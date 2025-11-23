@@ -1,15 +1,30 @@
 'use client'
 
 import { createClient } from '@/utils/supabase/client'
-import { Sparkles } from 'lucide-react' // The "Creation" icon you liked
+import { Sparkles } from 'lucide-react' 
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 
 export default function LoginPage() {
   const supabase = createClient()
+  const router = useRouter()
+
+  // Check if already logged in
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        router.push('/dashboard')
+      }
+    }
+    checkUser()
+  }, [router, supabase])
 
   const handleGoogleLogin = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
+        // This ensures they go to the callback route we made
         redirectTo: `${location.origin}/auth/callback`,
       },
     })
@@ -34,7 +49,7 @@ export default function LoginPage() {
           Automate your marketing with just a few clicks. No expertise required.
         </p>
 
-        {/* Google Button - Large Touch Target */}
+        {/* Google Button */}
         <button
           onClick={handleGoogleLogin}
           className="w-full bg-primary hover:bg-blue-200 transition-colors py-5 rounded-3xl flex items-center justify-center gap-3 text-primary-text font-bold text-lg shadow-sm active:scale-95 duration-200"
@@ -61,7 +76,6 @@ export default function LoginPage() {
           Continue with Google
         </button>
 
-        {/* Footer Note */}
         <p className="mt-8 text-xs text-slate-400 font-medium uppercase tracking-wider">
           Secure & Private
         </p>
