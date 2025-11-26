@@ -51,6 +51,7 @@ export default function ProfilePage() {
       if (data.pages && Array.isArray(data.pages)) {
         setFbPages(data.pages)
       } else {
+        console.log("No pages returned or invalid format:", data)
         setFbPages([])
       }
     } catch (e) {
@@ -123,9 +124,11 @@ export default function ProfilePage() {
             if (profile.selected_page_id) {
               setSelectedPageId(profile.selected_page_id)
             } else {
+              // Connected but no page selected? Fetch list.
               fetchPages()
             }
           } else if (currentToken) {
+             // Fallback if DB isn't updated yet but we have a token in session
              setIsFacebookConnected(true)
              fetchPages()
           }
@@ -134,6 +137,7 @@ export default function ProfilePage() {
       } catch (error) {
         console.error("Load error:", error)
       } finally {
+        // Stop loading normally
         if (isMounted) setLoading(false)
       }
     }
@@ -172,7 +176,7 @@ export default function ProfilePage() {
     const { error } = await supabase.auth.linkIdentity({
       provider: 'facebook',
       options: {
-        scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish',
+        scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management',
         redirectTo: window.location.origin + '/dashboard/profile',
         queryParams: {
           auth_type: 'rerequest'
@@ -192,7 +196,7 @@ export default function ProfilePage() {
       const { data: { user } } = await supabase.auth.getUser()
       const fbIdentity = user?.identities?.find(id => id.provider === 'facebook')
       
-      // FIX: Pass the entire 'fbIdentity' object, NOT just the ID string
+      // FIX: Pass the ENTIRE IDENTITY OBJECT, not just the ID string
       if (fbIdentity) {
         await supabase.auth.unlinkIdentity(fbIdentity)
       }
@@ -210,7 +214,6 @@ export default function ProfilePage() {
       }).eq('id', userId)
     }
 
-    // Force Reset UI
     setIsFacebookConnected(false)
     setFbPages([])
     setSelectedPageId('')

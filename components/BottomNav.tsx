@@ -11,7 +11,6 @@ export default function BottomNav() {
     { name: 'Inventory', icon: LayoutGrid, path: '/dashboard' },
     { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
-    { name: 'Auto', icon: MessageCircle, path: '/dashboard/whatsapp' },
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
   ]
 
