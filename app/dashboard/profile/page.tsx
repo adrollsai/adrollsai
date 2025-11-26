@@ -1,355 +1,228 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { CreditCard, LogOut, ChevronRight, Save, Upload, Phone, Loader2, Facebook, CheckCircle } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Share2, Upload, Image as ImageIcon, Trash2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
-import { useRouter } from 'next/navigation'
 
-type FBPage = {
+type Property = {
   id: string
-  name: string
-  access_token: string
-  category: string
+  title: string
+  address: string
+  price: string
+  status: string
+  image_url: string
+  images: string[]
+  description?: string
 }
 
-export default function ProfilePage() {
-  const router = useRouter()
+export default function InventoryPage() {
   const supabase = createClient()
   
-  // --- STATE ---
+  const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
-  const [userId, setUserId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   
-  // Actions
-  const [isSaving, setIsSaving] = useState(false)
-  const [uploadingLogo, setUploadingLogo] = useState(false)
-  const [isDisconnecting, setIsDisconnecting] = useState(false)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [sharingId, setSharingId] = useState<string | null>(null)
   
-  // Facebook Data
-  const [isFacebookConnected, setIsFacebookConnected] = useState(false)
-  const [fbPages, setFbPages] = useState<FBPage[]>([])
-  const [selectedPageId, setSelectedPageId] = useState<string>('')
-  const [isLoadingPages, setIsLoadingPages] = useState(false)
-
-  // Profile Data
-  const [formData, setFormData] = useState({
-    businessName: '',
-    mission: '',
-    color: '#D0E8FF',
-    contact: '',
-    logoUrl: ''
-  })
-
+  const [newProp, setNewProp] = useState({ title: '', address: '', price: '', description: '' })
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [previews, setPreviews] = useState<string[]>([])
+  
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // --- HELPER: Fetch Facebook Pages ---
-  const fetchPages = async () => {
-    setIsLoadingPages(true)
-    try {
-      const res = await fetch('/api/facebook/pages')
-      const data = await res.json()
-      if (data.pages && Array.isArray(data.pages)) {
-        setFbPages(data.pages)
-      } else {
-        console.log("No pages returned or invalid format:", data)
-        setFbPages([])
-      }
-    } catch (e) {
-      console.error("Error fetching pages:", e)
-      setFbPages([])
-    } finally {
-      setIsLoadingPages(false)
-    }
-  }
-
-  // --- HELPER: Save Selected Page ---
-  const handlePageSelect = async (pageId: string) => {
-    const page = fbPages.find(p => p.id === pageId)
-    if (!page || !userId) return
-
-    setSelectedPageId(pageId)
-    
-    await supabase.from('profiles').update({
-      selected_page_id: page.id,
-      selected_page_name: page.name,
-      selected_page_token: page.access_token
-    }).eq('id', userId)
-  }
-
-  // --- CORE: Load Data (With "Kill Switch") ---
-  useEffect(() => {
-    let isMounted = true
-
-    const init = async () => {
-      try {
-        // 1. Check Session
-        const { data: { session } } = await supabase.auth.getSession()
-        const user = session?.user
-
-        if (!user) {
-          if (isMounted) router.push('/')
-          return
-        }
-        if (isMounted) setUserId(user.id)
-
-        // 2. Capture Token if just returned from FB
-        const currentToken = session?.provider_token
-        if (currentToken) {
-          console.log("Capturing fresh FB token...")
-          await supabase
-            .from('profiles')
-            .update({ facebook_token: currentToken })
-            .eq('id', user.id)
-        }
-
-        // 3. Fetch Profile from DB
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single()
-
-        if (profile && isMounted) {
-          setFormData({
-            businessName: profile.business_name || '',
-            mission: profile.mission_statement || '',
-            color: profile.brand_color || '#D0E8FF',
-            contact: profile.contact_number || '',
-            logoUrl: profile.logo_url || ''
-          })
-          
-          // Check FB Status
-          if (profile.facebook_token) {
-            setIsFacebookConnected(true)
-            if (profile.selected_page_id) {
-              setSelectedPageId(profile.selected_page_id)
-            } else {
-              // Connected but no page selected? Fetch list.
-              fetchPages()
-            }
-          } else if (currentToken) {
-             // Fallback if DB isn't updated yet but we have a token in session
-             setIsFacebookConnected(true)
-             fetchPages()
-          }
-        }
-
-      } catch (error) {
-        console.error("Load error:", error)
-      } finally {
-        // Stop loading normally
-        if (isMounted) setLoading(false)
-      }
-    }
-
-    init()
-
-    // 4. "KILL SWITCH": Force stop loading after 2.5 seconds
-    const timer = setTimeout(() => {
-      if (isMounted) setLoading(false)
-    }, 2500)
-
-    // 5. Auth Listener
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-        const token = session?.provider_token
-        if (token && session?.user?.id) {
-           await supabase.from('profiles').update({ facebook_token: token }).eq('id', session.user.id)
-           if (isMounted) {
-             setIsFacebookConnected(true)
-             fetchPages()
-           }
-        }
-      }
-    })
-
-    return () => {
-      isMounted = false
-      clearTimeout(timer)
-      authListener.subscription.unsubscribe()
-    }
-  }, [router, supabase])
-
-  // --- ACTIONS ---
-
-  const handleConnectFacebook = async () => {
-    const { error } = await supabase.auth.linkIdentity({
-      provider: 'facebook',
-      options: {
-        scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management',
-        redirectTo: window.location.origin + '/dashboard/profile',
-        queryParams: {
-          auth_type: 'rerequest'
-        }
-      }
-    })
-    if (error) alert("Link error: " + error.message)
-  }
-
-  const handleDisconnectFacebook = async () => {
-    if (!confirm("Disconnect Facebook?")) return
-    
-    setIsDisconnecting(true)
-    
-    try {
-      // 1. Try to unlink from Auth
-      const { data: { user } } = await supabase.auth.getUser()
-      const fbIdentity = user?.identities?.find(id => id.provider === 'facebook')
-      
-      // FIX: Pass the ENTIRE IDENTITY OBJECT, not just the ID string
-      if (fbIdentity) {
-        await supabase.auth.unlinkIdentity(fbIdentity)
-      }
-    } catch (e) {
-      console.warn("Auth unlink warning:", e)
-    }
-
-    // 2. ALWAYS clear DB and Local State
-    if (userId) {
-      await supabase.from('profiles').update({ 
-        facebook_token: null,
-        selected_page_id: null,
-        selected_page_name: null,
-        selected_page_token: null
-      }).eq('id', userId)
-    }
-
-    setIsFacebookConnected(false)
-    setFbPages([])
-    setSelectedPageId('')
-    setIsDisconnecting(false)
-  }
-
-  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      if (!event.target.files || !event.target.files.length) return
-      setUploadingLogo(true)
-      if (!userId) return
-
-      const file = event.target.files[0]
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${userId}-${Date.now()}.${fileExt}`
-
-      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
-      if (uploadError) throw uploadError
-
-      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
-
-      setFormData(prev => ({ ...prev, logoUrl: publicUrl }))
-      await supabase.from('profiles').update({ logo_url: publicUrl }).eq('id', userId)
-
-    } catch (error) {
-      alert('Error uploading logo')
-    } finally {
-      setUploadingLogo(false)
-    }
-  }
-
-  const handleSave = async () => {
-    setIsSaving(true)
+  const fetchProperties = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+    const { data } = await supabase.from('properties').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
+    if (data) setProperties(data)
+    setLoading(false)
+  }
 
-    const { error } = await supabase.from('profiles').upsert({
-        id: user.id,
-        email: user.email,
-        business_name: formData.businessName,
-        mission_statement: formData.mission,
-        brand_color: formData.color,
-        contact_number: formData.contact,
-        logo_url: formData.logoUrl 
+  useEffect(() => { fetchProperties() }, [])
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const newFiles = Array.from(e.target.files)
+      
+      // VALIDATION: Check for huge files (>5MB)
+      const validFiles = newFiles.filter(file => {
+        if (file.size > 5 * 1024 * 1024) {
+          alert(`File ${file.name} is too large (Max 5MB). Skipped.`)
+          return false
+        }
+        return true
       })
 
-    if (error) alert(`Error saving: ${error.message}`)
-    setIsSaving(false)
+      setSelectedFiles(prev => [...prev, ...validFiles])
+      const newPreviews = validFiles.map(file => URL.createObjectURL(file))
+      setPreviews(prev => [...prev, ...newPreviews])
+    }
   }
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/')
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index))
+    setPreviews(prev => prev.filter((_, i) => i !== index))
   }
 
-  if (loading) return <div className="p-10 text-center text-slate-400 text-sm animate-pulse">Loading settings...</div>
+  // --- OPTIMIZED ADD FUNCTION ---
+  const handleAddProperty = async () => {
+    if (!newProp.address || !newProp.price || !newProp.title) {
+        alert("Please fill in Title, Address and Price.")
+        return
+    }
+    
+    setIsSubmitting(true)
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error("Not authenticated")
+
+      const uploadedUrls: string[] = []
+
+      // A. Upload Images
+      if (selectedFiles.length > 0) {
+        const uploadPromises = selectedFiles.map(async (file) => {
+          const fileExt = file.name.split('.').pop()
+          const cleanName = file.name.replace(/[^a-zA-Z0-9]/g, '')
+          const fileName = `${user.id}-${Date.now()}-${cleanName}.${fileExt}`
+          
+          const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, file)
+          if (uploadError) throw uploadError
+
+          const { data: { publicUrl } } = supabase.storage.from('properties').getPublicUrl(fileName)
+          return publicUrl
+        })
+
+        const results = await Promise.all(uploadPromises)
+        uploadedUrls.push(...results)
+      } else {
+          uploadedUrls.push(`https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newProp.title)}`)
+      }
+
+      // B. Insert into DB
+      const { error } = await supabase.from('properties').insert({
+          user_id: user.id,
+          title: newProp.title,
+          address: newProp.address,
+          price: newProp.price,
+          description: newProp.description,
+          status: 'Active',
+          image_url: uploadedUrls[0], 
+          images: uploadedUrls
+        })
+
+      if (error) throw error
+
+      // C. Close UI IMMEDIATELY (Optimistic)
+      setShowAddModal(false)
+      setNewProp({ title: '', address: '', price: '', description: '' })
+      setSelectedFiles([])
+      setPreviews([])
+      
+      // D. Refresh Data in Background
+      fetchProperties() 
+
+    } catch (error: any) {
+      alert('Error: ' + error.message)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
+    e.stopPropagation()
+    setSharingId(prop.id)
+    try {
+      const shareText = `🏠 *${prop.title}* \n\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description || ''}\n\n✨ Contact me for details!`
+      if (navigator.share) {
+        const imagesToShare = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url]
+        const limitedImages = imagesToShare.slice(0, 3) // Limit to 3 for share stability
+        const filePromises = limitedImages.map(async (url, index) => {
+            const response = await fetch(url)
+            const blob = await response.blob()
+            return new File([blob], `listing_${index}.jpg`, { type: "image/jpeg" })
+        })
+        const files = await Promise.all(filePromises)
+        await navigator.share({ files: files, title: prop.title, text: shareText })
+      } else {
+        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank')
+      }
+    } catch (error) { console.log("Share cancelled") } 
+    finally { setSharingId(null) }
+  }
+
+  // Filter Logic
+  const filteredProperties = properties.filter(p => 
+    p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    p.address.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   return (
-    <div className="p-5 max-w-md mx-auto min-h-screen pb-32">
-      
-      {/* Header */}
-      <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 flex flex-col items-center text-center">
-        <div onClick={() => !uploadingLogo && fileInputRef.current?.click()} className="w-24 h-24 bg-slate-50 rounded-full mb-3 flex items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-200 hover:border-primary transition-all">
-          {uploadingLogo ? <Loader2 className="animate-spin text-slate-400" /> : formData.logoUrl ? <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-1"><Upload size={20} className="text-slate-300" /><span className="text-[8px] text-slate-400 font-bold uppercase">Upload</span></div>}
-          <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
-        </div>
-        <h2 className="text-xl font-bold text-slate-800">{formData.businessName || 'Your Business'}</h2>
-        <p className="text-slate-400 text-xs">Tap circle to add logo</p>
+    <div className="p-5 max-w-md mx-auto relative min-h-screen pb-24">
+      <div className="flex justify-between items-end mb-6">
+        <div><h1 className="text-2xl font-bold text-slate-900">Inventory</h1><p className="text-slate-500 text-xs mt-1">Manage your active listings</p></div>
+        <button onClick={() => setShowAddModal(true)} className="bg-primary hover:bg-blue-200 text-primary-text p-3 rounded-full shadow-md active:scale-95 transition-transform"><Plus size={20} strokeWidth={3} /></button>
       </div>
 
-      {/* Social Accounts */}
-      <div className="mb-6">
-        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Social Accounts</h3>
-        <div className="bg-white rounded-[2rem] shadow-sm border border-blue-100 overflow-hidden p-5">
-          
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-[#1877F2] p-2 rounded-full text-white"><Facebook size={18} fill="white" /></div>
-              <div><h4 className="font-bold text-sm text-slate-800">Facebook</h4><p className="text-[10px] text-slate-400">{isFacebookConnected ? 'Account Linked' : 'Connect to automate'}</p></div>
-            </div>
-            {isFacebookConnected ? (
-              <button onClick={handleDisconnectFacebook} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
-            ) : (
-              <button onClick={handleConnectFacebook} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
-            )}
-          </div>
+      <div className="relative mb-6">
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"><Search size={18} /></div>
+        <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search properties..." className="w-full bg-white border-none py-3 pl-10 pr-4 rounded-xl shadow-sm text-sm text-slate-700 focus:ring-2 focus:ring-primary outline-none" />
+      </div>
 
-          {isFacebookConnected && (
-            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-              <div className="flex justify-between items-center mb-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Posting Page</label>
-                <button onClick={fetchPages} className="text-[10px] text-blue-500 font-bold">Refresh</button>
+      <div className="flex flex-col gap-4">
+        {loading ? <div className="text-center py-10 text-slate-400 text-sm">Loading...</div> : 
+         filteredProperties.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">No properties found. Click + to add.</div> : (
+          filteredProperties.map((prop) => (
+            <div key={prop.id} onClick={() => setSelectedProperty(prop)} className="bg-white p-3 rounded-[1.5rem] shadow-sm border border-slate-100 relative group cursor-pointer active:scale-95 transition-transform">
+              <div className="relative h-40 w-full rounded-2xl overflow-hidden bg-slate-100 mb-3">
+                <img src={prop.image_url} alt="Property" className="w-full h-full object-cover" />
+                <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-white/90 text-slate-700 backdrop-blur-sm">{prop.status}</span>
+                {prop.images && prop.images.length > 1 && (<div className="absolute bottom-2 right-2 bg-black/60 text-white px-2 py-1 rounded-lg text-[10px] font-bold backdrop-blur-sm flex items-center gap-1"><ImageIcon size={10} />+{prop.images.length - 1}</div>)}
               </div>
-              {isLoadingPages ? (
-                <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing...</div>
-              ) : fbPages.length > 0 ? (
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {fbPages.map(page => (
-                    <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                      <span className={`text-xs font-bold truncate ${selectedPageId === page.id ? 'text-slate-800' : 'text-slate-500'}`}>{page.name}</span>
-                      {selectedPageId === page.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-                    </button>
-                  ))}
+              <div className="px-1 pb-1 flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">{prop.title || 'Untitled'}</h3>
+                  <p className="text-sm font-bold text-slate-900 mt-0.5">{prop.price}</p>
+                  <div className="flex items-center gap-1.5 text-slate-500 mt-1"><MapPin size={14} /><span className="text-xs font-medium truncate">{prop.address}</span></div>
                 </div>
-              ) : (
-                <div className="py-2">
-                  <p className="text-xs text-slate-400 mb-2">No pages found.</p>
-                  <button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions / Refresh List</button>
-                </div>
-              )}
+                <button onClick={(e) => handleNativeShare(e, prop)} disabled={sharingId === prop.id} className="bg-green-50 text-green-600 p-3 rounded-full hover:bg-green-100 transition-colors active:scale-90">{sharingId === prop.id ? <Loader2 size={20} className="animate-spin" /> : <Share2 size={20} />}</button>
+              </div>
             </div>
-          )}
-        </div>
+          ))
+        )}
       </div>
 
-      {/* AI Form */}
-      <div className="mb-6">
-        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">AI Knowledge Base</h3>
-        <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-blue-100 space-y-4">
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Business Name</label><input type="text" value={formData.businessName} onChange={(e) => setFormData({...formData, businessName: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" /></div>
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Contact Number</label><input type="tel" value={formData.contact} onChange={(e) => setFormData({...formData, contact: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" /></div>
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Mission / Info</label><textarea rows={3} value={formData.mission} onChange={(e) => setFormData({...formData, mission: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm resize-none focus:ring-2 focus:ring-primary outline-none" /></div>
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Brand Color</label><div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl"><div className="w-6 h-6 rounded-md shadow-sm border border-slate-200" style={{ backgroundColor: formData.color }} /><input type="text" value={formData.color} onChange={(e) => setFormData({...formData, color: e.target.value})} className="bg-transparent font-mono text-xs w-full outline-none uppercase" /></div></div>
-            <button onClick={handleSave} disabled={isSaving || uploadingLogo} className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70">{isSaving ? 'Saving...' : ( <><Save size={16} /> Save Business Info</> )}</button>
+      {showAddModal && (
+        <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold text-slate-800">New Listing</h2><button onClick={() => setShowAddModal(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button></div>
+            <div className="space-y-4">
+              <div onClick={() => fileInputRef.current?.click()} className="w-full h-32 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 transition-colors relative overflow-hidden">
+                  <ImageIcon size={24} className="text-slate-400 mb-2"/><span className="text-xs font-bold text-slate-400 uppercase">Add Photos (Max 5MB)</span>
+                  <input type="file" multiple ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
+              </div>
+              {previews.length > 0 && (<div className="flex gap-2 overflow-x-auto pb-2">{previews.map((src, i) => (<div key={i} className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border border-slate-100"><img src={src} className="w-full h-full object-cover" /><button onClick={() => removeFile(i)} className="absolute top-0 right-0 bg-black/50 text-white p-0.5"><X size={10} /></button></div>))}</div>)}
+              <input type="text" value={newProp.title} onChange={(e) => setNewProp({...newProp, title: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Title (e.g. Sunset Villa)" />
+              <input type="text" value={newProp.address} onChange={(e) => setNewProp({...newProp, address: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Address" />
+              <input type="text" value={newProp.price} onChange={(e) => setNewProp({...newProp, price: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Price" />
+              <textarea value={newProp.description} onChange={(e) => setNewProp({...newProp, description: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Description..." rows={3} />
+              <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold flex justify-center items-center gap-2">{isSubmitting ? <><Loader2 className="animate-spin" size={16}/> Saving...</> : 'Save'}</button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Settings */}
-      <div>
-        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Settings</h3>
-        <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
-          <button className="w-full p-4 flex items-center justify-between hover:bg-slate-50 border-b border-slate-50"><div className="flex items-center gap-3"><div className="bg-blue-50 p-2 rounded-full text-blue-600"><CreditCard size={18} /></div><span className="font-bold text-sm text-slate-700">Subscription</span></div><ChevronRight size={18} className="text-slate-300" /></button>
-          <button onClick={handleSignOut} className="w-full p-4 flex items-center justify-between hover:bg-red-50 group"><div className="flex items-center gap-3"><div className="bg-red-50 p-2 rounded-full text-red-500 group-hover:bg-red-100"><LogOut size={18} /></div><span className="font-bold text-sm text-red-500">Sign Out</span></div></button>
+      {selectedProperty && (
+        <div className="fixed inset-0 z-[90] bg-white flex flex-col animate-in slide-in-from-bottom-10">
+           <div className="absolute top-4 left-4 z-10"><button onClick={() => setSelectedProperty(null)} className="bg-white/80 backdrop-blur-md p-3 rounded-full shadow-sm text-slate-900"><X size={24} /></button></div>
+           <div className="h-[45vh] bg-slate-100 w-full overflow-x-auto flex snap-x snap-mandatory scrollbar-hide">{(selectedProperty.images && selectedProperty.images.length > 0 ? selectedProperty.images : [selectedProperty.image_url]).map((img, i) => (<img key={i} src={img} className="w-full h-full object-cover flex-shrink-0 snap-center" />))}</div>
+           <div className="flex-1 p-6 overflow-y-auto bg-white -mt-6 rounded-t-[2rem] relative z-0"><div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6" /><div className="flex justify-between items-start mb-4"><div><h2 className="text-2xl font-bold text-slate-900">{selectedProperty.title}</h2><p className="text-lg font-bold text-primary-text mt-1">{selectedProperty.price}</p></div><span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold h-fit">{selectedProperty.status}</span></div><div className="flex items-center gap-2 text-slate-500 mb-6"><MapPin size={18} /><span className="text-sm">{selectedProperty.address}</span></div><h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-2">Details</h3><p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">{selectedProperty.description || "No description available."}</p></div>
+           <div className="p-4 bg-white border-t border-slate-100 flex gap-3"><button onClick={(e) => handleNativeShare(e, selectedProperty)} className="flex-1 bg-green-500 text-white py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-md active:scale-95 transition-transform"><Share2 size={18} /> Share</button></div>
         </div>
-      </div>
-
+      )}
     </div>
   )
 }
