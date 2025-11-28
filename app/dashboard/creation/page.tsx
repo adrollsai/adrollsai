@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, Image as ImageIcon, Video, Loader2, Building2 } from 'lucide-react'
+import { Send, Bot, Loader2, Building2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 // --- TYPES ---
@@ -32,19 +32,19 @@ type Profile = {
   mission_statement: string
 }
 
-// --- THE AI DESIGN BRAIN (Reference Styles) ---
+// --- THE STYLE LIBRARY ---
 const DESIGN_STYLES = [
   {
-    name: "The Investor (Split Layout)",
-    prompt: "Design a high-contrast real estate flyer. \n\nLAYOUT:\n- Top 60%: Use the provided property photo.\n- Bottom 40%: A clean solid background with text.\n\nTEXT & CONTENT:\n- HEADLINE: 'High ROI Opportunity'. Make this text Large, Bold.\n- SUB-HEADLINE: '[LOCATION]'.\n- DETAILS: '[PRICE]'.\n- FOOTER: A bar with Logo and Phone: '[PHONE]'."
+    name: "The Investor",
+    prompt: "Design a high-contrast real estate flyer. \n\nVISUAL STYLE:\n- Use a split layout: Top 60% property photos, Bottom 40% solid background.\n- Use Bold, Green/Teal typography.\n- Vibe: Professional, High ROI, Urgent."
   },
   {
-    name: "The Luxury Overlay (Full Bleed)",
-    prompt: "Create a premium real estate graphic. \n\nLAYOUT:\n- Use the provided property photo as a full-screen background.\n- Overlay a semi-transparent dark card at the bottom.\n\nTEXT & CONTENT:\n- HEADLINE: 'Luxury Living'. Serif font.\n- DETAILS: 'Starting at [PRICE]' and '[LOCATION]'.\n- FOOTER: Logo and '[PHONE]'."
+    name: "Luxury Full-Bleed",
+    prompt: "Create a premium, cinematic real estate poster. \n\nVISUAL STYLE:\n- Use the property photo as a full-screen background.\n- Overlay a sleek, semi-transparent glass card at the bottom.\n- Vibe: Expensive, Elegant, Serif Fonts, Minimalist."
   },
   {
-    name: "The Modern Tower (Vertical Focus)",
-    prompt: "Design a modern real estate ad. \n\nLAYOUT:\n- Focus on height. Use the images to create scale.\n\nTEXT & CONTENT:\n- HEADLINE: '[TITLE]'. Bold sans-serif.\n- FOOTER: Logo, '[PRICE]', and '[PHONE]'."
+    name: "Modern Geometric",
+    prompt: "Design a trendy, modern social media graphic. \n\nVISUAL STYLE:\n- Use a geometric frame or border around the property photos.\n- Use a clean white background for the text area.\n- Vibe: Fresh, Gen-Z, Pop of Color, Sans-Serif."
   }
 ]
 
@@ -56,7 +56,7 @@ export default function CreationPage() {
   const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
-    { id: 1, role: 'ai', text: 'Select a property, and I will generate a professional graphic for it using your photos.' }
+    { id: 1, role: 'ai', text: 'Select a property! I will auto-design a graphic using your photos. You can tell me "no price" or "make it dark" to override the style.' }
   ])
   
   // Data State
@@ -66,7 +66,7 @@ export default function CreationPage() {
   
   const chatEndRef = useRef<HTMLDivElement>(null)
 
-  // 1. Fetch Data (Profile + Properties)
+  // 1. Fetch Data
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -85,13 +85,12 @@ export default function CreationPage() {
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, isThinking])
 
-  // Helper: Detect Aspect Ratio (Matches API specs: 1:1, 9:16, 16:9)
+  // Helper: Detect Aspect Ratio
   const detectAspectRatio = (text: string, currentMode: string) => {
     const t = text.toLowerCase()
-    if (t.includes('landscape') || t.includes('horizontal') || t.includes('wide')) return '16:9'
-    if (t.includes('portrait') || t.includes('vertical') || t.includes('tall')) return '9:16'
-    if (t.includes('square') || t.includes('1:1')) return '1:1'
-    
+    if (t.includes('landscape') || t.includes('horizontal')) return '16:9'
+    if (t.includes('portrait') || t.includes('vertical')) return '9:16'
+    if (t.includes('square')) return '1:1'
     return currentMode === 'video' ? '9:16' : '1:1'
   }
 
@@ -99,7 +98,7 @@ export default function CreationPage() {
   const handleSend = async () => {
     if (isThinking) return
     
-    const userText = input.trim() || (selectedPropId ? "Generate a creative design for this property." : "Surprise me.")
+    const userText = input.trim() || (selectedPropId ? "Generate a creative design." : "Surprise me.")
     const userMsg: Message = { id: Date.now(), role: 'user', text: userText }
     setMessages(prev => [...prev, userMsg])
     
@@ -110,37 +109,45 @@ export default function CreationPage() {
       const prop = properties.find(p => p.id === selectedPropId)
       if (!prop) throw new Error("Please select a property first.")
 
-      // A. Image Logic (Top 2 + Logo)
+      // A. Build Image Array (Top 2 Photos + Logo)
       let propImages: string[] = []
+      // Use array if exists, else fallback to single url
       if (prop.images && prop.images.length > 0) {
         propImages = prop.images.slice(0, 2)
       } else if (prop.image_url) {
         propImages = [prop.image_url]
       }
 
-      if (profile?.logo_url && !input.toLowerCase().includes("no logo")) {
+      // Add Logo (Unless user explicitly says "no logo")
+      if (profile?.logo_url && !userText.toLowerCase().includes("no logo")) {
         propImages.push(profile.logo_url)
       }
 
-      // B. Dimension Logic
+      // B. Dimension & Style
       const targetRatio = detectAspectRatio(userText, mode)
-
-      // C. Construct Prompt
       const randomStyle = DESIGN_STYLES[Math.floor(Math.random() * DESIGN_STYLES.length)]
       
-      let finalPrompt = randomStyle.prompt
-        .replace('[LOCATION]', prop.address)
-        .replace('[PRICE]', prop.price)
-        .replace('[PHONE]', profile?.contact_number || "DM for info")
-      
-      finalPrompt += `
-        \n--- INSTRUCTIONS ---
-        PROPERTY TITLE: "${prop.title}"
-        DESCRIPTION: "${prop.description || ''}"
-        USER NOTES: "${input}"
-        BRAND: "${profile?.business_name || ""}"
-        COLOR: "${profile?.brand_color || "Teal"}"
-        Use the input images provided.
+      // C. Construct the "Smart Prompt"
+      const finalPrompt = `
+        TASK: Create a professional real estate graphic.
+        
+        1. VISUAL STYLE TEMPLATE:
+        ${randomStyle.prompt}
+        
+        2. PROPERTY DATA (Include these unless user says otherwise):
+        - Title: ${prop.title}
+        - Location: ${prop.address}
+        - Price: ${prop.price}
+        - Description Context: ${prop.description || ""}
+        
+        3. BRANDING:
+        - Brand Name: ${profile?.business_name}
+        - Contact Info: ${profile?.contact_number}
+        - Accent Color: ${profile?.brand_color || "Teal"}
+        
+        4. USER INSTRUCTIONS (***HIGHEST PRIORITY***):
+        "${userText}"
+        (Example: If user says "no price", DO NOT include the price text. If user says "dark mode", ignore the style template and make it dark.)
       `
 
       // D. Send to API
@@ -150,16 +157,16 @@ export default function CreationPage() {
         body: JSON.stringify({ 
             message: finalPrompt, 
             mode: mode,
-            imageUrls: propImages,
-            aspectRatio: targetRatio // "1:1" or "9:16"
+            imageUrls: propImages, // Array of [Photo1, Photo2, Logo]
+            aspectRatio: targetRatio
         })
       })
       
       const startData = await startResponse.json()
       const taskId = startData.taskId 
 
-      // E. Polling (Wait 20s)
-      await new Promise(resolve => setTimeout(resolve, 20000)) 
+      // E. Polling Loop
+      await new Promise(resolve => setTimeout(resolve, 15000)) 
 
       const checkResponse = await fetch('/api/check-status', {
         method: 'POST',
@@ -169,19 +176,21 @@ export default function CreationPage() {
 
       const checkData = await checkResponse.json()
       
-      // Parse Result (Kie.ai standard)
       let finalImageUrl = ''
       if (checkData.data && checkData.data.resultJson) {
          const resultObj = JSON.parse(checkData.data.resultJson)
          finalImageUrl = resultObj.resultUrls?.[0]
+      } else if (checkData.data && checkData.data.state === 'success' && checkData.data.resultUrl) {
+         finalImageUrl = checkData.data.resultUrl
       }
 
       if (finalImageUrl) {
+        // Auto-Save Draft
         if (profile) {
             await supabase.from('daily_drafts').insert({
-                user_id: profile.id, 
+                user_id: profile.id,
                 image_url: finalImageUrl,
-                caption: `🔥 ${prop.title}! ${prop.price}. Contact: ${profile.contact_number}`,
+                caption: `🔥 ${prop.title}! ${prop.price}.`,
                 status: 'pending'
             })
         }
@@ -189,13 +198,13 @@ export default function CreationPage() {
         const aiMsg: Message = { 
           id: Date.now() + 1, 
           role: 'ai', 
-          text: `I've created a ${targetRatio} design. It's saved to Drafts.`,
+          text: `I've created a design using the "${randomStyle.name}" style. You can find it in Drafts or ask for changes!`,
           mediaType: mode,
           mediaUrl: finalImageUrl
         }
         setMessages(prev => [...prev, aiMsg])
       } else {
-         throw new Error("Still processing... please check Assets tab in a moment.")
+         throw new Error("Still processing... check back in a minute.")
       }
 
     } catch (error: any) {
@@ -209,7 +218,7 @@ export default function CreationPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] bg-surface">
       
-      {/* --- HEADER --- */}
+      {/* HEADER */}
       <div className="bg-white px-5 py-3 shadow-sm z-10 space-y-3">
         <div className="flex justify-between items-center">
             <h1 className="text-lg font-bold text-slate-800">Creator</h1>
@@ -219,7 +228,7 @@ export default function CreationPage() {
             </div>
         </div>
 
-        {/* Selector */}
+        {/* SELECTOR */}
         <div className="relative">
             <Building2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <select 
@@ -237,7 +246,7 @@ export default function CreationPage() {
         </div>
       </div>
 
-      {/* --- CHAT AREA --- */}
+      {/* CHAT */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -263,7 +272,7 @@ export default function CreationPage() {
       {/* INPUT */}
       <div className="p-4 bg-surface pb-6">
         <div className="relative flex items-center">
-          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder={selectedPropId ? "Instructions (e.g. make it landscape)..." : "Select a property..."} disabled={isThinking || !selectedPropId} className="w-full bg-white border-none py-3 pl-5 pr-12 rounded-full shadow-lg shadow-blue-50 text-sm text-slate-700 focus:ring-2 focus:ring-primary outline-none disabled:opacity-50" />
+          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder={selectedPropId ? "Add instructions (e.g. no price)..." : "Select property first..."} disabled={isThinking || !selectedPropId} className="w-full bg-white border-none py-3 pl-5 pr-12 rounded-full shadow-lg shadow-blue-50 text-sm text-slate-700 focus:ring-2 focus:ring-primary outline-none disabled:opacity-50" />
           <button onClick={handleSend} disabled={isThinking || !selectedPropId} className="absolute right-2 bg-primary hover:bg-blue-300 text-primary-text p-2 rounded-full transition-colors disabled:opacity-50"><Send size={16} strokeWidth={2.5} /></button>
         </div>
       </div>

@@ -13,14 +13,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // 2. Extract Data
+  // 2. Extract Data (Updated to include Image Arrays & Aspect Ratio)
   const body = await request.json()
   const { message, mode, imageUrls, aspectRatio } = body
 
-  // Debug Logs
+  // Debug Logs (So you can see exactly what is being sent to n8n)
   console.log("User:", user.email)
-  console.log("N8N URL:", process.env.N8N_WEBHOOK_URL) // Check if this is undefined!
-  console.log("Payload:", { message, mode, aspectRatio, imagesCount: imageUrls?.length })
+  console.log("N8N URL:", process.env.N8N_WEBHOOK_URL)
+  console.log("Payload Summary:", { 
+    mode, 
+    aspectRatio, 
+    imagesCount: imageUrls?.length,
+    promptLength: message?.length 
+  })
 
   if (!process.env.N8N_WEBHOOK_URL) {
     console.error("CRITICAL: N8N_WEBHOOK_URL is missing in .env.local")
@@ -30,6 +35,7 @@ export async function POST(request: Request) {
   try {
     // 3. Send to n8n
     console.log("Sending request to n8n...")
+    
     const n8nResponse = await fetch(process.env.N8N_WEBHOOK_URL, {
       method: 'POST',
       headers: {
@@ -38,28 +44,29 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         userId: user.id,
         userEmail: user.email,
-        prompt: message,
-        mode: mode,
-        imageUrls: imageUrls,
-        aspectRatio: aspectRatio
+        prompt: message,       // The full text prompt
+        mode: mode,            // 'image' or 'video'
+        imageUrls: imageUrls,  // Array of strings [img1, img2, logo]
+        aspectRatio: aspectRatio // "1:1" or "9:16"
       }),
     })
 
     // 4. Check n8n Response
     const responseText = await n8nResponse.text()
     console.log("n8n Response Status:", n8nResponse.status)
-    console.log("n8n Raw Response:", responseText)
-
+    
     if (!n8nResponse.ok) {
+      console.error("n8n Error Body:", responseText)
       throw new Error(`n8n failed with ${n8nResponse.status}: ${responseText}`)
     }
 
-    // Try parsing JSON
+    // Try parsing JSON safely
     let data
     try {
       data = JSON.parse(responseText)
     } catch (e) {
-      // If n8n returned plain text (not JSON), handle it
+      // If n8n returned plain text (not JSON), handle it gracefully
+      console.warn("n8n returned non-JSON text:", responseText)
       data = { taskId: responseText, text: responseText }
     }
     
