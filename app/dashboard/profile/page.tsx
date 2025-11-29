@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { CreditCard, LogOut, ChevronRight, Save, Upload, Phone, Loader2, Facebook, CheckCircle } from 'lucide-react'
+import { CreditCard, LogOut, ChevronRight, Save, Upload, Phone, Loader2, Facebook, Linkedin, CheckCircle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -25,8 +25,10 @@ export default function ProfilePage() {
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
   
-  // Facebook Data
+  // Connections
   const [isFacebookConnected, setIsFacebookConnected] = useState(false)
+  const [isLinkedinConnected, setIsLinkedinConnected] = useState(false)
+  
   const [fbPages, setFbPages] = useState<FBPage[]>([])
   const [selectedPageId, setSelectedPageId] = useState<string>('')
   const [isLoadingPages, setIsLoadingPages] = useState(false)
@@ -42,7 +44,9 @@ export default function ProfilePage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // --- HELPER: Fetch Facebook Pages ---
+  // --- HELPERS ---
+  const isValidFacebookToken = (token: string) => token && token.startsWith('EAA')
+
   const fetchPages = async () => {
     setIsLoadingPages(true)
     try {
@@ -61,13 +65,11 @@ export default function ProfilePage() {
     }
   }
 
-  // --- HELPER: Save Selected Page ---
   const handlePageSelect = async (pageId: string) => {
     const page = fbPages.find(p => p.id === pageId)
     if (!page || !userId) return
 
     setSelectedPageId(pageId)
-    
     await supabase.from('profiles').update({
       selected_page_id: page.id,
       selected_page_name: page.name,
@@ -87,7 +89,6 @@ export default function ProfilePage() {
 
         if (errorMsg) {
           alert(`⚠️ Connection Failed: ${errorMsg}`)
-          // Clean URL so we don't show the alert again on refresh
           router.replace('/dashboard/profile')
           return 
         }
@@ -117,9 +118,10 @@ export default function ProfilePage() {
             logoUrl: profile.logo_url || ''
           })
           
-          // Check FB Status based on DB token
-          // We check if it starts with 'EAA' (Facebook Token) to avoid the Google token issue
-          if (profile.facebook_token && profile.facebook_token.startsWith('EAA')) {
+          // --- CHECK CONNECTIONS ---
+          
+          // Facebook Check
+          if (profile.facebook_token && isValidFacebookToken(profile.facebook_token)) {
             setIsFacebookConnected(true)
             if (profile.selected_page_id) {
               setSelectedPageId(profile.selected_page_id)
@@ -128,6 +130,11 @@ export default function ProfilePage() {
             }
           } else {
              setIsFacebookConnected(false)
+          }
+
+          // LinkedIn Check
+          if (profile.linkedin_token) {
+             setIsLinkedinConnected(true)
           }
         }
 
@@ -140,12 +147,10 @@ export default function ProfilePage() {
 
     init()
     
-    // Auth Listener to refresh UI if session updates (but no saving logic here)
+    // Auth Listener
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event) => {
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-         if (isMounted) {
-             init() 
-         }
+         if (isMounted) init() 
       }
     })
 
@@ -158,15 +163,32 @@ export default function ProfilePage() {
   // --- ACTIONS ---
 
   const handleConnectFacebook = async () => {
-    // UPDATED: Using signInWithOAuth because the account is likely already linked.
-    // This refreshes the session and triggers our server-side callback to capture the token.
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'facebook',
       options: {
         scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management',
-        redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile',
+        redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=facebook',
       }
     })
+    if (error) alert("Connection error: " + error.message)
+  }
+
+  const handleConnectLinkedIn = async () => {
+    // FIX: Use linkIdentity to merge accounts instead of switching users
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider: 'linkedin_oidc',
+      options: {
+        scopes: 'openid profile email w_member_social',
+        // We keep the same callback flow to save the token to the DB
+        redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=linkedin_oidc',
+      }
+    })
+
+    if (data?.url) {
+        // Manually redirect to the approval URL
+        window.location.href = data.url
+    }
+    
     if (error) alert("Connection error: " + error.message)
   }
 
@@ -174,7 +196,6 @@ export default function ProfilePage() {
     if (!confirm("Disconnect Facebook?")) return
     setIsDisconnecting(true)
     
-    // Clear Database
     if (userId) {
       await supabase.from('profiles').update({ 
         facebook_token: null,
@@ -257,45 +278,67 @@ export default function ProfilePage() {
       {/* Social Accounts */}
       <div className="mb-6">
         <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Social Accounts</h3>
-        <div className="bg-white rounded-[2rem] shadow-sm border border-blue-100 overflow-hidden p-5">
+        <div className="bg-white rounded-[2rem] shadow-sm border border-blue-100 overflow-hidden p-5 space-y-4">
           
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-[#1877F2] p-2 rounded-full text-white"><Facebook size={18} fill="white" /></div>
-              <div><h4 className="font-bold text-sm text-slate-800">Facebook</h4><p className="text-[10px] text-slate-400">{isFacebookConnected ? 'Account Linked' : 'Connect to automate'}</p></div>
+          {/* FACEBOOK */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                <div className="bg-[#1877F2] p-2 rounded-full text-white"><Facebook size={18} fill="white" /></div>
+                <div><h4 className="font-bold text-sm text-slate-800">Facebook</h4><p className="text-[10px] text-slate-400">{isFacebookConnected ? 'Account Linked' : 'Connect to automate'}</p></div>
+                </div>
+                {isFacebookConnected ? (
+                <button onClick={handleDisconnectFacebook} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
+                ) : (
+                <button onClick={handleConnectFacebook} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
+                )}
             </div>
-            {isFacebookConnected ? (
-              <button onClick={handleDisconnectFacebook} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
-            ) : (
-              <button onClick={handleConnectFacebook} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
+
+            {isFacebookConnected && (
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
+                <div className="flex justify-between items-center mb-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Posting Page</label>
+                    <button onClick={fetchPages} className="text-[10px] text-blue-500 font-bold">Refresh</button>
+                </div>
+                {isLoadingPages ? (
+                    <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing...</div>
+                ) : fbPages.length > 0 ? (
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {fbPages.map(page => (
+                        <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
+                        <span className={`text-xs font-bold truncate ${selectedPageId === page.id ? 'text-slate-800' : 'text-slate-500'}`}>{page.name}</span>
+                        {selectedPageId === page.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                        </button>
+                    ))}
+                    </div>
+                ) : (
+                    <div className="py-2">
+                    <p className="text-xs text-slate-400 mb-2">No pages found.</p>
+                    <button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions / Refresh List</button>
+                    </div>
+                )}
+                </div>
             )}
           </div>
 
-          {isFacebookConnected && (
-            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-              <div className="flex justify-between items-center mb-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Posting Page</label>
-                <button onClick={fetchPages} className="text-[10px] text-blue-500 font-bold">Refresh</button>
-              </div>
-              {isLoadingPages ? (
-                <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing...</div>
-              ) : fbPages.length > 0 ? (
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {fbPages.map(page => (
-                    <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                      <span className={`text-xs font-bold truncate ${selectedPageId === page.id ? 'text-slate-800' : 'text-slate-500'}`}>{page.name}</span>
-                      {selectedPageId === page.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-                    </button>
-                  ))}
+          {/* LINKEDIN */}
+          <div className="border-t border-slate-50 pt-4">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="bg-[#0077b5] p-2 rounded-full text-white"><Linkedin size={18} fill="white" /></div>
+                    <div>
+                        <h4 className="font-bold text-sm text-slate-800">LinkedIn</h4>
+                        <p className="text-[10px] text-slate-400">{isLinkedinConnected ? 'Account Linked' : 'Connect to automate'}</p>
+                    </div>
                 </div>
-              ) : (
-                <div className="py-2">
-                  <p className="text-xs text-slate-400 mb-2">No pages found.</p>
-                  <button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions / Refresh List</button>
-                </div>
-              )}
+                {isLinkedinConnected ? (
+                    <span className="text-[10px] font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-lg border border-green-100">Connected</span>
+                ) : (
+                    <button onClick={handleConnectLinkedIn} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
+                )}
             </div>
-          )}
+          </div>
+
         </div>
       </div>
 

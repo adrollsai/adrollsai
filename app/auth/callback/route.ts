@@ -4,14 +4,15 @@ import { createClient } from '@/utils/supabase/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
+  
+  // 1. Capture the Provider Tag
+  const provider = searchParams.get('provider') 
   const next = searchParams.get('next') ?? '/dashboard'
   
-  // 1. Check for specific Supabase errors before even trying to exchange code
-  const errorDescription = searchParams.get('error_description')
+  // Handle Errors from Providers
   const errorCode = searchParams.get('error_code')
-
+  const errorDescription = searchParams.get('error_description')
   if (errorCode) {
-    // Redirect back to the profile page with the error details so the frontend can show a toast
     return NextResponse.redirect(`${origin}${next}?error=${encodeURIComponent(errorDescription || 'Unknown Error')}`)
   }
 
@@ -20,19 +21,29 @@ export async function GET(request: Request) {
     const { error, data } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error && data?.session) {
-      // 🟢 CAPTURE TOKEN: Only if it's a Facebook token (starts with EAA)
       const token = data.session.provider_token
       const userId = data.session.user.id
 
-      if (token && token.startsWith('EAA')) {
-        console.log("✅ Captured Fresh Facebook Token. Saving...")
-        await supabase
-          .from('profiles')
-          .update({ facebook_token: token })
-          .eq('id', userId)
+      if (token) {
+        // 🟢 DYNAMIC TOKEN SAVING
+        const updates: any = {}
+        
+        if (provider === 'facebook' && token.startsWith('EAA')) {
+            console.log("✅ Saving Facebook Token...")
+            updates.facebook_token = token
+        } 
+        // 👇 UPDATED: Check for 'linkedin_oidc' specifically
+        else if (provider === 'linkedin_oidc') {
+            console.log("✅ Saving LinkedIn OIDC Token...")
+            updates.linkedin_token = token
+        }
+
+        if (Object.keys(updates).length > 0) {
+            await supabase.from('profiles').update(updates).eq('id', userId)
+        }
       }
       
-      // Handle environment redirects (Localhost vs Production)
+      // Handle Environment Redirects (Localhost vs Production)
       const forwardedHost = request.headers.get('x-forwarded-host') 
       const isLocalEnv = origin.includes('localhost')
       
@@ -46,6 +57,5 @@ export async function GET(request: Request) {
     }
   }
 
-  // Fallback if code exchange failed silently
   return NextResponse.redirect(`${origin}${next}?error=Authentication failed`)
 }
