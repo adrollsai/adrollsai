@@ -1,404 +1,85 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Share2, Image as ImageIcon, Link as LinkIcon, Filter, Trash2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { Sparkles } from 'lucide-react' 
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 
-// --- Helper for Price Parsing ---
-const parsePrice = (priceStr: string | null) => {
-  if (!priceStr) return 0
-  // Removes '$', ',', etc and parses to int
-  return parseInt(priceStr.replace(/[^0-9]/g, '') || '0')
-}
-
-type Property = {
-  id: string
-  title: string
-  address: string
-  price: string
-  status: string
-  image_url: string
-  images: string[]
-  description?: string
-  user_id: string 
-}
-
-export default function InventoryPage() {
+export default function LoginPage() {
   const supabase = createClient()
-  
-  // --- STATE ---
-  const [properties, setProperties] = useState<Property[]>([])
-  const [loading, setLoading] = useState(true)
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  
-  // Filter State
-  const [searchQuery, setSearchQuery] = useState('')
-  const [minPrice, setMinPrice] = useState('')
-  const [maxPrice, setMaxPrice] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
-  
-  // UI State
-  const [showAddModal, setShowAddModal] = useState(false)
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [sharingId, setSharingId] = useState<string | null>(null)
-  
-  // Form State
-  const [newProp, setNewProp] = useState({ title: '', address: '', price: '', description: '' })
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
-  const [previews, setPreviews] = useState<string[]>([])
-  
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const router = useRouter()
 
-  // 1. Fetch Properties
-  const fetchProperties = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    setCurrentUserId(user.id)
-
-    const { data } = await supabase
-      .from('properties')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-
-    if (data) setProperties(data)
-    setLoading(false)
-  }
-
+  // Check if already logged in
   useEffect(() => {
-    fetchProperties()
-  }, [])
-
-  // --- ACTIONS ---
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files)
-      setSelectedFiles(prev => [...prev, ...newFiles])
-      
-      const newPreviews = newFiles.map(file => URL.createObjectURL(file))
-      setPreviews(prev => [...prev, ...newPreviews])
-    }
-  }
-
-  const removeFile = (index: number) => {
-    setSelectedFiles(prev => prev.filter((_, i) => i !== index))
-    setPreviews(prev => prev.filter((_, i) => i !== index))
-  }
-
-  const handleAddProperty = async () => {
-    if (!newProp.address || !newProp.price || !newProp.title) {
-        alert("Please fill in Title, Address and Price.")
-        return
-    }
-    setIsSubmitting(true)
-
-    try {
+    const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error("Not authenticated")
-
-      const uploadedUrls: string[] = []
-
-      // A. Upload Images
-      if (selectedFiles.length > 0) {
-        const uploadPromises = selectedFiles.map(async (file) => {
-          const fileExt = file.name.split('.').pop()
-          const cleanName = file.name.replace(/[^a-zA-Z0-9]/g, '')
-          const fileName = `${user.id}-${Date.now()}-${cleanName}.${fileExt}`
-          
-          const { error: uploadError } = await supabase.storage
-            .from('properties')
-            .upload(fileName, file)
-
-          if (uploadError) throw uploadError
-
-          const { data: { publicUrl } } = supabase.storage
-            .from('properties')
-            .getPublicUrl(fileName)
-          
-          return publicUrl
-        })
-
-        const results = await Promise.all(uploadPromises)
-        uploadedUrls.push(...results)
-      } else {
-          // Fallback Placeholder
-          uploadedUrls.push(`https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newProp.title)}`)
+      if (user) {
+        router.push('/dashboard')
       }
-
-      // B. Insert into DB
-      const { error } = await supabase.from('properties').insert({
-          user_id: user.id,
-          title: newProp.title,
-          address: newProp.address,
-          price: newProp.price,
-          description: newProp.description,
-          status: 'Active',
-          image_url: uploadedUrls[0], // Main thumb
-          images: uploadedUrls        // Full gallery
-        })
-
-      if (error) throw error
-
-      // C. Success Cleanup
-      await fetchProperties()
-      setShowAddModal(false)
-      setNewProp({ title: '', address: '', price: '', description: '' })
-      setSelectedFiles([])
-      setPreviews([])
-
-    } catch (error: any) {
-      alert('Error adding property: ' + error.message)
-    } finally {
-      setIsSubmitting(false)
     }
+    checkUser()
+  }, [router, supabase])
+
+  const handleGoogleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        // This ensures they go to the callback route we made
+        redirectTo: `${location.origin}/auth/callback`,
+      },
+    })
   }
-
-  // --- NEW: Copy Link Action ---
-  const handleCopyFilteredLink = () => {
-    if (!currentUserId) {
-        alert("Error: User ID not found. Please refresh.")
-        return
-    }
-    
-    // Build URL Params
-    const params = new URLSearchParams()
-    if (minPrice) params.set('min', minPrice)
-    if (maxPrice) params.set('max', maxPrice)
-    if (searchQuery) params.set('q', searchQuery)
-    
-    const shareUrl = `${window.location.origin}/shared/${currentUserId}?${params.toString()}`
-    
-    navigator.clipboard.writeText(shareUrl)
-    alert("✅ Public Link Copied!\n\nSend this to your client. They will see only the properties matching your current filters.")
-  }
-
-  const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
-    e.stopPropagation()
-    setSharingId(prop.id)
-
-    try {
-      const shareText = `🏡 *${prop.title}* \n\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description || ''}\n\n📞 Contact me for details!`
-
-      if (navigator.share) {
-        const imagesToShare = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url]
-        const limitedImages = imagesToShare.slice(0, 3)
-
-        const filePromises = limitedImages.map(async (url, index) => {
-            const response = await fetch(url)
-            const blob = await response.blob()
-            return new File([blob], `listing_${index}.jpg`, { type: "image/jpeg" })
-        })
-
-        const files = await Promise.all(filePromises)
-
-        await navigator.share({
-          files: files,
-          title: prop.title,
-          text: shareText
-        })
-      } else {
-        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank')
-      }
-    } catch (error) {
-      console.log("Share cancelled")
-    } finally {
-      setSharingId(null)
-    }
-  }
-
-  // --- FILTER LOGIC ---
-  const filteredProperties = properties.filter(p => {
-    const priceVal = parsePrice(p.price)
-    const min = minPrice ? parseInt(minPrice) : 0
-    const max = maxPrice ? parseInt(maxPrice) : Infinity
-    
-    const matchesPrice = priceVal >= min && priceVal <= max
-    const matchesSearch = p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          p.address.toLowerCase().includes(searchQuery.toLowerCase())
-    
-    return matchesPrice && matchesSearch
-  })
 
   return (
-    <div className="p-5 max-w-md mx-auto relative min-h-screen pb-24">
+    <main className="min-h-screen bg-surface flex flex-col items-center justify-center p-6">
       
-      {/* Header */}
-      <div className="flex justify-between items-end mb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Inventory</h1>
-          <p className="text-slate-500 text-xs mt-1">Manage your active listings</p>
+      {/* Bubbly Card Container */}
+      <div className="w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-lg border border-blue-50 flex flex-col items-center text-center">
+        
+        {/* Icon/Logo Area */}
+        <div className="bg-primary h-20 w-20 rounded-3xl flex items-center justify-center mb-6 text-primary-text">
+          <Sparkles size={40} />
         </div>
-        <div className="flex gap-2">
-            <button 
-                onClick={() => setShowFilters(!showFilters)} 
-                className={`p-3 rounded-full shadow-md active:scale-95 transition-transform ${showFilters ? 'bg-slate-800 text-white' : 'bg-white text-slate-700'}`}
-            >
-              <Filter size={20} />
-            </button>
-            <button onClick={() => setShowAddModal(true)} className="bg-primary hover:bg-blue-200 text-primary-text p-3 rounded-full shadow-md active:scale-95 transition-transform">
-              <Plus size={20} strokeWidth={3} />
-            </button>
-        </div>
+
+        {/* Text Hierarchy */}
+        <h1 className="text-3xl font-bold text-slate-800 mb-3 tracking-tight">
+          Welcome
+        </h1>
+        <p className="text-slate-500 mb-10 text-lg leading-relaxed">
+          Automate your marketing with just a few clicks. No expertise required.
+        </p>
+
+        {/* Google Button */}
+        <button
+          onClick={handleGoogleLogin}
+          className="w-full bg-primary hover:bg-blue-200 transition-colors py-5 rounded-3xl flex items-center justify-center gap-3 text-primary-text font-bold text-lg shadow-sm active:scale-95 duration-200"
+        >
+          {/* Simple Google G Icon */}
+          <svg className="w-6 h-6" viewBox="0 0 24 24">
+            <path
+              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              fill="#4285F4"
+            />
+            <path
+              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              fill="#34A853"
+            />
+            <path
+              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+              fill="#FBBC05"
+            />
+            <path
+              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+              fill="#EA4335"
+            />
+          </svg>
+          Continue with Google
+        </button>
+
+        <p className="mt-8 text-xs text-slate-400 font-medium uppercase tracking-wider">
+          Secure & Private
+        </p>
       </div>
-
-      {/* FILTER BAR (Collapsible) */}
-      {showFilters && (
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-4 animate-in slide-in-from-top-2">
-            <div className="flex gap-3 mb-3">
-                <div className="flex-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Min Price</label>
-                    <input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="0" className="w-full bg-slate-50 p-2 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" />
-                </div>
-                <div className="flex-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Max Price</label>
-                    <input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="Any" className="w-full bg-slate-50 p-2 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" />
-                </div>
-            </div>
-            
-            <button onClick={handleCopyFilteredLink} className="w-full bg-blue-50 text-blue-600 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform border border-blue-100">
-                <LinkIcon size={14} /> Copy Link for Client
-            </button>
-        </div>
-      )}
-
-      {/* Search Bar */}
-      <div className="relative mb-6">
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"><Search size={18} /></div>
-        <input 
-          type="text" 
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search properties..." 
-          className="w-full bg-white border-none py-3 pl-10 pr-4 rounded-xl shadow-sm text-sm text-slate-700 focus:ring-2 focus:ring-primary outline-none" 
-        />
-      </div>
-
-      {/* List */}
-      <div className="flex flex-col gap-4">
-        {loading ? <div className="text-center py-10 text-slate-400 text-sm">Loading...</div> : 
-         filteredProperties.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">No properties found.</div> : (
-          filteredProperties.map((prop) => (
-            <div 
-              key={prop.id} 
-              onClick={() => setSelectedProperty(prop)}
-              className="bg-white p-3 rounded-[1.5rem] shadow-sm border border-slate-100 relative group cursor-pointer active:scale-95 transition-transform"
-            >
-              <div className="relative h-40 w-full rounded-2xl overflow-hidden bg-slate-100 mb-3">
-                <img src={prop.image_url} alt="Property" className="w-full h-full object-cover" />
-                <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-white/90 text-slate-700 backdrop-blur-sm">{prop.status}</span>
-                {prop.images && prop.images.length > 1 && (
-                    <div className="absolute bottom-2 right-2 bg-black/60 text-white px-2 py-1 rounded-lg text-[10px] font-bold backdrop-blur-sm flex items-center gap-1">
-                        <ImageIcon size={10} />
-                        +{prop.images.length - 1}
-                    </div>
-                )}
-              </div>
-              <div className="px-1 pb-1 flex justify-between items-start">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-800">{prop.title || 'Untitled'}</h3>
-                  <p className="text-sm font-bold text-slate-900 mt-0.5">{prop.price}</p>
-                  <div className="flex items-center gap-1.5 text-slate-500 mt-1">
-                    <MapPin size={14} />
-                    <span className="text-xs font-medium truncate">{prop.address}</span>
-                  </div>
-                </div>
-                <button 
-                  onClick={(e) => handleNativeShare(e, prop)}
-                  disabled={sharingId === prop.id}
-                  className="bg-green-50 text-green-600 p-3 rounded-full hover:bg-green-100 transition-colors active:scale-90"
-                >
-                  {sharingId === prop.id ? <Loader2 size={20} className="animate-spin" /> : <Share2 size={20} />}
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* --- ADD MODAL --- */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">New Listing</h2>
-              <button onClick={() => setShowAddModal(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
-            </div>
-            <div className="space-y-4">
-              <div onClick={() => fileInputRef.current?.click()} className="w-full h-32 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 transition-colors relative overflow-hidden">
-                  <ImageIcon size={24} className="text-slate-400 mb-2"/>
-                  <span className="text-xs font-bold text-slate-400 uppercase">Add Photos (Select Multiple)</span>
-                  <input type="file" multiple ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
-              </div>
-              {previews.length > 0 && (
-                <div className="flex gap-2 overflow-x-auto pb-2">
-                    {previews.map((src, i) => (
-                        <div key={i} className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border border-slate-100">
-                            <img src={src} className="w-full h-full object-cover" />
-                            <button onClick={() => removeFile(i)} className="absolute top-0 right-0 bg-black/50 text-white p-0.5"><X size={10} /></button>
-                        </div>
-                    ))}
-                </div>
-              )}
-              <input type="text" value={newProp.title} onChange={(e) => setNewProp({...newProp, title: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Title (e.g. Sunset Villa)" />
-              <input type="text" value={newProp.address} onChange={(e) => setNewProp({...newProp, address: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Address" />
-              <input type="text" value={newProp.price} onChange={(e) => setNewProp({...newProp, price: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Price" />
-              <textarea value={newProp.description} onChange={(e) => setNewProp({...newProp, description: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Description..." rows={3} />
-              <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold">{isSubmitting ? 'Saving...' : 'Save'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- DETAILS MODAL --- */}
-      {selectedProperty && (
-        <div className="fixed inset-0 z-[90] bg-white flex flex-col animate-in slide-in-from-bottom-10">
-           <div className="absolute top-4 left-4 z-10">
-             <button onClick={() => setSelectedProperty(null)} className="bg-white/80 backdrop-blur-md p-3 rounded-full shadow-sm text-slate-900"><X size={24} /></button>
-           </div>
-
-           <div className="h-[45vh] bg-slate-100 w-full overflow-x-auto flex snap-x snap-mandatory scrollbar-hide">
-             {(selectedProperty.images && selectedProperty.images.length > 0 ? selectedProperty.images : [selectedProperty.image_url]).map((img, i) => (
-                <img key={i} src={img} className="w-full h-full object-cover flex-shrink-0 snap-center" />
-             ))}
-           </div>
-
-           <div className="flex-1 p-6 overflow-y-auto bg-white -mt-6 rounded-t-[2rem] relative z-0">
-              <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6" />
-              
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900">{selectedProperty.title}</h2>
-                  <p className="text-lg font-bold text-primary-text mt-1">{selectedProperty.price}</p>
-                </div>
-                <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold h-fit">
-                  {selectedProperty.status}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 text-slate-500 mb-6">
-                <MapPin size={18} />
-                <span className="text-sm">{selectedProperty.address}</span>
-              </div>
-
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-2">Details</h3>
-              <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">
-                {selectedProperty.description || "No description available."}
-              </p>
-           </div>
-
-           <div className="p-4 bg-white border-t border-slate-100 flex gap-3">
-              <button 
-                onClick={(e) => handleNativeShare(e, selectedProperty)}
-                className="flex-1 bg-green-500 text-white py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-md active:scale-95 transition-transform"
-              >
-                <Share2 size={18} /> Share
-              </button>
-           </div>
-        </div>
-      )}
-
-    </div>
+    </main>
   )
 }
