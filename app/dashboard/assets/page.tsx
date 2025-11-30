@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Linkedin } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Linkedin, Youtube, Film } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 type Asset = {
@@ -23,6 +23,7 @@ export default function AssetsPage() {
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
   const [isPosting, setIsPosting] = useState(false)
   const [caption, setCaption] = useState('')
+  const [title, setTitle] = useState('') 
 
   // 1. Fetch Assets
   useEffect(() => {
@@ -99,6 +100,49 @@ export default function AssetsPage() {
     } catch (e) { alert('Network error') } finally { setIsPosting(false) }
   }
 
+  // 5. Handle Post to YouTube (Shorts/Video)
+  const handlePostYouTube = async () => {
+    if (!selectedAsset) return
+    
+    setIsPosting(true)
+    try {
+        const payload = selectedAsset.type === 'video' 
+            ? { 
+                videoUrl: selectedAsset.url, 
+                title: title || "New Listing Video", 
+                description: caption || "Check out this amazing property! #RealEstate",
+                type: 'video'
+              }
+            : {
+                // If it's an image, we send it to be converted to a Short
+                imageUrl: selectedAsset.url,
+                title: title || "New Listing Alert!",
+                description: caption || "New Update! #RealEstate",
+                type: 'image' 
+              }
+
+        const response = await fetch('/api/post-youtube', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        const data = await response.json()
+        if (response.ok) { 
+            // Different success message based on type
+            alert(selectedAsset.type === 'video' 
+                ? 'Successfully uploaded to YouTube!' 
+                : 'Processing: Converting image to Short and uploading to YouTube. This may take a minute.')
+            setSelectedAsset(null) 
+        } else { 
+            alert('Error: ' + (data.error || 'Failed to upload')) 
+        }
+    } catch (e) {
+        alert('Network error')
+    } finally {
+        setIsPosting(false)
+    }
+  }
+
   // Helper for Dimensions
   const getImageDimensions = (url: string): Promise<{ width: number, height: number, ratio: number }> => {
     return new Promise((resolve, reject) => {
@@ -109,21 +153,21 @@ export default function AssetsPage() {
     })
   }
 
-  // 5. Handle Universal Post
+  // 6. Handle Universal Post
   const handleUniversalPost = async () => {
     if (!selectedAsset) return
     setIsPosting(true)
 
-    let targets = ['facebook', 'instagram', 'linkedin'] 
+    let targets = ['facebook', 'instagram', 'linkedin', 'youtube'] 
 
     try {
-      // Dimension Check for IG
+      // Dimension Check for IG (Images only)
       if (selectedAsset.type === 'image') {
         const { ratio } = await getImageDimensions(selectedAsset.url)
         const isIgSafe = ratio >= 0.8 && ratio <= 1.91
         
         if (!isIgSafe) {
-          const proceed = confirm(`⚠️ DIMENSION WARNING\n\nAspect Ratio: ${ratio.toFixed(2)}.\nInstagram Feed supports 0.8 to 1.91.\n\nSkip Instagram and post to FB & LinkedIn?`)
+          const proceed = confirm(`⚠️ DIMENSION WARNING\n\nAspect Ratio: ${ratio.toFixed(2)}.\nInstagram Feed supports 0.8 to 1.91.\n\nSkip Instagram and post to others?`)
           if (proceed) { targets = targets.filter(t => t !== 'instagram') } 
           else { setIsPosting(false); return }
         }
@@ -133,8 +177,10 @@ export default function AssetsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageUrl: selectedAsset.url,
+          imageUrl: selectedAsset.url, 
           caption: caption || 'Automated Post via AdRolls AI 🚀',
+          title: title || 'New Asset', 
+          type: selectedAsset.type,
           platforms: targets
         })
       })
@@ -176,8 +222,15 @@ export default function AssetsPage() {
       ) : (
         <div className="grid grid-cols-3 gap-1.5 mb-24">
           {filteredAssets.map((asset) => (
-            <div key={asset.id} onClick={() => setSelectedAsset(asset)} className="relative aspect-square rounded-xl overflow-hidden bg-slate-100 group cursor-pointer active:scale-95 transition-transform">
-              <img src={asset.url} alt="Asset" className="w-full h-full object-cover" />
+            <div key={asset.id} onClick={() => { setSelectedAsset(asset); setTitle(''); setCaption(''); }} className="relative aspect-square rounded-xl overflow-hidden bg-slate-100 group cursor-pointer active:scale-95 transition-transform">
+              {asset.type === 'video' ? (
+                  <div className="w-full h-full bg-slate-800 flex items-center justify-center relative">
+                      <video src={asset.url} className="w-full h-full object-cover opacity-80" />
+                      <div className="absolute inset-0 flex items-center justify-center"><Film className="text-white opacity-50" size={24}/></div>
+                  </div>
+              ) : (
+                  <img src={asset.url} alt="Asset" className="w-full h-full object-cover" />
+              )}
               <div className={`absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ${asset.status === 'Published' ? 'bg-green-400' : 'bg-amber-400'}`} />
             </div>
           ))}
@@ -193,11 +246,21 @@ export default function AssetsPage() {
             </div>
 
             <div className="rounded-2xl overflow-hidden bg-slate-100 mb-4 border border-slate-100">
-               <img src={selectedAsset.url} className="w-full max-h-[300px] object-contain" alt="Preview" />
+               {selectedAsset.type === 'video' ? (
+                   <video src={selectedAsset.url} controls className="w-full max-h-[300px] object-contain bg-black" />
+               ) : (
+                   <img src={selectedAsset.url} className="w-full max-h-[300px] object-contain" alt="Preview" />
+               )}
+            </div>
+
+            {/* Title Input (YouTube - needed for both video uploads AND converted shorts) */}
+            <div className="mb-3">
+                <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Video Title (YouTube)</label>
+                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={selectedAsset.type === 'image' ? "Title for your Short..." : "Video Title..."} className="w-full bg-slate-50 p-3 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" />
             </div>
 
             <div className="mb-4">
-              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Caption</label>
+              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Caption / Description</label>
               <textarea value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Write a caption..." className="w-full bg-slate-50 p-3 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none resize-none" rows={2} />
             </div>
 
@@ -215,12 +278,18 @@ export default function AssetsPage() {
                  </button>
                </div>
 
+                {/* YouTube Button (Now works for BOTH) */}
+               <button onClick={handlePostYouTube} disabled={isPosting} className="w-full bg-[#FF0000] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-red-600">
+                    {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Youtube size={16} fill="white" />}
+                    {selectedAsset.type === 'video' ? 'Upload to YouTube' : 'Post as Short'}
+               </button>
+
                <button onClick={handleUniversalPost} disabled={isPosting} className="w-full bg-slate-800 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-200 hover:bg-slate-900">
                  {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Globe size={14} />}
                  Post Everywhere
                </button>
 
-               <a href={selectedAsset.url} download="asset.png" target="_blank" rel="noopener noreferrer" className="w-full bg-slate-100 text-slate-700 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors">
+               <a href={selectedAsset.url} download={`asset.${selectedAsset.type === 'video' ? 'mp4' : 'png'}`} target="_blank" rel="noopener noreferrer" className="w-full bg-slate-100 text-slate-700 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors">
                  <Download size={14} /> Download High-Res
                </a>
             </div>

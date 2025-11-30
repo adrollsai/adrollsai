@@ -11,26 +11,189 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        0,
-        0
+        -64,
+        96
       ],
-      "id": "7526977a-140a-4cbb-b1f0-f9a9e9d8acfe",
+      "id": "93516e5a-044e-4e18-8067-091f80ceea1d",
       "name": "Webhook",
-      "webhookId": "80a15787-2759-4605-bf10-a5c6d0dc0071"
+      "webhookId": "9b419ec6-7a66-4e31-b6cb-afea4cc251d7"
     },
     {
       "parameters": {
-        "url": "={{ $json.body.videoUrl }}",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "2c6e1334-118c-473d-8839-123456789abc",
+                    "leftValue": "={{ $json.body.convertImageToVideo }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Convert Image"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0a049a20-2f5d-41f4-ab3c-2ef31ff08800",
+                    "leftValue": "={{ $json.body.convertImageToVideo }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Do not convert"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        160,
+        96
+      ],
+      "id": "1097a57e-c2b4-4d46-a68c-aef49f31d2e1",
+      "name": "Check Type"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.creatomate.com/v1/renders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 3ed207b86f1845549afda84c6fb72f854fd4d7616d627a17261c9cf01cf811014fd768e139d90e84a23bab8685796685"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"template_id\": \"946d81ad-a99a-4e07-9293-ff810eab8128\",\n  \"modifications\": {\n    \"Image-CJT\": \"{{ $json.body.imageUrl }}\"\n  }\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        224,
-        0
+        400,
+        -32
       ],
-      "id": "942ecb86-75b3-4092-97e7-13a2f0738532",
-      "name": "Download Video"
+      "id": "07b39857-1622-4d5b-996c-b413372b43e5",
+      "name": "Render Video (Creatomate API)"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        624,
+        -32
+      ],
+      "id": "4d9f2157-1b0c-431e-8aec-2dbfe58d24a4",
+      "name": "Wait for Render",
+      "webhookId": "ae3ad83a-1009-4064-bbae-7fd06529ca67"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Webhook').item.json.body.accessToken }}"
+            },
+            {
+              "name": "X-Upload-Content-Type",
+              "value": "video/mp4"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"snippet\": {\n    \"title\": $node[\"Webhook\"].json.body.title,\n    \"description\": $node[\"Webhook\"].json.body.description\n  },\n  \"status\": {\n    \"privacyStatus\": $node[\"Webhook\"].json.body.privacy || 'public',\n    \"selfDeclaredMadeForKids\": false\n  }\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        848,
+        -32
+      ],
+      "id": "140e6772-d2b0-4a3a-87f0-48926a4f1094",
+      "name": "Initiate Upload (Img)"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Wait for Render').item.json.url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1072,
+        -32
+      ],
+      "id": "cae3220a-ec8e-4e1c-831b-bf35387beec4",
+      "name": "Download Render"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $node[\"Initiate Upload (Img)\"].json.headers.location }}",
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1280,
+        -32
+      ],
+      "id": "298d86e0-abd3-469e-b58e-9ae5d8b9afc6",
+      "name": "Upload Binary (Img)"
     },
     {
       "parameters": {
@@ -51,22 +214,36 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"snippet\": {\n    \"title\": \"{{ $node[\"Webhook\"].json.body.title }}\",\n    \"description\": \"{{ $node[\"Webhook\"].json.body.description }}\"\n  },\n  \"status\": {\n    \"privacyStatus\": \"public\",\n    \"selfDeclaredMadeForKids\": false\n  }\n}",
+        "jsonBody": "={{ {\n  \"snippet\": {\n    \"title\": $node[\"Webhook\"].json.body.title,\n    \"description\": $node[\"Webhook\"].json.body.description\n  },\n  \"status\": {\n    \"privacyStatus\": $node[\"Webhook\"].json.body.privacy || 'public',\n    \"selfDeclaredMadeForKids\": false\n  }\n} }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        448,
-        0
+        848,
+        240
       ],
-      "id": "6d987d28-8562-4023-938d-e25fbd9e6263",
-      "name": "Initiate Upload"
+      "id": "ec6575a8-d4aa-41cb-b97c-f11d295cf3e2",
+      "name": "Initiate Upload (Vid)"
+    },
+    {
+      "parameters": {
+        "url": "={{ $node[\"Webhook\"].json.body.videoUrl }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1072,
+        240
+      ],
+      "id": "3711f78e-f9dc-4094-8414-ef79ddf988f0",
+      "name": "Download Source Vid"
     },
     {
       "parameters": {
         "method": "PUT",
-        "url": "={{ $json.headers.location }}",
+        "url": "={{ $node[\"Initiate Upload (Vid)\"].json.headers.location }}",
         "sendBody": true,
         "contentType": "binaryData",
         "options": {}
@@ -74,11 +251,11 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        672,
-        0
+        1280,
+        240
       ],
-      "id": "7ec8da65-80cc-4776-ae4f-325516a243a1",
-      "name": "Upload Binary"
+      "id": "0dc63d7b-71c2-4a1a-8b43-8d99a74e4737",
+      "name": "Upload Binary (Vid)"
     },
     {
       "parameters": {
@@ -89,10 +266,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        880,
-        0
+        1504,
+        96
       ],
-      "id": "8412d537-146b-4e0b-8403-ba31233f8cea",
+      "id": "ef2599ea-3127-4dd3-bdf2-b57a29240ab7",
       "name": "Respond"
     }
   ],
@@ -102,36 +279,109 @@
       "main": [
         [
           {
-            "node": "Download Video",
+            "node": "Check Type",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Download Video": {
+    "Check Type": {
       "main": [
         [
           {
-            "node": "Initiate Upload",
+            "node": "Render Video (Creatomate API)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Initiate Upload (Vid)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Initiate Upload": {
+    "Render Video (Creatomate API)": {
       "main": [
         [
           {
-            "node": "Upload Binary",
+            "node": "Wait for Render",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Upload Binary": {
+    "Wait for Render": {
+      "main": [
+        [
+          {
+            "node": "Initiate Upload (Img)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initiate Upload (Img)": {
+      "main": [
+        [
+          {
+            "node": "Download Render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Render": {
+      "main": [
+        [
+          {
+            "node": "Upload Binary (Img)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Binary (Img)": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initiate Upload (Vid)": {
+      "main": [
+        [
+          {
+            "node": "Download Source Vid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Source Vid": {
+      "main": [
+        [
+          {
+            "node": "Upload Binary (Vid)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Binary (Vid)": {
       "main": [
         [
           {
@@ -147,7 +397,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "b1474c75-5cad-4b9b-b31a-a5725369c8fe",
+  "versionId": "0a464c6c-fae8-40de-ae10-d19a1a020692",
   "meta": {
     "instanceId": "3a51ec9e2b6ba838c197e909ea76dd8dc3b2079d815a88b998ea6ba74887a108"
   },

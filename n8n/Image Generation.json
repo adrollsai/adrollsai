@@ -331,7 +331,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// 1. Get the raw ingredients from the Webhook\nconst webhookData = $items(\"Webhook\")[0].json.body;\n\n// 2. Construct the Master Prompt\n// We combine the User's wish + The Property Details + The Branding\nconst masterPrompt = `\nCONTEXT FROM USER:\n\"$('Webhook').first().json.body.userInstructions\"\n\nPROPERTY DETAILS:\n\"$('Webhook').first().json.body.propertyDescription\"\n\nMANDATORY INCLUSIONS:\n- Include the Contact Number: \"${webhookData.contactNumber}\"\n- Include the Brand logo.\n\n\ndesign a facebook ad graphic from the provided images, whatever info you see in photos and provided description that is provided, use that, include the contact number, the creative should be attention grabbing and readable, only use the relevant and essential info in the creative, don't clutter it too much, if there is any specific user instruction, give that high priority.\n`;\n\n// 3. Handle Images\nlet finalImages = webhookData.imageUrls;\nif (!finalImages || finalImages.length === 0) {\n    finalImages = undefined; \n}\n\n// 4. Construct Payload for Nano Banana\nconst payload = {\n  \"model\": \"nano-banana-pro\",\n  \"input\": {\n    \"prompt\": masterPrompt, // The combined prompt we just made\n    \"image_input\": finalImages,\n    \"aspect_ratio\": webhookData.aspectRatio || \"1:1\",\n    \"resolution\": \"1K\",\n    \"output_format\": \"png\"\n  }\n};\n\nreturn {\n  json: {\n    payload: payload,\n    trackingTitle: webhookData.propertyTitle // Just passing this through for your reference\n  }\n};"
+        "jsCode": "// 1. Get the raw ingredients from the Webhook\nconst webhookData = $items(\"Webhook\")[0].json.body;\n\n// 2. Construct the Master Prompt\n// FIX: Use ${} to insert the variables, otherwise they are just text\nconst masterPrompt = `\nCONTEXT FROM USER:\n\"${webhookData.userInstructions}\"\n\nPROPERTY DETAILS:\n\"${webhookData.propertyDescription}\"\n\nMANDATORY INCLUSIONS:\n- Include the Contact Number: \"${webhookData.contactNumber}\"\n- Include the Brand logo.\n\n\ndesign a facebook ad graphic from the provided images, whatever info you see in photos and provided description that is provided, use that, include the contact number, the creative should be attention grabbing and readable, only use the relevant and essential info in the creative, don't clutter it too much, if there is any specific user instruction, give that high priority.\n`;\n\n// 3. Handle Images\nlet finalImages = webhookData.imageUrls;\nif (!finalImages || finalImages.length === 0) {\n    finalImages = undefined; \n}\n\n// 4. Construct Payload for Nano Banana\nconst payload = {\n  \"model\": \"nano-banana-pro\",\n  \"input\": {\n    \"prompt\": masterPrompt, // Now this contains the actual text\n    \"image_input\": finalImages,\n    \"aspect_ratio\": webhookData.aspectRatio || \"1:1\",\n    \"resolution\": \"1K\",\n    \"output_format\": \"png\"\n  }\n};\n\nreturn {\n  json: {\n    payload: payload,\n    trackingTitle: webhookData.propertyTitle \n  }\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -349,114 +349,404 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        1472,
-        -80
+        1504,
+        -32
       ],
       "id": "8633cd99-e2a1-423c-8484-b07c5e6756c0",
       "name": "Wait1",
       "webhookId": "5e40bfee-d22e-49ce-8de6-b5d59ce4396e"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1216,
+        848
+      ],
+      "id": "388c5345-b9f2-46b9-8cf6-bf0941171045",
+      "name": "Webhook1",
+      "webhookId": "d625eb57-bea3-412b-b489-0cecd34b2c10"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"text\": \"Here is your generated design!\",\n  \"image\": \"{{ $json.url }}\" \n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1216,
+        800
+      ],
+      "id": "9367e582-2d3c-4102-8470-5739416500ff",
+      "name": "Respond to Webhook2"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "profiles",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.body.userId }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -992,
+        848
+      ],
+      "id": "0dc80ff3-3a7e-40dd-b53b-ab2475924604",
+      "name": "Get many rows1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "UgnuxpCJwLormMKp",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.kie.ai/api/v1/jobs/createTask",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.payload }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -544,
+        848
+      ],
+      "id": "5caf053f-f65c-407e-9d1f-f6822c2683c6",
+      "name": "HTTP Request2",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "z68zkWYC1xuUJsNq",
+          "name": "csh kie.ai"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 20
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -320,
+        848
+      ],
+      "id": "ca1d3e3b-d4b9-4b1e-9bcb-8012563c019b",
+      "name": "Wait2",
+      "webhookId": "5e40bfee-d22e-49ce-8de6-b5d59ce4396e"
+    },
+    {
+      "parameters": {
+        "url": "https://api.kie.ai/api/v1/jobs/recordInfo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "taskId",
+              "value": "={{ $('HTTP Request2').item.json.data.taskId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -96,
+        848
+      ],
+      "id": "f8fbe1b5-461c-4b90-a11b-472261681367",
+      "name": "HTTP Request3",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "z68zkWYC1xuUJsNq",
+          "name": "csh kie.ai"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('HTTP Request3').item.json.msg }}",
+                    "rightValue": "success",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "a900be89-a9ba-44e4-b479-9223c01bd4c5"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "success"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "16295548-bf5f-4795-98cc-2cc7ef67f73a",
+                    "leftValue": "={{ $('HTTP Request3').item.json.msg }}",
+                    "rightValue": "fail",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fail"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4c60b301-575e-4a6b-b049-05a1ca1555a9",
+                    "leftValue": "={{ $('HTTP Request3').item.json.msg }}",
+                    "rightValue": "generating",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "generating"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "8a84aa8f-ef09-443b-a1d4-f966e90fd2f3",
+                    "leftValue": "={{ $('HTTP Request3').item.json.msg }}",
+                    "rightValue": "queuing",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "queuing"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "23e072e7-d365-4887-b873-3e553f6d5853",
+                    "leftValue": "={{ $('HTTP Request3').item.json.msg }}",
+                    "rightValue": "waiting",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "waiting"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        192,
+        848
+      ],
+      "id": "1b6da128-87e5-425a-a056-75416efca988",
+      "name": "Switch1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"text\": \"Sorry, the generation failed. Reason: {{ $('HTTP Request3').item.json.data.failMsg }}\",\n  \"image\": null\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        784,
+        1104
+      ],
+      "id": "5eca1e11-618b-4544-a530-c86b4fc8cd16",
+      "name": "Respond to Webhook3"
+    },
+    {
+      "parameters": {
+        "tableId": "assets",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "user_id",
+              "fieldValue": "={{ $('Webhook1').item.json.body.userId }}"
+            },
+            {
+              "fieldId": "url",
+              "fieldValue": "={{ JSON.parse($node[\"HTTP Request3\"].json.data.resultJson).resultUrls[0] }}"
+            },
+            {
+              "fieldId": "type",
+              "fieldValue": "={{ $('Webhook1').item.json.body.mode }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "Draft"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        976,
+        800
+      ],
+      "id": "7eae28ee-43b0-44ad-9e88-5c630fbd7f83",
+      "name": "Create a row1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "UgnuxpCJwLormMKp",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get the raw ingredients from the Webhook\nconst webhookData = $items(\"Webhook1\")[0].json.body;\n\n// 2. Construct the Master Prompt\n// FIX: Use ${} to insert the variables, otherwise they are just text\nconst masterPrompt = `\nCONTEXT FROM USER:\n\"${webhookData.userInstructions}\"\n\nPROPERTY DETAILS:\n\"${webhookData.propertyDescription}\"\n\nMANDATORY INCLUSIONS:\n- Include the Contact Number: \"${webhookData.contactNumber}\"\n- Include the Brand logo.\n\n\ndesign a facebook ad graphic from the provided images, whatever info you see in photos and provided description that is provided, use that, include the contact number, the creative should be attention grabbing and readable, only use the relevant and essential info in the creative, don't clutter it too much, if there is any specific user instruction, give that high priority.\n`;\n\n// 3. Handle Images\nlet finalImages = webhookData.imageUrls;\nif (!finalImages || finalImages.length === 0) {\n    finalImages = undefined; \n}\n\n// 4. Construct Payload for Nano Banana\nconst payload = {\n  \"model\": \"nano-banana-pro\",\n  \"input\": {\n    \"prompt\": masterPrompt, // Now this contains the actual text\n    \"image_input\": finalImages,\n    \"aspect_ratio\": webhookData.aspectRatio || \"1:1\",\n    \"resolution\": \"1K\",\n    \"output_format\": \"png\"\n  }\n};\n\nreturn {\n  json: {\n    payload: payload,\n    trackingTitle: webhookData.propertyTitle \n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        848
+      ],
+      "id": "c016ac20-9372-49ac-a31c-d17487866af2",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        1104
+      ],
+      "id": "6d0f1542-957d-4b04-b893-546d5fba6fd4",
+      "name": "Wait3",
+      "webhookId": "5e40bfee-d22e-49ce-8de6-b5d59ce4396e"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f92cdf00-4247-4d81-b4a2-70f2e319b1f7",
+              "leftValue": "={{ $json.data.resultJson }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        528,
+        832
+      ],
+      "id": "15cf6008-2c41-4028-8756-5656dbe2132c",
+      "name": "If"
     }
   ],
-  "pinData": {
-    "Webhook": [
-      {
-        "json": {
-          "headers": {
-            "host": "adrollsai13.app.n8n.cloud",
-            "user-agent": "node",
-            "content-length": "1840",
-            "accept": "*/*",
-            "accept-encoding": "gzip, br",
-            "accept-language": "*",
-            "cdn-loop": "cloudflare; loops=1; subreqs=1",
-            "cf-connecting-ip": "2401:4900:1c6f:c328:585:9cf7:2159:6ad7",
-            "cf-ew-via": "15",
-            "cf-ipcountry": "IN",
-            "cf-ray": "9a5a1a9fb460c197-BLR",
-            "cf-visitor": "{\"scheme\":\"https\"}",
-            "cf-worker": "n8n.cloud",
-            "content-type": "application/json",
-            "sec-fetch-mode": "cors",
-            "x-forwarded-for": "2401:4900:1c6f:c328:585:9cf7:2159:6ad7, 172.68.239.150",
-            "x-forwarded-host": "adrollsai13.app.n8n.cloud",
-            "x-forwarded-port": "443",
-            "x-forwarded-proto": "https",
-            "x-forwarded-server": "traefik-prod-users-gwc-60-78f959c455-qlrwh",
-            "x-is-trusted": "yes",
-            "x-real-ip": "2401:4900:1c6f:c328:585:9cf7:2159:6ad7"
-          },
-          "params": {},
-          "query": {},
-          "body": {
-            "userId": "b3d9fb26-038b-4505-a3c1-be33e13a8579",
-            "userEmail": "rchopra489@gmail.com",
-            "userInstructions": "Generate a creative design.",
-            "propertyDescription": "🌟 ✨ Premium Kothi for Sale in Mohali ✨ 🌟\n📍 Sector 00, Mohali\n\n🏡 Property Details:\n• Plot Size: 000 sq. yds\n• Construction: Newly Built / Tripple Storey\n• Built-up Area: Approx. 0000 sq. ft.\n• Facing: East / Park-Facing\n• Location: Prime & Peaceful Residential Area\n\n🏠 Accommodation:\n• 5 Spacious Bedrooms with Attached Washrooms\n• Modular Kitchen with Chimney & Branded Fittings\n• Drawing + Dining + Lobby\n• Powder Room\n• Store Room + Utility Area\n• Stylish Wardrobes & False Ceiling Work\n• High-Quality Tiles & Wooden Flooring\n• Premium UPVC Windows & Toughened Glass Railings\n\n🚗 Additional Features:\n• Wide Road (00 ft)\n• Ample Parking Space for 2–3 Cars\n• Fully Ventilated & Sun-Facing Rooms\n• CCTV + Smart Door Lock\n• Beautiful Front Elevation\n• Underground Wiring\n• Excellent Connectivity to Airport Road & Market\n\n📑 Status:\n• Clear Title\n• Loan Facility Available\n• Ready-to-Move\n\n💰 Demand: ₹0.00 Cr (Negotiable)\n\n📞 For More Details / Site Visit:\nCall/WhatsApp: 00000-00000",
-            "propertyTitle": "Luxury Listing",
-            "contactNumber": "8288835235",
-            "businessName": "Countryside Heaven",
-            "mode": "image",
-            "imageUrls": [
-              "https://ihyhqxlizxxxfmqthsaa.supabase.co/storage/v1/object/public/properties/b3d9fb26-038b-4505-a3c1-be33e13a8579-1764076321964-0.14313510859873257.png",
-              "https://ihyhqxlizxxxfmqthsaa.supabase.co/storage/v1/object/public/properties/b3d9fb26-038b-4505-a3c1-be33e13a8579-1764076321968-0.3283029775171681.jpeg",
-              "https://ihyhqxlizxxxfmqthsaa.supabase.co/storage/v1/object/public/logos/b3d9fb26-038b-4505-a3c1-be33e13a8579-1764157791714.jpeg"
-            ],
-            "aspectRatio": "1:1"
-          },
-          "webhookUrl": "https://adrollsai13.app.n8n.cloud/webhook-test/chat",
-          "executionMode": "test"
-        }
-      }
-    ],
-    "Get many rows": [
-      {
-        "json": {
-          "id": "b3d9fb26-038b-4505-a3c1-be33e13a8579",
-          "email": "rchopra489@gmail.com",
-          "business_name": "Countryside Heaven",
-          "mission_statement": "Fractional ownership of holiday homes.",
-          "brand_color": "#D0E8FF",
-          "created_at": "2025-11-23T17:47:41.96066+00:00",
-          "contact_number": "8288835235",
-          "logo_url": "https://ihyhqxlizxxxfmqthsaa.supabase.co/storage/v1/object/public/logos/b3d9fb26-038b-4505-a3c1-be33e13a8579-1764157791714.jpeg",
-          "facebook_token": "EAAMaVhrzxNABQCcjgdVMP5VxuRbyQaIyEcROJ4f70oY4nXaPiQUlWdQ44vG2C5qQ8rXyXwohCyIIdB7c5lNbxNxsHXUDZBES6ooU3EpZB6CCcmJzQmXsWOv9OYV380koTLcHVFVyZCEksS3CoZBVlcQRGPGSRKPBvjEkZAINW9vKfniI2SnMS1P3roLFQuQq5HKQNmloZBGyX48aykHGQm8kwNjZCnRNpiZCVpe8mZBXktGooUZBVm5MVrBxHRF7jCZAn6dkN8fXhaZBVyTCZADMOjX7dyCbZBZBOAmvKmH",
-          "selected_page_id": "184834498054577",
-          "selected_page_name": "10xrealtorai",
-          "selected_page_token": "EAAMaVhrzxNABQOTHvtgcRCCwiutFTTEtFguGRdFnRDjvZAb9YEbHnr4fZC4d3MCnJND15qDIFZBAXOVlR0WJXi7STYmhcyvsZAiSz3HbxRhf51AZAbSkbjr8p8hGhTh0L6RZBkR8rsZAeWdWA5fLsxYENJcvJfw6sLDMucbe5hbivzScDCP4NGZCT0BCEAPYTrhhVXsZD"
-        }
-      }
-    ],
-    "Code in JavaScript": [
-      {
-        "json": {
-          "payload": {
-            "model": "nano-banana-pro",
-            "input": {
-              "prompt": "\nCONTEXT FROM USER:\n\"$('Webhook').first().json.body.userInstructions\"\n\nPROPERTY DETAILS:\n\"$('Webhook').first().json.body.propertyDescription\"\n\nMANDATORY INCLUSIONS:\n- Include the Contact Number: \"8288835235\"\n- Include the Brand logo.\n\n\ndesign a facebook ad graphic from the provided images, whatever info you see in photos and provided description that is provided, use that, include the contact number, the creative should be attention grabbing and readable, only use the relevant and essential info in the creative, don't clutter it too much, if there is any specific user instruction, give that high priority.\n",
-              "image_input": [
-                "https://ihyhqxlizxxxfmqthsaa.supabase.co/storage/v1/object/public/properties/b3d9fb26-038b-4505-a3c1-be33e13a8579-1764076321964-0.14313510859873257.png",
-                "https://ihyhqxlizxxxfmqthsaa.supabase.co/storage/v1/object/public/properties/b3d9fb26-038b-4505-a3c1-be33e13a8579-1764076321968-0.3283029775171681.jpeg",
-                "https://ihyhqxlizxxxfmqthsaa.supabase.co/storage/v1/object/public/logos/b3d9fb26-038b-4505-a3c1-be33e13a8579-1764157791714.jpeg"
-              ],
-              "aspect_ratio": "1:1",
-              "resolution": "1K",
-              "output_format": "png"
-            }
-          },
-          "trackingTitle": "Luxury Listing"
-        }
-      }
-    ],
-    "Wait1": [
-      {
-        "json": {
-          "code": 422,
-          "msg": "taskId is required",
-          "data": null
-        }
-      }
-    ]
-  },
+  "pinData": {},
   "connections": {
     "Webhook": {
       "main": [
@@ -584,13 +874,158 @@
           }
         ]
       ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Get many rows1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many rows1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Wait2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request3": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait3": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create a row1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "80943bb8-b591-4d80-8026-b24fb8c1874d",
+  "versionId": "7ba2b80f-8fdd-4651-b7bf-afaa33e32e6a",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "3a51ec9e2b6ba838c197e909ea76dd8dc3b2079d815a88b998ea6ba74887a108"

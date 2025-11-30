@@ -9,12 +9,12 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { imageUrl, caption, platforms } = body
+  const { imageUrl, caption, title, type, platforms } = body
 
   // 2. Get User Credentials
   const { data: profile } = await supabase
     .from('profiles')
-    .select('selected_page_token, selected_page_id, linkedin_token')
+    .select('selected_page_token, selected_page_id, linkedin_token, youtube_token')
     .eq('id', user.id)
     .single()
 
@@ -85,6 +85,32 @@ export async function POST(request: Request) {
       }))
     } else {
       results.linkedin = 'skipped_no_token'
+    }
+  }
+
+  // --- YOUTUBE (Video OR Community Post) ---
+  if (platforms.includes('youtube')) {
+    if (profile.youtube_token) {
+        if (type === 'video') {
+            // Video Upload
+            promises.push(sendToN8N('youtube', process.env.N8N_YOUTUBE_WEBHOOK_URL, {
+                accessToken: profile.youtube_token,
+                videoUrl: imageUrl, 
+                title: title || 'New Listing',
+                description: caption,
+                privacy: 'public'
+            }))
+        } else {
+            // Community Post (Image)
+            promises.push(sendToN8N('youtube', process.env.N8N_YOUTUBE_WEBHOOK_URL, {
+                accessToken: profile.youtube_token,
+                imageUrl: imageUrl,
+                description: caption,
+                isCommunityPost: true
+            }))
+        }
+    } else {
+        results.youtube = 'skipped_no_token'
     }
   }
 
