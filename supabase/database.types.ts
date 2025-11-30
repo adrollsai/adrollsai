@@ -172,6 +172,8 @@ export type Database = {
           selected_page_id: string | null
           selected_page_name: string | null
           selected_page_token: string | null
+          youtube_refresh_token: string | null
+          youtube_token: string | null
         }
         Insert: {
           brand_color?: string | null
@@ -191,6 +193,8 @@ export type Database = {
           selected_page_id?: string | null
           selected_page_name?: string | null
           selected_page_token?: string | null
+          youtube_refresh_token?: string | null
+          youtube_token?: string | null
         }
         Update: {
           brand_color?: string | null
@@ -210,6 +214,8 @@ export type Database = {
           selected_page_id?: string | null
           selected_page_name?: string | null
           selected_page_token?: string | null
+          youtube_refresh_token?: string | null
+          youtube_token?: string | null
         }
         Relationships: []
       }
