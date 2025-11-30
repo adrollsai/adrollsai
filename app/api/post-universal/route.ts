@@ -88,11 +88,11 @@ export async function POST(request: Request) {
     }
   }
 
-  // --- YOUTUBE (Video OR Community Post) ---
+  // --- YOUTUBE (Video ONLY) ---
   if (platforms.includes('youtube')) {
-    if (profile.youtube_token) {
-        if (type === 'video') {
-            // Video Upload
+    // CHANGE: Strictly check if type is 'video' before proceeding
+    if (type === 'video') {
+        if (profile.youtube_token) {
             promises.push(sendToN8N('youtube', process.env.N8N_YOUTUBE_WEBHOOK_URL, {
                 accessToken: profile.youtube_token,
                 videoUrl: imageUrl, 
@@ -101,16 +101,11 @@ export async function POST(request: Request) {
                 privacy: 'public'
             }))
         } else {
-            // Community Post (Image)
-            promises.push(sendToN8N('youtube', process.env.N8N_YOUTUBE_WEBHOOK_URL, {
-                accessToken: profile.youtube_token,
-                imageUrl: imageUrl,
-                description: caption,
-                isCommunityPost: true
-            }))
+            results.youtube = 'skipped_no_token'
         }
     } else {
-        results.youtube = 'skipped_no_token'
+        // Explicitly record that we skipped it because it wasn't a video
+        results.youtube = 'skipped_not_video'
     }
   }
 

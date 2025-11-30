@@ -9,9 +9,14 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { videoUrl, imageUrl, title, description, type } = body
+  const { videoUrl, title, description, type } = body
 
-  // 2. Get YouTube Token
+  // 2. Validation: Video Only
+  if (type !== 'video' || !videoUrl) {
+      return NextResponse.json({ error: 'YouTube uploads are strictly for video content.' }, { status: 400 })
+  }
+
+  // 3. Get YouTube Token
   const { data: profile } = await supabase
     .from('profiles')
     .select('youtube_token')
@@ -22,31 +27,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No YouTube account linked. Go to Profile to connect.' }, { status: 400 })
   }
 
-  // 3. Prepare Payload
-  const payload: any = {
+  // 4. Prepare Payload (Direct Video Upload)
+  const payload = {
     accessToken: profile.youtube_token,
-    description: description || "#RealEstate #Shorts",
+    videoUrl: videoUrl,
+    title: title || "New Real Estate Listing",
+    description: description ? `${description}\n\n#Shorts #RealEstate` : "#Shorts #RealEstate",
     privacy: "public"
   }
 
-  if (type === 'image' || imageUrl) {
-      // IMAGE MODE -> CONVERT TO SHORT
-      // We tell n8n: "Take this image, make it a 15s video, then upload it."
-      payload.convertImageToVideo = true
-      payload.imageUrl = imageUrl || videoUrl 
-      payload.title = title || "New Listing Alert! 🏡"
-      // Ensure #Shorts is in the description so YouTube treats it as a Short
-      payload.description = `${payload.description}\n\n#Shorts`
-      
-      console.log("Requesting Image-to-Short Conversion:", payload.imageUrl)
-  } else {
-      // VIDEO MODE (Native Upload)
-      payload.videoUrl = videoUrl
-      payload.title = title || "New Real Estate Listing"
-      payload.description = description ? `${description}\n\n#Shorts #RealEstate` : "#Shorts #RealEstate"
-  }
-
-  // 4. Send to n8n Workflow
+  // 5. Send to n8n Workflow
   try {
     const n8nResponse = await fetch(process.env.N8N_YOUTUBE_WEBHOOK_URL!, {
       method: 'POST',

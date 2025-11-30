@@ -100,26 +100,24 @@ export default function AssetsPage() {
     } catch (e) { alert('Network error') } finally { setIsPosting(false) }
   }
 
-  // 5. Handle Post to YouTube (Shorts/Video)
+  // 5. Handle Post to YouTube (Video Only)
   const handlePostYouTube = async () => {
     if (!selectedAsset) return
     
+    // Prevent Image Uploads
+    if (selectedAsset.type !== 'video') {
+        alert("YouTube upload is only available for video assets.")
+        return
+    }
+    
     setIsPosting(true)
     try {
-        const payload = selectedAsset.type === 'video' 
-            ? { 
-                videoUrl: selectedAsset.url, 
-                title: title || "New Listing Video", 
-                description: caption || "Check out this amazing property! #RealEstate",
-                type: 'video'
-              }
-            : {
-                // If it's an image, we send it to be converted to a Short
-                imageUrl: selectedAsset.url,
-                title: title || "New Listing Alert!",
-                description: caption || "New Update! #RealEstate",
-                type: 'image' 
-              }
+        const payload = { 
+            videoUrl: selectedAsset.url, 
+            title: title || "New Listing Video", 
+            description: caption || "Check out this amazing property! #RealEstate",
+            type: 'video'
+        }
 
         const response = await fetch('/api/post-youtube', {
             method: 'POST',
@@ -128,10 +126,7 @@ export default function AssetsPage() {
         })
         const data = await response.json()
         if (response.ok) { 
-            // Different success message based on type
-            alert(selectedAsset.type === 'video' 
-                ? 'Successfully uploaded to YouTube!' 
-                : 'Processing: Converting image to Short and uploading to YouTube. This may take a minute.')
+            alert('Successfully uploaded to YouTube!')
             setSelectedAsset(null) 
         } else { 
             alert('Error: ' + (data.error || 'Failed to upload')) 
@@ -158,7 +153,14 @@ export default function AssetsPage() {
     if (!selectedAsset) return
     setIsPosting(true)
 
+    // Default targets
     let targets = ['facebook', 'instagram', 'linkedin', 'youtube'] 
+
+    // FILTER: Remove YouTube if it's an Image
+    if (selectedAsset.type === 'image') {
+        targets = targets.filter(t => t !== 'youtube')
+        console.log("Skipping YouTube for image asset in universal post.")
+    }
 
     try {
       // Dimension Check for IG (Images only)
@@ -253,11 +255,13 @@ export default function AssetsPage() {
                )}
             </div>
 
-            {/* Title Input (YouTube - needed for both video uploads AND converted shorts) */}
-            <div className="mb-3">
-                <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Video Title (YouTube)</label>
-                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={selectedAsset.type === 'image' ? "Title for your Short..." : "Video Title..."} className="w-full bg-slate-50 p-3 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" />
-            </div>
+            {/* Title Input (Only for Videos now) */}
+            {selectedAsset.type === 'video' && (
+                <div className="mb-3">
+                    <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Video Title (YouTube)</label>
+                    <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Video Title..." className="w-full bg-slate-50 p-3 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" />
+                </div>
+            )}
 
             <div className="mb-4">
               <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Caption / Description</label>
@@ -278,11 +282,13 @@ export default function AssetsPage() {
                  </button>
                </div>
 
-                {/* YouTube Button (Now works for BOTH) */}
-               <button onClick={handlePostYouTube} disabled={isPosting} className="w-full bg-[#FF0000] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-red-600">
-                    {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Youtube size={16} fill="white" />}
-                    {selectedAsset.type === 'video' ? 'Upload to YouTube' : 'Post as Short'}
-               </button>
+                {/* YouTube Button (Video Only) */}
+               {selectedAsset.type === 'video' && (
+                   <button onClick={handlePostYouTube} disabled={isPosting} className="w-full bg-[#FF0000] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-red-600">
+                        {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Youtube size={16} fill="white" />}
+                        Upload to YouTube
+                   </button>
+               )}
 
                <button onClick={handleUniversalPost} disabled={isPosting} className="w-full bg-slate-800 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-200 hover:bg-slate-900">
                  {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Globe size={14} />}

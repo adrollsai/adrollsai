@@ -184,29 +184,60 @@ export default function CreationPage() {
       })
       
       const startData = await startResponse.json()
-      const taskId = startData.taskId 
-
-      // G. Polling Loop (Wait 15s then check)
-      await new Promise(resolve => setTimeout(resolve, 15000)) 
-
-      const checkResponse = await fetch('/api/check-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId })
-      })
-
-      const checkData = await checkResponse.json()
       
       let finalImageUrl = ''
-      if (checkData.data && checkData.data.resultJson) {
-         const resultObj = JSON.parse(checkData.data.resultJson)
-         finalImageUrl = resultObj.resultUrls?.[0]
-      } else if (checkData.data && checkData.data.state === 'success' && checkData.data.resultUrl) {
-         finalImageUrl = checkData.data.resultUrl
+
+      // CASE 1: Immediate Result (Synchronous n8n flow)
+      // Your current n8n flow finishes and returns { "text": "...", "image": "URL" }
+      if (startData.image) {
+        finalImageUrl = startData.image
+      } 
+      // CASE 2: Async Result (Polling required)
+      else if (startData.taskId) {
+        const taskId = startData.taskId 
+        let attempts = 0
+        const maxAttempts = 30 // 30 * 4s = 120s timeout
+
+        // Polling Loop
+        while (attempts < maxAttempts) {
+            attempts++
+            // Wait 4 seconds between checks
+            await new Promise(resolve => setTimeout(resolve, 4000))
+
+            const checkResponse = await fetch('/api/check-status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ taskId })
+            })
+
+            const checkData = await checkResponse.json()
+            
+            // Success Check
+            if (checkData.data && checkData.data.resultJson) {
+                try {
+                    const resultObj = JSON.parse(checkData.data.resultJson)
+                    if (resultObj.resultUrls?.[0]) {
+                        finalImageUrl = resultObj.resultUrls[0]
+                        break // EXIT LOOP
+                    }
+                } catch(e) { console.error("JSON Parse Error in polling", e)}
+            } 
+            else if (checkData.data && checkData.data.state === 'success' && checkData.data.resultUrl) {
+                finalImageUrl = checkData.data.resultUrl
+                break // EXIT LOOP
+            }
+            else if (checkData.data && checkData.data.state === 'failed') {
+                throw new Error("Generation failed: " + (checkData.data.failMsg || "Unknown error"))
+            }
+            
+            // If still 'processing' or 'queueing', the loop continues...
+        }
       }
 
       if (finalImageUrl) {
-        // Auto-Save to Drafts
+        // Auto-Save to Drafts (Only if not already saved by n8n)
+        // Since n8n flow also has "Create a row", we might duplicate it, 
+        // but frontend doesn't know what n8n did. This is a safe backup.
         if (profile) {
             await supabase.from('daily_drafts').insert({
                 user_id: profile.id,
@@ -225,7 +256,7 @@ export default function CreationPage() {
         }
         setMessages(prev => [...prev, aiMsg])
       } else {
-         throw new Error("Still processing... please check your Assets tab in a minute.")
+         throw new Error("Generation timed out. Please check your Assets tab later.")
       }
 
     } catch (error: any) {

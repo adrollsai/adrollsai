@@ -11,361 +11,6 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        112,
-        -112
-      ],
-      "id": "c8b104e5-75e7-4b8e-a338-7039517f0d70",
-      "name": "Webhook",
-      "webhookId": "d625eb57-bea3-412b-b489-0cecd34b2c10"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={\n  \"text\": \"Here is your generated design!\",\n  \"image\": \"{{ $json.url }}\" \n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.4,
-      "position": [
-        2128,
-        -208
-      ],
-      "id": "aebfd640-a8f0-4ee1-abd5-7109894312e6",
-      "name": "Respond to Webhook"
-    },
-    {
-      "parameters": {
-        "operation": "getAll",
-        "tableId": "profiles",
-        "matchType": "allFilters",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "id",
-              "condition": "eq",
-              "keyValue": "={{ $json.body.userId }}"
-            }
-          ]
-        }
-      },
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [
-        336,
-        -112
-      ],
-      "id": "1cd8dce2-7fa6-493b-9648-56acddb0476c",
-      "name": "Get many rows",
-      "credentials": {
-        "supabaseApi": {
-          "id": "UgnuxpCJwLormMKp",
-          "name": "Supabase account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.kie.ai/api/v1/jobs/createTask",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ $json.payload }}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.3,
-      "position": [
-        784,
-        -112
-      ],
-      "id": "b860b829-84c6-4ace-aa6d-6c5eb91e44a2",
-      "name": "HTTP Request",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "z68zkWYC1xuUJsNq",
-          "name": "csh kie.ai"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "amount": 20
-      },
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        1008,
-        -112
-      ],
-      "id": "f5863831-489e-4d4d-a9af-c5a49323fc64",
-      "name": "Wait",
-      "webhookId": "5e40bfee-d22e-49ce-8de6-b5d59ce4396e"
-    },
-    {
-      "parameters": {
-        "url": "https://api.kie.ai/api/v1/jobs/recordInfo",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "taskId",
-              "value": "={{ $('HTTP Request').item.json.data.taskId }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.3,
-      "position": [
-        1232,
-        -112
-      ],
-      "id": "91311c2b-8d60-464d-b7c5-5b67437fa8a3",
-      "name": "HTTP Request1",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "z68zkWYC1xuUJsNq",
-          "name": "csh kie.ai"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('HTTP Request').item.json.msg }}",
-                    "rightValue": "success",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "a900be89-a9ba-44e4-b479-9223c01bd4c5"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "success"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "id": "16295548-bf5f-4795-98cc-2cc7ef67f73a",
-                    "leftValue": "={{ $('HTTP Request').item.json.msg }}",
-                    "rightValue": "fail",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals",
-                      "name": "filter.operator.equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "fail"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "id": "4c60b301-575e-4a6b-b049-05a1ca1555a9",
-                    "leftValue": "={{ $('HTTP Request').item.json.msg }}",
-                    "rightValue": "generating",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals",
-                      "name": "filter.operator.equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "generating"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "id": "8a84aa8f-ef09-443b-a1d4-f966e90fd2f3",
-                    "leftValue": "={{ $('HTTP Request').item.json.msg }}",
-                    "rightValue": "queuing",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals",
-                      "name": "filter.operator.equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "queuing"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "id": "23e072e7-d365-4887-b873-3e553f6d5853",
-                    "leftValue": "={{ $('HTTP Request').item.json.msg }}",
-                    "rightValue": "waiting",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals",
-                      "name": "filter.operator.equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "waiting"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.3,
-      "position": [
-        1696,
-        -32
-      ],
-      "id": "05a22a24-1bb7-4d63-a94e-ac2d72775c4c",
-      "name": "Switch"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={\n  \"text\": \"Sorry, the generation failed. Reason: {{ $('HTTP Request1').item.json.data.failMsg }}\",\n  \"image\": null\n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.4,
-      "position": [
-        1904,
-        -16
-      ],
-      "id": "f0cdd635-f7d9-430a-b114-db13bc82a5e7",
-      "name": "Respond to Webhook1"
-    },
-    {
-      "parameters": {
-        "tableId": "assets",
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "user_id",
-              "fieldValue": "={{ $('Webhook').item.json.body.userId }}"
-            },
-            {
-              "fieldId": "url",
-              "fieldValue": "={{ JSON.parse($node[\"HTTP Request1\"].json.data.resultJson).resultUrls[0] }}"
-            },
-            {
-              "fieldId": "type",
-              "fieldValue": "={{ $('Webhook').item.json.body.mode }}"
-            },
-            {
-              "fieldId": "status",
-              "fieldValue": "Draft"
-            }
-          ]
-        }
-      },
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [
-        1904,
-        -208
-      ],
-      "id": "a56773a8-c410-45bc-b213-9fca34897b9d",
-      "name": "Create a row",
-      "credentials": {
-        "supabaseApi": {
-          "id": "UgnuxpCJwLormMKp",
-          "name": "Supabase account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// 1. Get the raw ingredients from the Webhook\nconst webhookData = $items(\"Webhook\")[0].json.body;\n\n// 2. Construct the Master Prompt\n// FIX: Use ${} to insert the variables, otherwise they are just text\nconst masterPrompt = `\nCONTEXT FROM USER:\n\"${webhookData.userInstructions}\"\n\nPROPERTY DETAILS:\n\"${webhookData.propertyDescription}\"\n\nMANDATORY INCLUSIONS:\n- Include the Contact Number: \"${webhookData.contactNumber}\"\n- Include the Brand logo.\n\n\ndesign a facebook ad graphic from the provided images, whatever info you see in photos and provided description that is provided, use that, include the contact number, the creative should be attention grabbing and readable, only use the relevant and essential info in the creative, don't clutter it too much, if there is any specific user instruction, give that high priority.\n`;\n\n// 3. Handle Images\nlet finalImages = webhookData.imageUrls;\nif (!finalImages || finalImages.length === 0) {\n    finalImages = undefined; \n}\n\n// 4. Construct Payload for Nano Banana\nconst payload = {\n  \"model\": \"nano-banana-pro\",\n  \"input\": {\n    \"prompt\": masterPrompt, // Now this contains the actual text\n    \"image_input\": finalImages,\n    \"aspect_ratio\": webhookData.aspectRatio || \"1:1\",\n    \"resolution\": \"1K\",\n    \"output_format\": \"png\"\n  }\n};\n\nreturn {\n  json: {\n    payload: payload,\n    trackingTitle: webhookData.propertyTitle \n  }\n};"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        560,
-        -112
-      ],
-      "id": "7206d530-8675-4b7c-8be1-7a2a29a6b27e",
-      "name": "Code in JavaScript"
-    },
-    {
-      "parameters": {
-        "amount": 20
-      },
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        1504,
-        -32
-      ],
-      "id": "8633cd99-e2a1-423c-8484-b07c5e6756c0",
-      "name": "Wait1",
-      "webhookId": "5e40bfee-d22e-49ce-8de6-b5d59ce4396e"
-    },
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "chat",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2.1,
-      "position": [
         -1216,
         848
       ],
@@ -382,7 +27,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        1216,
+        1424,
         800
       ],
       "id": "9367e582-2d3c-4102-8470-5739416500ff",
@@ -639,7 +284,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        784,
+        992,
         1104
       ],
       "id": "5eca1e11-618b-4544-a530-c86b4fc8cd16",
@@ -672,7 +317,7 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        976,
+        1184,
         800
       ],
       "id": "7eae28ee-43b0-44ad-9e88-5c630fbd7f83",
@@ -739,142 +384,29 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        528,
+        752,
         832
       ],
       "id": "15cf6008-2c41-4028-8756-5656dbe2132c",
       "name": "If"
+    },
+    {
+      "parameters": {
+        "amount": 20
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        64,
+        1040
+      ],
+      "id": "6350f2ad-cb44-4278-bc08-9df6594cc4cb",
+      "name": "Wait",
+      "webhookId": "60a14430-4ee7-4c39-9557-081c243a1891"
     }
   ],
   "pinData": {},
   "connections": {
-    "Webhook": {
-      "main": [
-        [
-          {
-            "node": "Get many rows",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get many rows": {
-      "main": [
-        [
-          {
-            "node": "Code in JavaScript",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP Request": {
-      "main": [
-        [
-          {
-            "node": "Wait",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait": {
-      "main": [
-        [
-          {
-            "node": "HTTP Request1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP Request1": {
-      "main": [
-        [
-          {
-            "node": "Create a row",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Switch": {
-      "main": [
-        [
-          {
-            "node": "Create a row",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Respond to Webhook1",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "HTTP Request1",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "HTTP Request1",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "HTTP Request1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Create a row": {
-      "main": [
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code in JavaScript": {
-      "main": [
-        [
-          {
-            "node": "HTTP Request",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait1": {
-      "main": [
-        [
-          {
-            "node": "Switch",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Webhook1": {
       "main": [
         [
@@ -1006,7 +538,7 @@
       "main": [
         [
           {
-            "node": "HTTP Request3",
+            "node": "Wait",
             "type": "main",
             "index": 0
           }
@@ -1019,13 +551,24 @@
           }
         ]
       ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "7ba2b80f-8fdd-4651-b7bf-afaa33e32e6a",
+  "versionId": "20f6da10-3c46-4d56-8543-c17b9e2125b9",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "3a51ec9e2b6ba838c197e909ea76dd8dc3b2079d815a88b998ea6ba74887a108"
