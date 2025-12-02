@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-// Added 'Check' to imports for the filter UI
 import { Plus, Search, MapPin, X, Loader2, Share2, Image as ImageIcon, Link as LinkIcon, Filter, LogOut, Check } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -21,7 +20,7 @@ type Property = {
   image_url: string
   images: string[]
   description?: string
-  property_type?: string // Added this field
+  property_type?: string
   user_id: string 
 }
 
@@ -186,14 +185,39 @@ export default function InventoryPage() {
 
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
-    try {
-      const shareText = `🏡 ${prop.title}\n📍 ${prop.address}\n💰 ${prop.price}`
-      if (navigator.share) {
-        await navigator.share({ title: prop.title, text: shareText, url: prop.image_url })
-      } else {
-        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank')
+    
+    // 1. Prepare the Caption
+    const shareText = `🏡 ${prop.title}\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description || ''}`
+
+    if (navigator.share) {
+      try {
+        // 2. Fetch the image to create a File object
+        const response = await fetch(prop.image_url)
+        const blob = await response.blob()
+        const file = new File([blob], 'property-image.jpg', { type: blob.type })
+
+        // 3. Check if the device allows sharing files
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: prop.title,
+            text: shareText,
+          })
+        } else {
+          // Fallback: Share as Link if files aren't supported
+          await navigator.share({ 
+            title: prop.title, 
+            text: shareText, 
+            url: prop.image_url 
+          })
+        }
+      } catch (error) {
+        console.warn("Share failed or cancelled:", error)
       }
-    } catch (error) { console.log("Share cancelled") } 
+    } else {
+      // Fallback for Desktop (WhatsApp Web)
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText + "\n" + prop.image_url)}`, '_blank')
+    }
   }
 
   // --- FILTER LOGIC ---
