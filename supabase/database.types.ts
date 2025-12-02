@@ -168,6 +168,7 @@ export type Database = {
           location: string | null
           price: string | null
           property_type: string | null
+          requirement_id: string | null
           source_platform: string
           source_url: string
           title: string
@@ -183,6 +184,7 @@ export type Database = {
           location?: string | null
           price?: string | null
           property_type?: string | null
+          requirement_id?: string | null
           source_platform: string
           source_url: string
           title: string
@@ -198,11 +200,20 @@ export type Database = {
           location?: string | null
           price?: string | null
           property_type?: string | null
+          requirement_id?: string | null
           source_platform?: string
           source_url?: string
           title?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "external_listings_requirement_id_fkey"
+            columns: ["requirement_id"]
+            isOneToOne: false
+            referencedRelation: "deal_requirements"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       posts: {
         Row: {

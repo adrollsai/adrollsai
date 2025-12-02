@@ -11,10 +11,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -48,
-        0
+        672,
+        208
       ],
-      "id": "9870aa91-c90d-4e34-8450-dbba888c0a4a",
+      "id": "4d952fd8-0464-4769-ae4b-e8edf93dc639",
       "name": "Listen for Needs",
       "webhookId": "550ebd62-3679-4ad1-8c0a-ca99ea1fc073"
     },
@@ -36,31 +36,17 @@
           ]
         },
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "q",
-              "value": "={{ $json.body.searchQuery }} site:facebook.com OR site:linkedin.com OR site:99acres.com -inurl:login"
-            },
-            {
-              "name": "num",
-              "value": "10"
-            },
-            {
-              "name": "tbs",
-              "value": "qdr:w"
-            }
-          ]
-        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"q\": \"{{ $json.body.searchQuery }}\",\n  \"num\": 50,\n  \"tbs\": \"qdr:w\"\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        208,
-        0
+        928,
+        208
       ],
-      "id": "9e64bfce-c338-4931-bb40-e0d0817f705b",
+      "id": "64ecbcce-92e6-4e7a-aa64-d0c0b711c533",
       "name": "Search Web (Serper)"
     },
     {
@@ -83,10 +69,10 @@
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1,
       "position": [
-        400,
-        0
+        1120,
+        208
       ],
-      "id": "0d6e480f-407d-4d75-bda5-212681d7de85",
+      "id": "0b47858c-888f-42d9-a65a-7de3dd7dc4cf",
       "name": "Gemini Parser",
       "credentials": {
         "googlePalmApi": {
@@ -102,10 +88,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        704,
-        0
+        1424,
+        208
       ],
-      "id": "1ae3efc3-e131-45db-af4e-d7b39cd8b769",
+      "id": "82798ff9-9351-4d64-9d21-7abed1af0e33",
       "name": "Format JSON"
     },
     {
@@ -144,6 +130,14 @@
             {
               "fieldId": "property_type",
               "fieldValue": "Unknown"
+            },
+            {
+              "fieldId": "requirement_id",
+              "fieldValue": "={{ $('Listen for Needs').item.json.body.requirementId }}"
+            },
+            {
+              "fieldId": "=contact_info",
+              "fieldValue": "={{ $json.contact_info }}"
             }
           ]
         }
@@ -151,10 +145,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        960,
-        0
+        1680,
+        208
       ],
-      "id": "51d9b10b-2ccc-460f-91a1-29138a208b16",
+      "id": "9800f53e-75d4-4155-ad5f-63b769ba2e9c",
       "name": "Save to Supabase",
       "credentials": {
         "supabaseApi": {
@@ -172,10 +166,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        1216,
-        0
+        1936,
+        208
       ],
-      "id": "9d89f1f2-0861-4d85-84bd-c5b4e59c2ca9",
+      "id": "61e8ff18-be7d-447b-affd-7dd4b393dbf6",
       "name": "Respond"
     }
   ],
@@ -186,42 +180,37 @@
           "headers": {
             "host": "adrollsai13.app.n8n.cloud",
             "user-agent": "node",
-            "content-length": "291",
+            "content-length": "138",
             "accept": "*/*",
             "accept-encoding": "gzip, br",
             "accept-language": "*",
             "cdn-loop": "cloudflare; loops=1; subreqs=1",
-            "cf-connecting-ip": "2401:4900:1c2b:d830:b576:cf06:cf9f:3477",
+            "cf-connecting-ip": "3.87.193.39",
             "cf-ew-via": "15",
-            "cf-ipcountry": "IN",
-            "cf-ray": "9a71f57e16ae257c-CCU",
+            "cf-ipcountry": "US",
+            "cf-ray": "9a79ebc4b64807bd-IAD",
             "cf-visitor": "{\"scheme\":\"https\"}",
             "cf-worker": "n8n.cloud",
             "content-type": "application/json",
             "sec-fetch-mode": "cors",
-            "x-forwarded-for": "2401:4900:1c2b:d830:b576:cf06:cf9f:3477, 172.68.127.203",
+            "x-forwarded-for": "3.87.193.39, 162.158.152.163",
             "x-forwarded-host": "adrollsai13.app.n8n.cloud",
             "x-forwarded-port": "443",
             "x-forwarded-proto": "https",
-            "x-forwarded-server": "traefik-prod-users-gwc-60-78f959c455-qlrwh",
+            "x-forwarded-server": "traefik-prod-users-gwc-60-78f959c455-lfjjx",
             "x-is-trusted": "yes",
-            "x-real-ip": "2401:4900:1c2b:d830:b576:cf06:cf9f:3477"
+            "x-real-ip": "3.87.193.39",
+            "x-vercel-id": "bom1::st7zt-1764668979942-c76896c60d9b"
           },
           "params": {},
           "query": {},
           "body": {
-            "userId": "b3d9fb26-038b-4505-a3c1-be33e13a8579",
-            "userEmail": "rchopra489@gmail.com",
-            "requirementId": "2d3f69f5-217c-4ad9-b3dc-c31a5d2c289b",
-            "searchQuery": "\"sector 82\" \"Residential\" 3bhk in mohali price 1 cr - 2 cr",
-            "filters": {
-              "location": "sector 82",
-              "minBudget": "1 cr",
-              "maxBudget": "2 cr"
-            }
+            "userId": "005c5910-fa1a-43a8-9360-2c9d1a0b7b4e",
+            "requirementId": "763084d1-abcd-4cf7-9288-60ade4cbccde",
+            "searchQuery": "3bhk in mzirakpur"
           },
-          "webhookUrl": "https://adrollsai13.app.n8n.cloud/webhook-test/agent-hunt",
-          "executionMode": "test"
+          "webhookUrl": "https://adrollsai13.app.n8n.cloud/webhook/agent-hunt",
+          "executionMode": "production"
         }
       }
     ]
@@ -287,7 +276,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "34b7b26c-c866-4147-aad5-eb6325a5c91c",
+  "versionId": "287edb2e-8833-4372-9ba7-f950a68f41c0",
   "meta": {
     "instanceId": "3a51ec9e2b6ba838c197e909ea76dd8dc3b2079d815a88b998ea6ba74887a108"
   },
