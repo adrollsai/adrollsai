@@ -161,11 +161,26 @@ export default function DealRoomPage() {
     }
   }
 
-  // 4. Connect Action
+  // 4. Connect Action (Updated)
   const handleConnect = (match: ExternalListing) => {
     const introText = `Hi, I saw your listing for "${match.title}". I have a buyer. Is it still available?`
+    
     if (match.contact_info?.phone) {
-        const cleanPhone = match.contact_info.phone.replace(/[^0-9]/g, '')
+        // 1. Remove all non-numeric characters (spaces, dashes, brackets)
+        let cleanPhone = match.contact_info.phone.replace(/[^0-9]/g, '')
+
+        // 2. INTELLIGENT FORMATTING
+        // If it's a 10-digit number (e.g., 9876543210), assume it's Indian (+91)
+        if (cleanPhone.length === 10) {
+            cleanPhone = '91' + cleanPhone
+        }
+        // If it starts with '0' (e.g., 098765...), remove the 0 and add 91
+        else if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
+            cleanPhone = '91' + cleanPhone.substring(1)
+        }
+        // If it already has 12 digits (91987...), leave it alone. 
+        // Otherwise, send as is.
+
         window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(introText)}`, '_blank')
     } else {
         window.open(match.source_url, '_blank')
