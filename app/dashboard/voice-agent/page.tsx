@@ -8,38 +8,56 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useGeminiLive } from '@/hooks/useGeminiLive'
-import OrbVisualizer from '@/components/OrbVisualizer'
+import Orb from '@/components/Orb' // <--- CORRECT IMPORT
 
-type Lead = { id: string, name: string, status: string, phone: string, summary?: string }
+type Lead = { 
+  id: string
+  name: string
+  status: string
+  phone: string
+  summary?: string 
+}
 
 export default function VoiceAgentPage() {
   const supabase = createClient()
+  
+  // --- STATE ---
   const [apiKey, setApiKey] = useState('') 
   const [leads, setLeads] = useState<Lead[]>([])
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
   const [showDebug, setShowDebug] = useState(false)
   const [loading, setLoading] = useState(true)
   
+  // --- HOOK ---
   const { 
     connect, disconnect, isConnected, isSpeaking, 
     inputAnalyser, outputAnalyser, logs 
   } = useGeminiLive(apiKey)
 
-  // FIX: Scroll only the debug container
+  // --- SCROLL DEBUG ---
   const logsContainerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (showDebug && logsContainerRef.current) {
-        logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+        logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight
     }
   }, [logs, showDebug])
 
-  // Fetch Leads
+  // --- LEADS ---
   const fetchLeads = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase.from('leads').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
-    setLeads(data || [])
-    setLoading(false)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from('leads')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+      setLeads(data || [])
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
   }
   useEffect(() => { fetchLeads() }, [])
 
@@ -47,47 +65,68 @@ export default function VoiceAgentPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     await supabase.from('leads').insert([
-        { user_id: user.id, name: 'Sarah Miller', phone: '+1 555-0100', status: 'New', summary: 'Buyer: 2BHK downtown' }
+        { user_id: user.id, name: 'Sarah Miller', phone: '+1 555-0100', status: 'New', summary: 'Buyer: 2BHK downtown' },
+        { user_id: user.id, name: 'Mike Ross', phone: '+1 555-0199', status: 'New', summary: 'Investor: $2M Budget' }
     ])
     fetchLeads()
+  }
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    await supabase.from('leads').delete().eq('id', id)
+    fetchLeads()
+    if (activeLead?.id === id) setActiveLead(null)
   }
 
   const handleStartCall = async () => {
     if (!activeLead) return alert("Select a lead first")
     if (!apiKey) return alert("Enter Gemini API Key")
     
-    // Explicitly enabling multilingual in the prompt
-    const systemPrompt = `You are Alex, calling ${activeLead.name}. Goal: Qualify for real estate. 
-    Rules:
-    1. Ask budget and timeline.
-    2. Be concise (1-2 sentences).
-    3. Speak the user's language if they start speaking a different language.`
+    // System Prompt
+    const systemPrompt = `You are Alex, calling ${activeLead.name}. Purpose: Qualify for real estate. Ask budget and timeline. Be concise. Speak the user's language.`
     
-    const tools = [{ name: "mark_qualified", description: "Lead is good", parameters: { type: "OBJECT", properties: { reason: { type: "STRING" } } } }]
-    
+    // Tools
+    const tools = [
+        { name: "mark_qualified", description: "Lead is good", parameters: { type: "OBJECT", properties: { reason: { type: "STRING" } } } }
+    ]
+
     await connect(systemPrompt, tools)
   }
 
+  // --- RENDER ---
   return (
     <div className="p-5 max-w-md mx-auto min-h-screen pb-32 relative bg-surface">
       
-      {/* Header */}
+      {/* 1. HEADER */}
       <div className="mb-4 flex justify-between items-center">
         <h1 className="text-2xl font-bold text-slate-900">Voice AI</h1>
         <div className="flex gap-2">
             <button onClick={() => setShowDebug(!showDebug)} className={`p-2 rounded-full border ${showDebug ? 'bg-slate-800 text-white' : 'bg-white text-slate-400'}`}>
                 <Terminal size={16} />
             </button>
-            <input type="password" placeholder="API Key" className="bg-white px-3 rounded-full border border-slate-100 text-[10px] w-24 outline-none focus:border-blue-300" value={apiKey} onChange={e => setApiKey(e.target.value)}/>
+            <input 
+              type="password" 
+              placeholder="API Key" 
+              className="bg-white px-3 rounded-full border border-slate-100 text-[10px] w-24 outline-none focus:border-blue-300" 
+              value={apiKey} 
+              onChange={e => setApiKey(e.target.value)}
+            />
         </div>
       </div>
 
-      {/* Orb Card */}
+      {/* 2. ORB CARD (Visualizer) */}
       <div className={`relative w-full aspect-square rounded-[2.5rem] shadow-2xl overflow-hidden transition-all duration-500 bg-black`}>
+        
+        {/* The 3D Orb Component */}
         <div className="absolute inset-0 z-0">
-            <OrbVisualizer isSpeaking={isSpeaking} inputAnalyser={inputAnalyser} outputAnalyser={outputAnalyser} />
+            <Orb 
+              isSpeaking={isSpeaking} 
+              inputAnalyser={inputAnalyser} 
+              outputAnalyser={outputAnalyser} 
+            />
         </div>
 
+        {/* Overlay Info */}
         <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
             <div className="mt-32 text-center">
                 <h2 className="text-xl font-bold text-white drop-shadow-md">{activeLead ? activeLead.name : 'Select Lead'}</h2>
@@ -100,6 +139,7 @@ export default function VoiceAgentPage() {
             </div>
         </div>
 
+        {/* Controls */}
         <div className="absolute bottom-8 left-0 right-0 px-10 flex justify-center items-center z-20 gap-6">
             {!isConnected ? (
                 <button onClick={handleStartCall} disabled={!activeLead} className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all text-white disabled:opacity-50 disabled:grayscale">
@@ -113,12 +153,9 @@ export default function VoiceAgentPage() {
         </div>
       </div>
 
-      {/* DEBUG CONSOLE (Fixed Scroll) */}
+      {/* 3. DEBUG CONSOLE */}
       {showDebug && (
-        <div 
-            ref={logsContainerRef} 
-            className="mt-4 p-4 bg-slate-900 rounded-2xl h-48 overflow-y-auto border border-slate-800 shadow-inner scroll-smooth"
-        >
+        <div ref={logsContainerRef} className="mt-4 p-4 bg-slate-900 rounded-2xl h-48 overflow-y-auto border border-slate-800 shadow-inner scroll-smooth">
             <div className="flex items-center gap-2 mb-2 text-slate-400 text-[10px] uppercase font-bold tracking-wider sticky top-0 bg-slate-900 pb-2">
                 <Activity size={12} /> Live Logs
             </div>
@@ -134,7 +171,7 @@ export default function VoiceAgentPage() {
         </div>
       )}
 
-      {/* Leads List */}
+      {/* 4. LEADS LIST */}
       <div className="mt-6 space-y-2">
         {leads.length === 0 && !loading && (
             <button onClick={addDemoLeads} className="w-full py-4 text-center text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-2xl hover:bg-slate-50 transition-colors">
@@ -142,12 +179,24 @@ export default function VoiceAgentPage() {
             </button>
         )}
         {leads.map(lead => (
-            <div key={lead.id} onClick={() => !isConnected && setActiveLead(lead)} className={`p-4 rounded-xl border bg-white flex justify-between items-center cursor-pointer active:scale-95 transition-all ${activeLead?.id === lead.id ? 'border-blue-500 ring-1 ring-blue-100 shadow-sm' : 'border-slate-100'}`}>
-                <div>
-                    <h4 className="font-bold text-sm text-slate-800">{lead.name}</h4>
-                    <p className="text-[10px] text-slate-400">{lead.summary}</p>
+            <div 
+              key={lead.id} 
+              onClick={() => !isConnected && setActiveLead(lead)} 
+              className={`p-4 rounded-xl border bg-white flex justify-between items-center cursor-pointer active:scale-95 transition-all ${activeLead?.id === lead.id ? 'border-blue-500 ring-1 ring-blue-100 shadow-sm' : 'border-slate-100'}`}
+            >
+                <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold ${lead.status === 'Qualified' ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
+                        {lead.name[0]}
+                    </div>
+                    <div>
+                        <h4 className="font-bold text-sm text-slate-800">{lead.name}</h4>
+                        <p className="text-[10px] text-slate-400">{lead.summary}</p>
+                    </div>
                 </div>
-                {lead.status === 'New' ? <UserPlus size={16} className="text-blue-400"/> : <CheckCircle size={16} className="text-green-400"/>}
+                <div className="flex items-center gap-2">
+                    {lead.status === 'New' ? <UserPlus size={16} className="text-blue-400"/> : <CheckCircle size={16} className="text-green-400"/>}
+                    <button onClick={(e) => handleDelete(e, lead.id)} className="p-1.5 text-slate-300 hover:text-red-400 hover:bg-red-50 rounded-full"><Trash2 size={14}/></button>
+                </div>
             </div>
         ))}
       </div>
