@@ -1,15 +1,13 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 
 export const useGeminiLive = (apiKey: string) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(0);
   
-  // Two separate contexts for Input (16kHz) and Output (24kHz)
   const inputContextRef = useRef<AudioContext | null>(null);
   const outputContextRef = useRef<AudioContext | null>(null);
   
-  // Analysers for the Orb
   const inputAnalyserRef = useRef<AnalyserNode | null>(null);
   const outputAnalyserRef = useRef<AnalyserNode | null>(null);
   
@@ -22,16 +20,21 @@ export const useGeminiLive = (apiKey: string) => {
   const connect = useCallback(async (systemInstruction: string, tools: any[]) => {
     if (!apiKey) return alert("API Key required");
 
-    // 1. Initialize Audio Contexts
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     
-    // INPUT: 16kHz (Required by Gemini)
-    inputContextRef.current = new AudioContextClass({ sampleRate: 16000 });
+    // LOW LATENCY INPUT
+    inputContextRef.current = new AudioContextClass({ 
+        sampleRate: 16000,
+        latencyHint: 'interactive' 
+    });
     
-    // OUTPUT: 24kHz (Required by Gemini)
-    outputContextRef.current = new AudioContextClass({ sampleRate: 24000 });
+    // LOW LATENCY OUTPUT
+    outputContextRef.current = new AudioContextClass({ 
+        sampleRate: 24000,
+        latencyHint: 'interactive'
+    });
 
-    // Setup Analysers
+    // Analysers
     inputAnalyserRef.current = inputContextRef.current.createAnalyser();
     inputAnalyserRef.current.fftSize = 32;
     inputAnalyserRef.current.smoothingTimeConstant = 0.1;
@@ -40,7 +43,7 @@ export const useGeminiLive = (apiKey: string) => {
     outputAnalyserRef.current.fftSize = 32;
     outputAnalyserRef.current.smoothingTimeConstant = 0.1;
 
-    // 2. WebSocket Setup
+    // WebSocket
     const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -52,7 +55,7 @@ export const useGeminiLive = (apiKey: string) => {
       
       const setupMsg = {
         setup: {
-          model: "models/gemini-2.0-flash-exp",
+          model: "models/gemini-2.5-flash-native-audio-preview-09-2025",
           generationConfig: { 
             responseModalities: ["AUDIO"],
             speechConfig: {
@@ -77,31 +80,26 @@ export const useGeminiLive = (apiKey: string) => {
 
         const data = JSON.parse(textData);
         
-        // Handle Audio
         if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
-          const audioData = data.serverContent.modelTurn.parts[0].inlineData.data;
-          playAudio(audioData);
+          playAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
           setIsSpeaking(true);
         }
 
-        // Handle Turn Complete
         if (data.serverContent?.turnComplete) {
           setIsSpeaking(false);
         }
 
-        // Handle Interruption
         if (data.serverContent?.interrupted) {
             console.log("Interrupted!");
-            // Clear the audio queue
-            // In a real app, you would cancel the current buffer source nodes here
-            // For simplicity, we just reset the speaking state visually
             setIsSpeaking(false);
+            // Cancel current audio to stop talking immediately
+            // (In a full implementation, you'd track and stop source nodes here)
         }
 
-        // Handle Tool Calls
         if (data.toolUse) {
           const call = data.toolUse.functionCalls[0];
-          console.log("Tool Triggered:", call.name, call.args);
+          // We can emit this event to the UI if needed
+          console.log("Tool Triggered:", call.name);
           ws.send(JSON.stringify({
             toolResponse: {
               functionResponses: [{
@@ -125,17 +123,14 @@ export const useGeminiLive = (apiKey: string) => {
 
   const startMicrophone = async (ws: WebSocket) => {
     try {
-      // Get Mic Stream
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       
-      // Connect stream to the 16kHz Input Context
       const source = inputContextRef.current!.createMediaStreamSource(stream);
       sourceNodeRef.current = source;
       source.connect(inputAnalyserRef.current!);
 
-      // Use Buffer Size 256 for ultra-low latency (~16ms)
-      // This matches the Google Demo implementation
+      // BUFFER SIZE 256 for 16ms latency (Ultra Fast)
       const processor = inputContextRef.current!.createScriptProcessor(256, 1, 1);
       scriptProcessorRef.current = processor;
       
@@ -144,14 +139,12 @@ export const useGeminiLive = (apiKey: string) => {
         
         const inputData = e.inputBuffer.getChannelData(0);
         
-        // Volume Calculation
+        // Volume
         let sum = 0;
         for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
         setVolumeLevel(Math.sqrt(sum / inputData.length));
 
-        // Convert to PCM16
-        // Since inputContext is 16kHz, this data is ALREADY 16kHz. 
-        // No manual resampling needed.
+        // Float32 -> PCM16 (16kHz already guaranteed by Context)
         const pcm16 = new Int16Array(inputData.length);
         for (let i = 0; i < inputData.length; i++) {
           const s = Math.max(-1, Math.min(1, inputData[i]));
@@ -184,7 +177,6 @@ export const useGeminiLive = (apiKey: string) => {
   const playAudio = (base64String: string) => {
     if (!outputContextRef.current) return;
     
-    // Decode Base64 -> PCM16 -> Float32
     const binaryString = window.atob(base64String);
     const len = binaryString.length;
     const bytes = new Uint8Array(len);
@@ -205,7 +197,7 @@ export const useGeminiLive = (apiKey: string) => {
     source.connect(outputAnalyserRef.current!);
     source.connect(outputContextRef.current.destination);
     
-    // "Catch Up" Logic: If we are falling behind, jump to now
+    // Latency Compensation: Jump to now if drifting
     const now = outputContextRef.current.currentTime;
     if (nextStartTimeRef.current < now) {
         nextStartTimeRef.current = now;
@@ -217,15 +209,10 @@ export const useGeminiLive = (apiKey: string) => {
 
   const disconnect = useCallback(() => {
     wsRef.current?.close();
-    
-    // Clean up Audio Nodes
     scriptProcessorRef.current?.disconnect();
     sourceNodeRef.current?.disconnect();
-    
-    // Close Contexts
     inputContextRef.current?.close();
     outputContextRef.current?.close();
-    
     mediaStreamRef.current?.getTracks().forEach(track => track.stop());
     
     setIsConnected(false);

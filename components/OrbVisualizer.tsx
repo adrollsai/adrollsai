@@ -14,13 +14,20 @@ interface OrbProps {
 
 export default function OrbVisualizer({ isSpeaking, inputAnalyser, outputAnalyser }: OrbProps) {
   const mountRef = useRef<HTMLDivElement>(null)
+  
+  // Refs to hold latest values without triggering re-renders
+  const stateRef = useRef({ isSpeaking, inputAnalyser, outputAnalyser })
+
+  // Update refs when props change
+  useEffect(() => {
+    stateRef.current = { isSpeaking, inputAnalyser, outputAnalyser }
+  }, [isSpeaking, inputAnalyser, outputAnalyser])
 
   useEffect(() => {
     if (!mountRef.current) return
 
     // --- SCENE SETUP ---
     const scene = new THREE.Scene()
-    // Dark background for contrast
     scene.background = new THREE.Color(0x0a0a0a) 
 
     const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000)
@@ -31,24 +38,23 @@ export default function OrbVisualizer({ isSpeaking, inputAnalyser, outputAnalyse
     renderer.setPixelRatio(window.devicePixelRatio)
     mountRef.current.appendChild(renderer.domElement)
 
-    // --- ORB GEOMETRY & SHADER ---
-    const geometry = new THREE.IcosahedronGeometry(1.5, 30) // Detailed sphere
-    
-    // Custom "Wobbly Glow" Shader
+    // --- ORB ---
+    const geometry = new THREE.IcosahedronGeometry(1.5, 30)
     const material = new THREE.ShaderMaterial({
         uniforms: {
             uTime: { value: 0 },
-            uIntensity: { value: 0.3 }, // Base glow
-            uColorA: { value: new THREE.Color("#2E86C1") }, // Blue
-            uColorB: { value: new THREE.Color("#E74C3C") }  // Red (Active State)
+            uIntensity: { value: 0.3 },
+            uColorA: { value: new THREE.Color("#2E86C1") },
+            uColorB: { value: new THREE.Color("#E74C3C") }
         },
+        // (Same shaders as before, omitted for brevity but included in render)
         vertexShader: `
             uniform float uTime;
             uniform float uIntensity;
             varying vec2 vUv;
             varying float vDisplacement;
             
-            // Simplex Noise Function (Simplified)
+            // Simplex Noise
             vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
             vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
             vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
@@ -102,7 +108,6 @@ export default function OrbVisualizer({ isSpeaking, inputAnalyser, outputAnalyse
 
             void main() {
                 vUv = uv;
-                // Add noise to displacement based on time and intensity
                 vDisplacement = snoise(position + vec3(2.0 * uTime));
                 vec3 newPosition = position + normal * (vDisplacement * uIntensity);
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
@@ -116,11 +121,8 @@ export default function OrbVisualizer({ isSpeaking, inputAnalyser, outputAnalyse
 
             void main() {
                 float distort = 2.0 * vDisplacement * uIntensity;
-                // Mix colors based on distortion and intensity
                 vec3 color = mix(uColorA, uColorB, distort + uIntensity);
-                // Add a glow edge
-                float alpha = 1.0;
-                gl_FragColor = vec4(color, alpha);
+                gl_FragColor = vec4(color, 1.0);
             }
         `,
         transparent: true
@@ -129,59 +131,41 @@ export default function OrbVisualizer({ isSpeaking, inputAnalyser, outputAnalyse
     const sphere = new THREE.Mesh(geometry, material)
     scene.add(sphere)
 
-    // --- POST PROCESSING (BLOOM) ---
     const composer = new EffectComposer(renderer)
-    const renderPass = new RenderPass(scene, camera)
-    composer.addPass(renderPass)
-
-    const bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        1.5, // strength
-        0.4, // radius
-        0.85 // threshold
-    )
-    composer.addPass(bloomPass)
+    composer.addPass(new RenderPass(scene, camera))
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85))
 
     // --- ANIMATION LOOP ---
     const dataArray = new Uint8Array(32)
-    
+    let animationId: number
+
     const animate = () => {
-      requestAnimationFrame(animate)
+      animationId = requestAnimationFrame(animate)
 
-      let intensity = 0.2 // Base Idle State
+      // Use refs to access latest state without re-render
+      const { isSpeaking, inputAnalyser, outputAnalyser } = stateRef.current
+      let intensity = 0.2
 
-      // 1. Analyze Audio (If active)
       if (inputAnalyser || outputAnalyser) {
         let val = 0
         if (inputAnalyser) {
             inputAnalyser.getByteFrequencyData(dataArray)
-            val += dataArray[4] // Grab a mid-low frequency
+            val += dataArray[4]
         }
         if (outputAnalyser) {
             outputAnalyser.getByteFrequencyData(dataArray)
-            val += dataArray[4] * 1.5 // Boost output visual
+            val += dataArray[4] * 1.5 
         }
-        
-        // Normalize 0-255 -> 0.0-1.0
         const avg = val / 255 
         if (avg > 0) intensity += avg
       }
 
-      // 2. Update Shader
       material.uniforms.uTime.value += 0.01
+      material.uniforms.uIntensity.value = THREE.MathUtils.lerp(material.uniforms.uIntensity.value, intensity, 0.1)
       
-      // Smoothly interpolate intensity
-      material.uniforms.uIntensity.value = THREE.MathUtils.lerp(
-        material.uniforms.uIntensity.value,
-        intensity,
-        0.1
-      )
-
-      // Color Shift based on speaking
-      const targetColor = isSpeaking ? new THREE.Color("#50C878") : new THREE.Color("#2E86C1") // Green vs Blue
+      const targetColor = isSpeaking ? new THREE.Color("#50C878") : new THREE.Color("#2E86C1")
       material.uniforms.uColorA.value.lerp(targetColor, 0.05)
 
-      // Rotate Orb
       sphere.rotation.y += 0.005
       sphere.rotation.z += 0.002
 
@@ -190,24 +174,22 @@ export default function OrbVisualizer({ isSpeaking, inputAnalyser, outputAnalyse
 
     animate()
 
-    // Resize Handler
     const handleResize = () => {
       if (!mountRef.current) return
-      const w = mountRef.current.clientWidth
-      const h = mountRef.current.clientHeight
-      camera.aspect = w / h
+      camera.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight
       camera.updateProjectionMatrix()
-      renderer.setSize(w, h)
-      composer.setSize(w, h)
+      renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight)
+      composer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight)
     }
     window.addEventListener('resize', handleResize)
 
     return () => {
       window.removeEventListener('resize', handleResize)
+      cancelAnimationFrame(animationId)
       mountRef.current?.removeChild(renderer.domElement)
       renderer.dispose()
     }
-  }, [isSpeaking, inputAnalyser, outputAnalyser])
+  }, []) // Empty dependency array ensures we only init ONCE
 
   return <div ref={mountRef} className="w-full h-full" />
 }
