@@ -56,14 +56,19 @@ export default function VoiceAgentPage() {
     if (!activeLead) return alert("Select a lead first")
     if (!apiKey) return alert("Enter Gemini API Key")
     
-    // Short, punchy prompt to reduce "thinking" latency
-    const systemPrompt = `You are Alex, calling ${activeLead.name}. Goal: Qualify for real estate. Ask 1 question at a time. Keep it short.`
+    // Updated Prompt: Explicitly enables multilingual support
+    const systemPrompt = `You are Alex, calling ${activeLead.name}. 
+    Goal: Qualify for real estate. Ask budget and timeline.
+    Rules:
+    1. Be concise (1-2 sentences).
+    2. Speak the user's language if they switch languages.
+    3. Be friendly and natural.`
     
     const tools = [{ name: "mark_qualified", description: "Lead is good", parameters: { type: "OBJECT", properties: { reason: { type: "STRING" } } } }]
     
     await connect(systemPrompt, tools)
   }
-
+  
   return (
     <div className="p-5 max-w-md mx-auto min-h-screen pb-32 relative bg-surface">
       

@@ -33,24 +33,24 @@ export const useGeminiLive = (apiKey: string) => {
     if (!apiKey) return alert("API Key required");
 
     try {
+        addLog("Initializing Audio...");
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
         
-        // 1. OUTPUT CONTEXT (24kHz for Gemini responses)
+        // 1. OUTPUT CONTEXT (24kHz for Gemini)
         outputContextRef.current = new AudioContextClass({ sampleRate: 24000 });
         
-        // 2. INPUT CONTEXT (Try 16kHz, but be ready to downsample)
+        // 2. INPUT CONTEXT (Try 16kHz)
+        // If the browser refuses 16kHz, we downsample manually below.
         inputContextRef.current = new AudioContextClass({ sampleRate: 16000 });
         
         // Setup Visualizers
         inputAnalyserRef.current = inputContextRef.current.createAnalyser();
         outputAnalyserRef.current = outputContextRef.current.createAnalyser();
-        // Optimize analyser for visuals
         inputAnalyserRef.current.fftSize = 32; 
-        inputAnalyserRef.current.smoothingTimeConstant = 0.5;
         outputAnalyserRef.current.fftSize = 32;
-        outputAnalyserRef.current.smoothingTimeConstant = 0.5;
 
         // WebSocket
+        addLog("Connecting to Gemini...");
         const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
         const ws = new WebSocket(url);
         wsRef.current = ws;
@@ -62,10 +62,13 @@ export const useGeminiLive = (apiKey: string) => {
 
             const setupMsg = {
                 setup: {
-                    model: "models/gemini-2.0-flash-exp",
+                    // UPDATED MODEL: Specialized for native audio & speed
+                    model: "models/gemini-2.5-flash-native-audio-preview-09-2025",
                     generationConfig: { 
                         responseModalities: ["AUDIO"],
-                        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } }
+                        speechConfig: { 
+                            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } }
+                        }
                     },
                     systemInstruction: { parts: [{ text: systemInstruction }] },
                     tools: [{ functionDeclarations: tools }]
@@ -79,18 +82,30 @@ export const useGeminiLive = (apiKey: string) => {
                 let textData = event.data instanceof Blob ? await event.data.text() : event.data;
                 const data = JSON.parse(textData);
 
+                // Audio Received
                 if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
                     playAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
+                    
+                    // Only log "Speaking" if we weren't already to avoid spam
+                    if (!isSpeaking) addLog("Gemini Speaking 🔊", 'success');
                     setIsSpeaking(true);
                 }
 
                 if (data.serverContent?.turnComplete) {
+                    addLog("Turn Complete", 'info');
                     setIsSpeaking(false);
+                }
+
+                if (data.serverContent?.interrupted) {
+                    addLog("Interrupted by User", 'info');
+                    setIsSpeaking(false);
+                    // Clear the buffer to stop previous audio instantly
+                    nextStartTimeRef.current = outputContextRef.current?.currentTime || 0;
                 }
 
                 if (data.toolUse) {
                     const call = data.toolUse.functionCalls[0];
-                    addLog(`Tool: ${call.name}`, 'success');
+                    addLog(`Tool Called: ${call.name}`, 'success');
                     ws.send(JSON.stringify({
                         toolResponse: {
                             functionResponses: [{
@@ -104,7 +119,10 @@ export const useGeminiLive = (apiKey: string) => {
             } catch (e) { console.error(e); }
         };
 
-        ws.onclose = () => { setIsConnected(false); };
+        ws.onclose = () => { 
+            addLog("Disconnected", 'error');
+            setIsConnected(false); 
+        };
         
         await startMicrophone(ws);
 
@@ -112,11 +130,17 @@ export const useGeminiLive = (apiKey: string) => {
         addLog(`Error: ${err.message}`, 'error');
         disconnect();
     }
-  }, [apiKey]);
+  }, [apiKey, isSpeaking]); // Added isSpeaking to deps for log check
 
   const startMicrophone = async (ws: WebSocket) => {
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { 
+                echoCancellation: true,
+                autoGainControl: true,
+                noiseSuppression: true
+            } 
+        });
         mediaStreamRef.current = stream;
         
         const context = inputContextRef.current!;
@@ -124,9 +148,8 @@ export const useGeminiLive = (apiKey: string) => {
         sourceRef.current = source;
         source.connect(inputAnalyserRef.current!);
 
-        // BUFFER SIZE: 512 (Balance between latency and CPU)
-        // If context.sampleRate is 48k, 512 is ~10ms. If 16k, it's 32ms.
-        const processor = context.createScriptProcessor(512, 1, 1);
+        // BUFFER SIZE 256: 16ms latency (Matches Google Demo)
+        const processor = context.createScriptProcessor(256, 1, 1);
         processorRef.current = processor;
 
         processor.onaudioprocess = (e) => {
@@ -139,8 +162,7 @@ export const useGeminiLive = (apiKey: string) => {
             for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
             setVolumeLevel(Math.sqrt(sum / inputData.length));
 
-            // CRITICAL: RESAMPLING
-            // If the browser gave us 48000Hz, we MUST downsample to 16000Hz
+            // RESAMPLING LOGIC (Fixes Gibberish on 48kHz mics)
             let pcm16;
             if (context.sampleRate !== 16000) {
                 const downsampled = downsampleTo16k(inputData, context.sampleRate);
@@ -149,7 +171,6 @@ export const useGeminiLive = (apiKey: string) => {
                 pcm16 = floatTo16BitPCM(inputData);
             }
 
-            // Send to Gemini
             const base64Audio = arrayBufferToBase64(pcm16.buffer);
             ws.send(JSON.stringify({
                 realtimeInput: {
@@ -190,7 +211,10 @@ export const useGeminiLive = (apiKey: string) => {
     source.connect(outputContextRef.current.destination);
     
     const now = outputContextRef.current.currentTime;
-    if (nextStartTimeRef.current < now) nextStartTimeRef.current = now;
+    // Aggressive catch-up: if behind by >0.1s, jump to now
+    if (nextStartTimeRef.current < now || nextStartTimeRef.current > now + 0.1) {
+        nextStartTimeRef.current = now;
+    }
     
     source.start(nextStartTimeRef.current);
     nextStartTimeRef.current += buffer.duration;
@@ -215,8 +239,6 @@ export const useGeminiLive = (apiKey: string) => {
 };
 
 // --- UTILS ---
-
-// Robust Downsampler
 const downsampleTo16k = (buffer: Float32Array, sampleRate: number) => {
     if (sampleRate === 16000) return buffer;
     const ratio = sampleRate / 16000;
