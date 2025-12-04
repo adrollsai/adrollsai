@@ -3,6 +3,7 @@
 import { LayoutGrid, Sparkles, Grid3X3, MessageCircle, User, Briefcase } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { Mic } from 'lucide-react'
 
 export default function BottomNav() {
   const pathname = usePathname()
@@ -13,6 +14,7 @@ export default function BottomNav() {
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
     { name: 'Deal Room', icon: Briefcase, path: '/dashboard/deal-room' }, // <--- NEW TAB
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
+    { name: 'Voice AI', icon: Mic, path: '/dashboard/voice-agent' },
   ]
 
   return (
