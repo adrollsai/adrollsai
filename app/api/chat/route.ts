@@ -2,88 +2,78 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 
 export async function POST(request: Request) {
-  console.log("--- API/CHAT DEBUG START ---")
-  
   try {
-    // 1. Check Auth
+    // 1. Auth Check
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    if (!user) {
-      console.log("Auth Failed: No user")
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // 2. Inspect Incoming Data
+    // 2. Parse Input
     const body = await request.json()
-    
-    // LOGGING EXACTLY WHAT FRONTEND SENT
-    console.log("Received Body Keys:", Object.keys(body))
-    console.log("User Instructions:", body.userInstructions)
-    console.log("Prop Desc:", body.propertyDescription ? "Present" : "Missing")
-    console.log("Images Count:", body.imageUrls?.length)
-    console.log("Aspect Ratio:", body.aspectRatio)
+    const { 
+      userInstructions, 
+      propertyDescription, 
+      contactNumber, 
+      imageUrls, 
+      aspectRatio 
+    } = body
 
-    // 3. Check n8n URL
-    const webhookUrl = process.env.N8N_WEBHOOK_URL
-    if (!webhookUrl) {
-      throw new Error("Missing N8N_WEBHOOK_URL in .env.local")
+    // 3. Construct the Prompt (Logic ported from n8n)
+    const masterPrompt = `
+CONTEXT FROM USER:
+"${userInstructions || ''}"
+
+PROPERTY DETAILS:
+"${propertyDescription || ''}"
+
+MANDATORY INCLUSIONS:
+- Include the Contact Number: "${contactNumber || ''}"
+- Include the Brand logo.
+
+design a facebook ad graphic from the provided images, whatever info you see in photos and provided description that is provided, use that, include the contact number, the creative should be attention grabbing and readable, only use the relevant and essential info in the creative, don't clutter it too much, if there is any specific user instruction, give that high priority.
+`
+
+    // 4. Prepare Kie.ai Payload
+    // Ensure we have at least one image if possible, or undefined if empty
+    const finalImages = (imageUrls && imageUrls.length > 0) ? imageUrls : undefined
+
+    const payload = {
+      model: "nano-banana-pro",
+      input: {
+        prompt: masterPrompt,
+        image_input: finalImages,
+        aspect_ratio: aspectRatio || "1:1",
+        resolution: "1K",
+        output_format: "png"
+      }
     }
 
-    // 4. Send to n8n
-    console.log(`Sending to n8n (${webhookUrl})...`)
-    
-    const n8nResponse = await fetch(webhookUrl, {
+    // 5. Call Kie.ai to START the job
+    const kieResponse = await fetch('https://api.kie.ai/api/v1/jobs/createTask', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.KIE_API_KEY}`
       },
-      body: JSON.stringify({
-        userId: user.id,
-        userEmail: user.email,
-        
-        // Passing the Creative Ingredients
-        userInstructions: body.userInstructions || "",
-        propertyDescription: body.propertyDescription || "",
-        propertyTitle: body.propertyTitle || "",
-        contactNumber: body.contactNumber || "",
-        businessName: body.businessName || "",
-        
-        // Technical Specs
-        mode: body.mode,
-        imageUrls: body.imageUrls || [],
-        aspectRatio: body.aspectRatio || "1:1"
-      }),
+      body: JSON.stringify(payload)
     })
 
-    // 5. Handle n8n Response safely
-    console.log("n8n HTTP Status:", n8nResponse.status)
-    
-    const responseText = await n8nResponse.text()
-    console.log("n8n Raw Response:", responseText) // <--- THIS IS THE KEY TO THE ERROR
-
-    if (!n8nResponse.ok) {
-      throw new Error(`n8n Error: ${n8nResponse.status} - ${responseText}`)
+    if (!kieResponse.ok) {
+      const errText = await kieResponse.text()
+      throw new Error(`Kie.ai Error: ${errText}`)
     }
 
-    // Parse JSON only if successful
-    let data
-    try {
-      data = JSON.parse(responseText)
-    } catch (e) {
-      // If n8n returns just "Workflow started" (text), we handle it
-      data = { message: responseText, taskId: responseText } // Fallback
-    }
+    const kieData = await kieResponse.json()
 
-    console.log("--- API/CHAT DEBUG END (Success) ---")
-    return NextResponse.json(data)
+    // 6. Return the Task ID to Frontend
+    // The frontend will now automatically poll /api/check-status
+    return NextResponse.json({ 
+      success: true, 
+      taskId: kieData.data.taskId 
+    })
 
   } catch (error: any) {
-    console.error("!!! API CRASHED !!!")
-    console.error(error)
-    return NextResponse.json(
-      { error: error.message || "Internal Server Error" }, 
-      { status: 500 }
-    )
+    console.error("Generate Error:", error)
+    return NextResponse.json({ error: error.message || 'Generation failed' }, { status: 500 })
   }
 }

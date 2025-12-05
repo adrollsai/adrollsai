@@ -1,66 +1,29 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  })
+  // Better-Auth stores the session in this cookie
+  const sessionCookie = request.cookies.get("better-auth.session_token")
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            request.cookies.set(name, value)
-          )
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
+  const isDashboard = request.nextUrl.pathname.startsWith('/dashboard')
+  const isLoginPage = request.nextUrl.pathname === '/'
 
-  // This refreshes the session if it's expired
-  const { data: { user } } = await supabase.auth.getUser()
-
-  // REDIRECT LOGIC:
-  // 1. If user IS logged in and is on the Login Page (/), send them to Dashboard
-  if (user && request.nextUrl.pathname === '/') {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
-  // 2. If user is NOT logged in and tries to visit Dashboard, send them to Login
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
+  // 1. Protect Dashboard: If trying to access dashboard but no cookie, go to Login
+  if (isDashboard && !sessionCookie) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
-  return response
+  // 2. Redirect Logged-in Users: If on Login page but have a cookie, go to Dashboard
+  if (isLoginPage && sessionCookie) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  return NextResponse.next()
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - auth (auth routes)
-     * Feel free to modify this pattern to include more paths.
-     */
-    '/((?!_next/static|_next/image|favicon.ico|auth).*)',
-    '/((?!_next/static|_next/image|favicon.ico|auth|shared).*)',
+    // Apply to dashboard routes and the login page
+    '/dashboard/:path*',
+    '/',
   ],
 }

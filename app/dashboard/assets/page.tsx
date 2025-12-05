@@ -28,20 +28,16 @@ export default function AssetsPage() {
   // 1. Fetch Assets
   useEffect(() => {
     const fetchAssets = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data } = await supabase
-        .from('assets')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-
-      if (data) setAssets(data)
-      setLoading(false)
+      // No more supabase.auth.getUser()
+      const res = await fetch('/api/assets');
+      if (res.ok) {
+        const data = await res.json();
+        setAssets(data);
+      }
+      setLoading(false);
     }
-    fetchAssets()
-  }, [])
+    fetchAssets();
+  }, []);
 
   // 2. Handle Post to Facebook
   const handlePostFacebook = async () => {

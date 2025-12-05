@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-// Added 'Check' to imports for the filter UI
-import { Plus, Search, MapPin, X, Loader2, Share2, Image as ImageIcon, Link as LinkIcon, Filter, LogOut, Check } from 'lucide-react'
-import { createClient } from '@/utils/supabase/client'
+import { Plus, Search, Tag, X, Loader2, Share2, Image as ImageIcon, Link as LinkIcon, Filter, Check } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { authClient } from '@/lib/auth-client'
 
 // --- Helper for Price Parsing ---
 const parsePrice = (priceStr: string | null) => {
@@ -12,79 +11,69 @@ const parsePrice = (priceStr: string | null) => {
   return parseInt(priceStr.replace(/[^0-9]/g, '') || '0')
 }
 
-type Property = {
+// Data Type (Keys match DB, but we treat them generically)
+type Item = {
   id: string
   title: string
-  address: string
+  address: string // Used as Subtitle/Location
   price: string
   status: string
-  image_url: string
+  imageUrl: string 
   images: string[]
   description?: string
-  property_type?: string // Added this field
-  user_id: string 
+  propertyType?: string // Used as Category
+  userId: string 
 }
 
-const PROPERTY_TYPES = ['Residential', 'Commercial', 'Plots']
+// Generic Categories
+const CATEGORIES = ['Product', 'Service', 'Other']
 
 export default function InventoryPage() {
-  const supabase = createClient()
   const router = useRouter()
   
-  // --- STATE ---
-  const [properties, setProperties] = useState<Property[]>([])
+  // --- AUTH STATE ---
+  const { data: session, isPending: isAuthLoading } = authClient.useSession()
+
+  // --- DATA STATE ---
+  const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
-  const [authError, setAuthError] = useState(false)
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   
   // Filter State
   const [searchQuery, setSearchQuery] = useState('')
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([]) // Multi-select state
+  const [selectedCats, setSelectedCats] = useState<string[]>([])
   const [showFilters, setShowFilters] = useState(false)
   
   // UI State
   const [showAddModal, setShowAddModal] = useState(false)
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
+  const [selectedItem, setSelectedItem] = useState<Item | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   
   // Form State
-  const [newProp, setNewProp] = useState({ 
+  const [newItem, setNewItem] = useState({ 
     title: '', 
-    address: '', 
+    subtitle: '', // Maps to 'address'
     price: '', 
     description: '',
-    property_type: 'Residential' // Default
+    category: 'Product' // Maps to 'property_type'
   })
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
   
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 1. SAFE FETCH
-  const fetchProperties = async () => {
+  // 1. FETCH ITEMS
+  const fetchItems = async () => {
+    if (!session?.user) return
     try {
       setLoading(true)
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
-        setAuthError(true)
-        setLoading(false)
-        return
+      // We still hit the existing API endpoint
+      const res = await fetch('/api/properties')
+      if (res.ok) {
+        const data = await res.json()
+        setItems(data)
       }
-      
-      setCurrentUserId(user.id)
-
-      const { data, error: dbError } = await supabase
-        .from('properties')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-
-      if (dbError) throw dbError
-      if (data) setProperties(data)
-
     } catch (error) {
       console.error("Error loading inventory:", error)
     } finally {
@@ -92,14 +81,12 @@ export default function InventoryPage() {
     }
   }
 
-  useEffect(() => { fetchProperties() }, [])
+  useEffect(() => { 
+    if (session?.user) fetchItems()
+  }, [session])
 
   // --- ACTIONS ---
-  const handleManualLogout = async () => {
-    await supabase.auth.signOut()
-    window.location.href = '/'
-  }
-
+  
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files)
@@ -109,112 +96,108 @@ export default function InventoryPage() {
     }
   }
 
-  const handleAddProperty = async () => {
-    if (!newProp.address || !newProp.price || !newProp.title) {
-        alert("Please fill in Title, Address and Price.")
+  const handleAddItem = async () => {
+    // Basic Validation
+    if (!newItem.subtitle || !newItem.price || !newItem.title) {
+        alert("Please fill in Title, Subtitle and Price.")
         return
     }
     setIsSubmitting(true)
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error("Not authenticated")
-
       const uploadedUrls: string[] = []
 
+      // Upload Images
       if (selectedFiles.length > 0) {
-        const uploadPromises = selectedFiles.map(async (file) => {
-          const fileExt = file.name.split('.').pop()
-          const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
-          const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, file)
-          if (uploadError) throw uploadError
-          const { data: { publicUrl } } = supabase.storage.from('properties').getPublicUrl(fileName)
-          return publicUrl
-        })
-        const results = await Promise.all(uploadPromises)
-        uploadedUrls.push(...results)
+        for (const file of selectedFiles) {
+          const formData = new FormData()
+          formData.append('file', file)
+
+          const uploadRes = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+          })
+
+          if (!uploadRes.ok) throw new Error('Failed to upload image')
+          
+          const data = await uploadRes.json()
+          uploadedUrls.push(data.url)
+        }
       } else {
-          uploadedUrls.push(`https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newProp.title)}`)
+        uploadedUrls.push(`https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newItem.title)}`)
       }
 
-      const { error } = await supabase.from('properties').insert({
-          user_id: user.id,
-          title: newProp.title,
-          address: newProp.address,
-          price: newProp.price,
-          description: newProp.description,
-          property_type: newProp.property_type, // Saving the type
-          status: 'Active',
-          image_url: uploadedUrls[0],
-          images: uploadedUrls
-        })
+      // Save to DB
+      const res = await fetch('/api/properties', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: newItem.title,
+            address: newItem.subtitle, // Mapping subtitle -> address DB field
+            price: newItem.price,
+            description: newItem.description,
+            property_type: newItem.category, // Mapping category -> property_type DB field
+            image_url: uploadedUrls[0],
+            images: uploadedUrls
+          })
+      })
 
-      if (error) throw error
+      if (!res.ok) throw new Error("Failed to save item")
 
-      await fetchProperties()
+      await fetchItems()
       setShowAddModal(false)
-      setNewProp({ title: '', address: '', price: '', description: '', property_type: 'Residential' })
+      setNewItem({ title: '', subtitle: '', price: '', description: '', category: 'Product' })
       setSelectedFiles([])
       setPreviews([])
 
     } catch (error: any) {
-      alert('Error adding property: ' + error.message)
+      alert('Error: ' + error.message)
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  // Toggle filter type
-  const toggleFilterType = (type: string) => {
-    setSelectedTypes(prev => 
-      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+  const toggleFilterCat = (cat: string) => {
+    setSelectedCats(prev => 
+      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
     )
   }
 
   const handleCopyFilteredLink = () => {
-    if (!currentUserId) return
+    if (!session?.user) return
     const params = new URLSearchParams()
     if (minPrice) params.set('min', minPrice)
     if (maxPrice) params.set('max', maxPrice)
     if (searchQuery) params.set('q', searchQuery)
-    if (selectedTypes.length > 0) params.set('types', selectedTypes.join(',')) // Pass types to URL
+    if (selectedCats.length > 0) params.set('types', selectedCats.join(','))
     
-    const shareUrl = `${window.location.origin}/shared/${currentUserId}?${params.toString()}`
+    const shareUrl = `${window.location.origin}/shared/${session.user.id}?${params.toString()}`
     navigator.clipboard.writeText(shareUrl)
     alert("✅ Link Copied!")
   }
 
-  const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
-    e.stopPropagation()
-    try {
-      const shareText = `🏡 ${prop.title}\n📍 ${prop.address}\n💰 ${prop.price}`
-      if (navigator.share) {
-        await navigator.share({ title: prop.title, text: shareText, url: prop.image_url })
-      } else {
-        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank')
-      }
-    } catch (error) { console.log("Share cancelled") } 
-  }
+  // --- RENDER ---
+  
+  if (isAuthLoading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
+  
+  if (!session) return (
+    <div className="flex h-screen items-center justify-center flex-col gap-4">
+        <p className="text-slate-500">Please sign in to view dashboard</p>
+        <button onClick={() => router.push('/')} className="bg-primary px-4 py-2 rounded-xl text-primary-text font-bold">Go to Login</button>
+    </div>
+  )
 
-  // --- FILTER LOGIC ---
-  const filteredProperties = properties.filter(p => {
-    const priceVal = parsePrice(p.price)
+  const filteredItems = items.filter(item => {
+    const priceVal = parsePrice(item.price)
     const min = minPrice ? parseInt(minPrice) : 0
     const max = maxPrice ? parseInt(maxPrice) : Infinity
     
-    // Type Filter Logic
-    const matchesType = selectedTypes.length === 0 || (p.property_type && selectedTypes.includes(p.property_type))
-    
+    const matchesCat = selectedCats.length === 0 || (item.propertyType && selectedCats.includes(item.propertyType))
     const matchesPrice = priceVal >= min && priceVal <= max
-    const matchesSearch = p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          p.address.toLowerCase().includes(searchQuery.toLowerCase())
-    
-    return matchesPrice && matchesSearch && matchesType
+    const matchesSearch = item.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          item.address.toLowerCase().includes(searchQuery.toLowerCase())
+    return matchesPrice && matchesSearch && matchesCat
   })
-
-  // --- RENDER ---
-  if (authError) return <div className="flex h-screen items-center justify-center"><button onClick={handleManualLogout}>Login Again</button></div>
-  if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
 
   return (
     <div className="p-5 max-w-md mx-auto relative min-h-screen pb-24">
@@ -223,7 +206,7 @@ export default function InventoryPage() {
       <div className="flex justify-between items-end mb-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Inventory</h1>
-          <p className="text-slate-500 text-xs mt-1">Manage your active listings</p>
+          <p className="text-slate-500 text-xs mt-1">Manage your products & services</p>
         </div>
         <div className="flex gap-2">
             <button onClick={() => setShowFilters(!showFilters)} className={`p-3 rounded-full shadow-md active:scale-95 transition-transform ${showFilters ? 'bg-slate-800 text-white' : 'bg-white text-slate-700'}`}>
@@ -238,7 +221,6 @@ export default function InventoryPage() {
       {/* FILTER BAR */}
       {showFilters && (
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-4 animate-in slide-in-from-top-2 space-y-3">
-            {/* Price Row */}
             <div className="flex gap-3">
                 <div className="flex-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Min Price</label>
@@ -249,26 +231,23 @@ export default function InventoryPage() {
                     <input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="Any" className="w-full bg-slate-50 p-2 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" />
                 </div>
             </div>
-
-            {/* Type Row (Multi-select) */}
             <div>
-               <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Property Type</label>
+               <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Category</label>
                <div className="flex gap-2 flex-wrap">
-                 {PROPERTY_TYPES.map(type => {
-                   const isSelected = selectedTypes.includes(type)
+                 {CATEGORIES.map(cat => {
+                   const isSelected = selectedCats.includes(cat)
                    return (
                      <button 
-                       key={type} 
-                       onClick={() => toggleFilterType(type)}
+                       key={cat} 
+                       onClick={() => toggleFilterCat(cat)}
                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 ${isSelected ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}
                      >
-                       {type} {isSelected && <Check size={12} />}
+                       {cat} {isSelected && <Check size={12} />}
                      </button>
                    )
                  })}
                </div>
             </div>
-
             <button onClick={handleCopyFilteredLink} className="w-full bg-blue-50 text-blue-600 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform border border-blue-100">
                 <LinkIcon size={14} /> Copy Link for Client
             </button>
@@ -282,39 +261,40 @@ export default function InventoryPage() {
           type="text" 
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search properties..." 
+          placeholder="Search items..." 
           className="w-full bg-white border-none py-3 pl-10 pr-4 rounded-xl shadow-sm text-sm text-slate-700 focus:ring-2 focus:ring-primary outline-none" 
         />
       </div>
 
       {/* List */}
       <div className="flex flex-col gap-4">
-        {filteredProperties.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">No properties found.</div> : (
-          filteredProperties.map((prop) => (
+        {loading ? <div className="text-center py-10 text-slate-400"><Loader2 className="animate-spin inline mr-2"/> Loading...</div> : 
+         filteredItems.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">No items found.</div> : (
+          filteredItems.map((item) => (
             <div 
-              key={prop.id} 
-              onClick={() => setSelectedProperty(prop)}
+              key={item.id} 
+              onClick={() => setSelectedItem(item)}
               className="bg-white p-3 rounded-[1.5rem] shadow-sm border border-slate-100 relative group cursor-pointer active:scale-95 transition-transform"
             >
               <div className="relative h-40 w-full rounded-2xl overflow-hidden bg-slate-100 mb-3">
-                <img src={prop.image_url} alt="Property" className="w-full h-full object-cover" />
+                <img src={item.imageUrl} alt="Item" className="w-full h-full object-cover" />
                 <div className="absolute top-3 left-3 flex gap-1">
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-white/90 text-slate-700 backdrop-blur-sm">{prop.status}</span>
-                    {prop.property_type && <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-slate-900/80 text-white backdrop-blur-sm">{prop.property_type}</span>}
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-white/90 text-slate-700 backdrop-blur-sm">{item.status}</span>
+                    {item.propertyType && <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-slate-900/80 text-white backdrop-blur-sm">{item.propertyType}</span>}
                 </div>
               </div>
               <div className="px-1 pb-1 flex justify-between items-start">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-800">{prop.title || 'Untitled'}</h3>
-                  <p className="text-sm font-bold text-slate-900 mt-0.5">{prop.price}</p>
+                  <h3 className="text-lg font-bold text-slate-800">{item.title || 'Untitled'}</h3>
+                  <p className="text-sm font-bold text-slate-900 mt-0.5">{item.price}</p>
                   <div className="flex items-center gap-1.5 text-slate-500 mt-1">
-                    <MapPin size={14} />
-                    <span className="text-xs font-medium truncate">{prop.address}</span>
+                    <Tag size={14} />
+                    <span className="text-xs font-medium truncate">{item.address}</span>
                   </div>
                 </div>
-                <button onClick={(e) => handleNativeShare(e, prop)} className="bg-green-50 text-green-600 p-3 rounded-full hover:bg-green-100 transition-colors active:scale-90">
+                <div className="bg-green-50 text-green-600 p-3 rounded-full">
                   <Share2 size={20} />
-                </button>
+                </div>
               </div>
             </div>
           ))
@@ -326,7 +306,7 @@ export default function InventoryPage() {
         <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">New Listing</h2>
+              <h2 className="text-xl font-bold text-slate-800">New Item</h2>
               <button onClick={() => setShowAddModal(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
             </div>
             <div className="space-y-4">
@@ -337,47 +317,47 @@ export default function InventoryPage() {
               </div>
               {previews.length > 0 && <div className="flex gap-2 overflow-x-auto pb-2">{previews.map((src, i) => <img key={i} src={src} className="w-16 h-16 rounded-lg object-cover border border-slate-100" />)}</div>}
               
-              {/* Type Selector */}
+              {/* Category Selector */}
               <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Type</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Category</label>
                   <div className="flex gap-2">
-                      {PROPERTY_TYPES.map(type => (
+                      {CATEGORIES.map(cat => (
                           <button 
-                            key={type}
-                            onClick={() => setNewProp({...newProp, property_type: type})}
-                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${newProp.property_type === type ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-500 border-slate-50'}`}
+                            key={cat}
+                            onClick={() => setNewItem({...newItem, category: cat})}
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${newItem.category === cat ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-500 border-slate-50'}`}
                           >
-                              {type}
+                              {cat}
                           </button>
                       ))}
                   </div>
               </div>
 
-              <input type="text" value={newProp.title} onChange={(e) => setNewProp({...newProp, title: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Title" />
-              <input type="text" value={newProp.address} onChange={(e) => setNewProp({...newProp, address: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Address" />
-              <input type="text" value={newProp.price} onChange={(e) => setNewProp({...newProp, price: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Price" />
-              <textarea value={newProp.description} onChange={(e) => setNewProp({...newProp, description: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Description..." rows={3} />
-              <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold">{isSubmitting ? 'Saving...' : 'Save'}</button>
+              <input type="text" value={newItem.title} onChange={(e) => setNewItem({...newItem, title: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Item Name" />
+              <input type="text" value={newItem.subtitle} onChange={(e) => setNewItem({...newItem, subtitle: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Subtitle / Details" />
+              <input type="text" value={newItem.price} onChange={(e) => setNewItem({...newItem, price: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Price" />
+              <textarea value={newItem.description} onChange={(e) => setNewItem({...newItem, description: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Description..." rows={3} />
+              <button onClick={handleAddItem} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold">{isSubmitting ? 'Saving...' : 'Save'}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* VIEW MODAL (unchanged but includes property_type display) */}
-      {selectedProperty && (
+      {/* VIEW MODAL */}
+      {selectedItem && (
         <div className="fixed inset-0 z-[90] bg-white flex flex-col animate-in slide-in-from-bottom-10">
-           <div className="absolute top-4 left-4 z-10"><button onClick={() => setSelectedProperty(null)} className="bg-white/80 backdrop-blur-md p-3 rounded-full shadow-sm text-slate-900"><X size={24} /></button></div>
-           <div className="h-[45vh] bg-slate-100 w-full overflow-x-auto flex snap-x snap-mandatory scrollbar-hide">{(selectedProperty.images || [selectedProperty.image_url]).map((img, i) => <img key={i} src={img} className="w-full h-full object-cover flex-shrink-0 snap-center" />)}</div>
+           <div className="absolute top-4 left-4 z-10"><button onClick={() => setSelectedItem(null)} className="bg-white/80 backdrop-blur-md p-3 rounded-full shadow-sm text-slate-900"><X size={24} /></button></div>
+           <div className="h-[45vh] bg-slate-100 w-full overflow-x-auto flex snap-x snap-mandatory scrollbar-hide">{(selectedItem.images || [selectedItem.imageUrl]).map((img, i) => <img key={i} src={img} className="w-full h-full object-cover flex-shrink-0 snap-center" />)}</div>
            <div className="flex-1 p-6 overflow-y-auto bg-white -mt-6 rounded-t-[2rem] relative z-0">
               <div className="flex justify-between items-start">
                   <div>
-                    <h2 className="text-2xl font-bold text-slate-900">{selectedProperty.title}</h2>
-                    <p className="text-lg font-bold text-primary-text mt-1">{selectedProperty.price}</p>
+                    <h2 className="text-2xl font-bold text-slate-900">{selectedItem.title}</h2>
+                    <p className="text-lg font-bold text-primary-text mt-1">{selectedItem.price}</p>
                   </div>
-                  {selectedProperty.property_type && <span className="px-3 py-1 bg-slate-100 rounded-full text-xs font-bold text-slate-500">{selectedProperty.property_type}</span>}
+                  {selectedItem.propertyType && <span className="px-3 py-1 bg-slate-100 rounded-full text-xs font-bold text-slate-500">{selectedItem.propertyType}</span>}
               </div>
-              <div className="flex items-center gap-2 text-slate-500 my-4"><MapPin size={18} /><span className="text-sm">{selectedProperty.address}</span></div>
-              <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">{selectedProperty.description}</p>
+              <div className="flex items-center gap-2 text-slate-500 my-4"><Tag size={18} /><span className="text-sm">{selectedItem.address}</span></div>
+              <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">{selectedItem.description}</p>
            </div>
         </div>
       )}

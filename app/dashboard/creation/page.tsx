@@ -69,27 +69,33 @@ export default function CreationPage() {
   // 1. Fetch Data (Profile + Properties)
   useEffect(() => {
     const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      // Get Profile
-      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      if (profileData) setProfile(profileData)
-
-      // Get Properties (Explicit Selection to ensure fields are grabbed)
-      const { data: props } = await supabase
-        .from('properties')
-        .select('id, title, address, price, images, image_url, description, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-      
-      if (props) {
-        console.log("--- DEBUG: LOADED PROPERTIES ---")
-        console.log(props) // Check your Browser Console for this!
-        setProperties(props)
+      try {
+        // Fetch properties from our new API
+        const res = await fetch('/api/properties');
+        if (res.ok) {
+          const props = await res.json();
+          setProperties(props);
+        }
+        
+        // Fetch Profile (needed for logo/branding)
+        const profileRes = await fetch('/api/profile');
+        if (profileRes.ok) {
+            const profileData = await profileRes.json();
+            // Map the API response to the shape this component expects
+            setProfile({
+                id: profileData.id,
+                business_name: profileData.businessName,
+                contact_number: profileData.contactNumber,
+                logo_url: profileData.logoUrl,
+                brand_color: profileData.brandColor,
+                mission_statement: profileData.missionStatement
+            });
+        }
+      } catch (e) {
+        console.error(e);
       }
     }
-    init()
+    init();
   }, [])
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, isThinking])
@@ -239,13 +245,21 @@ export default function CreationPage() {
         // Since n8n flow also has "Create a row", we might duplicate it, 
         // but frontend doesn't know what n8n did. This is a safe backup.
         if (profile) {
-            await supabase.from('daily_drafts').insert({
-                user_id: profile.id,
-                image_url: finalImageUrl,
-                caption: `🔥 ${prop.title}! ${prop.price}. Contact: ${profile.contact_number}`,
-                status: 'pending'
-            })
-        }
+          await supabase.from('assets').insert({
+             user_id: profile.id,
+             url: finalImageUrl,
+             type: mode, // 'image' or 'video'
+             status: 'Draft'
+         })
+     }
+        // if (profile) {
+        //     await supabase.from('daily_drafts').insert({
+        //         user_id: profile.id,
+        //         image_url: finalImageUrl,
+        //         caption: `🔥 ${prop.title}! ${prop.price}. Contact: ${profile.contact_number}`,
+        //         status: 'pending'
+        //     })
+        // }
 
         const aiMsg: Message = { 
           id: Date.now() + 1, 
