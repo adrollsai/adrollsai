@@ -241,30 +241,21 @@ export default function CreationPage() {
       }
 
       if (finalImageUrl) {
-        // Auto-Save to Drafts (Only if not already saved by n8n)
-        // Since n8n flow also has "Create a row", we might duplicate it, 
-        // but frontend doesn't know what n8n did. This is a safe backup.
-        if (profile) {
-          await supabase.from('assets').insert({
-             user_id: profile.id,
-             url: finalImageUrl,
-             type: mode, // 'image' or 'video'
-             status: 'Draft'
-         })
-     }
-        // if (profile) {
-        //     await supabase.from('daily_drafts').insert({
-        //         user_id: profile.id,
-        //         image_url: finalImageUrl,
-        //         caption: `🔥 ${prop.title}! ${prop.price}. Contact: ${profile.contact_number}`,
-        //         status: 'pending'
-        //     })
-        // }
+        // SAVE TO DB (Using our new API)
+        await fetch('/api/assets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                url: finalImageUrl,
+                type: mode,
+                status: 'Draft'
+            })
+        });
 
         const aiMsg: Message = { 
           id: Date.now() + 1, 
           role: 'ai', 
-          text: `I've created a ${orientationText} design using the "${randomStyle.name}" style. It's saved to your Drafts!`,
+          text: `I've created a ${orientationText} design using the "${randomStyle.name}" style. It's saved to your Assets!`,
           mediaType: mode,
           mediaUrl: finalImageUrl
         }

@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
+import { auth } from '@/lib/auth' // Better-Auth
+import { headers } from 'next/headers'
 
 export async function POST(request: Request) {
   try {
-    // 1. Auth Check
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // 1. Auth Check (Replaced Supabase with Better-Auth)
+    const session = await auth.api.getSession({
+        headers: await headers()
+    });
+    
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
     // 2. Parse Input
     const body = await request.json()
@@ -18,7 +23,7 @@ export async function POST(request: Request) {
       aspectRatio 
     } = body
 
-    // 3. Construct the Prompt (Logic ported from n8n)
+    // 3. Construct the Prompt
     const masterPrompt = `
 CONTEXT FROM USER:
 "${userInstructions || ''}"
@@ -34,7 +39,6 @@ design a facebook ad graphic from the provided images, whatever info you see in 
 `
 
     // 4. Prepare Kie.ai Payload
-    // Ensure we have at least one image if possible, or undefined if empty
     const finalImages = (imageUrls && imageUrls.length > 0) ? imageUrls : undefined
 
     const payload = {
@@ -48,7 +52,7 @@ design a facebook ad graphic from the provided images, whatever info you see in 
       }
     }
 
-    // 5. Call Kie.ai to START the job
+    // 5. Call Kie.ai
     const kieResponse = await fetch('https://api.kie.ai/api/v1/jobs/createTask', {
       method: 'POST',
       headers: {
@@ -65,8 +69,7 @@ design a facebook ad graphic from the provided images, whatever info you see in 
 
     const kieData = await kieResponse.json()
 
-    // 6. Return the Task ID to Frontend
-    // The frontend will now automatically poll /api/check-status
+    // 6. Return Task ID
     return NextResponse.json({ 
       success: true, 
       taskId: kieData.data.taskId 

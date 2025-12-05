@@ -1,7 +1,18 @@
 import { NextResponse } from 'next/server'
+import { auth } from '@/lib/auth'
+import { headers } from 'next/headers'
 
 export async function POST(request: Request) {
-  // 1. Get the Task ID from the frontend
+  // 1. Auth Check
+  const session = await auth.api.getSession({
+      headers: await headers()
+  });
+  
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // 2. Get Task ID
   const body = await request.json()
   const { taskId } = body
 
@@ -10,8 +21,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    // 2. Ask Kie.ai: "Is this task done?"
-    // We use the KIE_API_KEY from your .env.local file
+    // 3. Ask Kie.ai
     const response = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}`, {
       method: 'GET',
       headers: {
@@ -24,8 +34,6 @@ export async function POST(request: Request) {
     }
 
     const data = await response.json()
-    
-    // 3. Send the answer back to the frontend
     return NextResponse.json(data)
 
   } catch (error: any) {

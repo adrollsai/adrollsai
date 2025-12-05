@@ -13,11 +13,10 @@ export const auth = betterAuth({
         verification: schema.verification
     }
   }),
-  // ADD THIS SECTION
   account: {
     accountLinking: {
       enabled: true,
-      trustedProviders: ["google", "facebook", "linkedin"], 
+      allowDifferentEmails: true // <--- THIS IS THE MAGIC FIX
     }
   },
   socialProviders: {
@@ -45,4 +44,5 @@ export const auth = betterAuth({
       scope: ["openid", "profile", "email", "w_member_social"]
     }
   },
+  plugins: [] 
 });
