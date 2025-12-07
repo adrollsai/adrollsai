@@ -29,10 +29,9 @@ export const user = pgTable("user", {
   selectedPageToken: text('selected_page_token'),
   selectedPageName: text('selected_page_name'),
   
-  // WhatsApp
-  whatsappBusinessId: text('whatsapp_business_id'),
-  whatsappPhoneId: text('whatsapp_phone_id'),
-  whatsappAccessToken: text('whatsapp_access_token'),
+  // Meta Ads
+  adAccountId: text('ad_account_id'),
+  adAccountName: text('ad_account_name'),
 });
 
 export const session = pgTable("session", {
