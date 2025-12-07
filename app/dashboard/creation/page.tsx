@@ -1,3 +1,5 @@
+// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/dashboard/creation/page.tsx
+
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
@@ -85,7 +87,7 @@ export default function CreationPage() {
       
       if (props) {
         console.log("--- DEBUG: LOADED PROPERTIES ---")
-        console.log(props) // Check your Browser Console for this!
+        console.log(props) 
         setProperties(props)
       }
     }
@@ -166,14 +168,14 @@ export default function CreationPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-            // RAW INGREDIENTS (For n8n Logic)
+            // RAW INGREDIENTS
             userInstructions: userText,
             propertyDescription: prop.description || "",
             propertyTitle: prop.title || "",
             contactNumber: profile?.contact_number || "",
             businessName: profile?.business_name || "",
             
-            // COMPILED PROMPT (For fallback)
+            // COMPILED PROMPT 
             message: finalPrompt, 
             
             // TECHNICAL SPECS
@@ -187,13 +189,12 @@ export default function CreationPage() {
       
       let finalImageUrl = ''
 
-      // CASE 1: Immediate Result (Synchronous n8n flow)
-      // Your current n8n flow finishes and returns { "text": "...", "image": "URL" }
-      if (startData.image) {
-        finalImageUrl = startData.image
-      } 
-      // CASE 2: Async Result (Polling required)
-      else if (startData.taskId) {
+      // ⚠️ MIGRATION FIX: The flow is now strictly asynchronous.
+      if (startData.error) {
+        throw new Error(startData.error)
+      }
+      
+      if (startData.taskId) {
         const taskId = startData.taskId 
         let attempts = 0
         const maxAttempts = 30 // 30 * 4s = 120s timeout
@@ -213,18 +214,22 @@ export default function CreationPage() {
             const checkData = await checkResponse.json()
             
             // Success Check
-            if (checkData.data && checkData.data.resultJson) {
-                try {
-                    const resultObj = JSON.parse(checkData.data.resultJson)
-                    if (resultObj.resultUrls?.[0]) {
-                        finalImageUrl = resultObj.resultUrls[0]
-                        break // EXIT LOOP
-                    }
-                } catch(e) { console.error("JSON Parse Error in polling", e)}
-            } 
-            else if (checkData.data && checkData.data.state === 'success' && checkData.data.resultUrl) {
-                finalImageUrl = checkData.data.resultUrl
-                break // EXIT LOOP
+            if (checkData.data && checkData.data.state === 'success') { 
+                // Check for the nested resultJson field (Kie.ai standard for image models)
+                if (checkData.data.resultJson) {
+                    try {
+                        const resultObj = JSON.parse(checkData.data.resultJson)
+                        if (resultObj.resultUrls?.[0]) {
+                            finalImageUrl = resultObj.resultUrls[0]
+                            break // EXIT LOOP
+                        }
+                    } catch(e) { console.error("JSON Parse Error in polling", e)}
+                }
+                // Fallback for direct URL field
+                else if (checkData.data.resultUrl) {
+                    finalImageUrl = checkData.data.resultUrl
+                    break // EXIT LOOP
+                }
             }
             else if (checkData.data && checkData.data.state === 'failed') {
                 throw new Error("Generation failed: " + (checkData.data.failMsg || "Unknown error"))
@@ -232,25 +237,27 @@ export default function CreationPage() {
             
             // If still 'processing' or 'queueing', the loop continues...
         }
+      } else {
+          // Fallback if chat/route.ts succeeded but didn't return a taskId
+          throw new Error("Generation task could not be started.")
       }
 
       if (finalImageUrl) {
-        // Auto-Save to Drafts (Only if not already saved by n8n)
-        // Since n8n flow also has "Create a row", we might duplicate it, 
-        // but frontend doesn't know what n8n did. This is a safe backup.
+        // MIGRATION FIX: Insert to 'assets' table (not 'daily_drafts')
         if (profile) {
-            await supabase.from('daily_drafts').insert({
+            await supabase.from('assets').insert({
                 user_id: profile.id,
-                image_url: finalImageUrl,
-                caption: `🔥 ${prop.title}! ${prop.price}. Contact: ${profile.contact_number}`,
-                status: 'pending'
+                url: finalImageUrl,
+                type: mode, // 'image' or 'video'
+                status: 'Draft'
             })
         }
 
         const aiMsg: Message = { 
           id: Date.now() + 1, 
           role: 'ai', 
-          text: `I've created a ${orientationText} design using the "${randomStyle.name}" style. It's saved to your Drafts!`,
+          // MIGRATION FIX: Updated message to point to the correct tab.
+          text: `I've created a ${orientationText} design using the "${randomStyle.name}" style. It's saved to your Assets tab!`, 
           mediaType: mode,
           mediaUrl: finalImageUrl
         }

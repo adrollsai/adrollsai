@@ -12,6 +12,12 @@ type FBPage = {
   category: string
 }
 
+// NEW TYPE FOR AD ACCOUNTS
+type AdAccount = {
+  id: string
+  name: string
+}
+
 export default function ProfilePage() {
   const router = useRouter()
   const supabase = createClient()
@@ -31,9 +37,15 @@ export default function ProfilePage() {
   const [isGoogleConnected, setIsGoogleConnected] = useState(false)
   const [isYoutubeConnected, setIsYoutubeConnected] = useState(false) 
   
+  // FIX: New state variable to hold the token outside of useEffect scope
+  const [facebookToken, setFacebookToken] = useState<string | null>(null); 
+  
   const [fbPages, setFbPages] = useState<FBPage[]>([])
+  const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]) 
   const [selectedPageId, setSelectedPageId] = useState<string>('')
+  const [selectedAdAccountId, setSelectedAdAccountId] = useState<string>('') 
   const [isLoadingPages, setIsLoadingPages] = useState(false)
+  const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false) 
 
   // Profile Data (Updated with Social URLs)
   const [formData, setFormData] = useState({
@@ -53,6 +65,7 @@ export default function ProfilePage() {
   // --- HELPERS ---
   const isValidFacebookToken = (token: string) => token && token.startsWith('EAA')
 
+  // Existing: Fetch Pages
   const fetchPages = async () => {
     setIsLoadingPages(true)
     try {
@@ -71,6 +84,32 @@ export default function ProfilePage() {
     }
   }
 
+  // NEW: Fetch Ad Accounts
+  const fetchAdAccounts = async (token: string) => { // Use 'token' argument locally
+    setIsLoadingAdAccounts(true);
+    try {
+        const res = await fetch(`https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name&access_token=${token}`);
+        const data = await res.json();
+        
+        const formattedAccounts = data.data?.map((acc: any) => ({
+            id: acc.id,
+            name: acc.name,
+        })) || [];
+
+        if (formattedAccounts.length > 0) {
+            setAdAccounts(formattedAccounts);
+        } else {
+            console.error("Error fetching ad accounts:", data.error?.message || "No ad accounts found.");
+            setAdAccounts([]);
+        }
+    } catch (e) {
+        console.error("Network error fetching ad accounts:", e);
+        setAdAccounts([]);
+    } finally {
+        setIsLoadingAdAccounts(false);
+    }
+  }
+
   const handlePageSelect = async (pageId: string) => {
     const page = fbPages.find(p => p.id === pageId)
     if (!page || !userId) return
@@ -80,6 +119,17 @@ export default function ProfilePage() {
       selected_page_id: page.id,
       selected_page_name: page.name,
       selected_page_token: page.access_token
+    }).eq('id', userId)
+  }
+
+  // NEW: Handle Ad Account Select
+  const handleAdAccountSelect = async (adAccountId: string) => {
+    if (!userId) return
+
+    setSelectedAdAccountId(adAccountId)
+    // Save the selected Ad Account ID to the user's profile
+    await supabase.from('profiles').update({
+      ad_account_id: adAccountId, 
     }).eq('id', userId)
   }
 
@@ -109,7 +159,7 @@ export default function ProfilePage() {
 
         const { data: profile } = await supabase
           .from('profiles')
-          .select('*')
+          .select('*, facebook_token, selected_page_id, ad_account_id') 
           .eq('id', user.id)
           .single()
 
@@ -126,16 +176,28 @@ export default function ProfilePage() {
             youtubeUrl: profile.youtube_url || ''
           })
           
-          // Facebook
+          // Facebook & Ad Account Logic
           if (profile.facebook_token && isValidFacebookToken(profile.facebook_token)) {
             setIsFacebookConnected(true)
+            
+            // FIX: Set the facebookToken state here
+            setFacebookToken(profile.facebook_token); 
+            
+            // Fetch pages 
             if (profile.selected_page_id) {
               setSelectedPageId(profile.selected_page_id)
             } else {
               fetchPages()
             }
+            
+            // NEW: Fetch Ad Accounts using the fetched token
+            setSelectedAdAccountId(profile.ad_account_id || '')
+            fetchAdAccounts(profile.facebook_token); 
+            
           } else {
              setIsFacebookConnected(false)
+             setFacebookToken(null); // Clear token
+             setAdAccounts([]); 
           }
 
           // LinkedIn
@@ -175,7 +237,8 @@ export default function ProfilePage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'facebook',
       options: {
-        scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management',
+        // ADD ads_management SCOPE
+        scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management',
         redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=facebook',
       }
     })
@@ -225,12 +288,16 @@ export default function ProfilePage() {
     setIsDisconnecting(true)
     if (userId) {
       await supabase.from('profiles').update({ 
-        facebook_token: null, selected_page_id: null, selected_page_name: null, selected_page_token: null
+        facebook_token: null, selected_page_id: null, selected_page_name: null, selected_page_token: null,
+        ad_account_id: null // NEW: Clear ad account ID
       }).eq('id', userId)
     }
     setIsFacebookConnected(false)
+    setFacebookToken(null) // Clear token state
     setFbPages([])
+    setAdAccounts([]) 
     setSelectedPageId('')
+    setSelectedAdAccountId('') 
     setIsDisconnecting(false)
   }
 
@@ -332,7 +399,7 @@ export default function ProfilePage() {
     <div className="p-5 max-w-md mx-auto min-h-screen pb-32">
       
       {/* Header */}
-      <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 flex flex-col items-center text-center">
+      <div className="w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-lg border border-blue-50 flex flex-col items-center text-center">
         <div onClick={() => !uploadingLogo && fileInputRef.current?.click()} className="w-24 h-24 bg-slate-50 rounded-full mb-3 flex items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-200 hover:border-primary transition-all">
           {uploadingLogo ? <Loader2 className="animate-spin text-slate-400" /> : formData.logoUrl ? <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-1"><Upload size={20} className="text-slate-300" /><span className="text-[8px] text-slate-400 font-bold uppercase">Upload</span></div>}
           <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
@@ -351,7 +418,7 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
                 <div className="bg-[#1877F2] p-2 rounded-full text-white"><Facebook size={18} fill="white" /></div>
-                <div><h4 className="font-bold text-sm text-slate-800">Facebook</h4><p className="text-[10px] text-slate-400">{isFacebookConnected ? 'Account Linked' : 'Connect to automate'}</p></div>
+                <div><h4 className="font-bold text-sm text-slate-800">Facebook & Instagram</h4><p className="text-[10px] text-slate-400">{isFacebookConnected ? 'Account Linked' : 'Connect to automate'}</p></div>
                 </div>
                 {isFacebookConnected ? (
                 <button onClick={handleDisconnectFacebook} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
@@ -361,28 +428,53 @@ export default function ProfilePage() {
             </div>
 
             {isFacebookConnected && (
-                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
-                <div className="flex justify-between items-center mb-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Posting Page</label>
-                    <button onClick={fetchPages} className="text-[10px] text-blue-500 font-bold">Refresh</button>
-                </div>
-                {isLoadingPages ? (
-                    <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing...</div>
-                ) : fbPages.length > 0 ? (
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {fbPages.map(page => (
-                        <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                        <span className={`text-xs font-bold truncate ${selectedPageId === page.id ? 'text-slate-800' : 'text-slate-500'}`}>{page.name}</span>
-                        {selectedPageId === page.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-                        </button>
-                    ))}
+                <div className="space-y-4 pt-3">
+                    
+                    {/* Page Selector */}
+                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
+                    <div className="flex justify-between items-center mb-2">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Posting Page</label>
+                        <button onClick={fetchPages} className="text-[10px] text-blue-500 font-bold">Refresh</button>
                     </div>
-                ) : (
-                    <div className="py-2">
-                    <p className="text-xs text-slate-400 mb-2">No pages found.</p>
-                    <button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions / Refresh List</button>
+                    {isLoadingPages ? (
+                        <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing pages...</div>
+                    ) : fbPages.length > 0 ? (
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                        {fbPages.map(page => (
+                            <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
+                            <span className={`text-xs font-bold truncate ${selectedPageId === page.id ? 'text-slate-800' : 'text-slate-500'}`}>{page.name}</span>
+                            {selectedPageId === page.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                            </button>
+                        ))}
+                        </div>
+                    ) : (
+                        <div className="py-2"><p className="text-xs text-slate-400 mb-2">No pages found.</p><button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions / Refresh List</button></div>
+                    )}
                     </div>
-                )}
+                    
+                    {/* NEW AD ACCOUNT SELECTOR */}
+                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
+                    <div className="flex justify-between items-center mb-2">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Ad Account</label>
+                        {/* FIX: Use the state variable facebookToken for the onClick handler */}
+                        <button onClick={() => facebookToken && fetchAdAccounts(facebookToken)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
+                    </div>
+                    {isLoadingAdAccounts ? (
+                        <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing accounts...</div>
+                    ) : adAccounts.length > 0 ? (
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                        {adAccounts.map(account => (
+                            <button key={account.id} onClick={() => handleAdAccountSelect(account.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedAdAccountId === account.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
+                            {/* Display name and ID */}
+                            <span className={`text-xs font-bold truncate ${selectedAdAccountId === account.id ? 'text-slate-800' : 'text-slate-500'}`}>{account.name} ({account.id})</span>
+                            {selectedAdAccountId === account.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                            </button>
+                        ))}
+                        </div>
+                    ) : (
+                        <div className="py-2"><p className="text-xs text-slate-400 mb-2">No Ad Accounts found. Ensure Ads Management permission is granted.</p><button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions / Refresh List</button></div>
+                    )}
+                    </div>
                 </div>
             )}
           </div>

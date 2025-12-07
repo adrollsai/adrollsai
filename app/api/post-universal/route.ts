@@ -1,5 +1,8 @@
+// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/api/post-universal/route.ts
+
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { postToFacebook, postToInstagram, postToLinkedIn, postToYouTube } from '@/utils/external-apis' // <--- NEW IMPORT
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -23,39 +26,27 @@ export async function POST(request: Request) {
   const results: Record<string, string> = {}
   const promises: Promise<void>[] = []
 
-  // --- HELPER ---
-  const sendToN8N = async (platform: string, url: string | undefined, payload: any) => {
-    if (!url) {
-      results[platform] = 'skipped_missing_env_var'
-      return
-    }
+  // --- HELPER (UPDATED to call direct functions) ---
+  const sendToPlatform = async (platform: string, fn: () => Promise<any>) => {
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
-      if (response.ok) {
-        results[platform] = 'success'
-      } else {
-        const text = await response.text()
-        console.error(`[Universal Post] ${platform} failed:`, text)
-        results[platform] = `Failed: ${text}` 
-      }
+      await fn()
+      results[platform] = 'success'
     } catch (error: any) {
-      console.error(`[Universal Post] ${platform} network error:`, error)
-      results[platform] = `Error: ${error.message}`
+      const errorMessage = error.message || 'Unknown Error'
+      console.error(`[Universal Post] ${platform} failed:`, errorMessage)
+      // Safely shorten error message for the response
+      results[platform] = `Failed: ${errorMessage.substring(0, 100)}...`
     }
   }
 
   // --- FACEBOOK ---
   if (platforms.includes('facebook')) {
     if (profile.selected_page_token) {
-      promises.push(sendToN8N('facebook', process.env.N8N_SOCIAL_WEBHOOK_URL, {
-        accessToken: profile.selected_page_token,
-        imageUrl,
+      promises.push(sendToPlatform('facebook', () => postToFacebook(
+        profile.selected_page_token!, 
+        imageUrl, 
         caption
-      }))
+      )))
     } else {
       results.facebook = 'skipped_no_token'
     }
@@ -64,49 +55,46 @@ export async function POST(request: Request) {
   // --- INSTAGRAM ---
   if (platforms.includes('instagram')) {
     if (profile.selected_page_token && profile.selected_page_id) {
-      promises.push(sendToN8N('instagram', process.env.N8N_INSTAGRAM_WEBHOOK_URL, {
-        accessToken: profile.selected_page_token,
-        pageId: profile.selected_page_id,
-        imageUrl,
+      promises.push(sendToPlatform('instagram', () => postToInstagram(
+        profile.selected_page_token!, 
+        profile.selected_page_id!, 
+        imageUrl, 
         caption
-      }))
+      )))
     } else {
-      results.instagram = 'skipped_no_token'
+      results.instagram = 'skipped_no_token_or_page_id' 
     }
   }
 
   // --- LINKEDIN ---
   if (platforms.includes('linkedin')) {
     if (profile.linkedin_token) {
-      promises.push(sendToN8N('linkedin', process.env.N8N_LINKEDIN_WEBHOOK_URL, {
-        accessToken: profile.linkedin_token,
-        imageUrl,
+      promises.push(sendToPlatform('linkedin', () => postToLinkedIn(
+        profile.linkedin_token!, 
+        imageUrl, 
         caption
-      }))
+      )))
     } else {
       results.linkedin = 'skipped_no_token'
     }
   }
 
   // --- YOUTUBE (Video ONLY) ---
-  if (platforms.includes('youtube')) {
-    // CHANGE: Strictly check if type is 'video' before proceeding
-    if (type === 'video') {
-        if (profile.youtube_token) {
-            promises.push(sendToN8N('youtube', process.env.N8N_YOUTUBE_WEBHOOK_URL, {
-                accessToken: profile.youtube_token,
-                videoUrl: imageUrl, 
-                title: title || 'New Listing',
-                description: caption,
-                privacy: 'public'
-            }))
-        } else {
-            results.youtube = 'skipped_no_token'
-        }
+  if (platforms.includes('youtube') && type === 'video') {
+    if (profile.youtube_token) {
+        promises.push(sendToPlatform('youtube', () => postToYouTube(
+            profile.youtube_token!,
+            imageUrl, 
+            title || 'New Listing',
+            caption,
+            'public'
+        )))
     } else {
-        // Explicitly record that we skipped it because it wasn't a video
-        results.youtube = 'skipped_not_video'
+        results.youtube = 'skipped_no_token'
     }
+  } else if (platforms.includes('youtube')) {
+    // Explicitly record that we skipped it because it wasn't a video
+    results.youtube = 'skipped_not_video'
   }
 
   await Promise.all(promises)

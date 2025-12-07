@@ -1,5 +1,8 @@
+// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/api/chat/route.ts
+
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { createKieTask } from '@/utils/external-apis'; 
 
 export async function POST(request: Request) {
   console.log("--- API/CHAT DEBUG START ---")
@@ -24,59 +27,48 @@ export async function POST(request: Request) {
     console.log("Images Count:", body.imageUrls?.length)
     console.log("Aspect Ratio:", body.aspectRatio)
 
-    // 3. Check n8n URL
-    const webhookUrl = process.env.N8N_WEBHOOK_URL
-    if (!webhookUrl) {
-      throw new Error("Missing N8N_WEBHOOK_URL in .env.local")
-    }
+    // 3. Construct Payload (REPLACING n8n CODE NODE)
+    const masterPrompt = `
+CONTEXT FROM USER:
+"${body.userInstructions || ''}"
 
-    // 4. Send to n8n
-    console.log(`Sending to n8n (${webhookUrl})...`)
+PROPERTY DETAILS:
+"${body.propertyDescription || ''}"
+
+MANDATORY INCLUSIONS:
+- Include the Contact Number: "${body.contactNumber || ''}"
+- Include the Brand logo.
+
+design a facebook ad graphic from the provided images, whatever info you see in photos and provided description that is provided, use that, include the contact number, the creative should be attention grabbing and readable, only use the relevant and essential info in the creative, don't clutter it too much, if there is any specific user instruction, give that high priority.
+`;
+
+    const payload = {
+      "model": "nano-banana-pro",
+      "input": {
+        "prompt": masterPrompt,
+        "image_input": body.imageUrls || [],
+        "aspect_ratio": body.aspectRatio || "1:1",
+        "resolution": "1K",
+        "output_format": "png"
+      }
+    };
     
-    const n8nResponse = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        userId: user.id,
-        userEmail: user.email,
-        
-        // Passing the Creative Ingredients
-        userInstructions: body.userInstructions || "",
-        propertyDescription: body.propertyDescription || "",
-        propertyTitle: body.propertyTitle || "",
-        contactNumber: body.contactNumber || "",
-        businessName: body.businessName || "",
-        
-        // Technical Specs
-        mode: body.mode,
-        imageUrls: body.imageUrls || [],
-        aspectRatio: body.aspectRatio || "1:1"
-      }),
-    })
-
-    // 5. Handle n8n Response safely
-    console.log("n8n HTTP Status:", n8nResponse.status)
+    // 4. Send to Kie.ai directly (REPLACING N8N WEBHOOK CALL)
+    console.log(`Sending task to Kie.ai...`)
     
-    const responseText = await n8nResponse.text()
-    console.log("n8n Raw Response:", responseText) // <--- THIS IS THE KEY TO THE ERROR
+    // FIX START: Capture the result object and check if 'error' property exists.
+    const kieResult = await createKieTask(payload);
 
-    if (!n8nResponse.ok) {
-      throw new Error(`n8n Error: ${n8nResponse.status} - ${responseText}`)
+    if ('error' in kieResult) {
+      throw new Error(`Kie AI Task creation failed: ${kieResult.error}`)
     }
-
-    // Parse JSON only if successful
-    let data
-    try {
-      data = JSON.parse(responseText)
-    } catch (e) {
-      // If n8n returns just "Workflow started" (text), we handle it
-      data = { message: responseText, taskId: responseText } // Fallback
-    }
-
-    console.log("--- API/CHAT DEBUG END (Success) ---")
-    return NextResponse.json(data)
+    
+    const taskId = kieResult.taskId;
+    // FIX END
+    
+    // 5. Return taskId for polling
+    console.log("--- API/CHAT DEBUG END (Success - Polling Started) ---")
+    return NextResponse.json({ taskId })
 
   } catch (error: any) {
     console.error("!!! API CRASHED !!!")

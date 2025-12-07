@@ -1,5 +1,8 @@
+// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/api/post-social/route.ts
+
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { postToFacebook } from '@/utils/external-apis' // <--- NEW IMPORT
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -12,7 +15,6 @@ export async function POST(request: Request) {
   const { imageUrl, caption } = body
 
   // 2. GET THE SPECIFIC PAGE TOKEN FROM DB
-  // We look for 'selected_page_token' which matches the page the user clicked in the UI
   const { data: profile } = await supabase
     .from('profiles')
     .select('selected_page_token, selected_page_name')
@@ -25,26 +27,15 @@ export async function POST(request: Request) {
     }, { status: 400 })
   }
 
-  // 3. Send to n8n
+  // 3. Post directly to Facebook (REPLACING N8N WEBHOOK CALL)
   try {
-    // We send the Page Token as 'accessToken', so n8n can use it directly
-    const n8nResponse = await fetch(process.env.N8N_SOCIAL_WEBHOOK_URL!, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        accessToken: profile.selected_page_token, // Using the Page Token
-        imageUrl,
-        caption
-      }),
-    })
-
-    if (!n8nResponse.ok) {
-      const text = await n8nResponse.text()
-      throw new Error(`n8n error: ${text}`)
-    }
+    const result = await postToFacebook(
+      profile.selected_page_token,
+      imageUrl,
+      caption
+    );
     
-    const result = await n8nResponse.json()
-    return NextResponse.json(result)
+    return NextResponse.json({ success: true, postId: result.id })
 
   } catch (error: any) {
     console.error(error)

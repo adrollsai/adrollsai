@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutGrid, Sparkles, Grid3X3, MessageCircle, User } from 'lucide-react'
+import { LayoutGrid, Sparkles, Grid3X3, MessageCircle, User, Zap } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
@@ -9,7 +9,8 @@ export default function BottomNav() {
 
   const navItems = [
     { name: 'Inventory', icon: LayoutGrid, path: '/dashboard' },
-    { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
+    // { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
+    { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
   ]

@@ -1,5 +1,8 @@
+// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/api/post-linkedin/route.ts
+
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { postToLinkedIn } from '@/utils/external-apis' // <--- NEW IMPORT
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -23,25 +26,15 @@ export async function POST(request: Request) {
     }, { status: 400 })
   }
 
-  // 2. Send to n8n
+  // 2. Post directly to LinkedIn (REPLACING N8N WEBHOOK CALL)
   try {
-    const n8nResponse = await fetch(process.env.N8N_LINKEDIN_WEBHOOK_URL!, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        accessToken: profile.linkedin_token,
+    const result = await postToLinkedIn(
+        profile.linkedin_token,
         imageUrl,
         caption
-      }),
-    })
+    );
 
-    if (!n8nResponse.ok) {
-      const text = await n8nResponse.text()
-      throw new Error(`n8n error: ${text}`)
-    }
-    
-    const result = await n8nResponse.json()
-    return NextResponse.json(result)
+    return NextResponse.json({ success: true, id: result.id })
 
   } catch (error: any) {
     console.error(error)

@@ -1,5 +1,8 @@
+// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/api/check-status/route.ts
+
 import { NextResponse } from 'next/server'
 
+// The check-status route must call Kie.ai directly
 export async function POST(request: Request) {
   // 1. Get the Task ID from the frontend
   const body = await request.json()
@@ -15,7 +18,7 @@ export async function POST(request: Request) {
     const response = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${process.env.KIE_API_KEY}`
+        'Authorization': `Bearer ${process.env.KIE_API_KEY}` // <-- Ensure this is still correct
       }
     })
 
