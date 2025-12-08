@@ -3,7 +3,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Zap, Plus, X, Loader2, DollarSign, Building2, Image as ImageIcon, Upload, Film, RefreshCw, Circle, ExternalLink } from 'lucide-react'
+import { Zap, Plus, X, Loader2, DollarSign, Building2, Image as ImageIcon, Upload, RefreshCw, ExternalLink } from 'lucide-react' // Added ExternalLink
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -25,7 +25,7 @@ type Asset = {
 type Campaign = {
     id: string
     name: string
-    status: string // 'ACTIVE', 'PAUSED', 'ARCHIVED'
+    status: string 
     objective: string
 }
 
@@ -40,7 +40,7 @@ export default function AdsPage() {
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [togglingId, setTogglingId] = useState<string | null>(null) // To show spinner on specific toggle
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   // --- DATA STATE ---
   const [campaigns, setCampaigns] = useState<Campaign[]>([]) 
@@ -77,27 +77,20 @@ export default function AdsPage() {
       }
   }
 
-  // --- TOGGLE CAMPAIGN STATUS ---
   const handleToggleStatus = async (id: string, currentStatus: string) => {
       const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
       setTogglingId(id);
-
-      // 1. Optimistic UI Update (Make it feel instant)
       setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c));
 
       try {
-          // 2. Call API
           const res = await fetch('/api/meta-ads/update-status', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ campaignId: id, newStatus })
           });
-
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
-
       } catch (error: any) {
-          // 3. Revert if failed
           alert(`Failed to update status: ${error.message}`);
           setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: currentStatus } : c));
       } finally {
@@ -130,17 +123,12 @@ export default function AdsPage() {
       if (propsRes.data) setProperties(propsRes.data)
       if (assetsRes.data) setAssets(assetsRes.data as Asset[])
 
-      if (profile?.ad_account_id) {
-          await fetchCampaigns();
-      }
+      if (profile?.ad_account_id) await fetchCampaigns();
 
       setLoading(false)
     }
     loadData()
-    
-    return () => {
-        localCreativePreviews.forEach(url => URL.revokeObjectURL(url));
-    };
+    return () => { localCreativePreviews.forEach(url => URL.revokeObjectURL(url)); };
   }, [])
   
   // --- HANDLERS ---
@@ -185,8 +173,9 @@ export default function AdsPage() {
     formPayload.append('linkUrl', adForm.linkUrl);
     formPayload.append('privacyPolicyUrl', adForm.privacyPolicyUrl);
 
-    adForm.selectedSourceIds.forEach((id, index) => {
-        formPayload.append(`selectedSourceIds[${index}]`, id);
+    // FIX: Simplified the appending key to just 'selectedSourceIds'
+    adForm.selectedSourceIds.forEach((id) => {
+        formPayload.append('selectedSourceIds', id);
     });
 
     localCreatives.forEach((file, index) => {
@@ -241,7 +230,6 @@ export default function AdsPage() {
         </div>
       </div>
 
-      {/* CAMPAIGN LIST */}
       <div className="flex flex-col gap-4"> 
         {campaigns.length === 0 ? (
             <div className="text-center py-10 text-slate-400 text-sm bg-white rounded-2xl border border-dashed border-slate-100">
@@ -249,46 +237,28 @@ export default function AdsPage() {
             </div>
         ) : (
             campaigns.map(campaign => (
-                <div 
-                    key={campaign.id} 
-                    // UPDATED CARD STYLING: Deeper shadow (shadow-lg), stronger border (border-slate-200)
-                    className="bg-white p-5 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200 transition-all hover:border-blue-200"
-                >
+                <div key={campaign.id} className="bg-white p-5 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200 transition-all hover:border-blue-200">
                     <div className="flex justify-between items-start mb-3">
                         <div className="max-w-[65%]">
                             <h3 className="text-sm font-bold text-slate-800 truncate leading-tight">{campaign.name}</h3>
                             <p className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">{campaign.objective.replace('OUTCOME_', '')}</p>
                         </div>
-                        
-                        {/* TOGGLE SWITCH */}
                         <div className="flex items-center gap-2">
                             {togglingId === campaign.id && <Loader2 size={12} className="animate-spin text-slate-400" />}
-                            <button 
-                                onClick={() => handleToggleStatus(campaign.id, campaign.status)}
-                                className={`w-11 h-6 rounded-full p-1 transition-colors duration-300 ease-in-out ${campaign.status === 'ACTIVE' ? 'bg-green-500' : 'bg-slate-200'}`}
-                            >
+                            <button onClick={() => handleToggleStatus(campaign.id, campaign.status)} className={`w-11 h-6 rounded-full p-1 transition-colors duration-300 ease-in-out ${campaign.status === 'ACTIVE' ? 'bg-green-500' : 'bg-slate-200'}`}>
                                 <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-300 ${campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'}`} />
                             </button>
                         </div>
                     </div>
-                    
                     <div className="flex justify-between items-center text-xs text-slate-500 pt-3 border-t border-slate-50">
                         <span className="font-mono text-[10px] opacity-60">ID: {campaign.id.slice(-6)}</span>
-                        <a 
-                            href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} 
-                            target="_blank" 
-                            rel="noreferrer"
-                            className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:underline"
-                        >
-                            Ads Manager <ExternalLink size={10} />
-                        </a>
+                        <a href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:underline">Ads Manager <ExternalLink size={10} /></a>
                     </div>
                 </div>
             ))
         )}
       </div>
       
-      {/* LAUNCH MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
@@ -298,7 +268,6 @@ export default function AdsPage() {
             </div>
             
             <div className="space-y-4">
-              {/* Form Content (Unchanged) */}
               <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
                   <button onClick={() => { setAdForm(prev => ({...prev, sourceType: 'inventory', selectedSourceIds: []})); setLocalCreatives([]); }} className={`flex-1 flex items-center gap-1 px-2 py-2 rounded-lg text-[10px] font-bold transition-all ${adForm.sourceType === 'inventory' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}> <Building2 size={12} /> Inventory </button>
                   <button onClick={() => { setAdForm(prev => ({...prev, sourceType: 'asset', selectedSourceIds: []})); setLocalCreatives([]); }} className={`flex-1 flex items-center gap-1 px-2 py-2 rounded-lg text-[10px] font-bold transition-all ${adForm.sourceType === 'asset' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}> <ImageIcon size={12} /> Assets </button>
@@ -330,52 +299,23 @@ export default function AdsPage() {
               </div>
 
               <h3 className="pt-2 border-t border-slate-100 text-[10px] font-bold text-slate-400 uppercase ml-1">Campaign Settings</h3>
-              
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Website URL</label>
-                <input type="url" value={adForm.linkUrl} onChange={(e) => setAdForm(prev => ({...prev, linkUrl: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="https://yourwebsite.com" />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Privacy Policy URL <span className="text-red-400">*</span></label>
-                <input type="url" value={adForm.privacyPolicyUrl} onChange={(e) => setAdForm(prev => ({...prev, privacyPolicyUrl: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="https://yourwebsite.com/privacy" />
-              </div>
-
-              <div>
-                  <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Target Location</label>
-                  <input type="text" value={adForm.targetLocation} onChange={(e) => setAdForm(prev => ({...prev, targetLocation: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="e.g. Mohali, Tricity Area" />
-              </div>
+              <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Website URL</label><input type="url" value={adForm.linkUrl} onChange={(e) => setAdForm(prev => ({...prev, linkUrl: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="https://yourwebsite.com" /></div>
+              <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Privacy Policy URL <span className="text-red-400">*</span></label><input type="url" value={adForm.privacyPolicyUrl} onChange={(e) => setAdForm(prev => ({...prev, privacyPolicyUrl: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="https://yourwebsite.com/privacy" /></div>
+              <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Target Location</label><input type="text" value={adForm.targetLocation} onChange={(e) => setAdForm(prev => ({...prev, targetLocation: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="e.g. Mohali, Tricity Area" /></div>
 
               <div className="flex gap-4">
-                  <div className="flex-1">
-                      <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Gender</label>
-                      <select value={adForm.gender} onChange={(e) => setAdForm(prev => ({...prev, gender: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none">
-                          {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
-                      </select>
-                  </div>
-                  <div className="flex-1">
-                      <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Budget (₹)</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span>
-                        <input type="number" min="100" step="100" value={adForm.dailyBudgetINR} onChange={(e) => setAdForm(prev => ({...prev, dailyBudgetINR: parseInt(e.target.value) || 0}))} className="w-full bg-slate-50 py-3 pl-6 pr-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" />
-                      </div>
-                  </div>
+                  <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Gender</label><select value={adForm.gender} onChange={(e) => setAdForm(prev => ({...prev, gender: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none">{GENDERS.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+                  <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Budget (₹)</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span><input type="number" min="100" step="100" value={adForm.dailyBudgetINR} onChange={(e) => setAdForm(prev => ({...prev, dailyBudgetINR: parseInt(e.target.value) || 0}))} className="w-full bg-slate-50 py-3 pl-6 pr-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" /></div></div>
               </div>
 
-              <button 
-                  onClick={handleLaunchCampaign} 
-                  disabled={isSubmitting || !adForm.targetLocation || !adForm.privacyPolicyUrl} 
-                  className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70"
-              >
+              <button onClick={handleLaunchCampaign} disabled={isSubmitting || !adForm.targetLocation || !adForm.privacyPolicyUrl} className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70">
                   {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
                   {isSubmitting ? 'AI Launching...' : 'Launch Lead Campaign'}
               </button>
-
             </div>
           </div>
         </div>
       )}
-
     </div>
   )
 }

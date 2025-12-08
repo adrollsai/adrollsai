@@ -1,159 +1,93 @@
 
-[2025-12-08T13:42:40.684Z] === STARTING CAMPAIGN LAUNCH (HARDCODED MODE) ===
+[2025-12-08T15:18:24.954Z] === STARTING AI CAMPAIGN LAUNCH ===
 
 ------------------------------------------------
 
-[2025-12-08T13:42:40.687Z] Account: act_3659699197644830 | Page: 184834498054577
+[2025-12-08T15:18:24.959Z] Source Type: inventory | Account: act_3659699197644830
 
 ------------------------------------------------
 
-[2025-12-08T13:42:40.693Z] --- 1. CREATING LEAD FORM ---
+[2025-12-08T15:18:24.970Z] Selected IDs:
+[
+  "0ba1996d-bd16-4825-b482-5dd6128b9500"
+]
+------------------------------------------------
+
+[2025-12-08T15:18:25.347Z] ✅ Found 2 images in array.
 
 ------------------------------------------------
 
-[2025-12-08T13:42:40.696Z] Lead Form Payload:
+[2025-12-08T15:18:25.351Z] --- 1. CREATING LEAD FORM ---
+
+------------------------------------------------
+
+[2025-12-08T15:18:27.169Z] ✅ Lead Form Created: 847244421245644
+
+------------------------------------------------
+
+[2025-12-08T15:18:27.173Z] --- 2. UPLOADING CREATIVES ---
+
+------------------------------------------------
+
+[2025-12-08T15:18:27.176Z] Processing 2 URL(s)...
+
+------------------------------------------------
+
+[2025-12-08T15:18:27.187Z] Fetching & Uploading: https://ihyhqxlizxxxfmqthsaa.supabase.co/storage/v1/object/public/properties/b3d9fb26-038b-4505-a3c1-be33e13a8579-1764504206069-8pwyzq.png
+
+------------------------------------------------
+
+[2025-12-08T15:18:28.972Z] Fetching & Uploading: https://ihyhqxlizxxxfmqthsaa.supabase.co/storage/v1/object/public/properties/b3d9fb26-038b-4505-a3c1-be33e13a8579-1764504206072-2gxaev.webp
+
+------------------------------------------------
+
+[2025-12-08T15:18:35.216Z] ✅ Image 1 Uploaded: d2b5e42c8e6d06b99c9a568a68ec7aae
+
+------------------------------------------------
+
+[2025-12-08T15:18:35.220Z] ✅ Image 2 Uploaded: 67b97ee34c4f6b9f9e9a0b7d65324f3d
+
+------------------------------------------------
+
+[2025-12-08T15:18:35.224Z] --- 3. AI COPYWRITING ---
+
+------------------------------------------------
+
+[2025-12-08T15:18:42.040Z] AI Copy:
 {
-  "name": "Hardcoded Form 1765201360696",
-  "follow_up_action_url": "https://yourbusiness.com",
-  "question_page_custom_headline": "Get Details",
-  "question_page_custom_text": "Please confirm your info below.",
-  "privacy_policy": {
-    "url": "https://policies.google.com/privacy",
-    "link_text": "Privacy Policy"
-  },
-  "questions": [
-    {
-      "type": "FULL_NAME",
-      "key": "full_name"
-    },
-    {
-      "type": "EMAIL",
-      "key": "email"
-    },
-    {
-      "type": "PHONE",
-      "key": "phone_number"
-    }
-  ],
-  "access_token": "EAAMaVhrzxNABQJNsDNNxSTZCqCxiOQJCZCZAGbyAOZCsHYSVBft8qXJ8N0NEEjBpZA7pcZAM2GZC6wWNYS5SNdkF5t1xYxHipnresK9gQGUBHN9tU3dtSdZAhvxtOTeWxWXYsSlVrGboPA8JR4AhXpZCfDJU96vZBdWY4yse2ihlaii4gYMdcY4CTzVYZCZAI6hhDJfYcZBValVZCGRDrBhLKQXtwIp9AjbGSSZBZCiKd3NcFfdUVHF5MS0boMA9tmcMj9hba5qeesMNDlszvPLFxUhEzw1m9VxPkrYBZASViPKGr"
+  "primary_text": "Live smart at Ananta Aspire! Spacious 3/4 BHK homes with a rooftop infinity pool & automated luxury. Unmatched connectivity to Mohali. Your green oasis!",
+  "headline": "Ananta Aspire: Smart Living"
 }
 ------------------------------------------------
 
-[2025-12-08T13:42:42.008Z] ✅ Lead Form Created: 1394760998989214
+[2025-12-08T15:18:42.046Z] --- 4. CAMPAIGN ---
 
 ------------------------------------------------
 
-[2025-12-08T13:42:42.015Z] --- 2. UPLOADING CREATIVE ASSETS ---
+[2025-12-08T15:18:43.372Z] ✅ Campaign ID: 120236876189000403
 
 ------------------------------------------------
 
-[2025-12-08T13:43:12.964Z] ✅ Image 1 Uploaded. Hash: 81afe96b23b92437596d67cda45b2289
+[2025-12-08T15:18:43.376Z] --- 5. AD SET ---
 
 ------------------------------------------------
 
-[2025-12-08T13:43:12.972Z] --- 3. CREATING CAMPAIGN ---
+[2025-12-08T15:18:45.183Z] ✅ Ad Set ID: 120236876189260403
 
 ------------------------------------------------
 
-[2025-12-08T13:43:12.976Z] Campaign Payload:
-{
-  "name": "Hardcoded Lead Campaign - 2025-12-08T13:43",
-  "objective": "OUTCOME_LEADS",
-  "status": "PAUSED",
-  "buying_type": "AUCTION",
-  "daily_budget": 50000,
-  "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
-  "special_ad_categories": [
-    "HOUSING"
-  ],
-  "special_ad_category_country": [
-    "IN"
-  ],
-  "access_token": "EAAMaVhrzxNABQJNsDNNxSTZCqCxiOQJCZCZAGbyAOZCsHYSVBft8qXJ8N0NEEjBpZA7pcZAM2GZC6wWNYS5SNdkF5t1xYxHipnresK9gQGUBHN9tU3dtSdZAhvxtOTeWxWXYsSlVrGboPA8JR4AhXpZCfDJU96vZBdWY4yse2ihlaii4gYMdcY4CTzVYZCZAI6hhDJfYcZBValVZCGRDrBhLKQXtwIp9AjbGSSZBZCiKd3NcFfdUVHF5MS0boMA9tmcMj9hba5qeesMNDlszvPLFxUhEzw1m9VxPkrYBZASViPKGr"
-}
-------------------------------------------------
-
-[2025-12-08T13:43:13.994Z] ✅ Campaign Created: 120236871162080403
+[2025-12-08T15:18:45.185Z] --- 6. CREATIVE ---
 
 ------------------------------------------------
 
-[2025-12-08T13:43:13.997Z] --- 4. CREATING AD SET ---
+[2025-12-08T15:18:46.709Z] ✅ Creative ID: 2115602755641958
 
 ------------------------------------------------
 
-[2025-12-08T13:43:13.999Z] Ad Set Payload:
-{
-  "name": "Hardcoded AdSet - IN Broad",
-  "campaign_id": "120236871162080403",
-  "destination_type": "ON_AD",
-  "optimization_goal": "LEAD_GENERATION",
-  "billing_event": "IMPRESSIONS",
-  "targeting": {
-    "geo_locations": {
-      "countries": [
-        "IN"
-      ]
-    }
-  },
-  "promoted_object": {
-    "page_id": "184834498054577"
-  },
-  "start_time": "2025-12-08T14:13:13.999Z",
-  "status": "PAUSED",
-  "access_token": "EAAMaVhrzxNABQJNsDNNxSTZCqCxiOQJCZCZAGbyAOZCsHYSVBft8qXJ8N0NEEjBpZA7pcZAM2GZC6wWNYS5SNdkF5t1xYxHipnresK9gQGUBHN9tU3dtSdZAhvxtOTeWxWXYsSlVrGboPA8JR4AhXpZCfDJU96vZBdWY4yse2ihlaii4gYMdcY4CTzVYZCZAI6hhDJfYcZBValVZCGRDrBhLKQXtwIp9AjbGSSZBZCiKd3NcFfdUVHF5MS0boMA9tmcMj9hba5qeesMNDlszvPLFxUhEzw1m9VxPkrYBZASViPKGr"
-}
-------------------------------------------------
-
-[2025-12-08T13:43:17.143Z] ✅ Ad Set Created: 120236871163740403
+[2025-12-08T15:18:46.710Z] --- 7. FINAL AD ---
 
 ------------------------------------------------
 
-[2025-12-08T13:43:17.146Z] --- 5. CREATING AD CREATIVE OBJECT ---
-
-------------------------------------------------
-
-[2025-12-08T13:43:17.150Z] Creative Payload:
-{
-  "name": "Hardcoded Creative - 1765201397150",
-  "object_story_spec": {
-    "page_id": "184834498054577",
-    "link_data": {
-      "message": "This is a test advertisement. Exclusive property deals available now.",
-      "name": "View Property Details",
-      "link": "https://yourbusiness.com",
-      "image_hash": "81afe96b23b92437596d67cda45b2289",
-      "call_to_action": {
-        "type": "SIGN_UP",
-        "value": {
-          "lead_gen_form_id": "1394760998989214"
-        }
-      }
-    }
-  },
-  "access_token": "EAAMaVhrzxNABQJNsDNNxSTZCqCxiOQJCZCZAGbyAOZCsHYSVBft8qXJ8N0NEEjBpZA7pcZAM2GZC6wWNYS5SNdkF5t1xYxHipnresK9gQGUBHN9tU3dtSdZAhvxtOTeWxWXYsSlVrGboPA8JR4AhXpZCfDJU96vZBdWY4yse2ihlaii4gYMdcY4CTzVYZCZAI6hhDJfYcZBValVZCGRDrBhLKQXtwIp9AjbGSSZBZCiKd3NcFfdUVHF5MS0boMA9tmcMj9hba5qeesMNDlszvPLFxUhEzw1m9VxPkrYBZASViPKGr"
-}
-------------------------------------------------
-
-[2025-12-08T13:43:18.930Z] ✅ Creative Object Created: 1902937233626614
-
-------------------------------------------------
-
-[2025-12-08T13:43:18.933Z] --- 6. CREATING FINAL AD ---
-
-------------------------------------------------
-
-[2025-12-08T13:43:18.936Z] Ad Payload:
-{
-  "name": "Hardcoded Ad - Final",
-  "adset_id": "120236871163740403",
-  "creative": {
-    "creative_id": "1902937233626614"
-  },
-  "status": "PAUSED",
-  "access_token": "EAAMaVhrzxNABQJNsDNNxSTZCqCxiOQJCZCZAGbyAOZCsHYSVBft8qXJ8N0NEEjBpZA7pcZAM2GZC6wWNYS5SNdkF5t1xYxHipnresK9gQGUBHN9tU3dtSdZAhvxtOTeWxWXYsSlVrGboPA8JR4AhXpZCfDJU96vZBdWY4yse2ihlaii4gYMdcY4CTzVYZCZAI6hhDJfYcZBValVZCGRDrBhLKQXtwIp9AjbGSSZBZCiKd3NcFfdUVHF5MS0boMA9tmcMj9hba5qeesMNDlszvPLFxUhEzw1m9VxPkrYBZASViPKGr"
-}
-------------------------------------------------
-
-[2025-12-08T13:43:20.979Z] ✅ Ad Created Successfully: 120236871180520403
+[2025-12-08T15:18:48.573Z] ✅ Ad Created: 120236876190140403
 
 ------------------------------------------------
