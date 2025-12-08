@@ -3,7 +3,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Zap, Plus, X, Loader2, DollarSign, Building2, Image as ImageIcon, Upload, Film } from 'lucide-react'
+import { Zap, Plus, X, Loader2, DollarSign, Building2, Image as ImageIcon, Upload, Film, RefreshCw, Circle, ExternalLink } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -22,6 +22,13 @@ type Asset = {
     url: string
 }
 
+type Campaign = {
+    id: string
+    name: string
+    status: string // 'ACTIVE', 'PAUSED', 'ARCHIVED'
+    objective: string
+}
+
 const GENDERS = ['All', 'Male', 'Female']
 
 export default function AdsPage() {
@@ -33,8 +40,10 @@ export default function AdsPage() {
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null) // To show spinner on specific toggle
 
   // --- DATA STATE ---
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]) 
   const [properties, setProperties] = useState<Property[]>([])
   const [assets, setAssets] = useState<Asset[]>([]) 
   const [selectedAdAccountId, setSelectedAdAccountId] = useState<string | null>(null)
@@ -49,7 +58,7 @@ export default function AdsPage() {
     dailyBudgetINR: 500,
     pageId: '', 
     linkUrl: 'https://yourbusiness.com', 
-    privacyPolicyUrl: '', // <--- NEW: Required for Lead Ads
+    privacyPolicyUrl: '', 
   })
   
   const [localCreatives, setLocalCreatives] = useState<File[]>([]);
@@ -58,12 +67,49 @@ export default function AdsPage() {
   const isVideoFile = (file: File) => file.type.startsWith('video/');
 
   // --- DATA FETCHING ---
+  const fetchCampaigns = async () => {
+      try {
+          const res = await fetch('/api/meta-ads/campaigns');
+          const data = await res.json();
+          if (data.campaigns) setCampaigns(data.campaigns);
+      } catch (e) {
+          console.error("Failed to load campaigns", e);
+      }
+  }
+
+  // --- TOGGLE CAMPAIGN STATUS ---
+  const handleToggleStatus = async (id: string, currentStatus: string) => {
+      const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+      setTogglingId(id);
+
+      // 1. Optimistic UI Update (Make it feel instant)
+      setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c));
+
+      try {
+          // 2. Call API
+          const res = await fetch('/api/meta-ads/update-status', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ campaignId: id, newStatus })
+          });
+
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error);
+
+      } catch (error: any) {
+          // 3. Revert if failed
+          alert(`Failed to update status: ${error.message}`);
+          setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: currentStatus } : c));
+      } finally {
+          setTogglingId(null);
+      }
+  }
+
   useEffect(() => {
     const loadData = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
 
-      // 1. Get Profile Data
       const { data: profile } = await supabase
         .from('profiles')
         .select('facebook_token, ad_account_id, selected_page_id') 
@@ -76,21 +122,17 @@ export default function AdsPage() {
         setAdForm(prev => ({...prev, pageId: profile.selected_page_id || ''})) 
       }
 
-      // 2. Get Inventory
-      const { data: props } = await supabase
-        .from('properties')
-        .select('id, title, price, image_url, description')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-      if (props) setProperties(props)
-      
-      // 3. Get Assets
-      const { data: assetsData } = await supabase
-        .from('assets')
-        .select('id, type, url')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-      if (assetsData) setAssets(assetsData as Asset[])
+      const [propsRes, assetsRes] = await Promise.all([
+          supabase.from('properties').select('id, title, price, image_url, description').eq('user_id', user.id).order('created_at', { ascending: false }),
+          supabase.from('assets').select('id, type, url').eq('user_id', user.id).order('created_at', { ascending: false })
+      ])
+
+      if (propsRes.data) setProperties(propsRes.data)
+      if (assetsRes.data) setAssets(assetsRes.data as Asset[])
+
+      if (profile?.ad_account_id) {
+          await fetchCampaigns();
+      }
 
       setLoading(false)
     }
@@ -102,7 +144,6 @@ export default function AdsPage() {
   }, [])
   
   // --- HANDLERS ---
-  
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
         const files = Array.from(e.target.files).slice(0, 3); 
@@ -129,12 +170,7 @@ export default function AdsPage() {
         alert("Please select a Property or Asset."); return;
     }
     if (!adForm.targetLocation || adForm.dailyBudgetINR < 100) { alert("Please set a target location and a reasonable budget."); return }
-    
-    // VALIDATION: Privacy Policy is mandatory for Lead Forms
-    if (!adForm.privacyPolicyUrl) {
-        alert("A Privacy Policy URL is required to create a Lead Form.");
-        return;
-    }
+    if (!adForm.privacyPolicyUrl) { alert("A Privacy Policy URL is required."); return; }
     
     setIsSubmitting(true)
     
@@ -147,8 +183,6 @@ export default function AdsPage() {
     formPayload.append('gender', adForm.gender);
     formPayload.append('dailyBudgetINR', (adForm.dailyBudgetINR * 100).toString()); 
     formPayload.append('linkUrl', adForm.linkUrl);
-    
-    // APPEND PRIVACY POLICY
     formPayload.append('privacyPolicyUrl', adForm.privacyPolicyUrl);
 
     adForm.selectedSourceIds.forEach((id, index) => {
@@ -168,11 +202,12 @@ export default function AdsPage() {
       const data = await res.json()
 
       if (res.ok) {
-        alert(`Success! Lead Gen Campaign Launched.\n\nCampaign ID: ${data.campaignId}\n${data.message}`);
+        alert(`${data.message}`);
         setIsModalOpen(false)
         setAdForm(prev => ({ ...prev, selectedSourceIds: [], targetLocation: '', dailyBudgetINR: 500 })) 
         setLocalCreatives([]);
         setLocalCreativePreviews([]);
+        fetchCampaigns();
       } else {
         throw new Error(data.error || 'Ad Campaign Failed to Start');
       }
@@ -198,17 +233,62 @@ export default function AdsPage() {
             <h1 className="text-2xl font-bold text-slate-900">Meta Ads AI</h1>
             <p className="text-slate-500 text-xs mt-1">AI-optimized Lead Gen campaigns</p>
         </div>
-        <button onClick={() => setIsModalOpen(true)} className="bg-primary hover:bg-blue-200 text-primary-text p-3 rounded-full shadow-md active:scale-95 transition-transform">
-          <Plus size={20} strokeWidth={3} />
-        </button>
-      </div>
-
-      <div className="flex flex-col gap-4">
-        <div className="text-center py-10 text-slate-400 text-sm bg-white rounded-2xl border border-dashed border-slate-100">
-            No active campaigns found. <br/>Tap '+' to launch a new Lead Gen campaign.
+        <div className="flex gap-2">
+            <button onClick={fetchCampaigns} className="bg-white text-slate-500 p-3 rounded-full shadow-sm border border-slate-100 active:scale-95 transition-transform"><RefreshCw size={20} /></button>
+            <button onClick={() => setIsModalOpen(true)} className="bg-primary hover:bg-blue-200 text-primary-text p-3 rounded-full shadow-md active:scale-95 transition-transform">
+            <Plus size={20} strokeWidth={3} />
+            </button>
         </div>
       </div>
+
+      {/* CAMPAIGN LIST */}
+      <div className="flex flex-col gap-4"> 
+        {campaigns.length === 0 ? (
+            <div className="text-center py-10 text-slate-400 text-sm bg-white rounded-2xl border border-dashed border-slate-100">
+                No campaigns found. <br/>Tap '+' to launch a new Lead Gen campaign.
+            </div>
+        ) : (
+            campaigns.map(campaign => (
+                <div 
+                    key={campaign.id} 
+                    // UPDATED CARD STYLING: Deeper shadow (shadow-lg), stronger border (border-slate-200)
+                    className="bg-white p-5 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200 transition-all hover:border-blue-200"
+                >
+                    <div className="flex justify-between items-start mb-3">
+                        <div className="max-w-[65%]">
+                            <h3 className="text-sm font-bold text-slate-800 truncate leading-tight">{campaign.name}</h3>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">{campaign.objective.replace('OUTCOME_', '')}</p>
+                        </div>
+                        
+                        {/* TOGGLE SWITCH */}
+                        <div className="flex items-center gap-2">
+                            {togglingId === campaign.id && <Loader2 size={12} className="animate-spin text-slate-400" />}
+                            <button 
+                                onClick={() => handleToggleStatus(campaign.id, campaign.status)}
+                                className={`w-11 h-6 rounded-full p-1 transition-colors duration-300 ease-in-out ${campaign.status === 'ACTIVE' ? 'bg-green-500' : 'bg-slate-200'}`}
+                            >
+                                <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-300 ${campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div className="flex justify-between items-center text-xs text-slate-500 pt-3 border-t border-slate-50">
+                        <span className="font-mono text-[10px] opacity-60">ID: {campaign.id.slice(-6)}</span>
+                        <a 
+                            href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:underline"
+                        >
+                            Ads Manager <ExternalLink size={10} />
+                        </a>
+                    </div>
+                </div>
+            ))
+        )}
+      </div>
       
+      {/* LAUNCH MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
@@ -218,8 +298,7 @@ export default function AdsPage() {
             </div>
             
             <div className="space-y-4">
-              
-              {/* Source Type Toggle */}
+              {/* Form Content (Unchanged) */}
               <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
                   <button onClick={() => { setAdForm(prev => ({...prev, sourceType: 'inventory', selectedSourceIds: []})); setLocalCreatives([]); }} className={`flex-1 flex items-center gap-1 px-2 py-2 rounded-lg text-[10px] font-bold transition-all ${adForm.sourceType === 'inventory' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}> <Building2 size={12} /> Inventory </button>
                   <button onClick={() => { setAdForm(prev => ({...prev, sourceType: 'asset', selectedSourceIds: []})); setLocalCreatives([]); }} className={`flex-1 flex items-center gap-1 px-2 py-2 rounded-lg text-[10px] font-bold transition-all ${adForm.sourceType === 'asset' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}> <ImageIcon size={12} /> Assets </button>
@@ -227,7 +306,6 @@ export default function AdsPage() {
               </div>
               <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*,video/*" className="hidden" multiple /> 
 
-              {/* Source Selector */}
               <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Select Source</label>
                   {adForm.sourceType !== 'localUpload' && (
@@ -251,17 +329,15 @@ export default function AdsPage() {
                   </div>
               </div>
 
-              {/* Campaign Settings */}
               <h3 className="pt-2 border-t border-slate-100 text-[10px] font-bold text-slate-400 uppercase ml-1">Campaign Settings</h3>
               
               <div>
-                <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Website URL (For "View Website")</label>
+                <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Website URL</label>
                 <input type="url" value={adForm.linkUrl} onChange={(e) => setAdForm(prev => ({...prev, linkUrl: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="https://yourwebsite.com" />
               </div>
 
-              {/* NEW: Privacy Policy Input */}
               <div>
-                <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Privacy Policy URL <span className="text-red-400">*Required</span></label>
+                <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Privacy Policy URL <span className="text-red-400">*</span></label>
                 <input type="url" value={adForm.privacyPolicyUrl} onChange={(e) => setAdForm(prev => ({...prev, privacyPolicyUrl: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="https://yourwebsite.com/privacy" />
               </div>
 
@@ -292,7 +368,7 @@ export default function AdsPage() {
                   className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70"
               >
                   {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
-                  {isSubmitting ? 'AI Creating Ad & Form...' : 'Launch Lead Campaign'}
+                  {isSubmitting ? 'AI Launching...' : 'Launch Lead Campaign'}
               </button>
 
             </div>
