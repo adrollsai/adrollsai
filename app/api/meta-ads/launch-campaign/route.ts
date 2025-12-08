@@ -1,32 +1,63 @@
+// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/api/meta-ads/launch-campaign/route.ts
+
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { callGemini } from '@/utils/external-apis'; 
+import fs from 'fs'
+import path from 'path'
 
+// NOTE: No AI import needed for hardcoded mode
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0"
 
+// Path to the log file
+const LOG_FILE_PATH = path.join(process.cwd(), 'meta_ads_debug.txt');
+
+// --- LOGGING HELPER ---
+function logToFile(message: string, data?: any) {
+    try {
+        const timestamp = new Date().toISOString();
+        const logEntry = `\n[${timestamp}] ${message}\n${data ? JSON.stringify(data, null, 2) : ''}\n------------------------------------------------\n`;
+        
+        // Append to the file (we clear it only once at the start of the request)
+        fs.appendFileSync(LOG_FILE_PATH, logEntry);
+        
+        // Also log to console for realtime view
+        console.log(message);
+        if (data) console.log(JSON.stringify(data, null, 2));
+    } catch (e) {
+        console.error("Logging failed:", e);
+    }
+}
+
 export async function POST(request: Request) {
+    // --- 1. RESET LOG FILE FOR NEW RUN ---
+    try {
+        fs.writeFileSync(LOG_FILE_PATH, ''); // Wipes the file clean
+        console.log("Log file cleared for new run.");
+    } catch (e) {
+        console.error("Failed to clear log file:", e);
+    }
+
     const supabase = await createClient()
     
+    // 2. Auth Check
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // 1. Read Form Data (Handling files and text inputs)
+    // 3. Read Form Data
     const formData = await request.formData();
     
-    // Extract fields
+    // Extract Text Fields
     const adAccountId = formData.get('adAccountId')?.toString();
     const facebookToken = formData.get('facebookToken')?.toString();
     const sourceType = formData.get('sourceType')?.toString();
-    const targetLocation = formData.get('targetLocation')?.toString();
-    const gender = formData.get('gender')?.toString();
+    const targetLocation = formData.get('targetLocation')?.toString(); 
     const dailyBudgetINR = parseFloat(formData.get('dailyBudgetINR')?.toString() || '0');
     const pageId = formData.get('pageId')?.toString();
     const linkUrl = formData.get('linkUrl')?.toString();
+    const privacyPolicyUrl = formData.get('privacyPolicyUrl')?.toString();
 
-    // Get array of selected IDs (non-file source)
+    // Extract Arrays/Files
     const selectedSourceIds = formData.getAll('selectedSourceIds[]').map(String); 
-    
-    // Get array of uploaded files by iterating through FormData keys
     const creativeFiles = [];
     for (const [key, value] of formData.entries()) {
         if (key.startsWith('creativeFiles[') && value instanceof Blob) {
@@ -34,237 +65,284 @@ export async function POST(request: Request) {
         }
     }
 
-    if (!facebookToken || !adAccountId || !pageId || !linkUrl) {
-        return NextResponse.json({ error: 'Missing essential campaign data (Account, Page, or Link URL).' }, { status: 400 });
+    // Basic Validation
+    if (!facebookToken || !adAccountId || !pageId || !linkUrl || !privacyPolicyUrl) {
+        return NextResponse.json({ error: 'Missing essential data: Token, Account, Page, Link, or Privacy Policy.' }, { status: 400 });
     }
 
+    logToFile("=== STARTING CAMPAIGN LAUNCH (HARDCODED MODE) ===");
+    logToFile(`Account: ${adAccountId} | Page: ${pageId}`);
+
     try {
-        // --- Step A: Get Source Data (Title/Description for LLM) ---
-        let propertyTitle: string = '';
-        let propertyDescription: string = '';
+        // --- Step A: Get Source Data (Just for logging/context) ---
         let initialImageUrls: string[] = []; 
 
         if (sourceType === 'inventory' && selectedSourceIds.length > 0) {
             const id = selectedSourceIds[0];
-            const { data: prop } = await supabase.from('properties').select('title, description, images').eq('id', id).single();
-            if (prop) {
-                propertyTitle = prop.title || '';
-                propertyDescription = prop.description || '';
-                initialImageUrls = prop.images || [];
-            }
+            const { data: prop } = await supabase.from('properties').select('images').eq('id', id).single();
+            if (prop) initialImageUrls = prop.images || [];
         } else if (sourceType === 'asset' && selectedSourceIds.length > 0) {
              const id = selectedSourceIds[0];
              const { data: asset } = await supabase.from('assets').select('url').eq('id', id).single();
              if (asset) initialImageUrls = [asset.url];
         }
 
-        // --- Step B: Upload Creatives to Meta ---
+        // --- STEP B: AUTOMATICALLY CREATE LEAD FORM ---
+        logToFile("--- 1. CREATING LEAD FORM ---");
+        
+        const formName = `Hardcoded Form ${new Date().getTime()}`;
+        
+        const leadFormPayload = {
+            name: formName,
+            follow_up_action_url: linkUrl, 
+            question_page_custom_headline: "Get Details",
+            question_page_custom_text: "Please confirm your info below.",
+            privacy_policy: {
+                url: privacyPolicyUrl,
+                link_text: "Privacy Policy"
+            },
+            questions: [
+                { type: "FULL_NAME", key: "full_name" },
+                { type: "EMAIL", key: "email" },
+                { type: "PHONE", key: "phone_number" }
+            ],
+            access_token: facebookToken
+        };
+
+        logToFile("Lead Form Payload:", leadFormPayload);
+
+        const formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(leadFormPayload)
+        });
+
+        const formDataRes = await formCreateRes.json();
+
+        if (!formCreateRes.ok) {
+            logToFile("❌ Lead Form Creation Failed:", formDataRes);
+            throw new Error(`Lead Form Error: ${formDataRes.error?.message || formDataRes.error?.error_user_msg} (Code: ${formDataRes.error?.code})`);
+        }
+
+        const leadFormId = formDataRes.id;
+        logToFile(`✅ Lead Form Created: ${leadFormId}`);
+
+
+        // --- Step C: Upload Creatives (Images) ---
+        logToFile("--- 2. UPLOADING CREATIVE ASSETS ---");
         const metaCreativeHashes: string[] = [];
         const creativeUploadPromises = [];
 
-        // 2.1 Handle uploaded files first (Direct File Upload)
+        // CASE 1: File Upload
         if (creativeFiles.length > 0) {
             for (const file of creativeFiles) {
                 const uploadFormData = new FormData();
-                
                 uploadFormData.append('source', file, file.name); 
                 uploadFormData.append('access_token', facebookToken);
                 
                 creativeUploadPromises.push(fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, {
                     method: 'POST',
                     body: uploadFormData, 
-                }).then(res => res.json()).then(data => {
-                    if (data.images) {
-                        const imageHash = Object.keys(data.images)[0];
-                        return data.images[imageHash].hash;
-                    }
-                    throw new Error(data.error?.message || "File upload failed.");
-                }));
+                }).then(res => res.json()));
             }
+        } 
+        // CASE 2: URL Upload
+        else if (initialImageUrls.length > 0) {
+            const url = initialImageUrls[0];
+            logToFile(`Uploading URL: ${url}`);
+            creativeUploadPromises.push(fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url, access_token: facebookToken }),
+            }).then(res => res.json()));
+        } else {
+            throw new Error("No image files or URLs provided.");
         }
         
-        // 2.2 Handle assets from URL (if files were NOT uploaded, and URLs exist)
-        if (creativeFiles.length === 0 && initialImageUrls.length > 0) {
-            for (const url of initialImageUrls.slice(0, 3)) { 
-                creativeUploadPromises.push(fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: url, access_token: facebookToken }),
-                }).then(res => res.json()).then(data => {
-                    if (data.images) {
-                        const imageHash = Object.keys(data.images)[0];
-                        return data.images[imageHash].hash;
-                    }
-                    throw new Error(data.error?.message || "URL upload failed.");
-                }));
+        const uploadResults = await Promise.all(creativeUploadPromises);
+        
+        uploadResults.forEach((data, index) => {
+            if (data.images) {
+                const hash = data.images[Object.keys(data.images)[0]].hash;
+                metaCreativeHashes.push(hash);
+                logToFile(`✅ Image ${index + 1} Uploaded. Hash: ${hash}`);
+            } else {
+                logToFile(`❌ Image ${index + 1} Failed:`, data);
             }
-        }
-        
-        const hashes = await Promise.allSettled(creativeUploadPromises);
-        metaCreativeHashes.push(...hashes
-            .filter(result => result.status === 'fulfilled' && result.value)
-            .map(result => (result as PromiseFulfilledResult<string>).value)
-        );
+        });
 
-        if (metaCreativeHashes.length === 0) {
-            throw new Error("No usable creative assets could be uploaded to Meta.");
-        }
-        
-        const mainCreativeHash = metaCreativeHashes[0];
+        if (metaCreativeHashes.length === 0) throw new Error("Creative upload failed entirely.");
+        const mainCreativeHash = metaCreativeHashes[0]; 
 
 
-        // --- Step C: AI Copy Generation (LLM Call) ---
-        const llmPrompt = `Generate 5 unique Primary Text variations (max 125 chars each) and 5 unique Headline variations (max 40 chars each) for a real estate ad. The tone should be urgent and high-value. The ad is for: "${propertyTitle || 'Asset ID: ' + selectedSourceIds[0]}". Use this detail: "${propertyDescription}". The target location is ${targetLocation}. Return only a single JSON object with two arrays: 'primary_texts' and 'headlines'. The JSON MUST NOT contain any markdown formatting, backticks, or explanatory text outside of the arrays.`;
-        
-        let primaryTexts: string[] = ["New listing in the area!"];
-        let headlines: string[] = ["Don't miss out!"];
+        // --- Step D: Campaign Creation ---
+        logToFile("--- 3. CREATING CAMPAIGN ---");
 
-        try {
-            const llmResponseText = await callGemini(llmPrompt); 
-            
-            let cleanedJsonText = llmResponseText.trim();
-            if (cleanedJsonText.startsWith('```json')) {
-                cleanedJsonText = cleanedJsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-            }
+        const campaignPayload = {
+            name: `Hardcoded Lead Campaign - ${new Date().toISOString().slice(0, 16)}`,
+            objective: 'OUTCOME_LEADS', 
+            status: 'PAUSED', 
+            buying_type: 'AUCTION',
+            daily_budget: dailyBudgetINR, 
+            bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+            special_ad_categories: ['HOUSING'],
+            special_ad_category_country: ['IN'], 
+            access_token: facebookToken,
+        };
 
-            const llmCreative = JSON.parse(cleanedJsonText);
-            primaryTexts = llmCreative.primary_texts?.slice(0, 5) || primaryTexts;
-            headlines = llmCreative.headlines?.slice(0, 5) || headlines;
-        } catch (e) {
-            console.warn("LLM Creative generation failed, using defaults.", e);
-        }
+        logToFile("Campaign Payload:", campaignPayload);
 
-        // --- Step D: Create CBO Campaign Structure ---
-        
-        // 4.1 Create Campaign 
         const campaignRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/campaigns`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                name: `AI CBO - ${propertyTitle || 'Campaign'} - ${new Date().toISOString().slice(0, 10)}`,
-                objective: 'OUTCOME_LEADS', 
-                status: 'PAUSED', 
-                buying_type: 'AUCTION',
-                daily_budget: dailyBudgetINR, 
-                
-                // CRITICAL FIX: Required Special Ad Category for Housing
-                special_ad_categories: ['HOUSING'], 
-                
-                access_token: facebookToken,
-            }),
+            body: JSON.stringify(campaignPayload),
         });
         const campaignData = await campaignRes.json();
-        if (!campaignRes.ok) throw new Error("Campaign creation failed: " + campaignData.error?.message);
+
+        if (!campaignRes.ok) {
+            logToFile("❌ Campaign Failed:", campaignData);
+            throw new Error(`Campaign Error: ${campaignData.error?.message}`);
+        }
         const campaignId = campaignData.id;
+        logToFile(`✅ Campaign Created: ${campaignId}`);
 
 
-        // 4.2 Create Ad Set (Targeting)
-        
+        // --- Step E: Ad Set Creation ---
+        logToFile("--- 4. CREATING AD SET ---");
+
+        const startTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+        const adSetPayload = {
+            name: `Hardcoded AdSet - IN Broad`,
+            campaign_id: campaignId,
+            destination_type: 'ON_AD', 
+            optimization_goal: 'LEAD_GENERATION', 
+            billing_event: 'IMPRESSIONS', 
+            
+            targeting: {
+                geo_locations: { 
+                    countries: ['IN'] 
+                },
+            },
+            
+            promoted_object: {
+                page_id: pageId, 
+            },
+            
+            start_time: startTime, 
+            status: 'PAUSED',
+            access_token: facebookToken,
+        };
+
+        logToFile("Ad Set Payload:", adSetPayload);
+
         const adSetRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adsets`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                name: `AI AdSet - ${targetLocation} (Broad)`,
-                campaign_id: campaignId,
-                billing_event: 'IMPRESSIONS',
-                optimization_goal: 'LEAD_GENERATION',
-                bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-                
-                // FINAL COMPLIANCE FIX: Minimal Ad Set payload required for Housing Compliance
-                targeting: {
-                    geo_locations: { 
-                        countries: ['IN'] 
-                    }
-                },
-                
-                // NEW FIXES: Add required structural fields that might be implicitly checked:
-                promoted_object: {
-                    page_id: pageId, // Promoted object is usually required for objective tie-in
-                },
-                publisher_platforms: ['facebook', 'instagram'], // Explicitly define platforms
-                start_time: new Date().toISOString(), // FIX: Ensure start time is explicit
-
-                status: 'PAUSED',
-                access_token: facebookToken,
-            }),
+            body: JSON.stringify(adSetPayload),
         });
         const adSetData = await adSetRes.json();
-        if (!adSetRes.ok) throw new Error("AdSet creation failed: " + adSetData.error?.message);
+
+        if (!adSetRes.ok) {
+            logToFile("❌ Ad Set Failed:", adSetData);
+            throw new Error(`Ad Set Error: ${adSetData.error?.message}`);
+        }
         const adSetId = adSetData.id;
+        logToFile(`✅ Ad Set Created: ${adSetId}`);
 
 
-        // 4.3 Create Multiple Ads (N x M Ad Variations)
-        const adCreationPromises = [];
+        // --- Step F: Ad Creative Object ---
+        logToFile("--- 5. CREATING AD CREATIVE OBJECT ---");
 
-        for (let i = 0; i < primaryTexts.length; i++) {
-            for (let j = 0; j < headlines.length; j++) {
-                
-                // Create Ad Creative (for each copy variation)
-                 const creativeRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adcreatives`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: `AI Creative ${i+1}-${j+1}`,
-                        object_story_spec: {
-                            page_id: pageId, 
-                            link_data: {
-                                message: primaryTexts[i], 
-                                headline: headlines[j], 
-                                link: linkUrl, 
-                                image_hash: mainCreativeHash, 
-                                call_to_action: { type: 'LEARN_MORE', value: { link: linkUrl } }
-                            }
-                        },
-                        access_token: facebookToken,
-                    }),
+        const primaryText = "This is a test advertisement. Exclusive property deals available now.";
+        const headline = "View Property Details";
+
+        const creativePayload = {
+            name: `Hardcoded Creative - ${new Date().getTime()}`,
+            object_story_spec: {
+                page_id: pageId, 
+                link_data: {
+                    message: primaryText, 
+                    name: headline, 
+                    link: linkUrl, 
+                    image_hash: mainCreativeHash, 
+                    call_to_action: { 
+                        type: 'SIGN_UP', 
+                        value: { 
+                            lead_gen_form_id: leadFormId 
+                        } 
+                    }
+                }
+            },
+            access_token: facebookToken,
+        };
+
+        logToFile("Creative Payload:", creativePayload);
+
+        const creativeRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adcreatives`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(creativePayload),
+        });
+        const creativeData = await creativeRes.json();
+
+        if (!creativeRes.ok) {
+            logToFile("❌ Creative Object Failed:", creativeData);
+            const userMsg = creativeData.error?.error_user_msg || creativeData.error?.message;
+            throw new Error(`Creative Error: ${userMsg}`);
+        }
+        const creativeId = creativeData.id;
+        logToFile(`✅ Creative Object Created: ${creativeId}`);
+
+
+        // --- Step G: Create Final Ad ---
+        logToFile("--- 6. CREATING FINAL AD ---");
+
+        const adPayload = {
+            name: `Hardcoded Ad - Final`,
+            adset_id: adSetId,
+            creative: { creative_id: creativeId },
+            status: 'PAUSED', 
+            access_token: facebookToken,
+        };
+
+        logToFile("Ad Payload:", adPayload);
+
+        const adRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(adPayload),
+        });
+        const adData = await adRes.json();
+
+        if (!adRes.ok) {
+            logToFile("❌ Final Ad Failed (Likely Payment or Policy):", adData);
+            
+            // SOFT FAILURE FOR PAYMENT ISSUE
+            if (adData.error?.error_subcode === 1359188 || adData.error?.code === 100) {
+                return NextResponse.json({ 
+                    success: true, 
+                    campaignId: campaignId, 
+                    adSetId: adSetId,
+                    message: "Campaign DRAFTED successfully! \n\n⚠️ Action Required: Please add a payment method in Facebook Ads Manager to publish the final ad." 
                 });
-                const creativeData = await creativeRes.json();
-                if (!creativeRes.ok) continue; 
-                const creativeId = creativeData.id;
-
-
-                // Create the Ad
-                adCreationPromises.push(fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: `Ad ${i+1}-${j+1}`,
-                        adset_id: adSetId,
-                        creative: { creative_id: creativeId },
-                        status: 'ACTIVE', 
-                        access_token: facebookToken,
-                    }),
-                }));
             }
+            
+            throw new Error(`Final Ad Error: ${adData.error?.message}`);
         }
         
-        await Promise.all(adCreationPromises);
-
-        // 4.4 Activate the Campaign and Ad Set (Last Step)
-        
-        // Activate Ad Set first
-        await fetch(`${FB_MARKETING_URL}/${adSetId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'ACTIVE', access_token: facebookToken }),
-        });
-
-        // Activate Campaign
-        await fetch(`${FB_MARKETING_URL}/${campaignId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'ACTIVE', access_token: facebookToken }),
-        });
-
+        logToFile(`✅ Ad Created Successfully: ${adData.id}`);
 
         return NextResponse.json({ 
             success: true, 
-            campaignId,
-            message: "CBO Campaign successfully launched and activated."
+            campaignId: campaignId, 
+            adSetId: adSetId,
+            adId: adData.id,
+            message: "Hardcoded Lead Gen Campaign Launched Successfully" 
         });
 
     } catch (error: any) {
-        console.error("Meta Ads API CRASH:", error.message);
+        logToFile("!!! API CRASH !!!", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }

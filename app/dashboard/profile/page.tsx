@@ -238,7 +238,7 @@ export default function ProfilePage() {
       provider: 'facebook',
       options: {
         // ADD ads_management SCOPE
-        scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management',
+        scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management, pages_manage_ads, leads_retrieval',
         redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=facebook',
       }
     })

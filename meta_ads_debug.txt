@@ -1,0 +1,159 @@
+
+[2025-12-08T13:42:40.684Z] === STARTING CAMPAIGN LAUNCH (HARDCODED MODE) ===
+
+------------------------------------------------
+
+[2025-12-08T13:42:40.687Z] Account: act_3659699197644830 | Page: 184834498054577
+
+------------------------------------------------
+
+[2025-12-08T13:42:40.693Z] --- 1. CREATING LEAD FORM ---
+
+------------------------------------------------
+
+[2025-12-08T13:42:40.696Z] Lead Form Payload:
+{
+  "name": "Hardcoded Form 1765201360696",
+  "follow_up_action_url": "https://yourbusiness.com",
+  "question_page_custom_headline": "Get Details",
+  "question_page_custom_text": "Please confirm your info below.",
+  "privacy_policy": {
+    "url": "https://policies.google.com/privacy",
+    "link_text": "Privacy Policy"
+  },
+  "questions": [
+    {
+      "type": "FULL_NAME",
+      "key": "full_name"
+    },
+    {
+      "type": "EMAIL",
+      "key": "email"
+    },
+    {
+      "type": "PHONE",
+      "key": "phone_number"
+    }
+  ],
+  "access_token": "EAAMaVhrzxNABQJNsDNNxSTZCqCxiOQJCZCZAGbyAOZCsHYSVBft8qXJ8N0NEEjBpZA7pcZAM2GZC6wWNYS5SNdkF5t1xYxHipnresK9gQGUBHN9tU3dtSdZAhvxtOTeWxWXYsSlVrGboPA8JR4AhXpZCfDJU96vZBdWY4yse2ihlaii4gYMdcY4CTzVYZCZAI6hhDJfYcZBValVZCGRDrBhLKQXtwIp9AjbGSSZBZCiKd3NcFfdUVHF5MS0boMA9tmcMj9hba5qeesMNDlszvPLFxUhEzw1m9VxPkrYBZASViPKGr"
+}
+------------------------------------------------
+
+[2025-12-08T13:42:42.008Z] ✅ Lead Form Created: 1394760998989214
+
+------------------------------------------------
+
+[2025-12-08T13:42:42.015Z] --- 2. UPLOADING CREATIVE ASSETS ---
+
+------------------------------------------------
+
+[2025-12-08T13:43:12.964Z] ✅ Image 1 Uploaded. Hash: 81afe96b23b92437596d67cda45b2289
+
+------------------------------------------------
+
+[2025-12-08T13:43:12.972Z] --- 3. CREATING CAMPAIGN ---
+
+------------------------------------------------
+
+[2025-12-08T13:43:12.976Z] Campaign Payload:
+{
+  "name": "Hardcoded Lead Campaign - 2025-12-08T13:43",
+  "objective": "OUTCOME_LEADS",
+  "status": "PAUSED",
+  "buying_type": "AUCTION",
+  "daily_budget": 50000,
+  "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+  "special_ad_categories": [
+    "HOUSING"
+  ],
+  "special_ad_category_country": [
+    "IN"
+  ],
+  "access_token": "EAAMaVhrzxNABQJNsDNNxSTZCqCxiOQJCZCZAGbyAOZCsHYSVBft8qXJ8N0NEEjBpZA7pcZAM2GZC6wWNYS5SNdkF5t1xYxHipnresK9gQGUBHN9tU3dtSdZAhvxtOTeWxWXYsSlVrGboPA8JR4AhXpZCfDJU96vZBdWY4yse2ihlaii4gYMdcY4CTzVYZCZAI6hhDJfYcZBValVZCGRDrBhLKQXtwIp9AjbGSSZBZCiKd3NcFfdUVHF5MS0boMA9tmcMj9hba5qeesMNDlszvPLFxUhEzw1m9VxPkrYBZASViPKGr"
+}
+------------------------------------------------
+
+[2025-12-08T13:43:13.994Z] ✅ Campaign Created: 120236871162080403
+
+------------------------------------------------
+
+[2025-12-08T13:43:13.997Z] --- 4. CREATING AD SET ---
+
+------------------------------------------------
+
+[2025-12-08T13:43:13.999Z] Ad Set Payload:
+{
+  "name": "Hardcoded AdSet - IN Broad",
+  "campaign_id": "120236871162080403",
+  "destination_type": "ON_AD",
+  "optimization_goal": "LEAD_GENERATION",
+  "billing_event": "IMPRESSIONS",
+  "targeting": {
+    "geo_locations": {
+      "countries": [
+        "IN"
+      ]
+    }
+  },
+  "promoted_object": {
+    "page_id": "184834498054577"
+  },
+  "start_time": "2025-12-08T14:13:13.999Z",
+  "status": "PAUSED",
+  "access_token": "EAAMaVhrzxNABQJNsDNNxSTZCqCxiOQJCZCZAGbyAOZCsHYSVBft8qXJ8N0NEEjBpZA7pcZAM2GZC6wWNYS5SNdkF5t1xYxHipnresK9gQGUBHN9tU3dtSdZAhvxtOTeWxWXYsSlVrGboPA8JR4AhXpZCfDJU96vZBdWY4yse2ihlaii4gYMdcY4CTzVYZCZAI6hhDJfYcZBValVZCGRDrBhLKQXtwIp9AjbGSSZBZCiKd3NcFfdUVHF5MS0boMA9tmcMj9hba5qeesMNDlszvPLFxUhEzw1m9VxPkrYBZASViPKGr"
+}
+------------------------------------------------
+
+[2025-12-08T13:43:17.143Z] ✅ Ad Set Created: 120236871163740403
+
+------------------------------------------------
+
+[2025-12-08T13:43:17.146Z] --- 5. CREATING AD CREATIVE OBJECT ---
+
+------------------------------------------------
+
+[2025-12-08T13:43:17.150Z] Creative Payload:
+{
+  "name": "Hardcoded Creative - 1765201397150",
+  "object_story_spec": {
+    "page_id": "184834498054577",
+    "link_data": {
+      "message": "This is a test advertisement. Exclusive property deals available now.",
+      "name": "View Property Details",
+      "link": "https://yourbusiness.com",
+      "image_hash": "81afe96b23b92437596d67cda45b2289",
+      "call_to_action": {
+        "type": "SIGN_UP",
+        "value": {
+          "lead_gen_form_id": "1394760998989214"
+        }
+      }
+    }
+  },
+  "access_token": "EAAMaVhrzxNABQJNsDNNxSTZCqCxiOQJCZCZAGbyAOZCsHYSVBft8qXJ8N0NEEjBpZA7pcZAM2GZC6wWNYS5SNdkF5t1xYxHipnresK9gQGUBHN9tU3dtSdZAhvxtOTeWxWXYsSlVrGboPA8JR4AhXpZCfDJU96vZBdWY4yse2ihlaii4gYMdcY4CTzVYZCZAI6hhDJfYcZBValVZCGRDrBhLKQXtwIp9AjbGSSZBZCiKd3NcFfdUVHF5MS0boMA9tmcMj9hba5qeesMNDlszvPLFxUhEzw1m9VxPkrYBZASViPKGr"
+}
+------------------------------------------------
+
+[2025-12-08T13:43:18.930Z] ✅ Creative Object Created: 1902937233626614
+
+------------------------------------------------
+
+[2025-12-08T13:43:18.933Z] --- 6. CREATING FINAL AD ---
+
+------------------------------------------------
+
+[2025-12-08T13:43:18.936Z] Ad Payload:
+{
+  "name": "Hardcoded Ad - Final",
+  "adset_id": "120236871163740403",
+  "creative": {
+    "creative_id": "1902937233626614"
+  },
+  "status": "PAUSED",
+  "access_token": "EAAMaVhrzxNABQJNsDNNxSTZCqCxiOQJCZCZAGbyAOZCsHYSVBft8qXJ8N0NEEjBpZA7pcZAM2GZC6wWNYS5SNdkF5t1xYxHipnresK9gQGUBHN9tU3dtSdZAhvxtOTeWxWXYsSlVrGboPA8JR4AhXpZCfDJU96vZBdWY4yse2ihlaii4gYMdcY4CTzVYZCZAI6hhDJfYcZBValVZCGRDrBhLKQXtwIp9AjbGSSZBZCiKd3NcFfdUVHF5MS0boMA9tmcMj9hba5qeesMNDlszvPLFxUhEzw1m9VxPkrYBZASViPKGr"
+}
+------------------------------------------------
+
+[2025-12-08T13:43:20.979Z] ✅ Ad Created Successfully: 120236871180520403
+
+------------------------------------------------
