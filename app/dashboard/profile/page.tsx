@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe } from 'lucide-react'
+import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -12,8 +12,12 @@ type FBPage = {
   category: string
 }
 
-// NEW TYPE FOR AD ACCOUNTS
 type AdAccount = {
+  id: string
+  name: string
+}
+
+type Pixel = {
   id: string
   name: string
 }
@@ -37,17 +41,21 @@ export default function ProfilePage() {
   const [isGoogleConnected, setIsGoogleConnected] = useState(false)
   const [isYoutubeConnected, setIsYoutubeConnected] = useState(false) 
   
-  // FIX: New state variable to hold the token outside of useEffect scope
   const [facebookToken, setFacebookToken] = useState<string | null>(null); 
   
   const [fbPages, setFbPages] = useState<FBPage[]>([])
   const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]) 
+  const [pixels, setPixels] = useState<Pixel[]>([]) // NEW: Pixels State
+
   const [selectedPageId, setSelectedPageId] = useState<string>('')
   const [selectedAdAccountId, setSelectedAdAccountId] = useState<string>('') 
+  const [selectedPixelId, setSelectedPixelId] = useState<string>('') // NEW: Selected Pixel
+
   const [isLoadingPages, setIsLoadingPages] = useState(false)
   const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false) 
+  const [isLoadingPixels, setIsLoadingPixels] = useState(false) // NEW: Loading state
 
-  // Profile Data (Updated with Social URLs)
+  // Profile Data
   const [formData, setFormData] = useState({
     businessName: '',
     mission: '',
@@ -65,7 +73,7 @@ export default function ProfilePage() {
   // --- HELPERS ---
   const isValidFacebookToken = (token: string) => token && token.startsWith('EAA')
 
-  // Existing: Fetch Pages
+  // 1. Fetch Pages
   const fetchPages = async () => {
     setIsLoadingPages(true)
     try {
@@ -84,8 +92,8 @@ export default function ProfilePage() {
     }
   }
 
-  // NEW: Fetch Ad Accounts
-  const fetchAdAccounts = async (token: string) => { // Use 'token' argument locally
+  // 2. Fetch Ad Accounts
+  const fetchAdAccounts = async (token: string) => {
     setIsLoadingAdAccounts(true);
     try {
         const res = await fetch(`https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name&access_token=${token}`);
@@ -110,6 +118,33 @@ export default function ProfilePage() {
     }
   }
 
+  // 3. Fetch Pixels (NEW)
+  const fetchPixels = async (adAccountId: string) => {
+    setIsLoadingPixels(true)
+    try {
+        const res = await fetch('/api/facebook/pixels', {
+            method: 'POST',
+            body: JSON.stringify({ adAccountId })
+        })
+        const data = await res.json()
+        if (data.pixels) {
+            setPixels(data.pixels)
+            // Auto-select if only one exists and none currently selected
+            if (data.pixels.length === 1 && !selectedPixelId) {
+                handlePixelSelect(data.pixels[0].id)
+            }
+        } else {
+            setPixels([])
+        }
+    } catch (e) { 
+        console.error(e) 
+        setPixels([])
+    } 
+    finally { setIsLoadingPixels(false) }
+  }
+
+  // --- SELECTION HANDLERS ---
+
   const handlePageSelect = async (pageId: string) => {
     const page = fbPages.find(p => p.id === pageId)
     if (!page || !userId) return
@@ -122,15 +157,23 @@ export default function ProfilePage() {
     }).eq('id', userId)
   }
 
-  // NEW: Handle Ad Account Select
   const handleAdAccountSelect = async (adAccountId: string) => {
     if (!userId) return
 
     setSelectedAdAccountId(adAccountId)
-    // Save the selected Ad Account ID to the user's profile
+    // Save the selected Ad Account ID
     await supabase.from('profiles').update({
       ad_account_id: adAccountId, 
     }).eq('id', userId)
+
+    // Automatically fetch pixels for this account
+    fetchPixels(adAccountId)
+  }
+
+  const handlePixelSelect = async (pixelId: string) => {
+    if (!userId) return
+    setSelectedPixelId(pixelId)
+    await supabase.from('profiles').update({ pixel_id: pixelId }).eq('id', userId)
   }
 
   // --- CORE: Load Data ---
@@ -159,7 +202,7 @@ export default function ProfilePage() {
 
         const { data: profile } = await supabase
           .from('profiles')
-          .select('*, facebook_token, selected_page_id, ad_account_id') 
+          .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id') 
           .eq('id', user.id)
           .single()
 
@@ -176,37 +219,36 @@ export default function ProfilePage() {
             youtubeUrl: profile.youtube_url || ''
           })
           
-          // Facebook & Ad Account Logic
+          // Facebook Logic
           if (profile.facebook_token && isValidFacebookToken(profile.facebook_token)) {
             setIsFacebookConnected(true)
-            
-            // FIX: Set the facebookToken state here
             setFacebookToken(profile.facebook_token); 
             
-            // Fetch pages 
-            if (profile.selected_page_id) {
-              setSelectedPageId(profile.selected_page_id)
-            } else {
-              fetchPages()
+            // Restore IDs
+            if (profile.selected_page_id) setSelectedPageId(profile.selected_page_id)
+            else fetchPages()
+
+            // Restore Ad Account & Pixels
+            if (profile.ad_account_id) {
+                setSelectedAdAccountId(profile.ad_account_id)
+                fetchPixels(profile.ad_account_id)
+            }
+            if (profile.pixel_id) {
+                setSelectedPixelId(profile.pixel_id)
             }
             
-            // NEW: Fetch Ad Accounts using the fetched token
-            setSelectedAdAccountId(profile.ad_account_id || '')
+            // Always fetch ad accounts list so dropdown works
             fetchAdAccounts(profile.facebook_token); 
             
           } else {
              setIsFacebookConnected(false)
-             setFacebookToken(null); // Clear token
+             setFacebookToken(null);
              setAdAccounts([]); 
+             setPixels([]);
           }
 
-          // LinkedIn
           if (profile.linkedin_token) setIsLinkedinConnected(true)
-
-          // Google Business
           if (profile.google_business_token) setIsGoogleConnected(true)
-
-          // YouTube (Check for youtube_token)
           if (profile.youtube_token) setIsYoutubeConnected(true)
         }
 
@@ -237,7 +279,6 @@ export default function ProfilePage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'facebook',
       options: {
-        // ADD ads_management SCOPE
         scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management, pages_manage_ads, leads_retrieval',
         redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=facebook',
       }
@@ -289,15 +330,17 @@ export default function ProfilePage() {
     if (userId) {
       await supabase.from('profiles').update({ 
         facebook_token: null, selected_page_id: null, selected_page_name: null, selected_page_token: null,
-        ad_account_id: null // NEW: Clear ad account ID
+        ad_account_id: null, pixel_id: null
       }).eq('id', userId)
     }
     setIsFacebookConnected(false)
-    setFacebookToken(null) // Clear token state
+    setFacebookToken(null)
     setFbPages([])
     setAdAccounts([]) 
+    setPixels([])
     setSelectedPageId('')
     setSelectedAdAccountId('') 
+    setSelectedPixelId('')
     setIsDisconnecting(false)
   }
 
@@ -326,7 +369,7 @@ export default function ProfilePage() {
   }
 
   const handleDisconnectYouTube = async () => {
-    if (!confirm("Disconnect YouTube? This will allow you to select a different channel on reconnect.")) return
+    if (!confirm("Disconnect YouTube?")) return
     setIsDisconnecting(true)
     if (userId) {
       await supabase.from('profiles').update({ 
@@ -377,7 +420,6 @@ export default function ProfilePage() {
         brand_color: formData.color,
         contact_number: formData.contact,
         logo_url: formData.logoUrl,
-        // Save new social URLs
         facebook_url: formData.facebookUrl,
         instagram_url: formData.instagramUrl,
         linkedin_url: formData.linkedinUrl,
@@ -452,11 +494,10 @@ export default function ProfilePage() {
                     )}
                     </div>
                     
-                    {/* NEW AD ACCOUNT SELECTOR */}
+                    {/* AD ACCOUNT SELECTOR */}
                     <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
                     <div className="flex justify-between items-center mb-2">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Ad Account</label>
-                        {/* FIX: Use the state variable facebookToken for the onClick handler */}
                         <button onClick={() => facebookToken && fetchAdAccounts(facebookToken)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
                     </div>
                     {isLoadingAdAccounts ? (
@@ -465,16 +506,44 @@ export default function ProfilePage() {
                         <div className="space-y-2 max-h-40 overflow-y-auto">
                         {adAccounts.map(account => (
                             <button key={account.id} onClick={() => handleAdAccountSelect(account.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedAdAccountId === account.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                            {/* Display name and ID */}
                             <span className={`text-xs font-bold truncate ${selectedAdAccountId === account.id ? 'text-slate-800' : 'text-slate-500'}`}>{account.name} ({account.id})</span>
                             {selectedAdAccountId === account.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
                             </button>
                         ))}
                         </div>
                     ) : (
-                        <div className="py-2"><p className="text-xs text-slate-400 mb-2">No Ad Accounts found. Ensure Ads Management permission is granted.</p><button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions / Refresh List</button></div>
+                        <div className="py-2"><p className="text-xs text-slate-400 mb-2">No Ad Accounts found.</p><button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions</button></div>
                     )}
                     </div>
+
+                    {/* NEW: PIXEL SELECTOR */}
+                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Data Pixel</label>
+                            <button onClick={() => selectedAdAccountId && fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
+                        </div>
+                        
+                        {!selectedAdAccountId ? (
+                             <div className="py-2"><p className="text-xs text-slate-400">Select an Ad Account first.</p></div>
+                        ) : isLoadingPixels ? (
+                            <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Searching pixels...</div>
+                        ) : pixels.length > 0 ? (
+                            <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {pixels.map(pixel => (
+                                <button key={pixel.id} onClick={() => handlePixelSelect(pixel.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPixelId === pixel.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
+                                <div className="flex items-center gap-2">
+                                    <Target size={14} className={selectedPixelId === pixel.id ? 'text-green-500' : 'text-slate-400'} />
+                                    <span className={`text-xs font-bold truncate ${selectedPixelId === pixel.id ? 'text-slate-800' : 'text-slate-500'}`}>{pixel.name}</span>
+                                </div>
+                                {selectedPixelId === pixel.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                                </button>
+                            ))}
+                            </div>
+                        ) : (
+                            <div className="py-2"><p className="text-xs text-slate-400">No Pixels found for this account.</p></div>
+                        )}
+                    </div>
+
                 </div>
             )}
           </div>

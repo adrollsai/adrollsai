@@ -217,31 +217,55 @@ export type Database = {
       }
       leads: {
         Row: {
+          ad_name: string | null
           created_at: string
+          email: string | null
+          external_id: string | null
+          facebook_lead_id: string | null
           id: string
           name: string
+          notes: string | null
           phone: string | null
+          pipeline_stage: string | null
+          source: string | null
           status: string | null
           summary: string | null
           user_id: string
+          value: number | null
         }
         Insert: {
+          ad_name?: string | null
           created_at?: string
+          email?: string | null
+          external_id?: string | null
+          facebook_lead_id?: string | null
           id?: string
           name: string
+          notes?: string | null
           phone?: string | null
+          pipeline_stage?: string | null
+          source?: string | null
           status?: string | null
           summary?: string | null
           user_id: string
+          value?: number | null
         }
         Update: {
+          ad_name?: string | null
           created_at?: string
+          email?: string | null
+          external_id?: string | null
+          facebook_lead_id?: string | null
           id?: string
           name?: string
+          notes?: string | null
           phone?: string | null
+          pipeline_stage?: string | null
+          source?: string | null
           status?: string | null
           summary?: string | null
           user_id?: string
+          value?: number | null
         }
         Relationships: []
       }
@@ -301,6 +325,7 @@ export type Database = {
           linkedin_urn: string | null
           logo_url: string | null
           mission_statement: string | null
+          pixel_id: string | null
           selected_page_id: string | null
           selected_page_name: string | null
           selected_page_token: string | null
@@ -327,6 +352,7 @@ export type Database = {
           linkedin_urn?: string | null
           logo_url?: string | null
           mission_statement?: string | null
+          pixel_id?: string | null
           selected_page_id?: string | null
           selected_page_name?: string | null
           selected_page_token?: string | null
@@ -353,6 +379,7 @@ export type Database = {
           linkedin_urn?: string | null
           logo_url?: string | null
           mission_statement?: string | null
+          pixel_id?: string | null
           selected_page_id?: string | null
           selected_page_name?: string | null
           selected_page_token?: string | null

@@ -1,3 +1,7 @@
+// adrollsai/adrollsai/adrollsai-adrollsai-version3/utils/external-apis.ts
+
+import crypto from 'crypto';
+
 // NOTE: For Next.js App Router API Routes, the native 'fetch' works correctly 
 // for binary operations like PUT/POST of ArrayBuffer/Blob on the server.
 
@@ -282,4 +286,141 @@ export async function callGemini(prompt: string): Promise<string> {
     }
 
     return data.candidates[0].content.parts[0].text;
+}
+
+/**
+ * 7. Fetch Lead Forms List
+ * Returns a list of forms so the user can select one.
+ */
+export async function fetchLeadForms(accessToken: string, pageId: string): Promise<any[]> {
+    try {
+        const response = await fetch(`${FACEBOOK_GRAPH_URL}/${pageId}/leadgen_forms?fields=id,name,status,leads_count&limit=100&access_token=${accessToken}`);
+        const data = await response.json();
+        
+        if (data.error) throw new Error(data.error.message);
+        
+        return data.data || [];
+    } catch (e: any) {
+        throw new Error(`Failed to fetch forms: ${e.message}`);
+    }
+}
+
+/**
+ * 8. Fetch Facebook Leads from Lead Forms (CRM FEATURE)
+ * Updated with pagination loop and optional formId filtering.
+ */
+export async function fetchFacebookLeads(accessToken: string, pageId: string, specificFormId?: string): Promise<any[]> {
+    try {
+        // 1. Get Lead Forms for the Page
+        // Increased limit to 500 to catch more forms at once
+        const formsRes = await fetch(`${FACEBOOK_GRAPH_URL}/${pageId}/leadgen_forms?fields=id,name&limit=500&access_token=${accessToken}`);
+        const formsData = await formsRes.json();
+        
+        if (formsData.error) throw new Error(formsData.error.message);
+        
+        let formsToProcess = formsData.data || [];
+
+        // FILTER: If user selected a specific form, only process that one
+        if (specificFormId) {
+            formsToProcess = formsToProcess.filter((f: any) => f.id === specificFormId);
+        }
+
+        const allLeads = [];
+
+        // 2. Iterate Forms and Get Leads
+        for (const form of formsToProcess) {
+            // Initial request for this form's leads
+            let nextUrl = `${FACEBOOK_GRAPH_URL}/${form.id}/leads?fields=id,created_time,field_data,ad_id,ad_name&limit=200&access_token=${accessToken}`;
+            
+            // PAGINATION LOOP: Keep fetching while there is a 'next' page
+            while (nextUrl) {
+                const leadsRes = await fetch(nextUrl);
+                const leadsData = await leadsRes.json();
+                
+                if (leadsData.data && leadsData.data.length > 0) {
+                    const formattedLeads = leadsData.data.map((l: any) => {
+                        // Helper to safely extract values from the field_data array
+                        const getField = (name: string) => l.field_data?.find((f: any) => f.name === name)?.values[0] || '';
+                        
+                        // Combine Ad Name + Form Name for clear source tracking
+                        const sourceTag = l.ad_name 
+                            ? `${l.ad_name} | ${form.name}` 
+                            : form.name;
+
+                        return {
+                            facebook_lead_id: l.id,
+                            name: getField('full_name') || getField('name') || 'Unknown',
+                            email: getField('email') || '',
+                            phone: getField('phone_number') || '',
+                            source: 'Facebook',
+                            ad_name: sourceTag, // This now contains the visible Form Name
+                            created_at: l.created_time
+                        };
+                    });
+                    allLeads.push(...formattedLeads);
+                }
+
+                // Update nextUrl for the next loop iteration (or null to stop)
+                nextUrl = leadsData.paging?.next || null;
+            }
+        }
+        return allLeads;
+    } catch (e: any) {
+        throw new Error(`FB Leads Sync Error: ${e.message}`);
+    }
+}
+
+/**
+ * 9. Send Facebook CAPI Event (CRM FEATURE)
+ */
+export async function sendCAPIEvent(accessToken: string, pixelId: string, eventName: string, userData: { email?: string, phone?: string }, value?: number) {
+    if (!pixelId) return;
+
+    // Helper to Hash Data (SHA256) required by Meta
+    const hashData = (data: string) => crypto.createHash('sha256').update(data.trim().toLowerCase()).digest('hex');
+
+    const payload = {
+        data: [{
+            event_name: eventName,
+            event_time: Math.floor(Date.now() / 1000),
+            user_data: {
+                em: userData.email ? [hashData(userData.email)] : [],
+                ph: userData.phone ? [hashData(userData.phone)] : [],
+            },
+            custom_data: {
+                currency: 'INR',
+                value: value || 0
+            }
+        }],
+        access_token: accessToken
+    };
+
+    try {
+        await fetch(`${FACEBOOK_GRAPH_URL}/${pixelId}/events`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        console.log(`CAPI Event '${eventName}' Sent.`);
+    } catch (e) {
+        console.error("CAPI Error:", e);
+    }
+}
+
+/**
+ * 10. Fetch Facebook Pixels for Ad Account (NEW)
+ */
+export async function fetchFacebookPixels(accessToken: string, adAccountId: string): Promise<any[]> {
+    try {
+        const response = await fetch(`${FACEBOOK_GRAPH_URL}/${adAccountId}/adspixels?fields=name,id&access_token=${accessToken}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error.message);
+        }
+        
+        return data.data || [];
+    } catch (e: any) {
+        throw new Error(`Failed to fetch Pixels: ${e.message}`);
+    }
 }
