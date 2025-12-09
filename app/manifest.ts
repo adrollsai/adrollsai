@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'AdRolls AI',
     short_name: 'AdRolls',
-    description: 'Automate your real estate marketing with AI',
+    description: 'Keep your ads rolling...',
     start_url: '/dashboard',
     display: 'standalone',
     background_color: '#F8F9FF',
