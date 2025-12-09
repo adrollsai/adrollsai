@@ -5,6 +5,20 @@ import { Sparkles } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 
+// --- 1. ROBUST URL HELPER ---
+const getURL = () => {
+  let url =
+    process.env.NEXT_PUBLIC_SITE_URL ?? // Set this to your site URL in production env.
+    process.env.NEXT_PUBLIC_VERCEL_URL ?? // Automatically set by Vercel.
+    'http://localhost:3000/'
+  
+  // Make sure to include `https://` when not localhost.
+  url = url.startsWith('http') ? url : `https://${url}`
+  // Make sure to include a trailing `/`.
+  url = url.endsWith('/') ? url : `${url}/`
+  return url
+}
+
 export default function LoginPage() {
   const supabase = createClient()
   const router = useRouter()
@@ -21,11 +35,16 @@ export default function LoginPage() {
   }, [router, supabase])
 
   const handleGoogleLogin = async () => {
+    // --- 2. USE THE HELPER HERE ---
+    // This ensures we explicitly ask for the Vercel URL, not just "whatever the browser says"
+    const redirectUrl = `${getURL()}auth/callback`
+    
+    console.log("Attempting login with redirect to:", redirectUrl) // For debugging
+
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // This ensures they go to the callback route we made
-        redirectTo: `${location.origin}/auth/callback`,
+        redirectTo: redirectUrl,
       },
     })
   }
