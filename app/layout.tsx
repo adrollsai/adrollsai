@@ -6,10 +6,40 @@ import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
 
+// 1. Set the Base URL so social platforms know where images are hosted
+const baseUrl = process.env.NEXT_PUBLIC_SITE_URL 
+  ? process.env.NEXT_PUBLIC_SITE_URL 
+  : "https://adrolls.in"; // Fallback to your domain
+
 export const metadata: Metadata = {
+  metadataBase: new URL(baseUrl),
   title: "AdRolls AI",
-  description: "Automate your real estate marketing",
+  description: "Automate your real estate marketing with AI. Launch ads, manage leads, and create content in seconds.",
   manifest: "/manifest.webmanifest",
+  // 2. Add Open Graph Config (For WhatsApp, LinkedIn, FB)
+  openGraph: {
+    title: "AdRolls AI - Real Estate Marketing Automator",
+    description: "Automate your real estate marketing with AI. Launch ads, manage leads, and create content in seconds.",
+    url: baseUrl,
+    siteName: "AdRolls AI",
+    locale: "en_US",
+    type: "website",
+    images: [
+      {
+        url: "/og-image.png", // This looks in your public folder
+        width: 1200,
+        height: 630,
+        alt: "AdRolls AI Dashboard Preview",
+      },
+    ],
+  },
+  // 3. Add Twitter Config (For X/Twitter cards)
+  twitter: {
+    card: "summary_large_image",
+    title: "AdRolls AI",
+    description: "Automate your real estate marketing with AI.",
+    images: ["/og-image.jpg"],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -22,7 +52,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  userScalable: false, // Often desired for "app-like" feel
+  userScalable: false,
 };
 
 export default function RootLayout({
