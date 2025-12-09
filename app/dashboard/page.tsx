@@ -189,7 +189,7 @@ export default function InventoryPage() {
 
   /**
    * UPDATED SHARE FUNCTION
-   * Fixed TypeScript error by checking typeof function
+   * Fixed TypeScript error by using strict type checking for navigator.canShare
    */
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
@@ -203,29 +203,20 @@ export default function InventoryPage() {
       const shareText = `${shareTitle}\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description || ''}`
 
       // 2. Prepare Images
-      // Determine which images to share (Array or fallback to single URL)
       let imageUrls = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url];
-      
-      // Limit to 10 images to prevent crashing mobile share sheets
       imageUrls = imageUrls.slice(0, 10);
 
       // 3. Fetch Blobs and Create Files
-      // We must fetch the images to convert them into File objects for navigator.share
       const filesArray: File[] = [];
 
-      // FIX: Replaced "if (navigator.canShare)" with strict typeof check
+      // FIX: Use typeof check to satisfy TypeScript and runtime safety
       if (typeof navigator.canShare === 'function') {
         try {
             await Promise.all(imageUrls.map(async (url, index) => {
-                // Fetch the image
                 const response = await fetch(url);
                 const blob = await response.blob();
-                
-                // Guess mime type or default to jpeg
                 const mimeType = blob.type || 'image/jpeg';
                 const ext = mimeType.split('/')[1] || 'jpg';
-                
-                // Create a File object
                 const file = new File([blob], `property_${prop.id}_${index}.${ext}`, { type: mimeType });
                 filesArray.push(file);
             }));
@@ -235,25 +226,22 @@ export default function InventoryPage() {
       }
 
       // 4. Execute Share
-      // FIX: Updated logic to check typeof again here
+      // FIX: Use typeof check here as well
       if (filesArray.length > 0 && typeof navigator.canShare === 'function' && navigator.canShare({ files: filesArray })) {
-        // Share FILES + TEXT
-        // WhatsApp treats the 'text' field as the caption when files are present
         await navigator.share({
             files: filesArray,
             title: shareTitle,
             text: shareText
         });
       } else {
-        // Fallback: Share LINK + TEXT if files failed or not supported
+        // Fallback
         if (navigator.share) {
             await navigator.share({ 
                 title: shareTitle, 
                 text: shareText, 
-                url: prop.image_url // Fallback to URL sharing
+                url: prop.image_url 
             });
         } else {
-            // Desktop fallback
             window.open(`https://wa.me/?text=${encodeURIComponent(shareText + "\n\n" + prop.image_url)}`, '_blank');
         }
       }
@@ -305,7 +293,6 @@ export default function InventoryPage() {
       {/* FILTER BAR */}
       {showFilters && (
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-4 animate-in slide-in-from-top-2 space-y-3">
-            {/* Price Row */}
             <div className="flex gap-3">
                 <div className="flex-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Min Price</label>
@@ -317,7 +304,6 @@ export default function InventoryPage() {
                 </div>
             </div>
 
-            {/* Type Row (Multi-select) */}
             <div>
                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Property Type</label>
                <div className="flex gap-2 flex-wrap">
@@ -379,7 +365,6 @@ export default function InventoryPage() {
                     <span className="text-xs font-medium truncate">{prop.address}</span>
                   </div>
                 </div>
-                {/* Share Button with Loading State */}
                 <button 
                     onClick={(e) => handleNativeShare(e, prop)} 
                     disabled={isSharingId === prop.id}
@@ -409,7 +394,6 @@ export default function InventoryPage() {
               </div>
               {previews.length > 0 && <div className="flex gap-2 overflow-x-auto pb-2">{previews.map((src, i) => <img key={i} src={src} className="w-16 h-16 rounded-lg object-cover border border-slate-100" />)}</div>}
               
-              {/* Type Selector */}
               <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Type</label>
                   <div className="flex gap-2">
