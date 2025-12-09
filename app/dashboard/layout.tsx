@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: "/og-image.png", // This looks in your public folder
+        url: "/og-image.jpg", // This looks in your public folder
         width: 1200,
         height: 630,
         alt: "AdRolls AI Dashboard Preview",
