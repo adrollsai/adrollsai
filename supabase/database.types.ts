@@ -117,6 +117,134 @@ export type Database = {
         }
         Relationships: []
       }
+      deal_requirements: {
+        Row: {
+          budget_range: string | null
+          created_at: string
+          description: string | null
+          id: string
+          location: string
+          property_type: string
+          status: string
+          title: string
+          urgency: string | null
+          user_id: string
+        }
+        Insert: {
+          budget_range?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          location: string
+          property_type: string
+          status?: string
+          title: string
+          urgency?: string | null
+          user_id: string
+        }
+        Update: {
+          budget_range?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          location?: string
+          property_type?: string
+          status?: string
+          title?: string
+          urgency?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      external_listings: {
+        Row: {
+          confidence_score: number | null
+          contact_info: Json | null
+          created_at: string
+          description: string | null
+          id: string
+          image_url: string | null
+          is_claimed: boolean | null
+          location: string | null
+          price: string | null
+          property_type: string | null
+          requirement_id: string | null
+          source_platform: string
+          source_url: string
+          title: string
+        }
+        Insert: {
+          confidence_score?: number | null
+          contact_info?: Json | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_claimed?: boolean | null
+          location?: string | null
+          price?: string | null
+          property_type?: string | null
+          requirement_id?: string | null
+          source_platform: string
+          source_url: string
+          title: string
+        }
+        Update: {
+          confidence_score?: number | null
+          contact_info?: Json | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_claimed?: boolean | null
+          location?: string | null
+          price?: string | null
+          property_type?: string | null
+          requirement_id?: string | null
+          source_platform?: string
+          source_url?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_listings_requirement_id_fkey"
+            columns: ["requirement_id"]
+            isOneToOne: false
+            referencedRelation: "deal_requirements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leads: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          phone: string | null
+          status: string | null
+          summary: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          phone?: string | null
+          status?: string | null
+          summary?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          phone?: string | null
+          status?: string | null
+          summary?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       posts: {
         Row: {
           content: string | null
@@ -155,6 +283,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          ad_account_id: string | null
           brand_color: string | null
           business_name: string | null
           contact_number: string | null
@@ -180,6 +309,7 @@ export type Database = {
           youtube_url: string | null
         }
         Insert: {
+          ad_account_id?: string | null
           brand_color?: string | null
           business_name?: string | null
           contact_number?: string | null
@@ -205,6 +335,7 @@ export type Database = {
           youtube_url?: string | null
         }
         Update: {
+          ad_account_id?: string | null
           brand_color?: string | null
           business_name?: string | null
           contact_number?: string | null
