@@ -57,6 +57,10 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: "default",
     title: "AdRolls AI",
+    // This adds the splash screen for iPhones
+    startupImage: [
+      "/apple-splash.png",
+    ],
   },
 };
 
