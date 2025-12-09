@@ -1,8 +1,9 @@
+// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/dashboard/page.tsx
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-// Added 'Check' to imports for the filter UI
-import { Plus, Search, MapPin, X, Loader2, Share2, Image as ImageIcon, Link as LinkIcon, Filter, LogOut, Check } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Share2, Image as ImageIcon, Link as LinkIcon, Filter, Check } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -21,7 +22,7 @@ type Property = {
   image_url: string
   images: string[]
   description?: string
-  property_type?: string // Added this field
+  property_type?: string
   user_id: string 
 }
 
@@ -37,11 +38,14 @@ export default function InventoryPage() {
   const [authError, setAuthError] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   
+  // Sharing State
+  const [isSharingId, setIsSharingId] = useState<string | null>(null)
+
   // Filter State
   const [searchQuery, setSearchQuery] = useState('')
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([]) // Multi-select state
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [showFilters, setShowFilters] = useState(false)
   
   // UI State
@@ -143,7 +147,7 @@ export default function InventoryPage() {
           address: newProp.address,
           price: newProp.price,
           description: newProp.description,
-          property_type: newProp.property_type, // Saving the type
+          property_type: newProp.property_type,
           status: 'Active',
           image_url: uploadedUrls[0],
           images: uploadedUrls
@@ -164,7 +168,6 @@ export default function InventoryPage() {
     }
   }
 
-  // Toggle filter type
   const toggleFilterType = (type: string) => {
     setSelectedTypes(prev => 
       prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
@@ -177,23 +180,89 @@ export default function InventoryPage() {
     if (minPrice) params.set('min', minPrice)
     if (maxPrice) params.set('max', maxPrice)
     if (searchQuery) params.set('q', searchQuery)
-    if (selectedTypes.length > 0) params.set('types', selectedTypes.join(',')) // Pass types to URL
+    if (selectedTypes.length > 0) params.set('types', selectedTypes.join(','))
     
     const shareUrl = `${window.location.origin}/shared/${currentUserId}?${params.toString()}`
     navigator.clipboard.writeText(shareUrl)
     alert("✅ Link Copied!")
   }
 
+  /**
+   * UPDATED SHARE FUNCTION
+   * Fixed TypeScript error by checking typeof function
+   */
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
+    if (isSharingId) return // Prevent double clicks
+
+    setIsSharingId(prop.id)
+
     try {
-      const shareText = `🏡 ${prop.title}\n📍 ${prop.address}\n💰 ${prop.price}`
-      if (navigator.share) {
-        await navigator.share({ title: prop.title, text: shareText, url: prop.image_url })
-      } else {
-        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank')
+      // 1. Prepare Description
+      const shareTitle = `🏡 ${prop.title}`
+      const shareText = `${shareTitle}\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description || ''}`
+
+      // 2. Prepare Images
+      // Determine which images to share (Array or fallback to single URL)
+      let imageUrls = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url];
+      
+      // Limit to 10 images to prevent crashing mobile share sheets
+      imageUrls = imageUrls.slice(0, 10);
+
+      // 3. Fetch Blobs and Create Files
+      // We must fetch the images to convert them into File objects for navigator.share
+      const filesArray: File[] = [];
+
+      // FIX: Replaced "if (navigator.canShare)" with strict typeof check
+      if (typeof navigator.canShare === 'function') {
+        try {
+            await Promise.all(imageUrls.map(async (url, index) => {
+                // Fetch the image
+                const response = await fetch(url);
+                const blob = await response.blob();
+                
+                // Guess mime type or default to jpeg
+                const mimeType = blob.type || 'image/jpeg';
+                const ext = mimeType.split('/')[1] || 'jpg';
+                
+                // Create a File object
+                const file = new File([blob], `property_${prop.id}_${index}.${ext}`, { type: mimeType });
+                filesArray.push(file);
+            }));
+        } catch (fetchErr) {
+            console.error("Failed to fetch images for sharing", fetchErr);
+        }
       }
-    } catch (error) { console.log("Share cancelled") } 
+
+      // 4. Execute Share
+      // FIX: Updated logic to check typeof again here
+      if (filesArray.length > 0 && typeof navigator.canShare === 'function' && navigator.canShare({ files: filesArray })) {
+        // Share FILES + TEXT
+        // WhatsApp treats the 'text' field as the caption when files are present
+        await navigator.share({
+            files: filesArray,
+            title: shareTitle,
+            text: shareText
+        });
+      } else {
+        // Fallback: Share LINK + TEXT if files failed or not supported
+        if (navigator.share) {
+            await navigator.share({ 
+                title: shareTitle, 
+                text: shareText, 
+                url: prop.image_url // Fallback to URL sharing
+            });
+        } else {
+            // Desktop fallback
+            window.open(`https://wa.me/?text=${encodeURIComponent(shareText + "\n\n" + prop.image_url)}`, '_blank');
+        }
+      }
+
+    } catch (error) { 
+      console.log("Share cancelled or failed", error) 
+    } finally {
+        setIsSharingId(null)
+    }
   }
 
   // --- FILTER LOGIC ---
@@ -202,9 +271,7 @@ export default function InventoryPage() {
     const min = minPrice ? parseInt(minPrice) : 0
     const max = maxPrice ? parseInt(maxPrice) : Infinity
     
-    // Type Filter Logic
     const matchesType = selectedTypes.length === 0 || (p.property_type && selectedTypes.includes(p.property_type))
-    
     const matchesPrice = priceVal >= min && priceVal <= max
     const matchesSearch = p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           p.address.toLowerCase().includes(searchQuery.toLowerCase())
@@ -312,8 +379,13 @@ export default function InventoryPage() {
                     <span className="text-xs font-medium truncate">{prop.address}</span>
                   </div>
                 </div>
-                <button onClick={(e) => handleNativeShare(e, prop)} className="bg-green-50 text-green-600 p-3 rounded-full hover:bg-green-100 transition-colors active:scale-90">
-                  <Share2 size={20} />
+                {/* Share Button with Loading State */}
+                <button 
+                    onClick={(e) => handleNativeShare(e, prop)} 
+                    disabled={isSharingId === prop.id}
+                    className="bg-green-50 text-green-600 p-3 rounded-full hover:bg-green-100 transition-colors active:scale-90"
+                >
+                  {isSharingId === prop.id ? <Loader2 size={20} className="animate-spin"/> : <Share2 size={20} />}
                 </button>
               </div>
             </div>
@@ -363,7 +435,7 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* VIEW MODAL (unchanged but includes property_type display) */}
+      {/* VIEW MODAL */}
       {selectedProperty && (
         <div className="fixed inset-0 z-[90] bg-white flex flex-col animate-in slide-in-from-bottom-10">
            <div className="absolute top-4 left-4 z-10"><button onClick={() => setSelectedProperty(null)} className="bg-white/80 backdrop-blur-md p-3 rounded-full shadow-sm text-slate-900"><X size={24} /></button></div>
