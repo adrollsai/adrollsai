@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Search, Phone, MessageCircle, RefreshCw, Upload, Plus, CheckCircle2, X, Download, Trash2, UserPlus, Trophy, Users, BarChart3, Filter } from 'lucide-react'
+import { Search, Phone, MessageCircle, RefreshCw, Upload, Plus, CheckCircle2, X, Download, Trash2, UserPlus, Trophy, Users, BarChart3, ArrowRightLeft } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 const STAGES = ['New', 'Qualified', 'Site Visit Done', 'Closed']
@@ -53,6 +53,7 @@ export default function CRMPage() {
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [isAssigning, setIsAssigning] = useState(false) // NEW
 
   // Sync Logic
   const [forms, setForms] = useState<any[]>([])
@@ -91,7 +92,6 @@ export default function CRMPage() {
                 setTeamMembers(members as Profile[])
                 const memberIds = members.map(m => m.id)
                 
-                // Fetch leads belonging to any team member
                 const { data } = await supabase
                     .from('leads')
                     .select('*')
@@ -141,6 +141,31 @@ export default function CRMPage() {
 
   // --- 2. ACTIONS ---
 
+  // Admin: Assign Lead
+  const handleAssignLead = async (agentId: string) => {
+      if (!selectedLead) return
+      setIsAssigning(true)
+      try {
+          const res = await fetch('/api/crm/assign', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ leadId: selectedLead.id, agentId })
+          })
+          
+          if (!res.ok) throw new Error("Assignment failed")
+          
+          // Optimistic Update
+          setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, user_id: agentId } : l))
+          setSelectedLead(prev => prev ? { ...prev, user_id: agentId } : null)
+          alert("Lead reassigned successfully!")
+          
+      } catch (e) {
+          alert("Failed to reassign lead")
+      } finally {
+          setIsAssigning(false)
+      }
+  }
+
   const handleAddLead = async () => {
     if (!newLead.name || !newLead.phone) return alert("Name/Phone required")
     setIsAdding(true)
@@ -167,8 +192,20 @@ export default function CRMPage() {
   const handleDeleteLead = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!confirm("Delete lead?")) return
-    setLeads(prev => prev.filter(l => l.id !== id)) // Optimistic
+    setLeads(prev => prev.filter(l => l.id !== id)) 
     await supabase.from('leads').delete().eq('id', id)
+  }
+
+  // Sync Logic (Simplified for brevity, assumes endpoints exist)
+  const openSyncModal = async () => {
+     setIsSyncModalOpen(true)
+     const res = await fetch('/api/facebook/forms'); const d = await res.json(); if(d.forms) setForms(d.forms)
+  }
+  const handleSync = async () => {
+      setIsSyncing(true)
+      await fetch('/api/crm/sync', { method: 'POST', body: JSON.stringify({ formId: selectedFormId }) })
+      fetchCRMData()
+      setIsSyncing(false); setIsSyncModalOpen(false)
   }
 
   const updateStage = async (leadId: string, newStage: string) => {
@@ -181,18 +218,14 @@ export default function CRMPage() {
     })
   }
 
-  // Filter Logic (Admin Filter + Search + Stage)
+  // Filter Logic
   const filteredLeads = leads.filter(l => {
       const matchStage = (l.pipeline_stage || 'New') === activeStage
       const matchSearch = l.name?.toLowerCase().includes(searchQuery.toLowerCase()) || l.phone?.includes(searchQuery)
-      
-      // Admin Filter
       const matchAgent = selectedAgentFilter === 'all' || l.user_id === selectedAgentFilter
-      
       return matchStage && matchSearch && matchAgent
   })
 
-  // --- RENDER ---
   return (
     <div className="p-5 max-w-md mx-auto min-h-screen pb-24 relative bg-slate-50">
       
@@ -203,7 +236,9 @@ export default function CRMPage() {
             <p className="text-slate-500 text-xs mt-1 font-medium">Pipeline & Leads</p>
         </div>
         <div className="flex gap-2">
-             {/* Add Button */}
+            {userProfile?.role === 'admin' && (
+                <button onClick={openSyncModal} className="bg-white p-3 rounded-full shadow-sm border border-slate-100"><Download size={20} className="text-slate-600"/></button>
+            )}
             <button onClick={() => setIsAddModalOpen(true)} className="bg-slate-900 text-white p-3 rounded-full shadow-lg active:scale-95 transition-transform">
                 <Plus size={20} />
             </button>
@@ -236,15 +271,9 @@ export default function CRMPage() {
 
               {/* Agent Filter */}
               <div className="relative">
-                  <select 
-                    value={selectedAgentFilter} 
-                    onChange={e => setSelectedAgentFilter(e.target.value)}
-                    className="w-full appearance-none bg-white p-3 pl-10 rounded-xl text-xs font-bold border-none shadow-sm outline-none text-slate-600"
-                  >
+                  <select value={selectedAgentFilter} onChange={e => setSelectedAgentFilter(e.target.value)} className="w-full appearance-none bg-white p-3 pl-10 rounded-xl text-xs font-bold border-none shadow-sm outline-none text-slate-600">
                       <option value="all">View All Agents</option>
-                      {teamMembers.map(m => (
-                          <option key={m.id} value={m.id}>{m.business_name} ({teamStats.find(s=>s.agentId===m.id)?.count || 0})</option>
-                      ))}
+                      {teamMembers.map(m => <option key={m.id} value={m.id}>{m.business_name} ({teamStats.find(s=>s.agentId===m.id)?.count || 0})</option>)}
                   </select>
                   <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               </div>
@@ -254,23 +283,13 @@ export default function CRMPage() {
       {/* Search */}
       <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <input 
-            type="text" 
-            placeholder="Search leads..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white pl-10 pr-4 py-3 rounded-xl text-sm border-none shadow-sm focus:ring-2 focus:ring-slate-200 outline-none"
-          />
+          <input type="text" placeholder="Search leads..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white pl-10 pr-4 py-3 rounded-xl text-sm border-none shadow-sm focus:ring-2 focus:ring-slate-200 outline-none"/>
       </div>
 
       {/* Pipeline Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-2 -mx-5 px-5 scrollbar-hide mb-2">
         {STAGES.map(stage => (
-            <button 
-                key={stage} 
-                onClick={() => setActiveStage(stage)}
-                className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${activeStage === stage ? 'bg-blue-600 text-white shadow-blue-200' : 'bg-white text-slate-500'}`}
-            >
+            <button key={stage} onClick={() => setActiveStage(stage)} className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${activeStage === stage ? 'bg-blue-600 text-white shadow-blue-200' : 'bg-white text-slate-500'}`}>
                 {stage} <span className="ml-1 opacity-60">({leads.filter(l => (l.pipeline_stage || 'New') === stage).length})</span>
             </button>
         ))}
@@ -288,36 +307,23 @@ export default function CRMPage() {
                     <div className="flex gap-2">
                         {lead.phone && (
                             <>
-                                <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} onClick={e => e.stopPropagation()} target="_blank" className="p-2 bg-green-50 text-green-600 rounded-full hover:bg-green-100 transition-colors">
-                                    <MessageCircle size={18} />
-                                </a>
-                                <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} className="p-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-colors">
-                                    <Phone size={18} />
-                                </a>
+                                <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} onClick={e => e.stopPropagation()} target="_blank" className="p-2 bg-green-50 text-green-600 rounded-full hover:bg-green-100 transition-colors"><MessageCircle size={18} /></a>
+                                <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} className="p-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-colors"><Phone size={18} /></a>
                             </>
                         )}
-                        <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2 bg-red-50 text-red-400 rounded-full hover:bg-red-100 transition-colors">
-                            <Trash2 size={18} />
-                        </button>
+                        <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2 bg-red-50 text-red-400 rounded-full hover:bg-red-100 transition-colors"><Trash2 size={18} /></button>
                     </div>
                 </div>
-                
-                {/* Footer Info */}
                 <div className="mt-3 pt-3 border-t border-slate-50 flex items-center justify-between">
                     <div className="flex flex-wrap gap-1">
-                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-md">
-                            {lead.source}
-                        </span>
-                        {/* Admin View: Show who owns this lead */}
+                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-md">{lead.source}</span>
                         {userProfile?.role === 'admin' && selectedAgentFilter === 'all' && (
                             <span className="text-[10px] font-bold bg-purple-50 text-purple-600 px-2 py-1 rounded-md flex items-center gap-1">
                                 <Users size={10}/> {teamMembers.find(m => m.id === lead.user_id)?.business_name?.split(' ')[0] || 'Agent'}
                             </span>
                         )}
                     </div>
-                    <span className="text-[10px] text-slate-300 font-medium">
-                        {new Date(lead.created_at).toLocaleDateString()}
-                    </span>
+                    <span className="text-[10px] text-slate-300 font-medium">{new Date(lead.created_at).toLocaleDateString()}</span>
                 </div>
             </div>
         ))}
@@ -336,18 +342,36 @@ export default function CRMPage() {
                 <div className="space-y-3">
                     <input type="text" value={newLead.name} onChange={e => setNewLead({...newLead, name: e.target.value})} className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none" placeholder="Name" />
                     <input type="tel" value={newLead.phone} onChange={e => setNewLead({...newLead, phone: e.target.value})} className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none" placeholder="Phone" />
-                    <input type="email" value={newLead.email} onChange={e => setNewLead({...newLead, email: e.target.value})} className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none" placeholder="Email (Optional)" />
-                    <textarea value={newLead.notes} onChange={e => setNewLead({...newLead, notes: e.target.value})} className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none resize-none" rows={2} placeholder="Notes" />
-                    
-                    <button onClick={handleAddLead} disabled={isAdding} className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-bold mt-2">
-                        {isAdding ? 'Saving...' : 'Save Lead'}
-                    </button>
+                    <button onClick={handleAddLead} disabled={isAdding} className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-bold mt-2">{isAdding ? 'Saving...' : 'Save Lead'}</button>
                 </div>
             </div>
         </div>
       )}
+      
+      {/* --- SYNC MODAL --- */}
+      {isSyncModalOpen && (
+          <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg font-bold text-slate-800">Sync Leads</h2>
+                    <button onClick={() => setIsSyncModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={18} /></button>
+                </div>
+                <div className="space-y-4">
+                     <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                        <button onClick={() => setSelectedFormId('')} className={`w-full p-3 rounded-xl text-left text-xs font-bold border transition-all flex justify-between items-center ${selectedFormId === '' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-100 bg-white text-slate-600'}`}><span>Sync All</span>{selectedFormId === '' && <CheckCircle2 size={16} />}</button>
+                        {forms.map(form => (
+                            <button key={form.id} onClick={() => setSelectedFormId(form.id)} className={`w-full p-3 rounded-xl text-left text-xs font-bold border transition-all flex justify-between items-center ${selectedFormId === form.id ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-100 bg-white text-slate-600'}`}>
+                                <div className="truncate w-40">{form.name}</div>{selectedFormId === form.id && <CheckCircle2 size={16} />}
+                            </button>
+                        ))}
+                     </div>
+                     <button onClick={handleSync} disabled={isSyncing} className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-70">{isSyncing ? <RefreshCw className="animate-spin" size={16} /> : <Download size={16} />}{isSyncing ? 'Syncing...' : 'Start Sync'}</button>
+                </div>
+            </div>
+          </div>
+      )}
 
-      {/* --- EDIT MODAL --- */}
+      {/* --- VIEW/EDIT MODAL --- */}
       {selectedLead && (
         <div className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in">
             <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
@@ -360,10 +384,22 @@ export default function CRMPage() {
                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                         <h3 className="font-bold text-lg text-slate-900">{selectedLead.name}</h3>
                         <p className="text-sm text-slate-500">{selectedLead.phone}</p>
+                        
+                        {/* ADMIN ONLY: REASSIGN */}
                         {userProfile?.role === 'admin' && (
-                             <p className="text-xs text-slate-400 mt-2 pt-2 border-t border-slate-200">
-                                Assigned to: {teamMembers.find(m => m.id === selectedLead.user_id)?.business_name || 'Agent'}
-                             </p>
+                             <div className="mt-3 pt-3 border-t border-slate-200">
+                                 <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 flex items-center gap-1"><ArrowRightLeft size={10}/> Assigned To</label>
+                                 <select 
+                                    className="w-full bg-white p-2 rounded-lg text-xs font-bold border border-slate-200 outline-none"
+                                    value={selectedLead.user_id}
+                                    onChange={(e) => handleAssignLead(e.target.value)}
+                                    disabled={isAssigning}
+                                 >
+                                     {teamMembers.map(m => (
+                                         <option key={m.id} value={m.id}>{m.business_name}</option>
+                                     ))}
+                                 </select>
+                             </div>
                         )}
                     </div>
 
@@ -371,11 +407,7 @@ export default function CRMPage() {
                         <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-2">Stage</label>
                         <div className="grid grid-cols-2 gap-2">
                             {STAGES.map(stage => (
-                                <button 
-                                    key={stage}
-                                    onClick={() => updateStage(selectedLead.id, stage)}
-                                    className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${selectedLead.pipeline_stage === stage ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}
-                                >
+                                <button key={stage} onClick={() => updateStage(selectedLead.id, stage)} className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${selectedLead.pipeline_stage === stage ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}>
                                     {stage}
                                 </button>
                             ))}
