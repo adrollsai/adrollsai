@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target } from 'lucide-react'
+import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target, Building2, ShieldCheck, User, Camera, Mail, Phone } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -22,6 +22,16 @@ type Pixel = {
   name: string
 }
 
+// Updated Profile Type
+type ProfileData = {
+    role: 'admin' | 'agent'
+    organization?: { name: string }
+    business_name: string
+    contact_number: string
+    email: string
+    // ... plus other social fields
+}
+
 export default function ProfilePage() {
   const router = useRouter()
   const supabase = createClient()
@@ -29,6 +39,8 @@ export default function ProfilePage() {
   // --- STATE ---
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<'admin' | 'agent'>('agent')
+  const [orgName, setOrgName] = useState<string>('')
   
   // Actions
   const [isSaving, setIsSaving] = useState(false)
@@ -45,15 +57,15 @@ export default function ProfilePage() {
   
   const [fbPages, setFbPages] = useState<FBPage[]>([])
   const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]) 
-  const [pixels, setPixels] = useState<Pixel[]>([]) // NEW: Pixels State
+  const [pixels, setPixels] = useState<Pixel[]>([]) 
 
   const [selectedPageId, setSelectedPageId] = useState<string>('')
   const [selectedAdAccountId, setSelectedAdAccountId] = useState<string>('') 
-  const [selectedPixelId, setSelectedPixelId] = useState<string>('') // NEW: Selected Pixel
+  const [selectedPixelId, setSelectedPixelId] = useState<string>('') 
 
   const [isLoadingPages, setIsLoadingPages] = useState(false)
   const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false) 
-  const [isLoadingPixels, setIsLoadingPixels] = useState(false) // NEW: Loading state
+  const [isLoadingPixels, setIsLoadingPixels] = useState(false)
 
   // Profile Data
   const [formData, setFormData] = useState({
@@ -107,7 +119,6 @@ export default function ProfilePage() {
         if (formattedAccounts.length > 0) {
             setAdAccounts(formattedAccounts);
         } else {
-            console.error("Error fetching ad accounts:", data.error?.message || "No ad accounts found.");
             setAdAccounts([]);
         }
     } catch (e) {
@@ -118,7 +129,7 @@ export default function ProfilePage() {
     }
   }
 
-  // 3. Fetch Pixels (NEW)
+  // 3. Fetch Pixels
   const fetchPixels = async (adAccountId: string) => {
     setIsLoadingPixels(true)
     try {
@@ -129,7 +140,6 @@ export default function ProfilePage() {
         const data = await res.json()
         if (data.pixels) {
             setPixels(data.pixels)
-            // Auto-select if only one exists and none currently selected
             if (data.pixels.length === 1 && !selectedPixelId) {
                 handlePixelSelect(data.pixels[0].id)
             }
@@ -161,12 +171,10 @@ export default function ProfilePage() {
     if (!userId) return
 
     setSelectedAdAccountId(adAccountId)
-    // Save the selected Ad Account ID
     await supabase.from('profiles').update({
       ad_account_id: adAccountId, 
     }).eq('id', userId)
 
-    // Automatically fetch pixels for this account
     fetchPixels(adAccountId)
   }
 
@@ -200,13 +208,18 @@ export default function ProfilePage() {
         }
         if (isMounted) setUserId(user.id)
 
+        // UPDATED: Fetch Organization and Role
         const { data: profile } = await supabase
           .from('profiles')
-          .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id') 
+          .select('*, organization:organizations(name)') 
           .eq('id', user.id)
           .single()
 
         if (profile && isMounted) {
+          setUserRole(profile.role || 'agent')
+          // @ts-ignore
+          setOrgName(profile.organization?.name || 'Independent')
+          
           setFormData({
             businessName: profile.business_name || '',
             mission: profile.mission_statement || '',
@@ -224,20 +237,15 @@ export default function ProfilePage() {
             setIsFacebookConnected(true)
             setFacebookToken(profile.facebook_token); 
             
-            // Restore IDs
             if (profile.selected_page_id) setSelectedPageId(profile.selected_page_id)
             else fetchPages()
 
-            // Restore Ad Account & Pixels
             if (profile.ad_account_id) {
                 setSelectedAdAccountId(profile.ad_account_id)
                 fetchPixels(profile.ad_account_id)
             }
-            if (profile.pixel_id) {
-                setSelectedPixelId(profile.pixel_id)
-            }
+            if (profile.pixel_id) setSelectedPixelId(profile.pixel_id)
             
-            // Always fetch ad accounts list so dropdown works
             fetchAdAccounts(profile.facebook_token); 
             
           } else {
@@ -273,7 +281,8 @@ export default function ProfilePage() {
     }
   }, [router, supabase])
 
-  // --- ACTIONS ---
+  // --- ACTIONS (Connect/Disconnect) ---
+  // (Keeping your existing logic intact)
 
   const handleConnectFacebook = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
@@ -322,8 +331,6 @@ export default function ProfilePage() {
     if (error) alert("Connection error: " + error.message)
   }
 
-  // --- DISCONNECT HANDLERS ---
-
   const handleDisconnectFacebook = async () => {
     if (!confirm("Disconnect Facebook?")) return
     setIsDisconnecting(true)
@@ -347,11 +354,7 @@ export default function ProfilePage() {
   const handleDisconnectLinkedIn = async () => {
     if (!confirm("Disconnect LinkedIn?")) return
     setIsDisconnecting(true)
-    if (userId) {
-      await supabase.from('profiles').update({ 
-        linkedin_token: null, linkedin_urn: null 
-      }).eq('id', userId)
-    }
+    if (userId) await supabase.from('profiles').update({ linkedin_token: null, linkedin_urn: null }).eq('id', userId)
     setIsLinkedinConnected(false)
     setIsDisconnecting(false)
   }
@@ -359,11 +362,7 @@ export default function ProfilePage() {
   const handleDisconnectGoogleBusiness = async () => {
     if (!confirm("Disconnect Google Business?")) return
     setIsDisconnecting(true)
-    if (userId) {
-      await supabase.from('profiles').update({ 
-        google_business_token: null, google_business_refresh_token: null, google_business_location_id: null
-      }).eq('id', userId)
-    }
+    if (userId) await supabase.from('profiles').update({ google_business_token: null, google_business_refresh_token: null, google_business_location_id: null }).eq('id', userId)
     setIsGoogleConnected(false)
     setIsDisconnecting(false)
   }
@@ -371,11 +370,7 @@ export default function ProfilePage() {
   const handleDisconnectYouTube = async () => {
     if (!confirm("Disconnect YouTube?")) return
     setIsDisconnecting(true)
-    if (userId) {
-      await supabase.from('profiles').update({ 
-        youtube_token: null, youtube_refresh_token: null
-      }).eq('id', userId)
-    }
+    if (userId) await supabase.from('profiles').update({ youtube_token: null, youtube_refresh_token: null }).eq('id', userId)
     setIsYoutubeConnected(false)
     setIsDisconnecting(false)
   }
@@ -390,7 +385,7 @@ export default function ProfilePage() {
 
       const file = event.target.files[0]
       const fileExt = file.name.split('.').pop()
-      const fileName = `${userId}-${Date.now()}.${fileExt}`
+      const fileName = `logos/${userId}-${Date.now()}.${fileExt}`
 
       const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
       if (uploadError) throw uploadError
@@ -399,9 +394,10 @@ export default function ProfilePage() {
 
       setFormData(prev => ({ ...prev, logoUrl: publicUrl }))
       await supabase.from('profiles').update({ logo_url: publicUrl }).eq('id', userId)
+      alert("Logo updated!")
 
-    } catch (error) {
-      alert('Error uploading logo')
+    } catch (error: any) {
+      alert('Error uploading logo: ' + error.message)
     } finally {
       setUploadingLogo(false)
     }
@@ -412,9 +408,7 @@ export default function ProfilePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const { error } = await supabase.from('profiles').upsert({
-        id: user.id,
-        email: user.email,
+    const { error } = await supabase.from('profiles').update({
         business_name: formData.businessName,
         mission_statement: formData.mission,
         brand_color: formData.color,
@@ -424,9 +418,10 @@ export default function ProfilePage() {
         instagram_url: formData.instagramUrl,
         linkedin_url: formData.linkedinUrl,
         youtube_url: formData.youtubeUrl
-      })
+      }).eq('id', user.id)
 
     if (error) alert(`Error saving: ${error.message}`)
+    else alert("Profile saved successfully!")
     setIsSaving(false)
   }
 
@@ -439,18 +434,82 @@ export default function ProfilePage() {
 
   return (
     <div className="p-5 max-w-md mx-auto min-h-screen pb-32">
-      
-      {/* Header */}
-      <div className="w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-lg border border-blue-50 flex flex-col items-center text-center">
-        <div onClick={() => !uploadingLogo && fileInputRef.current?.click()} className="w-24 h-24 bg-slate-50 rounded-full mb-3 flex items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-200 hover:border-primary transition-all">
-          {uploadingLogo ? <Loader2 className="animate-spin text-slate-400" /> : formData.logoUrl ? <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-1"><Upload size={20} className="text-slate-300" /><span className="text-[8px] text-slate-400 font-bold uppercase">Upload</span></div>}
-          <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
-        </div>
-        <h2 className="text-xl font-bold text-slate-800">{formData.businessName || 'Your Business'}</h2>
-        <p className="text-slate-400 text-xs">Tap circle to add logo</p>
+      <h1 className="text-2xl font-bold text-slate-900 mb-6">Your Profile</h1>
+
+      {/* 1. IDENTITY CARD (New Design) */}
+      <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 text-center relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-20 bg-gradient-to-r from-slate-900 to-slate-800 z-0"></div>
+          
+          <div className="relative z-10 flex flex-col items-center">
+              {/* Logo / Avatar */}
+              <div className="relative group cursor-pointer" onClick={() => !uploadingLogo && fileInputRef.current?.click()}>
+                  <div className="w-24 h-24 rounded-full bg-white border-4 border-white shadow-lg flex items-center justify-center overflow-hidden">
+                      {uploadingLogo ? <Loader2 className="animate-spin text-slate-400"/> : formData.logoUrl ? (
+                          <img src={formData.logoUrl} className="w-full h-full object-contain" />
+                      ) : (
+                          <User size={40} className="text-slate-300" />
+                      )}
+                  </div>
+                  <div className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full shadow-md group-hover:scale-110 transition-transform">
+                      <Camera size={14} />
+                  </div>
+                  <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
+              </div>
+              
+              <h2 className="mt-3 font-bold text-lg text-slate-900">{formData.businessName || 'Your Business'}</h2>
+              <p className="text-xs text-slate-500">{orgName}</p>
+              
+              <div className="flex items-center gap-2 mt-2">
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${userRole === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                      {userRole}
+                  </span>
+              </div>
+          </div>
       </div>
 
-      {/* Social Accounts */}
+      {/* 2. BRANDING KIT (Critical for Stamping) */}
+      <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6">
+          <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><ShieldCheck size={18}/> Branding Kit</h3>
+          <p className="text-xs text-slate-500 mb-4 leading-relaxed bg-blue-50 p-3 rounded-xl border border-blue-100">
+             These details will be <b>automatically stamped</b> onto every marketing creative you generate from the Feed.
+          </p>
+
+          <div className="space-y-4">
+              <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Business Name (On Image)</label>
+                  <div className="relative">
+                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
+                      <input 
+                        type="text" 
+                        value={formData.businessName} 
+                        onChange={e => setFormData({...formData, businessName: e.target.value})}
+                        className="w-full bg-slate-50 pl-10 pr-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-slate-200 outline-none font-bold text-slate-700" 
+                        placeholder="e.g. Rahul Realtors"
+                      />
+                  </div>
+              </div>
+
+              <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Contact Number (On Image)</label>
+                  <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
+                      <input 
+                        type="tel" 
+                        value={formData.contact} 
+                        onChange={e => setFormData({...formData, contact: e.target.value})}
+                        className="w-full bg-slate-50 pl-10 pr-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-slate-200 outline-none font-bold text-slate-700" 
+                        placeholder="+91 98765 43210"
+                      />
+                  </div>
+              </div>
+
+              <button onClick={handleSave} disabled={isSaving} className="w-full bg-slate-900 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
+                 {isSaving ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} Save Branding
+              </button>
+          </div>
+      </div>
+
+      {/* 3. SOCIAL ACCOUNTS (Existing Logic) */}
       <div className="mb-6">
         <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Social Accounts</h3>
         <div className="bg-white rounded-[2rem] shadow-sm border border-blue-100 overflow-hidden p-5 space-y-4">
@@ -474,76 +533,74 @@ export default function ProfilePage() {
                     
                     {/* Page Selector */}
                     <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
-                    <div className="flex justify-between items-center mb-2">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Posting Page</label>
-                        <button onClick={fetchPages} className="text-[10px] text-blue-500 font-bold">Refresh</button>
-                    </div>
-                    {isLoadingPages ? (
-                        <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing pages...</div>
-                    ) : fbPages.length > 0 ? (
-                        <div className="space-y-2 max-h-40 overflow-y-auto">
-                        {fbPages.map(page => (
-                            <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                            <span className={`text-xs font-bold truncate ${selectedPageId === page.id ? 'text-slate-800' : 'text-slate-500'}`}>{page.name}</span>
-                            {selectedPageId === page.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-                            </button>
-                        ))}
-                        </div>
-                    ) : (
-                        <div className="py-2"><p className="text-xs text-slate-400 mb-2">No pages found.</p><button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions / Refresh List</button></div>
-                    )}
-                    </div>
-                    
-                    {/* AD ACCOUNT SELECTOR */}
-                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
-                    <div className="flex justify-between items-center mb-2">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Ad Account</label>
-                        <button onClick={() => facebookToken && fetchAdAccounts(facebookToken)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
-                    </div>
-                    {isLoadingAdAccounts ? (
-                        <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing accounts...</div>
-                    ) : adAccounts.length > 0 ? (
-                        <div className="space-y-2 max-h-40 overflow-y-auto">
-                        {adAccounts.map(account => (
-                            <button key={account.id} onClick={() => handleAdAccountSelect(account.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedAdAccountId === account.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                            <span className={`text-xs font-bold truncate ${selectedAdAccountId === account.id ? 'text-slate-800' : 'text-slate-500'}`}>{account.name} ({account.id})</span>
-                            {selectedAdAccountId === account.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-                            </button>
-                        ))}
-                        </div>
-                    ) : (
-                        <div className="py-2"><p className="text-xs text-slate-400 mb-2">No Ad Accounts found.</p><button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions</button></div>
-                    )}
-                    </div>
-
-                    {/* NEW: PIXEL SELECTOR */}
-                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
                         <div className="flex justify-between items-center mb-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Data Pixel</label>
-                            <button onClick={() => selectedAdAccountId && fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Posting Page</label>
+                            <button onClick={fetchPages} className="text-[10px] text-blue-500 font-bold">Refresh</button>
                         </div>
-                        
-                        {!selectedAdAccountId ? (
-                             <div className="py-2"><p className="text-xs text-slate-400">Select an Ad Account first.</p></div>
-                        ) : isLoadingPixels ? (
-                            <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Searching pixels...</div>
-                        ) : pixels.length > 0 ? (
+                        {isLoadingPages ? (
+                            <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing...</div>
+                        ) : fbPages.length > 0 ? (
                             <div className="space-y-2 max-h-40 overflow-y-auto">
-                            {pixels.map(pixel => (
-                                <button key={pixel.id} onClick={() => handlePixelSelect(pixel.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPixelId === pixel.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                                <div className="flex items-center gap-2">
-                                    <Target size={14} className={selectedPixelId === pixel.id ? 'text-green-500' : 'text-slate-400'} />
-                                    <span className={`text-xs font-bold truncate ${selectedPixelId === pixel.id ? 'text-slate-800' : 'text-slate-500'}`}>{pixel.name}</span>
-                                </div>
-                                {selectedPixelId === pixel.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                            {fbPages.map(page => (
+                                <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
+                                <span className={`text-xs font-bold truncate ${selectedPageId === page.id ? 'text-slate-800' : 'text-slate-500'}`}>{page.name}</span>
+                                {selectedPageId === page.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
                                 </button>
                             ))}
                             </div>
                         ) : (
-                            <div className="py-2"><p className="text-xs text-slate-400">No Pixels found for this account.</p></div>
+                            <div className="py-2"><p className="text-xs text-slate-400 mb-2">No pages found.</p></div>
                         )}
                     </div>
+                    
+                    {/* ADMIN ONLY: ADS & PIXELS */}
+                    {userRole === 'admin' && (
+                        <>
+                            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Account</label>
+                                    <button onClick={() => facebookToken && fetchAdAccounts(facebookToken)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
+                                </div>
+                                {isLoadingAdAccounts ? (
+                                    <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing...</div>
+                                ) : adAccounts.length > 0 ? (
+                                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                                    {adAccounts.map(account => (
+                                        <button key={account.id} onClick={() => handleAdAccountSelect(account.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedAdAccountId === account.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
+                                        <span className={`text-xs font-bold truncate ${selectedAdAccountId === account.id ? 'text-slate-800' : 'text-slate-500'}`}>{account.name}</span>
+                                        {selectedAdAccountId === account.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                                        </button>
+                                    ))}
+                                    </div>
+                                ) : (
+                                    <div className="py-2"><p className="text-xs text-slate-400">No Ad Accounts.</p></div>
+                                )}
+                            </div>
 
+                            {selectedAdAccountId && (
+                                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Data Pixel</label>
+                                        <button onClick={() => fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
+                                    </div>
+                                    {isLoadingPixels ? (
+                                        <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Searching...</div>
+                                    ) : pixels.length > 0 ? (
+                                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                                        {pixels.map(pixel => (
+                                            <button key={pixel.id} onClick={() => handlePixelSelect(pixel.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPixelId === pixel.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
+                                            <span className={`text-xs font-bold truncate ${selectedPixelId === pixel.id ? 'text-slate-800' : 'text-slate-500'}`}>{pixel.name}</span>
+                                            {selectedPixelId === pixel.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                                            </button>
+                                        ))}
+                                        </div>
+                                    ) : (
+                                        <div className="py-2"><p className="text-xs text-slate-400">No Pixels found.</p></div>
+                                    )}
+                                </div>
+                            )}
+                        </>
+                    )}
                 </div>
             )}
           </div>
@@ -566,8 +623,8 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* YOUTUBE */}
-          <div className="border-t border-slate-50 pt-4">
+           {/* YOUTUBE */}
+           <div className="border-t border-slate-50 pt-4">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="bg-[#FF0000] p-2 rounded-full text-white"><Youtube size={18} fill="white" /></div>
@@ -603,54 +660,25 @@ export default function ProfilePage() {
                 )}
             </div>
           </div>
-
         </div>
       </div>
 
-      {/* Business Profile Form */}
-      <div className="mb-6">
-        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Business Profile</h3>
-        <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-blue-100 space-y-4">
-            
-            {/* Basic Info */}
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Business Name</label><input type="text" value={formData.businessName} onChange={(e) => setFormData({...formData, businessName: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" /></div>
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Contact Number</label><input type="tel" value={formData.contact} onChange={(e) => setFormData({...formData, contact: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" /></div>
-            
-            {/* Social Links Section */}
-            <div className="pt-4 border-t border-slate-50 mt-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase mb-3 block">Public Social Links</label>
-                <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                        <div className="bg-blue-50 p-2 rounded-lg text-blue-600 flex-shrink-0"><Facebook size={16} /></div>
-                        <input type="text" placeholder="https://facebook.com/..." value={formData.facebookUrl} onChange={(e) => setFormData({...formData, facebookUrl: e.target.value})} className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="bg-pink-50 p-2 rounded-lg text-pink-600 flex-shrink-0"><Instagram size={16} /></div>
-                        <input type="text" placeholder="https://instagram.com/..." value={formData.instagramUrl} onChange={(e) => setFormData({...formData, instagramUrl: e.target.value})} className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="bg-blue-50 p-2 rounded-lg text-[#0077b5] flex-shrink-0"><Linkedin size={16} /></div>
-                        <input type="text" placeholder="https://linkedin.com/in/..." value={formData.linkedinUrl} onChange={(e) => setFormData({...formData, linkedinUrl: e.target.value})} className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="bg-red-50 p-2 rounded-lg text-red-600 flex-shrink-0"><Youtube size={16} /></div>
-                        <input type="text" placeholder="https://youtube.com/@..." value={formData.youtubeUrl} onChange={(e) => setFormData({...formData, youtubeUrl: e.target.value})} className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                </div>
-            </div>
-
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1 mt-2">Mission / Info</label><textarea rows={3} value={formData.mission} onChange={(e) => setFormData({...formData, mission: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm resize-none focus:ring-2 focus:ring-primary outline-none" /></div>
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Brand Color</label><div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl"><div className="w-6 h-6 rounded-md shadow-sm border border-slate-200" style={{ backgroundColor: formData.color }} /><input type="text" value={formData.color} onChange={(e) => setFormData({...formData, color: e.target.value})} className="bg-transparent font-mono text-xs w-full outline-none uppercase" /></div></div>
-            <button onClick={handleSave} disabled={isSaving || uploadingLogo} className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70">{isSaving ? 'Saving...' : ( <><Save size={16} /> Save Business Info</> )}</button>
-        </div>
-      </div>
-
-      {/* Settings */}
+      {/* ADDITIONAL SETTINGS */}
       <div>
-        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Settings</h3>
+        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Account Settings</h3>
         <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
-          <button className="w-full p-4 flex items-center justify-between hover:bg-slate-50 border-b border-slate-50"><div className="flex items-center gap-3"><div className="bg-blue-50 p-2 rounded-full text-blue-600"><CreditCard size={18} /></div><span className="font-bold text-sm text-slate-700">Subscription</span></div><ChevronRight size={18} className="text-slate-300" /></button>
-          <button onClick={handleSignOut} className="w-full p-4 flex items-center justify-between hover:bg-red-50 group"><div className="flex items-center gap-3"><div className="bg-red-50 p-2 rounded-full text-red-500 group-hover:bg-red-100"><LogOut size={18} /></div><span className="font-bold text-sm text-red-500">Sign Out</span></div></button>
+          <div className="p-4 flex items-center justify-between border-b border-slate-50">
+               <div className="flex items-center gap-3">
+                   <Mail size={18} className="text-slate-400"/>
+                   <span className="text-sm text-slate-600 truncate max-w-[200px]">{userRole} account</span>
+               </div>
+          </div>
+          <button onClick={handleSignOut} className="w-full p-4 flex items-center justify-between hover:bg-red-50 group">
+              <div className="flex items-center gap-3">
+                  <div className="bg-red-50 p-2 rounded-full text-red-500 group-hover:bg-red-100"><LogOut size={18} /></div>
+                  <span className="font-bold text-sm text-red-500">Sign Out</span>
+              </div>
+          </button>
         </div>
       </div>
 

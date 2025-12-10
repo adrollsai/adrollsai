@@ -1,439 +1,469 @@
-// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/dashboard/page.tsx
-
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Share2, Image as ImageIcon, Link as LinkIcon, Filter, Check } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
-// --- Helper for Price Parsing ---
-const parsePrice = (priceStr: string | null) => {
-  if (!priceStr) return 0
-  return parseInt(priceStr.replace(/[^0-9]/g, '') || '0')
-}
+// --- Types ---
+type Configuration = { name: string; size: string; price: string }
 
 type Property = {
   id: string
   title: string
   address: string
-  price: string
-  status: string
+  rera_number?: string
+  description?: string
   image_url: string
   images: string[]
-  description?: string
-  property_type?: string
-  user_id: string 
+  brochure_url?: string
+  floor_plan_url?: string
+  configurations?: Configuration[]
+  created_at: string
 }
 
-const PROPERTY_TYPES = ['Residential', 'Commercial', 'Plots']
+type MasterCreative = {
+  id: string
+  url: string
+  type: 'image' | 'video'
+  caption_template: string
+  created_at: string
+  property?: Property // Joined
+}
 
-export default function InventoryPage() {
+type AssetStat = {
+    agent_name: string
+    status: string
+    share_stats: { whatsapp: number, facebook: number, instagram: number, download: number }
+}
+
+type Profile = {
+    id: string
+    role: 'admin' | 'agent'
+    organization_id: string
+    business_name: string
+    contact_number: string
+    logo_url: string
+}
+
+export default function DashboardPage() {
   const supabase = createClient()
   const router = useRouter()
   
   // --- STATE ---
-  const [properties, setProperties] = useState<Property[]>([])
+  const [activeTab, setActiveTab] = useState<'feed' | 'inventory' | 'analytics'>('feed')
+  
+  const [userProfile, setUserProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
-  const [authError, setAuthError] = useState(false)
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   
-  // Sharing State
-  const [isSharingId, setIsSharingId] = useState<string | null>(null)
-
-  // Filter State
-  const [searchQuery, setSearchQuery] = useState('')
-  const [minPrice, setMinPrice] = useState('')
-  const [maxPrice, setMaxPrice] = useState('')
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([])
-  const [showFilters, setShowFilters] = useState(false)
+  // Data
+  const [properties, setProperties] = useState<Property[]>([])
+  const [creatives, setCreatives] = useState<MasterCreative[]>([])
+  const [analytics, setAnalytics] = useState<AssetStat[]>([])
   
-  // UI State
-  const [showAddModal, setShowAddModal] = useState(false)
+  // Modals
+  const [showAddProject, setShowAddProject] = useState(false)
+  const [showAddCreative, setShowAddCreative] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
+  
+  // Forms
   const [isSubmitting, setIsSubmitting] = useState(false)
   
-  // Form State
-  const [newProp, setNewProp] = useState({ 
-    title: '', 
-    address: '', 
-    price: '', 
-    description: '',
-    property_type: 'Residential' // Default
+  // -- Add Project Form --
+  const [newProject, setNewProject] = useState({
+      title: '', address: '', rera: '', description: '',
+      configs: [] as Configuration[]
   })
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
-  const [previews, setPreviews] = useState<string[]>([])
+  const [tempConfig, setTempConfig] = useState({ name: '', size: '', price: '' })
+  const [projectFiles, setProjectFiles] = useState<{images: File[], brochure?: File, floorPlan?: File}>({ images: [] })
   
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  // -- Add Creative Form --
+  const [newCreative, setNewCreative] = useState({
+      property_id: '',
+      caption: "Check out this new update! {{Name}} {{Phone}}"
+  })
+  const [creativeFile, setCreativeFile] = useState<File | null>(null)
 
-  // 1. SAFE FETCH
-  const fetchProperties = async () => {
+  // 1. FETCH DATA
+  const fetchData = async () => {
     try {
       setLoading(true)
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
-        setAuthError(true)
-        setLoading(false)
-        return
-      }
-      
-      setCurrentUserId(user.id)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/'); return }
 
-      const { data, error: dbError } = await supabase
-        .from('properties')
-        .select('*')
-        .eq('user_id', user.id)
+      // Get Profile
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      if (profile) setUserProfile(profile as Profile)
+
+      // Get Properties
+      const { data: props } = await supabase.from('properties').select('*').order('created_at', { ascending: false })
+      if (props) setProperties(props)
+
+      // Get Creatives Feed
+      const { data: feed } = await supabase
+        .from('master_creatives')
+        .select(`*, property:properties(title)`)
         .order('created_at', { ascending: false })
+      if (feed) setCreatives(feed)
 
-      if (dbError) throw dbError
-      if (data) setProperties(data)
+      // Get Analytics (Admin Only)
+      if (profile?.role === 'admin') {
+          const { data: stats } = await supabase
+            .from('assets')
+            .select(`status, share_stats, user:profiles(business_name)`)
+            .not('share_stats', 'is', null)
+          
+          if (stats) {
+             const formatted = stats.map((s: any) => ({
+                 agent_name: s.user?.business_name || 'Unknown',
+                 status: s.status,
+                 share_stats: s.share_stats
+             }))
+             setAnalytics(formatted)
+          }
+      }
 
     } catch (error) {
-      console.error("Error loading inventory:", error)
+      console.error("Error:", error)
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { fetchProperties() }, [])
+  useEffect(() => { fetchData() }, [])
 
-  // --- ACTIONS ---
-  const handleManualLogout = async () => {
-    await supabase.auth.signOut()
-    window.location.href = '/'
-  }
+  // --- HANDLERS ---
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files)
-      setSelectedFiles(prev => [...prev, ...newFiles])
-      const newPreviews = newFiles.map(file => URL.createObjectURL(file))
-      setPreviews(prev => [...prev, ...newPreviews])
-    }
-  }
-
-  const handleAddProperty = async () => {
-    if (!newProp.address || !newProp.price || !newProp.title) {
-        alert("Please fill in Title, Address and Price.")
-        return
-    }
-    setIsSubmitting(true)
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error("Not authenticated")
-
-      const uploadedUrls: string[] = []
-
-      if (selectedFiles.length > 0) {
-        const uploadPromises = selectedFiles.map(async (file) => {
-          const fileExt = file.name.split('.').pop()
-          const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
-          const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, file)
-          if (uploadError) throw uploadError
-          const { data: { publicUrl } } = supabase.storage.from('properties').getPublicUrl(fileName)
-          return publicUrl
-        })
-        const results = await Promise.all(uploadPromises)
-        uploadedUrls.push(...results)
-      } else {
-          uploadedUrls.push(`https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newProp.title)}`)
+  // 1. Add Project
+  const handleAddProject = async () => {
+      if (!newProject.title || !newProject.rera || projectFiles.images.length === 0) {
+          alert("Title, RERA, and at least 1 image are required.")
+          return
       }
+      setIsSubmitting(true)
+      try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (!user) throw new Error("No user")
 
-      const { error } = await supabase.from('properties').insert({
-          user_id: user.id,
-          title: newProp.title,
-          address: newProp.address,
-          price: newProp.price,
-          description: newProp.description,
-          property_type: newProp.property_type,
-          status: 'Active',
-          image_url: uploadedUrls[0],
-          images: uploadedUrls
-        })
+          // Upload Images
+          const imageUrls = []
+          for (const file of projectFiles.images) {
+             const path = `projects/${Date.now()}_${file.name}`
+             await supabase.storage.from('properties').upload(path, file)
+             const { data } = supabase.storage.from('properties').getPublicUrl(path)
+             imageUrls.push(data.publicUrl)
+          }
 
-      if (error) throw error
-
-      await fetchProperties()
-      setShowAddModal(false)
-      setNewProp({ title: '', address: '', price: '', description: '', property_type: 'Residential' })
-      setSelectedFiles([])
-      setPreviews([])
-
-    } catch (error: any) {
-      alert('Error adding property: ' + error.message)
-    } finally {
-      setIsSubmitting(false)
-    }
+          // Insert
+          await supabase.from('properties').insert({
+              user_id: user.id,
+              organization_id: userProfile?.organization_id,
+              title: newProject.title,
+              address: newProject.address,
+              rera_number: newProject.rera,
+              description: newProject.description,
+              image_url: imageUrls[0],
+              images: imageUrls,
+              configurations: newProject.configs
+          })
+          
+          await fetchData()
+          setShowAddProject(false)
+      } catch (e: any) {
+          alert(e.message)
+      } finally { setIsSubmitting(false) }
   }
 
-  const toggleFilterType = (type: string) => {
-    setSelectedTypes(prev => 
-      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
-    )
-  }
-
-  const handleCopyFilteredLink = () => {
-    if (!currentUserId) return
-    const params = new URLSearchParams()
-    if (minPrice) params.set('min', minPrice)
-    if (maxPrice) params.set('max', maxPrice)
-    if (searchQuery) params.set('q', searchQuery)
-    if (selectedTypes.length > 0) params.set('types', selectedTypes.join(','))
-    
-    const shareUrl = `${window.location.origin}/shared/${currentUserId}?${params.toString()}`
-    navigator.clipboard.writeText(shareUrl)
-    alert("✅ Link Copied!")
-  }
-
-  /**
-   * UPDATED SHARE FUNCTION
-   * Fixed TypeScript error by using strict type checking for navigator.canShare
-   */
-  const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
-    e.stopPropagation()
-    if (isSharingId) return // Prevent double clicks
-
-    setIsSharingId(prop.id)
-
-    try {
-      // 1. Prepare Description
-      const shareTitle = `🏡 ${prop.title}`
-      const shareText = `${shareTitle}\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description || ''}`
-
-      // 2. Prepare Images
-      let imageUrls = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url];
-      imageUrls = imageUrls.slice(0, 10);
-
-      // 3. Fetch Blobs and Create Files
-      const filesArray: File[] = [];
-
-      // FIX: Use typeof check to satisfy TypeScript and runtime safety
-      if (typeof navigator.canShare === 'function') {
-        try {
-            await Promise.all(imageUrls.map(async (url, index) => {
-                const response = await fetch(url);
-                const blob = await response.blob();
-                const mimeType = blob.type || 'image/jpeg';
-                const ext = mimeType.split('/')[1] || 'jpg';
-                const file = new File([blob], `property_${prop.id}_${index}.${ext}`, { type: mimeType });
-                filesArray.push(file);
-            }));
-        } catch (fetchErr) {
-            console.error("Failed to fetch images for sharing", fetchErr);
-        }
+  // 2. Add Creative to Feed
+  const handleAddCreative = async () => {
+      if (!newCreative.property_id || !creativeFile) {
+          alert("Select a project and upload a file.")
+          return
       }
+      setIsSubmitting(true)
+      try {
+          const path = `feed/${Date.now()}_${creativeFile.name}`
+          await supabase.storage.from('properties').upload(path, creativeFile)
+          const { data } = supabase.storage.from('properties').getPublicUrl(path)
+          
+          await supabase.from('master_creatives').insert({
+              property_id: newCreative.property_id,
+              url: data.publicUrl,
+              type: creativeFile.type.startsWith('video') ? 'video' : 'image',
+              caption_template: newCreative.caption
+          })
 
-      // 4. Execute Share
-      // FIX: Use typeof check here as well
-      if (filesArray.length > 0 && typeof navigator.canShare === 'function' && navigator.canShare({ files: filesArray })) {
-        await navigator.share({
-            files: filesArray,
-            title: shareTitle,
-            text: shareText
-        });
-      } else {
-        // Fallback
-        if (navigator.share) {
-            await navigator.share({ 
-                title: shareTitle, 
-                text: shareText, 
-                url: prop.image_url 
-            });
-        } else {
-            window.open(`https://wa.me/?text=${encodeURIComponent(shareText + "\n\n" + prop.image_url)}`, '_blank');
-        }
-      }
-
-    } catch (error) { 
-      console.log("Share cancelled or failed", error) 
-    } finally {
-        setIsSharingId(null)
-    }
+          await fetchData()
+          setShowAddCreative(false)
+      } catch (e: any) {
+          alert(e.message)
+      } finally { setIsSubmitting(false) }
   }
 
-  // --- FILTER LOGIC ---
-  const filteredProperties = properties.filter(p => {
-    const priceVal = parsePrice(p.price)
-    const min = minPrice ? parseInt(minPrice) : 0
-    const max = maxPrice ? parseInt(maxPrice) : Infinity
-    
-    const matchesType = selectedTypes.length === 0 || (p.property_type && selectedTypes.includes(p.property_type))
-    const matchesPrice = priceVal >= min && priceVal <= max
-    const matchesSearch = p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          p.address.toLowerCase().includes(searchQuery.toLowerCase())
-    
-    return matchesPrice && matchesSearch && matchesType
-  })
+  // 3. Agent: Claim Creative
+  const handleClaim = async (creative: MasterCreative) => {
+      if (!userProfile?.contact_number) {
+          alert("Please complete your profile first.")
+          return
+      }
+      setIsSubmitting(true)
+      try {
+          const res = await fetch('/api/creative/stamp', {
+              method: 'POST',
+              body: JSON.stringify({
+                  masterImageUrl: creative.url,
+                  agentProfile: userProfile,
+                  propertyId: creative.property?.id,
+                  masterCreativeId: creative.id
+              })
+          })
+          if(res.ok) {
+              alert("Creative Claimed! Check your Assets tab.")
+          }
+      } catch (e) {
+          console.error(e)
+      } finally { setIsSubmitting(false) }
+  }
 
-  // --- RENDER ---
-  if (authError) return <div className="flex h-screen items-center justify-center"><button onClick={handleManualLogout}>Login Again</button></div>
-  if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
+  // --- UI COMPONENTS ---
+
+  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-slate-400"/></div>
 
   return (
-    <div className="p-5 max-w-md mx-auto relative min-h-screen pb-24">
+    <div className="min-h-screen bg-slate-50 pb-24 max-w-md mx-auto relative shadow-2xl">
       
       {/* Header */}
-      <div className="flex justify-between items-end mb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Inventory</h1>
-          <p className="text-slate-500 text-xs mt-1">Manage your active listings</p>
-        </div>
-        <div className="flex gap-2">
-            <button onClick={() => setShowFilters(!showFilters)} className={`p-3 rounded-full shadow-md active:scale-95 transition-transform ${showFilters ? 'bg-slate-800 text-white' : 'bg-white text-slate-700'}`}>
-              <Filter size={20} />
-            </button>
-            <button onClick={() => setShowAddModal(true)} className="bg-primary hover:bg-blue-200 text-primary-text p-3 rounded-full shadow-md active:scale-95 transition-transform">
-              <Plus size={20} strokeWidth={3} />
-            </button>
-        </div>
-      </div>
-
-      {/* FILTER BAR */}
-      {showFilters && (
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-4 animate-in slide-in-from-top-2 space-y-3">
-            <div className="flex gap-3">
-                <div className="flex-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Min Price</label>
-                    <input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="0" className="w-full bg-slate-50 p-2 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" />
-                </div>
-                <div className="flex-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Max Price</label>
-                    <input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="Any" className="w-full bg-slate-50 p-2 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" />
-                </div>
-            </div>
-
+      <div className="bg-white p-5 pt-8 rounded-b-[2rem] shadow-sm z-10 sticky top-0">
+          <div className="flex justify-between items-center mb-4">
             <div>
-               <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Property Type</label>
-               <div className="flex gap-2 flex-wrap">
-                 {PROPERTY_TYPES.map(type => {
-                   const isSelected = selectedTypes.includes(type)
-                   return (
-                     <button 
-                       key={type} 
-                       onClick={() => toggleFilterType(type)}
-                       className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 ${isSelected ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}
-                     >
-                       {type} {isSelected && <Check size={12} />}
-                     </button>
-                   )
-                 })}
-               </div>
+                <h1 className="text-xl font-black text-slate-900 tracking-tight">{userProfile?.role === 'admin' ? 'Builder Console' : 'Agent Hub'}</h1>
+                <p className="text-xs font-medium text-slate-400">{userProfile?.organization_id ? 'Prime Estates' : 'Welcome'}</p>
             </div>
-
-            <button onClick={handleCopyFilteredLink} className="w-full bg-blue-50 text-blue-600 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform border border-blue-100">
-                <LinkIcon size={14} /> Copy Link for Client
-            </button>
-        </div>
-      )}
-
-      {/* Search Bar */}
-      <div className="relative mb-6">
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"><Search size={18} /></div>
-        <input 
-          type="text" 
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search properties..." 
-          className="w-full bg-white border-none py-3 pl-10 pr-4 rounded-xl shadow-sm text-sm text-slate-700 focus:ring-2 focus:ring-primary outline-none" 
-        />
-      </div>
-
-      {/* List */}
-      <div className="flex flex-col gap-4">
-        {filteredProperties.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">No properties found.</div> : (
-          filteredProperties.map((prop) => (
-            <div 
-              key={prop.id} 
-              onClick={() => setSelectedProperty(prop)}
-              className="bg-white p-3 rounded-[1.5rem] shadow-sm border border-slate-100 relative group cursor-pointer active:scale-95 transition-transform"
-            >
-              <div className="relative h-40 w-full rounded-2xl overflow-hidden bg-slate-100 mb-3">
-                <img src={prop.image_url} alt="Property" className="w-full h-full object-cover" />
-                <div className="absolute top-3 left-3 flex gap-1">
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-white/90 text-slate-700 backdrop-blur-sm">{prop.status}</span>
-                    {prop.property_type && <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-slate-900/80 text-white backdrop-blur-sm">{prop.property_type}</span>}
-                </div>
-              </div>
-              <div className="px-1 pb-1 flex justify-between items-start">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-800">{prop.title || 'Untitled'}</h3>
-                  <p className="text-sm font-bold text-slate-900 mt-0.5">{prop.price}</p>
-                  <div className="flex items-center gap-1.5 text-slate-500 mt-1">
-                    <MapPin size={14} />
-                    <span className="text-xs font-medium truncate">{prop.address}</span>
-                  </div>
-                </div>
-                <button 
-                    onClick={(e) => handleNativeShare(e, prop)} 
-                    disabled={isSharingId === prop.id}
-                    className="bg-green-50 text-green-600 p-3 rounded-full hover:bg-green-100 transition-colors active:scale-90"
-                >
-                  {isSharingId === prop.id ? <Loader2 size={20} className="animate-spin"/> : <Share2 size={20} />}
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* ADD MODAL */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">New Listing</h2>
-              <button onClick={() => setShowAddModal(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
-            </div>
-            <div className="space-y-4">
-              <div onClick={() => fileInputRef.current?.click()} className="w-full h-32 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 transition-colors relative overflow-hidden">
-                  <ImageIcon size={24} className="text-slate-400 mb-2"/>
-                  <span className="text-xs font-bold text-slate-400 uppercase">Add Photos</span>
-                  <input type="file" multiple ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
-              </div>
-              {previews.length > 0 && <div className="flex gap-2 overflow-x-auto pb-2">{previews.map((src, i) => <img key={i} src={src} className="w-16 h-16 rounded-lg object-cover border border-slate-100" />)}</div>}
-              
-              <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Type</label>
-                  <div className="flex gap-2">
-                      {PROPERTY_TYPES.map(type => (
-                          <button 
-                            key={type}
-                            onClick={() => setNewProp({...newProp, property_type: type})}
-                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${newProp.property_type === type ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-500 border-slate-50'}`}
-                          >
-                              {type}
-                          </button>
-                      ))}
-                  </div>
-              </div>
-
-              <input type="text" value={newProp.title} onChange={(e) => setNewProp({...newProp, title: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Title" />
-              <input type="text" value={newProp.address} onChange={(e) => setNewProp({...newProp, address: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Address" />
-              <input type="text" value={newProp.price} onChange={(e) => setNewProp({...newProp, price: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Price" />
-              <textarea value={newProp.description} onChange={(e) => setNewProp({...newProp, description: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Description..." rows={3} />
-              <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold">{isSubmitting ? 'Saving...' : 'Save'}</button>
-            </div>
+            {/* User Avatar / Profile Link could go here */}
           </div>
-        </div>
+
+          {/* TABS */}
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+              <button onClick={() => setActiveTab('feed')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'feed' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
+                  <Zap size={14}/> Feed
+              </button>
+              <button onClick={() => setActiveTab('inventory')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'inventory' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
+                  <Building size={14}/> Projects
+              </button>
+              {userProfile?.role === 'admin' && (
+                  <button onClick={() => setActiveTab('analytics')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'analytics' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
+                      <BarChart3 size={14}/> Stats
+                  </button>
+              )}
+          </div>
+      </div>
+
+      <div className="p-5 space-y-4">
+          
+          {/* --- TAB: CREATIVE FEED --- */}
+          {activeTab === 'feed' && (
+              <>
+                 <div className="flex justify-between items-center">
+                    <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Latest Updates</h2>
+                    {userProfile?.role === 'admin' && (
+                        <button onClick={() => setShowAddCreative(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-lg active:scale-95 transition-transform">
+                            <Plus size={12}/> New Post
+                        </button>
+                    )}
+                 </div>
+
+                 {creatives.map(c => (
+                     <div key={c.id} className="bg-white rounded-2xl p-3 shadow-sm border border-slate-100">
+                         <div className="flex items-center gap-2 mb-3">
+                             <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-500">
+                                 P
+                             </div>
+                             <div>
+                                 <p className="text-xs font-bold text-slate-900">{c.property?.title || 'General Update'}</p>
+                                 <p className="text-[10px] text-slate-400">{new Date(c.created_at).toLocaleDateString()}</p>
+                             </div>
+                         </div>
+                         <div className="rounded-xl overflow-hidden bg-slate-50 aspect-square mb-3 relative">
+                             <img src={c.url} className="w-full h-full object-cover" />
+                             {userProfile?.role === 'agent' && (
+                                 <button onClick={() => handleClaim(c)} disabled={isSubmitting} className="absolute bottom-3 right-3 bg-white/90 backdrop-blur text-slate-900 text-xs font-bold px-4 py-2 rounded-full shadow-md active:scale-95 transition-transform">
+                                     {isSubmitting ? 'Claiming...' : 'Claim & Share'}
+                                 </button>
+                             )}
+                         </div>
+                         <div className="px-1">
+                             <p className="text-xs text-slate-600 line-clamp-2">{c.caption_template || 'New marketing creative available.'}</p>
+                         </div>
+                     </div>
+                 ))}
+                 {creatives.length === 0 && <div className="text-center py-10 text-slate-400 text-xs">No updates yet.</div>}
+              </>
+          )}
+
+          {/* --- TAB: INVENTORY --- */}
+          {activeTab === 'inventory' && (
+              <>
+                <div className="flex justify-between items-center">
+                    <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">All Projects</h2>
+                    {userProfile?.role === 'admin' && (
+                        <button onClick={() => setShowAddProject(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-lg active:scale-95 transition-transform">
+                            <Plus size={12}/> Add Project
+                        </button>
+                    )}
+                 </div>
+
+                 {properties.map(p => (
+                     <div key={p.id} onClick={() => setSelectedProperty(p)} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex gap-3 cursor-pointer hover:bg-slate-50 transition-colors">
+                         <img src={p.image_url} className="w-20 h-20 rounded-xl object-cover bg-slate-200" />
+                         <div className="flex-1 py-1">
+                             <h3 className="font-bold text-slate-900 text-sm">{p.title}</h3>
+                             <p className="text-xs text-slate-500 mt-1">{p.address}</p>
+                             <div className="flex gap-2 mt-2">
+                                 {p.configurations?.map((c, i) => (
+                                     <span key={i} className="px-1.5 py-0.5 bg-slate-100 rounded text-[10px] font-bold text-slate-600">{c.name}</span>
+                                 )).slice(0, 3)}
+                             </div>
+                         </div>
+                     </div>
+                 ))}
+              </>
+          )}
+
+          {/* --- TAB: ANALYTICS (Admin Only) --- */}
+          {activeTab === 'analytics' && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+                  <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><Share2 size={16}/> Team Activity</h3>
+                  <div className="space-y-4">
+                      {analytics.map((stat, i) => (
+                          <div key={i} className="flex items-center justify-between border-b border-slate-50 pb-3 last:border-0">
+                              <div>
+                                  <p className="text-xs font-bold text-slate-800">{stat.agent_name}</p>
+                                  <p className="text-[10px] text-slate-400">Status: {stat.status}</p>
+                              </div>
+                              <div className="flex gap-3 text-xs font-mono text-slate-600">
+                                  <div className="flex items-center gap-1"><Share2 size={10} className="text-green-500"/> {stat.share_stats.whatsapp}</div>
+                                  <div className="flex items-center gap-1"><Download size={10} className="text-blue-500"/> {stat.share_stats.download}</div>
+                              </div>
+                          </div>
+                      ))}
+                      {analytics.length === 0 && <div className="text-center text-xs text-slate-400 py-4">No activity recorded yet.</div>}
+                  </div>
+              </div>
+          )}
+
+      </div>
+
+      {/* --- MODAL: ADD PROJECT --- */}
+      {showAddProject && (
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between mb-4">
+                      <h2 className="font-bold text-lg">New Project</h2>
+                      <button onClick={() => setShowAddProject(false)}><X size={20}/></button>
+                  </div>
+                  <div className="space-y-3">
+                      <input placeholder="Project Title" className="w-full bg-slate-50 p-3 rounded-xl text-sm" onChange={e => setNewProject({...newProject, title: e.target.value})} />
+                      <input placeholder="Address" className="w-full bg-slate-50 p-3 rounded-xl text-sm" onChange={e => setNewProject({...newProject, address: e.target.value})} />
+                      <input placeholder="RERA Number" className="w-full bg-slate-50 p-3 rounded-xl text-sm" onChange={e => setNewProject({...newProject, rera: e.target.value})} />
+                      <textarea placeholder="Description" className="w-full bg-slate-50 p-3 rounded-xl text-sm" rows={3} onChange={e => setNewProject({...newProject, description: e.target.value})} />
+                      
+                      {/* Configurations */}
+                      <div className="bg-slate-50 p-3 rounded-xl">
+                          <p className="text-xs font-bold text-slate-400 mb-2 uppercase">Configurations</p>
+                          <div className="flex gap-2 mb-2">
+                              <input placeholder="Type (2BHK)" className="flex-1 bg-white p-2 rounded-lg text-xs" value={tempConfig.name} onChange={e => setTempConfig({...tempConfig, name: e.target.value})} />
+                              <input placeholder="Price" className="w-20 bg-white p-2 rounded-lg text-xs" value={tempConfig.price} onChange={e => setTempConfig({...tempConfig, price: e.target.value})} />
+                              <button onClick={() => {
+                                  if(tempConfig.name) setNewProject(prev => ({...prev, configs: [...prev.configs, tempConfig]}))
+                                  setTempConfig({name:'', size:'', price:''})
+                              }} className="bg-slate-900 text-white px-3 rounded-lg text-xs font-bold">+</button>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                              {newProject.configs.map((c, i) => (
+                                  <span key={i} className="text-[10px] bg-white border px-2 py-1 rounded-md">{c.name} - {c.price}</span>
+                              ))}
+                          </div>
+                      </div>
+
+                      <div className="border-2 border-dashed border-slate-200 p-4 rounded-xl text-center">
+                          <p className="text-xs text-slate-400 mb-2">Project Images (Required)</p>
+                          <input type="file" multiple accept="image/*" onChange={e => e.target.files && setProjectFiles({...projectFiles, images: Array.from(e.target.files)})} className="text-xs text-slate-500 w-full" />
+                      </div>
+
+                      <button onClick={handleAddProject} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm mt-2">
+                          {isSubmitting ? 'Saving...' : 'Create Project'}
+                      </button>
+                  </div>
+              </div>
+          </div>
       )}
 
-      {/* VIEW MODAL */}
-      {selectedProperty && (
-        <div className="fixed inset-0 z-[90] bg-white flex flex-col animate-in slide-in-from-bottom-10">
-           <div className="absolute top-4 left-4 z-10"><button onClick={() => setSelectedProperty(null)} className="bg-white/80 backdrop-blur-md p-3 rounded-full shadow-sm text-slate-900"><X size={24} /></button></div>
-           <div className="h-[45vh] bg-slate-100 w-full overflow-x-auto flex snap-x snap-mandatory scrollbar-hide">{(selectedProperty.images || [selectedProperty.image_url]).map((img, i) => <img key={i} src={img} className="w-full h-full object-cover flex-shrink-0 snap-center" />)}</div>
-           <div className="flex-1 p-6 overflow-y-auto bg-white -mt-6 rounded-t-[2rem] relative z-0">
-              <div className="flex justify-between items-start">
-                  <div>
-                    <h2 className="text-2xl font-bold text-slate-900">{selectedProperty.title}</h2>
-                    <p className="text-lg font-bold text-primary-text mt-1">{selectedProperty.price}</p>
+      {/* --- MODAL: ADD CREATIVE --- */}
+      {showAddCreative && (
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6">
+                  <div className="flex justify-between mb-4">
+                      <h2 className="font-bold text-lg">Post to Feed</h2>
+                      <button onClick={() => setShowAddCreative(false)}><X size={20}/></button>
                   </div>
-                  {selectedProperty.property_type && <span className="px-3 py-1 bg-slate-100 rounded-full text-xs font-bold text-slate-500">{selectedProperty.property_type}</span>}
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-xs font-bold text-slate-500 ml-1">Select Project</label>
+                          <select className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none" onChange={e => setNewCreative({...newCreative, property_id: e.target.value})}>
+                              <option value="">-- General / Select --</option>
+                              {properties.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+                          </select>
+                      </div>
+                      
+                      <div className="border-2 border-dashed border-slate-200 p-6 rounded-xl text-center cursor-pointer hover:bg-slate-50 transition-colors relative">
+                          <input type="file" accept="image/*,video/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => e.target.files?.[0] && setCreativeFile(e.target.files[0])} />
+                          <Upload className="mx-auto text-slate-400 mb-2" size={24}/>
+                          <p className="text-xs font-bold text-slate-500">{creativeFile ? creativeFile.name : 'Upload Creative File'}</p>
+                      </div>
+
+                      <div>
+                          <label className="text-xs font-bold text-slate-500 ml-1">Caption Template</label>
+                          <textarea className="w-full bg-slate-50 p-3 rounded-xl text-sm" rows={3} value={newCreative.caption} onChange={e => setNewCreative({...newCreative, caption: e.target.value})} />
+                          <p className="text-[10px] text-slate-400 mt-1 ml-1">Use {'{{Name}}'} and {'{{Phone}}'}</p>
+                      </div>
+
+                      <button onClick={handleAddCreative} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm">
+                          {isSubmitting ? 'Posting...' : 'Post Update'}
+                      </button>
+                  </div>
               </div>
-              <div className="flex items-center gap-2 text-slate-500 my-4"><MapPin size={18} /><span className="text-sm">{selectedProperty.address}</span></div>
-              <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">{selectedProperty.description}</p>
+          </div>
+      )}
+      
+      {/* --- MODAL: VIEW PROPERTY DETAILS --- */}
+      {selectedProperty && (
+        <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-bottom-10">
+           <button onClick={() => setSelectedProperty(null)} className="absolute top-4 right-4 z-10 bg-black/50 text-white p-2 rounded-full"><X size={20}/></button>
+           <img src={selectedProperty.image_url} className="w-full h-64 object-cover" />
+           <div className="flex-1 p-6 overflow-y-auto -mt-6 bg-white rounded-t-[2rem] relative">
+               <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider mb-2 inline-block">RERA: {selectedProperty.rera_number || 'Pending'}</span>
+               <h1 className="text-2xl font-black text-slate-900 mb-1">{selectedProperty.title}</h1>
+               <p className="text-slate-500 text-sm flex items-center gap-1 mb-6"><MapPin size={14}/> {selectedProperty.address}</p>
+               
+               <div className="grid grid-cols-2 gap-3 mb-6">
+                   {selectedProperty.configurations?.map((c, i) => (
+                       <div key={i} className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                           <p className="text-xs font-bold text-slate-400 uppercase">{c.name}</p>
+                           <p className="font-bold text-slate-900">{c.price}</p>
+                           <p className="text-[10px] text-slate-500">{c.size}</p>
+                       </div>
+                   ))}
+               </div>
+
+               <h3 className="font-bold text-slate-900 text-sm mb-2">About Project</h3>
+               <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line mb-6">{selectedProperty.description}</p>
+               
+               {/* Show Brochure Button if URL exists */}
+               {selectedProperty.brochure_url && (
+                   <button className="w-full border border-slate-200 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 mb-2">
+                       <FileText size={16}/> Download Brochure
+                   </button>
+               )}
            </div>
         </div>
       )}

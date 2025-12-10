@@ -18,28 +18,51 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          master_creative_id: string | null
+          property_id: string | null
+          share_stats: Json | null
           status: string | null
           type: string | null
-          url: string | null
-          user_id: string
+          url: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
           id?: string
+          master_creative_id?: string | null
+          property_id?: string | null
+          share_stats?: Json | null
           status?: string | null
           type?: string | null
-          url?: string | null
-          user_id: string
+          url: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
           id?: string
+          master_creative_id?: string | null
+          property_id?: string | null
+          share_stats?: Json | null
           status?: string | null
           type?: string | null
-          url?: string | null
-          user_id?: string
+          url?: string
+          user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "assets_master_creative_id_fkey"
+            columns: ["master_creative_id"]
+            isOneToOne: false
+            referencedRelation: "master_creatives"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assets_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "assets_user_id_fkey"
             columns: ["user_id"]
@@ -58,7 +81,7 @@ export type Database = {
           is_active: boolean | null
           stats: string | null
           title: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -68,7 +91,7 @@ export type Database = {
           is_active?: boolean | null
           stats?: string | null
           title: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -78,7 +101,7 @@ export type Database = {
           is_active?: boolean | null
           stats?: string | null
           title?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -86,131 +109,6 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      daily_drafts: {
-        Row: {
-          caption: string | null
-          created_at: string
-          id: string
-          image_url: string
-          status: string | null
-          user_id: string
-        }
-        Insert: {
-          caption?: string | null
-          created_at?: string
-          id?: string
-          image_url: string
-          status?: string | null
-          user_id: string
-        }
-        Update: {
-          caption?: string | null
-          created_at?: string
-          id?: string
-          image_url?: string
-          status?: string | null
-          user_id?: string
-        }
-        Relationships: []
-      }
-      deal_requirements: {
-        Row: {
-          budget_range: string | null
-          created_at: string
-          description: string | null
-          id: string
-          location: string
-          property_type: string
-          status: string
-          title: string
-          urgency: string | null
-          user_id: string
-        }
-        Insert: {
-          budget_range?: string | null
-          created_at?: string
-          description?: string | null
-          id?: string
-          location: string
-          property_type: string
-          status?: string
-          title: string
-          urgency?: string | null
-          user_id: string
-        }
-        Update: {
-          budget_range?: string | null
-          created_at?: string
-          description?: string | null
-          id?: string
-          location?: string
-          property_type?: string
-          status?: string
-          title?: string
-          urgency?: string | null
-          user_id?: string
-        }
-        Relationships: []
-      }
-      external_listings: {
-        Row: {
-          confidence_score: number | null
-          contact_info: Json | null
-          created_at: string
-          description: string | null
-          id: string
-          image_url: string | null
-          is_claimed: boolean | null
-          location: string | null
-          price: string | null
-          property_type: string | null
-          requirement_id: string | null
-          source_platform: string
-          source_url: string
-          title: string
-        }
-        Insert: {
-          confidence_score?: number | null
-          contact_info?: Json | null
-          created_at?: string
-          description?: string | null
-          id?: string
-          image_url?: string | null
-          is_claimed?: boolean | null
-          location?: string | null
-          price?: string | null
-          property_type?: string | null
-          requirement_id?: string | null
-          source_platform: string
-          source_url: string
-          title: string
-        }
-        Update: {
-          confidence_score?: number | null
-          contact_info?: Json | null
-          created_at?: string
-          description?: string | null
-          id?: string
-          image_url?: string | null
-          is_claimed?: boolean | null
-          location?: string | null
-          price?: string | null
-          property_type?: string | null
-          requirement_id?: string | null
-          source_platform?: string
-          source_url?: string
-          title?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "external_listings_requirement_id_fkey"
-            columns: ["requirement_id"]
-            isOneToOne: false
-            referencedRelation: "deal_requirements"
             referencedColumns: ["id"]
           },
         ]
@@ -230,7 +128,7 @@ export type Database = {
           source: string | null
           status: string | null
           summary: string | null
-          user_id: string
+          user_id: string | null
           value: number | null
         }
         Insert: {
@@ -247,7 +145,7 @@ export type Database = {
           source?: string | null
           status?: string | null
           summary?: string | null
-          user_id: string
+          user_id?: string | null
           value?: number | null
         }
         Update: {
@@ -264,46 +162,124 @@ export type Database = {
           source?: string | null
           status?: string | null
           summary?: string | null
-          user_id?: string
+          user_id?: string | null
           value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      master_creatives: {
+        Row: {
+          caption_template: string | null
+          created_at: string
+          id: string
+          is_active: boolean | null
+          property_id: string
+          type: string | null
+          url: string
+        }
+        Insert: {
+          caption_template?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          property_id: string
+          type?: string | null
+          url: string
+        }
+        Update: {
+          caption_template?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          property_id?: string
+          type?: string | null
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "master_creatives_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          brand_color: string | null
+          created_at: string
+          id: string
+          master_logo_url: string | null
+          name: string
+        }
+        Insert: {
+          brand_color?: string | null
+          created_at?: string
+          id?: string
+          master_logo_url?: string | null
+          name: string
+        }
+        Update: {
+          brand_color?: string | null
+          created_at?: string
+          id?: string
+          master_logo_url?: string | null
+          name?: string
         }
         Relationships: []
       }
       posts: {
         Row: {
           content: string | null
-          created_at: string | null
+          created_at: string
           excerpt: string | null
           id: string
           image_url: string | null
           status: string | null
           tags: string[] | null
-          title: string
-          user_id: string
+          title: string | null
+          user_id: string | null
         }
         Insert: {
           content?: string | null
-          created_at?: string | null
+          created_at?: string
           excerpt?: string | null
           id?: string
           image_url?: string | null
           status?: string | null
           tags?: string[] | null
-          title: string
-          user_id: string
+          title?: string | null
+          user_id?: string | null
         }
         Update: {
           content?: string | null
-          created_at?: string | null
+          created_at?: string
           excerpt?: string | null
           id?: string
           image_url?: string | null
           status?: string | null
           tags?: string[] | null
-          title?: string
-          user_id?: string
+          title?: string | null
+          user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "posts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -325,7 +301,9 @@ export type Database = {
           linkedin_urn: string | null
           logo_url: string | null
           mission_statement: string | null
+          organization_id: string | null
           pixel_id: string | null
+          role: string | null
           selected_page_id: string | null
           selected_page_name: string | null
           selected_page_token: string | null
@@ -352,7 +330,9 @@ export type Database = {
           linkedin_urn?: string | null
           logo_url?: string | null
           mission_statement?: string | null
+          organization_id?: string | null
           pixel_id?: string | null
+          role?: string | null
           selected_page_id?: string | null
           selected_page_name?: string | null
           selected_page_token?: string | null
@@ -379,7 +359,9 @@ export type Database = {
           linkedin_urn?: string | null
           logo_url?: string | null
           mission_statement?: string | null
+          organization_id?: string | null
           pixel_id?: string | null
+          role?: string | null
           selected_page_id?: string | null
           selected_page_name?: string | null
           selected_page_token?: string | null
@@ -387,49 +369,85 @@ export type Database = {
           youtube_token?: string | null
           youtube_url?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       properties: {
         Row: {
           address: string
+          brochure_url: string | null
+          configurations: Json | null
           created_at: string
           description: string | null
+          floor_plan_url: string | null
           id: string
           image_url: string | null
           images: string[] | null
+          marketing_copy_template: string | null
+          master_creatives: string[] | null
+          organization_id: string | null
           price: string | null
           property_type: string | null
+          rera_number: string | null
           status: string | null
-          title: string | null
-          user_id: string
+          title: string
+          user_id: string | null
         }
         Insert: {
           address: string
+          brochure_url?: string | null
+          configurations?: Json | null
           created_at?: string
           description?: string | null
+          floor_plan_url?: string | null
           id?: string
           image_url?: string | null
           images?: string[] | null
+          marketing_copy_template?: string | null
+          master_creatives?: string[] | null
+          organization_id?: string | null
           price?: string | null
           property_type?: string | null
+          rera_number?: string | null
           status?: string | null
-          title?: string | null
-          user_id: string
+          title: string
+          user_id?: string | null
         }
         Update: {
           address?: string
+          brochure_url?: string | null
+          configurations?: Json | null
           created_at?: string
           description?: string | null
+          floor_plan_url?: string | null
           id?: string
           image_url?: string | null
           images?: string[] | null
+          marketing_copy_template?: string | null
+          master_creatives?: string[] | null
+          organization_id?: string | null
           price?: string | null
           property_type?: string | null
+          rera_number?: string | null
           status?: string | null
-          title?: string | null
-          user_id?: string
+          title?: string
+          user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "properties_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "properties_user_id_fkey"
             columns: ["user_id"]
@@ -444,27 +462,9 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      get_agent_properties: {
-        Args: { agent_id: string }
-        Returns: {
-          address: string
-          created_at: string
-          description: string | null
-          id: string
-          image_url: string | null
-          images: string[] | null
-          price: string | null
-          property_type: string | null
-          status: string | null
-          title: string | null
-          user_id: string
-        }[]
-        SetofOptions: {
-          from: "*"
-          to: "properties"
-          isOneToOne: false
-          isSetofReturn: true
-        }
+      increment_share_stat: {
+        Args: { asset_id: string; platform: string }
+        Returns: undefined
       }
     }
     Enums: {

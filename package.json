@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "next build --webpack", 
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "update-types": "npx supabase gen types typescript --project-id ihyhqxlizxxxfmqthsaa > supabase/database.types.ts"
+    "update-types": "npx supabase gen types typescript --project-id dvygrupphzjitzbrtlve > supabase/database.types.ts"
   },
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
@@ -16,7 +16,8 @@
     "lucide-react": "^0.554.0",
     "next": "^16.0.7",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
