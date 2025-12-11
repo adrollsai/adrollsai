@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2 } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -67,8 +67,13 @@ export default function DashboardPage() {
   const [showAddCreative, setShowAddCreative] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   
+  // Image Slider State
+  const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  const sliderRef = useRef<HTMLDivElement>(null)
+
   // Forms
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   
   // -- Add Project Form --
   const [newProject, setNewProject] = useState({
@@ -223,33 +228,98 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // 4. Delete Project (FIXED: Manual Cascade Delete)
+  // 4. Delete Project (ROBUST VERSION)
   const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!confirm("Are you sure? This will delete all associated creatives.")) return
+    if (!confirm("Are you sure? This will delete the project and all its templates.")) return
 
-    // Optimistic UI Update
+    setIsDeleting(true)
+    
+    // 1. Optimistic Update (Remove from UI immediately)
+    const backupProperties = [...properties]
     setProperties(prev => prev.filter(p => p.id !== id))
 
     try {
-        // 1. Delete dependent Master Creatives first
-        await supabase.from('master_creatives').delete().eq('property_id', id)
+        console.log(`Starting delete process for Property ID: ${id}`);
+
+        // --- A. Identify Linked Master Creatives ---
+        const { data: linkedCreatives, error: fetchCreativesError } = await supabase
+            .from('master_creatives')
+            .select('id')
+            .eq('property_id', id)
         
-        // 2. Delete dependent Assets
-        await supabase.from('assets').delete().eq('property_id', id)
+        if (fetchCreativesError) console.warn("Could not fetch linked creatives:", fetchCreativesError)
+        
+        const creativeIds = linkedCreatives?.map(c => c.id) || []
+        console.log(`Found ${creativeIds.length} linked Master Creatives`);
 
-        // 3. Finally Delete Property
-        const { error } = await supabase.from('properties').delete().eq('id', id)
 
-        if (error) {
-            console.error("Delete Error:", error)
-            alert("Failed to delete from database. Refreshing...")
-            fetchData() // Revert UI
+        // --- B. Unlink Assets (Preserve User Data) ---
+        // 1. Unlink assets tied directly to this property
+        await supabase
+            .from('assets')
+            .update({ property_id: null })
+            .eq('property_id', id)
+
+        // 2. Unlink assets tied to the master creatives of this property
+        if (creativeIds.length > 0) {
+            await supabase
+                .from('assets')
+                .update({ master_creative_id: null })
+                .in('master_creative_id', creativeIds)
         }
+
+        // --- C. Delete Master Creatives (Templates) ---
+        // We use .select() to verify deletion, though not strictly required if we assume FKs are handled
+        await supabase
+            .from('master_creatives')
+            .delete()
+            .eq('property_id', id)
+        
+        // --- D. Delete Property (WITH VERIFICATION) ---
+        // IMPORTANT: We use .select() here. 
+        // If RLS prevents delete, 'data' will be empty even if no 'error' is returned.
+        const { data: deletedData, error: deletePropError } = await supabase
+            .from('properties')
+            .delete()
+            .eq('id', id)
+            .select() 
+
+        if (deletePropError) {
+            console.error("Database Delete Error:", deletePropError)
+            throw new Error(deletePropError.message)
+        }
+        
+        if (!deletedData || deletedData.length === 0) {
+            console.error("Silent Failure: No rows deleted. Likely RLS policy issue.")
+            throw new Error("Permission Denied: You do not have permission to delete this property (Check RLS Policies).")
+        }
+
+        console.log("Property successfully deleted from DB.");
+
     } catch (err: any) {
-        alert("Error: " + err.message)
-        fetchData()
+        console.error("Delete process failed:", err)
+        alert("Failed to delete: " + err.message)
+        setProperties(backupProperties) // Revert UI
+    } finally {
+        setIsDeleting(false)
+        fetchData() // Sync with server state
     }
+  }
+
+  // --- Slider Helper ---
+  const handleScroll = () => {
+    if (sliderRef.current) {
+        const scrollLeft = sliderRef.current.scrollLeft
+        const width = sliderRef.current.offsetWidth
+        const index = Math.round(scrollLeft / width)
+        setCurrentImageIndex(index)
+    }
+  }
+
+  const getDisplayImages = (p: Property) => {
+      if (p.images && p.images.length > 0) return p.images;
+      return [p.image_url];
   }
 
   // --- UI COMPONENTS ---
@@ -343,15 +413,16 @@ export default function DashboardPage() {
                  </div>
 
                  {properties.map(p => (
-                     <div key={p.id} onClick={() => setSelectedProperty(p)} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex gap-3 cursor-pointer hover:bg-slate-50 transition-colors relative group">
+                     <div key={p.id} onClick={() => { setSelectedProperty(p); setCurrentImageIndex(0); }} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex gap-3 cursor-pointer hover:bg-slate-50 transition-colors relative group">
                          <img src={p.image_url} className="w-20 h-20 rounded-xl object-cover bg-slate-200" />
                          <div className="flex-1 py-1">
                              <div className="flex justify-between items-start">
                                  <h3 className="font-bold text-slate-900 text-sm">{p.title}</h3>
-                                 {/* DELETE BUTTON */}
+                                 {/* DELETE BUTTON - Stops propagation to prevent opening modal */}
                                  {userProfile?.role === 'admin' && (
                                      <button 
                                          onClick={(e) => handleDeleteProject(p.id, e)}
+                                         disabled={isDeleting}
                                          className="text-slate-300 hover:text-red-500 transition-colors p-1"
                                      >
                                          <Trash2 size={16} />
@@ -476,12 +547,45 @@ export default function DashboardPage() {
           </div>
       )}
       
-      {/* --- MODAL: VIEW PROPERTY DETAILS --- */}
+      {/* --- MODAL: VIEW PROPERTY DETAILS (UPDATED SLIDER) --- */}
       {selectedProperty && (
         <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-bottom-10">
-           <button onClick={() => setSelectedProperty(null)} className="absolute top-4 right-4 z-10 bg-black/50 text-white p-2 rounded-full"><X size={20}/></button>
-           <img src={selectedProperty.image_url} className="w-full h-64 object-cover" />
-           <div className="flex-1 p-6 overflow-y-auto -mt-6 bg-white rounded-t-[2rem] relative">
+           {/* Close Button */}
+           <button onClick={() => setSelectedProperty(null)} className="absolute top-4 right-4 z-20 bg-black/40 backdrop-blur-md text-white p-2.5 rounded-full hover:bg-black/60 transition-colors"><X size={20}/></button>
+           
+           {/* IMAGE SLIDER (CAROUSEL) */}
+           <div className="relative w-full h-[40vh] bg-slate-100">
+               {/* Image Container with Scroll Snap */}
+               <div 
+                 ref={sliderRef}
+                 onScroll={handleScroll}
+                 className="flex overflow-x-auto w-full h-full snap-x snap-mandatory scrollbar-hide"
+                 style={{ scrollBehavior: 'smooth' }}
+               >
+                   {getDisplayImages(selectedProperty).map((img, index) => (
+                       <div key={index} className="w-full h-full flex-shrink-0 snap-center relative">
+                           <img src={img} className="w-full h-full object-cover" alt={`Slide ${index}`} />
+                       </div>
+                   ))}
+               </div>
+
+               {/* Counter Badge */}
+               <div className="absolute top-4 left-4 z-10 bg-black/40 backdrop-blur-md text-white text-[10px] font-bold px-3 py-1.5 rounded-full">
+                   {currentImageIndex + 1} / {getDisplayImages(selectedProperty).length}
+               </div>
+
+               {/* Navigation (Optional for Desktop/Tablet feel) */}
+               {getDisplayImages(selectedProperty).length > 1 && (
+                   <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5 z-10">
+                       {getDisplayImages(selectedProperty).map((_, idx) => (
+                           <div key={idx} className={`w-1.5 h-1.5 rounded-full transition-colors ${idx === currentImageIndex ? 'bg-white' : 'bg-white/40'}`} />
+                       ))}
+                   </div>
+               )}
+           </div>
+
+           {/* Content Section */}
+           <div className="flex-1 p-6 overflow-y-auto -mt-6 bg-white rounded-t-[2rem] relative z-10">
                <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider mb-2 inline-block">RERA: {selectedProperty.rera_number || 'Pending'}</span>
                <h1 className="text-2xl font-black text-slate-900 mb-1">{selectedProperty.title}</h1>
                <p className="text-slate-500 text-sm flex items-center gap-1 mb-6"><MapPin size={14}/> {selectedProperty.address}</p>

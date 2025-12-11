@@ -1,3 +1,5 @@
+// adrollsai/adrollsai/adrollsai-builder-app/app/api/upload/sign/route.ts
+
 import { NextResponse } from 'next/server'
 import { PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
@@ -13,9 +15,8 @@ export async function POST(request: Request) {
 
   const cleanName = fileName.replace(/[^a-zA-Z0-9.-]/g, '')
   
-  // FIX: Explicitly adding the double folder structure to match your bucket state
-  // This ensures the Public URL is: .../adrolls-storage/adrolls-storage/properties/...
-  const key = `adrolls-storage/adrolls-storage/${folder}/${user.id}/${Date.now()}-${cleanName}`
+  // 1. CLEAN KEY for S3/R2 Upload (No 'adrolls-storage' prefix)
+  const key = `${folder}/${user.id}/${Date.now()}-${cleanName}`
 
   try {
     const command = new PutObjectCommand({
@@ -28,7 +29,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ 
       signedUrl, 
-      publicUrl: `${R2_PUBLIC_URL}/${key}` 
+      // 2. PREFIXED URL for Fetching/DB (Includes 'adrolls-storage')
+      publicUrl: `${R2_PUBLIC_URL}/adrolls-storage/${key}` 
     })
 
   } catch (error: any) {

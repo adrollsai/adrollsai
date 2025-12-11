@@ -1,3 +1,5 @@
+// adrollsai/adrollsai/adrollsai-builder-app/app/api/creative/stamp/route.ts
+
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import sharp from 'sharp'
@@ -68,8 +70,8 @@ export async function POST(request: Request) {
       .toBuffer()
 
     // 4. Upload to Cloudflare R2
-    // FIX: Explicitly adding double folder structure here too
-    const fileName = `adrolls-storage/adrolls-storage/stamped/${user.id}/${Date.now()}.png`
+    // CLEAN KEY (No 'adrolls-storage' prefix)
+    const fileName = `stamped/${user.id}/${Date.now()}.png`
     
     try {
       await r2.send(new PutObjectCommand({
@@ -83,7 +85,8 @@ export async function POST(request: Request) {
       throw new Error("Failed to save image to storage")
     }
 
-    const publicUrl = `${R2_PUBLIC_URL}/${fileName}`
+    // PREFIXED URL
+    const publicUrl = `${R2_PUBLIC_URL}/adrolls-storage/${fileName}`
 
     // 5. Save to DB
     await supabase.from('assets').insert({
