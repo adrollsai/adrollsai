@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Linkedin, Youtube, Film, MessageCircle, Share2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { useOrganization } from '@/components/OrganizationWrapper'
 
 type Asset = {
   id: string
@@ -26,6 +27,7 @@ const filters = ['All', 'image', 'video']
 
 export default function AssetsPage() {
   const supabase = createClient()
+  const { org } = useOrganization()
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [activeFilter, setActiveFilter] = useState('All')
@@ -120,7 +122,14 @@ export default function AssetsPage() {
   return (
     <div className="p-5 max-w-md mx-auto min-h-screen relative pb-24">
       <div className="flex justify-between items-end mb-5">
-        <div><h1 className="text-2xl font-bold text-slate-900">My Assets</h1><p className="text-slate-500 text-xs mt-1">Ready to share</p></div>
+        <div>
+            {/* Dynamic Logo integration */}
+            <div className="flex items-center gap-2">
+               {org?.master_logo_url && <img src={org.master_logo_url} className="w-6 h-6 object-contain" />}
+               <h1 className="text-2xl font-bold text-slate-900">My Assets</h1>
+            </div>
+            <p className="text-slate-500 text-xs mt-1">Ready to share</p>
+        </div>
         <div className="p-2.5 bg-white text-slate-700 rounded-full shadow-sm border border-slate-100"><Filter size={18} /></div>
       </div>
 
@@ -157,7 +166,7 @@ export default function AssetsPage() {
           <div className="bg-white w-full max-w-sm rounded-[2rem] p-5 shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold text-slate-800">Share Asset</h2>
-              <button onClick={() => setSelectedAsset(null)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
+              <button onClick={() => setSelectedAsset(null)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20}/></button>
             </div>
 
             <div className="rounded-2xl overflow-hidden bg-slate-100 mb-4 border border-slate-100 relative">

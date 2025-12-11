@@ -1,11 +1,10 @@
-// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/dashboard/ads/page.tsx
-
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Zap, Plus, X, Loader2, DollarSign, Building2, Image as ImageIcon, Upload, RefreshCw, ExternalLink } from 'lucide-react' // Added ExternalLink
+import { Zap, Plus, X, Loader2, DollarSign, Building2, Image as ImageIcon, Upload, RefreshCw, ExternalLink } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
+import { useOrganization } from '@/components/OrganizationWrapper'
 
 // --- TYPES ---
 type Property = {
@@ -34,7 +33,8 @@ const GENDERS = ['All', 'Male', 'Female']
 export default function AdsPage() {
   const router = useRouter()
   const supabase = createClient()
-  const fileInputRef = useRef<HTMLInputElement>(null) 
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const { org } = useOrganization()
   
   // --- CORE STATE ---
   const [loading, setLoading] = useState(true)
@@ -219,7 +219,11 @@ export default function AdsPage() {
     <div className="p-5 max-w-md mx-auto min-h-screen pb-24">
       <div className="flex justify-between items-end mb-6">
         <div>
-            <h1 className="text-2xl font-bold text-slate-900">Meta Ads AI</h1>
+            {/* Dynamic Logo integration */}
+            <div className="flex items-center gap-2">
+               {org?.master_logo_url && <img src={org.master_logo_url} className="w-6 h-6 object-contain" />}
+               <h1 className="text-2xl font-bold text-slate-900">Meta Ads AI</h1>
+            </div>
             <p className="text-slate-500 text-xs mt-1">AI-optimized Lead Gen campaigns</p>
         </div>
         <div className="flex gap-2">

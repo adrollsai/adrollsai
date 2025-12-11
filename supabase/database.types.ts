@@ -466,6 +466,7 @@ export type Database = {
         Args: { asset_id: string; platform: string }
         Returns: undefined
       }
+      is_admin: { Args: never; Returns: boolean }
     }
     Enums: {
       [_ in never]: never

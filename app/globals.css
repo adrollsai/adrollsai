@@ -1,3 +1,11 @@
+/* adrollsai/adrollsai/adrollsai-builder-app/app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  /* Default AdRolls Theme (Light Blue) */
+  --primary: #D0E8FF; 
+  --primary-text: #001D35;
+  --surface: #F8F9FF;
+}

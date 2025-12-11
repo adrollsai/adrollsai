@@ -1,5 +1,7 @@
+/* adrollsai/adrollsai/adrollsai-builder-app/app/dashboard/layout.tsx */
 import BottomNav from "@/components/BottomNav";
-import FloatingAgent from "@/components/FloatingAgent"; // <--- Import this
+import FloatingAgent from "@/components/FloatingAgent"; 
+import OrganizationWrapper from "@/components/OrganizationWrapper"; // Import
 
 export default function DashboardLayout({
   children,
@@ -7,14 +9,12 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-surface pb-32 relative"> 
-      
-      {children}
-      
-      {/* The Global AI Agent Button */}
-      <FloatingAgent /> 
-      
-      <BottomNav />
-    </div>
+    <OrganizationWrapper>
+      <div className="min-h-screen bg-surface pb-32 relative transition-colors duration-500"> 
+        {children}
+        <FloatingAgent /> 
+        <BottomNav />
+      </div>
+    </OrganizationWrapper>
   );
 }

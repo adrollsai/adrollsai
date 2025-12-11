@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Search, Phone, MessageCircle, RefreshCw, Upload, Plus, CheckCircle2, X, Download, Trash2, UserPlus, Trophy, Users, BarChart3, ArrowRightLeft } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { useOrganization } from '@/components/OrganizationWrapper'
 
 const STAGES = ['New', 'Qualified', 'Site Visit Done', 'Closed']
 const CACHE_KEY = 'crm_leads_cache'
@@ -34,6 +35,7 @@ type TeamStat = {
 
 export default function CRMPage() {
   const supabase = createClient()
+  const { org } = useOrganization()
   
   // --- STATE ---
   const [leads, setLeads] = useState<Lead[]>([])
@@ -232,7 +234,11 @@ export default function CRMPage() {
       {/* Header */}
       <div className="flex justify-between items-end mb-6">
         <div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">CRM</h1>
+            {/* Dynamic Logo integration */}
+            <div className="flex items-center gap-2">
+               {org?.master_logo_url && <img src={org.master_logo_url} className="w-6 h-6 object-contain" />}
+               <h1 className="text-2xl font-black text-slate-900 tracking-tight">CRM</h1>
+            </div>
             <p className="text-slate-500 text-xs mt-1 font-medium">Pipeline & Leads</p>
         </div>
         <div className="flex gap-2">

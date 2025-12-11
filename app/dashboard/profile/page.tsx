@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target, Building2, ShieldCheck, User, Camera, Mail, Phone } from 'lucide-react'
+import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target, Building2, ShieldCheck, User, Camera, Mail, Phone, Building, Palette } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
-import { uploadToR2 } from '@/utils/upload-helper' // <--- IMPORT HELPER
+import { uploadToR2 } from '@/utils/upload-helper'
+import { useOrganization } from '@/components/OrganizationWrapper'
 
 type FBPage = {
   id: string
@@ -34,6 +35,7 @@ type ProfileData = {
 export default function ProfilePage() {
   const router = useRouter()
   const supabase = createClient()
+  const { org, refreshOrg } = useOrganization()
   
   // --- STATE ---
   const [loading, setLoading] = useState(true)
@@ -78,6 +80,11 @@ export default function ProfilePage() {
     linkedinUrl: '',
     youtubeUrl: ''
   })
+
+  // New Org Form State
+  const [orgForm, setOrgForm] = useState({ name: '', color: '#D0E8FF', logo: '' })
+  const [isSavingOrg, setIsSavingOrg] = useState(false)
+  const orgLogoInputRef = useRef<HTMLInputElement>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -210,7 +217,7 @@ export default function ProfilePage() {
         // UPDATED: Fetch Organization and Role
         const { data: profile } = await supabase
           .from('profiles')
-          .select('*, organization:organizations(name)') 
+          .select('*, organization:organizations(name, id)') 
           .eq('id', user.id)
           .single()
 
@@ -279,6 +286,17 @@ export default function ProfilePage() {
       authListener.subscription.unsubscribe()
     }
   }, [router, supabase])
+
+  // Load Org Data into Form when context is ready
+  useEffect(() => {
+    if (org) {
+      setOrgForm({
+        name: org.name || '',
+        color: org.brand_color || '#D0E8FF',
+        logo: org.master_logo_url || ''
+      })
+    }
+  }, [org])
 
   // --- ACTIONS (Connect/Disconnect) ---
   const handleConnectFacebook = async () => {
@@ -417,6 +435,45 @@ export default function ProfilePage() {
     setIsSaving(false)
   }
 
+  const handleSaveOrg = async () => {
+    // @ts-ignore
+    if (userRole !== 'admin' || !orgName) return
+    if (!org?.id) return;
+
+    setIsSavingOrg(true)
+    
+    // UPDATED: Added .select() to verify the update actually happened
+    const { data, error } = await supabase
+      .from('organizations')
+      .update({
+        name: orgForm.name,
+        brand_color: orgForm.color,
+        master_logo_url: orgForm.logo
+      })
+      .eq('id', org.id)
+      .select() 
+
+    if (error) {
+        alert("Failed to update organization: " + error.message)
+    } else if (!data || data.length === 0) {
+        alert("Update failed: You might not have permission to edit this organization.")
+    } else {
+        alert("Organization settings saved!")
+        // Explicitly await the refresh to ensure data is synced before UI updates
+        await refreshOrg() 
+    }
+    setIsSavingOrg(false)
+  }
+
+  const handleOrgLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+       try {
+         const url = await uploadToR2(e.target.files[0], 'logos')
+         setOrgForm(prev => ({...prev, logo: url}))
+       } catch(err) { alert("Upload failed") }
+    }
+  }
+
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/')
@@ -458,6 +515,47 @@ export default function ProfilePage() {
               </div>
           </div>
       </div>
+
+      {/* NEW: ORGANIZATION SETTINGS (Admin Only) */}
+      {userRole === 'admin' && (
+        <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 relative overflow-hidden">
+           <div className="absolute top-0 right-0 p-4 opacity-5"><Building size={100}/></div>
+           <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><Building size={18}/> Organization Settings</h3>
+           
+           <div className="space-y-4 relative z-10">
+              {/* Logo Upload */}
+              <div className="flex items-center gap-4">
+                  <div onClick={() => orgLogoInputRef.current?.click()} className="w-16 h-16 rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200 flex items-center justify-center cursor-pointer hover:border-blue-300 transition-colors overflow-hidden">
+                      {orgForm.logo ? <img src={orgForm.logo} className="w-full h-full object-contain"/> : <Camera size={20} className="text-slate-400"/>}
+                  </div>
+                  <div>
+                      <p className="text-xs font-bold text-slate-700">Company Logo</p>
+                      <p className="text-[10px] text-slate-400">Appears in top bar</p>
+                  </div>
+                  <input type="file" ref={orgLogoInputRef} onChange={handleOrgLogoUpload} className="hidden"/>
+              </div>
+
+              {/* Company Name */}
+              <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Company Name</label>
+                  <input type="text" value={orgForm.name} onChange={e => setOrgForm({...orgForm, name: e.target.value})} className="w-full bg-slate-50 px-4 py-3 rounded-xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-primary"/>
+              </div>
+
+              {/* Brand Color */}
+              <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Brand Theme Color</label>
+                  <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl">
+                      <input type="color" value={orgForm.color} onChange={e => setOrgForm({...orgForm, color: e.target.value})} className="w-10 h-10 rounded-lg cursor-pointer border-none bg-transparent"/>
+                      <span className="text-xs font-mono text-slate-500">{orgForm.color}</span>
+                  </div>
+              </div>
+
+              <button onClick={handleSaveOrg} disabled={isSavingOrg} className="w-full bg-slate-900 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
+                 {isSavingOrg ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} Save Organization
+              </button>
+           </div>
+        </div>
+      )}
 
       {/* 2. BRANDING KIT */}
       <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6">

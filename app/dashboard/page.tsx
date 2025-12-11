@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
+import { useOrganization } from '@/components/OrganizationWrapper'
 
 // --- Types ---
 type Configuration = { name: string; size: string; price: string }
@@ -51,9 +52,11 @@ export default function DashboardPage() {
   const supabase = createClient()
   const router = useRouter()
   
+  // Use the global organization context (This provides the logo/colors)
+  const { org } = useOrganization()
+  
   // --- STATE ---
   const [activeTab, setActiveTab] = useState<'feed' | 'inventory' | 'analytics'>('feed')
-  
   const [userProfile, setUserProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   
@@ -98,8 +101,21 @@ export default function DashboardPage() {
       if (!user) { router.push('/'); return }
 
       // Get Profile
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      if (profile) setUserProfile(profile as Profile)
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+      
+      if (profileError) {
+          console.error("Profile Fetch Error:", profileError)
+      }
+
+      if (profile) {
+          setUserProfile(profile as Profile)
+          // If the profile says admin, we unlock admin features
+          console.log("Current User Role:", profile.role)
+      }
 
       // Get Properties
       const { data: props } = await supabase.from('properties').select('*').order('created_at', { ascending: false })
@@ -130,7 +146,7 @@ export default function DashboardPage() {
       }
 
     } catch (error) {
-      console.error("Error:", error)
+      console.error("Dashboard Error:", error)
     } finally {
       setLoading(false)
     }
@@ -228,7 +244,7 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // 4. Delete Project (ROBUST VERSION)
+  // 4. Delete Project
   const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!confirm("Are you sure? This will delete the project and all its templates.")) return
@@ -240,65 +256,19 @@ export default function DashboardPage() {
     setProperties(prev => prev.filter(p => p.id !== id))
 
     try {
-        console.log(`Starting delete process for Property ID: ${id}`);
+        // Unlink assets first (optional safety)
+        await supabase.from('assets').update({ property_id: null }).eq('property_id', id)
 
-        // --- A. Identify Linked Master Creatives ---
-        const { data: linkedCreatives, error: fetchCreativesError } = await supabase
-            .from('master_creatives')
-            .select('id')
-            .eq('property_id', id)
+        // Delete Master Creatives
+        await supabase.from('master_creatives').delete().eq('property_id', id)
         
-        if (fetchCreativesError) console.warn("Could not fetch linked creatives:", fetchCreativesError)
-        
-        const creativeIds = linkedCreatives?.map(c => c.id) || []
-        console.log(`Found ${creativeIds.length} linked Master Creatives`);
+        // Delete Property
+        const { error } = await supabase.from('properties').delete().eq('id', id)
 
-
-        // --- B. Unlink Assets (Preserve User Data) ---
-        // 1. Unlink assets tied directly to this property
-        await supabase
-            .from('assets')
-            .update({ property_id: null })
-            .eq('property_id', id)
-
-        // 2. Unlink assets tied to the master creatives of this property
-        if (creativeIds.length > 0) {
-            await supabase
-                .from('assets')
-                .update({ master_creative_id: null })
-                .in('master_creative_id', creativeIds)
-        }
-
-        // --- C. Delete Master Creatives (Templates) ---
-        // We use .select() to verify deletion, though not strictly required if we assume FKs are handled
-        await supabase
-            .from('master_creatives')
-            .delete()
-            .eq('property_id', id)
-        
-        // --- D. Delete Property (WITH VERIFICATION) ---
-        // IMPORTANT: We use .select() here. 
-        // If RLS prevents delete, 'data' will be empty even if no 'error' is returned.
-        const { data: deletedData, error: deletePropError } = await supabase
-            .from('properties')
-            .delete()
-            .eq('id', id)
-            .select() 
-
-        if (deletePropError) {
-            console.error("Database Delete Error:", deletePropError)
-            throw new Error(deletePropError.message)
-        }
-        
-        if (!deletedData || deletedData.length === 0) {
-            console.error("Silent Failure: No rows deleted. Likely RLS policy issue.")
-            throw new Error("Permission Denied: You do not have permission to delete this property (Check RLS Policies).")
-        }
-
-        console.log("Property successfully deleted from DB.");
+        if (error) throw error
 
     } catch (err: any) {
-        console.error("Delete process failed:", err)
+        console.error("Delete failed:", err)
         alert("Failed to delete: " + err.message)
         setProperties(backupProperties) // Revert UI
     } finally {
@@ -329,12 +299,21 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-slate-50 pb-24 max-w-md mx-auto relative shadow-2xl">
       
-      {/* Header */}
+      {/* Header with Dynamic Branding */}
       <div className="bg-white p-5 pt-8 rounded-b-[2rem] shadow-sm z-10 sticky top-0">
           <div className="flex justify-between items-center mb-4">
             <div>
-                <h1 className="text-xl font-black text-slate-900 tracking-tight">{userProfile?.role === 'admin' ? 'Builder Console' : 'Agent Hub'}</h1>
-                <p className="text-xs font-medium text-slate-400">{userProfile?.organization_id ? 'Prime Estates' : 'Welcome'}</p>
+                {/* LOGO AND TITLE */}
+                <div className="flex items-center gap-2 mb-1">
+                   {org?.master_logo_url && <img src={org.master_logo_url} className="w-8 h-8 object-contain" alt="Org Logo"/>}
+                   <h1 className="text-xl font-black text-slate-900 tracking-tight">
+                     {org?.name || (userProfile?.role === 'admin' ? 'Builder Console' : 'Agent Hub')}
+                   </h1>
+                </div>
+                {/* Subtitle based on role */}
+                <p className="text-xs font-medium text-slate-400">
+                    {userProfile?.role === 'admin' ? 'Organization Admin' : 'Sales Agent'}
+                </p>
             </div>
           </div>
 
@@ -418,7 +397,7 @@ export default function DashboardPage() {
                          <div className="flex-1 py-1">
                              <div className="flex justify-between items-start">
                                  <h3 className="font-bold text-slate-900 text-sm">{p.title}</h3>
-                                 {/* DELETE BUTTON - Stops propagation to prevent opening modal */}
+                                 {/* DELETE BUTTON */}
                                  {userProfile?.role === 'admin' && (
                                      <button 
                                          onClick={(e) => handleDeleteProject(p.id, e)}
