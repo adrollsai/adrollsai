@@ -10,6 +10,8 @@
     "update-types": "npx supabase gen types typescript --project-id dvygrupphzjitzbrtlve > supabase/database.types.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.948.0",
+    "@aws-sdk/s3-request-presigner": "^3.948.0",
     "@ducanh2912/next-pwa": "^10.2.9",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.84.0",

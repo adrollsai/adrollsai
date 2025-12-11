@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target, Building2, ShieldCheck, User, Camera, Mail, Phone } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
+import { uploadToR2 } from '@/utils/upload-helper' // <--- IMPORT HELPER
 
 type FBPage = {
   id: string
@@ -22,14 +23,12 @@ type Pixel = {
   name: string
 }
 
-// Updated Profile Type
 type ProfileData = {
     role: 'admin' | 'agent'
     organization?: { name: string }
     business_name: string
     contact_number: string
     email: string
-    // ... plus other social fields
 }
 
 export default function ProfilePage() {
@@ -282,8 +281,6 @@ export default function ProfilePage() {
   }, [router, supabase])
 
   // --- ACTIONS (Connect/Disconnect) ---
-  // (Keeping your existing logic intact)
-
   const handleConnectFacebook = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'facebook',
@@ -375,7 +372,7 @@ export default function ProfilePage() {
     setIsDisconnecting(false)
   }
 
-  // --- FILE UPLOADS & SAVING ---
+  // --- FILE UPLOADS & SAVING (UPDATED) ---
 
   const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -383,14 +380,9 @@ export default function ProfilePage() {
       setUploadingLogo(true)
       if (!userId) return
 
+      // R2 UPLOAD
       const file = event.target.files[0]
-      const fileExt = file.name.split('.').pop()
-      const fileName = `logos/${userId}-${Date.now()}.${fileExt}`
-
-      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
-      if (uploadError) throw uploadError
-
-      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
+      const publicUrl = await uploadToR2(file, 'logos')
 
       setFormData(prev => ({ ...prev, logoUrl: publicUrl }))
       await supabase.from('profiles').update({ logo_url: publicUrl }).eq('id', userId)
@@ -436,7 +428,7 @@ export default function ProfilePage() {
     <div className="p-5 max-w-md mx-auto min-h-screen pb-32">
       <h1 className="text-2xl font-bold text-slate-900 mb-6">Your Profile</h1>
 
-      {/* 1. IDENTITY CARD (New Design) */}
+      {/* 1. IDENTITY CARD */}
       <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 text-center relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-20 bg-gradient-to-r from-slate-900 to-slate-800 z-0"></div>
           
@@ -467,7 +459,7 @@ export default function ProfilePage() {
           </div>
       </div>
 
-      {/* 2. BRANDING KIT (Critical for Stamping) */}
+      {/* 2. BRANDING KIT */}
       <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6">
           <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><ShieldCheck size={18}/> Branding Kit</h3>
           <p className="text-xs text-slate-500 mb-4 leading-relaxed bg-blue-50 p-3 rounded-xl border border-blue-100">
@@ -509,7 +501,7 @@ export default function ProfilePage() {
           </div>
       </div>
 
-      {/* 3. SOCIAL ACCOUNTS (Existing Logic) */}
+      {/* 3. SOCIAL ACCOUNTS */}
       <div className="mb-6">
         <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Social Accounts</h3>
         <div className="bg-white rounded-[2rem] shadow-sm border border-blue-100 overflow-hidden p-5 space-y-4">

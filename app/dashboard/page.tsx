@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
+import { uploadToR2 } from '@/utils/upload-helper'
 
 // --- Types ---
 type Configuration = { name: string; size: string; price: string }
@@ -145,13 +146,11 @@ export default function DashboardPage() {
           const { data: { user } } = await supabase.auth.getUser()
           if (!user) throw new Error("No user")
 
-          // Upload Images
+          // Upload Images to R2
           const imageUrls = []
           for (const file of projectFiles.images) {
-             const path = `projects/${Date.now()}_${file.name}`
-             await supabase.storage.from('properties').upload(path, file)
-             const { data } = supabase.storage.from('properties').getPublicUrl(path)
-             imageUrls.push(data.publicUrl)
+             const publicUrl = await uploadToR2(file, 'properties')
+             imageUrls.push(publicUrl)
           }
 
           // Insert
@@ -182,13 +181,12 @@ export default function DashboardPage() {
       }
       setIsSubmitting(true)
       try {
-          const path = `feed/${Date.now()}_${creativeFile.name}`
-          await supabase.storage.from('properties').upload(path, creativeFile)
-          const { data } = supabase.storage.from('properties').getPublicUrl(path)
+          // Upload to R2
+          const publicUrl = await uploadToR2(creativeFile, 'feed')
           
           await supabase.from('master_creatives').insert({
               property_id: newCreative.property_id,
-              url: data.publicUrl,
+              url: publicUrl,
               type: creativeFile.type.startsWith('video') ? 'video' : 'image',
               caption_template: newCreative.caption
           })
@@ -225,6 +223,35 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
+  // 4. Delete Project (FIXED: Manual Cascade Delete)
+  const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm("Are you sure? This will delete all associated creatives.")) return
+
+    // Optimistic UI Update
+    setProperties(prev => prev.filter(p => p.id !== id))
+
+    try {
+        // 1. Delete dependent Master Creatives first
+        await supabase.from('master_creatives').delete().eq('property_id', id)
+        
+        // 2. Delete dependent Assets
+        await supabase.from('assets').delete().eq('property_id', id)
+
+        // 3. Finally Delete Property
+        const { error } = await supabase.from('properties').delete().eq('id', id)
+
+        if (error) {
+            console.error("Delete Error:", error)
+            alert("Failed to delete from database. Refreshing...")
+            fetchData() // Revert UI
+        }
+    } catch (err: any) {
+        alert("Error: " + err.message)
+        fetchData()
+    }
+  }
+
   // --- UI COMPONENTS ---
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-slate-400"/></div>
@@ -239,7 +266,6 @@ export default function DashboardPage() {
                 <h1 className="text-xl font-black text-slate-900 tracking-tight">{userProfile?.role === 'admin' ? 'Builder Console' : 'Agent Hub'}</h1>
                 <p className="text-xs font-medium text-slate-400">{userProfile?.organization_id ? 'Prime Estates' : 'Welcome'}</p>
             </div>
-            {/* User Avatar / Profile Link could go here */}
           </div>
 
           {/* TABS */}
@@ -284,7 +310,11 @@ export default function DashboardPage() {
                              </div>
                          </div>
                          <div className="rounded-xl overflow-hidden bg-slate-50 aspect-square mb-3 relative">
-                             <img src={c.url} className="w-full h-full object-cover" />
+                             {c.type === 'video' ? (
+                                <video src={c.url} controls className="w-full h-full object-cover" />
+                             ) : (
+                                <img src={c.url} className="w-full h-full object-cover" />
+                             )}
                              {userProfile?.role === 'agent' && (
                                  <button onClick={() => handleClaim(c)} disabled={isSubmitting} className="absolute bottom-3 right-3 bg-white/90 backdrop-blur text-slate-900 text-xs font-bold px-4 py-2 rounded-full shadow-md active:scale-95 transition-transform">
                                      {isSubmitting ? 'Claiming...' : 'Claim & Share'}
@@ -313,10 +343,21 @@ export default function DashboardPage() {
                  </div>
 
                  {properties.map(p => (
-                     <div key={p.id} onClick={() => setSelectedProperty(p)} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex gap-3 cursor-pointer hover:bg-slate-50 transition-colors">
+                     <div key={p.id} onClick={() => setSelectedProperty(p)} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex gap-3 cursor-pointer hover:bg-slate-50 transition-colors relative group">
                          <img src={p.image_url} className="w-20 h-20 rounded-xl object-cover bg-slate-200" />
                          <div className="flex-1 py-1">
-                             <h3 className="font-bold text-slate-900 text-sm">{p.title}</h3>
+                             <div className="flex justify-between items-start">
+                                 <h3 className="font-bold text-slate-900 text-sm">{p.title}</h3>
+                                 {/* DELETE BUTTON */}
+                                 {userProfile?.role === 'admin' && (
+                                     <button 
+                                         onClick={(e) => handleDeleteProject(p.id, e)}
+                                         className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                                     >
+                                         <Trash2 size={16} />
+                                     </button>
+                                 )}
+                             </div>
                              <p className="text-xs text-slate-500 mt-1">{p.address}</p>
                              <div className="flex gap-2 mt-2">
                                  {p.configurations?.map((c, i) => (

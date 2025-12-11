@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import sharp from 'sharp'
+import { PutObjectCommand } from '@aws-sdk/client-s3'
+import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -10,7 +12,6 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    // UPDATED: Now accepting masterCreativeId
     const { masterImageUrl, agentProfile, propertyId, masterCreativeId } = await request.json()
 
     if (!masterImageUrl) throw new Error("Missing Master Image URL")
@@ -52,12 +53,13 @@ export async function POST(request: Request) {
     `
     const footerBuffer = Buffer.from(footerSvg)
 
-    const layers = [
+    const layers: sharp.OverlayOptions[] = [
       { input: footerBuffer, top: height - footerHeight, left: 0 }
     ]
 
     if (logoBuffer) {
-      layers.push({ input: logoBuffer, top: 40, left: 40 })
+      // Cast to any to fix TS error
+      layers.push({ input: logoBuffer as any, top: 40, left: 40 })
     }
 
     const finalImageBuffer = await sharp(masterBuffer)
@@ -65,24 +67,32 @@ export async function POST(request: Request) {
       .png()
       .toBuffer()
 
-    // 4. Upload
-    const fileName = `stamped/${user.id}-${Date.now()}.png`
-    const { error: uploadError } = await supabase.storage
-      .from('assets')
-      .upload(fileName, finalImageBuffer, { contentType: 'image/png' })
+    // 4. Upload to Cloudflare R2
+    // FIX: Explicitly adding double folder structure here too
+    const fileName = `adrolls-storage/adrolls-storage/stamped/${user.id}/${Date.now()}.png`
+    
+    try {
+      await r2.send(new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: fileName,
+        Body: finalImageBuffer,
+        ContentType: 'image/png'
+      }))
+    } catch (uploadError) {
+      console.error("R2 Upload Failed:", uploadError)
+      throw new Error("Failed to save image to storage")
+    }
 
-    if (uploadError) throw uploadError
+    const publicUrl = `${R2_PUBLIC_URL}/${fileName}`
 
-    const { data: { publicUrl } } = supabase.storage.from('assets').getPublicUrl(fileName)
-
-    // 5. Save to DB (UPDATED: Saving master_creative_id)
+    // 5. Save to DB
     await supabase.from('assets').insert({
         user_id: user.id,
         url: publicUrl,
         type: 'image',
         status: 'Stamped',
         property_id: propertyId,
-        master_creative_id: masterCreativeId, // <--- Key for Analytics
+        master_creative_id: masterCreativeId, 
         share_stats: { whatsapp: 0, facebook: 0, instagram: 0, download: 0 }
     })
 
