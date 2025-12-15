@@ -1,11 +1,59 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target, Building2, ShieldCheck, User, Camera, Mail, Phone, Building, Palette, BadgeCheck } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { LogOut, Save, Loader2, Building, Facebook, Linkedin, CheckCircle, Youtube, Globe, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { useOrganization } from '@/components/OrganizationWrapper'
+
+// --- LOCAL TYPE DEFINITIONS (The Nuclear Fix) ---
+// We define exactly what we need here so we don't depend on broken external files.
+
+type OrganizationWithDomain = {
+    id: string;
+    name: string;
+    brand_color: string | null;
+    master_logo_url: string | null;
+    custom_domain: string | null;
+}
+
+type LocalProfile = {
+    id: string;
+    role: 'admin' | 'agent' | null; // Explicitly defined
+    organization: OrganizationWithDomain | null;
+    
+    // Core Profile Fields
+    business_name: string | null;
+    mission_statement: string | null;
+    brand_color: string | null;
+    contact_number: string | null;
+    email: string | null;
+    logo_url: string | null;
+    
+    // Social Fields
+    facebook_token: string | null;
+    facebook_url: string | null;
+    selected_page_id: string | null;
+    selected_page_name: string | null;
+    selected_page_token: string | null;
+    ad_account_id: string | null;
+    pixel_id: string | null;
+    
+    instagram_url: string | null;
+    
+    linkedin_token: string | null;
+    linkedin_url: string | null;
+    linkedin_urn: string | null;
+    
+    google_business_token: string | null;
+    google_business_refresh_token: string | null;
+    google_business_location_id: string | null;
+    
+    youtube_token: string | null;
+    youtube_refresh_token: string | null;
+    youtube_url: string | null;
+}
 
 type FBPage = {
   id: string
@@ -24,19 +72,16 @@ type Pixel = {
   name: string
 }
 
-type ProfileData = {
-    role: 'admin' | 'agent'
-    organization?: { name: string }
-    business_name: string
-    contact_number: string
-    email: string
-}
+const DEFAULT_APP_HOST = process.env.NEXT_PUBLIC_DEFAULT_HOST || 'app.adrollsai.com' 
 
 export default function ProfilePage() {
   const router = useRouter()
   const supabase = createClient()
-  const { org, refreshOrg } = useOrganization()
   
+  // FIX: Force cast the hook result
+  const { org: rawOrg, refreshOrg } = useOrganization()
+  const org = rawOrg as unknown as OrganizationWithDomain | null
+
   // --- STATE ---
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
@@ -47,6 +92,11 @@ export default function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
+  
+  // Custom Domain State
+  const [customDomainInput, setCustomDomainInput] = useState('')
+  const [isSavingCustomDomain, setIsSavingCustomDomain] = useState(false)
+  const [saveDomainStatus, setSaveDomainStatus] = useState<'idle' | 'saved' | 'error'>('idle')
   
   // Connections
   const [isFacebookConnected, setIsFacebookConnected] = useState(false)
@@ -68,13 +118,13 @@ export default function ProfilePage() {
   const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false) 
   const [isLoadingPixels, setIsLoadingPixels] = useState(false)
 
-  // Profile Data
+  // Profile Data Form
   const [formData, setFormData] = useState({
     businessName: '',
     mission: '',
     color: '#D0E8FF',
     contact: '',
-    email: '', // Added Email
+    email: '', 
     logoUrl: '',
     facebookUrl: '',
     instagramUrl: '',
@@ -91,6 +141,14 @@ export default function ProfilePage() {
 
   // --- HELPERS ---
   const isValidFacebookToken = (token: string) => token && token.startsWith('EAA')
+  
+  // Dynamic invite link generator
+  const getAgentInviteLink = useCallback(() => {
+    if (!org?.id) return 'N/A'
+    const domain = org.custom_domain || DEFAULT_APP_HOST
+    return `https://${domain}/?invite_org=${org.id}`
+  }, [org])
+
 
   // 1. Fetch Pages
   const fetchPages = async () => {
@@ -161,7 +219,6 @@ export default function ProfilePage() {
   }
 
   // --- SELECTION HANDLERS ---
-
   const handlePageSelect = async (pageId: string) => {
     const page = fbPages.find(p => p.id === pageId)
     if (!page || !userId) return
@@ -215,24 +272,30 @@ export default function ProfilePage() {
         }
         if (isMounted) setUserId(user.id)
 
-        // UPDATED: Fetch Organization and Role
-        const { data: profile } = await supabase
+        // FIX: Force cast the Supabase response to our LocalProfile type
+        const { data: rawProfileData, error: profileError } = await supabase
           .from('profiles')
-          .select('*, organization:organizations(name, id)') 
+          .select('*, organization:organizations(name, id, custom_domain)') 
           .eq('id', user.id)
           .single()
 
+        if (profileError) throw profileError;
+
+        // Force casting here ensures TypeScript sees 'role', 'business_name', etc.
+        const profile = rawProfileData as unknown as LocalProfile;
+
         if (profile && isMounted) {
-          setUserRole(profile.role || 'agent')
-          // @ts-ignore
+          setUserRole(profile.role || 'agent') // No red squiggle here anymore
           setOrgName(profile.organization?.name || 'Independent')
+          
+          setCustomDomainInput(profile.organization?.custom_domain || '') 
           
           setFormData({
             businessName: profile.business_name || '',
             mission: profile.mission_statement || '',
             color: profile.brand_color || '#D0E8FF',
             contact: profile.contact_number || '',
-            email: profile.email || user.email || '', // Set Email
+            email: profile.email || user.email || '', 
             logoUrl: profile.logo_url || '',
             facebookUrl: profile.facebook_url || '',
             instagramUrl: profile.instagram_url || '',
@@ -297,8 +360,56 @@ export default function ProfilePage() {
         color: org.brand_color || '#D0E8FF',
         logo: org.master_logo_url || ''
       })
+      setCustomDomainInput(org.custom_domain || '') 
     }
   }, [org])
+
+  // --- NEW: CUSTOM DOMAIN HANDLER ---
+  const handleSaveCustomDomain = async (e: React.FormEvent) => { 
+    e.preventDefault()
+    if (userRole !== 'admin' || !org?.id) return
+
+    setIsSavingCustomDomain(true)
+    setSaveDomainStatus('idle')
+    
+    const normalizedDomain = customDomainInput.trim().toLowerCase()
+    
+    if (normalizedDomain === DEFAULT_APP_HOST) {
+        alert(`Cannot use the default application host (${DEFAULT_APP_HOST}) as a custom domain.`)
+        setIsSavingCustomDomain(false)
+        setSaveDomainStatus('error')
+        return
+    }
+
+    try {
+      // FIX: Force cast the update/select result
+      const { data, error } = await supabase
+        .from('organizations')
+        .update({ custom_domain: normalizedDomain || null } as any) 
+        .eq('id', org.id)
+        .select('custom_domain')
+        .single()
+      
+      if (error) throw error
+
+      // Cast data safely
+      const updatedData = data as unknown as { custom_domain: string | null }
+      setCustomDomainInput(updatedData?.custom_domain || '')
+      
+      await refreshOrg() 
+      
+      setSaveDomainStatus('saved')
+      setTimeout(() => setSaveDomainStatus('idle'), 3000)
+
+    } catch (error: any) {
+      console.error('Error saving custom domain:', error.message)
+      alert('Failed to save custom domain: ' + error.message)
+      setSaveDomainStatus('error')
+    } finally {
+      setIsSavingCustomDomain(false)
+    }
+  }
+
 
   // --- ACTIONS (Connect/Disconnect) ---
   const handleConnectFacebook = async () => {
@@ -392,7 +503,7 @@ export default function ProfilePage() {
     setIsDisconnecting(false)
   }
 
-  // --- FILE UPLOADS & SAVING (UPDATED) ---
+  // --- FILE UPLOADS & SAVING ---
 
   const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -438,13 +549,10 @@ export default function ProfilePage() {
   }
 
   const handleSaveOrg = async () => {
-    // @ts-ignore
-    if (userRole !== 'admin' || !orgName) return
-    if (!org?.id) return;
+    if (userRole !== 'admin' || !org?.id) return;
 
     setIsSavingOrg(true)
     
-    // UPDATED: Added .select() to verify the update actually happened
     const { data, error } = await supabase
       .from('organizations')
       .update({
@@ -461,7 +569,6 @@ export default function ProfilePage() {
         alert("Update failed: You might not have permission to edit this organization.")
     } else {
         alert("Organization settings saved!")
-        // Explicitly await the refresh to ensure data is synced before UI updates
         await refreshOrg() 
     }
     setIsSavingOrg(false)
@@ -482,13 +589,20 @@ export default function ProfilePage() {
   }
 
   if (loading) return <div className="p-10 text-center text-slate-400 text-sm animate-pulse">Loading settings...</div>
+  
+  // State for conditional rendering
+  const isCustomDomainSet = !!org?.custom_domain; 
+  const domainButtonText = 
+    isSavingCustomDomain ? 'Saving...' : 
+    saveDomainStatus === 'saved' ? 'Domain Saved!' : 
+    'Save Custom Domain'
+    
 
   return (
     <div className="p-5 max-w-md mx-auto min-h-screen pb-32">
       <h1 className="text-2xl font-bold text-slate-900 mb-6">Your Profile</h1>
 
       {/* --- NEW: ACTIVE ORGANIZATION BADGE --- */}
-      {/* This shows explicitly which Org the agent is under */}
       {org && (
           <div className="bg-slate-900 text-white p-5 rounded-2xl flex items-center gap-4 relative overflow-hidden shadow-lg mb-6">
               <div className="absolute right-[-10px] top-[-10px] opacity-10 rotate-12 pointer-events-none">
@@ -520,7 +634,6 @@ export default function ProfilePage() {
           <div className="absolute top-0 left-0 w-full h-20 bg-gradient-to-r from-slate-900 to-slate-800 z-0"></div>
           
           <div className="relative z-10 flex flex-col items-center">
-              {/* Logo / Avatar */}
               <div className="relative group cursor-pointer" onClick={() => !uploadingLogo && fileInputRef.current?.click()}>
                   <div className="w-24 h-24 rounded-full bg-white border-4 border-white shadow-lg flex items-center justify-center overflow-hidden">
                       {uploadingLogo ? <Loader2 className="animate-spin text-slate-400"/> : formData.logoUrl ? (
@@ -541,7 +654,7 @@ export default function ProfilePage() {
       </div>
 
       {/* NEW: ORGANIZATION SETTINGS (Admin Only) */}
-      {userRole === 'admin' && (
+      {userRole === 'admin' && org && ( 
         <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 relative overflow-hidden">
            <div className="absolute top-0 right-0 p-4 opacity-5"><Building size={100}/></div>
            <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><Building size={18}/> Organization Settings</h3>
@@ -578,6 +691,53 @@ export default function ProfilePage() {
                  {isSavingOrg ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} Save Organization
               </button>
            </div>
+           
+           {/* --- NEW: CUSTOM DOMAIN SECTION --- */}
+            <div className="border-t border-slate-200 mt-6 pt-6">
+                <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2 text-base"><Globe size={18}/> Custom Sign-in Domain</h4>
+                <p className="text-xs text-slate-500 mb-4 leading-relaxed bg-yellow-50 p-3 rounded-xl border border-yellow-100">
+                    For agents to sign in at a custom URL (e.g., <code className="bg-white p-0.5 rounded text-slate-800">agents.yourcompany.com</code>), enter it below. This requires setting up a **CNAME record** in your DNS.
+                </p>
+                
+                <form onSubmit={handleSaveCustomDomain} className="space-y-4">
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Agent Sign-in Domain</label>
+                        <input 
+                            type="text" 
+                            value={customDomainInput} 
+                            onChange={e => setCustomDomainInput(e.target.value)} 
+                            placeholder="agents.mycompany.com"
+                            disabled={isSavingCustomDomain}
+                            className="w-full bg-slate-50 px-4 py-3 rounded-xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+
+                    <button type="submit" disabled={isSavingCustomDomain} className={`w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors ${
+                        isSavingCustomDomain
+                            ? 'bg-blue-400 cursor-not-allowed'
+                            : saveDomainStatus === 'saved'
+                                ? 'bg-green-600 text-white'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}>
+                        {isSavingCustomDomain ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} 
+                        {domainButtonText}
+                    </button>
+                </form>
+
+                <div className="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                    <h5 className="font-bold text-sm text-slate-800 mb-2">Agent Invitation Link</h5>
+                    <p className="text-[10px] text-slate-500 mb-2">Share this dynamic link. It redirects agents to sign in on the correct domain.</p>
+                    <code className="block p-3 bg-white rounded-lg text-xs break-all text-blue-600 border border-slate-100">
+                        <a href={getAgentInviteLink()} target="_blank" rel="noopener noreferrer">
+                            {getAgentInviteLink()}
+                        </a>
+                    </code>
+                    {/* The org object is now forcibly typed to include custom_domain so this works */}
+                    {isCustomDomainSet && <p className="text-[10px] text-green-600 mt-2">Currently using custom domain: <span className="font-bold">{org.custom_domain}</span></p>}
+                    {!isCustomDomainSet && <p className="text-[10px] text-slate-500 mt-2">Currently using default host: <span className="font-bold">{DEFAULT_APP_HOST}</span></p>}
+                </div>
+            </div>
+            {/* --- END: CUSTOM DOMAIN SECTION --- */}
         </div>
       )}
 
@@ -617,7 +777,6 @@ export default function ProfilePage() {
                   </div>
               </div>
               
-              {/* NEW: Read Only Email */}
               <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Email Address (Login)</label>
                   <div className="relative opacity-60">

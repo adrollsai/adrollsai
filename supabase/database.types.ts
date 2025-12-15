@@ -249,6 +249,7 @@ export type Database = {
         Row: {
           brand_color: string | null
           created_at: string
+          custom_domain: string | null
           id: string
           master_logo_url: string | null
           name: string
@@ -256,6 +257,7 @@ export type Database = {
         Insert: {
           brand_color?: string | null
           created_at?: string
+          custom_domain?: string | null
           id?: string
           master_logo_url?: string | null
           name: string
@@ -263,6 +265,7 @@ export type Database = {
         Update: {
           brand_color?: string | null
           created_at?: string
+          custom_domain?: string | null
           id?: string
           master_logo_url?: string | null
           name?: string

@@ -1,6 +1,48 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 
+// Helper function to determine the base URL for redirection (Custom Domain or Default)
+async function getRedirectBaseUrl(request: Request) {
+  const url = new URL(request.url)
+  const origin = url.origin
+  
+  // The client is created here as it's needed for all successful and error redirect paths.
+  const supabase = await createClient()
+
+  // The host as seen by the request (x-forwarded-host is preferred in Next.js/Vercel)
+  const forwardedHost = request.headers.get('x-forwarded-host') 
+  const currentHost = forwardedHost || url.host
+
+  // 1. Check for Local Environment
+  if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    // In local env, use origin (http://localhost:3000) or forwarded host (for tunnels/previews)
+    return forwardedHost ? `https://${forwardedHost}` : origin
+  }
+
+  // 2. Check for Custom Domain Match in Production/Staging
+  // We query the organization table for a matching custom_domain
+  const { data: orgData } = await supabase
+    .from('organizations')
+    .select('custom_domain')
+    .eq('custom_domain', currentHost)
+    .single()
+    
+  // Supabase Postgrest client's single() returns null if no row is found on the server
+  if (orgData) {
+    // Found a custom domain match, use it. Force HTTPS as it's production.
+    return `https://${orgData.custom_domain}`
+  }
+
+  // 3. Fallback to default logic (forwardedHost or origin)
+  if (forwardedHost) {
+    // If no custom domain, but forwardedHost is set (e.g., Vercel default domain)
+    return `https://${forwardedHost}`
+  }
+  
+  // Final fallback to the request origin (main app domain)
+  return origin
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
@@ -14,8 +56,11 @@ export async function GET(request: Request) {
   const errorCode = searchParams.get('error_code')
   const errorDescription = searchParams.get('error_description')
   
+  // Handle immediate errors without full auth flow
   if (errorCode) {
-    return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(errorDescription || 'Unknown Error')}`)
+    // Use the helper to determine the correct base URL for the error page
+    const errorRedirectBaseUrl = await getRedirectBaseUrl(request)
+    return NextResponse.redirect(`${errorRedirectBaseUrl}/?error=${encodeURIComponent(errorDescription || 'Unknown Error')}`)
   }
 
   if (code) {
@@ -130,19 +175,13 @@ export async function GET(request: Request) {
           }
       }
       
-      // 4. Standard Redirect Logic
-      const forwardedHost = request.headers.get('x-forwarded-host') 
-      const isLocalEnv = origin.includes('localhost')
-      
-      if (isLocalEnv) {
-        return NextResponse.redirect(`${origin}${next}`)
-      } else if (forwardedHost) {
-        return NextResponse.redirect(`https://${forwardedHost}${next}`)
-      } else {
-        return NextResponse.redirect(`${origin}${next}`)
-      }
+      // 4. Custom Domain & Standard Redirect Logic
+      const redirectBaseUrl = await getRedirectBaseUrl(request)
+      return NextResponse.redirect(`${redirectBaseUrl}${next}`)
     }
   }
 
-  return NextResponse.redirect(`${origin}/?error=Authentication failed`)
+  // Final fallback error redirect
+  const errorRedirectBaseUrl = await getRedirectBaseUrl(request)
+  return NextResponse.redirect(`${errorRedirectBaseUrl}/?error=Authentication failed`)
 }
