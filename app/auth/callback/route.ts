@@ -8,37 +8,48 @@ async function getRedirectBaseUrl(request: Request) {
   
   const supabase = await createClient()
 
-  // The host as seen by the request. Vercel sets 'x-forwarded-host' to the custom domain.
+  // Use 'x-forwarded-host' to capture the original host requested by the client (e.g., agent.countrysideheavens.com)
   const forwardedHost = request.headers.get('x-forwarded-host') 
   const currentHost = forwardedHost || url.host
 
+  // LOG 1: Check the incoming host for debugging
+  console.log(`[AUTH-CALLBACK] Received Host: ${currentHost}`);
+
   // 1. Handle local environment to avoid SSL/host issues
   if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-    // Use http for localhost, and prioritize the forwarded host if it exists
-    return forwardedHost ? `http://${currentHost}` : origin
+    const localRedirect = forwardedHost ? `http://${currentHost}` : origin;
+    console.log(`[AUTH-CALLBACK] Local Environment, Redirect: ${localRedirect}`);
+    return localRedirect
   }
 
   // 2. Check if the current host is a registered custom domain in the database
-  // This requires the RLS policy to allow anonymous/public SELECT on the organizations table.
-  const { data: orgData } = await supabase
+  const { data: orgData, error: dbError } = await supabase
     .from('organizations')
     .select('custom_domain')
     .eq('custom_domain', currentHost)
     .single()
     
+  if (dbError && dbError.code !== 'PGRST116') { // PGRST116 is "Did not find row" which is fine
+      // LOG 2: Log DB lookup errors (RLS issues, etc.)
+      console.error(`[AUTH-CALLBACK] DB Lookup Error: ${dbError.message}, Code: ${dbError.code}`); 
+  }
+
   // If a matching custom domain is found, use that host for the redirect
   if (orgData) {
-    // Force HTTPS for production domains
-    return `https://${currentHost}`
+    const customRedirect = `https://${currentHost}`;
+    // LOG 3: Custom domain successful redirect found
+    console.log(`[AUTH-CALLBACK] Custom Domain Found, Redirect: ${customRedirect}`); 
+    return customRedirect
   }
 
-  // 3. Fallback to the main Vercel app domain (using the forwardedHost, which should be the correct default host)
-  if (forwardedHost) {
-      return `https://${forwardedHost}`
-  }
-
-  // 4. Final fallback to the request origin
-  return origin
+  // 3. Fallback to the original host or Vercel host
+  const fallbackRedirect = forwardedHost ? `https://${forwardedHost}` : origin;
+  // LOG 4: Log the determined fallback redirect
+  console.log(`[AUTH-CALLBACK] Falling back to: ${fallbackRedirect}`); 
+  
+  // This is the value that will be used for redirection.
+  // If the log here shows 'adrolls.in', the issue is external (Supabase Site URL is overriding this logic).
+  return fallbackRedirect
 }
 
 export async function GET(request: Request) {
@@ -68,7 +79,7 @@ export async function GET(request: Request) {
       const user = data.session.user
       const userId = user.id
 
-      // 2. Prepare Token Updates (Preserve existing logic)
+      // 2. Prepare Token Updates 
       const token = data.session.provider_token
       const refreshToken = data.session.provider_refresh_token
       const tokenUpdates: any = {}
@@ -95,7 +106,6 @@ export async function GET(request: Request) {
       }
 
       // 3. Handle Profile & Organization Logic
-      // Check if profile exists to determine if this is a signup or login
       const { data: existingProfile } = await supabase
         .from('profiles')
         .select('*')
@@ -105,7 +115,7 @@ export async function GET(request: Request) {
       if (inviteOrg) {
           // === CASE A: User Invited to an Organization ===
           
-          // 1. Add to Members Table (Upsert ensures no error if already exists)
+          // 1. Add to Members Table
           const { error: memberError } = await supabase.from('organization_members').upsert({
               user_id: userId,
               organization_id: inviteOrg,
@@ -173,6 +183,8 @@ export async function GET(request: Request) {
       
       // 4. Final Redirect Logic
       const redirectBaseUrl = await getRedirectBaseUrl(request)
+      // LOG 5: Final redirect URL determined
+      console.log(`[AUTH-CALLBACK] Final Redirecting to: ${redirectBaseUrl}${next}`); 
       return NextResponse.redirect(`${redirectBaseUrl}${next}`)
     }
   }
