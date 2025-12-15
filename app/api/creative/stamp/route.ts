@@ -64,21 +64,23 @@ export async function POST(request: Request) {
       layers.push({ input: logoBuffer as any, top: 40, left: 40 })
     }
 
+    // --- COMPRESSION APPLIED HERE ---
+    // Switched from .png() to .jpeg({ quality: 80 })
     const finalImageBuffer = await sharp(masterBuffer)
       .composite(layers)
-      .png()
+      .jpeg({ quality: 80, mozjpeg: true }) 
       .toBuffer()
 
     // 4. Upload to Cloudflare R2
-    // CLEAN KEY (No 'adrolls-storage' prefix)
-    const fileName = `stamped/${user.id}/${Date.now()}.png`
+    // Changed extension to .jpg
+    const fileName = `stamped/${user.id}/${Date.now()}.jpg`
     
     try {
       await r2.send(new PutObjectCommand({
         Bucket: R2_BUCKET,
         Key: fileName,
         Body: finalImageBuffer,
-        ContentType: 'image/png'
+        ContentType: 'image/jpeg' // Changed content type
       }))
     } catch (uploadError) {
       console.error("R2 Upload Failed:", uploadError)

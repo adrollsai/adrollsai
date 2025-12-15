@@ -1,3 +1,5 @@
+// adrollsai/adrollsai/adrollsai-builder-app/app/dashboard/page.tsx
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -34,6 +36,7 @@ type FeedItem =
       type: 'image' | 'video'
       caption_template: string
       created_at: string
+      property_id: string // <--- ADDED: To correctly link the asset on claim
       property?: { title: string }
       pinned?: boolean 
     }
@@ -78,6 +81,7 @@ export default function DashboardPage() {
   const [properties, setProperties] = useState<Property[]>([])
   const [feedItems, setFeedItems] = useState<FeedItem[]>([])
   const [analytics, setAnalytics] = useState<AssetStat[]>([])
+  const [claimedCreativeIds, setClaimedCreativeIds] = useState<Set<string>>(new Set()) // Tracks claimed items
   
   // Modals
   const [showAddProject, setShowAddProject] = useState(false)
@@ -149,6 +153,7 @@ export default function DashboardPage() {
       if (props) setProperties(props)
 
       // 3. Get Creatives Feed (FILTERED BY ORG via Property relation)
+      // Note: `*` includes `property_id` from master_creatives
       const { data: creatives } = await supabase
         .from('master_creatives')
         .select(`*, property:properties!inner(title, organization_id)`) // !inner forces filtering
@@ -156,7 +161,6 @@ export default function DashboardPage() {
         .order('created_at', { ascending: false })
 
       // 4. Get News Posts (FILTERED BY ORG via Author relation)
-      // We assume posts are made by admins of the organization
       const { data: posts } = await supabase
         .from('posts')
         .select(`*, author:profiles!inner(organization_id, business_name, logo_url)`)
@@ -174,6 +178,7 @@ export default function DashboardPage() {
               type: c.type,
               caption_template: c.caption_template,
               created_at: c.created_at,
+              property_id: c.property_id, // <--- Correct field added to FeedItem
               property: c.property
           }))
       }
@@ -201,9 +206,23 @@ export default function DashboardPage() {
 
       setFeedItems(combinedFeed)
 
-      // 6. Get Analytics (Admin Only & Filtered)
+      // 6. Get Claimed Creatives (For Agents)
+      if (profile.role === 'agent') {
+          const { data: claims } = await supabase
+             .from('assets')
+             .select('master_creative_id')
+             .eq('user_id', user.id)
+             .not('master_creative_id', 'is', null)
+          
+          const claimedSet = new Set<string>()
+          claims?.forEach((c: any) => {
+              if (c.master_creative_id) claimedSet.add(c.master_creative_id)
+          })
+          setClaimedCreativeIds(claimedSet)
+      }
+
+      // 7. Get Analytics (Admin Only & Filtered)
       if (profile.role === 'admin') {
-          // Get profiles in this org
           const { data: orgUsers } = await supabase.from('profiles').select('id, business_name').eq('organization_id', orgId)
           const orgUserIds = orgUsers?.map(u => u.id) || []
 
@@ -211,7 +230,7 @@ export default function DashboardPage() {
             const { data: stats } = await supabase
                 .from('assets')
                 .select(`status, share_stats, user:profiles(business_name)`)
-                .in('user_id', orgUserIds) // Filter by org users
+                .in('user_id', orgUserIds)
                 .not('share_stats', 'is', null)
             
             if (stats) {
@@ -247,14 +266,12 @@ export default function DashboardPage() {
           const { data: { user } } = await supabase.auth.getUser()
           if (!user) throw new Error("No user")
 
-          // Upload Images to R2
           const imageUrls = []
           for (const file of projectFiles.images) {
              const publicUrl = await uploadToR2(file, 'properties')
              imageUrls.push(publicUrl)
           }
 
-          // Insert
           await supabase.from('properties').insert({
               user_id: user.id,
               organization_id: userProfile?.organization_id,
@@ -282,7 +299,6 @@ export default function DashboardPage() {
       }
       setIsSubmitting(true)
       try {
-          // Upload to R2
           const publicUrl = await uploadToR2(creativeFile, 'feed')
           
           await supabase.from('master_creatives').insert({
@@ -311,7 +327,7 @@ export default function DashboardPage() {
               title: newNews.title,
               content: newNews.content,
               status: 'published',
-              tags: [] // Not pinned by default
+              tags: []
           })
           
           await fetchData()
@@ -322,7 +338,7 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // 4. Agent: Claim Creative
+  // 4. Agent: Claim Creative (FIXED to send correct property ID)
   const handleClaim = async (creative: FeedItem) => {
       if (creative.kind !== 'creative') return
       
@@ -330,6 +346,15 @@ export default function DashboardPage() {
           alert("Please complete your profile first.")
           return
       }
+
+      // Check for prior claim
+      const isAlreadyClaimed = claimedCreativeIds.has(creative.id)
+      if (isAlreadyClaimed) {
+          if (!confirm("You have already claimed this asset. Do you want to generate it again?")) {
+              return
+          }
+      }
+
       setIsSubmitting(true)
       try {
           const res = await fetch('/api/creative/stamp', {
@@ -337,15 +362,26 @@ export default function DashboardPage() {
               body: JSON.stringify({
                   masterImageUrl: creative.url,
                   agentProfile: userProfile,
-                  propertyId: creative.property ? creative.property['title'] : null, // Simplification
+                  propertyId: creative.property_id, // <--- FIXED: Now sending the actual Property ID (UUID)
                   masterCreativeId: creative.id
               })
           })
           if(res.ok) {
-              alert("Creative Claimed! Check your Assets tab.")
+              // Update local state to reflect claimed status immediately
+              setClaimedCreativeIds(prev => new Set(prev).add(creative.id))
+              
+              // Navigate to the Assets tab to force a re-fetch of assets by that page.
+              router.push('/dashboard/assets')
+
+              alert("Creative Claimed! Navigating to your Assets tab now.")
+              
+          } else {
+             const errorData = await res.json()
+             throw new Error(errorData.error || "Stamping failed.")
           }
-      } catch (e) {
+      } catch (e: any) {
           console.error(e)
+          alert("Failed to claim asset: " + e.message)
       } finally { setIsSubmitting(false) }
   }
 
@@ -354,7 +390,6 @@ export default function DashboardPage() {
       e.stopPropagation()
       if (!confirm("Are you sure you want to delete this?")) return
       
-      // Optimistic update
       setFeedItems(prev => prev.filter(i => i.id !== item.id))
 
       try {
@@ -365,11 +400,11 @@ export default function DashboardPage() {
           }
       } catch (err) {
           console.error(err)
-          fetchData() // Revert on error
+          fetchData()
       }
   }
 
-  // 6. Pin/Unpin Post (Admin)
+  // 6. Pin/Unpin Post
   const handleTogglePin = async (post: FeedItem, e: React.MouseEvent) => {
       e.stopPropagation()
       if (post.kind !== 'post') return
@@ -379,14 +414,12 @@ export default function DashboardPage() {
          ? (post.tags || []).filter(t => t !== 'pinned')
          : [...(post.tags || []), 'pinned']
 
-      // Optimistic Update
       setFeedItems(prev => prev.map(i => {
           if (i.id === post.id && i.kind === 'post') {
               return { ...i, tags: newTags }
           }
           return i
       }).sort((a, b) => {
-          // Re-sort logic
           const isAPinned = a.kind === 'post' && (a.id === post.id ? newTags.includes('pinned') : a.tags?.includes('pinned'))
           const isBPinned = b.kind === 'post' && (b.id === post.id ? newTags.includes('pinned') : b.tags?.includes('pinned'))
           if (isAPinned && !isBPinned) return -1
@@ -424,8 +457,6 @@ export default function DashboardPage() {
   // 8. Invite Link
   const handleCopyInvite = () => {
       if (!userProfile?.organization_id) return
-      // Create a link that points to the signup page with org param
-      // Assuming your auth page handles ?org=XYZ
       const link = `${window.location.origin}/?invite_org=${userProfile.organization_id}`
       navigator.clipboard.writeText(link)
       alert("Invite link copied to clipboard! Send this to your agents.")
@@ -543,6 +574,8 @@ export default function DashboardPage() {
                      }
 
                      // RENDER CREATIVE CARD
+                     const isClaimed = claimedCreativeIds.has(item.id)
+
                      return (
                          <div key={item.id} className="bg-white rounded-2xl p-3 shadow-sm border border-slate-100 group relative">
                              <div className="flex items-center gap-2 mb-3">
@@ -565,9 +598,18 @@ export default function DashboardPage() {
                                  ) : (
                                     <img src={item.url} className="w-full h-full object-cover" />
                                  )}
+                                 
                                  {userProfile?.role === 'agent' && (
-                                     <button onClick={() => handleClaim(item)} disabled={isSubmitting} className="absolute bottom-3 right-3 bg-white/90 backdrop-blur text-slate-900 text-xs font-bold px-4 py-2 rounded-full shadow-md active:scale-95 transition-transform">
-                                         {isSubmitting ? '...' : 'Claim & Share'}
+                                     <button 
+                                        onClick={() => handleClaim(item)} 
+                                        disabled={isSubmitting} 
+                                        className={`absolute bottom-3 right-3 backdrop-blur text-xs font-bold px-4 py-2 rounded-full shadow-md active:scale-95 transition-transform flex items-center gap-1 
+                                            ${isClaimed ? 'bg-green-100/90 text-green-800' : 'bg-white/90 text-slate-900'}
+                                        `}
+                                     >
+                                         {isSubmitting ? '...' : isClaimed ? (
+                                            <>Claim Again</>
+                                         ) : 'Claim & Share'}
                                      </button>
                                  )}
                              </div>

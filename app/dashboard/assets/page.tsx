@@ -1,3 +1,5 @@
+// adrollsai/adrollsai/adrollsai-builder-app/app/dashboard/assets/page.tsx
+
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -10,6 +12,7 @@ type Asset = {
   type: 'image' | 'video'
   status: string
   url: string
+  master_creative_id: string | null 
   property?: {
       marketing_copy_template: string
   }
@@ -45,9 +48,12 @@ export default function AssetsPage() {
 
       const { data: profile } = await supabase.from('profiles').select('business_name, contact_number').eq('id', user.id).single()
       if (profile) setUserProfile(profile as Profile)
+      
+      // Add a small delay (500ms) to allow eventual consistency to resolve
+      await new Promise(resolve => setTimeout(resolve, 500)) 
 
       // Fetch assets with templates from either Property or Master Creative
-      const { data } = await supabase
+      const { data, error } = await supabase // Capture error object
         .from('assets')
         .select(`
             *,
@@ -57,6 +63,22 @@ export default function AssetsPage() {
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 
+      // --- DEBUGGING LOGS ADDED HERE ---
+      console.log("--- DEBUG ASSETS FETCH START ---")
+      console.log("User ID for Fetch:", user.id)
+      if (error) {
+        // If there's an error, it is likely RLS or connection issue
+        console.error("ASSETS FETCH ERROR:", error)
+      }
+      if (data) {
+        console.log("ASSETS FETCH SUCCESS. Total rows received:", data.length)
+        if (data.length > 0) {
+            console.log("First asset URL:", data[0].url)
+            console.log("First asset Status:", data[0].status)
+        }
+      }
+      console.log("--- DEBUG ASSETS FETCH END ---")
+      
       if (data) setAssets(data as unknown as Asset[])
       setLoading(false)
     }
@@ -98,7 +120,12 @@ export default function AssetsPage() {
           try {
               const response = await fetch(selectedAsset.url)
               const blob = await response.blob()
-              const file = new File([blob], "property.png", { type: blob.type })
+              
+              // Handle the .jpg extension for stamped images (from the compression fix)
+              const fileType = selectedAsset.url.endsWith('.jpg') ? 'image/jpeg' : blob.type
+              const fileName = selectedAsset.url.endsWith('.jpg') ? 'property.jpg' : 'property.png'
+
+              const file = new File([blob], fileName, { type: fileType })
               await navigator.share({ title: "Property", text: caption, files: [file] })
           } catch (e) {
               window.open(`https://wa.me/?text=${encodeURIComponent(caption + " " + selectedAsset.url)}`, '_blank')
@@ -112,7 +139,9 @@ export default function AssetsPage() {
       await trackShare('download')
       const link = document.createElement('a')
       link.href = selectedAsset?.url || ''
-      link.download = `Asset-${Date.now()}`
+      // Use the URL extension for download
+      const extension = selectedAsset?.url.split('.').pop()
+      link.download = `Asset-${Date.now()}.${extension}`
       link.target = "_blank"
       link.click()
   }
