@@ -5,14 +5,17 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
   
-  // 1. Capture Provider Tag (custom param we pass during login)
+  // 1. Capture Params
+  // 'invite_org' comes from our custom login page URL
+  const inviteOrg = searchParams.get('invite_org')
   const provider = searchParams.get('provider') 
   const next = searchParams.get('next') ?? '/dashboard'
   
   const errorCode = searchParams.get('error_code')
   const errorDescription = searchParams.get('error_description')
+  
   if (errorCode) {
-    return NextResponse.redirect(`${origin}${next}?error=${encodeURIComponent(errorDescription || 'Unknown Error')}`)
+    return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(errorDescription || 'Unknown Error')}`)
   }
 
   if (code) {
@@ -20,48 +23,114 @@ export async function GET(request: Request) {
     const { error, data } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error && data?.session) {
+      const user = data.session.user
+      const userId = user.id
+
+      // 2. Prepare Token Updates (Preserve existing logic)
       const token = data.session.provider_token
-      // 🟢 CAPTURE REFRESH TOKEN (Vital for Google/YouTube)
       const refreshToken = data.session.provider_refresh_token
-      const userId = data.session.user.id
+      const tokenUpdates: any = {}
 
       if (token) {
-        const updates: any = {}
-        
         // --- FACEBOOK ---
         if (provider === 'facebook' && token.startsWith('EAA')) {
-            console.log("✅ Saving Facebook Token...")
-            updates.facebook_token = token
+            tokenUpdates.facebook_token = token
         } 
         // --- LINKEDIN ---
         else if (provider === 'linkedin_oidc') {
-            console.log("✅ Saving LinkedIn Token...")
-            updates.linkedin_token = token
+            tokenUpdates.linkedin_token = token
         }
         // --- GOOGLE BUSINESS ---
         else if (provider === 'google_business') {
-            console.log("✅ Saving Google Business Tokens...")
-            updates.google_business_token = token
-            if (refreshToken) {
-                updates.google_business_refresh_token = refreshToken
-            }
+            tokenUpdates.google_business_token = token
+            if (refreshToken) tokenUpdates.google_business_refresh_token = refreshToken
         }
-        // --- YOUTUBE (NEW) ---
+        // --- YOUTUBE ---
         else if (provider === 'youtube') {
-            console.log("✅ Saving YouTube Tokens...")
-            updates.youtube_token = token
-            if (refreshToken) {
-                updates.youtube_refresh_token = refreshToken
-            } else {
-                console.warn("⚠️ No Refresh Token received for YouTube! Automation may expire.")
-            }
-        }
-
-        if (Object.keys(updates).length > 0) {
-            await supabase.from('profiles').update(updates).eq('id', userId)
+            tokenUpdates.youtube_token = token
+            if (refreshToken) tokenUpdates.youtube_refresh_token = refreshToken
         }
       }
+
+      // 3. Handle Profile & Organization Logic
+      // Check if profile exists to determine if this is a signup or login
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (inviteOrg) {
+          // === CASE A: User Invited to an Organization ===
+          
+          // 1. Add to Members Table (Upsert ensures no error if already exists)
+          // We force role 'agent' for invites to be safe
+          const { error: memberError } = await supabase.from('organization_members').upsert({
+              user_id: userId,
+              organization_id: inviteOrg,
+              role: 'agent'
+          }, { onConflict: 'organization_id, user_id' })
+
+          if (memberError) console.error("Error adding member:", memberError)
+
+          // 2. Switch Context: Update Profile to point to this Org
+          if (existingProfile) {
+               await supabase.from('profiles').update({
+                   ...tokenUpdates,
+                   organization_id: inviteOrg, // Switch active view
+                   role: 'agent' // Ensure they view as agent
+               }).eq('id', userId)
+          } else {
+               // First time user logic
+               await supabase.from('profiles').insert({
+                   id: userId,
+                   email: user.email,
+                   role: 'agent',
+                   organization_id: inviteOrg,
+                   business_name: user.user_metadata.full_name || 'New Agent',
+                   logo_url: user.user_metadata.avatar_url || user.user_metadata.picture,
+                   ...tokenUpdates
+               })
+          }
+
+      } else {
+          // === CASE B: Organic Sign Up (No Invite) ===
+          
+          if (!existingProfile) {
+              // 1. Create New Organization (User becomes Admin)
+              const { data: newOrg } = await supabase
+                .from('organizations')
+                .insert({ name: `${user.user_metadata.full_name || 'My'}'s Organization` })
+                .select()
+                .single()
+              
+              if (newOrg) {
+                  // 2. Create Admin Profile
+                  await supabase.from('profiles').insert({
+                      id: userId,
+                      email: user.email,
+                      role: 'admin',
+                      organization_id: newOrg.id,
+                      business_name: user.user_metadata.full_name || 'Builder Admin',
+                      logo_url: user.user_metadata.avatar_url || user.user_metadata.picture,
+                      ...tokenUpdates
+                  })
+                  // 3. Add to Members as Admin
+                  await supabase.from('organization_members').insert({
+                      user_id: userId,
+                      organization_id: newOrg.id,
+                      role: 'admin'
+                  })
+              }
+          } else {
+              // User exists, just update tokens if we have new ones
+              if (Object.keys(tokenUpdates).length > 0) {
+                  await supabase.from('profiles').update(tokenUpdates).eq('id', userId)
+              }
+          }
+      }
       
+      // 4. Standard Redirect Logic
       const forwardedHost = request.headers.get('x-forwarded-host') 
       const isLocalEnv = origin.includes('localhost')
       
@@ -75,5 +144,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`${origin}${next}?error=Authentication failed`)
+  return NextResponse.redirect(`${origin}/?error=Authentication failed`)
 }

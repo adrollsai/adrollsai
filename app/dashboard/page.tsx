@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -22,16 +22,30 @@ type Property = {
   floor_plan_url?: string
   configurations?: Configuration[]
   created_at: string
+  organization_id: string
 }
 
-type MasterCreative = {
-  id: string
-  url: string
-  type: 'image' | 'video'
-  caption_template: string
-  created_at: string
-  property?: Property // Joined
-}
+// Unified Feed Type
+type FeedItem = 
+  | { 
+      kind: 'creative'
+      id: string
+      url: string
+      type: 'image' | 'video'
+      caption_template: string
+      created_at: string
+      property?: { title: string }
+      pinned?: boolean 
+    }
+  | {
+      kind: 'post'
+      id: string
+      title: string
+      content: string
+      created_at: string
+      tags: string[] | null // Used for Pinning logic
+      author?: { business_name: string, logo_url: string }
+    }
 
 type AssetStat = {
     agent_name: string
@@ -52,7 +66,7 @@ export default function DashboardPage() {
   const supabase = createClient()
   const router = useRouter()
   
-  // Use the global organization context (This provides the logo/colors)
+  // Use the global organization context
   const { org } = useOrganization()
   
   // --- STATE ---
@@ -62,12 +76,13 @@ export default function DashboardPage() {
   
   // Data
   const [properties, setProperties] = useState<Property[]>([])
-  const [creatives, setCreatives] = useState<MasterCreative[]>([])
+  const [feedItems, setFeedItems] = useState<FeedItem[]>([])
   const [analytics, setAnalytics] = useState<AssetStat[]>([])
   
   // Modals
   const [showAddProject, setShowAddProject] = useState(false)
   const [showAddCreative, setShowAddCreative] = useState(false)
+  const [showAddNews, setShowAddNews] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   
   // Image Slider State
@@ -93,6 +108,9 @@ export default function DashboardPage() {
   })
   const [creativeFile, setCreativeFile] = useState<File | null>(null)
 
+  // -- Add News Form --
+  const [newNews, setNewNews] = useState({ title: '', content: '' })
+
   // 1. FETCH DATA
   const fetchData = async () => {
     try {
@@ -100,48 +118,110 @@ export default function DashboardPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
 
-      // Get Profile
+      // 1. Get Profile to determine Organization
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single()
       
-      if (profileError) {
+      if (profileError || !profile) {
           console.error("Profile Fetch Error:", profileError)
+          return
       }
 
-      if (profile) {
-          setUserProfile(profile as Profile)
-          // If the profile says admin, we unlock admin features
-          console.log("Current User Role:", profile.role)
+      setUserProfile(profile as Profile)
+      const orgId = profile.organization_id
+
+      if (!orgId) {
+          // Handle case where user has no organization (shouldn't happen for valid agents)
+          setLoading(false)
+          return
       }
 
-      // Get Properties
-      const { data: props } = await supabase.from('properties').select('*').order('created_at', { ascending: false })
+      // 2. Get Properties (FILTERED BY ORG)
+      const { data: props } = await supabase
+        .from('properties')
+        .select('*')
+        .eq('organization_id', orgId) 
+        .order('created_at', { ascending: false })
+      
       if (props) setProperties(props)
 
-      // Get Creatives Feed
-      const { data: feed } = await supabase
+      // 3. Get Creatives Feed (FILTERED BY ORG via Property relation)
+      const { data: creatives } = await supabase
         .from('master_creatives')
-        .select(`*, property:properties(title)`)
+        .select(`*, property:properties!inner(title, organization_id)`) // !inner forces filtering
+        .eq('property.organization_id', orgId)
         .order('created_at', { ascending: false })
-      if (feed) setCreatives(feed)
 
-      // Get Analytics (Admin Only)
-      if (profile?.role === 'admin') {
-          const { data: stats } = await supabase
-            .from('assets')
-            .select(`status, share_stats, user:profiles(business_name)`)
-            .not('share_stats', 'is', null)
-          
-          if (stats) {
-             const formatted = stats.map((s: any) => ({
-                 agent_name: s.user?.business_name || 'Unknown',
-                 status: s.status,
-                 share_stats: s.share_stats
-             }))
-             setAnalytics(formatted)
+      // 4. Get News Posts (FILTERED BY ORG via Author relation)
+      // We assume posts are made by admins of the organization
+      const { data: posts } = await supabase
+        .from('posts')
+        .select(`*, author:profiles!inner(organization_id, business_name, logo_url)`)
+        .eq('author.organization_id', orgId)
+        .order('created_at', { ascending: false })
+
+      // 5. Merge and Sort Feed
+      const combinedFeed: FeedItem[] = []
+      
+      if (creatives) {
+          creatives.forEach((c: any) => combinedFeed.push({
+              kind: 'creative',
+              id: c.id,
+              url: c.url,
+              type: c.type,
+              caption_template: c.caption_template,
+              created_at: c.created_at,
+              property: c.property
+          }))
+      }
+
+      if (posts) {
+          posts.forEach((p: any) => combinedFeed.push({
+              kind: 'post',
+              id: p.id,
+              title: p.title,
+              content: p.content,
+              created_at: p.created_at,
+              tags: p.tags,
+              author: p.author
+          }))
+      }
+
+      // Sort: Pinned posts first, then newest
+      combinedFeed.sort((a, b) => {
+          const isAPinned = a.kind === 'post' && a.tags?.includes('pinned')
+          const isBPinned = b.kind === 'post' && b.tags?.includes('pinned')
+          if (isAPinned && !isBPinned) return -1
+          if (!isAPinned && isBPinned) return 1
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      })
+
+      setFeedItems(combinedFeed)
+
+      // 6. Get Analytics (Admin Only & Filtered)
+      if (profile.role === 'admin') {
+          // Get profiles in this org
+          const { data: orgUsers } = await supabase.from('profiles').select('id, business_name').eq('organization_id', orgId)
+          const orgUserIds = orgUsers?.map(u => u.id) || []
+
+          if (orgUserIds.length > 0) {
+            const { data: stats } = await supabase
+                .from('assets')
+                .select(`status, share_stats, user:profiles(business_name)`)
+                .in('user_id', orgUserIds) // Filter by org users
+                .not('share_stats', 'is', null)
+            
+            if (stats) {
+                const formatted = stats.map((s: any) => ({
+                    agent_name: s.user?.business_name || 'Unknown',
+                    status: s.status,
+                    share_stats: s.share_stats
+                }))
+                setAnalytics(formatted)
+            }
           }
       }
 
@@ -219,8 +299,33 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // 3. Agent: Claim Creative
-  const handleClaim = async (creative: MasterCreative) => {
+  // 3. Add News Post (Admin)
+  const handleAddNews = async () => {
+      if (!newNews.title || !newNews.content) return
+      setIsSubmitting(true)
+      try {
+          const { data: { user } } = await supabase.auth.getUser()
+          
+          await supabase.from('posts').insert({
+              user_id: user?.id,
+              title: newNews.title,
+              content: newNews.content,
+              status: 'published',
+              tags: [] // Not pinned by default
+          })
+          
+          await fetchData()
+          setShowAddNews(false)
+          setNewNews({title: '', content: ''})
+      } catch(e: any) {
+          alert(e.message)
+      } finally { setIsSubmitting(false) }
+  }
+
+  // 4. Agent: Claim Creative
+  const handleClaim = async (creative: FeedItem) => {
+      if (creative.kind !== 'creative') return
+      
       if (!userProfile?.contact_number) {
           alert("Please complete your profile first.")
           return
@@ -232,7 +337,7 @@ export default function DashboardPage() {
               body: JSON.stringify({
                   masterImageUrl: creative.url,
                   agentProfile: userProfile,
-                  propertyId: creative.property?.id,
+                  propertyId: creative.property ? creative.property['title'] : null, // Simplification
                   masterCreativeId: creative.id
               })
           })
@@ -244,40 +349,89 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // 4. Delete Project
+  // 5. Delete Item (Admin)
+  const handleDeleteItem = async (item: FeedItem, e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (!confirm("Are you sure you want to delete this?")) return
+      
+      // Optimistic update
+      setFeedItems(prev => prev.filter(i => i.id !== item.id))
+
+      try {
+          if (item.kind === 'creative') {
+              await supabase.from('master_creatives').delete().eq('id', item.id)
+          } else {
+              await supabase.from('posts').delete().eq('id', item.id)
+          }
+      } catch (err) {
+          console.error(err)
+          fetchData() // Revert on error
+      }
+  }
+
+  // 6. Pin/Unpin Post (Admin)
+  const handleTogglePin = async (post: FeedItem, e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (post.kind !== 'post') return
+
+      const isPinned = post.tags?.includes('pinned')
+      const newTags = isPinned 
+         ? (post.tags || []).filter(t => t !== 'pinned')
+         : [...(post.tags || []), 'pinned']
+
+      // Optimistic Update
+      setFeedItems(prev => prev.map(i => {
+          if (i.id === post.id && i.kind === 'post') {
+              return { ...i, tags: newTags }
+          }
+          return i
+      }).sort((a, b) => {
+          // Re-sort logic
+          const isAPinned = a.kind === 'post' && (a.id === post.id ? newTags.includes('pinned') : a.tags?.includes('pinned'))
+          const isBPinned = b.kind === 'post' && (b.id === post.id ? newTags.includes('pinned') : b.tags?.includes('pinned'))
+          if (isAPinned && !isBPinned) return -1
+          if (!isAPinned && isBPinned) return 1
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      }))
+
+      await supabase.from('posts').update({ tags: newTags }).eq('id', post.id)
+  }
+
+  // 7. Delete Project
   const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!confirm("Are you sure? This will delete the project and all its templates.")) return
 
     setIsDeleting(true)
-    
-    // 1. Optimistic Update (Remove from UI immediately)
     const backupProperties = [...properties]
     setProperties(prev => prev.filter(p => p.id !== id))
 
     try {
-        // Unlink assets first (optional safety)
         await supabase.from('assets').update({ property_id: null }).eq('property_id', id)
-
-        // Delete Master Creatives
         await supabase.from('master_creatives').delete().eq('property_id', id)
-        
-        // Delete Property
         const { error } = await supabase.from('properties').delete().eq('id', id)
-
         if (error) throw error
-
     } catch (err: any) {
         console.error("Delete failed:", err)
         alert("Failed to delete: " + err.message)
-        setProperties(backupProperties) // Revert UI
+        setProperties(backupProperties)
     } finally {
         setIsDeleting(false)
-        fetchData() // Sync with server state
+        fetchData()
     }
   }
+  
+  // 8. Invite Link
+  const handleCopyInvite = () => {
+      if (!userProfile?.organization_id) return
+      // Create a link that points to the signup page with org param
+      // Assuming your auth page handles ?org=XYZ
+      const link = `${window.location.origin}/?invite_org=${userProfile.organization_id}`
+      navigator.clipboard.writeText(link)
+      alert("Invite link copied to clipboard! Send this to your agents.")
+  }
 
-  // --- Slider Helper ---
+  // --- UI HELPERS ---
   const handleScroll = () => {
     if (sliderRef.current) {
         const scrollLeft = sliderRef.current.scrollLeft
@@ -292,29 +446,31 @@ export default function DashboardPage() {
       return [p.image_url];
   }
 
-  // --- UI COMPONENTS ---
-
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-slate-400"/></div>
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24 max-w-md mx-auto relative shadow-2xl">
       
-      {/* Header with Dynamic Branding */}
+      {/* Header */}
       <div className="bg-white p-5 pt-8 rounded-b-[2rem] shadow-sm z-10 sticky top-0">
           <div className="flex justify-between items-center mb-4">
             <div>
-                {/* LOGO AND TITLE */}
                 <div className="flex items-center gap-2 mb-1">
                    {org?.master_logo_url && <img src={org.master_logo_url} className="w-8 h-8 object-contain" alt="Org Logo"/>}
                    <h1 className="text-xl font-black text-slate-900 tracking-tight">
                      {org?.name || (userProfile?.role === 'admin' ? 'Builder Console' : 'Agent Hub')}
                    </h1>
                 </div>
-                {/* Subtitle based on role */}
                 <p className="text-xs font-medium text-slate-400">
                     {userProfile?.role === 'admin' ? 'Organization Admin' : 'Sales Agent'}
                 </p>
             </div>
+            {/* INVITE BUTTON (Admin Only) */}
+            {userProfile?.role === 'admin' && (
+                <button onClick={handleCopyInvite} className="bg-slate-100 p-2 rounded-full text-slate-600 active:scale-95 transition-transform" title="Copy Invite Link">
+                    <LinkIcon size={18} />
+                </button>
+            )}
           </div>
 
           {/* TABS */}
@@ -335,47 +491,93 @@ export default function DashboardPage() {
 
       <div className="p-5 space-y-4">
           
-          {/* --- TAB: CREATIVE FEED --- */}
+          {/* --- TAB: FEED --- */}
           {activeTab === 'feed' && (
               <>
                  <div className="flex justify-between items-center">
                     <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Latest Updates</h2>
                     {userProfile?.role === 'admin' && (
-                        <button onClick={() => setShowAddCreative(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-lg active:scale-95 transition-transform">
-                            <Plus size={12}/> New Post
-                        </button>
+                        <div className="flex gap-2">
+                             <button onClick={() => setShowAddNews(true)} className="flex items-center gap-1 text-xs font-bold bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-full shadow-sm active:scale-95 transition-transform">
+                                <Megaphone size={12}/> News
+                            </button>
+                            <button onClick={() => setShowAddCreative(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-lg active:scale-95 transition-transform">
+                                <Plus size={12}/> Creative
+                            </button>
+                        </div>
                     )}
                  </div>
 
-                 {creatives.map(c => (
-                     <div key={c.id} className="bg-white rounded-2xl p-3 shadow-sm border border-slate-100">
-                         <div className="flex items-center gap-2 mb-3">
-                             <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-500">
-                                 P
+                 {feedItems.map(item => {
+                     // RENDER NEWS POST
+                     if (item.kind === 'post') {
+                         const isPinned = item.tags?.includes('pinned')
+                         return (
+                            <div key={item.id} className={`bg-white rounded-2xl p-4 shadow-sm border ${isPinned ? 'border-blue-200 bg-blue-50/30' : 'border-slate-100'} relative group`}>
+                                {isPinned && <div className="absolute top-2 right-2 text-blue-500"><Pin size={14} fill="currentColor"/></div>}
+                                
+                                <div className="flex items-center gap-2 mb-2">
+                                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center font-bold text-xs text-blue-600">
+                                         {item.author?.business_name?.[0] || 'N'}
+                                     </div>
+                                     <div>
+                                         <p className="text-xs font-bold text-slate-900">{item.title}</p>
+                                         <p className="text-[10px] text-slate-400">{new Date(item.created_at).toLocaleDateString()}</p>
+                                     </div>
+                                </div>
+                                <p className="text-sm text-slate-700 whitespace-pre-line mb-2">{item.content}</p>
+
+                                {/* ADMIN ACTIONS */}
+                                {userProfile?.role === 'admin' && (
+                                    <div className="flex gap-3 mt-3 pt-3 border-t border-slate-100 justify-end">
+                                        <button onClick={(e) => handleTogglePin(item, e)} className={`text-xs font-bold flex items-center gap-1 ${isPinned ? 'text-blue-600' : 'text-slate-400'}`}>
+                                            <Pin size={12}/> {isPinned ? 'Unpin' : 'Pin'}
+                                        </button>
+                                        <button onClick={(e) => handleDeleteItem(item, e)} className="text-xs font-bold text-red-400 flex items-center gap-1 hover:text-red-600">
+                                            <Trash2 size={12}/> Delete
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                         )
+                     }
+
+                     // RENDER CREATIVE CARD
+                     return (
+                         <div key={item.id} className="bg-white rounded-2xl p-3 shadow-sm border border-slate-100 group relative">
+                             <div className="flex items-center gap-2 mb-3">
+                                 <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-500">
+                                     P
+                                 </div>
+                                 <div className="flex-1">
+                                     <p className="text-xs font-bold text-slate-900">{item.property?.title || 'General Update'}</p>
+                                     <p className="text-[10px] text-slate-400">{new Date(item.created_at).toLocaleDateString()}</p>
+                                 </div>
+                                 {userProfile?.role === 'admin' && (
+                                     <button onClick={(e) => handleDeleteItem(item, e)} className="text-slate-300 hover:text-red-500 p-1">
+                                         <Trash2 size={14}/>
+                                     </button>
+                                 )}
                              </div>
-                             <div>
-                                 <p className="text-xs font-bold text-slate-900">{c.property?.title || 'General Update'}</p>
-                                 <p className="text-[10px] text-slate-400">{new Date(c.created_at).toLocaleDateString()}</p>
+                             <div className="rounded-xl overflow-hidden bg-slate-50 aspect-square mb-3 relative">
+                                 {item.type === 'video' ? (
+                                    <video src={item.url} controls className="w-full h-full object-cover" />
+                                 ) : (
+                                    <img src={item.url} className="w-full h-full object-cover" />
+                                 )}
+                                 {userProfile?.role === 'agent' && (
+                                     <button onClick={() => handleClaim(item)} disabled={isSubmitting} className="absolute bottom-3 right-3 bg-white/90 backdrop-blur text-slate-900 text-xs font-bold px-4 py-2 rounded-full shadow-md active:scale-95 transition-transform">
+                                         {isSubmitting ? '...' : 'Claim & Share'}
+                                     </button>
+                                 )}
+                             </div>
+                             <div className="px-1">
+                                 <p className="text-xs text-slate-600 line-clamp-2">{item.caption_template || 'New marketing creative available.'}</p>
                              </div>
                          </div>
-                         <div className="rounded-xl overflow-hidden bg-slate-50 aspect-square mb-3 relative">
-                             {c.type === 'video' ? (
-                                <video src={c.url} controls className="w-full h-full object-cover" />
-                             ) : (
-                                <img src={c.url} className="w-full h-full object-cover" />
-                             )}
-                             {userProfile?.role === 'agent' && (
-                                 <button onClick={() => handleClaim(c)} disabled={isSubmitting} className="absolute bottom-3 right-3 bg-white/90 backdrop-blur text-slate-900 text-xs font-bold px-4 py-2 rounded-full shadow-md active:scale-95 transition-transform">
-                                     {isSubmitting ? 'Claiming...' : 'Claim & Share'}
-                                 </button>
-                             )}
-                         </div>
-                         <div className="px-1">
-                             <p className="text-xs text-slate-600 line-clamp-2">{c.caption_template || 'New marketing creative available.'}</p>
-                         </div>
-                     </div>
-                 ))}
-                 {creatives.length === 0 && <div className="text-center py-10 text-slate-400 text-xs">No updates yet.</div>}
+                     )
+                 })}
+                 {feedItems.length === 0 && <div className="text-center py-10 text-slate-400 text-xs">No updates yet.</div>}
               </>
           )}
 
@@ -397,7 +599,6 @@ export default function DashboardPage() {
                          <div className="flex-1 py-1">
                              <div className="flex justify-between items-start">
                                  <h3 className="font-bold text-slate-900 text-sm">{p.title}</h3>
-                                 {/* DELETE BUTTON */}
                                  {userProfile?.role === 'admin' && (
                                      <button 
                                          onClick={(e) => handleDeleteProject(p.id, e)}
@@ -417,6 +618,7 @@ export default function DashboardPage() {
                          </div>
                      </div>
                  ))}
+                 {properties.length === 0 && <div className="text-center py-10 text-slate-400 text-xs">No projects assigned to your organization.</div>}
               </>
           )}
 
@@ -494,14 +696,14 @@ export default function DashboardPage() {
           <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6">
                   <div className="flex justify-between mb-4">
-                      <h2 className="font-bold text-lg">Post to Feed</h2>
+                      <h2 className="font-bold text-lg">Post Creative</h2>
                       <button onClick={() => setShowAddCreative(false)}><X size={20}/></button>
                   </div>
                   <div className="space-y-4">
                       <div>
                           <label className="text-xs font-bold text-slate-500 ml-1">Select Project</label>
                           <select className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none" onChange={e => setNewCreative({...newCreative, property_id: e.target.value})}>
-                              <option value="">-- General / Select --</option>
+                              <option value="">-- Select --</option>
                               {properties.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
                           </select>
                       </div>
@@ -515,7 +717,6 @@ export default function DashboardPage() {
                       <div>
                           <label className="text-xs font-bold text-slate-500 ml-1">Caption Template</label>
                           <textarea className="w-full bg-slate-50 p-3 rounded-xl text-sm" rows={3} value={newCreative.caption} onChange={e => setNewCreative({...newCreative, caption: e.target.value})} />
-                          <p className="text-[10px] text-slate-400 mt-1 ml-1">Use {'{{Name}}'} and {'{{Phone}}'}</p>
                       </div>
 
                       <button onClick={handleAddCreative} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm">
@@ -525,16 +726,35 @@ export default function DashboardPage() {
               </div>
           </div>
       )}
+
+      {/* --- MODAL: ADD NEWS --- */}
+      {showAddNews && (
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6">
+                  <div className="flex justify-between mb-4">
+                      <h2 className="font-bold text-lg">Post News</h2>
+                      <button onClick={() => setShowAddNews(false)}><X size={20}/></button>
+                  </div>
+                  <div className="space-y-4">
+                      <input placeholder="Headline / Title" className="w-full bg-slate-50 p-3 rounded-xl text-sm font-bold" value={newNews.title} onChange={e => setNewNews({...newNews, title: e.target.value})} />
+                      <textarea placeholder="Write your announcement here..." className="w-full bg-slate-50 p-3 rounded-xl text-sm h-32" value={newNews.content} onChange={e => setNewNews({...newNews, content: e.target.value})} />
+
+                      <button onClick={handleAddNews} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm">
+                          {isSubmitting ? 'Publishing...' : 'Publish'}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
       
-      {/* --- MODAL: VIEW PROPERTY DETAILS (UPDATED SLIDER) --- */}
+      {/* --- MODAL: VIEW PROPERTY DETAILS --- */}
       {selectedProperty && (
         <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-bottom-10">
            {/* Close Button */}
            <button onClick={() => setSelectedProperty(null)} className="absolute top-4 right-4 z-20 bg-black/40 backdrop-blur-md text-white p-2.5 rounded-full hover:bg-black/60 transition-colors"><X size={20}/></button>
            
-           {/* IMAGE SLIDER (CAROUSEL) */}
+           {/* IMAGE SLIDER */}
            <div className="relative w-full h-[40vh] bg-slate-100">
-               {/* Image Container with Scroll Snap */}
                <div 
                  ref={sliderRef}
                  onScroll={handleScroll}
@@ -547,13 +767,9 @@ export default function DashboardPage() {
                        </div>
                    ))}
                </div>
-
-               {/* Counter Badge */}
                <div className="absolute top-4 left-4 z-10 bg-black/40 backdrop-blur-md text-white text-[10px] font-bold px-3 py-1.5 rounded-full">
                    {currentImageIndex + 1} / {getDisplayImages(selectedProperty).length}
                </div>
-
-               {/* Navigation (Optional for Desktop/Tablet feel) */}
                {getDisplayImages(selectedProperty).length > 1 && (
                    <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5 z-10">
                        {getDisplayImages(selectedProperty).map((_, idx) => (
@@ -582,7 +798,6 @@ export default function DashboardPage() {
                <h3 className="font-bold text-slate-900 text-sm mb-2">About Project</h3>
                <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line mb-6">{selectedProperty.description}</p>
                
-               {/* Show Brochure Button if URL exists */}
                {selectedProperty.brochure_url && (
                    <button className="w-full border border-slate-200 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 mb-2">
                        <FileText size={16}/> Download Brochure

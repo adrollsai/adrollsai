@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target, Building2, ShieldCheck, User, Camera, Mail, Phone, Building, Palette } from 'lucide-react'
+import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target, Building2, ShieldCheck, User, Camera, Mail, Phone, Building, Palette, BadgeCheck } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -74,6 +74,7 @@ export default function ProfilePage() {
     mission: '',
     color: '#D0E8FF',
     contact: '',
+    email: '', // Added Email
     logoUrl: '',
     facebookUrl: '',
     instagramUrl: '',
@@ -231,6 +232,7 @@ export default function ProfilePage() {
             mission: profile.mission_statement || '',
             color: profile.brand_color || '#D0E8FF',
             contact: profile.contact_number || '',
+            email: profile.email || user.email || '', // Set Email
             logoUrl: profile.logo_url || '',
             facebookUrl: profile.facebook_url || '',
             instagramUrl: profile.instagram_url || '',
@@ -485,7 +487,35 @@ export default function ProfilePage() {
     <div className="p-5 max-w-md mx-auto min-h-screen pb-32">
       <h1 className="text-2xl font-bold text-slate-900 mb-6">Your Profile</h1>
 
-      {/* 1. IDENTITY CARD */}
+      {/* --- NEW: ACTIVE ORGANIZATION BADGE --- */}
+      {/* This shows explicitly which Org the agent is under */}
+      {org && (
+          <div className="bg-slate-900 text-white p-5 rounded-2xl flex items-center gap-4 relative overflow-hidden shadow-lg mb-6">
+              <div className="absolute right-[-10px] top-[-10px] opacity-10 rotate-12 pointer-events-none">
+                  <Building2 size={120}/>
+              </div>
+              
+              <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center overflow-hidden shrink-0 shadow-sm border border-slate-100 z-10">
+                  {org.master_logo_url ? (
+                      <img src={org.master_logo_url} className="w-full h-full object-contain p-2" alt={org.name} />
+                  ) : (
+                      <Building2 className="text-slate-900" size={32}/>
+                  )}
+              </div>
+
+              <div className="z-10">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Active Organization</p>
+                  <h2 className="text-xl font-bold leading-tight">{org.name}</h2>
+                  <div className="flex items-center gap-1.5 mt-2">
+                      <span className="bg-blue-500/20 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 border border-blue-500/30">
+                          <BadgeCheck size={10} /> {userRole === 'admin' ? 'Administrator' : 'Authorized Agent'}
+                      </span>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* 1. IDENTITY CARD (AGENT BRANDING) */}
       <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 text-center relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-20 bg-gradient-to-r from-slate-900 to-slate-800 z-0"></div>
           
@@ -506,13 +536,7 @@ export default function ProfilePage() {
               </div>
               
               <h2 className="mt-3 font-bold text-lg text-slate-900">{formData.businessName || 'Your Business'}</h2>
-              <p className="text-xs text-slate-500">{orgName}</p>
-              
-              <div className="flex items-center gap-2 mt-2">
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${userRole === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                      {userRole}
-                  </span>
-              </div>
+              <p className="text-xs text-slate-500">Agent @ {orgName}</p>
           </div>
       </div>
 
@@ -557,7 +581,7 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* 2. BRANDING KIT */}
+      {/* 2. PROFILE & BRANDING */}
       <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6">
           <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><ShieldCheck size={18}/> Branding Kit</h3>
           <p className="text-xs text-slate-500 mb-4 leading-relaxed bg-blue-50 p-3 rounded-xl border border-blue-100">
@@ -589,6 +613,20 @@ export default function ProfilePage() {
                         onChange={e => setFormData({...formData, contact: e.target.value})}
                         className="w-full bg-slate-50 pl-10 pr-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-slate-200 outline-none font-bold text-slate-700" 
                         placeholder="+91 98765 43210"
+                      />
+                  </div>
+              </div>
+              
+              {/* NEW: Read Only Email */}
+              <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Email Address (Login)</label>
+                  <div className="relative opacity-60">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
+                      <input 
+                        type="email" 
+                        value={formData.email} 
+                        disabled
+                        className="w-full bg-slate-100 pl-10 pr-4 py-3 rounded-xl text-sm outline-none font-bold text-slate-500 cursor-not-allowed" 
                       />
                   </div>
               </div>

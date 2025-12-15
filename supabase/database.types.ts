@@ -213,6 +213,38 @@ export type Database = {
           },
         ]
       }
+      organization_members: {
+        Row: {
+          created_at: string | null
+          id: string
+          organization_id: string | null
+          role: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          organization_id?: string | null
+          role?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          organization_id?: string | null
+          role?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           brand_color: string | null
@@ -462,6 +494,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_my_org_id: { Args: never; Returns: string }
+      get_public_org_info: {
+        Args: { org_id: string }
+        Returns: {
+          logo_url: string
+          name: string
+        }[]
+      }
       increment_share_stat: {
         Args: { asset_id: string; platform: string }
         Returns: undefined
