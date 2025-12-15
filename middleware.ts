@@ -1,8 +1,11 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
-// IMPORTANT: Set this environment variable (e.g., 'app.adrollsai.com')
-// to ensure the rewrite target is correct.
+// Set runtime to nodejs for Supabase compatibility (Fixes Vercel warnings/errors)
+export const runtime = 'nodejs';
+
+// IMPORTANT: This must match your Vercel project's default host (e.g., adrollsai-builder-app.vercel.app)
+// This environment variable must be set in your Vercel project settings.
 const DEFAULT_APP_HOST = process.env.NEXT_PUBLIC_DEFAULT_HOST || 'app.adrollsai.com' 
 
 export async function middleware(request: NextRequest) {
@@ -11,6 +14,11 @@ export async function middleware(request: NextRequest) {
       headers: request.headers,
     },
   })
+  
+  const url = request.nextUrl
+  // Prefer 'x-forwarded-host' which Vercel provides as the original host requested by the client.
+  const currentHost = request.headers.get('x-forwarded-host') || url.host
+  const isLocalhost = currentHost.includes('localhost') || currentHost.includes('127.0.0.1')
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -37,13 +45,7 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const url = request.nextUrl
-  // Prefer 'x-forwarded-host' as it reflects the original host in environments like Vercel
-  const currentHost = request.headers.get('x-forwarded-host') || url.host
-  const isLocalhost = currentHost.includes('localhost') || currentHost.includes('127.0.0.1')
-  
-  
-  // --- CUSTOM DOMAIN LOGIC (REWRITE) ---
+  // 1. --- CUSTOM DOMAIN LOGIC (REWRITE) ---
   // Only check for a custom domain if it's not localhost and not the default host.
   if (!isLocalhost && currentHost !== DEFAULT_APP_HOST) {
     
@@ -55,42 +57,45 @@ export async function middleware(request: NextRequest) {
       .limit(1)
       .single()
 
+    // If RLS fails and data is null, the request continues without rewrite, 
+    // potentially leading to a 404 or the main app content if Vercel handles it.
     if (orgData) {
-      // 1. Construct the internal rewrite URL (main app host, same path)
+      // Perform the Rewrite to the DEFAULT_APP_HOST (Vercel's internal host)
+      // This is the CRITICAL fix for the silent routing.
       const rewriteUrl = new URL(url.pathname, `https://${DEFAULT_APP_HOST}`)
       url.searchParams.forEach((value, key) => {
           rewriteUrl.searchParams.set(key, value)
       })
       
-      // 2. Perform the Rewrite
       response = NextResponse.rewrite(rewriteUrl, {
           request: {
               headers: request.headers,
           },
       })
       
-      // 3. Pass the original host header through for the callback route to use
-      // This is crucial for correct post-login redirection back to the custom domain.
+      // Pass the original host header through for the callback route to use
       response.headers.set('x-forwarded-host', currentHost);
     }
   }
   
-  // --- AUTHENTICATION LOGIC ---
+  // 2. --- AUTHENTICATION LOGIC ---
 
   // This refreshes the session if it's expired
   const { data: { user } } = await supabase.auth.getUser()
+  
+  // Determine the effective pathname after a rewrite, or use the original URL
+  const finalUrl = response.headers.get('x-middleware-rewrite') ? new URL(response.headers.get('x-middleware-rewrite')!) : url
 
   // REDIRECT LOGIC:
-  // This logic uses `request.nextUrl.pathname` (which uses the rewritten path if a rewrite occurred)
-  // for the check, and `new URL(path, request.url)` for the redirect (which respects the custom host).
-
   // 1. If user IS logged in and is on the Login Page (/), send them to Dashboard
-  if (user && request.nextUrl.pathname === '/') {
+  if (user && finalUrl.pathname === '/') {
+    // Use request.url to construct the redirect, which maintains the custom domain host
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   // 2. If user is NOT logged in and tries to visit Dashboard, send them to Login
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
+  if (!user && finalUrl.pathname.startsWith('/dashboard')) {
+    // Use request.url to construct the redirect, which maintains the custom domain host
     return NextResponse.redirect(new URL('/', request.url))
   }
 
@@ -98,16 +103,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // Match all request paths except for files and auth routes
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - auth (auth routes)
-     * - shared (publicly shareable content)
-     */
-    '/((?!_next/static|_next/image|favicon.ico|auth|shared).*)',
     '/((?!_next/static|_next/image|favicon.ico|auth|shared).*)',
   ],
 }

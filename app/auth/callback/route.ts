@@ -6,40 +6,38 @@ async function getRedirectBaseUrl(request: Request) {
   const url = new URL(request.url)
   const origin = url.origin
   
-  // The client is created here as it's needed for all successful and error redirect paths.
   const supabase = await createClient()
 
-  // The host as seen by the request (x-forwarded-host is preferred in Next.js/Vercel)
+  // The host as seen by the request. Vercel sets 'x-forwarded-host' to the custom domain.
   const forwardedHost = request.headers.get('x-forwarded-host') 
   const currentHost = forwardedHost || url.host
 
-  // 1. Check for Local Environment
+  // 1. Handle local environment to avoid SSL/host issues
   if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-    // In local env, use origin (http://localhost:3000) or forwarded host (for tunnels/previews)
-    return forwardedHost ? `https://${forwardedHost}` : origin
+    // Use http for localhost, and prioritize the forwarded host if it exists
+    return forwardedHost ? `http://${currentHost}` : origin
   }
 
-  // 2. Check for Custom Domain Match in Production/Staging
-  // We query the organization table for a matching custom_domain
+  // 2. Check if the current host is a registered custom domain in the database
+  // This requires the RLS policy to allow anonymous/public SELECT on the organizations table.
   const { data: orgData } = await supabase
     .from('organizations')
     .select('custom_domain')
     .eq('custom_domain', currentHost)
     .single()
     
-  // Supabase Postgrest client's single() returns null if no row is found on the server
+  // If a matching custom domain is found, use that host for the redirect
   if (orgData) {
-    // Found a custom domain match, use it. Force HTTPS as it's production.
-    return `https://${orgData.custom_domain}`
+    // Force HTTPS for production domains
+    return `https://${currentHost}`
   }
 
-  // 3. Fallback to default logic (forwardedHost or origin)
+  // 3. Fallback to the main Vercel app domain (using the forwardedHost, which should be the correct default host)
   if (forwardedHost) {
-    // If no custom domain, but forwardedHost is set (e.g., Vercel default domain)
-    return `https://${forwardedHost}`
+      return `https://${forwardedHost}`
   }
-  
-  // Final fallback to the request origin (main app domain)
+
+  // 4. Final fallback to the request origin
   return origin
 }
 
@@ -48,7 +46,6 @@ export async function GET(request: Request) {
   const code = searchParams.get('code')
   
   // 1. Capture Params
-  // 'invite_org' comes from our custom login page URL
   const inviteOrg = searchParams.get('invite_org')
   const provider = searchParams.get('provider') 
   const next = searchParams.get('next') ?? '/dashboard'
@@ -56,10 +53,10 @@ export async function GET(request: Request) {
   const errorCode = searchParams.get('error_code')
   const errorDescription = searchParams.get('error_description')
   
-  // Handle immediate errors without full auth flow
+  // Determine the base URL for redirection for error states
+  const errorRedirectBaseUrl = await getRedirectBaseUrl(request)
+
   if (errorCode) {
-    // Use the helper to determine the correct base URL for the error page
-    const errorRedirectBaseUrl = await getRedirectBaseUrl(request)
     return NextResponse.redirect(`${errorRedirectBaseUrl}/?error=${encodeURIComponent(errorDescription || 'Unknown Error')}`)
   }
 
@@ -109,7 +106,6 @@ export async function GET(request: Request) {
           // === CASE A: User Invited to an Organization ===
           
           // 1. Add to Members Table (Upsert ensures no error if already exists)
-          // We force role 'agent' for invites to be safe
           const { error: memberError } = await supabase.from('organization_members').upsert({
               user_id: userId,
               organization_id: inviteOrg,
@@ -175,13 +171,13 @@ export async function GET(request: Request) {
           }
       }
       
-      // 4. Custom Domain & Standard Redirect Logic
+      // 4. Final Redirect Logic
       const redirectBaseUrl = await getRedirectBaseUrl(request)
       return NextResponse.redirect(`${redirectBaseUrl}${next}`)
     }
   }
 
-  // Final fallback error redirect
-  const errorRedirectBaseUrl = await getRedirectBaseUrl(request)
-  return NextResponse.redirect(`${errorRedirectBaseUrl}/?error=Authentication failed`)
+  // Final error redirect
+  const redirectBaseUrl = await getRedirectBaseUrl(request)
+  return NextResponse.redirect(`${redirectBaseUrl}/?error=Authentication failed`)
 }
