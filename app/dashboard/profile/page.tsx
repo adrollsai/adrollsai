@@ -374,6 +374,7 @@ export default function ProfilePage() {
     
     const normalizedDomain = customDomainInput.trim().toLowerCase()
     
+    // Prevent using the main app host
     if (normalizedDomain === DEFAULT_APP_HOST) {
         alert(`Cannot use the default application host (${DEFAULT_APP_HOST}) as a custom domain.`)
         setIsSavingCustomDomain(false)
@@ -382,24 +383,33 @@ export default function ProfilePage() {
     }
 
     try {
-      // FIX: Force cast the update/select result
-      const { data, error } = await supabase
-        .from('organizations')
-        .update({ custom_domain: normalizedDomain || null } as any) 
-        .eq('id', org.id)
-        .select('custom_domain')
-        .single()
-      
-      if (error) throw error
+      // 1. Call our new Automation API
+      const response = await fetch('/api/domains/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domain: normalizedDomain })
+      })
 
-      // Cast data safely
-      const updatedData = data as unknown as { custom_domain: string | null }
-      setCustomDomainInput(updatedData?.custom_domain || '')
+      const data = await response.json()
+
+      if (!response.ok) {
+          throw new Error(data.error || 'Failed to add domain')
+      }
+
+      // 2. Success Logic
+      setCustomDomainInput(data.domain)
       
+      // Refresh local org data to show the badge
       await refreshOrg() 
       
       setSaveDomainStatus('saved')
-      setTimeout(() => setSaveDomainStatus('idle'), 3000)
+      
+      // OPTIONAL: Alert user with DNS instructions if needed
+      if (data.configured === false) {
+          alert(`Domain added! To finish, go to your DNS provider (GoDaddy, Namecheap, etc.) and add a CNAME record for "${data.domain}" pointing to "cname.vercel-dns.com".`)
+      } else {
+          setTimeout(() => setSaveDomainStatus('idle'), 3000)
+      }
 
     } catch (error: any) {
       console.error('Error saving custom domain:', error.message)
@@ -409,7 +419,6 @@ export default function ProfilePage() {
       setIsSavingCustomDomain(false)
     }
   }
-
 
   // --- ACTIONS (Connect/Disconnect) ---
   const handleConnectFacebook = async () => {
