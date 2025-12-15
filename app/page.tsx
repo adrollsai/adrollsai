@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, Building2, User, LayoutGrid, CheckCircle2, TestTube2, AlertCircle } from 'lucide-react'
@@ -10,7 +10,8 @@ type InviteInfo = {
   logo_url: string
 }
 
-export default function LoginPage() {
+// 1. Extract logic into a separate component
+function LoginForm() {
   const supabase = createClient()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -183,5 +184,18 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// 2. Wrap the component in Suspense for the main export
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-slate-400 w-8 h-8" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }
