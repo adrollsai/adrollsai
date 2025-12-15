@@ -1,25 +1,28 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
-// Set runtime to nodejs for Supabase compatibility (Fixes Vercel warnings/errors)
-export const runtime = 'nodejs';
+// 1. Force Node.js runtime to support Supabase libraries in middleware
+export const runtime = 'nodejs'
 
-// IMPORTANT: This must match your Vercel project's default host (e.g., adrollsai-builder-app.vercel.app)
-// This environment variable must be set in your Vercel project settings.
-const DEFAULT_APP_HOST = process.env.NEXT_PUBLIC_DEFAULT_HOST || 'app.adrollsai.com' 
+// 2. Configuration: Set this to your internal Vercel domain (e.g., adrollsai-builder.vercel.app)
+// Do NOT use your public custom domain here.
+const DEFAULT_APP_HOST = process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app' 
 
 export async function middleware(request: NextRequest) {
+  // Initialize response
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   })
-  
+
   const url = request.nextUrl
-  // Prefer 'x-forwarded-host' which Vercel provides as the original host requested by the client.
+  
+  // Get the hostname (check x-forwarded-host first for custom domains)
   const currentHost = request.headers.get('x-forwarded-host') || url.host
   const isLocalhost = currentHost.includes('localhost') || currentHost.includes('127.0.0.1')
 
+  // 3. Create Supabase Client
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -45,11 +48,11 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // 1. --- CUSTOM DOMAIN LOGIC (REWRITE) ---
-  // Only check for a custom domain if it's not localhost and not the default host.
+  // 4. CUSTOM DOMAIN LOGIC (REWRITE)
+  // Only execute if it's not localhost and not the internal default host
   if (!isLocalhost && currentHost !== DEFAULT_APP_HOST) {
     
-    // Check organizations table for a matching custom_domain
+    // Check if this domain exists in the 'organizations' table
     const { data: orgData } = await supabase
       .from('organizations')
       .select('custom_domain')
@@ -57,45 +60,42 @@ export async function middleware(request: NextRequest) {
       .limit(1)
       .single()
 
-    // If RLS fails and data is null, the request continues without rewrite, 
-    // potentially leading to a 404 or the main app content if Vercel handles it.
+    // If valid custom domain found, rewrite traffic to the internal host
     if (orgData) {
-      // Perform the Rewrite to the DEFAULT_APP_HOST (Vercel's internal host)
-      // This is the CRITICAL fix for the silent routing.
       const rewriteUrl = new URL(url.pathname, `https://${DEFAULT_APP_HOST}`)
+      
+      // Preserve search parameters
       url.searchParams.forEach((value, key) => {
           rewriteUrl.searchParams.set(key, value)
       })
       
+      // Perform the rewrite
       response = NextResponse.rewrite(rewriteUrl, {
           request: {
               headers: request.headers,
           },
       })
       
-      // Pass the original host header through for the callback route to use
-      response.headers.set('x-forwarded-host', currentHost);
+      // Tag the response with the original host for downstream use
+      response.headers.set('x-forwarded-host', currentHost)
     }
   }
   
-  // 2. --- AUTHENTICATION LOGIC ---
-
-  // This refreshes the session if it's expired
+  // 5. AUTHENTICATION LOGIC
   const { data: { user } } = await supabase.auth.getUser()
-  
-  // Determine the effective pathname after a rewrite, or use the original URL
-  const finalUrl = response.headers.get('x-middleware-rewrite') ? new URL(response.headers.get('x-middleware-rewrite')!) : url
 
-  // REDIRECT LOGIC:
-  // 1. If user IS logged in and is on the Login Page (/), send them to Dashboard
+  // Determine the effective path (handling potentially rewritten URLs)
+  const finalUrl = response.headers.get('x-middleware-rewrite') 
+    ? new URL(response.headers.get('x-middleware-rewrite')!) 
+    : url
+
+  // A. Logged In User on Login Page -> Redirect to Dashboard
   if (user && finalUrl.pathname === '/') {
-    // Use request.url to construct the redirect, which maintains the custom domain host
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
-  // 2. If user is NOT logged in and tries to visit Dashboard, send them to Login
+  // B. Guest User on Protected Route -> Redirect to Login
   if (!user && finalUrl.pathname.startsWith('/dashboard')) {
-    // Use request.url to construct the redirect, which maintains the custom domain host
     return NextResponse.redirect(new URL('/', request.url))
   }
 
@@ -103,8 +103,15 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Match all request paths except for files and auth routes
   matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - auth (auth routes)
+     * - shared (publicly shareable content)
+     */
     '/((?!_next/static|_next/image|favicon.ico|auth|shared).*)',
   ],
 }

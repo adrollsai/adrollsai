@@ -10,7 +10,7 @@ type InviteInfo = {
   logo_url: string
 }
 
-// 1. Extract logic into a separate component
+// 1. Inner Component: Handles all logic and params
 function LoginForm() {
   const supabase = createClient()
   const router = useRouter()
@@ -19,7 +19,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [inviteInfo, setInviteInfo] = useState<InviteInfo | null>(null)
   
-  // Capture the invite code
+  // Capture the invite code and error
   const inviteOrg = searchParams.get('invite_org')
   const errorMsg = searchParams.get('error')
 
@@ -39,7 +39,11 @@ function LoginForm() {
   const handleLogin = async (provider: 'google' | 'linkedin_oidc') => {
     setLoading(true)
     try {
-      const redirectUrl = new URL(`${window.location.origin}/auth/callback`)
+      // FIX: Use window.location.origin to support Custom Domains dynamically
+      // This ensures Supabase redirects back to 'agent.countrysideheavens.com' instead of 'adrolls.in'
+      const origin = window.location.origin
+      const redirectUrl = new URL(`${origin}/auth/callback`)
+      
       if (inviteOrg) {
         redirectUrl.searchParams.set('invite_org', inviteOrg)
       }
@@ -60,7 +64,7 @@ function LoginForm() {
     }
   }
 
-  // --- UPDATED DEMO LOGIN ---
+  // --- DEMO LOGIN LOGIC ---
   const handleDemoLogin = async () => {
     setLoading(true)
     try {
@@ -187,7 +191,7 @@ function LoginForm() {
   )
 }
 
-// 2. Wrap the component in Suspense for the main export
+// 2. Main Page Component: Wraps LoginForm in Suspense to fix Vercel Build Error
 export default function LoginPage() {
   return (
     <Suspense fallback={
