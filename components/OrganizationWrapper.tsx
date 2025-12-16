@@ -1,7 +1,7 @@
 /* adrollsai/adrollsai/adrollsai-builder-app-gamification/components/OrganizationWrapper.tsx */
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useSearchParams } from 'next/navigation'
 import { Shield } from 'lucide-react'
@@ -24,9 +24,10 @@ const OrgContext = createContext<OrgContextType>({ org: null, loading: true, isI
 
 export const useOrganization = () => useContext(OrgContext)
 
-export default function OrganizationWrapper({ children }: { children: React.ReactNode }) {
+// 1. INNER COMPONENT: Handles logic and useSearchParams
+function OrgContent({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
-  const searchParams = useSearchParams()
+  const searchParams = useSearchParams() // <--- usage is safe here because parent wraps in Suspense
   
   const [org, setOrg] = useState<Organization | null>(null)
   const [loading, setLoading] = useState(true)
@@ -37,7 +38,7 @@ export default function OrganizationWrapper({ children }: { children: React.Reac
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // 1. Get Profile AND Role
+      // Get Profile AND Role
       const { data: profile } = await supabase
         .from('profiles')
         .select('organization_id, role')
@@ -46,13 +47,16 @@ export default function OrganizationWrapper({ children }: { children: React.Reac
 
       let targetOrgId = profile?.organization_id
 
-      // 2. SUPER USER LOGIC: Check for override
+      // SUPER USER LOGIC: Check for override
       const overrideId = searchParams.get('impersonate_org')
       
-      // @ts-ignore - 'super_user' might not be in your local types yet, but it's in DB
-      if (profile?.role === 'super_user' && overrideId) {
-          targetOrgId = overrideId
-          setIsImpersonating(true)
+      // Check role (safely handling types)
+      if ((profile?.role === 'super_user' || profile?.role === 'admin') && overrideId) {
+          // Verify they are actually allowed to impersonate (double check role)
+          if(profile.role === 'super_user') {
+            targetOrgId = overrideId
+            setIsImpersonating(true)
+          }
       } else {
           setIsImpersonating(false)
       }
@@ -94,7 +98,7 @@ export default function OrganizationWrapper({ children }: { children: React.Reac
 
   useEffect(() => {
     fetchOrg()
-  }, [searchParams]) // Re-fetch if URL changes
+  }, [searchParams]) 
 
   useEffect(() => {
     if (org && org.brand_color) {
@@ -114,5 +118,14 @@ export default function OrganizationWrapper({ children }: { children: React.Reac
           </div>
       )}
     </OrgContext.Provider>
+  )
+}
+
+// 2. OUTER COMPONENT: Provides Suspense Boundary
+export default function OrganizationWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div className="h-screen w-full bg-slate-50" />}>
+      <OrgContent>{children}</OrgContent>
+    </Suspense>
   )
 }
