@@ -18,6 +18,69 @@ export async function POST(request: Request) {
 
     if (!masterImageUrl) throw new Error("Missing Master Image URL")
 
+    // --- GAMIFICATION LOGIC START ---
+    const { data: currentStats } = await supabase
+      .from('profiles')
+      .select('current_streak, last_activity_date, total_xp, level, badges')
+      .eq('id', user.id)
+      .single()
+
+    const now = new Date()
+    const lastDate = currentStats?.last_activity_date ? new Date(currentStats.last_activity_date) : null
+    
+    let newStreak = currentStats?.current_streak || 0
+    let newXp = (currentStats?.total_xp || 0) + 50 // Base XP
+    let currentBadges = currentStats?.badges || []
+    let newBadges: string[] = [...currentBadges]
+    let earnedBadgeName: string | null = null
+    
+    // Streak Calculation
+    if (lastDate) {
+      const isToday = lastDate.toDateString() === now.toDateString()
+      const isYesterday = new Date(now.setDate(now.getDate() - 1)).toDateString() === lastDate.toDateString()
+      
+      // Reset date to 'now'
+      now.setDate(new Date().getDate()) 
+
+      if (!isToday) {
+        if (isYesterday) {
+          newStreak += 1
+        } else {
+          newStreak = 1 // Reset
+        }
+      }
+    } else {
+      newStreak = 1 
+    }
+
+    // --- MILESTONE CHECK ---
+    const MILESTONES = [
+        { days: 7, id: 'streak_7', xp: 500, name: 'Week Warrior' },
+        { days: 30, id: 'streak_30', xp: 2000, name: 'Consistency King' },
+        { days: 100, id: 'streak_100', xp: 5000, name: 'Century Club' }
+    ]
+
+    const milestone = MILESTONES.find(m => m.days === newStreak)
+    
+    if (milestone && !newBadges.includes(milestone.id)) {
+        newBadges.push(milestone.id)
+        newXp += milestone.xp
+        earnedBadgeName = milestone.name
+    }
+
+    // Level Calculation
+    const newLevel = Math.floor(newXp / 1000) + 1
+
+    // Update Profile
+    await supabase.from('profiles').update({
+        current_streak: newStreak,
+        last_activity_date: new Date().toISOString(),
+        total_xp: newXp,
+        level: newLevel,
+        badges: newBadges
+    }).eq('id', user.id)
+    // --- GAMIFICATION LOGIC END ---
+
     // 2. Fetch Resources
     const masterImageRes = await fetch(masterImageUrl)
     const masterArrayBuffer = await masterImageRes.arrayBuffer()
@@ -64,15 +127,13 @@ export async function POST(request: Request) {
       layers.push({ input: logoBuffer as any, top: 40, left: 40 })
     }
 
-    // --- COMPRESSION APPLIED HERE ---
-    // Switched from .png() to .jpeg({ quality: 80 })
+    // --- COMPRESSION ---
     const finalImageBuffer = await sharp(masterBuffer)
       .composite(layers)
       .jpeg({ quality: 80, mozjpeg: true }) 
       .toBuffer()
 
     // 4. Upload to Cloudflare R2
-    // Changed extension to .jpg
     const fileName = `stamped/${user.id}/${Date.now()}.jpg`
     
     try {
@@ -80,7 +141,7 @@ export async function POST(request: Request) {
         Bucket: R2_BUCKET,
         Key: fileName,
         Body: finalImageBuffer,
-        ContentType: 'image/jpeg' // Changed content type
+        ContentType: 'image/jpeg'
       }))
     } catch (uploadError) {
       console.error("R2 Upload Failed:", uploadError)
@@ -101,7 +162,13 @@ export async function POST(request: Request) {
         share_stats: { whatsapp: 0, facebook: 0, instagram: 0, download: 0 }
     })
 
-    return NextResponse.json({ success: true, url: publicUrl })
+    return NextResponse.json({ 
+        success: true, 
+        url: publicUrl, 
+        xpEarned: newXp - (currentStats?.total_xp || 0), // Show actual gained XP (Base + Bonus)
+        streak: newStreak,
+        newBadge: earnedBadgeName // Pass this to frontend to show celebration
+    })
 
   } catch (error: any) {
     console.error("Stamping Error:", error)

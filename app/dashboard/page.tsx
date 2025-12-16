@@ -3,7 +3,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -36,7 +36,7 @@ type FeedItem =
       type: 'image' | 'video'
       caption_template: string
       created_at: string
-      property_id: string // <--- ADDED: To correctly link the asset on claim
+      property_id: string 
       property?: { title: string }
       pinned?: boolean 
     }
@@ -46,7 +46,7 @@ type FeedItem =
       title: string
       content: string
       created_at: string
-      tags: string[] | null // Used for Pinning logic
+      tags: string[] | null 
       author?: { business_name: string, logo_url: string }
     }
 
@@ -63,6 +63,10 @@ type Profile = {
     business_name: string
     contact_number: string
     logo_url: string
+    // Gamification Fields
+    current_streak?: number
+    total_xp?: number
+    level?: number
 }
 
 export default function DashboardPage() {
@@ -73,7 +77,8 @@ export default function DashboardPage() {
   const { org } = useOrganization()
   
   // --- STATE ---
-  const [activeTab, setActiveTab] = useState<'feed' | 'inventory' | 'analytics'>('feed')
+  // Added 'leaderboard' to activeTab
+  const [activeTab, setActiveTab] = useState<'feed' | 'inventory' | 'leaderboard' | 'analytics'>('feed')
   const [userProfile, setUserProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   
@@ -81,7 +86,8 @@ export default function DashboardPage() {
   const [properties, setProperties] = useState<Property[]>([])
   const [feedItems, setFeedItems] = useState<FeedItem[]>([])
   const [analytics, setAnalytics] = useState<AssetStat[]>([])
-  const [claimedCreativeIds, setClaimedCreativeIds] = useState<Set<string>>(new Set()) // Tracks claimed items
+  const [leaderboard, setLeaderboard] = useState<Profile[]>([]) // New State
+  const [claimedCreativeIds, setClaimedCreativeIds] = useState<Set<string>>(new Set()) 
   
   // Modals
   const [showAddProject, setShowAddProject] = useState(false)
@@ -138,7 +144,6 @@ export default function DashboardPage() {
       const orgId = profile.organization_id
 
       if (!orgId) {
-          // Handle case where user has no organization (shouldn't happen for valid agents)
           setLoading(false)
           return
       }
@@ -153,10 +158,9 @@ export default function DashboardPage() {
       if (props) setProperties(props)
 
       // 3. Get Creatives Feed (FILTERED BY ORG via Property relation)
-      // Note: `*` includes `property_id` from master_creatives
       const { data: creatives } = await supabase
         .from('master_creatives')
-        .select(`*, property:properties!inner(title, organization_id)`) // !inner forces filtering
+        .select(`*, property:properties!inner(title, organization_id)`) 
         .eq('property.organization_id', orgId)
         .order('created_at', { ascending: false })
 
@@ -178,7 +182,7 @@ export default function DashboardPage() {
               type: c.type,
               caption_template: c.caption_template,
               created_at: c.created_at,
-              property_id: c.property_id, // <--- Correct field added to FeedItem
+              property_id: c.property_id, 
               property: c.property
           }))
       }
@@ -221,7 +225,18 @@ export default function DashboardPage() {
           setClaimedCreativeIds(claimedSet)
       }
 
-      // 7. Get Analytics (Admin Only & Filtered)
+      // 7. Get Leaderboard (Everyone)
+      const { data: lb } = await supabase
+         .from('profiles')
+         .select('*')
+         .eq('organization_id', orgId)
+         .order('total_xp', { ascending: false })
+         .limit(20)
+      
+      if (lb) setLeaderboard(lb as Profile[])
+
+
+      // 8. Get Analytics (Admin Only & Filtered)
       if (profile.role === 'admin') {
           const { data: orgUsers } = await supabase.from('profiles').select('id, business_name').eq('organization_id', orgId)
           const orgUserIds = orgUsers?.map(u => u.id) || []
@@ -338,7 +353,7 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // 4. Agent: Claim Creative (FIXED to send correct property ID)
+  // 4. Agent: Claim Creative
   const handleClaim = async (creative: FeedItem) => {
       if (creative.kind !== 'creative') return
       
@@ -362,22 +377,25 @@ export default function DashboardPage() {
               body: JSON.stringify({
                   masterImageUrl: creative.url,
                   agentProfile: userProfile,
-                  propertyId: creative.property_id, // <--- FIXED: Now sending the actual Property ID (UUID)
+                  propertyId: creative.property_id, 
                   masterCreativeId: creative.id
               })
           })
+          
+          const data = await res.json()
+          
           if(res.ok) {
-              // Update local state to reflect claimed status immediately
               setClaimedCreativeIds(prev => new Set(prev).add(creative.id))
               
-              // Navigate to the Assets tab to force a re-fetch of assets by that page.
-              router.push('/dashboard/assets')
+              // Gamification Alert
+              if (data.xpEarned) {
+                  alert(`Creative Claimed!\n\n🔥 Streak: ${data.streak} Days\n✨ XP Earned: +${data.xpEarned}`)
+              }
 
-              alert("Creative Claimed! Navigating to your Assets tab now.")
+              router.push('/dashboard/assets')
               
           } else {
-             const errorData = await res.json()
-             throw new Error(errorData.error || "Stamping failed.")
+             throw new Error(data.error || "Stamping failed.")
           }
       } catch (e: any) {
           console.error(e)
@@ -503,6 +521,40 @@ export default function DashboardPage() {
                 </button>
             )}
           </div>
+          
+          {/* --- GAMIFICATION STATUS BAR --- */}
+          {userProfile?.role === 'agent' && (
+              <div className="flex items-center gap-2 mb-4 bg-slate-900 text-white p-3 rounded-xl shadow-lg relative overflow-hidden">
+                  <div className="flex-1 flex items-center gap-2 relative z-10">
+                      <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center font-black text-sm border-2 border-white/30">
+                          {userProfile.level || 1}
+                      </div>
+                      <div>
+                          <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">Current Level</p>
+                          <p className="text-xs font-bold text-white flex items-center gap-1">
+                              <Star size={10} className="text-yellow-400 fill-current"/> {userProfile.total_xp || 0} XP
+                          </p>
+                      </div>
+                  </div>
+                  
+                  <div className="h-8 w-[1px] bg-white/10"></div>
+
+                  <div className="flex-1 flex items-center gap-2 relative z-10 pl-2">
+                       <div className="bg-orange-500/20 p-2 rounded-lg text-orange-400">
+                           <Flame size={18} fill="currentColor" />
+                       </div>
+                       <div>
+                          <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">Daily Streak</p>
+                          <p className="text-xs font-bold text-white">{userProfile.current_streak || 0} Days</p>
+                       </div>
+                  </div>
+
+                  {/* Decorative BG */}
+                  <div className="absolute top-0 right-0 p-2 opacity-5 pointer-events-none">
+                      <Trophy size={80} />
+                  </div>
+              </div>
+          )}
 
           {/* TABS */}
           <div className="flex bg-slate-100 p-1 rounded-xl">
@@ -512,6 +564,12 @@ export default function DashboardPage() {
               <button onClick={() => setActiveTab('inventory')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'inventory' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
                   <Building size={14}/> Projects
               </button>
+              
+              {/* Leaderboard Tab (All Users) */}
+              <button onClick={() => setActiveTab('leaderboard')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'leaderboard' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
+                  <Trophy size={14}/> Rankings
+              </button>
+
               {userProfile?.role === 'admin' && (
                   <button onClick={() => setActiveTab('analytics')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'analytics' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
                       <BarChart3 size={14}/> Stats
@@ -662,6 +720,81 @@ export default function DashboardPage() {
                  ))}
                  {properties.length === 0 && <div className="text-center py-10 text-slate-400 text-xs">No projects assigned to your organization.</div>}
               </>
+          )}
+
+          {/* --- TAB: LEADERBOARD --- */}
+          {activeTab === 'leaderboard' && (
+              <div className="space-y-4">
+                  <div className="bg-slate-900 p-6 rounded-3xl relative overflow-hidden text-white shadow-xl">
+                      <div className="absolute top-0 right-0 p-6 opacity-10"><Trophy size={120} /></div>
+                      <h2 className="text-xl font-bold mb-1">Top Performers</h2>
+                      <p className="text-xs text-slate-400 mb-6">Based on activity and sales</p>
+                      
+                      {leaderboard.length > 0 && (
+                          <div className="flex items-end justify-center gap-4 mb-4">
+                              {/* 2nd Place */}
+                              {leaderboard[1] && (
+                                  <div className="flex flex-col items-center">
+                                      <div className="w-12 h-12 rounded-full border-2 border-slate-500 bg-slate-800 flex items-center justify-center font-bold text-sm mb-2 overflow-hidden relative">
+                                          {leaderboard[1].logo_url ? <img src={leaderboard[1].logo_url} className="w-full h-full object-cover"/> : leaderboard[1].business_name?.[0]}
+                                          <div className="absolute -bottom-1 -right-1 bg-slate-500 rounded-full p-0.5"><Medal size={12}/></div>
+                                      </div>
+                                      <p className="text-[10px] font-bold text-slate-300 w-16 text-center truncate">{leaderboard[1].business_name}</p>
+                                      <p className="text-[10px] font-bold text-slate-500">{leaderboard[1].total_xp || 0} XP</p>
+                                  </div>
+                              )}
+                              {/* 1st Place */}
+                              {leaderboard[0] && (
+                                  <div className="flex flex-col items-center -mt-6">
+                                      <Crown size={24} className="text-yellow-400 mb-2 animate-bounce"/>
+                                      <div className="w-16 h-16 rounded-full border-4 border-yellow-400 bg-slate-800 flex items-center justify-center font-bold text-lg mb-2 overflow-hidden shadow-lg shadow-yellow-500/20">
+                                          {leaderboard[0].logo_url ? <img src={leaderboard[0].logo_url} className="w-full h-full object-cover"/> : leaderboard[0].business_name?.[0]}
+                                      </div>
+                                      <p className="text-xs font-bold text-white w-20 text-center truncate">{leaderboard[0].business_name}</p>
+                                      <p className="text-[10px] font-bold text-yellow-400">{leaderboard[0].total_xp || 0} XP</p>
+                                  </div>
+                              )}
+                              {/* 3rd Place */}
+                              {leaderboard[2] && (
+                                  <div className="flex flex-col items-center">
+                                      <div className="w-12 h-12 rounded-full border-2 border-orange-700 bg-slate-800 flex items-center justify-center font-bold text-sm mb-2 overflow-hidden relative">
+                                          {leaderboard[2].logo_url ? <img src={leaderboard[2].logo_url} className="w-full h-full object-cover"/> : leaderboard[2].business_name?.[0]}
+                                          <div className="absolute -bottom-1 -right-1 bg-orange-700 rounded-full p-0.5"><Medal size={12}/></div>
+                                      </div>
+                                      <p className="text-[10px] font-bold text-slate-300 w-16 text-center truncate">{leaderboard[2].business_name}</p>
+                                      <p className="text-[10px] font-bold text-slate-500">{leaderboard[2].total_xp || 0} XP</p>
+                                  </div>
+                              )}
+                          </div>
+                      )}
+                  </div>
+
+                  <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                      {leaderboard.map((agent, i) => (
+                          <div key={agent.id} className={`p-4 flex items-center gap-3 border-b border-slate-50 last:border-0 ${agent.id === userProfile?.id ? 'bg-blue-50' : ''}`}>
+                              <span className={`w-6 text-center font-bold text-sm ${i < 3 ? 'text-yellow-500' : 'text-slate-400'}`}>#{i + 1}</span>
+                              <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-600 overflow-hidden">
+                                  {agent.logo_url ? <img src={agent.logo_url} className="w-full h-full object-cover"/> : agent.business_name?.[0]}
+                              </div>
+                              <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                      <h4 className="font-bold text-sm text-slate-900">{agent.business_name}</h4>
+                                      {agent.id === userProfile?.id && <span className="bg-blue-200 text-blue-800 text-[10px] font-bold px-1.5 py-0.5 rounded">YOU</span>}
+                                  </div>
+                                  <div className="flex gap-3 text-[10px] text-slate-500 font-medium">
+                                      <span className="flex items-center gap-1"><Flame size={10} className="text-orange-500"/> {agent.current_streak || 0} Day Streak</span>
+                                      <span>Level {agent.level || 1}</span>
+                                  </div>
+                              </div>
+                              <div className="text-right">
+                                  <p className="font-bold text-sm text-slate-900">{agent.total_xp || 0}</p>
+                                  <p className="text-[10px] text-slate-400">XP</p>
+                              </div>
+                          </div>
+                      ))}
+                      {leaderboard.length === 0 && <div className="p-8 text-center text-slate-400 text-xs">No rankings available yet.</div>}
+                  </div>
+              </div>
           )}
 
           {/* --- TAB: ANALYTICS (Admin Only) --- */}

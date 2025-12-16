@@ -319,10 +319,12 @@ export type Database = {
       profiles: {
         Row: {
           ad_account_id: string | null
+          badges: string[] | null
           brand_color: string | null
           business_name: string | null
           contact_number: string | null
           created_at: string
+          current_streak: number | null
           email: string | null
           facebook_token: string | null
           facebook_url: string | null
@@ -331,6 +333,8 @@ export type Database = {
           google_business_token: string | null
           id: string
           instagram_url: string | null
+          last_activity_date: string | null
+          level: number | null
           linkedin_token: string | null
           linkedin_url: string | null
           linkedin_urn: string | null
@@ -342,16 +346,19 @@ export type Database = {
           selected_page_id: string | null
           selected_page_name: string | null
           selected_page_token: string | null
+          total_xp: number | null
           youtube_refresh_token: string | null
           youtube_token: string | null
           youtube_url: string | null
         }
         Insert: {
           ad_account_id?: string | null
+          badges?: string[] | null
           brand_color?: string | null
           business_name?: string | null
           contact_number?: string | null
           created_at?: string
+          current_streak?: number | null
           email?: string | null
           facebook_token?: string | null
           facebook_url?: string | null
@@ -360,6 +367,8 @@ export type Database = {
           google_business_token?: string | null
           id: string
           instagram_url?: string | null
+          last_activity_date?: string | null
+          level?: number | null
           linkedin_token?: string | null
           linkedin_url?: string | null
           linkedin_urn?: string | null
@@ -371,16 +380,19 @@ export type Database = {
           selected_page_id?: string | null
           selected_page_name?: string | null
           selected_page_token?: string | null
+          total_xp?: number | null
           youtube_refresh_token?: string | null
           youtube_token?: string | null
           youtube_url?: string | null
         }
         Update: {
           ad_account_id?: string | null
+          badges?: string[] | null
           brand_color?: string | null
           business_name?: string | null
           contact_number?: string | null
           created_at?: string
+          current_streak?: number | null
           email?: string | null
           facebook_token?: string | null
           facebook_url?: string | null
@@ -389,6 +401,8 @@ export type Database = {
           google_business_token?: string | null
           id?: string
           instagram_url?: string | null
+          last_activity_date?: string | null
+          level?: number | null
           linkedin_token?: string | null
           linkedin_url?: string | null
           linkedin_urn?: string | null
@@ -400,6 +414,7 @@ export type Database = {
           selected_page_id?: string | null
           selected_page_name?: string | null
           selected_page_token?: string | null
+          total_xp?: number | null
           youtube_refresh_token?: string | null
           youtube_token?: string | null
           youtube_url?: string | null

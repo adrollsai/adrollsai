@@ -12,7 +12,7 @@ export default function DashboardLayout({
     <OrganizationWrapper>
       <div className="min-h-screen bg-surface pb-32 relative transition-colors duration-500"> 
         {children}
-        <FloatingAgent /> 
+        {/* <FloatingAgent />  */}
         <BottomNav />
       </div>
     </OrganizationWrapper>

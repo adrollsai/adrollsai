@@ -1,15 +1,15 @@
+// adrollsai/adrollsai/adrollsai-builder-app/app/dashboard/profile/page.tsx
+
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { LogOut, Save, Loader2, Building, Facebook, Linkedin, CheckCircle, Youtube, Globe, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck } from 'lucide-react'
+import { LogOut, Save, Loader2, Building, Facebook, CheckCircle, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck, Globe, Award, Lock, Flame, Zap, Crown, Share2, Link as LinkIcon } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { useOrganization } from '@/components/OrganizationWrapper'
 
-// --- LOCAL TYPE DEFINITIONS (The Nuclear Fix) ---
-// We define exactly what we need here so we don't depend on broken external files.
-
+// --- LOCAL TYPE DEFINITIONS ---
 type OrganizationWithDomain = {
     id: string;
     name: string;
@@ -20,7 +20,7 @@ type OrganizationWithDomain = {
 
 type LocalProfile = {
     id: string;
-    role: 'admin' | 'agent' | null; // Explicitly defined
+    role: 'admin' | 'agent' | null;
     organization: OrganizationWithDomain | null;
     
     // Core Profile Fields
@@ -42,17 +42,8 @@ type LocalProfile = {
     
     instagram_url: string | null;
     
-    linkedin_token: string | null;
-    linkedin_url: string | null;
-    linkedin_urn: string | null;
-    
-    google_business_token: string | null;
-    google_business_refresh_token: string | null;
-    google_business_location_id: string | null;
-    
-    youtube_token: string | null;
-    youtube_refresh_token: string | null;
-    youtube_url: string | null;
+    // Gamification
+    badges: string[] | null;
 }
 
 type FBPage = {
@@ -72,13 +63,22 @@ type Pixel = {
   name: string
 }
 
+// --- BADGE CONFIGURATION ---
+const ALL_BADGES = [
+    { id: 'streak_7', name: 'Week Warrior', desc: '7 Day Streak', icon: Flame, color: 'text-orange-500', bg: 'bg-orange-100' },
+    { id: 'streak_30', name: 'Consistency King', desc: '30 Day Streak', icon: Zap, color: 'text-yellow-500', bg: 'bg-yellow-100' },
+    { id: 'streak_100', name: 'Century Club', desc: '100 Day Streak', icon: Crown, color: 'text-purple-500', bg: 'bg-purple-100' },
+    { id: 'social_connected', name: 'Connected', desc: '1 Social Linked', icon: LinkIcon, color: 'text-blue-400', bg: 'bg-blue-50' },
+    { id: 'social_networker', name: 'Networker', desc: '2 Socials Linked', icon: Share2, color: 'text-indigo-500', bg: 'bg-indigo-50' },
+    { id: 'social_king', name: 'Omnichannel King', desc: 'All Socials Linked', icon: Globe, color: 'text-green-500', bg: 'bg-green-100' },
+]
+
 const DEFAULT_APP_HOST = process.env.NEXT_PUBLIC_DEFAULT_HOST || 'app.adrollsai.com' 
 
 export default function ProfilePage() {
   const router = useRouter()
   const supabase = createClient()
   
-  // FIX: Force cast the hook result
   const { org: rawOrg, refreshOrg } = useOrganization()
   const org = rawOrg as unknown as OrganizationWithDomain | null
 
@@ -100,10 +100,6 @@ export default function ProfilePage() {
   
   // Connections
   const [isFacebookConnected, setIsFacebookConnected] = useState(false)
-  const [isLinkedinConnected, setIsLinkedinConnected] = useState(false)
-  const [isGoogleConnected, setIsGoogleConnected] = useState(false)
-  const [isYoutubeConnected, setIsYoutubeConnected] = useState(false) 
-  
   const [facebookToken, setFacebookToken] = useState<string | null>(null); 
   
   const [fbPages, setFbPages] = useState<FBPage[]>([])
@@ -127,10 +123,11 @@ export default function ProfilePage() {
     email: '', 
     logoUrl: '',
     facebookUrl: '',
-    instagramUrl: '',
-    linkedinUrl: '',
-    youtubeUrl: ''
+    instagramUrl: ''
   })
+  
+  // Gamification State
+  const [myBadges, setMyBadges] = useState<string[]>([])
 
   // New Org Form State
   const [orgForm, setOrgForm] = useState({ name: '', color: '#D0E8FF', logo: '' })
@@ -142,12 +139,45 @@ export default function ProfilePage() {
   // --- HELPERS ---
   const isValidFacebookToken = (token: string) => token && token.startsWith('EAA')
   
-  // Dynamic invite link generator
   const getAgentInviteLink = useCallback(() => {
     if (!org?.id) return 'N/A'
     const domain = org.custom_domain || DEFAULT_APP_HOST
     return `https://${domain}/?invite_org=${org.id}`
   }, [org])
+
+  // --- GAMIFICATION CHECK ---
+  const checkSocialRewards = async () => {
+    try {
+        const res = await fetch('/api/gamification/check-socials', { method: 'POST' })
+        const data = await res.json()
+        
+        // Only alert if they earned something NEW
+        if (data.success && data.xpGained > 0) {
+            let msg = `🎉 Social Connected!`
+            msg += `\n\n✨ +${data.xpGained} XP Earned!`
+            if (data.earnedBadges && data.earnedBadges.length > 0) {
+                msg += `\n🏅 Badge Unlocked: ${data.earnedBadges.join(', ')}`
+            }
+            if (data.newLevel) {
+                 msg += `\n🏆 LEVEL UP! You are now Level ${data.newLevel}!`
+            }
+            alert(msg)
+            
+            // Refresh local badge state
+            if (data.earnedBadges) {
+                // Since API returns names, we might want to just re-fetch profile or update locally if we knew IDs
+                // Ideally, re-fetch profile to be safe
+                const { data: { user } } = await supabase.auth.getUser()
+                if (user) {
+                   const { data: p } = await supabase.from('profiles').select('badges').eq('id', user.id).single()
+                   if (p?.badges) setMyBadges(p.badges)
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Gamification check failed:", e)
+    }
+  }
 
 
   // 1. Fetch Pages
@@ -272,7 +302,6 @@ export default function ProfilePage() {
         }
         if (isMounted) setUserId(user.id)
 
-        // FIX: Force cast the Supabase response to our LocalProfile type
         const { data: rawProfileData, error: profileError } = await supabase
           .from('profiles')
           .select('*, organization:organizations(name, id, custom_domain)') 
@@ -281,12 +310,12 @@ export default function ProfilePage() {
 
         if (profileError) throw profileError;
 
-        // Force casting here ensures TypeScript sees 'role', 'business_name', etc.
         const profile = rawProfileData as unknown as LocalProfile;
 
         if (profile && isMounted) {
-          setUserRole(profile.role || 'agent') // No red squiggle here anymore
+          setUserRole(profile.role || 'agent')
           setOrgName(profile.organization?.name || 'Independent')
+          setMyBadges(profile.badges || [])
           
           setCustomDomainInput(profile.organization?.custom_domain || '') 
           
@@ -298,15 +327,16 @@ export default function ProfilePage() {
             email: profile.email || user.email || '', 
             logoUrl: profile.logo_url || '',
             facebookUrl: profile.facebook_url || '',
-            instagramUrl: profile.instagram_url || '',
-            linkedinUrl: profile.linkedin_url || '',
-            youtubeUrl: profile.youtube_url || ''
+            instagramUrl: profile.instagram_url || ''
           })
           
           // Facebook Logic
           if (profile.facebook_token && isValidFacebookToken(profile.facebook_token)) {
             setIsFacebookConnected(true)
             setFacebookToken(profile.facebook_token); 
+            
+            // Trigger Gamification Check
+            checkSocialRewards() 
             
             if (profile.selected_page_id) setSelectedPageId(profile.selected_page_id)
             else fetchPages()
@@ -325,10 +355,6 @@ export default function ProfilePage() {
              setAdAccounts([]); 
              setPixels([]);
           }
-
-          if (profile.linkedin_token) setIsLinkedinConnected(true)
-          if (profile.google_business_token) setIsGoogleConnected(true)
-          if (profile.youtube_token) setIsYoutubeConnected(true)
         }
 
       } catch (error) {
@@ -364,7 +390,7 @@ export default function ProfilePage() {
     }
   }, [org])
 
-  // --- NEW: CUSTOM DOMAIN HANDLER ---
+  // --- CUSTOM DOMAIN HANDLER ---
   const handleSaveCustomDomain = async (e: React.FormEvent) => { 
     e.preventDefault()
     if (userRole !== 'admin' || !org?.id) return
@@ -374,7 +400,6 @@ export default function ProfilePage() {
     
     const normalizedDomain = customDomainInput.trim().toLowerCase()
     
-    // Prevent using the main app host
     if (normalizedDomain === DEFAULT_APP_HOST) {
         alert(`Cannot use the default application host (${DEFAULT_APP_HOST}) as a custom domain.`)
         setIsSavingCustomDomain(false)
@@ -383,7 +408,6 @@ export default function ProfilePage() {
     }
 
     try {
-      // 1. Call our new Automation API
       const response = await fetch('/api/domains/add', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -396,15 +420,10 @@ export default function ProfilePage() {
           throw new Error(data.error || 'Failed to add domain')
       }
 
-      // 2. Success Logic
       setCustomDomainInput(data.domain)
-      
-      // Refresh local org data to show the badge
       await refreshOrg() 
-      
       setSaveDomainStatus('saved')
       
-      // OPTIONAL: Alert user with DNS instructions if needed
       if (data.configured === false) {
           alert(`Domain added! To finish, go to your DNS provider (GoDaddy, Namecheap, etc.) and add a CNAME record for "${data.domain}" pointing to "cname.vercel-dns.com".`)
       } else {
@@ -420,49 +439,13 @@ export default function ProfilePage() {
     }
   }
 
-  // --- ACTIONS (Connect/Disconnect) ---
+  // --- ACTIONS ---
   const handleConnectFacebook = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'facebook',
       options: {
         scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management, pages_manage_ads, leads_retrieval',
         redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=facebook',
-      }
-    })
-    if (error) alert("Connection error: " + error.message)
-  }
-
-  const handleConnectLinkedIn = async () => {
-    const { data, error } = await supabase.auth.linkIdentity({
-      provider: 'linkedin_oidc',
-      options: {
-        scopes: 'openid profile email w_member_social',
-        redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=linkedin_oidc',
-      }
-    })
-    if (data?.url) window.location.href = data.url
-    if (error) alert("Connection error: " + error.message)
-  }
-
-  const handleConnectGoogleBusiness = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        scopes: 'https://www.googleapis.com/auth/business.manage',
-        queryParams: { access_type: 'offline', prompt: 'consent' },
-        redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=google_business',
-      }
-    })
-    if (error) alert("Connection error: " + error.message)
-  }
-
-  const handleConnectYouTube = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google', 
-      options: {
-        scopes: 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
-        queryParams: { access_type: 'offline', prompt: 'consent' },
-        redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=youtube',
       }
     })
     if (error) alert("Connection error: " + error.message)
@@ -488,30 +471,6 @@ export default function ProfilePage() {
     setIsDisconnecting(false)
   }
 
-  const handleDisconnectLinkedIn = async () => {
-    if (!confirm("Disconnect LinkedIn?")) return
-    setIsDisconnecting(true)
-    if (userId) await supabase.from('profiles').update({ linkedin_token: null, linkedin_urn: null }).eq('id', userId)
-    setIsLinkedinConnected(false)
-    setIsDisconnecting(false)
-  }
-
-  const handleDisconnectGoogleBusiness = async () => {
-    if (!confirm("Disconnect Google Business?")) return
-    setIsDisconnecting(true)
-    if (userId) await supabase.from('profiles').update({ google_business_token: null, google_business_refresh_token: null, google_business_location_id: null }).eq('id', userId)
-    setIsGoogleConnected(false)
-    setIsDisconnecting(false)
-  }
-
-  const handleDisconnectYouTube = async () => {
-    if (!confirm("Disconnect YouTube?")) return
-    setIsDisconnecting(true)
-    if (userId) await supabase.from('profiles').update({ youtube_token: null, youtube_refresh_token: null }).eq('id', userId)
-    setIsYoutubeConnected(false)
-    setIsDisconnecting(false)
-  }
-
   // --- FILE UPLOADS & SAVING ---
 
   const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -520,7 +479,6 @@ export default function ProfilePage() {
       setUploadingLogo(true)
       if (!userId) return
 
-      // R2 UPLOAD
       const file = event.target.files[0]
       const publicUrl = await uploadToR2(file, 'logos')
 
@@ -547,9 +505,7 @@ export default function ProfilePage() {
         contact_number: formData.contact,
         logo_url: formData.logoUrl,
         facebook_url: formData.facebookUrl,
-        instagram_url: formData.instagramUrl,
-        linkedin_url: formData.linkedinUrl,
-        youtube_url: formData.youtubeUrl
+        instagram_url: formData.instagramUrl
       }).eq('id', user.id)
 
     if (error) alert(`Error saving: ${error.message}`)
@@ -599,7 +555,6 @@ export default function ProfilePage() {
 
   if (loading) return <div className="p-10 text-center text-slate-400 text-sm animate-pulse">Loading settings...</div>
   
-  // State for conditional rendering
   const isCustomDomainSet = !!org?.custom_domain; 
   const domainButtonText = 
     isSavingCustomDomain ? 'Saving...' : 
@@ -611,7 +566,7 @@ export default function ProfilePage() {
     <div className="p-5 max-w-md mx-auto min-h-screen pb-32">
       <h1 className="text-2xl font-bold text-slate-900 mb-6">Your Profile</h1>
 
-      {/* --- NEW: ACTIVE ORGANIZATION BADGE --- */}
+      {/* --- ACTIVE ORGANIZATION BADGE --- */}
       {org && (
           <div className="bg-slate-900 text-white p-5 rounded-2xl flex items-center gap-4 relative overflow-hidden shadow-lg mb-6">
               <div className="absolute right-[-10px] top-[-10px] opacity-10 rotate-12 pointer-events-none">
@@ -661,8 +616,35 @@ export default function ProfilePage() {
               <p className="text-xs text-slate-500">Agent @ {orgName}</p>
           </div>
       </div>
+      
+      {/* --- NEW: TROPHY CABINET --- */}
+      <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 relative overflow-hidden">
+          <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2"><Award size={18}/> Trophy Cabinet</h3>
+              <span className="text-[10px] font-bold bg-slate-100 px-2 py-1 rounded-full text-slate-500">
+                  {myBadges.length} / {ALL_BADGES.length} Unlocked
+              </span>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-3">
+              {ALL_BADGES.map(badge => {
+                  const isUnlocked = myBadges.includes(badge.id)
+                  const Icon = badge.icon
+                  
+                  return (
+                      <div key={badge.id} className={`flex flex-col items-center p-3 rounded-xl border text-center transition-all ${isUnlocked ? `${badge.bg} border-${badge.color.split('-')[1]}-200` : 'bg-slate-50 border-slate-100 opacity-60 grayscale'}`}>
+                          <div className={`p-2 rounded-full mb-2 ${isUnlocked ? 'bg-white shadow-sm' : 'bg-slate-200'}`}>
+                              {isUnlocked ? <Icon size={16} className={badge.color}/> : <Lock size={16} className="text-slate-400"/>}
+                          </div>
+                          <p className={`text-[10px] font-bold leading-tight ${isUnlocked ? 'text-slate-900' : 'text-slate-400'}`}>{badge.name}</p>
+                          <p className="text-[9px] text-slate-500 mt-1">{badge.desc}</p>
+                      </div>
+                  )
+              })}
+          </div>
+      </div>
 
-      {/* NEW: ORGANIZATION SETTINGS (Admin Only) */}
+      {/* ORGANIZATION SETTINGS (Admin Only) */}
       {userRole === 'admin' && org && ( 
         <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 relative overflow-hidden">
            <div className="absolute top-0 right-0 p-4 opacity-5"><Building size={100}/></div>
@@ -701,7 +683,7 @@ export default function ProfilePage() {
               </button>
            </div>
            
-           {/* --- NEW: CUSTOM DOMAIN SECTION --- */}
+           {/* --- CUSTOM DOMAIN SECTION --- */}
             <div className="border-t border-slate-200 mt-6 pt-6">
                 <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2 text-base"><Globe size={18}/> Custom Sign-in Domain</h4>
                 <p className="text-xs text-slate-500 mb-4 leading-relaxed bg-yellow-50 p-3 rounded-xl border border-yellow-100">
@@ -741,12 +723,10 @@ export default function ProfilePage() {
                             {getAgentInviteLink()}
                         </a>
                     </code>
-                    {/* The org object is now forcibly typed to include custom_domain so this works */}
                     {isCustomDomainSet && <p className="text-[10px] text-green-600 mt-2">Currently using custom domain: <span className="font-bold">{org.custom_domain}</span></p>}
                     {!isCustomDomainSet && <p className="text-[10px] text-slate-500 mt-2">Currently using default host: <span className="font-bold">{DEFAULT_APP_HOST}</span></p>}
                 </div>
             </div>
-            {/* --- END: CUSTOM DOMAIN SECTION --- */}
         </div>
       )}
 
@@ -805,7 +785,7 @@ export default function ProfilePage() {
           </div>
       </div>
 
-      {/* 3. SOCIAL ACCOUNTS */}
+      {/* 3. SOCIAL ACCOUNTS (Filtered for Facebook/Insta Only) */}
       <div className="mb-6">
         <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Social Accounts</h3>
         <div className="bg-white rounded-[2rem] shadow-sm border border-blue-100 overflow-hidden p-5 space-y-4">
@@ -899,62 +879,6 @@ export default function ProfilePage() {
                     )}
                 </div>
             )}
-          </div>
-
-          {/* LINKEDIN */}
-          <div className="border-t border-slate-50 pt-4">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="bg-[#0077b5] p-2 rounded-full text-white"><Linkedin size={18} fill="white" /></div>
-                    <div>
-                        <h4 className="font-bold text-sm text-slate-800">LinkedIn</h4>
-                        <p className="text-[10px] text-slate-400">{isLinkedinConnected ? 'Account Linked' : 'Connect to automate'}</p>
-                    </div>
-                </div>
-                {isLinkedinConnected ? (
-                    <button onClick={handleDisconnectLinkedIn} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
-                ) : (
-                    <button onClick={handleConnectLinkedIn} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
-                )}
-            </div>
-          </div>
-
-           {/* YOUTUBE */}
-           <div className="border-t border-slate-50 pt-4">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="bg-[#FF0000] p-2 rounded-full text-white"><Youtube size={18} fill="white" /></div>
-                    <div>
-                        <h4 className="font-bold text-sm text-slate-800">YouTube</h4>
-                        <p className="text-[10px] text-slate-400">{isYoutubeConnected ? 'Shorts & Videos Ready' : 'Connect Channel'}</p>
-                    </div>
-                </div>
-                {isYoutubeConnected ? (
-                    <button onClick={handleDisconnectYouTube} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
-                ) : (
-                    <button onClick={handleConnectYouTube} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
-                )}
-            </div>
-          </div>
-
-          {/* GOOGLE BUSINESS */}
-          <div className="border-t border-slate-50 pt-4">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="bg-white border border-slate-200 p-2 rounded-full text-slate-900">
-                        <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-                    </div>
-                    <div>
-                        <h4 className="font-bold text-sm text-slate-800">Google Business</h4>
-                        <p className="text-[10px] text-slate-400">{isGoogleConnected ? 'Account Linked' : 'Connect to automate'}</p>
-                    </div>
-                </div>
-                {isGoogleConnected ? (
-                    <button onClick={handleDisconnectGoogleBusiness} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
-                ) : (
-                    <button onClick={handleConnectGoogleBusiness} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
-                )}
-            </div>
           </div>
         </div>
       </div>

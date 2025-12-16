@@ -1,3 +1,5 @@
+// adrollsai/adrollsai/adrollsai-builder-app/app/dashboard/crm/page.tsx
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -55,7 +57,7 @@ export default function CRMPage() {
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [isAssigning, setIsAssigning] = useState(false) // NEW
+  const [isAssigning, setIsAssigning] = useState(false) 
 
   // Sync Logic
   const [forms, setForms] = useState<any[]>([])
@@ -168,27 +170,39 @@ export default function CRMPage() {
       }
   }
 
+  // --- MODIFIED: ADD LEAD WITH GAMIFICATION ---
   const handleAddLead = async () => {
     if (!newLead.name || !newLead.phone) return alert("Name/Phone required")
     setIsAdding(true)
-    const { data: { user } } = await supabase.auth.getUser()
     
-    if (user) {
-        const payload = {
-            user_id: user.id,
-            name: newLead.name,
-            phone: newLead.phone,
-            email: newLead.email,
-            notes: newLead.notes,
-            source: 'Manual',
-            pipeline_stage: 'New'
-        }
-        await supabase.from('leads').insert(payload)
+    try {
+        // Use the new Gamified API
+        const res = await fetch('/api/crm/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newLead)
+        })
+        
+        const data = await res.json()
+        
+        if (!res.ok) throw new Error(data.error || "Failed to add lead")
+
+        // Display Gamification Rewards
+        let msg = "Lead Added Successfully!"
+        if (data.xpGained) msg += `\n\n✨ +${data.xpGained} XP Earned!`
+        if (data.leveledUp) msg += `\n🏆 LEVEL UP! You reached Level ${data.newLevel}!`
+        
+        alert(msg)
+
         fetchCRMData()
         setIsAddModalOpen(false)
         setNewLead({ name: '', phone: '', email: '', notes: '' })
+
+    } catch (e: any) {
+        alert("Error: " + e.message)
+    } finally {
+        setIsAdding(false)
     }
-    setIsAdding(false)
   }
 
   const handleDeleteLead = async (id: string, e: React.MouseEvent) => {
@@ -198,11 +212,16 @@ export default function CRMPage() {
     await supabase.from('leads').delete().eq('id', id)
   }
 
-  // Sync Logic (Simplified for brevity, assumes endpoints exist)
+  // Sync Logic
   const openSyncModal = async () => {
      setIsSyncModalOpen(true)
-     const res = await fetch('/api/facebook/forms'); const d = await res.json(); if(d.forms) setForms(d.forms)
+     try {
+        const res = await fetch('/api/facebook/forms')
+        const d = await res.json() 
+        if(d.forms) setForms(d.forms)
+     } catch(e) { console.error(e) }
   }
+
   const handleSync = async () => {
       setIsSyncing(true)
       await fetch('/api/crm/sync', { method: 'POST', body: JSON.stringify({ formId: selectedFormId }) })
