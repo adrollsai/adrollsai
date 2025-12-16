@@ -226,10 +226,12 @@ export default function DashboardPage() {
       }
 
       // 7. Get Leaderboard (Everyone)
+      // Exclude 'admin' role so the admin doesn't appear in rankings
       const { data: lb } = await supabase
          .from('profiles')
          .select('*')
          .eq('organization_id', orgId)
+         .neq('role', 'admin') 
          .order('total_xp', { ascending: false })
          .limit(20)
       
@@ -238,7 +240,13 @@ export default function DashboardPage() {
 
       // 8. Get Analytics (Admin Only & Filtered)
       if (profile.role === 'admin') {
-          const { data: orgUsers } = await supabase.from('profiles').select('id, business_name').eq('organization_id', orgId)
+          // Filter out the admin themselves from the user list
+          const { data: orgUsers } = await supabase
+            .from('profiles')
+            .select('id, business_name')
+            .eq('organization_id', orgId)
+            .neq('role', 'admin')
+
           const orgUserIds = orgUsers?.map(u => u.id) || []
 
           if (orgUserIds.length > 0) {

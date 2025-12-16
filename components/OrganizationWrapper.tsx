@@ -1,4 +1,5 @@
-/* adrollsai/adrollsai/adrollsai-builder-app-gamification/components/OrganizationWrapper.tsx */
+// adrollsai/adrollsai/adrollsai-builder-app-gamification-superuser/components/OrganizationWrapper.tsx
+
 'use client'
 
 import { createContext, useContext, useEffect, useState, Suspense } from 'react'
@@ -17,21 +18,29 @@ type OrgContextType = {
   org: Organization | null
   loading: boolean
   isImpersonating: boolean
+  userRole: string | null // Added userRole to context
   refreshOrg: () => void
 }
 
-const OrgContext = createContext<OrgContextType>({ org: null, loading: true, isImpersonating: false, refreshOrg: () => {} })
+const OrgContext = createContext<OrgContextType>({ 
+    org: null, 
+    loading: true, 
+    isImpersonating: false, 
+    userRole: null, 
+    refreshOrg: () => {} 
+})
 
 export const useOrganization = () => useContext(OrgContext)
 
 // 1. INNER COMPONENT: Handles logic and useSearchParams
 function OrgContent({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
-  const searchParams = useSearchParams() // <--- usage is safe here because parent wraps in Suspense
+  const searchParams = useSearchParams() 
   
   const [org, setOrg] = useState<Organization | null>(null)
   const [loading, setLoading] = useState(true)
   const [isImpersonating, setIsImpersonating] = useState(false)
+  const [userRole, setUserRole] = useState<string | null>(null) // State for Role
 
   const fetchOrg = async () => {
     try {
@@ -44,6 +53,10 @@ function OrgContent({ children }: { children: React.ReactNode }) {
         .select('organization_id, role')
         .eq('id', user.id)
         .single()
+      
+      if (profile) {
+          setUserRole(profile.role) // Set the role state
+      }
 
       let targetOrgId = profile?.organization_id
 
@@ -107,7 +120,7 @@ function OrgContent({ children }: { children: React.ReactNode }) {
   }, [org])
 
   return (
-    <OrgContext.Provider value={{ org, loading, isImpersonating, refreshOrg: fetchOrg }}>
+    <OrgContext.Provider value={{ org, loading, isImpersonating, userRole, refreshOrg: fetchOrg }}>
       {children}
       
       {/* IMPERSONATION BANNER */}

@@ -3,7 +3,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Linkedin, Youtube, Film, MessageCircle, Share2 } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Linkedin, Youtube, Film, MessageCircle, Share2, Rocket } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useOrganization } from '@/components/OrganizationWrapper'
 
@@ -39,6 +39,7 @@ export default function AssetsPage() {
   // Modal State
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
   const [caption, setCaption] = useState('')
+  const [isPosting, setIsPosting] = useState(false)
 
   // 1. Fetch Assets
   useEffect(() => {
@@ -53,7 +54,7 @@ export default function AssetsPage() {
       await new Promise(resolve => setTimeout(resolve, 500)) 
 
       // Fetch assets with templates from either Property or Master Creative
-      const { data, error } = await supabase // Capture error object
+      const { data, error } = await supabase
         .from('assets')
         .select(`
             *,
@@ -63,21 +64,9 @@ export default function AssetsPage() {
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 
-      // --- DEBUGGING LOGS ADDED HERE ---
-      console.log("--- DEBUG ASSETS FETCH START ---")
-      console.log("User ID for Fetch:", user.id)
       if (error) {
-        // If there's an error, it is likely RLS or connection issue
         console.error("ASSETS FETCH ERROR:", error)
       }
-      if (data) {
-        console.log("ASSETS FETCH SUCCESS. Total rows received:", data.length)
-        if (data.length > 0) {
-            console.log("First asset URL:", data[0].url)
-            console.log("First asset Status:", data[0].status)
-        }
-      }
-      console.log("--- DEBUG ASSETS FETCH END ---")
       
       if (data) setAssets(data as unknown as Asset[])
       setLoading(false)
@@ -111,7 +100,47 @@ export default function AssetsPage() {
       })
   }
 
-  // 4. Share Handlers
+  // 4. Universal Post Handler
+  const handleUniversalPost = async () => {
+      if (!selectedAsset) return
+      setIsPosting(true)
+      try {
+          const res = await fetch('/api/post-universal', {
+              method: 'POST',
+              body: JSON.stringify({
+                  imageUrl: selectedAsset.url,
+                  caption: caption,
+                  platforms: ['facebook', 'instagram']
+              })
+          })
+          const data = await res.json()
+          
+          if (res.ok && data.success) {
+              alert("🚀 Successfully posted to Facebook and Instagram!")
+              // Track stats for both
+              trackShare('facebook')
+              trackShare('instagram')
+              setSelectedAsset(null) // Close modal on success
+          } else {
+              // Handle partial success or errors
+              let msg = "Posting completed with issues:\n"
+              if (data.results) {
+                  Object.entries(data.results).forEach(([platform, status]) => {
+                      msg += `${platform}: ${status}\n`
+                  })
+              } else {
+                  msg = data.error || "Unknown error occurred."
+              }
+              alert(msg)
+          }
+      } catch (e: any) {
+          alert("Network error: " + e.message)
+      } finally {
+          setIsPosting(false)
+      }
+  }
+
+  // 5. Native Share / WhatsApp
   const handleNativeShare = async () => {
       if (!selectedAsset) return
       await trackShare('whatsapp') // Track as WhatsApp/Native
@@ -212,14 +241,26 @@ export default function AssetsPage() {
             </div>
 
             <div className="flex flex-col gap-3">
+               {/* UNIVERSAL POST BUTTON */}
+               <button 
+                 onClick={handleUniversalPost}
+                 disabled={isPosting} 
+                 className="w-full bg-gradient-to-r from-blue-600 to-pink-600 text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform"
+               >
+                 {isPosting ? <Loader2 size={18} className="animate-spin" /> : <Rocket size={18} />} 
+                 {isPosting ? 'Posting...' : 'Universal Post (FB + Insta)'}
+               </button>
+
+               {/* WHATSAPP / NATIVE SHARE BUTTON */}
                <button onClick={handleNativeShare} className="w-full bg-[#25D366] text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-100 active:scale-95 transition-transform">
                  <MessageCircle size={18} /> Share on WhatsApp
                </button>
 
+               {/* Standalone Actions */}
                <div className="flex gap-2">
-                 <button onClick={() => trackShare('facebook')} className="flex-1 bg-blue-600 text-white py-3 rounded-xl flex justify-center"><Facebook size={18} /></button>
-                 <button onClick={() => trackShare('instagram')} className="flex-1 bg-pink-600 text-white py-3 rounded-xl flex justify-center"><Instagram size={18} /></button>
-                 <button onClick={handleDownload} className="flex-1 bg-slate-800 text-white py-3 rounded-xl flex justify-center"><Download size={18} /></button>
+                 <button onClick={() => trackShare('facebook')} className="flex-1 bg-blue-600 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform" title="Facebook Only"><Facebook size={18} /></button>
+                 <button onClick={() => trackShare('instagram')} className="flex-1 bg-pink-600 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform" title="Instagram Only"><Instagram size={18} /></button>
+                 <button onClick={handleDownload} className="flex-1 bg-slate-800 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform" title="Download"><Download size={18} /></button>
                </div>
             </div>
           </div>

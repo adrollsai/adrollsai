@@ -3,7 +3,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { LogOut, Save, Loader2, Building, Facebook, CheckCircle, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck, Globe, Award, Lock, Flame, Zap, Crown, Share2, Link as LinkIcon } from 'lucide-react'
+import { LogOut, Save, Loader2, Building, Facebook, CheckCircle, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck, Globe, Award, Lock, Flame, Zap, Crown, Share2, Link as LinkIcon, Briefcase } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -40,10 +40,9 @@ type LocalProfile = {
     ad_account_id: string | null;
     pixel_id: string | null;
     
-    instagram_url: string | null;
-    
     // Gamification
     badges: string[] | null;
+    instagram_url: string | null;
 }
 
 type FBPage = {
@@ -147,6 +146,9 @@ export default function ProfilePage() {
 
   // --- GAMIFICATION CHECK ---
   const checkSocialRewards = async () => {
+    // Admins don't participate in gamification
+    if (userRole === 'admin') return
+
     try {
         const res = await fetch('/api/gamification/check-socials', { method: 'POST' })
         const data = await res.json()
@@ -165,8 +167,6 @@ export default function ProfilePage() {
             
             // Refresh local badge state
             if (data.earnedBadges) {
-                // Since API returns names, we might want to just re-fetch profile or update locally if we knew IDs
-                // Ideally, re-fetch profile to be safe
                 const { data: { user } } = await supabase.auth.getUser()
                 if (user) {
                    const { data: p } = await supabase.from('profiles').select('badges').eq('id', user.id).single()
@@ -335,8 +335,10 @@ export default function ProfilePage() {
             setIsFacebookConnected(true)
             setFacebookToken(profile.facebook_token); 
             
-            // Trigger Gamification Check
-            checkSocialRewards() 
+            // Trigger Gamification Check (Logic inside handles admin check)
+            if (profile.role !== 'admin') {
+                checkSocialRewards() 
+            }
             
             if (profile.selected_page_id) setSelectedPageId(profile.selected_page_id)
             else fetchPages()
@@ -585,15 +587,23 @@ export default function ProfilePage() {
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Active Organization</p>
                   <h2 className="text-xl font-bold leading-tight">{org.name}</h2>
                   <div className="flex items-center gap-1.5 mt-2">
-                      <span className="bg-blue-500/20 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 border border-blue-500/30">
-                          <BadgeCheck size={10} /> {userRole === 'admin' ? 'Administrator' : 'Authorized Agent'}
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 border ${
+                          userRole === 'admin' 
+                          ? 'bg-purple-500/20 text-purple-200 border-purple-500/30' 
+                          : 'bg-blue-500/20 text-blue-200 border-blue-500/30'
+                      }`}>
+                          {userRole === 'admin' ? (
+                              <><ShieldCheck size={10} /> Organization Owner</>
+                          ) : (
+                              <><BadgeCheck size={10} /> Authorized Agent</>
+                          )}
                       </span>
                   </div>
               </div>
           </div>
       )}
 
-      {/* 1. IDENTITY CARD (AGENT BRANDING) */}
+      {/* 1. IDENTITY CARD */}
       <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 text-center relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-20 bg-gradient-to-r from-slate-900 to-slate-800 z-0"></div>
           
@@ -613,36 +623,40 @@ export default function ProfilePage() {
               </div>
               
               <h2 className="mt-3 font-bold text-lg text-slate-900">{formData.businessName || 'Your Business'}</h2>
-              <p className="text-xs text-slate-500">Agent @ {orgName}</p>
+              <p className="text-xs text-slate-500">
+                  {userRole === 'admin' ? 'Owner' : 'Agent'} @ {orgName}
+              </p>
           </div>
       </div>
       
-      {/* --- NEW: TROPHY CABINET --- */}
-      <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 relative overflow-hidden">
-          <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-900 flex items-center gap-2"><Award size={18}/> Trophy Cabinet</h3>
-              <span className="text-[10px] font-bold bg-slate-100 px-2 py-1 rounded-full text-slate-500">
-                  {myBadges.length} / {ALL_BADGES.length} Unlocked
-              </span>
-          </div>
-          
-          <div className="grid grid-cols-3 gap-3">
-              {ALL_BADGES.map(badge => {
-                  const isUnlocked = myBadges.includes(badge.id)
-                  const Icon = badge.icon
-                  
-                  return (
-                      <div key={badge.id} className={`flex flex-col items-center p-3 rounded-xl border text-center transition-all ${isUnlocked ? `${badge.bg} border-${badge.color.split('-')[1]}-200` : 'bg-slate-50 border-slate-100 opacity-60 grayscale'}`}>
-                          <div className={`p-2 rounded-full mb-2 ${isUnlocked ? 'bg-white shadow-sm' : 'bg-slate-200'}`}>
-                              {isUnlocked ? <Icon size={16} className={badge.color}/> : <Lock size={16} className="text-slate-400"/>}
+      {/* --- TROPHY CABINET (Agents Only) --- */}
+      {userRole === 'agent' && (
+          <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 relative overflow-hidden">
+              <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2"><Award size={18}/> Trophy Cabinet</h3>
+                  <span className="text-[10px] font-bold bg-slate-100 px-2 py-1 rounded-full text-slate-500">
+                      {myBadges.length} / {ALL_BADGES.length} Unlocked
+                  </span>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-3">
+                  {ALL_BADGES.map(badge => {
+                      const isUnlocked = myBadges.includes(badge.id)
+                      const Icon = badge.icon
+                      
+                      return (
+                          <div key={badge.id} className={`flex flex-col items-center p-3 rounded-xl border text-center transition-all ${isUnlocked ? `${badge.bg} border-${badge.color.split('-')[1]}-200` : 'bg-slate-50 border-slate-100 opacity-60 grayscale'}`}>
+                              <div className={`p-2 rounded-full mb-2 ${isUnlocked ? 'bg-white shadow-sm' : 'bg-slate-200'}`}>
+                                  {isUnlocked ? <Icon size={16} className={badge.color}/> : <Lock size={16} className="text-slate-400"/>}
+                              </div>
+                              <p className={`text-[10px] font-bold leading-tight ${isUnlocked ? 'text-slate-900' : 'text-slate-400'}`}>{badge.name}</p>
+                              <p className="text-[9px] text-slate-500 mt-1">{badge.desc}</p>
                           </div>
-                          <p className={`text-[10px] font-bold leading-tight ${isUnlocked ? 'text-slate-900' : 'text-slate-400'}`}>{badge.name}</p>
-                          <p className="text-[9px] text-slate-500 mt-1">{badge.desc}</p>
-                      </div>
-                  )
-              })}
+                      )
+                  })}
+              </div>
           </div>
-      </div>
+      )}
 
       {/* ORGANIZATION SETTINGS (Admin Only) */}
       {userRole === 'admin' && org && ( 
@@ -843,8 +857,8 @@ export default function ProfilePage() {
                                     <div className="space-y-2 max-h-40 overflow-y-auto">
                                     {adAccounts.map(account => (
                                         <button key={account.id} onClick={() => handleAdAccountSelect(account.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedAdAccountId === account.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                                        <span className={`text-xs font-bold truncate ${selectedAdAccountId === account.id ? 'text-slate-800' : 'text-slate-500'}`}>{account.name}</span>
-                                        {selectedAdAccountId === account.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                                            <span className={`text-xs font-bold truncate ${selectedAdAccountId === account.id ? 'text-slate-800' : 'text-slate-500'}`}>{account.name}</span>
+                                            {selectedAdAccountId === account.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
                                         </button>
                                     ))}
                                     </div>
@@ -865,8 +879,8 @@ export default function ProfilePage() {
                                         <div className="space-y-2 max-h-40 overflow-y-auto">
                                         {pixels.map(pixel => (
                                             <button key={pixel.id} onClick={() => handlePixelSelect(pixel.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPixelId === pixel.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                                            <span className={`text-xs font-bold truncate ${selectedPixelId === pixel.id ? 'text-slate-800' : 'text-slate-500'}`}>{pixel.name}</span>
-                                            {selectedPixelId === pixel.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                                                <span className={`text-xs font-bold truncate ${selectedPixelId === pixel.id ? 'text-slate-800' : 'text-slate-500'}`}>{pixel.name}</span>
+                                                {selectedPixelId === pixel.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
                                             </button>
                                         ))}
                                         </div>

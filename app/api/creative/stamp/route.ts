@@ -1,4 +1,4 @@
-// adrollsai/adrollsai/adrollsai-builder-app/app/api/creative/stamp/route.ts
+// adrollsai/adrollsai/adrollsai-builder-app-gamification-superuser/app/api/creative/stamp/route.ts
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
@@ -86,54 +86,129 @@ export async function POST(request: Request) {
     const masterArrayBuffer = await masterImageRes.arrayBuffer()
     const masterBuffer = Buffer.from(masterArrayBuffer)
 
+    // Get dimensions first
+    const masterMetadata = await sharp(masterBuffer).metadata()
+    const width = masterMetadata.width || 1080
+    const height = masterMetadata.height || 1080
+    
+    // Calculate Footer Dimensions
+    const footerHeight = Math.round(width * 0.15) // 15% of width
+    const padding = Math.round(footerHeight * 0.15)
+    const logoSize = Math.round(footerHeight * 0.70)
+
+    // 2a. Process Logo
     let logoBuffer: Buffer | null = null
+
     if (agentProfile.logo_url) {
       try {
         const logoRes = await fetch(agentProfile.logo_url)
         const logoArrayBuffer = await logoRes.arrayBuffer()
+        
+        // Resize logo to fit nicely
         logoBuffer = await sharp(Buffer.from(logoArrayBuffer))
-          .resize(150, 150, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+          .resize(logoSize, logoSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
           .toBuffer()
       } catch (e) {
         console.error("Failed to load agent logo", e)
       }
     }
 
-    // 3. Stamping Logic
-    const masterMetadata = await sharp(masterBuffer).metadata()
-    const width = masterMetadata.width || 1080
-    const height = masterMetadata.height || 1080
-    const footerHeight = Math.round(height * 0.12)
+    // 3. Define Design Variables
+    const backgroundColor = { r: 255, g: 255, b: 255, alpha: 1 }; // Pure White
+    const primaryTextColor = "#1F2937"; // Gray 800 (Soft Black)
+    const secondaryTextColor = "#B45309"; // Amber 700 (Elegant Dark Gold/Orange)
+    const borderColor = "#E5E7EB"; // Gray 200 (Separator lines)
+    const dividerColor = "#D1D5DB"; // Gray 300 (Vertical Divider)
 
+    // 4. Stamping Logic
+
+    // Layout Calculation
+    // Left Side (Logo + Name)
+    const textStartX = logoBuffer ? (padding * 2 + logoSize) : padding
+    const fontSizeName = Math.round(footerHeight * 0.28)
+    
+    // Right Side (Phone + Icon)
+    const fontSizePhone = Math.round(footerHeight * 0.28)
+    const iconSize = fontSizePhone;
+    
+    // Estimate width of phone number text to position the icon correctly
+    // Average char width approx 0.6em
+    const phoneText = agentProfile.contact_number || '';
+    const approxPhoneWidth = phoneText.length * (fontSizePhone * 0.6);
+    
+    // Position of Icon: [RightEdge] - [Padding] - [TextWidth] - [IconSize] - [SmallGap]
+    const iconX = width - padding - approxPhoneWidth - iconSize - (padding * 0.5);
+    
+    // Position of Vertical Divider: Left of Icon with some spacing
+    const dividerX = iconX - (padding * 1.5);
+    const dividerHeight = footerHeight * 0.6;
+    const dividerY = (footerHeight - dividerHeight) / 2;
+
+    // Construct SVG
     const footerSvg = `
       <svg width="${width}" height="${footerHeight}">
-        <rect x="0" y="0" width="${width}" height="${footerHeight}" fill="#000000" />
-        <text x="40" y="${footerHeight / 2 + 15}" font-family="sans-serif" font-size="${footerHeight * 0.35}" fill="white" font-weight="bold">
+        <line x1="0" y1="0" x2="${width}" y2="0" style="stroke:${borderColor};stroke-width:2" />
+
+        <line x1="${dividerX}" y1="${dividerY}" x2="${dividerX}" y2="${dividerY + dividerHeight}" style="stroke:${dividerColor};stroke-width:2" />
+
+        <text 
+            x="${textStartX}" 
+            y="${footerHeight / 2 + (fontSizeName / 3)}" 
+            font-family="Arial, Helvetica, sans-serif" 
+            font-size="${fontSizeName}" 
+            fill="${primaryTextColor}" 
+            font-weight="800"
+            style="text-transform: uppercase; letter-spacing: 0.5px;"
+        >
           ${agentProfile.business_name || 'Agent'}
         </text>
-        <text x="${width - 40}" y="${footerHeight / 2 + 15}" font-family="sans-serif" font-size="${footerHeight * 0.35}" fill="#fbbf24" font-weight="bold" text-anchor="end">
-          ${agentProfile.contact_number || ''}
+        
+        <g transform="translate(${iconX}, ${(footerHeight - iconSize) / 2}) scale(${iconSize / 24})">
+            <path 
+                d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.05 12.05 0 0 0 .57 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.03 12.03 0 0 0 2.81.57A2 2 0 0 1 22 16.92z" 
+                fill="${secondaryTextColor}" 
+            />
+        </g>
+
+        <text 
+            x="${width - padding}" 
+            y="${footerHeight / 2 + (fontSizePhone / 3)}" 
+            font-family="Arial, Helvetica, sans-serif" 
+            font-size="${fontSizePhone}" 
+            fill="${secondaryTextColor}" 
+            font-weight="bold" 
+            text-anchor="end"
+        >
+          ${phoneText}
         </text>
       </svg>
     `
     const footerBuffer = Buffer.from(footerSvg)
 
+    // Extend the canvas with the White Background
+    const extendedImage = await sharp(masterBuffer)
+        .extend({
+            bottom: footerHeight,
+            background: backgroundColor
+        })
+
+    // Define Layers
     const layers: sharp.OverlayOptions[] = [
-      { input: footerBuffer, top: height - footerHeight, left: 0 }
+      { input: footerBuffer, top: height, left: 0 }
     ]
 
     if (logoBuffer) {
-      // Cast to any to fix TS error
-      layers.push({ input: logoBuffer as any, top: 40, left: 40 })
+      const logoTop = height + Math.round((footerHeight - logoSize) / 2)
+      layers.push({ input: logoBuffer as any, top: logoTop, left: padding })
     }
 
-    // --- COMPRESSION ---
-    const finalImageBuffer = await sharp(masterBuffer)
+    // --- COMPOSITE & COMPRESSION ---
+    const finalImageBuffer = await extendedImage
       .composite(layers)
-      .jpeg({ quality: 80, mozjpeg: true }) 
+      .jpeg({ quality: 95, mozjpeg: true }) 
       .toBuffer()
 
-    // 4. Upload to Cloudflare R2
+    // 5. Upload to Cloudflare R2
     const fileName = `stamped/${user.id}/${Date.now()}.jpg`
     
     try {
@@ -148,10 +223,9 @@ export async function POST(request: Request) {
       throw new Error("Failed to save image to storage")
     }
 
-    // PREFIXED URL
     const publicUrl = `${R2_PUBLIC_URL}/adrolls-storage/${fileName}`
 
-    // 5. Save to DB
+    // 6. Save to DB
     await supabase.from('assets').insert({
         user_id: user.id,
         url: publicUrl,
@@ -165,9 +239,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ 
         success: true, 
         url: publicUrl, 
-        xpEarned: newXp - (currentStats?.total_xp || 0), // Show actual gained XP (Base + Bonus)
+        xpEarned: newXp - (currentStats?.total_xp || 0),
         streak: newStreak,
-        newBadge: earnedBadgeName // Pass this to frontend to show celebration
+        newBadge: earnedBadgeName 
     })
 
   } catch (error: any) {
