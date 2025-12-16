@@ -1,8 +1,10 @@
-/* adrollsai/adrollsai/adrollsai-builder-app/components/OrganizationWrapper.tsx */
+/* adrollsai/adrollsai/adrollsai-builder-app-gamification/components/OrganizationWrapper.tsx */
 'use client'
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
+import { useSearchParams } from 'next/navigation'
+import { Shield } from 'lucide-react'
 
 type Organization = {
   id: string
@@ -14,39 +16,56 @@ type Organization = {
 type OrgContextType = {
   org: Organization | null
   loading: boolean
+  isImpersonating: boolean
   refreshOrg: () => void
 }
 
-const OrgContext = createContext<OrgContextType>({ org: null, loading: true, refreshOrg: () => {} })
+const OrgContext = createContext<OrgContextType>({ org: null, loading: true, isImpersonating: false, refreshOrg: () => {} })
 
 export const useOrganization = () => useContext(OrgContext)
 
 export default function OrganizationWrapper({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
+  const searchParams = useSearchParams()
+  
   const [org, setOrg] = useState<Organization | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isImpersonating, setIsImpersonating] = useState(false)
 
   const fetchOrg = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
+      // 1. Get Profile AND Role
       const { data: profile } = await supabase
         .from('profiles')
-        .select('organization_id')
+        .select('organization_id, role')
         .eq('id', user.id)
         .single()
 
-      if (profile?.organization_id) {
+      let targetOrgId = profile?.organization_id
+
+      // 2. SUPER USER LOGIC: Check for override
+      const overrideId = searchParams.get('impersonate_org')
+      
+      // @ts-ignore - 'super_user' might not be in your local types yet, but it's in DB
+      if (profile?.role === 'super_user' && overrideId) {
+          targetOrgId = overrideId
+          setIsImpersonating(true)
+      } else {
+          setIsImpersonating(false)
+      }
+
+      if (targetOrgId) {
         const { data: orgData } = await supabase
           .from('organizations')
           .select('*')
-          .eq('id', profile.organization_id)
+          .eq('id', targetOrgId)
           .single()
         
         if (orgData) {
           setOrg(orgData)
-          // Theme is applied via the useEffect below now
         }
       }
     } catch (e) {
@@ -58,7 +77,6 @@ export default function OrganizationWrapper({ children }: { children: React.Reac
 
   const getContrastColor = (hexColor: string) => {
     if (!hexColor) return '#001D35'
-    // Remove # if present
     const hex = hexColor.replace('#', '')
     const r = parseInt(hex.substr(0, 2), 16)
     const g = parseInt(hex.substr(2, 2), 16)
@@ -74,12 +92,10 @@ export default function OrganizationWrapper({ children }: { children: React.Reac
     root.style.setProperty('--primary-text', getContrastColor(color))
   }
 
-  // 1. Initial Load
   useEffect(() => {
     fetchOrg()
-  }, [])
+  }, [searchParams]) // Re-fetch if URL changes
 
-  // 2. React to changes (Crucial for "Save" to work instantly)
   useEffect(() => {
     if (org && org.brand_color) {
         applyTheme(org.brand_color)
@@ -87,8 +103,16 @@ export default function OrganizationWrapper({ children }: { children: React.Reac
   }, [org])
 
   return (
-    <OrgContext.Provider value={{ org, loading, refreshOrg: fetchOrg }}>
+    <OrgContext.Provider value={{ org, loading, isImpersonating, refreshOrg: fetchOrg }}>
       {children}
+      
+      {/* IMPERSONATION BANNER */}
+      {isImpersonating && org && (
+          <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 text-xs font-bold animate-pulse pointer-events-none">
+              <Shield size={14} fill="currentColor"/>
+              Viewing as {org.name}
+          </div>
+      )}
     </OrgContext.Provider>
   )
 }

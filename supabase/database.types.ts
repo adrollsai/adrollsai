@@ -113,6 +113,51 @@ export type Database = {
           },
         ]
       }
+      creative_prompts: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_used: boolean | null
+          organization_id: string
+          prompt_text: string
+          property_id: string | null
+          used_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_used?: boolean | null
+          organization_id: string
+          prompt_text: string
+          property_id?: string | null
+          used_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_used?: boolean | null
+          organization_id?: string
+          prompt_text?: string
+          property_id?: string | null
+          used_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creative_prompts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_prompts_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           ad_name: string | null
