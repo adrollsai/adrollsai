@@ -19,6 +19,12 @@ import Link from 'next/link'
 
 export default function LandingPage() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+    // --- DYNAMIC LINK LOGIC ---
+  // If we are developing locally, just go to "/login"
+  // If we are in production, go to the app subdomain
+  const PARTNER_LOGIN_URL = process.env.NODE_ENV === 'development' 
+  ? '/login' 
+  : 'https://app.adrolls.in';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-amber-500/30">
@@ -42,7 +48,7 @@ export default function LandingPage() {
 
           <div className="flex items-center gap-4">
             <Link 
-              href="/login" // Assuming your login logic is here or separate
+              href={PARTNER_LOGIN_URL} // Assuming your login logic is here or separate
               className="hidden md:block text-sm font-medium text-slate-300 hover:text-white"
             >
               Partner Login
