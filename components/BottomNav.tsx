@@ -16,8 +16,8 @@ export default function BottomNav() {
     // { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
     
-    // Only show Ads tab if user is a super_user
-    ...(userRole === 'super_user' ? [{ name: 'Ads', icon: Zap, path: '/dashboard/ads' }] : []),
+    // Show Ads tab if user is super_user, admin, or agent
+    ...(['super_user', 'admin', 'agent'].includes(userRole || '') ? [{ name: 'Ads', icon: Zap, path: '/dashboard/ads' }] : []),
     
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
