@@ -3,8 +3,28 @@ import { createClient } from '@/utils/supabase/server'
 import sharp from 'sharp'
 import { PutObjectCommand } from '@aws-sdk/client-s3'
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
+import path from 'path'
+import process from 'process'
+
+// --- FIX: Initialize Fontconfig ---
+// This function sets the environment variables required by Sharp/librsvg
+// to find the font configuration and the font files in your project.
+function initFonts() {
+  try {
+    if (process.env.FONTCONFIG_PATH) return; // Already initialized
+
+    const fontConfigPath = path.join(process.cwd(), 'fonts');
+    process.env.FONTCONFIG_PATH = fontConfigPath;
+    process.env.FONTCONFIG_FILE = path.join(fontConfigPath, 'fonts.conf');
+  } catch (error) {
+    console.error("Error initializing fonts:", error);
+  }
+}
 
 export async function POST(request: Request) {
+  // Initialize fonts immediately at the start of the request
+  initFonts();
+
   const supabase = await createClient()
   
   // 1. Auth Check
@@ -85,7 +105,6 @@ export async function POST(request: Request) {
     const originalBuffer = Buffer.from(masterArrayBuffer) // Keep as const
 
     // 4. OPTIMIZATION: Resize to Standard 1080px Width
-    // We create a NEW variable 'optimizedBuffer' to avoid "const reassignment" errors.
     const STANDARD_WIDTH = 1080;
     
     const resizedImage = await sharp(originalBuffer)
@@ -94,7 +113,7 @@ export async function POST(request: Request) {
         })
         .toBuffer({ resolveWithObject: true }); 
     
-    const optimizedBuffer = resizedImage.data; // <--- Use this from now on
+    const optimizedBuffer = resizedImage.data; 
     const { width, height } = resizedImage.info;
 
     // 5. Calculate Footer Dimensions
@@ -135,6 +154,9 @@ export async function POST(request: Request) {
     const iconX = width - padding - approxPhoneWidth - iconSize - (padding * 0.5);
     const dividerX = iconX - (padding * 1.5);
 
+    // Note: We use 'sans-serif' here. Since we added fonts.conf and point to './fonts',
+    // ensure you have a .ttf file (e.g., Roboto.ttf) in your 'fonts' folder
+    // so fontconfig can pick it up as the default.
     const footerSvg = `
       <svg width="${width}" height="${footerHeight}">
         <line x1="0" y1="0" x2="${width}" y2="0" style="stroke:${borderColor};stroke-width:2" />
@@ -144,7 +166,7 @@ export async function POST(request: Request) {
         <text 
             x="${textStartX}" 
             y="${footerHeight / 2 + (fontSizeName / 3)}" 
-            font-family="sans-serif" 
+            font-family="Poppins" 
             font-size="${fontSizeName}" 
             fill="${primaryTextColor}" 
             font-weight="800"
@@ -163,7 +185,7 @@ export async function POST(request: Request) {
         <text 
             x="${width - padding}" 
             y="${footerHeight / 2 + (fontSizePhone / 3)}" 
-            font-family="sans-serif" 
+            font-family="Poppins" 
             font-size="${fontSizePhone}" 
             fill="${secondaryTextColor}" 
             font-weight="bold" 
@@ -177,7 +199,7 @@ export async function POST(request: Request) {
     const footerBuffer = Buffer.from(footerSvg)
 
     // 9. Composite (Using optimizedBuffer)
-    const extendedImage = await sharp(optimizedBuffer) // <--- Changed from masterBuffer
+    const extendedImage = await sharp(optimizedBuffer) 
         .extend({
             bottom: footerHeight,
             background: { r: 255, g: 255, b: 255, alpha: 1 }
