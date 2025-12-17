@@ -24,14 +24,11 @@ export async function POST(request: Request) {
 
     if (!agentProfile) throw new Error("Profile not found")
 
-    // DEBUG: Check what data is actually being used
-    console.log("--- STAMPING DEBUG ---")
+    // DEBUG LOGS
+    console.log("--- STAMPING START ---")
     console.log("Agent:", agentProfile.business_name)
-    console.log("Phone:", agentProfile.contact_number)
-    console.log("Logo:", agentProfile.logo_url ? "Yes" : "No")
 
     // --- GAMIFICATION LOGIC START ---
-    // (Kept identical to your previous code)
     const currentStats = agentProfile 
     const now = new Date()
     const lastDate = currentStats?.last_activity_date ? new Date(currentStats.last_activity_date) : null
@@ -82,30 +79,30 @@ export async function POST(request: Request) {
     }).eq('id', user.id)
     // --- GAMIFICATION LOGIC END ---
 
-    // 3. Fetch & OPTIMIZE Master Image
+    // 3. Fetch Master Image
     const masterImageRes = await fetch(masterImageUrl)
     const masterArrayBuffer = await masterImageRes.arrayBuffer()
-    let masterBuffer = Buffer.from(masterArrayBuffer)
+    const originalBuffer = Buffer.from(masterArrayBuffer) // Keep as const
 
-    // OPTIMIZATION: Resize to Standard 1080px Width
-    // This fixes the "Taking too long" issue and ensures footer ratio is always perfect.
+    // 4. OPTIMIZATION: Resize to Standard 1080px Width
+    // We create a NEW variable 'optimizedBuffer' to avoid "const reassignment" errors.
     const STANDARD_WIDTH = 1080;
     
-    const resizedImage = await sharp(masterBuffer)
-        .resize(STANDARD_WIDTH, null, { // null height maintains aspect ratio
-            withoutEnlargement: true // Don't upscale small images
+    const resizedImage = await sharp(originalBuffer)
+        .resize(STANDARD_WIDTH, null, { 
+            withoutEnlargement: true 
         })
-        .toBuffer({ resolveWithObject: true }); // Get buffer AND info
+        .toBuffer({ resolveWithObject: true }); 
     
-    masterBuffer = resizedImage.data;
+    const optimizedBuffer = resizedImage.data; // <--- Use this from now on
     const { width, height } = resizedImage.info;
 
-    // 4. Calculate Footer Dimensions (Based on Standard Width)
-    const footerHeight = Math.round(width * 0.15) // 162px for 1080w
+    // 5. Calculate Footer Dimensions
+    const footerHeight = Math.round(width * 0.15) 
     const padding = Math.round(footerHeight * 0.15)
     const logoSize = Math.round(footerHeight * 0.70)
 
-    // 5. Process Agent Logo
+    // 6. Process Agent Logo
     let logoBuffer: Buffer | null = null
     if (agentProfile.logo_url) {
       try {
@@ -119,24 +116,21 @@ export async function POST(request: Request) {
       }
     }
 
-    // 6. Define Design Variables
+    // 7. Define Design Variables
     const primaryTextColor = "#1F2937"; 
     const secondaryTextColor = "#B45309"; 
     const borderColor = "#E5E7EB"; 
     const dividerColor = "#D1D5DB";
 
-    // 7. SVG Construction
+    // 8. SVG Construction
     const textStartX = logoBuffer ? (padding * 2 + logoSize) : padding
-    const fontSizeName = Math.round(footerHeight * 0.28) // ~45px
-    const fontSizePhone = Math.round(footerHeight * 0.28) // ~45px
+    const fontSizeName = Math.round(footerHeight * 0.28)
+    const fontSizePhone = Math.round(footerHeight * 0.28)
     const iconSize = fontSizePhone;
     
-    const phoneText = agentProfile.contact_number || 'Contact Me'; // Fallback text
-    const businessName = agentProfile.business_name || 'Real Estate Agent'; // Fallback text
+    const phoneText = agentProfile.contact_number || 'Contact Me';
+    const businessName = agentProfile.business_name || 'Real Estate Agent';
 
-    // Layout Logic
-    // We align the phone section to the RIGHT.
-    // Icon X = Width - Padding - TextWidth - IconSize - Gap
     const approxPhoneWidth = phoneText.length * (fontSizePhone * 0.6); 
     const iconX = width - padding - approxPhoneWidth - iconSize - (padding * 0.5);
     const dividerX = iconX - (padding * 1.5);
@@ -182,8 +176,8 @@ export async function POST(request: Request) {
     `
     const footerBuffer = Buffer.from(footerSvg)
 
-    // 8. Composite
-    const extendedImage = await sharp(masterBuffer)
+    // 9. Composite (Using optimizedBuffer)
+    const extendedImage = await sharp(optimizedBuffer) // <--- Changed from masterBuffer
         .extend({
             bottom: footerHeight,
             background: { r: 255, g: 255, b: 255, alpha: 1 }
@@ -194,17 +188,16 @@ export async function POST(request: Request) {
     ]
 
     if (logoBuffer) {
-      // Centered vertically in the footer
       const logoTop = height + Math.round((footerHeight - logoSize) / 2)
       layers.push({ input: logoBuffer as any, top: logoTop, left: padding })
     }
 
     const finalImageBuffer = await extendedImage
       .composite(layers)
-      .jpeg({ quality: 90 }) // Slightly lower quality for faster speed, still looks great
+      .jpeg({ quality: 90 }) 
       .toBuffer()
 
-    // 9. Upload
+    // 10. Upload
     const fileName = `stamped/${user.id}/${Date.now()}.jpg`
     
     await r2.send(new PutObjectCommand({
@@ -216,7 +209,7 @@ export async function POST(request: Request) {
 
     const publicUrl = `${R2_PUBLIC_URL}/adrolls-storage/${fileName}`
 
-    // 10. Save to DB
+    // 11. Save to DB
     await supabase.from('assets').insert({
         user_id: user.id,
         url: publicUrl,
