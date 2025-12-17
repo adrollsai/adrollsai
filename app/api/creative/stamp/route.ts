@@ -11,16 +11,21 @@ import process from 'process'
 // to find the font configuration and the font files in your project.
 function initFonts() {
   try {
-    if (process.env.FONTCONFIG_PATH) return; // Already initialized
+    if (process.env.FONTCONFIG_PATH) return;
 
-    const fontConfigPath = path.join(process.cwd(), 'fonts');
-    process.env.FONTCONFIG_PATH = fontConfigPath;
-    process.env.FONTCONFIG_FILE = path.join(fontConfigPath, 'fonts.conf');
+    // Vercel serverless functions run in /var/task
+    // We check if we are in production to use the absolute path
+    const isProd = process.env.NODE_ENV === 'production';
+    const fontDir = isProd ? '/var/task/fonts' : path.join(process.cwd(), 'fonts');
+
+    process.env.FONTCONFIG_PATH = fontDir;
+    process.env.FONTCONFIG_FILE = path.join(fontDir, 'fonts.conf');
+    
+    console.log("Font Config Loaded:", process.env.FONTCONFIG_FILE);
   } catch (error) {
     console.error("Error initializing fonts:", error);
   }
 }
-
 export async function POST(request: Request) {
   // Initialize fonts immediately at the start of the request
   initFonts();
