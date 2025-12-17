@@ -1,5 +1,3 @@
-// adrollsai/adrollsai/adrollsai-builder-app-gamification-superuser/app/api/creative/stamp/route.ts
-
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import sharp from 'sharp'
@@ -14,16 +12,24 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const { masterImageUrl, agentProfile, propertyId, masterCreativeId } = await request.json()
+    // REMOVED agentProfile from request body. We will fetch it ourselves.
+    const { masterImageUrl, propertyId, masterCreativeId } = await request.json()
 
     if (!masterImageUrl) throw new Error("Missing Master Image URL")
 
-    // --- GAMIFICATION LOGIC START ---
-    const { data: currentStats } = await supabase
+    // --- FETCH LATEST PROFILE (FIX) ---
+    // We fetch the branding info directly from the DB to ensure it's fresh
+    const { data: agentProfile } = await supabase
       .from('profiles')
-      .select('current_streak, last_activity_date, total_xp, level, badges')
+      .select('business_name, contact_number, logo_url, current_streak, last_activity_date, total_xp, level, badges')
       .eq('id', user.id)
       .single()
+
+    if (!agentProfile) throw new Error("Profile not found")
+
+    // --- GAMIFICATION LOGIC START ---
+    // (We can use the same agentProfile object since we fetched the fields above)
+    const currentStats = agentProfile 
 
     const now = new Date()
     const lastDate = currentStats?.last_activity_date ? new Date(currentStats.last_activity_date) : null
