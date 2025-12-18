@@ -68,6 +68,7 @@ export async function postToFacebook(accessToken: string, imageUrl: string, capt
 
 /**
  * 3. Instagram Posting (Replacing n8n 'Post to Instagram' workflow)
+ * UPDATED: Includes status check loop to prevent "Media ID not available" error
  */
 export async function postToInstagram(accessToken: string, pageId: string, imageUrl: string, caption: string): Promise<any> {
     // 3.1 Get IG Business Account ID
@@ -94,6 +95,34 @@ export async function postToInstagram(accessToken: string, pageId: string, image
     }
     const creationId = containerData.id;
 
+    // --- NEW: WAIT FOR CONTAINER TO BE READY ---
+    let attempts = 0;
+    const maxAttempts = 10; // Wait up to ~20 seconds
+    let isReady = false;
+
+    while (attempts < maxAttempts) {
+        // Wait 2 seconds between checks
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        const statusRes = await fetch(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code&access_token=${accessToken}`);
+        const statusData = await statusRes.json();
+        
+        if (statusData.status_code === 'FINISHED') {
+            isReady = true;
+            break;
+        }
+        if (statusData.status_code === 'ERROR' || statusData.status_code === 'EXPIRED') {
+             throw new Error(`IG Media Processing Failed with status: ${statusData.status_code}`);
+        }
+        // If IN_PROGRESS, loop continues
+        attempts++;
+    }
+    
+    if (!isReady) {
+        throw new Error("Instagram Media Processing Timed Out. Please try again later.");
+    }
+    // -------------------------------------------
+
     // 3.3 Publish Media
     const publishRes = await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
         method: 'POST',
@@ -109,7 +138,6 @@ export async function postToInstagram(accessToken: string, pageId: string, image
     }
     return publishData;
 }
-
 
 /**
  * 4. LinkedIn Posting (Replacing n8n 'Post to LinkedIn' workflow)

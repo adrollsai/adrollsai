@@ -102,43 +102,58 @@ export default function AssetsPage() {
 
   // 4. Universal Post Handler
   const handleUniversalPost = async () => {
-      if (!selectedAsset) return
-      setIsPosting(true)
-      try {
-          const res = await fetch('/api/post-universal', {
-              method: 'POST',
-              body: JSON.stringify({
-                  imageUrl: selectedAsset.url,
-                  caption: caption,
-                  platforms: ['facebook', 'instagram']
-              })
-          })
-          const data = await res.json()
-          
-          if (res.ok && data.success) {
-              alert("🚀 Successfully posted to Facebook and Instagram!")
-              // Track stats for both
-              trackShare('facebook')
-              trackShare('instagram')
-              setSelectedAsset(null) // Close modal on success
-          } else {
-              // Handle partial success or errors
-              let msg = "Posting completed with issues:\n"
-              if (data.results) {
-                  Object.entries(data.results).forEach(([platform, status]) => {
-                      msg += `${platform}: ${status}\n`
-                  })
-              } else {
-                  msg = data.error || "Unknown error occurred."
-              }
-              alert(msg)
-          }
-      } catch (e: any) {
-          alert("Network error: " + e.message)
-      } finally {
-          setIsPosting(false)
-      }
-  }
+    if (!selectedAsset) return
+    setIsPosting(true)
+    try {
+        const res = await fetch('/api/post-universal', {
+            method: 'POST',
+            body: JSON.stringify({
+                imageUrl: selectedAsset.url,
+                caption: caption,
+                platforms: ['facebook', 'instagram']
+            })
+        })
+        const data = await res.json()
+        
+        if (res.ok && data.success) {
+            // --- UPDATED LOGIC START ---
+            // Check if any platform in the results object starts with "Failed"
+            const failures = Object.entries(data.results || {})
+                .filter(([_, status]) => (status as string).startsWith('Failed'))
+                .map(([platform, status]) => `${platform}: ${status}`);
+
+            if (failures.length > 0) {
+                // Partial Success
+                alert(`⚠️ Posted with some issues:\n${failures.join('\n')}`);
+            } else {
+                // Full Success
+                alert("🚀 Successfully posted to Facebook and Instagram!")
+                setSelectedAsset(null) // Close modal on full success
+            }
+
+            // Track stats only for successful ones
+            if (data.results?.facebook === 'success') trackShare('facebook')
+            if (data.results?.instagram === 'success') trackShare('instagram')
+            // --- UPDATED LOGIC END ---
+
+        } else {
+            // Handle total failure
+            let msg = "Posting completed with issues:\n"
+            if (data.results) {
+                Object.entries(data.results).forEach(([platform, status]) => {
+                    msg += `${platform}: ${status}\n`
+                })
+            } else {
+                msg = data.error || "Unknown error occurred."
+            }
+            alert(msg)
+        }
+    } catch (e: any) {
+        alert("Network error: " + e.message)
+    } finally {
+        setIsPosting(false)
+    }
+}
 
   // 5. Native Share / WhatsApp
   const handleNativeShare = async () => {
