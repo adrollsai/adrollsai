@@ -390,7 +390,16 @@ export default function LandingPage() {
             <div className="text-slate-600 text-sm">
                &copy; 2024 AdRolls Intelligence Pvt Ltd. All rights reserved.
             </div>
+            <a
+          href="https://docs.google.com/document/d/1_K6q21m7sCLx01oosmSonuOwtYNj48KzjMG-HLNFsIg/edit?usp=sharing"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm text-gray-500 hover:text-gray-900 hover:underline transition-colors"
+        >
+          Privacy Policy
+        </a>
          </div>
+         
       </footer>
 
     </div>

@@ -182,7 +182,14 @@ function LoginForm() {
            
            <div className="text-center">
              <p className="text-xs text-slate-400">
-               By continuing, you agree to our Terms & Privacy Policy.
+               By continuing, you agree to our <a
+          href="https://docs.google.com/document/d/1_K6q21m7sCLx01oosmSonuOwtYNj48KzjMG-HLNFsIg/edit?usp=sharing"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-gray-400 hover:text-gray-600 hover:underline"
+        >
+          Privacy Policy
+        </a>.
              </p>
            </div>
         </div>
