@@ -1,5 +1,3 @@
-// adrollsai/adrollsai/adrollsai-builder-app/app/api/post-universal/route.ts
-
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { postToFacebook, postToInstagram } from '@/utils/external-apis'
@@ -47,7 +45,8 @@ export async function POST(request: Request) {
         caption
       )))
     } else {
-      results.facebook = 'skipped_no_token'
+      // FIX: Return a "Failed" status so the frontend alerts the user
+      results.facebook = 'Failed: No Facebook Page connected. Please go to Profile to connect.'
     }
   }
 
@@ -61,7 +60,8 @@ export async function POST(request: Request) {
         caption
       )))
     } else {
-      results.instagram = 'skipped_no_token_or_page_id' 
+      // FIX: Return a "Failed" status so the frontend alerts the user
+      results.instagram = 'Failed: No Instagram Page connected. Ensure your FB Page is linked to Insta.' 
     }
   }
 

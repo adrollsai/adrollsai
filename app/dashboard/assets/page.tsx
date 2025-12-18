@@ -1,5 +1,3 @@
-// adrollsai/adrollsai/adrollsai-builder-app/app/dashboard/assets/page.tsx
-
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -39,7 +37,9 @@ export default function AssetsPage() {
   // Modal State
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
   const [caption, setCaption] = useState('')
-  const [isPosting, setIsPosting] = useState(false)
+  
+  // Tracking which platform is currently posting (null, 'universal', 'facebook', 'instagram')
+  const [postingState, setPostingState] = useState<string | null>(null)
 
   // 1. Fetch Assets
   useEffect(() => {
@@ -93,52 +93,49 @@ export default function AssetsPage() {
   // 3. TRACKING FUNCTION
   const trackShare = async (platform: string) => {
       if (!selectedAsset) return
-      // Call the Database RPC function we created in Step 1
       await supabase.rpc('increment_share_stat', { 
           asset_id: selectedAsset.id, 
           platform: platform 
       })
   }
 
-  // 4. Universal Post Handler
-  const handleUniversalPost = async () => {
+  // 4. POST HANDLER (Universal & Individual)
+  const handlePost = async (targetPlatforms: string[], stateKey: string) => {
     if (!selectedAsset) return
-    setIsPosting(true)
+    setPostingState(stateKey)
+
     try {
         const res = await fetch('/api/post-universal', {
             method: 'POST',
             body: JSON.stringify({
                 imageUrl: selectedAsset.url,
                 caption: caption,
-                platforms: ['facebook', 'instagram']
+                platforms: targetPlatforms
             })
         })
         const data = await res.json()
         
         if (res.ok && data.success) {
-            // --- UPDATED LOGIC START ---
-            // Check if any platform in the results object starts with "Failed"
+            // Check for partial failures
             const failures = Object.entries(data.results || {})
                 .filter(([_, status]) => (status as string).startsWith('Failed'))
                 .map(([platform, status]) => `${platform}: ${status}`);
 
             if (failures.length > 0) {
-                // Partial Success
-                alert(`⚠️ Posted with some issues:\n${failures.join('\n')}`);
+                alert(`⚠️ Posted with issues:\n${failures.join('\n')}`);
             } else {
-                // Full Success
-                alert("🚀 Successfully posted to Facebook and Instagram!")
-                setSelectedAsset(null) // Close modal on full success
+                const prettyNames = targetPlatforms.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' & ')
+                alert(`🚀 Successfully posted to ${prettyNames}!`)
+                if (targetPlatforms.length > 1) setSelectedAsset(null) // Close only on universal success
             }
 
-            // Track stats only for successful ones
+            // Track stats for successes
             if (data.results?.facebook === 'success') trackShare('facebook')
             if (data.results?.instagram === 'success') trackShare('instagram')
-            // --- UPDATED LOGIC END ---
 
         } else {
             // Handle total failure
-            let msg = "Posting completed with issues:\n"
+            let msg = "Posting failed:\n"
             if (data.results) {
                 Object.entries(data.results).forEach(([platform, status]) => {
                     msg += `${platform}: ${status}\n`
@@ -151,21 +148,20 @@ export default function AssetsPage() {
     } catch (e: any) {
         alert("Network error: " + e.message)
     } finally {
-        setIsPosting(false)
+        setPostingState(null)
     }
-}
+  }
 
   // 5. Native Share / WhatsApp
   const handleNativeShare = async () => {
       if (!selectedAsset) return
-      await trackShare('whatsapp') // Track as WhatsApp/Native
+      await trackShare('whatsapp') 
 
       if (navigator.share) {
           try {
               const response = await fetch(selectedAsset.url)
               const blob = await response.blob()
               
-              // Handle the .jpg extension for stamped images (from the compression fix)
               const fileType = selectedAsset.url.endsWith('.jpg') ? 'image/jpeg' : blob.type
               const fileName = selectedAsset.url.endsWith('.jpg') ? 'property.jpg' : 'property.png'
 
@@ -183,7 +179,6 @@ export default function AssetsPage() {
       await trackShare('download')
       const link = document.createElement('a')
       link.href = selectedAsset?.url || ''
-      // Use the URL extension for download
       const extension = selectedAsset?.url.split('.').pop()
       link.download = `Asset-${Date.now()}.${extension}`
       link.target = "_blank"
@@ -258,12 +253,12 @@ export default function AssetsPage() {
             <div className="flex flex-col gap-3">
                {/* UNIVERSAL POST BUTTON */}
                <button 
-                 onClick={handleUniversalPost}
-                 disabled={isPosting} 
-                 className="w-full bg-gradient-to-r from-blue-600 to-pink-600 text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform"
+                 onClick={() => handlePost(['facebook', 'instagram'], 'universal')}
+                 disabled={!!postingState} 
+                 className="w-full bg-gradient-to-r from-blue-600 to-pink-600 text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform disabled:opacity-70"
                >
-                 {isPosting ? <Loader2 size={18} className="animate-spin" /> : <Rocket size={18} />} 
-                 {isPosting ? 'Posting...' : 'Universal Post (FB + Insta)'}
+                 {postingState === 'universal' ? <Loader2 size={18} className="animate-spin" /> : <Rocket size={18} />} 
+                 {postingState === 'universal' ? 'Posting...' : 'Universal Post (FB + Insta)'}
                </button>
 
                {/* WHATSAPP / NATIVE SHARE BUTTON */}
@@ -273,9 +268,30 @@ export default function AssetsPage() {
 
                {/* Standalone Actions */}
                <div className="flex gap-2">
-                 <button onClick={() => trackShare('facebook')} className="flex-1 bg-blue-600 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform" title="Facebook Only"><Facebook size={18} /></button>
-                 <button onClick={() => trackShare('instagram')} className="flex-1 bg-pink-600 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform" title="Instagram Only"><Instagram size={18} /></button>
-                 <button onClick={handleDownload} className="flex-1 bg-slate-800 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform" title="Download"><Download size={18} /></button>
+                 {/* FACEBOOK ONLY POST */}
+                 <button 
+                    onClick={() => handlePost(['facebook'], 'facebook')} 
+                    disabled={!!postingState}
+                    className="flex-1 bg-blue-600 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform disabled:opacity-70" 
+                    title="Post to Facebook Only"
+                 >
+                    {postingState === 'facebook' ? <Loader2 size={18} className="animate-spin" /> : <Facebook size={18} />}
+                 </button>
+                 
+                 {/* INSTAGRAM ONLY POST */}
+                 <button 
+                    onClick={() => handlePost(['instagram'], 'instagram')} 
+                    disabled={!!postingState}
+                    className="flex-1 bg-pink-600 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform disabled:opacity-70" 
+                    title="Post to Instagram Only"
+                 >
+                    {postingState === 'instagram' ? <Loader2 size={18} className="animate-spin" /> : <Instagram size={18} />}
+                 </button>
+                 
+                 {/* DOWNLOAD */}
+                 <button onClick={handleDownload} className="flex-1 bg-slate-800 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform" title="Download">
+                    <Download size={18} />
+                 </button>
                </div>
             </div>
           </div>
