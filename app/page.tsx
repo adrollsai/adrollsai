@@ -47,15 +47,13 @@ export default function LandingPage() {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* UPDATED: Partner Login now uses the yellow button styling and 'Request Audit' is removed */}
             <Link 
-              href={PARTNER_LOGIN_URL} // Assuming your login logic is here or separate
-              className="hidden md:block text-sm font-medium text-slate-300 hover:text-white"
+              href={PARTNER_LOGIN_URL} 
+              className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-5 py-2.5 rounded-full text-sm font-bold transition-all active:scale-95 shadow-[0_0_20px_-5px_rgba(245,158,11,0.5)]"
             >
               Partner Login
             </Link>
-            <button className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-5 py-2.5 rounded-full text-sm font-bold transition-all active:scale-95 shadow-[0_0_20px_-5px_rgba(245,158,11,0.5)]">
-              Request Audit
-            </button>
           </div>
         </div>
       </nav>
