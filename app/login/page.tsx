@@ -3,14 +3,13 @@
 import { useState, useEffect, Suspense } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Loader2, Building2, User, LayoutGrid, CheckCircle2, TestTube2, AlertCircle } from 'lucide-react'
+import { Loader2, Building2, User, LayoutGrid, CheckCircle2, TestTube2, AlertCircle, Mail, Lock, ArrowRight } from 'lucide-react'
 
 type InviteInfo = {
   name: string
   logo_url: string
 }
 
-// 1. Inner Component: Handles all logic and params
 function LoginForm() {
   const supabase = createClient()
   const router = useRouter()
@@ -19,6 +18,12 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [inviteInfo, setInviteInfo] = useState<InviteInfo | null>(null)
   
+  // New State for Email Auth
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
+  const [message, setMessage] = useState<{ type: 'error' | 'success', text: string } | null>(null)
+
   // Capture the invite code and error
   const inviteOrg = searchParams.get('invite_org')
   const errorMsg = searchParams.get('error')
@@ -36,11 +41,10 @@ function LoginForm() {
     fetchInviteDetails()
   }, [inviteOrg])
 
-  const handleLogin = async (provider: 'google' | 'linkedin_oidc') => {
+  // --- OAUTH LOGIN ---
+  const handleOAuthLogin = async (provider: 'google' | 'linkedin_oidc') => {
     setLoading(true)
     try {
-      // FIX: Use window.location.origin to support Custom Domains dynamically
-      // This ensures Supabase redirects back to 'agent.countrysideheavens.com' instead of 'adrolls.in'
       const origin = window.location.origin
       const redirectUrl = new URL(`${origin}/auth/callback`)
       
@@ -64,11 +68,69 @@ function LoginForm() {
     }
   }
 
+  // --- EMAIL LOGIN / SIGNUP ---
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setMessage(null)
+
+    try {
+      if (authMode === 'signup') {
+        // 1. SIGN UP FLOW
+        const origin = window.location.origin
+        const redirectUrl = new URL(`${origin}/auth/callback`)
+        if (inviteOrg) redirectUrl.searchParams.set('invite_org', inviteOrg)
+
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: redirectUrl.toString() // Important: passes invite_org to callback
+          }
+        })
+
+        if (error) throw error
+        setMessage({ type: 'success', text: 'Check your email for the confirmation link.' })
+        
+      } else {
+        // 2. LOGIN FLOW
+        const { data: { user }, error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        })
+
+        if (error) throw error
+        if (!user) throw new Error("Login failed")
+
+        // Manually handle Invite Linking (since login skips the callback route)
+        if (inviteOrg) {
+          console.log("Linking User to Invite Org:", inviteOrg)
+          
+          await supabase.from('organization_members').upsert({
+              user_id: user.id,
+              organization_id: inviteOrg,
+              role: 'agent'
+          }, { onConflict: 'organization_id, user_id' })
+
+          await supabase.from('profiles').update({
+              organization_id: inviteOrg,
+              role: 'agent'
+          }).eq('id', user.id)
+        }
+
+        router.push('/dashboard')
+      }
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // --- DEMO LOGIN LOGIC ---
   const handleDemoLogin = async () => {
     setLoading(true)
     try {
-      // 1. Perform Login
       const { data: { user }, error } = await supabase.auth.signInWithPassword({
         email: 'demo@adrolls.ai',
         password: 'demo123'
@@ -77,25 +139,19 @@ function LoginForm() {
       if (error) throw error
       if (!user) throw new Error("No user returned")
 
-      // 2. CHECK FOR INVITE & MANUALLY LINK
       if (inviteOrg) {
-          console.log("Linking Demo User to Invite Org:", inviteOrg)
-          
-          // A. Add to Members Table (Upsert to avoid errors if already in)
           await supabase.from('organization_members').upsert({
               user_id: user.id,
               organization_id: inviteOrg,
               role: 'agent'
           }, { onConflict: 'organization_id, user_id' })
 
-          // B. Update Profile to Switch Context to this Org
           await supabase.from('profiles').update({
               organization_id: inviteOrg,
               role: 'agent'
           }).eq('id', user.id)
       }
 
-      // 3. Redirect
       router.push('/dashboard')
     } catch (error: any) {
       alert("Demo Login Failed: " + error.message)
@@ -107,13 +163,12 @@ function LoginForm() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <div className="bg-white w-full max-w-md rounded-3xl shadow-xl overflow-hidden">
         
-        {/* Dynamic Header */}
+        {/* Header */}
         <div className="bg-slate-900 p-8 text-center relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-full opacity-10">
              <LayoutGrid className="w-full h-full text-white" />
           </div>
           <div className="relative z-10">
-            {/* Show Invite Org Logo if available, else Default */}
             <div className="w-20 h-20 bg-white rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg p-2">
                {inviteInfo?.logo_url ? (
                  <img src={inviteInfo.logo_url} className="w-full h-full object-contain" alt="Org Logo"/>
@@ -131,39 +186,109 @@ function LoginForm() {
           </div>
         </div>
 
-        {/* Login Body */}
+        {/* Body */}
         <div className="p-8 space-y-6">
            
-           {errorMsg && (
-             <div className="bg-red-50 border border-red-100 p-3 rounded-xl flex gap-2 items-center text-red-600 text-xs font-bold">
-               <AlertCircle size={16}/> {decodeURIComponent(errorMsg)}
+           {/* Global Error/Success Messages */}
+           {(errorMsg || message) && (
+             <div className={`p-3 rounded-xl flex gap-2 items-center text-xs font-bold ${
+               message?.type === 'success' 
+                 ? 'bg-green-50 border border-green-100 text-green-700' 
+                 : 'bg-red-50 border border-red-100 text-red-600'
+             }`}>
+               {message?.type === 'success' ? <CheckCircle2 size={16}/> : <AlertCircle size={16}/>} 
+               {message ? message.text : decodeURIComponent(errorMsg || '')}
              </div>
            )}
 
-           {inviteOrg && (
+           {inviteOrg && !message && (
              <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex gap-3 items-start">
                 <CheckCircle2 size={20} className="text-blue-600 shrink-0 mt-0.5" />
                 <div>
                   <h3 className="text-sm font-bold text-blue-900">Accept Invitation</h3>
                   <p className="text-xs text-blue-700 leading-relaxed mt-1">
-                    Sign in to join <b>{inviteInfo?.name || 'the organization'}</b> as an Agent. You will gain access to shared projects and creatives.
+                    {authMode === 'login' ? 'Sign in' : 'Sign up'} to join <b>{inviteInfo?.name || 'the organization'}</b> as an Agent.
                   </p>
                 </div>
              </div>
            )}
 
-           <div className="space-y-3">
-              <button 
-                onClick={() => handleLogin('google')} 
+           {/* --- EMAIL FORM --- */}
+           <form onSubmit={handleEmailAuth} className="space-y-4">
+             <div>
+                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Email Address</label>
+                <div className="relative mt-1">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input 
+                    type="email" 
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all"
+                    placeholder="name@company.com"
+                  />
+                </div>
+             </div>
+             
+             <div>
+                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Password</label>
+                <div className="relative mt-1">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input 
+                    type="password" 
+                    required
+                    minLength={6}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all"
+                    placeholder="••••••••"
+                  />
+                </div>
+             </div>
+
+             <button 
+                type="submit"
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 p-4 rounded-xl text-slate-700 font-bold text-sm hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98]"
+                className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white p-4 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all active:scale-[0.98]"
               >
                 {loading ? <Loader2 size={18} className="animate-spin"/> : (
                   <>
-                    <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google"/>
-                    Continue with Google
+                    {authMode === 'login' ? 'Sign In' : 'Create Account'}
+                    <ArrowRight size={16} />
                   </>
                 )}
+              </button>
+           </form>
+
+           {/* Toggle Auth Mode */}
+           <div className="text-center">
+             <button 
+               type="button"
+               onClick={() => {
+                 setAuthMode(authMode === 'login' ? 'signup' : 'login')
+                 setMessage(null)
+               }}
+               className="text-sm text-slate-500 hover:text-slate-800 font-medium transition-colors"
+             >
+               {authMode === 'login' 
+                 ? "Don't have an account? Sign up" 
+                 : "Already have an account? Sign in"}
+             </button>
+           </div>
+
+           <div className="relative">
+              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
+              <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400">Or continue with</span></div>
+           </div>
+
+           <div className="space-y-3">
+              <button 
+                onClick={() => handleOAuthLogin('google')} 
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 p-4 rounded-xl text-slate-700 font-bold text-sm hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98]"
+              >
+                <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google"/>
+                Google
               </button>
 
               <button 
@@ -171,26 +296,9 @@ function LoginForm() {
                 disabled={loading}
                 className="w-full flex items-center justify-center gap-3 bg-indigo-50 border border-indigo-100 p-4 rounded-xl text-indigo-700 font-bold text-sm hover:bg-indigo-100 transition-all active:scale-[0.98]"
               >
-                 {loading ? <Loader2 size={18} className="animate-spin text-indigo-600"/> : (
-                    <>
-                       <TestTube2 size={20} className="text-indigo-600" />
-                       Demo Agent Login
-                    </>
-                 )}
+                 <TestTube2 size={20} className="text-indigo-600" />
+                 Demo Agent Login
               </button>
-           </div>
-           
-           <div className="text-center">
-             <p className="text-xs text-slate-400">
-               By continuing, you agree to our <a
-          href="https://docs.google.com/document/d/1_K6q21m7sCLx01oosmSonuOwtYNj48KzjMG-HLNFsIg/edit?usp=sharing"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs text-gray-400 hover:text-gray-600 hover:underline"
-        >
-          Privacy Policy
-        </a>.
-             </p>
            </div>
         </div>
       </div>
@@ -198,7 +306,6 @@ function LoginForm() {
   )
 }
 
-// 2. Main Page Component: Wraps LoginForm in Suspense to fix Vercel Build Error
 export default function LoginPage() {
   return (
     <Suspense fallback={
