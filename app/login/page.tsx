@@ -57,6 +57,7 @@ function LoginForm() {
         options: {
           redirectTo: redirectUrl.toString(),
           queryParams: {
+            config_id: '25664675166502911',
             access_type: 'offline',
             prompt: 'consent',
           },
