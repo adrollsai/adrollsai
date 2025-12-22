@@ -385,19 +385,32 @@ export default function LandingPage() {
               </div>
               <span className="text-sm font-bold text-slate-500">AdRolls.ai</span>
             </div>
-            <div className="text-slate-600 text-sm">
+            
+            <div className="text-slate-600 text-sm order-3 md:order-2">
                &copy; 2024 AdRolls Intelligence Pvt Ltd. All rights reserved.
             </div>
-            <a
-          href="https://docs.google.com/document/d/1_K6q21m7sCLx01oosmSonuOwtYNj48KzjMG-HLNFsIg/edit?usp=sharing"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm text-gray-500 hover:text-gray-900 hover:underline transition-colors"
-        >
-          Privacy Policy
-        </a>
+
+            <div className="flex flex-wrap justify-center gap-6 order-2 md:order-3">
+              <Link
+                href="/privacy-policy"
+                className="text-sm text-slate-500 hover:text-amber-500 transition-colors"
+              >
+                Privacy Policy
+              </Link>
+              <Link
+                href="/terms-and-conditions"
+                className="text-sm text-slate-500 hover:text-amber-500 transition-colors"
+              >
+                Terms & Conditions
+              </Link>
+              <Link
+                href="/refund-policy"
+                className="text-sm text-slate-500 hover:text-amber-500 transition-colors"
+              >
+                Refund Policy
+              </Link>
+            </div>
          </div>
-         
       </footer>
 
     </div>
