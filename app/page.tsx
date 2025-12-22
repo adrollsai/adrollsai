@@ -1,321 +1,576 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { 
-  Building2, 
-  Users2, 
+  Zap, 
   BarChart3, 
-  Trophy, 
+  Target, 
   Megaphone, 
   CheckCircle2, 
   ArrowRight, 
   Play,
   LayoutGrid,
   TrendingUp,
-  ShieldCheck,
-  ChevronRight
+  Globe,
+  Palette,
+  Users2,
+  Rocket,
+  Menu,
+  X,
+  Sparkles,
+  Send,
+  MessageCircle
 } from 'lucide-react'
 import Link from 'next/link'
+import { motion, useScroll, AnimatePresence } from 'framer-motion'
 
+// --- CHAT MASCOT COMPONENT ---
+const ChatMascot = () => {
+  const { scrollYProgress } = useScroll();
+  const [mood, setMood] = useState('idle'); // idle, happy, cool
+  const [isOpen, setIsOpen] = useState(false);
+  
+  // Scroll Logic for Moods (Kept for animations like glasses/tongue)
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollP = window.scrollY;
+      const windowH = window.innerHeight;
+      const docH = document.body.scrollHeight;
+      const scrollPercent = scrollP / (docH - windowH);
+
+      if (scrollPercent < 0.3) {
+        setMood('idle');
+      } else if (scrollPercent >= 0.3 && scrollPercent < 0.85) {
+        setMood('happy');
+      } else {
+        setMood('cool');
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  return (
+    <>
+      {/* --- THE CHAT WINDOW (Now on the Right) --- */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            // CHANGED: left-6 to right-6
+            className="fixed bottom-28 right-6 z-[70] w-[300px] md:w-[350px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden font-sans"
+          >
+            {/* Header */}
+            <div className="bg-[#003D6F] p-4 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-white font-bold">
+                  <span className="text-xs">AI</span>
+                </div>
+                <div>
+                  <h4 className="text-white font-bold text-sm">AdRolls Assistant</h4>
+                  <p className="text-blue-200 text-xs flex items-center gap-1">
+                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"/> Online
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setIsOpen(false)} className="text-white/80 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 h-64 bg-slate-50 overflow-y-auto flex flex-col gap-3">
+              <div className="bg-white p-3 rounded-tr-xl rounded-bl-xl rounded-br-xl shadow-sm border border-slate-100 self-start max-w-[85%]">
+                <p className="text-slate-600 text-sm">
+                  Hello! I'm Rolls. 🐶 <br/>How can I help you grow your business today?
+                </p>
+              </div>
+            </div>
+
+            {/* Input */}
+            <div className="p-3 border-t border-slate-100 bg-white flex gap-2">
+              <input 
+                type="text" 
+                placeholder="Type your question..." 
+                className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#003D6F]"
+              />
+              <button className="bg-[#003D6F] text-white p-2 rounded-lg hover:bg-[#002a4d]">
+                <Send size={16} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* --- THE DOG BUTTON (Now Bottom Right) --- */}
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        // CHANGED: left-6 to right-6
+        className="fixed bottom-6 right-6 z-[60] cursor-pointer group flex flex-col items-end"
+      >
+
+        {/* Dog Container */}
+        <motion.div 
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="w-20 h-20 md:w-24 md:h-24 relative filter drop-shadow-xl"
+        >
+          <svg viewBox="0 0 200 200" className="w-full h-full overflow-visible">
+              
+              {/* TAIL REMOVED HERE */}
+
+              {/* 2. BODY (Fluffy White with Brown Spot) */}
+              <path d="M50,140 
+                       Q45,130 50,125 Q40,120 55,115 Q50,105 65,105
+                       Q80,100 120,100 
+                       Q135,105 130,115 Q145,120 135,125 Q145,130 140,140
+                       Q145,155 135,165 Q120,175 100,175 
+                       Q80,175 65,165 Q55,155 50,140 Z" 
+                    fill="white" stroke="black" strokeWidth="4" strokeLinejoin="round"/>
+              
+              {/* Brown Spot */}
+              <path d="M70,115 Q85,110 100,112 Q115,110 130,115 Q135,130 125,140 Q115,150 100,150 Q85,150 75,140 Q65,130 70,115 Z" 
+                    fill="#8B4513" opacity="1" stroke="black" strokeWidth="2" strokeLinejoin="round"/>
+
+              {/* 3. PAWS */}
+              <g transform="translate(0, 5)">
+                  <path d="M70,175 Q68,182 75,185 Q82,188 90,185 Q92,178 90,175" fill="white" stroke="black" strokeWidth="3" />
+                  <path d="M110,175 Q108,182 115,185 Q122,188 130,185 Q132,178 130,175" fill="white" stroke="black" strokeWidth="3" />
+              </g>
+
+              {/* 4. COLLAR */}
+              <path d="M72,132 Q100,142 128,132" stroke="#B22B31" strokeWidth="8" strokeLinecap="round" fill="none" />
+              <circle cx="100" cy="138" r="6" fill="#F4B429" stroke="black" strokeWidth="2" />
+
+              {/* 5. HEAD (Bobbing Animation) */}
+              <motion.g 
+                transform="translate(0, -15)"
+                animate={{ y: [0, -3, 0] }}
+                transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
+              >
+                  {/* Ears */}
+                  <path d="M55,75 Q45,95 50,110 Q55,125 70,120 Q80,115 75,90" fill="#8B4513" stroke="black" strokeWidth="3" strokeLinejoin="round"/>
+                  <path d="M145,75 Q155,95 150,110 Q145,125 130,120 Q120,115 125,90" fill="#8B4513" stroke="black" strokeWidth="3" strokeLinejoin="round"/>
+
+                  {/* Head Shape */}
+                  <path d="M100,50 
+                           Q120,50 135,65 Q145,80 140,100 
+                           Q135,120 115,135 Q100,140 85,135 
+                           Q65,120 60,100 Q55,80 65,65 
+                           Q80,50 100,50 Z"
+                        fill="white" stroke="black" strokeWidth="3" strokeLinejoin="round"/>
+
+                  {/* Top Tuft */}
+                  <path d="M90,55 Q100,40 110,55" stroke="black" strokeWidth="3" fill="white"/>
+
+                  {/* Eye Patches */}
+                  <ellipse cx="80" cy="90" rx="18" ry="22" fill="#8B4513" transform="rotate(-10 80 90)" />
+                  <ellipse cx="120" cy="90" rx="18" ry="22" fill="#8B4513" transform="rotate(10 120 90)" />
+
+                  {/* Blush */}
+                  <ellipse cx="75" cy="115" rx="8" ry="5" fill="#FFC0CB" opacity="0.6" />
+                  <ellipse cx="125" cy="115" rx="8" ry="5" fill="#FFC0CB" opacity="0.6" />
+
+                  {/* EYES (Blinking) */}
+                  <motion.g 
+                     animate={{ scaleY: [1, 1, 0.1, 1] }} 
+                     transition={{ duration: 4, repeat: Infinity, times: [0, 0.9, 0.95, 1] }}
+                  >
+                      <circle cx="82" cy="92" r="7" fill="black" />
+                      <circle cx="118" cy="92" r="7" fill="black" />
+                      <circle cx="84" cy="90" r="2.5" fill="white" />
+                      <circle cx="120" cy="90" r="2.5" fill="white" />
+                  </motion.g>
+
+                  {/* SNOUT */}
+                  <ellipse cx="100" cy="105" rx="14" ry="10" fill="#F3F4F6" stroke="black" strokeWidth="1" />
+                  <ellipse cx="100" cy="100" rx="7" ry="5" fill="black" />
+                  <path d="M92,112 Q100,118 108,112" stroke="black" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+
+                  {/* TONGUE (Happy only) */}
+                  <motion.path 
+                    d="M96,114 Q100,128 104,114" fill="#FB7185" stroke="black" strokeWidth="1"
+                    animate={{ opacity: mood === 'happy' ? 1 : 0 }}
+                  />
+              </motion.g>
+
+              {/* 6. BIG DEAL WITH IT GLASSES */}
+              <motion.g 
+                 initial={{ y: -150, opacity: 0 }}
+                 animate={mood === 'cool' ? { y: -15, opacity: 1 } : { y: -150, opacity: 0 }}
+                 transition={{ type: "spring", stiffness: 120, damping: 12 }}
+              >
+                  {/* Left Lens */}
+                  <rect x="60" y="80" width="40" height="20" fill="black" />
+                  <rect x="60" y="80" width="5" height="5" fill="white" opacity="0.4" />
+                  <rect x="65" y="85" width="5" height="5" fill="white" opacity="0.4" />
+                  
+                  {/* Right Lens */}
+                  <rect x="105" y="80" width="40" height="20" fill="black" />
+                  <rect x="105" y="80" width="5" height="5" fill="white" opacity="0.4" />
+                  <rect x="110" y="85" width="5" height="5" fill="white" opacity="0.4" />
+                  
+                  {/* Bridge */}
+                  <rect x="100" y="82" width="5" height="5" fill="black" />
+                  
+                  {/* Arms */}
+                  <rect x="145" y="80" width="10" height="5" fill="black" />
+                  <rect x="50" y="80" width="10" height="5" fill="black" />
+              </motion.g>
+
+          </svg>
+        </motion.div>
+        {/* CAPTION AT THE BOTTOM */}
+        <div className="mt-2 bg-[#003D6F] px-3 py-1 rounded-full shadow-lg border border-white/20">
+          <p className="text-white font-bold text-[10px] md:text-xs whitespace-nowrap">
+            Woof! I'm Rolls! Need help?
+          </p>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// --- MAIN PAGE ---
 export default function LandingPage() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-    // --- DYNAMIC LINK LOGIC ---
-  // If we are developing locally, just go to "/login"
-  // If we are in production, go to the app subdomain
+  
   const PARTNER_LOGIN_URL = process.env.NODE_ENV === 'development' 
   ? '/login' 
   : 'https://app.adrolls.in';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-amber-500/30">
+    <div className="min-h-screen bg-slate-50 text-[#003D6F] font-sans selection:bg-[#F4B429]/30 selection:text-[#003D6F] overflow-x-hidden relative">
       
+      {/* Background Texture */}
+      <div className="fixed inset-0 z-0 opacity-[0.03] pointer-events-none" 
+           style={{ backgroundImage: 'radial-gradient(#003D6F 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
+      </div>
+
+      {/* --- CHAT MASCOT --- */}
+      <ChatMascot />
+
       {/* --- NAVIGATION --- */}
-      <nav className="fixed top-0 w-full z-50 border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center">
-              <Building2 className="text-white w-5 h-5" />
-            </div>
-            <span className="text-xl font-bold tracking-tight text-white">AdRolls<span className="text-slate-400">.ai</span></span>
+      <nav className="fixed top-0 w-full z-50 border-b border-[#003D6F]/10 bg-white/95 backdrop-blur-xl transition-all duration-300">
+        <div className="max-w-[1400px] mx-auto px-6 h-32 md:h-40 flex items-center justify-between">
+          
+          {/* LOGO */}
+          <div className="flex items-center gap-2 shrink-0">
+            <img 
+              src="https://i.ibb.co/7dDJdPgS/bg-removed.png" 
+              alt="AdRolls" 
+              className="h-24 md:h-32 w-auto min-w-[200px] object-contain hover:scale-105 transition-transform duration-300 drop-shadow-sm"
+            />
           </div>
           
-          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
-            <a href="#problem" className="hover:text-amber-400 transition-colors">The Disconnect</a>
-            <a href="#solution" className="hover:text-amber-400 transition-colors">The Ecosystem</a>
-            <a href="#service" className="hover:text-amber-400 transition-colors">Managed Service</a>
-            <a href="#results" className="hover:text-amber-400 transition-colors">Results</a>
+          {/* DESKTOP MENU */}
+          <div className="hidden lg:flex items-center gap-12 text-lg font-bold text-[#003D6F]/90">
+            <a href="#features" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Features</a>
+            <a href="#ads" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Meta Ads</a>
+            <a href="#pricing" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Pricing</a>
           </div>
 
-          <div className="flex items-center gap-4">
-            {/* UPDATED: Partner Login now uses the yellow button styling and 'Request Audit' is removed */}
+          {/* CTA BUTTONS */}
+          <div className="hidden lg:flex items-center gap-6">
             <Link 
               href={PARTNER_LOGIN_URL} 
-              className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-5 py-2.5 rounded-full text-sm font-bold transition-all active:scale-95 shadow-[0_0_20px_-5px_rgba(245,158,11,0.5)]"
+              className="text-[#003D6F] hover:text-[#B22B31] font-bold text-lg px-2"
             >
-              Partner Login
+              Login
+            </Link>
+            <Link 
+              href={PARTNER_LOGIN_URL} 
+              className="bg-[#B22B31] hover:bg-[#902227] text-white px-10 py-4 rounded-full text-lg font-bold transition-all shadow-[0_10px_30px_-10px_rgba(178,43,49,0.5)] active:scale-95 flex items-center gap-2"
+            >
+              Get Started <ArrowRight size={20}/>
             </Link>
           </div>
+
+          {/* MOBILE MENU TOGGLE */}
+          <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="lg:hidden text-[#003D6F] p-2 bg-slate-100 rounded-lg">
+            {isMenuOpen ? <X size={32} /> : <Menu size={32} />}
+          </button>
         </div>
+
+        {/* MOBILE MENU */}
+        {isMenuOpen && (
+          <div className="lg:hidden border-t border-slate-200 bg-white p-6 absolute w-full shadow-2xl flex flex-col gap-6 z-50 text-xl">
+             <a href="#features" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F] font-bold">Features</a>
+             <a href="#ads" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F] font-bold">Meta Ads</a>
+             <a href="#pricing" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F] font-bold">Pricing</a>
+             <Link href={PARTNER_LOGIN_URL} className="text-[#B22B31] font-bold">Login / Sign Up</Link>
+          </div>
+        )}
       </nav>
 
       {/* --- HERO SECTION --- */}
-      <section className="relative pt-32 pb-20 md:pt-48 md:pb-32 overflow-hidden">
-        {/* Background Gradients */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-amber-500/10 blur-[120px] rounded-full pointer-events-none" />
+      <section className="relative pt-48 pb-24 md:pt-64 md:pb-40 overflow-hidden z-10">
+        <div className="absolute top-0 right-0 w-[50vw] h-[50vw] bg-[#F4B429]/10 blur-[120px] rounded-full pointer-events-none -translate-y-1/2 translate-x-1/4" />
+        <div className="absolute bottom-0 left-0 w-[40vw] h-[40vw] bg-[#003D6F]/5 blur-[100px] rounded-full pointer-events-none translate-y-1/4 -translate-x-1/4" />
         
-        <div className="max-w-7xl mx-auto px-6 relative z-10">
-          <div className="flex flex-col lg:flex-row items-center gap-16">
+        <div className="max-w-[1400px] mx-auto px-6 relative z-10">
+          <div className="text-center max-w-6xl mx-auto mb-20">
+            <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-white border-2 border-[#003D6F]/5 text-[#003D6F] text-sm font-extrabold uppercase tracking-widest mb-10 shadow-lg cursor-default">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#B22B31] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-[#B22B31]"></span>
+              </span>
+              AI Marketing Suite for Small & Medium Businesses
+            </div>
             
-            {/* Hero Copy */}
-            <div className="flex-1 text-center lg:text-left">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-amber-500 text-xs font-bold uppercase tracking-wider mb-6">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"/>
-                For Developers & Master Brokers
-              </div>
-              
-              <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white leading-[1.1] mb-6">
-                Fast Track Real Estate Sales <br/>
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-400 to-amber-600">
-                  Without Ad Spend.
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tight text-[#003D6F] leading-[1.05] mb-10 drop-shadow-sm">
+              Grow Your Business <br className="hidden md:block"/>
+              <span className="relative inline-block">
+                <span className="relative z-10 text-transparent bg-clip-text bg-gradient-to-r from-[#B22B31] via-[#D35F30] to-[#F4B429]">
+                   On Autopilot.
                 </span>
-              </h1>
-              
-              <p className="text-lg text-slate-400 mb-8 leading-relaxed max-w-2xl mx-auto lg:mx-0">
-                Transform your dormant Channel Partner network into a hyper-active, 24/7 digital sales force. We provide the infrastructure and strategy to dominate the market using the people you already have.
-              </p>
-              
-              <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
-                <button className="w-full sm:w-auto px-8 py-4 bg-white text-slate-950 rounded-xl font-bold hover:bg-slate-200 transition-all flex items-center justify-center gap-2">
-                  Request Network Audit <ArrowRight className="w-4 h-4"/>
-                </button>
-                <button className="w-full sm:w-auto px-8 py-4 bg-slate-900 border border-slate-800 text-white rounded-xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2">
-                  <Play className="w-4 h-4 fill-current"/> See How It Works
-                </button>
-              </div>
-
-              <div className="mt-10 flex items-center justify-center lg:justify-start gap-6 text-sm text-slate-500 font-medium">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-amber-500" /> No Software Setup
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-amber-500" /> Fully Managed
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-amber-500" /> Result Oriented
-                </div>
-              </div>
+                <svg className="absolute -bottom-2 md:-bottom-4 left-0 w-full h-4 md:h-6 text-[#F4B429]/40 -z-10" viewBox="0 0 100 10" preserveAspectRatio="none">
+                   <path d="M0 5 Q 50 15 100 5" stroke="currentColor" strokeWidth="12" fill="none" />
+                </svg>
+              </span>
+            </h1>
+            
+            <p className="text-xl md:text-2xl text-slate-600 mb-14 leading-relaxed max-w-3xl mx-auto font-medium">
+              Stop juggling 10 different tools. AdRolls uses AI to design your graphics, manage inventory, post to social, and launch ads—<span className="text-[#003D6F] font-bold bg-blue-50 px-2 py-1 rounded">all in one place.</span>
+            </p>
+            
+            <div className="flex flex-col sm:flex-row items-center gap-6 justify-center">
+              <Link href="#pricing" className="group w-full sm:w-auto px-12 py-6 bg-[#B22B31] text-white text-xl rounded-2xl font-bold hover:bg-[#902227] transition-all flex items-center justify-center gap-3 shadow-[0_20px_40px_-15px_rgba(178,43,49,0.3)] hover:-translate-y-1">
+                Start Growing Today 
+                <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform"/>
+              </Link>
+              <button className="w-full sm:w-auto px-12 py-6 bg-white border-2 border-[#003D6F]/10 text-[#003D6F] text-xl rounded-2xl font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-3 hover:-translate-y-1 hover:border-[#003D6F]/30 hover:shadow-lg">
+                <Play className="w-5 h-5 fill-current"/> Watch Demo
+              </button>
             </div>
 
-            {/* Hero Visual - Abstract Dashboard Interface */}
-            <div className="flex-1 w-full relative">
-              <div className="relative rounded-2xl bg-slate-900 border border-slate-800 p-2 shadow-2xl shadow-amber-900/20 rotate-1 hover:rotate-0 transition-transform duration-700">
-                <div className="absolute -top-12 -right-12 bg-slate-800/50 backdrop-blur-md border border-slate-700 p-4 rounded-xl hidden md:block animate-bounce-slow">
-                   <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center text-green-500"><TrendingUp size={20}/></div>
-                      <div>
-                        <div className="text-xs text-slate-400">Leads Today</div>
-                        <div className="text-xl font-bold text-white">+142</div>
+            <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-6 text-base text-slate-500 font-bold">
+              <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-sm">
+                <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current" /> No Design Skills Needed
+              </div>
+              <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-sm">
+                <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current" /> Automated SEO
+              </div>
+              <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-sm">
+                <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current" /> Meta CAPI Integration
+              </div>
+            </div>
+          </div>
+
+          {/* DASHBOARD PREVIEW */}
+          <div className="relative mx-auto max-w-[1200px]">
+             <div className="absolute -inset-1 bg-gradient-to-r from-[#B22B31] via-[#F4B429] to-[#003D6F] rounded-[2.5rem] blur-xl opacity-20"></div>
+             
+             <div className="relative rounded-[2.5rem] bg-white border-4 border-slate-100 p-4 shadow-2xl shadow-[#003D6F]/10">
+                <div className="bg-slate-50 rounded-[2rem] overflow-hidden aspect-[16/10] md:aspect-[21/9] relative flex items-center justify-center border border-slate-200">
+                   
+                   {/* Abstract UI Representation */}
+                   <div className="absolute inset-0 grid grid-cols-12 grid-rows-6 gap-6 p-8 md:p-12">
+                      <div className="hidden md:block col-span-2 row-span-6 bg-white rounded-2xl border-2 border-slate-100 shadow-sm"></div>
+                      <div className="col-span-12 md:col-span-10 row-span-1 bg-white rounded-2xl border-2 border-slate-100 shadow-sm flex items-center px-6 gap-4">
+                         <div className="w-32 h-4 bg-slate-100 rounded-full"></div>
+                         <div className="flex-1"></div>
+                         <div className="w-10 h-10 rounded-full bg-[#B22B31]/10 border border-[#B22B31]/20"></div>
+                      </div>
+                      <div className="col-span-12 md:col-span-7 row-span-3 bg-white rounded-2xl border-2 border-slate-100 shadow-sm p-8 relative overflow-hidden group">
+                         <div className="flex justify-between items-center mb-8">
+                            <div className="h-4 w-32 bg-slate-100 rounded"></div>
+                            <div className="px-3 py-1 bg-green-100 rounded-full flex items-center justify-center text-green-700 text-sm font-bold border border-green-200">+24.5%</div>
+                         </div>
+                         <div className="flex items-end gap-3 h-32 w-full">
+                            {[40, 60, 45, 70, 50, 80, 65, 90].map((h, i) => (
+                               <div key={i} className="flex-1 bg-[#003D6F] rounded-t-lg opacity-10" style={{height: `${h}%`}}></div>
+                            ))}
+                         </div>
+                      </div>
+                      <div className="hidden md:block col-span-3 row-span-3 space-y-4">
+                         <div className="h-1/2 bg-[#B22B31] rounded-2xl shadow-xl shadow-[#B22B31]/20 p-6 text-white flex flex-col justify-between relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-4 opacity-20"><Zap size={48}/></div>
+                            <div className="text-sm font-medium opacity-80">Active Leads</div>
+                            <div className="text-4xl font-bold">1,204</div>
+                         </div>
+                         <div className="h-1/2 bg-white rounded-2xl border-2 border-slate-100 shadow-sm p-6 flex flex-col justify-center items-center">
+                            <div className="w-14 h-14 rounded-full bg-[#F4B429]/20 flex items-center justify-center text-[#F4B429] mb-3">
+                               <Megaphone size={28}/>
+                            </div>
+                            <div className="text-base font-bold text-[#003D6F]">Ad Running</div>
+                         </div>
+                      </div>
+                      <div className="col-span-12 md:col-span-10 row-span-2 grid grid-cols-3 gap-6">
+                         {[1,2,3].map(i => (
+                            <div key={i} className="bg-white rounded-2xl border-2 border-slate-100 shadow-sm p-5 flex gap-4 items-center">
+                               <div className="w-14 h-14 bg-slate-100 rounded-xl"></div>
+                               <div className="space-y-2 flex-1">
+                                  <div className="h-3 w-3/4 bg-slate-100 rounded"></div>
+                                  <div className="h-2 w-1/2 bg-slate-100 rounded"></div>
+                               </div>
+                            </div>
+                         ))}
                       </div>
                    </div>
-                </div>
 
-                <div className="bg-slate-950 rounded-xl overflow-hidden aspect-[4/3] relative">
-                  {/* Mock UI Header */}
-                  <div className="h-12 border-b border-slate-800 flex items-center px-4 gap-2">
-                    <div className="flex gap-1.5">
-                      <div className="w-3 h-3 rounded-full bg-slate-800"></div>
-                      <div className="w-3 h-3 rounded-full bg-slate-800"></div>
-                    </div>
-                  </div>
-                  {/* Mock UI Body */}
-                  <div className="p-6 grid grid-cols-2 gap-4">
-                     <div className="col-span-2 bg-slate-900 rounded-lg p-4 border border-slate-800">
-                        <div className="flex justify-between items-center mb-4">
-                           <div className="h-4 w-32 bg-slate-800 rounded"></div>
-                           <div className="h-8 w-24 bg-amber-500/20 rounded text-amber-500 text-xs flex items-center justify-center font-bold">Live Status</div>
-                        </div>
-                        <div className="space-y-2">
-                           <div className="h-2 w-full bg-slate-800 rounded"></div>
-                           <div className="h-2 w-2/3 bg-slate-800 rounded"></div>
-                        </div>
-                     </div>
-                     <div className="bg-slate-900 rounded-lg p-4 border border-slate-800 flex flex-col items-center justify-center py-8">
-                        <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 flex items-center justify-center text-amber-500 font-bold mb-2">12K</div>
-                        <div className="text-xs text-slate-500">Asset Shares</div>
-                     </div>
-                     <div className="bg-slate-900 rounded-lg p-4 border border-slate-800 flex flex-col items-center justify-center py-8">
-                        <div className="w-12 h-12 rounded-full border-4 border-blue-500/20 flex items-center justify-center text-blue-500 font-bold mb-2">450</div>
-                        <div className="text-xs text-slate-500">Qualified Leads</div>
-                     </div>
-                  </div>
                 </div>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </section>
-
-      {/* --- SOCIAL PROOF --- */}
-      <section className="py-10 border-y border-slate-900 bg-slate-950/50">
-        <div className="max-w-7xl mx-auto px-6">
-          <p className="text-center text-slate-500 text-sm font-medium mb-8">TRUSTED INFRASTRUCTURE FOR</p>
-          <div className="flex flex-wrap justify-center gap-12 md:gap-24 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
-            {/* Placeholder Logos */}
-            {['Lodha', 'Godrej Properties', 'Prestige', 'Brigade', 'Sobha'].map((brand) => (
-               <div key={brand} className="text-xl font-serif font-bold text-slate-300">{brand}</div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* --- PROBLEM / AGITATION --- */}
-      <section id="problem" className="py-24 bg-slate-950">
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <h2 className="text-3xl md:text-5xl font-bold text-white mb-6">
-            You Have 500 Channel Partners. <br/>
-            <span className="text-slate-500">Why Are Only 10 Selling?</span>
-          </h2>
-          <p className="text-lg text-slate-400 mb-12 leading-relaxed">
-            Most developers rely on the "Pareto Principle"—80% of sales come from 20% of agents. 
-            The rest of your network is untapped potential, sitting idle because they lack the content, 
-            the systems, and the urgency to sell <b>your</b> inventory.
-          </p>
-
-          <div className="grid md:grid-cols-3 gap-8 text-left">
-             <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
-                <div className="w-10 h-10 bg-red-500/10 rounded-lg flex items-center justify-center mb-4">
-                  <LayoutGrid className="text-red-500 w-5 h-5"/>
-                </div>
-                <h3 className="text-white font-bold mb-2">Content Chaos</h3>
-                <p className="text-sm text-slate-400">Agents waiting days for generic brochures that they don't share.</p>
-             </div>
-             <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
-                <div className="w-10 h-10 bg-red-500/10 rounded-lg flex items-center justify-center mb-4">
-                  <Megaphone className="text-red-500 w-5 h-5"/>
-                </div>
-                <h3 className="text-white font-bold mb-2">Zero Visibility</h3>
-                <p className="text-sm text-slate-400">No way to track who is actually pitching your property to clients.</p>
-             </div>
-             <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800">
-                <div className="w-10 h-10 bg-red-500/10 rounded-lg flex items-center justify-center mb-4">
-                  <Users2 className="text-red-500 w-5 h-5"/>
-                </div>
-                <h3 className="text-white font-bold mb-2">Low Engagement</h3>
-                <p className="text-sm text-slate-400">Without competition or gamification, partners lose interest quickly.</p>
              </div>
           </div>
         </div>
       </section>
 
-      {/* --- SOLUTION --- */}
-      <section id="solution" className="py-24 bg-slate-900 relative">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-20">
-             <h2 className="text-3xl md:text-5xl font-bold text-white mb-4">Enter The Partner Activation Ecosystem</h2>
-             <p className="text-slate-400 max-w-2xl mx-auto">We deploy a proprietary, white-labeled infrastructure into your business that gamifies sales and automates marketing for your entire network.</p>
-          </div>
+      {/* --- FEATURES GRID --- */}
+      <section id="features" className="py-32 bg-white relative z-10">
+         <div className="max-w-[1400px] mx-auto px-6">
+            <div className="mb-20 text-center">
+               <span className="text-[#B22B31] font-bold tracking-wider uppercase text-sm bg-red-50 px-3 py-1 rounded-full border border-red-100">Everything You Need</span>
+               <h2 className="text-4xl md:text-5xl font-black text-[#003D6F] mt-4">Built for Growth</h2>
+            </div>
 
-          <div className="space-y-24">
-            
-            {/* Feature 1: Automated Branding */}
-            <div className="flex flex-col md:flex-row items-center gap-12">
-               <div className="flex-1 space-y-6">
-                  <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/20">
-                    <LayoutGrid className="text-slate-900 w-6 h-6" />
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8 auto-rows-[320px]">
+               {/* Card 1 */}
+               <div className="md:col-span-2 lg:col-span-2 row-span-1 bg-white border-2 border-slate-200 p-10 rounded-[2.5rem] shadow-lg shadow-slate-200/50 hover:border-[#F4B429] hover:shadow-2xl hover:shadow-[#003D6F]/10 transition-all group relative overflow-hidden flex flex-col justify-between">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-[#B22B31]/5 to-transparent rounded-full -translate-y-1/2 translate-x-1/2 group-hover:scale-125 transition-transform duration-700"/>
+                  <div className="w-16 h-16 bg-[#B22B31]/10 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-[#B22B31] group-hover:text-white transition-colors duration-300">
+                     <Palette className="w-8 h-8" />
                   </div>
-                  <h3 className="text-3xl font-bold text-white">One Click. Hundreds of Status Updates.</h3>
-                  <p className="text-slate-400 text-lg leading-relaxed">
-                    Your marketing team uploads a creative once. Our system <b className="text-white">instantly personalizes it</b> with the photo, name, and phone number of every single agent in your network. Your project floods WhatsApp, Instagram, and LinkedIn simultaneously.
-                  </p>
-                  <ul className="space-y-3">
-                    <li className="flex items-center gap-3 text-slate-300">
-                      <CheckCircle2 className="w-5 h-5 text-amber-500"/> Instant WhatsApp Status Distribution
-                    </li>
-                    <li className="flex items-center gap-3 text-slate-300">
-                      <CheckCircle2 className="w-5 h-5 text-amber-500"/> Auto-stamping of Agent Details
-                    </li>
-                  </ul>
+                  <div>
+                     <h3 className="text-3xl font-bold text-[#003D6F] mb-3">AI Graphic Studio</h3>
+                     <p className="text-lg text-slate-600 leading-relaxed max-w-md">
+                        Generate professional social media posts and ad creatives in seconds.
+                     </p>
+                  </div>
                </div>
-               <div className="flex-1 bg-slate-950 p-8 rounded-3xl border border-slate-800 relative">
-                  {/* Visual representation of branding */}
-                  <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/5 to-transparent rounded-3xl"/>
-                  <div className="grid grid-cols-2 gap-4 relative z-10">
-                     <div className="bg-slate-800 p-2 rounded-lg opacity-50 scale-90">
-                        <div className="aspect-square bg-slate-700 rounded mb-2"/>
-                        <div className="h-2 bg-slate-600 rounded w-1/2"/>
+
+               {/* Card 2 */}
+               <div className="md:col-span-1 lg:col-span-1 row-span-2 bg-[#003D6F] text-white p-10 rounded-[2.5rem] shadow-xl hover:translate-y-[-5px] transition-all group relative overflow-hidden flex flex-col border-4 border-[#003D6F]">
+                  <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#00284d]"/>
+                  <div className="relative z-10 flex-1">
+                     <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-8 backdrop-blur-sm">
+                        <Megaphone className="w-8 h-8 text-[#F4B429]" />
                      </div>
-                     <div className="bg-slate-800 p-2 rounded-lg border-2 border-amber-500 shadow-xl transform scale-105">
-                        <div className="aspect-square bg-slate-700 rounded mb-2 flex items-end p-2">
-                           <div className="bg-black/60 backdrop-blur-sm p-1 px-2 rounded text-[10px] text-white w-full">
-                             Contact: Agent Rahul
-                           </div>
-                        </div>
-                        <div className="h-2 bg-slate-600 rounded w-full mb-1"/>
-                        <div className="h-2 bg-slate-600 rounded w-2/3"/>
+                     <h3 className="text-3xl font-bold mb-4">One-Click Posting</h3>
+                     <p className="text-blue-200 text-lg leading-relaxed">
+                        Publish to Facebook, Instagram, LinkedIn, and Twitter simultaneously.
+                     </p>
+                  </div>
+                  <div className="relative z-10 mt-8 bg-white/10 rounded-xl p-4 backdrop-blur-md border border-white/10">
+                     <div className="flex gap-2 mb-2">
+                        <div className="w-2 h-2 rounded-full bg-red-400"/>
+                        <div className="w-2 h-2 rounded-full bg-yellow-400"/>
+                        <div className="w-2 h-2 rounded-full bg-green-400"/>
                      </div>
+                     <div className="h-2 w-3/4 bg-white/20 rounded mb-2"/>
+                     <div className="h-2 w-1/2 bg-white/20 rounded"/>
+                  </div>
+               </div>
+
+               {/* Card 3 */}
+               <div className="md:col-span-1 lg:col-span-1 row-span-1 bg-white border-2 border-slate-200 p-10 rounded-[2.5rem] shadow-lg shadow-slate-200/50 hover:border-[#003D6F] transition-all group flex flex-col justify-between">
+                  <div className="w-14 h-14 bg-[#003D6F]/10 rounded-2xl flex items-center justify-center group-hover:bg-[#003D6F] group-hover:text-white transition-colors">
+                     <LayoutGrid className="w-7 h-7" />
+                  </div>
+                  <div>
+                     <h3 className="text-2xl font-bold text-[#003D6F] mb-2">Inventory Sync</h3>
+                     <p className="text-slate-600 font-medium">Update products once, sync everywhere instantly.</p>
+                  </div>
+               </div>
+
+               {/* Card 4 */}
+               <div className="md:col-span-2 lg:col-span-1 row-span-1 bg-white border-2 border-slate-200 p-10 rounded-[2.5rem] shadow-lg shadow-slate-200/50 hover:border-[#003D6F] transition-all group flex flex-col justify-between">
+                  <div className="w-14 h-14 bg-[#003D6F]/10 rounded-2xl flex items-center justify-center group-hover:bg-[#003D6F] group-hover:text-white transition-colors">
+                     <Globe className="w-7 h-7" />
+                  </div>
+                  <div>
+                     <h3 className="text-2xl font-bold text-[#003D6F] mb-2">Automated SEO</h3>
+                     <p className="text-slate-600 font-medium">Rank on Google without hiring an agency.</p>
+                  </div>
+               </div>
+
+               {/* Card 5 */}
+               <div className="md:col-span-2 lg:col-span-2 row-span-1 bg-gradient-to-br from-[#F4B429] to-[#E5A825] p-10 rounded-[2.5rem] shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between border-4 border-[#F4B429]">
+                  <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mb-6 backdrop-blur-sm text-[#003D6F]">
+                     <Sparkles className="w-8 h-8" />
+                  </div>
+                  <div className="text-[#003D6F]">
+                     <h3 className="text-3xl font-black mb-3">High Conversion Pages</h3>
+                     <p className="text-lg font-bold opacity-80 max-w-md leading-snug">
+                        Automatically generate beautiful landing pages designed to turn visitors into customers.
+                     </p>
+                  </div>
+               </div>
+
+               {/* Card 6 */}
+               <div className="md:col-span-1 lg:col-span-1 row-span-1 bg-white border-2 border-slate-200 p-10 rounded-[2.5rem] shadow-lg shadow-slate-200/50 hover:border-[#B22B31] transition-all group flex flex-col justify-between">
+                  <div className="w-14 h-14 bg-[#B22B31]/10 rounded-2xl flex items-center justify-center group-hover:bg-[#B22B31] group-hover:text-white transition-colors">
+                     <Users2 className="w-7 h-7" />
+                  </div>
+                  <div>
+                     <h3 className="text-2xl font-bold text-[#003D6F] mb-2">Integrated CRM</h3>
+                     <p className="text-slate-600 font-medium">Manage leads directly inside AdRolls.</p>
                   </div>
                </div>
             </div>
-
-            {/* Feature 2: Gamification */}
-            <div className="flex flex-col md:flex-row-reverse items-center gap-12">
-               <div className="flex-1 space-y-6">
-                  <div className="w-12 h-12 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                    <Trophy className="text-white w-6 h-6" />
-                  </div>
-                  <h3 className="text-3xl font-bold text-white">Turn Selling Into a Sport.</h3>
-                  <p className="text-slate-400 text-lg leading-relaxed">
-                    We implement a live "XP and Leaderboard" system. Agents earn points for sharing content, logging site visits, and closing deals. Watch your partners fight for the top spot on the weekly leaderboard.
-                  </p>
-               </div>
-               <div className="flex-1 bg-slate-950 p-8 rounded-3xl border border-slate-800">
-                  <div className="space-y-4">
-                     {[1, 2, 3].map((rank) => (
-                       <div key={rank} className="flex items-center gap-4 bg-slate-900 p-4 rounded-xl border border-slate-800">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${rank === 1 ? 'bg-amber-500 text-black' : 'bg-slate-800 text-slate-500'}`}>
-                            {rank}
-                          </div>
-                          <div className="w-10 h-10 rounded-full bg-slate-700" />
-                          <div className="flex-1">
-                            <div className="h-3 w-24 bg-slate-700 rounded mb-1"/>
-                            <div className="h-2 w-16 bg-slate-800 rounded"/>
-                          </div>
-                          <div className="text-amber-500 font-mono text-sm">2,4{rank}0 XP</div>
-                       </div>
-                     ))}
-                  </div>
-               </div>
-            </div>
-
-          </div>
-        </div>
+         </div>
       </section>
 
-      {/* --- META ADS FEATURE --- */}
-      <section className="py-24 bg-slate-950 border-y border-slate-900">
-        <div className="max-w-7xl mx-auto px-6">
-           <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-3xl p-8 md:p-16 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-1/2 h-full bg-indigo-500/10 blur-[100px]"/>
+      {/* --- DEEP DIVE: META ADS --- */}
+      <section id="ads" className="py-32 bg-slate-50 overflow-hidden relative z-10">
+        <div className="max-w-[1400px] mx-auto px-6">
+           <div className="bg-[#003D6F] rounded-[3rem] p-10 md:p-20 relative overflow-hidden shadow-2xl">
+              <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-[#B22B31] blur-[200px] opacity-30 rounded-full translate-x-1/2 -translate-y-1/2 pointer-events-none"/>
+              <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-[#F4B429] blur-[150px] opacity-10 rounded-full -translate-x-1/2 translate-y-1/2 pointer-events-none"/>
               
-              <div className="relative z-10 flex flex-col md:flex-row items-center gap-12">
+              <div className="relative z-10 flex flex-col lg:flex-row items-center gap-16 text-white">
                 <div className="flex-1">
-                  <h3 className="text-3xl font-bold text-white mb-6">Stop Spending. Start Empowering.</h3>
-                  <p className="text-indigo-200 mb-8 text-lg">
-                    Why should you pay for all the visibility? Our ecosystem allows your top partners to launch pre-approved, brand-safe ad campaigns for <b>your project</b> using <b>their budget</b>.
+                  <div className="inline-block px-4 py-2 bg-[#F4B429]/20 rounded-full text-[#F4B429] text-xs font-extrabold tracking-widest uppercase mb-6 backdrop-blur-md border border-[#F4B429]/30">
+                    Premium Feature
+                  </div>
+                  <h3 className="text-4xl md:text-6xl font-black mb-8 leading-tight">
+                    Smarter Ads.<br/>Better Leads.
+                  </h3>
+                  <p className="text-slate-200 mb-10 text-xl leading-relaxed max-w-xl font-medium">
+                    Most small businesses waste money on ads that don't track results. AdRolls uses <b className="text-[#F4B429]">Meta Conversions API (CAPI)</b> to send server-side data directly to Facebook/Instagram. 
                   </p>
-                  <button className="bg-white text-indigo-900 px-6 py-3 rounded-xl font-bold hover:bg-indigo-50 transition-colors">
-                    Explore Decentralized Ads
+                  <ul className="space-y-6 mb-12">
+                     <li className="flex items-center gap-4 text-white text-lg font-medium">
+                        <div className="w-8 h-8 bg-[#F4B429] rounded-full flex items-center justify-center text-[#003D6F] font-bold shadow-lg shadow-[#F4B429]/20">
+                           <CheckCircle2 className="w-5 h-5" />
+                        </div>
+                        <span>Bypass browser cookie blockers</span>
+                     </li>
+                     <li className="flex items-center gap-4 text-white text-lg font-medium">
+                        <div className="w-8 h-8 bg-[#F4B429] rounded-full flex items-center justify-center text-[#003D6F] font-bold shadow-lg shadow-[#F4B429]/20">
+                           <CheckCircle2 className="w-5 h-5" />
+                        </div>
+                        <span>Train AI to find high-intent buyers</span>
+                     </li>
+                  </ul>
+                  <button className="bg-white text-[#003D6F] px-8 py-4 rounded-xl font-bold text-lg hover:bg-[#F4B429] hover:text-[#003D6F] transition-all shadow-xl hover:scale-105">
+                    Start Running AI Ads
                   </button>
                 </div>
-                <div className="flex-1 grid grid-cols-2 gap-4 opacity-80">
-                   <div className="bg-white/5 p-4 rounded-xl backdrop-blur-sm border border-white/10">
-                      <div className="text-xs text-indigo-300 uppercase mb-2">Partner Spend</div>
-                      <div className="text-2xl font-bold text-white">₹12.5L</div>
-                   </div>
-                   <div className="bg-white/5 p-4 rounded-xl backdrop-blur-sm border border-white/10">
-                      <div className="text-xs text-indigo-300 uppercase mb-2">Impressions</div>
-                      <div className="text-2xl font-bold text-white">3.2M</div>
+                
+                <div className="flex-1 w-full max-w-lg">
+                   <div className="bg-white/10 backdrop-blur-xl rounded-[2.5rem] border border-white/20 p-8 shadow-2xl relative">
+                      <div className="absolute -top-10 -right-10 bg-[#B22B31] p-5 rounded-2xl shadow-xl animate-bounce">
+                         <Target className="w-8 h-8 text-white"/>
+                      </div>
+
+                      <div className="flex justify-between items-center mb-8">
+                         <h4 className="font-bold text-white text-xl">Performance</h4>
+                         <span className="px-3 py-1 bg-green-500/20 text-green-300 rounded-full text-xs font-bold border border-green-500/30">+24% Growth</span>
+                      </div>
+                      <div className="space-y-6">
+                         <div className="bg-black/30 p-6 rounded-2xl flex justify-between items-center border border-white/5 backdrop-blur-md">
+                            <div className="flex items-center gap-4">
+                                <div className="bg-[#B22B31]/20 p-3 rounded-xl text-[#B22B31]"><Users2 size={24}/></div>
+                                <div>
+                                  <div className="text-sm text-slate-300 mb-1">Total Leads</div>
+                                  <div className="text-2xl font-black text-white">2,405</div>
+                                </div>
+                            </div>
+                         </div>
+                      </div>
                    </div>
                 </div>
               </div>
@@ -323,89 +578,110 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* --- SERVICE MODEL --- */}
-      <section id="service" className="py-24 bg-slate-950">
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <h2 className="text-3xl md:text-5xl font-bold text-white mb-6">Not Just Platform. Partnership.</h2>
-          <p className="text-lg text-slate-400 mb-12">We don't just hand you a login and walk away. We operate the machine for you.</p>
-          
-          <div className="grid md:grid-cols-3 gap-8">
-             <div className="text-left">
-                <div className="text-amber-500 font-bold text-xl mb-2">01.</div>
-                <h4 className="text-white font-bold text-lg mb-2">We Onboard</h4>
-                <p className="text-slate-500 text-sm">Our team handles the training and activation of your CP network via webinars and offline events.</p>
-             </div>
-             <div className="text-left">
-                <div className="text-amber-500 font-bold text-xl mb-2">02.</div>
-                <h4 className="text-white font-bold text-lg mb-2">We Create</h4>
-                <p className="text-slate-500 text-sm">Our creative strategists design the high-converting assets that get uploaded to the ecosystem.</p>
-             </div>
-             <div className="text-left">
-                <div className="text-amber-500 font-bold text-xl mb-2">03.</div>
-                <h4 className="text-white font-bold text-lg mb-2">We Manage</h4>
-                <p className="text-slate-500 text-sm">We structure the rewards and XP systems that drive maximum agent behavior.</p>
-             </div>
-          </div>
+      {/* --- PRICING SECTION --- */}
+      <section id="pricing" className="py-32 bg-white relative border-t border-slate-200 z-10">
+        <div className="max-w-[1400px] mx-auto px-6">
+           <div className="text-center mb-20">
+              <h2 className="text-4xl md:text-6xl font-black text-[#003D6F] mb-6">Simple, Transparent Pricing</h2>
+              <p className="text-slate-600 text-xl font-medium">Everything you need to grow your business, at a price that makes sense.</p>
+           </div>
+
+           <div className="max-w-xl mx-auto bg-white border-2 border-slate-200 rounded-[3rem] overflow-hidden shadow-2xl shadow-[#003D6F]/10 relative hover:border-[#F4B429] transition-all duration-300 group">
+              <div className="absolute top-0 inset-x-0 h-4 bg-gradient-to-r from-[#003D6F] via-[#B22B31] to-[#F4B429]"></div>
+              
+              <div className="p-12 text-center border-b border-slate-100">
+                 <h3 className="text-xl font-extrabold text-[#003D6F] uppercase tracking-widest mb-4">Starter Plan</h3>
+                 <div className="flex items-baseline justify-center gap-2 mb-6">
+                    <span className="text-lg text-slate-500 font-medium">Starting at</span>
+                    <span className="text-7xl font-black text-[#B22B31]">₹999</span>
+                    <span className="text-slate-500 font-medium">/mo</span>
+                 </div>
+                 <p className="text-slate-500 text-lg font-medium">Perfect for small businesses and solo entrepreneurs.</p>
+              </div>
+
+              <div className="p-12 bg-slate-50/50">
+                 <ul className="space-y-6 mb-10">
+                    {[
+                      "AI Social Media Content & Posting",
+                      "Inventory/Product Management",
+                      "Basic CRM Functionality",
+                      "Meta Ads Manager (Self-Serve)",
+                      "High-Conversion Landing Page"
+                    ].map((feature, i) => (
+                      <li key={i} className="flex items-center gap-4 text-slate-700 text-lg font-bold">
+                         <div className="w-6 h-6 rounded-full bg-[#F4B429]/20 flex items-center justify-center text-[#B22B31] shrink-0">
+                           <CheckCircle2 className="w-4 h-4" />
+                         </div>
+                         {feature}
+                      </li>
+                    ))}
+                 </ul>
+                 
+                 <Link 
+                    href={PARTNER_LOGIN_URL}
+                    className="block w-full py-6 bg-[#003D6F] hover:bg-[#00284d] text-white text-center rounded-2xl font-bold text-xl transition-all shadow-xl shadow-[#003D6F]/20 hover:scale-[1.02]"
+                 >
+                    Get Started Now
+                 </Link>
+                 <p className="text-center text-sm text-slate-400 mt-6 font-medium">No credit card required for demo.</p>
+              </div>
+           </div>
         </div>
       </section>
 
       {/* --- FOOTER / CTA --- */}
-      <section className="py-24 bg-slate-900 border-t border-slate-800">
-        <div className="max-w-3xl mx-auto px-6 text-center">
-          <h2 className="text-4xl md:text-5xl font-bold text-white mb-8 tracking-tight">
-            Your Inventory is Waiting. <br/>
-            Your Partners are Ready.
+      <section className="py-32 bg-slate-50 border-t border-slate-200 z-10 relative">
+        <div className="max-w-4xl mx-auto px-6 text-center">
+          <h2 className="text-5xl md:text-7xl font-black text-[#003D6F] mb-10 tracking-tight leading-none">
+            Ready to Automate <br/><span className="text-[#B22B31]">Your Marketing?</span>
           </h2>
-          <p className="text-slate-400 mb-10 text-lg">
-            Let's build the infrastructure that sells your properties on autopilot.
+          <p className="text-slate-600 mb-12 text-xl font-medium">
+            Join hundreds of small businesses growing faster with AdRolls.
           </p>
           
-          <div className="bg-slate-950 p-2 rounded-2xl inline-flex flex-col sm:flex-row gap-2 border border-slate-800 shadow-2xl">
+          <div className="bg-white p-4 rounded-[2rem] inline-flex flex-col sm:flex-row gap-4 border-2 border-slate-200 shadow-2xl shadow-[#003D6F]/10 w-full max-w-2xl">
              <input 
                type="email" 
-               placeholder="Enter your work email" 
-               className="bg-transparent text-white px-6 py-4 outline-none w-full sm:w-80 placeholder:text-slate-600"
+               placeholder="Enter your email" 
+               className="bg-slate-50 rounded-xl text-[#003D6F] px-8 py-5 outline-none w-full text-lg placeholder:text-slate-400 font-medium border border-transparent focus:border-[#F4B429] transition-all"
              />
-             <button className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-8 py-4 rounded-xl font-bold transition-all whitespace-nowrap">
-               Book Strategy Audit
+             <button className="bg-[#B22B31] hover:bg-[#902227] text-white px-12 py-5 rounded-xl font-bold text-lg transition-all whitespace-nowrap shadow-lg">
+               Start Free Trial
              </button>
           </div>
-          <p className="mt-6 text-xs text-slate-600">
-            Limited slots available for Q3. No commitment required.
-          </p>
         </div>
       </section>
       
       {/* Footer Links */}
-      <footer className="bg-slate-950 py-12 border-t border-slate-900">
-         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 bg-slate-800 rounded flex items-center justify-center">
-                <Building2 className="text-slate-400 w-3 h-3" />
+      <footer className="bg-[#003D6F] py-16 border-t border-[#00284d] text-white relative z-10">
+         <div className="max-w-[1400px] mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                <Rocket className="text-white w-5 h-5" />
               </div>
-              <span className="text-sm font-bold text-slate-500">AdRolls.ai</span>
+              <span className="text-xl font-bold tracking-tight">AdRolls.in</span>
             </div>
             
-            <div className="text-slate-600 text-sm order-3 md:order-2">
+            <div className="text-slate-300 text-sm font-medium order-3 md:order-2">
                &copy; 2024 AdRolls Intelligence Pvt Ltd. All rights reserved.
             </div>
 
-            <div className="flex flex-wrap justify-center gap-6 order-2 md:order-3">
+            <div className="flex flex-wrap justify-center gap-8 order-2 md:order-3">
               <Link
                 href="/privacy-policy"
-                className="text-sm text-slate-500 hover:text-amber-500 transition-colors"
+                className="text-slate-300 hover:text-[#F4B429] font-bold transition-colors"
               >
                 Privacy Policy
               </Link>
               <Link
                 href="/terms-and-conditions"
-                className="text-sm text-slate-500 hover:text-amber-500 transition-colors"
+                className="text-slate-300 hover:text-[#F4B429] font-bold transition-colors"
               >
                 Terms & Conditions
               </Link>
               <Link
                 href="/refund-policy"
-                className="text-sm text-slate-500 hover:text-amber-500 transition-colors"
+                className="text-slate-300 hover:text-[#F4B429] font-bold transition-colors"
               >
                 Refund Policy
               </Link>
