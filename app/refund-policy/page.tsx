@@ -27,16 +27,11 @@ export default function RefundPolicy() {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-white mb-4">2. Refund Policy</h2>
+            <h2 className="text-xl font-bold text-white mb-4">2. No Refund Policy</h2>
             <ul className="list-disc pl-5 space-y-2">
-              <li><strong>Software Fees:</strong> As AdRollsAI is a digital SaaS product, we generally do not offer refunds for partial months or unused time on a subscription once the billing cycle has started.</li>
-              <li><strong>Exceptions:</strong> We may consider a refund request within 7 days of the initial purchase if:
-                <ul className="list-disc pl-5 mt-2 space-y-1 text-slate-400">
-                  <li>The App is technically defective and our support team cannot resolve the issue.</li>
-                  <li>You were charged due to a billing error on our end.</li>
-                </ul>
-              </li>
-              <li><strong>Note:</strong> Regret of purchase or "change of mind" is not grounds for a refund.</li>
+              <li><strong>All Sales Are Final:</strong> As AdRollsAI provides immediate access to digital software and marketing automation tools, <strong>we do not offer refunds</strong> once a subscription has been purchased.</li>
+              <li><strong>No Exceptions:</strong> We do not provide refunds for partial months, unused time, or "change of mind" cancellations. Please ensure the software meets your requirements before purchasing a subscription.</li>
+              <li><strong>Cancellations:</strong> You can cancel your subscription at any time to prevent future charges, but no refunds will be issued for the current billing cycle.</li>
             </ul>
           </section>
 

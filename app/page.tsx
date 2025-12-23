@@ -36,10 +36,11 @@ export default function LandingPage() {
             <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center">
               <Building2 className="text-white w-5 h-5" />
             </div>
-            <span className="text-xl font-bold tracking-tight text-white">AdRolls<span className="text-slate-400">.ai</span></span>
+            <span className="text-xl font-bold tracking-tight text-white">AdRolls<span className="text-slate-400">.in</span></span>
           </div>
           
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
+            {/* UPDATED: Nav links now point to on-page sections */}
             <a href="#problem" className="hover:text-amber-400 transition-colors">The Disconnect</a>
             <a href="#solution" className="hover:text-amber-400 transition-colors">The Ecosystem</a>
             <a href="#service" className="hover:text-amber-400 transition-colors">Managed Service</a>
@@ -47,7 +48,6 @@ export default function LandingPage() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* UPDATED: Partner Login now uses the yellow button styling and 'Request Audit' is removed */}
             <Link 
               href={PARTNER_LOGIN_URL} 
               className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-5 py-2.5 rounded-full text-sm font-bold transition-all active:scale-95 shadow-[0_0_20px_-5px_rgba(245,158,11,0.5)]"
@@ -70,7 +70,7 @@ export default function LandingPage() {
             <div className="flex-1 text-center lg:text-left">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-amber-500 text-xs font-bold uppercase tracking-wider mb-6">
                 <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"/>
-                For Developers & Master Brokers
+                Real Estate Marketing Automation Software
               </div>
               
               <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white leading-[1.1] mb-6">
@@ -80,17 +80,28 @@ export default function LandingPage() {
                 </span>
               </h1>
               
-              <p className="text-lg text-slate-400 mb-8 leading-relaxed max-w-2xl mx-auto lg:mx-0">
-                Transform your dormant Channel Partner network into a hyper-active, 24/7 digital sales force. We provide the infrastructure and strategy to dominate the market using the people you already have.
+              <p className="text-lg text-slate-400 mb-6 leading-relaxed max-w-2xl mx-auto lg:mx-0">
+                A B2B SaaS platform that transforms your dormant Channel Partner network into a hyper-active, 24/7 digital sales force. Automate your marketing distribution today.
               </p>
+
+              {/* Pricing Mention */}
+              <div className="mb-8 inline-block bg-slate-900/50 border border-slate-800 rounded-lg px-4 py-2">
+                 <p className="text-slate-300 font-medium">
+                    Plans starting from <span className="text-amber-500 font-bold">₹999/-</span> per month
+                 </p>
+              </div>
               
               <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
-                <button className="w-full sm:w-auto px-8 py-4 bg-white text-slate-950 rounded-xl font-bold hover:bg-slate-200 transition-all flex items-center justify-center gap-2">
-                  Request Network Audit <ArrowRight className="w-4 h-4"/>
-                </button>
-                <button className="w-full sm:w-auto px-8 py-4 bg-slate-900 border border-slate-800 text-white rounded-xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2">
-                  <Play className="w-4 h-4 fill-current"/> See How It Works
-                </button>
+                <Link href={PARTNER_LOGIN_URL} className="w-full sm:w-auto">
+                  <button className="w-full px-8 py-4 bg-white text-slate-950 rounded-xl font-bold hover:bg-slate-200 transition-all flex items-center justify-center gap-2">
+                    Get Started Now <ArrowRight className="w-4 h-4"/>
+                  </button>
+                </Link>
+                <Link href={PARTNER_LOGIN_URL} className="w-full sm:w-auto">
+                  <button className="w-full px-8 py-4 bg-slate-900 border border-slate-800 text-white rounded-xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2">
+                    <Play className="w-4 h-4 fill-current"/> See Software Demo
+                  </button>
+                </Link>
               </div>
 
               <div className="mt-10 flex items-center justify-center lg:justify-start gap-6 text-sm text-slate-500 font-medium">
@@ -152,19 +163,6 @@ export default function LandingPage() {
               </div>
             </div>
 
-          </div>
-        </div>
-      </section>
-
-      {/* --- SOCIAL PROOF --- */}
-      <section className="py-10 border-y border-slate-900 bg-slate-950/50">
-        <div className="max-w-7xl mx-auto px-6">
-          <p className="text-center text-slate-500 text-sm font-medium mb-8">TRUSTED INFRASTRUCTURE FOR</p>
-          <div className="flex flex-wrap justify-center gap-12 md:gap-24 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
-            {/* Placeholder Logos */}
-            {['Lodha', 'Godrej Properties', 'Prestige', 'Brigade', 'Sobha'].map((brand) => (
-               <div key={brand} className="text-xl font-serif font-bold text-slate-300">{brand}</div>
-            ))}
           </div>
         </div>
       </section>
@@ -293,7 +291,8 @@ export default function LandingPage() {
       </section>
 
       {/* --- META ADS FEATURE --- */}
-      <section className="py-24 bg-slate-950 border-y border-slate-900">
+      {/* UPDATED: Added ID for navigation target and removed risky financial stats */}
+      <section id="results" className="py-24 bg-slate-950 border-y border-slate-900">
         <div className="max-w-7xl mx-auto px-6">
            <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-3xl p-8 md:p-16 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-1/2 h-full bg-indigo-500/10 blur-[100px]"/>
@@ -304,18 +303,24 @@ export default function LandingPage() {
                   <p className="text-indigo-200 mb-8 text-lg">
                     Why should you pay for all the visibility? Our ecosystem allows your top partners to launch pre-approved, brand-safe ad campaigns for <b>your project</b> using <b>their budget</b>.
                   </p>
-                  <button className="bg-white text-indigo-900 px-6 py-3 rounded-xl font-bold hover:bg-indigo-50 transition-colors">
-                    Explore Decentralized Ads
-                  </button>
+                  
+                  {/* UPDATED: Button now points to the app/login */}
+                  <Link href={PARTNER_LOGIN_URL}>
+                    <button className="bg-white text-indigo-900 px-6 py-3 rounded-xl font-bold hover:bg-indigo-50 transition-colors">
+                      Explore Decentralized Ads
+                    </button>
+                  </Link>
                 </div>
+                
                 <div className="flex-1 grid grid-cols-2 gap-4 opacity-80">
+                   {/* UPDATED: Removed 'Partner Spend' and 'Impressions' to avoid payment gateway audit issues */}
                    <div className="bg-white/5 p-4 rounded-xl backdrop-blur-sm border border-white/10">
-                      <div className="text-xs text-indigo-300 uppercase mb-2">Partner Spend</div>
-                      <div className="text-2xl font-bold text-white">₹12.5L</div>
+                      <div className="text-xs text-indigo-300 uppercase mb-2">Setup Time</div>
+                      <div className="text-2xl font-bold text-white">Instant</div>
                    </div>
                    <div className="bg-white/5 p-4 rounded-xl backdrop-blur-sm border border-white/10">
-                      <div className="text-xs text-indigo-300 uppercase mb-2">Impressions</div>
-                      <div className="text-2xl font-bold text-white">3.2M</div>
+                      <div className="text-xs text-indigo-300 uppercase mb-2">Optimization</div>
+                      <div className="text-2xl font-bold text-white">AI Driven</div>
                    </div>
                 </div>
               </div>
@@ -361,14 +366,11 @@ export default function LandingPage() {
           </p>
           
           <div className="bg-slate-950 p-2 rounded-2xl inline-flex flex-col sm:flex-row gap-2 border border-slate-800 shadow-2xl">
-             <input 
-               type="email" 
-               placeholder="Enter your work email" 
-               className="bg-transparent text-white px-6 py-4 outline-none w-full sm:w-80 placeholder:text-slate-600"
-             />
-             <button className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-8 py-4 rounded-xl font-bold transition-all whitespace-nowrap">
-               Book Strategy Audit
-             </button>
+             <Link href={PARTNER_LOGIN_URL} className="w-full">
+               <button className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 px-12 py-4 rounded-xl font-bold transition-all whitespace-nowrap">
+                 Start Free Trial
+               </button>
+             </Link>
           </div>
           <p className="mt-6 text-xs text-slate-600">
             Limited slots available for Q3. No commitment required.
@@ -383,7 +385,7 @@ export default function LandingPage() {
               <div className="w-6 h-6 bg-slate-800 rounded flex items-center justify-center">
                 <Building2 className="text-slate-400 w-3 h-3" />
               </div>
-              <span className="text-sm font-bold text-slate-500">AdRolls.ai</span>
+              <span className="text-sm font-bold text-slate-500">AdRolls.in</span>
             </div>
             
             <div className="text-slate-600 text-sm order-3 md:order-2">
