@@ -380,37 +380,71 @@ export default function LandingPage() {
       
       {/* Footer Links */}
       <footer className="bg-slate-950 py-12 border-t border-slate-900">
-         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 bg-slate-800 rounded flex items-center justify-center">
-                <Building2 className="text-slate-400 w-3 h-3" />
-              </div>
-              <span className="text-sm font-bold text-slate-500">AdRolls.in</span>
-            </div>
-            
-            <div className="text-slate-600 text-sm order-3 md:order-2">
-               &copy; 2024 AdRolls Intelligence Pvt Ltd. All rights reserved.
+         <div className="max-w-7xl mx-auto px-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
+               {/* Brand Column */}
+               <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center">
+                      <Building2 className="text-slate-400 w-5 h-5" />
+                    </div>
+                    <span className="text-lg font-bold text-white">AdRolls.in</span>
+                  </div>
+                  <p className="text-sm text-slate-500 max-w-xs">
+                    Accelerating project sales velocity with automated partner marketing and decentralized ads.
+                  </p>
+               </div>
+
+               {/* Contact Info Column */}
+               <div className="space-y-4">
+                  <h4 className="text-white font-bold text-sm uppercase tracking-wider">Contact Us</h4>
+                  <ul className="space-y-3 text-sm text-slate-500">
+                     <li className="flex items-center gap-3">
+                        <span className="text-amber-500">Phone:</span>
+                        <a href="tel:+918288835235" className="hover:text-white transition-colors">+91-82888 35235</a>
+                     </li>
+                     <li className="flex items-center gap-3">
+                        <span className="text-amber-500">Email:</span>
+                        <a href="mailto:adrollsai@gmail.com" className="hover:text-white transition-colors">adrollsai@gmail.com</a>
+                     </li>
+                  </ul>
+               </div>
+
+               {/* Address Column */}
+               <div className="space-y-4">
+                  <h4 className="text-white font-bold text-sm uppercase tracking-wider">Office Address</h4>
+                  <p className="text-sm text-slate-500 leading-relaxed">
+                     392, Gopal Singh Street,<br />
+                     Sri Muktsar Sahib, Punjab 152026
+                  </p>
+               </div>
             </div>
 
-            <div className="flex flex-wrap justify-center gap-6 order-2 md:order-3">
-              <Link
-                href="/privacy-policy"
-                className="text-sm text-slate-500 hover:text-amber-500 transition-colors"
-              >
-                Privacy Policy
-              </Link>
-              <Link
-                href="/terms-and-conditions"
-                className="text-sm text-slate-500 hover:text-amber-500 transition-colors"
-              >
-                Terms & Conditions
-              </Link>
-              <Link
-                href="/refund-policy"
-                className="text-sm text-slate-500 hover:text-amber-500 transition-colors"
-              >
-                Refund Policy
-              </Link>
+            <div className="pt-8 border-t border-slate-900 flex flex-col md:flex-row justify-between items-center gap-6">
+               <div className="text-slate-600 text-sm order-3 md:order-2">
+                  &copy; 2024 Rahul Chopra. All rights reserved.
+               </div>
+
+               <div className="flex flex-wrap justify-center gap-6 order-2 md:order-3">
+                  <Link
+                     href="/privacy-policy"
+                     className="text-sm text-slate-500 hover:text-amber-500 transition-colors"
+                  >
+                     Privacy Policy
+                  </Link>
+                  <Link
+                     href="/terms-and-conditions"
+                     className="text-sm text-slate-500 hover:text-amber-500 transition-colors"
+                  >
+                     Terms & Conditions
+                  </Link>
+                  <Link
+                     href="/refund-policy"
+                     className="text-sm text-slate-500 hover:text-amber-500 transition-colors"
+                  >
+                     Refund Policy
+                  </Link>
+               </div>
             </div>
          </div>
       </footer>
