@@ -90,6 +90,39 @@ export type Database = {
           },
         ]
       }
+      calls: {
+        Row: {
+          created_at: string
+          exotel_call_sid: string | null
+          id: string
+          name: string
+          notes: string | null
+          phone_number: string
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          exotel_call_sid?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          phone_number: string
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          exotel_call_sid?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          phone_number?: string
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       daily_drafts: {
         Row: {
           caption: string | null
