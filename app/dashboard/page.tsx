@@ -1,17 +1,9 @@
-// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/dashboard/page.tsx
-
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Share2, Image as ImageIcon, Link as LinkIcon, Filter, Check } from 'lucide-react'
+import { Plus, Search, X, Loader2, Share2, Image as ImageIcon, Link as LinkIcon, Filter, MoreHorizontal } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
-
-// --- Helper for Price Parsing ---
-const parsePrice = (priceStr: string | null) => {
-  if (!priceStr) return 0
-  return parseInt(priceStr.replace(/[^0-9]/g, '') || '0')
-}
 
 type Property = {
   id: string
@@ -26,9 +18,7 @@ type Property = {
   user_id: string 
 }
 
-const PROPERTY_TYPES = ['Residential', 'Commercial', 'Plots']
-
-export default function InventoryPage() {
+export default function ProductsPage() {
   const supabase = createClient()
   const router = useRouter()
   
@@ -43,9 +33,6 @@ export default function InventoryPage() {
 
   // Filter State
   const [searchQuery, setSearchQuery] = useState('')
-  const [minPrice, setMinPrice] = useState('')
-  const [maxPrice, setMaxPrice] = useState('')
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [showFilters, setShowFilters] = useState(false)
   
   // UI State
@@ -53,13 +40,10 @@ export default function InventoryPage() {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   
-  // Form State
+  // Form State - Simplified for Generic Business
   const [newProp, setNewProp] = useState({ 
     title: '', 
-    address: '', 
-    price: '', 
-    description: '',
-    property_type: 'Residential' // Default
+    description: ''
   })
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
@@ -90,7 +74,7 @@ export default function InventoryPage() {
       if (data) setProperties(data)
 
     } catch (error) {
-      console.error("Error loading inventory:", error)
+      console.error("Error loading products:", error)
     } finally {
       setLoading(false)
     }
@@ -114,8 +98,9 @@ export default function InventoryPage() {
   }
 
   const handleAddProperty = async () => {
-    if (!newProp.address || !newProp.price || !newProp.title) {
-        alert("Please fill in Title, Address and Price.")
+    // Simplified Validation
+    if (!newProp.title) {
+        alert("Please enter a Product/Service Name.")
         return
     }
     setIsSubmitting(true)
@@ -138,16 +123,18 @@ export default function InventoryPage() {
         const results = await Promise.all(uploadPromises)
         uploadedUrls.push(...results)
       } else {
+          // Placeholder if no image (though typically products have images)
           uploadedUrls.push(`https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newProp.title)}`)
       }
 
       const { error } = await supabase.from('properties').insert({
           user_id: user.id,
           title: newProp.title,
-          address: newProp.address,
-          price: newProp.price,
           description: newProp.description,
-          property_type: newProp.property_type,
+          // Generic Defaults for DB schema requirements
+          address: '', 
+          price: '', 
+          property_type: 'Generic', 
           status: 'Active',
           image_url: uploadedUrls[0],
           images: uploadedUrls
@@ -157,59 +144,45 @@ export default function InventoryPage() {
 
       await fetchProperties()
       setShowAddModal(false)
-      setNewProp({ title: '', address: '', price: '', description: '', property_type: 'Residential' })
+      setNewProp({ title: '', description: '' })
       setSelectedFiles([])
       setPreviews([])
 
     } catch (error: any) {
-      alert('Error adding property: ' + error.message)
+      alert('Error adding product: ' + error.message)
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const toggleFilterType = (type: string) => {
-    setSelectedTypes(prev => 
-      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
-    )
-  }
-
   const handleCopyFilteredLink = () => {
     if (!currentUserId) return
     const params = new URLSearchParams()
-    if (minPrice) params.set('min', minPrice)
-    if (maxPrice) params.set('max', maxPrice)
     if (searchQuery) params.set('q', searchQuery)
-    if (selectedTypes.length > 0) params.set('types', selectedTypes.join(','))
     
     const shareUrl = `${window.location.origin}/shared/${currentUserId}?${params.toString()}`
     navigator.clipboard.writeText(shareUrl)
     alert("✅ Link Copied!")
   }
 
-  /**
-   * UPDATED SHARE FUNCTION
-   * Fixed TypeScript error by using strict type checking for navigator.canShare
-   */
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
-    if (isSharingId) return // Prevent double clicks
+    if (isSharingId) return 
 
     setIsSharingId(prop.id)
 
     try {
       // 1. Prepare Description
-      const shareTitle = `🏡 ${prop.title}`
-      const shareText = `${shareTitle}\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description || ''}`
+      const shareTitle = `${prop.title}`
+      const shareText = `${shareTitle}\n\n${prop.description || ''}`
 
       // 2. Prepare Images
       let imageUrls = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url];
       imageUrls = imageUrls.slice(0, 10);
 
-      // 3. Fetch Blobs and Create Files
+      // 3. Fetch Blobs
       const filesArray: File[] = [];
 
-      // FIX: Use typeof check to satisfy TypeScript and runtime safety
       if (typeof navigator.canShare === 'function') {
         try {
             await Promise.all(imageUrls.map(async (url, index) => {
@@ -217,7 +190,7 @@ export default function InventoryPage() {
                 const blob = await response.blob();
                 const mimeType = blob.type || 'image/jpeg';
                 const ext = mimeType.split('/')[1] || 'jpg';
-                const file = new File([blob], `property_${prop.id}_${index}.${ext}`, { type: mimeType });
+                const file = new File([blob], `product_${prop.id}_${index}.${ext}`, { type: mimeType });
                 filesArray.push(file);
             }));
         } catch (fetchErr) {
@@ -226,7 +199,6 @@ export default function InventoryPage() {
       }
 
       // 4. Execute Share
-      // FIX: Use typeof check here as well
       if (filesArray.length > 0 && typeof navigator.canShare === 'function' && navigator.canShare({ files: filesArray })) {
         await navigator.share({
             files: filesArray,
@@ -234,7 +206,6 @@ export default function InventoryPage() {
             text: shareText
         });
       } else {
-        // Fallback
         if (navigator.share) {
             await navigator.share({ 
                 title: shareTitle, 
@@ -253,18 +224,11 @@ export default function InventoryPage() {
     }
   }
 
-  // --- FILTER LOGIC ---
+  // --- FILTER LOGIC (Simplified) ---
   const filteredProperties = properties.filter(p => {
-    const priceVal = parsePrice(p.price)
-    const min = minPrice ? parseInt(minPrice) : 0
-    const max = maxPrice ? parseInt(maxPrice) : Infinity
-    
-    const matchesType = selectedTypes.length === 0 || (p.property_type && selectedTypes.includes(p.property_type))
-    const matchesPrice = priceVal >= min && priceVal <= max
     const matchesSearch = p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          p.address.toLowerCase().includes(searchQuery.toLowerCase())
-    
-    return matchesPrice && matchesSearch && matchesType
+                          p.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    return matchesSearch
   })
 
   // --- RENDER ---
@@ -277,12 +241,12 @@ export default function InventoryPage() {
       {/* Header */}
       <div className="flex justify-between items-end mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Inventory</h1>
-          <p className="text-slate-500 text-xs mt-1">Manage your active listings</p>
+          <h1 className="text-2xl font-bold text-slate-900">Products & Services</h1>
+          <p className="text-slate-500 text-xs mt-1">Manage your catalog</p>
         </div>
         <div className="flex gap-2">
             <button onClick={() => setShowFilters(!showFilters)} className={`p-3 rounded-full shadow-md active:scale-95 transition-transform ${showFilters ? 'bg-slate-800 text-white' : 'bg-white text-slate-700'}`}>
-              <Filter size={20} />
+              <MoreHorizontal size={20} />
             </button>
             <button onClick={() => setShowAddModal(true)} className="bg-primary hover:bg-blue-200 text-primary-text p-3 rounded-full shadow-md active:scale-95 transition-transform">
               <Plus size={20} strokeWidth={3} />
@@ -290,40 +254,11 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* FILTER BAR */}
+      {/* OPTIONS BAR */}
       {showFilters && (
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-4 animate-in slide-in-from-top-2 space-y-3">
-            <div className="flex gap-3">
-                <div className="flex-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Min Price</label>
-                    <input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="0" className="w-full bg-slate-50 p-2 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" />
-                </div>
-                <div className="flex-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Max Price</label>
-                    <input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="Any" className="w-full bg-slate-50 p-2 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" />
-                </div>
-            </div>
-
-            <div>
-               <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Property Type</label>
-               <div className="flex gap-2 flex-wrap">
-                 {PROPERTY_TYPES.map(type => {
-                   const isSelected = selectedTypes.includes(type)
-                   return (
-                     <button 
-                       key={type} 
-                       onClick={() => toggleFilterType(type)}
-                       className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 ${isSelected ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}
-                     >
-                       {type} {isSelected && <Check size={12} />}
-                     </button>
-                   )
-                 })}
-               </div>
-            </div>
-
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-4 animate-in slide-in-from-top-2">
             <button onClick={handleCopyFilteredLink} className="w-full bg-blue-50 text-blue-600 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform border border-blue-100">
-                <LinkIcon size={14} /> Copy Link for Client
+                <LinkIcon size={14} /> Copy Public Link
             </button>
         </div>
       )}
@@ -335,40 +270,39 @@ export default function InventoryPage() {
           type="text" 
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search properties..." 
+          placeholder="Search products..." 
           className="w-full bg-white border-none py-3 pl-10 pr-4 rounded-xl shadow-sm text-sm text-slate-700 focus:ring-2 focus:ring-primary outline-none" 
         />
       </div>
 
       {/* List */}
       <div className="flex flex-col gap-4">
-        {filteredProperties.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">No properties found.</div> : (
+        {filteredProperties.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">No products found.</div> : (
           filteredProperties.map((prop) => (
             <div 
               key={prop.id} 
               onClick={() => setSelectedProperty(prop)}
               className="bg-white p-3 rounded-[1.5rem] shadow-sm border border-slate-100 relative group cursor-pointer active:scale-95 transition-transform"
             >
-              <div className="relative h-40 w-full rounded-2xl overflow-hidden bg-slate-100 mb-3">
-                <img src={prop.image_url} alt="Property" className="w-full h-full object-cover" />
+              <div className="relative h-48 w-full rounded-2xl overflow-hidden bg-slate-100 mb-3">
+                <img src={prop.image_url} alt="Product" className="w-full h-full object-cover" />
                 <div className="absolute top-3 left-3 flex gap-1">
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-white/90 text-slate-700 backdrop-blur-sm">{prop.status}</span>
-                    {prop.property_type && <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-slate-900/80 text-white backdrop-blur-sm">{prop.property_type}</span>}
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-white/90 text-slate-700 backdrop-blur-sm">
+                      {prop.status}
+                    </span>
                 </div>
               </div>
-              <div className="px-1 pb-1 flex justify-between items-start">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-800">{prop.title || 'Untitled'}</h3>
-                  <p className="text-sm font-bold text-slate-900 mt-0.5">{prop.price}</p>
-                  <div className="flex items-center gap-1.5 text-slate-500 mt-1">
-                    <MapPin size={14} />
-                    <span className="text-xs font-medium truncate">{prop.address}</span>
-                  </div>
+              <div className="px-2 pb-1 flex justify-between items-start">
+                <div className="flex-1 pr-2">
+                  <h3 className="text-lg font-bold text-slate-800 leading-tight">{prop.title || 'Untitled'}</h3>
+                  <p className="text-xs text-slate-500 mt-2 line-clamp-2 leading-relaxed">
+                    {prop.description || 'No description provided.'}
+                  </p>
                 </div>
                 <button 
                     onClick={(e) => handleNativeShare(e, prop)} 
                     disabled={isSharingId === prop.id}
-                    className="bg-green-50 text-green-600 p-3 rounded-full hover:bg-green-100 transition-colors active:scale-90"
+                    className="bg-green-50 text-green-600 p-3 rounded-full hover:bg-green-100 transition-colors active:scale-90 flex-shrink-0"
                 >
                   {isSharingId === prop.id ? <Loader2 size={20} className="animate-spin"/> : <Share2 size={20} />}
                 </button>
@@ -383,37 +317,46 @@ export default function InventoryPage() {
         <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">New Listing</h2>
+              <h2 className="text-xl font-bold text-slate-800">Add Product</h2>
               <button onClick={() => setShowAddModal(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
             </div>
             <div className="space-y-4">
-              <div onClick={() => fileInputRef.current?.click()} className="w-full h-32 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 transition-colors relative overflow-hidden">
-                  <ImageIcon size={24} className="text-slate-400 mb-2"/>
-                  <span className="text-xs font-bold text-slate-400 uppercase">Add Photos</span>
+              {/* Image Picker */}
+              <div onClick={() => fileInputRef.current?.click()} className="w-full h-40 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 transition-colors relative overflow-hidden group">
+                  <ImageIcon size={32} className="text-slate-400 mb-2 group-hover:scale-110 transition-transform"/>
+                  <span className="text-xs font-bold text-slate-400 uppercase">Upload Photos</span>
                   <input type="file" multiple ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
               </div>
-              {previews.length > 0 && <div className="flex gap-2 overflow-x-auto pb-2">{previews.map((src, i) => <img key={i} src={src} className="w-16 h-16 rounded-lg object-cover border border-slate-100" />)}</div>}
               
-              <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Type</label>
-                  <div className="flex gap-2">
-                      {PROPERTY_TYPES.map(type => (
-                          <button 
-                            key={type}
-                            onClick={() => setNewProp({...newProp, property_type: type})}
-                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${newProp.property_type === type ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-500 border-slate-50'}`}
-                          >
-                              {type}
-                          </button>
-                      ))}
-                  </div>
-              </div>
-
-              <input type="text" value={newProp.title} onChange={(e) => setNewProp({...newProp, title: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Title" />
-              <input type="text" value={newProp.address} onChange={(e) => setNewProp({...newProp, address: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Address" />
-              <input type="text" value={newProp.price} onChange={(e) => setNewProp({...newProp, price: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Price" />
-              <textarea value={newProp.description} onChange={(e) => setNewProp({...newProp, description: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Description..." rows={3} />
-              <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold">{isSubmitting ? 'Saving...' : 'Save'}</button>
+              {/* Previews */}
+              {previews.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                  {previews.map((src, i) => (
+                    <img key={i} src={src} className="w-20 h-20 rounded-lg object-cover border border-slate-100 flex-shrink-0" />
+                  ))}
+                </div>
+              )}
+              
+              {/* Simple Inputs */}
+              <input 
+                type="text" 
+                value={newProp.title} 
+                onChange={(e) => setNewProp({...newProp, title: e.target.value})} 
+                className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none font-bold text-slate-700" 
+                placeholder="Product / Service Name" 
+              />
+              
+              <textarea 
+                value={newProp.description} 
+                onChange={(e) => setNewProp({...newProp, description: e.target.value})} 
+                className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" 
+                placeholder="Description, features, details..." 
+                rows={5} 
+              />
+              
+              <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all">
+                {isSubmitting ? 'Saving...' : 'Save Product'}
+              </button>
             </div>
           </div>
         </div>
@@ -423,17 +366,22 @@ export default function InventoryPage() {
       {selectedProperty && (
         <div className="fixed inset-0 z-[90] bg-white flex flex-col animate-in slide-in-from-bottom-10">
            <div className="absolute top-4 left-4 z-10"><button onClick={() => setSelectedProperty(null)} className="bg-white/80 backdrop-blur-md p-3 rounded-full shadow-sm text-slate-900"><X size={24} /></button></div>
-           <div className="h-[45vh] bg-slate-100 w-full overflow-x-auto flex snap-x snap-mandatory scrollbar-hide">{(selectedProperty.images || [selectedProperty.image_url]).map((img, i) => <img key={i} src={img} className="w-full h-full object-cover flex-shrink-0 snap-center" />)}</div>
-           <div className="flex-1 p-6 overflow-y-auto bg-white -mt-6 rounded-t-[2rem] relative z-0">
-              <div className="flex justify-between items-start">
-                  <div>
-                    <h2 className="text-2xl font-bold text-slate-900">{selectedProperty.title}</h2>
-                    <p className="text-lg font-bold text-primary-text mt-1">{selectedProperty.price}</p>
-                  </div>
-                  {selectedProperty.property_type && <span className="px-3 py-1 bg-slate-100 rounded-full text-xs font-bold text-slate-500">{selectedProperty.property_type}</span>}
+           
+           <div className="h-[50vh] bg-slate-100 w-full overflow-x-auto flex snap-x snap-mandatory scrollbar-hide">
+             {(selectedProperty.images || [selectedProperty.image_url]).map((img, i) => (
+               <img key={i} src={img} className="w-full h-full object-cover flex-shrink-0 snap-center" />
+             ))}
+           </div>
+           
+           <div className="flex-1 p-8 overflow-y-auto bg-white -mt-8 rounded-t-[2.5rem] relative z-0 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
+              <div className="mb-6">
+                <h2 className="text-3xl font-black text-slate-900 leading-tight mb-2">{selectedProperty.title}</h2>
+                <div className="w-16 h-1 bg-primary rounded-full"></div>
               </div>
-              <div className="flex items-center gap-2 text-slate-500 my-4"><MapPin size={18} /><span className="text-sm">{selectedProperty.address}</span></div>
-              <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">{selectedProperty.description}</p>
+              
+              <p className="text-slate-600 text-base leading-relaxed whitespace-pre-line">
+                {selectedProperty.description}
+              </p>
            </div>
         </div>
       )}
