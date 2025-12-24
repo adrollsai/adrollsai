@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutGrid, Sparkles, Grid3X3, MessageCircle, User, Zap, Users } from 'lucide-react'
+import { LayoutGrid, Sparkles, Grid3X3, MessageCircle, User, Zap, Users, Phone } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
@@ -13,6 +13,8 @@ export default function BottomNav() {
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
     { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
+    // Added AI Calling tab ensuring key is 'path' to match others
+    { name: 'AI Calling', icon: Phone, path: '/dashboard/calling' },
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
   ]
 
