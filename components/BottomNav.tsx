@@ -9,7 +9,7 @@ export default function BottomNav() {
 
   const navItems = [
     { name: 'Inventory', icon: LayoutGrid, path: '/dashboard' },
-    // { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
+    { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
     { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
