@@ -8,7 +8,7 @@ import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { useOrganization } from '@/components/OrganizationWrapper'
-
+// import DistributeManager from '@/components/DistributeManager'
 // --- Types ---
 type Configuration = { name: string; size: string; price: string }
 

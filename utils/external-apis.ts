@@ -513,7 +513,8 @@ export async function sendWhatsAppMessage(
     phoneNumberId: string, 
     to: string, 
     templateName: string, 
-    languageCode: string = "en_US"
+    languageCode: string = "en_US",
+    components?: any[] // <--- ADD THIS ARGUMENT
   ): Promise<any> {
       try {
           const response = await fetch(`${FACEBOOK_GRAPH_URL}/${phoneNumberId}/messages`, {
@@ -531,7 +532,8 @@ export async function sendWhatsAppMessage(
                       name: templateName, 
                       language: { 
                           code: languageCode 
-                      } 
+                      },
+                      components: components || [] // <--- ADD THIS TO PAYLOAD
                   }
               }),
           });
@@ -540,9 +542,8 @@ export async function sendWhatsAppMessage(
           
           if (!response.ok) {
                console.error("WhatsApp Template Error Response:", JSON.stringify(data, null, 2));
-               // Specific error handling for test numbers
                if (data.error?.code === 133010) {
-                   throw new Error("Meta Restriction (#133010): The recipient number is not in your Allowed Test Users list. Please verify it in the App Dashboard.");
+                   throw new Error("Meta Restriction (#133010): The recipient number is not in your Allowed Test Users list.");
                }
                throw new Error(`WhatsApp Template Error: ${data.error?.message || "Unknown error"}`);
           }
