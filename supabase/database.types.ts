@@ -226,6 +226,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean | null
+          layout_config: Json | null
           property_id: string
           type: string | null
           url: string
@@ -235,6 +236,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean | null
+          layout_config?: Json | null
           property_id: string
           type?: string | null
           url: string
@@ -244,6 +246,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean | null
+          layout_config?: Json | null
           property_id?: string
           type?: string | null
           url?: string
