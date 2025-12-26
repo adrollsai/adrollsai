@@ -19,6 +19,8 @@ export default function BottomNav() {
     // Show Ads tab if user is super_user, admin, or agent
     ...(['super_user', 'admin', 'agent'].includes(userRole || '') ? [{ name: 'Ads', icon: Zap, path: '/dashboard/ads' }] : []),
     
+    // Added WhatsApp / Agents Tab here
+    { name: 'Agents', icon: MessageCircle, path: '/dashboard/whatsapp' },
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
   ]

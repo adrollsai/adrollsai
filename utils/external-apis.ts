@@ -452,3 +452,103 @@ export async function fetchFacebookPixels(accessToken: string, adAccountId: stri
         throw new Error(`Failed to fetch Pixels: ${e.message}`);
     }
 }
+
+// ==========================================
+//           WHATSAPP FUNCTIONS
+// ==========================================
+
+/**
+ * 11. Send WhatsApp Message (Text)
+ * Good for replying to users within the 24h window.
+ */
+export async function sendWhatsAppMessage(
+    accessToken: string, 
+    phoneNumberId: string, 
+    to: string, 
+    text: string
+  ): Promise<any> {
+      try {
+          const response = await fetch(`${FACEBOOK_GRAPH_URL}/${phoneNumberId}/messages`, {
+              method: 'POST',
+              headers: {
+                  'Authorization': `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                  messaging_product: "whatsapp",
+                  recipient_type: "individual",
+                  to: to,
+                  type: "text",
+                  text: { 
+                      preview_url: false,
+                      body: text 
+                  }
+              }),
+          });
+  
+          const data = await response.json();
+          
+          if (!response.ok) {
+              // Log full error for debugging
+              console.error("WhatsApp API Error Response:", JSON.stringify(data, null, 2));
+              throw new Error(`WhatsApp API Error: ${data.error?.message || response.statusText}`);
+          }
+          
+          return data;
+      } catch (e: any) {
+          throw new Error(`Failed to send WhatsApp message: ${e.message}`);
+      }
+  }
+  
+  /**
+   * 12. Send WhatsApp Template (NEW)
+   * USE THIS for the first message to a user.
+   * Templates are the ONLY way to open a conversation with a customer
+   * who hasn't messaged you first.
+   * * @param templateName - The name of the approved template (e.g., "hello_world")
+   * @param languageCode - The language code (default "en_US")
+   */
+  export async function sendWhatsAppTemplate(
+    accessToken: string, 
+    phoneNumberId: string, 
+    to: string, 
+    templateName: string, 
+    languageCode: string = "en_US"
+  ): Promise<any> {
+      try {
+          const response = await fetch(`${FACEBOOK_GRAPH_URL}/${phoneNumberId}/messages`, {
+              method: 'POST',
+              headers: {
+                  'Authorization': `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                  messaging_product: "whatsapp",
+                  recipient_type: "individual",
+                  to: to,
+                  type: "template",
+                  template: { 
+                      name: templateName, 
+                      language: { 
+                          code: languageCode 
+                      } 
+                  }
+              }),
+          });
+  
+          const data = await response.json();
+          
+          if (!response.ok) {
+               console.error("WhatsApp Template Error Response:", JSON.stringify(data, null, 2));
+               // Specific error handling for test numbers
+               if (data.error?.code === 133010) {
+                   throw new Error("Meta Restriction (#133010): The recipient number is not in your Allowed Test Users list. Please verify it in the App Dashboard.");
+               }
+               throw new Error(`WhatsApp Template Error: ${data.error?.message || "Unknown error"}`);
+          }
+          
+          return data;
+      } catch (e: any) {
+          throw new Error(e.message);
+      }
+  }
