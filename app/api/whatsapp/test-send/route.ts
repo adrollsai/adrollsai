@@ -5,14 +5,11 @@ import { sendWhatsAppTemplate } from '@/utils/external-apis'
 export async function POST(request: Request) {
   const supabase = await createClient()
 
-  // 1. Validate User
+  // 1. Validate User (Must be logged in)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  
-  // FIX: Declare variable HERE so it is visible in both try and catch blocks
-  let sanitizedTo = ''; 
 
   try {
     const { to } = await request.json()
@@ -21,48 +18,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing phone number' }, { status: 400 })
     }
 
-    // FIX: Assign value here (remove 'const')
-    sanitizedTo = to.replace(/\D/g, '');
+    // Sanitize Phone Number (Remove non-digits)
+    const sanitizedTo = to.replace(/\D/g, '');
     
     if (sanitizedTo.length < 10) {
         return NextResponse.json({ error: 'Invalid phone number format.' }, { status: 400 })
     }
 
-    // --- 🚀 DEV BYPASS START ---
-    const devPhoneId = process.env.DEV_WHATSAPP_PHONE_ID;
-    const devToken = process.env.DEV_WHATSAPP_ACCESS_TOKEN;
+    // 2. Fetch User's WhatsApp Credentials from Database
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('whatsapp_access_token, whatsapp_phone_number_id')
+      .eq('id', user.id)
+      .single()
 
-    let accessToken = "";
-    let phoneNumberId = "";
-
-    if (devPhoneId && devToken) {
-        console.log("⚠️ USING DEV OVERRIDE CREDENTIALS ⚠️");
-        phoneNumberId = devPhoneId;
-        accessToken = devToken;
-    } else {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('whatsapp_access_token, whatsapp_phone_number_id')
-          .eq('id', user.id)
-          .single()
-
-        if (!profile?.whatsapp_access_token || !profile?.whatsapp_phone_number_id) {
-          return NextResponse.json({ error: 'WhatsApp is not connected for this user' }, { status: 400 })
-        }
-        
-        phoneNumberId = profile.whatsapp_phone_number_id;
-        accessToken = profile.whatsapp_access_token;
+    if (!profile?.whatsapp_access_token || !profile?.whatsapp_phone_number_id) {
+      return NextResponse.json({ error: 'WhatsApp is not connected for this user' }, { status: 400 })
     }
-    // --- 🚀 DEV BYPASS END ---
 
-    console.log(`Sending 'hello_world' template to ${sanitizedTo} from ID ${phoneNumberId}...`);
+    console.log(`[Test Send] Sending 'hello_world' from ID ${profile.whatsapp_phone_number_id} to ${sanitizedTo}...`);
     
+    // 3. Send the "hello_world" Template
     const response = await sendWhatsAppTemplate(
-      accessToken,
-      phoneNumberId,
+      profile.whatsapp_access_token,
+      profile.whatsapp_phone_number_id,
       sanitizedTo,
-      "hello_world", 
-      "en_US"
+      "welcome_msg", // <--- CHANGE THIS to your actual template name
+      "en"
     )
 
     return NextResponse.json({ success: true, data: response })
@@ -70,10 +52,10 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error("Test Send Error:", error.message)
     
+    // Friendly error for the Whitelist issue
     if (error.message.includes('133010')) {
         return NextResponse.json({ 
-            // Now 'sanitizedTo' is accessible here!
-            error: "Dev Mode Error: The recipient number is not in your Test Whitelist. Go to Meta Dashboard > WhatsApp > API Setup and add: " + sanitizedTo 
+            error: "Meta Restriction: The recipient number is not in your Allowed Test List. Since you are in Development Mode, you must add this number in the Meta Dashboard > WhatsApp > API Setup." 
         }, { status: 400 })
     }
 

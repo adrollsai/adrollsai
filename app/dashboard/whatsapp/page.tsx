@@ -5,6 +5,7 @@ import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, LogIn, Se
 import { createClient } from '@/utils/supabase/client'
 import Script from 'next/script'
 import { useRouter } from 'next/navigation'
+import ClientDisconnectButton from './ClientDisconnectButton' // <--- IMPORT THE BUTTON
 
 // 1. Map String names to Actual Icons
 const iconMap: Record<string, LucideIcon> = {
@@ -260,7 +261,21 @@ export default function AutomationPage() {
       ) : (
         <div className="space-y-6 mb-24">
           
-          {/* 1. TEST LAB SECTION (Added for you) */}
+          {/* --- NEW SECTION: ACCOUNT SETTINGS / DISCONNECT --- */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                 <div className="p-2 bg-green-50 rounded-full">
+                     <MessageCircle size={20} className="text-green-600"/>
+                 </div>
+                 <div>
+                     <h3 className="font-bold text-slate-900 text-sm">Active Account</h3>
+                     <p className="text-[10px] text-slate-400">Manage connection</p>
+                 </div>
+              </div>
+              <ClientDisconnectButton />
+          </div>
+
+          {/* 1. TEST LAB SECTION (Existing) */}
           <div className="bg-white p-5 rounded-[1.5rem] border border-indigo-100 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
                 <FlaskConical size={18} className="text-indigo-600" />

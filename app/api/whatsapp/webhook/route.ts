@@ -22,50 +22,45 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
     
-    // LOG RAW BODY to confirm receipt
-    console.log("📨 [Webhook Hit] Raw Body:", JSON.stringify(body, null, 2))
+    // 1. Log Raw Body (Crucial for debugging)
+    // console.log("📨 [Webhook Raw]:", JSON.stringify(body, null, 2))
 
     if (body.object === 'whatsapp_business_account') {
       const entry = body.entry?.[0]
       const changes = entry?.changes?.[0]
       const value = changes?.value
       
+      // Check for incoming message
       if (value?.messages?.[0]) {
         const message = value.messages[0]
         const from = message.from
-        const messageText = message.text?.body || "[Media Message]"
-        const wabaId = entry.id
+        const messageText = message.text?.body || "[Media/Other]"
+        const wabaId = entry.id // The Business Account ID this message was sent TO
 
-        console.log(`[Webhook] Message from ${from}: ${messageText}`)
+        console.log(`[Webhook] Message from ${from} to WABA ${wabaId}: "${messageText}"`)
 
-        // --- 🚀 DEV BYPASS: Use Env Vars if Database Fails ---
-        let accessToken = process.env.DEV_WHATSAPP_ACCESS_TOKEN;
-        let phoneNumberId = process.env.DEV_WHATSAPP_PHONE_ID;
+        // 2. Find the User who owns this WABA
+        const supabase = await createClient()
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('whatsapp_access_token, whatsapp_phone_number_id')
+          .eq('whatsapp_business_account_id', wabaId)
+          .single()
 
-        // Only try DB if Dev vars are missing
-        if (!accessToken || !phoneNumberId) {
-            const supabase = await createClient()
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('whatsapp_access_token, whatsapp_phone_number_id')
-              .eq('whatsapp_business_account_id', wabaId)
-              .single()
-            
-            accessToken = profile?.whatsapp_access_token;
-            phoneNumberId = profile?.whatsapp_phone_number_id;
-        }
-
-        if (accessToken && phoneNumberId) {
-          // Send Reply
-          console.log("Found credentials, sending auto-reply...")
+        if (profile?.whatsapp_access_token && profile?.whatsapp_phone_number_id) {
+          
+          // 3. Send Auto-Reply (Echo)
+          // Note: In production, you would call your AI Agent here instead.
+          console.log(`[Webhook] Found owner. Sending reply...`)
+          
           await sendWhatsAppMessage(
-             accessToken,
-             phoneNumberId,
+             profile.whatsapp_access_token,
+             profile.whatsapp_phone_number_id,
              from,
              `✅ Server Received: "${messageText}"`
            )
         } else {
-            console.error("❌ No credentials found (DB or ENV) to reply.")
+            console.error(`[Webhook] ❌ No user found for WABA ID: ${wabaId}`)
         }
       }
       return NextResponse.json({ status: 'ok' })
