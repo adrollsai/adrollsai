@@ -392,6 +392,9 @@ export type Database = {
           selected_page_name: string | null
           selected_page_token: string | null
           total_xp: number | null
+          whatsapp_access_token: string | null
+          whatsapp_business_account_id: string | null
+          whatsapp_phone_number_id: string | null
           youtube_refresh_token: string | null
           youtube_token: string | null
           youtube_url: string | null
@@ -426,6 +429,9 @@ export type Database = {
           selected_page_name?: string | null
           selected_page_token?: string | null
           total_xp?: number | null
+          whatsapp_access_token?: string | null
+          whatsapp_business_account_id?: string | null
+          whatsapp_phone_number_id?: string | null
           youtube_refresh_token?: string | null
           youtube_token?: string | null
           youtube_url?: string | null
@@ -460,6 +466,9 @@ export type Database = {
           selected_page_name?: string | null
           selected_page_token?: string | null
           total_xp?: number | null
+          whatsapp_access_token?: string | null
+          whatsapp_business_account_id?: string | null
+          whatsapp_phone_number_id?: string | null
           youtube_refresh_token?: string | null
           youtube_token?: string | null
           youtube_url?: string | null
