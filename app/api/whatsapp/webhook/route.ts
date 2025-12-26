@@ -13,55 +13,64 @@ export async function GET(request: Request) {
   if (mode && token) {
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
       return new NextResponse(challenge, { status: 200 })
-    } else {
-      return new NextResponse('Verification failed', { status: 403 })
     }
   }
-  return NextResponse.json({ error: 'Missing parameters' }, { status: 400 })
+  return NextResponse.json({ error: 'Verification failed' }, { status: 403 })
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
+    
+    // LOG RAW BODY to confirm receipt
+    console.log("📨 [Webhook Hit] Raw Body:", JSON.stringify(body, null, 2))
 
     if (body.object === 'whatsapp_business_account') {
       const entry = body.entry?.[0]
       const changes = entry?.changes?.[0]
       const value = changes?.value
       
-      // Check for incoming message
       if (value?.messages?.[0]) {
         const message = value.messages[0]
-        const wabaId = entry.id
         const from = message.from
-        const messageText = message.text?.body
+        const messageText = message.text?.body || "[Media Message]"
+        const wabaId = entry.id
 
-        console.log(`[Webhook] Received from ${from}: ${messageText}`)
+        console.log(`[Webhook] Message from ${from}: ${messageText}`)
 
-        // 1. Fetch Credentials
-        const supabase = await createClient()
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('whatsapp_access_token, whatsapp_phone_number_id')
-          .eq('whatsapp_business_account_id', wabaId)
-          .single()
+        // --- 🚀 DEV BYPASS: Use Env Vars if Database Fails ---
+        let accessToken = process.env.DEV_WHATSAPP_ACCESS_TOKEN;
+        let phoneNumberId = process.env.DEV_WHATSAPP_PHONE_ID;
 
-        if (profile?.whatsapp_access_token && profile?.whatsapp_phone_number_id) {
-          // 2. Mirror Reply (Proof of Receipt)
-          if (messageText) {
-             await sendWhatsAppMessage(
-               profile.whatsapp_access_token,
-               profile.whatsapp_phone_number_id,
-               from,
-               `✅ Received: "${messageText}"`
-             )
-             console.log("[Webhook] Auto-reply sent.")
-          }
+        // Only try DB if Dev vars are missing
+        if (!accessToken || !phoneNumberId) {
+            const supabase = await createClient()
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('whatsapp_access_token, whatsapp_phone_number_id')
+              .eq('whatsapp_business_account_id', wabaId)
+              .single()
+            
+            accessToken = profile?.whatsapp_access_token;
+            phoneNumberId = profile?.whatsapp_phone_number_id;
+        }
+
+        if (accessToken && phoneNumberId) {
+          // Send Reply
+          console.log("Found credentials, sending auto-reply...")
+          await sendWhatsAppMessage(
+             accessToken,
+             phoneNumberId,
+             from,
+             `✅ Server Received: "${messageText}"`
+           )
+        } else {
+            console.error("❌ No credentials found (DB or ENV) to reply.")
         }
       }
       return NextResponse.json({ status: 'ok' })
     }
-    return NextResponse.json({ error: 'Not a WhatsApp event' }, { status: 404 })
+    return NextResponse.json({ status: 'ignored' })
   } catch (error: any) {
     console.error("Webhook Error:", error.message)
     return NextResponse.json({ error: error.message }, { status: 500 })

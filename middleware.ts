@@ -147,6 +147,15 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|auth|shared).*)',
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - auth (auth routes)
+     * - shared (shared public routes)
+     * - api/whatsapp/webhook (Meta Webhook - bypass auth)
+     */
+    '/((?!_next/static|_next/image|favicon.ico|auth|shared|api/whatsapp/webhook).*)',
   ],
 }
