@@ -1,78 +1,110 @@
-// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/api/chat/route.ts
-
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createKieTask } from '@/utils/external-apis'; 
 
 export async function POST(request: Request) {
-  console.log("--- API/CHAT DEBUG START ---")
-  
   try {
     // 1. Check Auth
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
-      console.log("Auth Failed: No user")
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // 2. Inspect Incoming Data
     const body = await request.json()
+    const { 
+        userInstructions, 
+        propertyDescription, 
+        propertyTitle,       
+        contactNumber, 
+        logoUrl,
+        propImages, 
+        templateUrl, 
+        aspectRatio = "1:1",
+        mode = "image"
+    } = body;
+
+    console.log("--- DIRECT GENERATION START ---")
     
-    // LOGGING EXACTLY WHAT FRONTEND SENT
-    console.log("Received Body Keys:", Object.keys(body))
-    console.log("User Instructions:", body.userInstructions)
-    console.log("Prop Desc:", body.propertyDescription ? "Present" : "Missing")
-    console.log("Images Count:", body.imageUrls?.length)
-    console.log("Aspect Ratio:", body.aspectRatio)
+    // 3. CONSTRUCT INPUT IMAGES ARRAY
+    // Order matters: [Product Images..., Logo?, Reference?]
+    const allInputImages = [...(propImages || [])];
+    
+    // INJECT LOGO as an input image so the model "sees" it
+    if (logoUrl) {
+        allInputImages.push(logoUrl);
+    }
 
-    // 3. Construct Payload (REPLACING n8n CODE NODE)
-    const masterPrompt = `
-CONTEXT FROM USER:
-"${body.userInstructions || ''}"
+    // INJECT REFERENCE (Must be LAST for the control flag to work)
+    if (templateUrl) {
+        allInputImages.push(templateUrl);
+    }
 
-PROPERTY DETAILS:
-"${body.propertyDescription || ''}"
+    // 4. CONSTRUCT THE PROMPT
+    let finalImagePrompt = `Create a high-converting, professional Facebook ad design for the product: "${propertyTitle}". \n\n`;
 
-MANDATORY INCLUSIONS:
-- Include the Contact Number: "${body.contactNumber || ''}"
-- Include the Brand logo.
+    // Context
+    finalImagePrompt += `PRODUCT CONTEXT: ${propertyDescription}. \n`;
+    if (userInstructions) finalImagePrompt += `USER REQUIREMENTS: ${userInstructions}. \n`;
 
-design a facebook ad graphic from the provided images, whatever info you see in photos and provided description that is provided, use that, include the contact number, the creative should be attention grabbing and readable, only use the relevant and essential info in the creative, don't clutter it too much, if there is any specific user instruction, give that high priority.
-`;
+    finalImagePrompt += `VISUAL STYLE: High quality, commercial photography, engaging, professional lighting. \n`;
 
+    // LOGO INSTRUCTION
+    if (logoUrl) {
+        finalImagePrompt += `\n*** LOGO INSTRUCTIONS ***\n`;
+        finalImagePrompt += `One of the input images is a brand logo. You MUST include this logo in the final design. Place it clearly (e.g., top corner or bottom footer) without distorting it.\n`;
+    }
+
+    // REFERENCE INSTRUCTION
+    if (templateUrl) {
+        finalImagePrompt += `\n*** REFERENCE IMAGE INSTRUCTIONS ***\n`;
+        finalImagePrompt += `The LAST image provided is a REFERENCE DESIGN.\n`;
+        finalImagePrompt += `1. Capture ONLY the design language, layout, and composition from this reference image.\n`;
+        finalImagePrompt += `2. Do NOT copy the specific content or objects from the reference image.\n`;
+        finalImagePrompt += `3. Apply this extracted design style strictly to the "${propertyTitle}".\n`;
+        
+        // This flag tells the model the specific role of the last image
+        finalImagePrompt += " --control_image_last_is_reference"; 
+    }
+
+    // Specs
+    finalImagePrompt += `\nAspect Ratio: ${aspectRatio}.`;
+    if (contactNumber) finalImagePrompt += ` Display contact info: ${contactNumber}.`;
+
+    // 5. DEBUG LOGS (Check your server terminal for these)
+    console.log("[LOG] Final Prompt:", finalImagePrompt);
+    console.log("[LOG] Image Inputs Order:", JSON.stringify(allInputImages, null, 2));
+
+    // 6. PREPARE PAYLOAD
     const payload = {
-      "model": "nano-banana-pro",
+      "model": "nano-banana-pro", 
       "input": {
-        "prompt": masterPrompt,
-        "image_input": body.imageUrls || [],
-        "aspect_ratio": body.aspectRatio || "1:1",
+        "prompt": finalImagePrompt,
+        "image_input": allInputImages, 
+        "aspect_ratio": aspectRatio,
         "resolution": "1K",
-        "output_format": "png"
+        "output_format": "png",
+        // We still pass this just in case, but the image_input is the key fix
+        "logo_url": logoUrl || undefined 
       }
     };
     
-    // 4. Send to Kie.ai directly (REPLACING N8N WEBHOOK CALL)
-    console.log(`Sending task to Kie.ai...`)
-    
-    // FIX START: Capture the result object and check if 'error' property exists.
+    // 7. EXECUTE TASK
     const kieResult = await createKieTask(payload);
 
     if ('error' in kieResult) {
       throw new Error(`Kie AI Task creation failed: ${kieResult.error}`)
     }
     
-    const taskId = kieResult.taskId;
-    // FIX END
-    
-    // 5. Return taskId for polling
-    console.log("--- API/CHAT DEBUG END (Success - Polling Started) ---")
-    return NextResponse.json({ taskId })
+    return NextResponse.json({ 
+        taskId: kieResult.taskId,
+        marketingAngle: "Custom Strategy" 
+    })
 
   } catch (error: any) {
-    console.error("!!! API CRASHED !!!")
-    console.error(error)
+    console.error("API Error:", error)
     return NextResponse.json(
       { error: error.message || "Internal Server Error" }, 
       { status: 500 }

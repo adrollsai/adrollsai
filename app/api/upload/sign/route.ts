@@ -13,7 +13,7 @@ export async function POST(request: Request) {
 
   const cleanName = fileName.replace(/[^a-zA-Z0-9.-]/g, '')
   
-  // 1. CLEAN KEY for Upload
+  // 1. CLEAN KEY for Upload (Does NOT include 'adrolls-storage' as requested)
   const key = `${folder}/${user.id}/${Date.now()}-${cleanName}`
 
   try {
@@ -27,8 +27,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ 
       signedUrl, 
-      // 2. CLEAN PUBLIC URL (No 'adrolls-storage' here, so DB stays clean)
-      publicUrl: `${R2_PUBLIC_URL}/${key}` 
+      // 2. FIXED PUBLIC URL: Manually adding 'adrolls-storage' for fetching
+      publicUrl: `${R2_PUBLIC_URL}/adrolls-storage/${key}` 
     })
 
   } catch (error: any) {

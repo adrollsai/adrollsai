@@ -268,7 +268,8 @@ export async function postToYouTube(accessToken: string, videoUrl: string, title
 export async function callGemini(prompt: string): Promise<string> {
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured for Auto-Blogger.");
     
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
+    // UPDATED: Using gemini-3-flash-preview as requested
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent", {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
