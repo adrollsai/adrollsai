@@ -4,14 +4,29 @@ import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
 import path from 'path'
 import process from 'process'
 
-// --- HELPER: Fix R2 URL if missing folder ---
-// We use this to ensure we can FETCH the source images
+// --- HELPER: Fix R2 URL ---
 function fixR2Url(url: string) {
   if (!url) return ''
   if (url.includes('.r2.dev') && !url.includes('/adrolls-storage/')) {
     return url.replace('.r2.dev/', '.r2.dev/adrolls-storage/')
   }
   return url
+}
+
+// --- HELPER: Phone Formatter ---
+function formatPhoneNumber(phone: string) {
+  const cleaned = ('' + phone).replace(/\D/g, '')
+  if (cleaned.length === 10) {
+    const part1 = cleaned.substring(0, 5)
+    const part2 = cleaned.substring(5, 10)
+    return `+91-${part1} ${part2}`
+  }
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+     const part1 = cleaned.substring(2, 7)
+     const part2 = cleaned.substring(7, 12)
+     return `+91-${part1} ${part2}`
+  }
+  return phone
 }
 
 // --- FONT INIT ---
@@ -33,14 +48,14 @@ export async function generateStampedImage(params: any) {
 
   const { agentProfile, masterImageUrl, userId } = params;
 
-  // 1. Fetch Master Image (FIXED URL)
+  // 1. Fetch Master Image
   const safeMasterUrl = fixR2Url(masterImageUrl)
   const masterImageRes = await fetch(safeMasterUrl)
   if (!masterImageRes.ok) throw new Error(`Failed to fetch master image`)
   const masterArrayBuffer = await masterImageRes.arrayBuffer()
   const originalBuffer = Buffer.from(masterArrayBuffer)
 
-  // 2. Resize
+  // 2. Resize to Standard 1080px
   const STANDARD_WIDTH = 1080;
   const resizedImage = await sharp(originalBuffer)
       .resize(STANDARD_WIDTH, null, { withoutEnlargement: true })
@@ -49,85 +64,99 @@ export async function generateStampedImage(params: any) {
   const optimizedBuffer = resizedImage.data; 
   const { width, height } = resizedImage.info;
 
-  // 3. Footer Calculations
-  const footerHeight = Math.round(width * 0.15) 
-  const padding = Math.round(footerHeight * 0.15)
-  const logoSize = Math.round(footerHeight * 0.70)
+  // 3. Layout Constants
+  const footerHeight = 220; 
+  const accentColor = "#B45309"; // Gold/Bronze
+  const textColor = "#1F2937";   // Dark Grey
+  const dividerColor = "#E5E7EB"; // Light Grey
+  
+  // Section Layout
+  const logoSectionWidth = 280; 
+  const remainingWidth = width - logoSectionWidth;
+  const sectionWidth = remainingWidth / 2; 
 
   // 4. Process Agent Logo
+  const logoBoxSize = 160; 
   let logoBuffer: Buffer | null = null
   if (agentProfile.logo_url) {
     try {
-      // FIX LOGO URL BEFORE FETCH
       const safeLogoUrl = fixR2Url(agentProfile.logo_url)
-      
       const logoRes = await fetch(safeLogoUrl)
       if (logoRes.ok) {
         const logoArrayBuffer = await logoRes.arrayBuffer()
         logoBuffer = await sharp(Buffer.from(logoArrayBuffer))
-          .resize(logoSize, logoSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+          .resize(logoBoxSize, logoBoxSize, { 
+            fit: 'contain', 
+            background: { r: 0, g: 0, b: 0, alpha: 0 } 
+          })
           .toBuffer()
       }
     } catch (e) {
-      console.error("Failed to load agent logo", e)
+      console.error("Failed to load logo", e)
     }
   }
 
-  // 5. Design Constants
-  const primaryTextColor = "#1F2937"; 
-  const secondaryTextColor = "#B45309"; 
-  const borderColor = "#E5E7EB"; 
-  const dividerColor = "#D1D5DB";
-
-  const textStartX = logoBuffer ? (padding * 2 + logoSize) : padding
-  const fontSizeName = Math.round(footerHeight * 0.28)
-  const fontSizePhone = Math.round(footerHeight * 0.28)
-  const iconSize = fontSizePhone;
+  // 5. Content
+  const rawName = agentProfile.business_name || 'Real Estate Agent';
+  const name = rawName.toUpperCase(); 
   
-  const phoneText = agentProfile.contact_number || 'Contact Me';
-  const businessName = agentProfile.business_name || 'Real Estate Agent';
+  const rawPhone = agentProfile.contact_number || 'Contact Me';
+  const phone = formatPhoneNumber(rawPhone);
 
-  const approxPhoneWidth = phoneText.length * (fontSizePhone * 0.6); 
-  const iconX = width - padding - approxPhoneWidth - iconSize - (padding * 0.5);
-  const dividerX = iconX - (padding * 1.5);
+  const fontSizeText = 24; 
+  const circleRadius = 28; 
+  
+  // ICONS (Material Design - Standard 24x24)
+  // Work Icon (Briefcase)
+  const businessIconPath = "M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-2 .89-2 2v11c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-8-2h4v2h-4V4zM4 8h16v11H4V8z";
+  
+  // Phone Icon (Standard Handset - Restored)
+  const phoneIconPath = "M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 1.23 0 2.44.2 3.57.57.35.13.74.04 1.02-.24l2.2-2.2z";
 
-  // 6. SVG Footer
+  // Coordinates
+  const circleY = 80;
+  const textY = 150;
+
+  const section1Center = sectionWidth / 2;
+  const section2Center = sectionWidth + (sectionWidth / 2);
+  const logoCenter = width - (logoSectionWidth / 2);
+
+  const sep1X = sectionWidth;
+  const sep2X = width - logoSectionWidth;
+
+  // 6. SVG Construction
   const footerSvg = `
     <svg width="${width}" height="${footerHeight}">
-      <line x1="0" y1="0" x2="${width}" y2="0" style="stroke:${borderColor};stroke-width:2" />
-      ${agentProfile.contact_number ? `<line x1="${dividerX}" y1="${footerHeight * 0.2}" x2="${dividerX}" y2="${footerHeight * 0.8}" style="stroke:${dividerColor};stroke-width:2" />` : ''}
+      <rect x="0" y="0" width="${width}" height="${footerHeight}" fill="#FFFFFF" />
+      <rect x="0" y="0" width="${width}" height="6" fill="${accentColor}" />
 
-      <text 
-          x="${textStartX}" 
-          y="${footerHeight / 2 + (fontSizeName / 3)}" 
-          font-family="Poppins" 
-          font-size="${fontSizeName}" 
-          fill="${primaryTextColor}" 
-          font-weight="800"
-          style="text-transform: uppercase; letter-spacing: 0.5px;"
-      >
-        ${businessName}
-      </text>
-      
-      ${agentProfile.contact_number ? `
-      <g transform="translate(${iconX}, ${(footerHeight - iconSize) / 2}) scale(${iconSize / 24})">
-          <path 
-              d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.05 12.05 0 0 0 .57 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.03 12.03 0 0 0 2.81.57A2 2 0 0 1 22 16.92z" 
-              fill="${secondaryTextColor}" 
-          />
+      <line x1="${sep1X}" y1="40" x2="${sep1X}" y2="${footerHeight - 40}" stroke="${dividerColor}" stroke-width="2" />
+      <line x1="${sep2X}" y1="40" x2="${sep2X}" y2="${footerHeight - 40}" stroke="${dividerColor}" stroke-width="2" />
+
+      <g transform="translate(${section1Center}, 0)">
+         <circle cx="0" cy="${circleY}" r="${circleRadius}" fill="${accentColor}" />
+         <g transform="translate(-12, ${circleY - 12})">
+            <path d="${businessIconPath}" fill="#FFFFFF" />
+         </g>
+         <text x="0" y="${textY}" font-family="Poppins" font-size="${fontSizeText}" fill="${textColor}" font-weight="bold" text-anchor="middle" letter-spacing="1">
+            ${name}
+         </text>
       </g>
-      <text 
-          x="${width - padding}" 
-          y="${footerHeight / 2 + (fontSizePhone / 3)}" 
-          font-family="Poppins" 
-          font-size="${fontSizePhone}" 
-          fill="${secondaryTextColor}" 
-          font-weight="bold" 
-          text-anchor="end"
-        >
-        ${phoneText}
-      </text>
+
+      <g transform="translate(${section2Center}, 0)">
+         <circle cx="0" cy="${circleY}" r="${circleRadius}" fill="${accentColor}" />
+         <g transform="translate(-12, ${circleY - 12})">
+            <path d="${phoneIconPath}" fill="#FFFFFF" />
+         </g>
+         <text x="0" y="${textY}" font-family="Poppins" font-size="${fontSizeText}" fill="${textColor}" font-weight="bold" text-anchor="middle">
+            ${phone}
+         </text>
+      </g>
+      
+      ${!logoBuffer ? `
+        <text x="${logoCenter}" y="${footerHeight/2 + 10}" font-family="Poppins" font-size="20" fill="${dividerColor}" text-anchor="middle">NO LOGO</text>
       ` : ''}
+
     </svg>
   `
 
@@ -143,16 +172,17 @@ export async function generateStampedImage(params: any) {
   ]
 
   if (logoBuffer) {
-    const logoTop = height + Math.round((footerHeight - logoSize) / 2)
-    layers.push({ input: logoBuffer, top: logoTop, left: padding })
+    const logoTop = height + Math.round((footerHeight - logoBoxSize) / 2)
+    const logoLeft = Math.round(width - logoSectionWidth + (logoSectionWidth - logoBoxSize) / 2)
+    layers.push({ input: logoBuffer, top: logoTop, left: logoLeft })
   }
 
   const finalImageBuffer = await extendedImage
     .composite(layers)
-    .jpeg({ quality: 90 }) 
+    .jpeg({ quality: 95 }) 
     .toBuffer()
 
-  // 8. Upload to R2 (CLEAN KEY)
+  // 8. Upload
   const fileName = `stamped/${userId}/${Date.now()}.jpg`
   
   await r2.send(new PutObjectCommand({
@@ -162,6 +192,5 @@ export async function generateStampedImage(params: any) {
       ContentType: 'image/jpeg'
   }))
 
-  // RETURN URL (FIXED FOR FETCHING)
   return `${R2_PUBLIC_URL}/adrolls-storage/${fileName}`
 }

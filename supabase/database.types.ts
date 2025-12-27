@@ -189,6 +189,80 @@ export type Database = {
         }
         Relationships: []
       }
+      distribution_batches: {
+        Row: {
+          completed_count: number
+          created_at: string
+          id: string
+          master_image_url: string
+          status: string
+          total_count: number
+          user_id: string
+        }
+        Insert: {
+          completed_count?: number
+          created_at?: string
+          id?: string
+          master_image_url: string
+          status?: string
+          total_count?: number
+          user_id: string
+        }
+        Update: {
+          completed_count?: number
+          created_at?: string
+          id?: string
+          master_image_url?: string
+          status?: string
+          total_count?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      distribution_items: {
+        Row: {
+          agent_data: Json
+          batch_id: string
+          created_at: string
+          email_sent: boolean | null
+          error_message: string | null
+          id: string
+          result_url: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          agent_data: Json
+          batch_id: string
+          created_at?: string
+          email_sent?: boolean | null
+          error_message?: string | null
+          id?: string
+          result_url?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          agent_data?: Json
+          batch_id?: string
+          created_at?: string
+          email_sent?: boolean | null
+          error_message?: string | null
+          id?: string
+          result_url?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "distribution_items_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "distribution_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       external_agents: {
         Row: {
           address: string | null
@@ -543,6 +617,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      increment_batch_counter: { Args: { row_id: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never

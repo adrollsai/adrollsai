@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { generateStampedImage } from '@/utils/stamp-helper'
-import { sendDistributionEmail } from '@/utils/email-helper' // Import Helper
+import { headers } from 'next/headers'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
-
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -16,51 +14,59 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Get Sender Name for Email
-    const { data: profile } = await supabase.from('profiles').select('business_name').eq('id', user.id).single()
-    const senderName = profile?.business_name || 'Partner'
-
-    const results = []
-
-    for (const agent of agents) {
-      // 1. Generate Image
-      const stampedUrl = await generateStampedImage({
-        agentProfile: {
-          business_name: agent.business_name,
-          contact_number: agent.contact_number,
-          logo_url: agent.logo_url
-        },
-        masterImageUrl,
-        userId: user.id
-      })
-
-      // 2. Save Asset
-      const { data: assetData } = await supabase.from('assets').insert({
+    // 1. Create the Batch
+    const { data: batch, error: batchError } = await supabase
+      .from('distribution_batches')
+      .insert({
         user_id: user.id,
-        url: stampedUrl,
-        type: 'image',
-        status: 'Distributed', 
-      }).select().single()
-
-      // 3. Send Email (If requested AND agent has email)
-      let emailResult = null
-      if (sendEmail && agent.email) {
-          emailResult = await sendDistributionEmail(agent.email, agent.business_name, stampedUrl, senderName)
-      }
-
-      results.push({
-        agentName: agent.business_name,
-        stampedUrl,
-        assetId: assetData?.id,
-        emailSent: emailResult?.success || false,
-        emailError: emailResult?.error
+        master_image_url: masterImageUrl,
+        total_count: agents.length,
+        status: 'pending'
       })
-    }
+      .select()
+      .single()
 
-    return NextResponse.json({ success: true, results })
+    if (batchError) throw batchError
+
+    // 2. Create Items (Bulk Insert)
+    const items = agents.map((agent: any) => ({
+      batch_id: batch.id,
+      user_id: user.id,
+      agent_data: { ...agent, sendEmail }, // Store preference in the item
+      status: 'pending'
+    }))
+
+    const { error: itemsError } = await supabase.from('distribution_items').insert(items)
+    if (itemsError) throw itemsError
+
+    // 3. TRIGGER THE WORKER (Fire and Forget strategy)
+    // We call the worker API but don't strictly await the full processing.
+    // We catch errors so the user still gets a "Success" response even if trigger fails (Cron can pick it up later)
+    
+    // Construct absolute URL for the worker
+    const host = (await headers()).get('host')
+    const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https'
+    const workerUrl = `${protocol}://${host}/api/distribute/worker`
+
+    // Fire the worker asynchronously
+    fetch(workerUrl, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-batch-id': batch.id // Pass ID securely or in body
+      },
+      body: JSON.stringify({ batchId: batch.id })
+    }).catch(err => console.error("Worker trigger failed:", err))
+
+    // 4. Return immediately to user
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Distribution started in background.', 
+      batchId: batch.id 
+    })
 
   } catch (error: any) {
-    console.error("Distribution Error:", error)
+    console.error("Distribution Setup Error:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
