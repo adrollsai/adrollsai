@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target } from 'lucide-react'
+import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target, Share2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -45,15 +45,19 @@ export default function ProfilePage() {
   
   const [fbPages, setFbPages] = useState<FBPage[]>([])
   const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]) 
-  const [pixels, setPixels] = useState<Pixel[]>([]) // NEW: Pixels State
+  const [pixels, setPixels] = useState<Pixel[]>([])
 
   const [selectedPageId, setSelectedPageId] = useState<string>('')
   const [selectedAdAccountId, setSelectedAdAccountId] = useState<string>('') 
-  const [selectedPixelId, setSelectedPixelId] = useState<string>('') // NEW: Selected Pixel
+  const [selectedPixelId, setSelectedPixelId] = useState<string>('')
 
   const [isLoadingPages, setIsLoadingPages] = useState(false)
   const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false) 
-  const [isLoadingPixels, setIsLoadingPixels] = useState(false) // NEW: Loading state
+  const [isLoadingPixels, setIsLoadingPixels] = useState(false) 
+
+  // --- NEW: Distribution Toggle States ---
+  const [enableDistribution, setEnableDistribution] = useState(false)
+  const [isTogglingDist, setIsTogglingDist] = useState(false)
 
   // Profile Data
   const [formData, setFormData] = useState({
@@ -118,7 +122,7 @@ export default function ProfilePage() {
     }
   }
 
-  // 3. Fetch Pixels (NEW)
+  // 3. Fetch Pixels
   const fetchPixels = async (adAccountId: string) => {
     setIsLoadingPixels(true)
     try {
@@ -219,6 +223,9 @@ export default function ProfilePage() {
             youtubeUrl: profile.youtube_url || ''
           })
           
+          // Set Distribution Toggle
+          setEnableDistribution(profile.enable_distribution || false)
+
           // Facebook Logic
           if (profile.facebook_token && isValidFacebookToken(profile.facebook_token)) {
             setIsFacebookConnected(true)
@@ -407,6 +414,38 @@ export default function ProfilePage() {
     }
   }
 
+  // --- NEW: Toggle Distribution Instantly ---
+  const handleToggleDistribution = async () => {
+    if (!userId) return
+    const newState = !enableDistribution
+    
+    // 1. Optimistic Update (Switch UI immediately)
+    setEnableDistribution(newState)
+    setIsTogglingDist(true)
+
+    try {
+        // 2. Save to Database
+        const { error } = await supabase
+            .from('profiles')
+            .update({ enable_distribution: newState })
+            .eq('id', userId)
+
+        if (error) {
+            throw error
+        } else {
+            // 3. Success -> Reload to update BottomNav
+            // Small delay to ensure DB write is consistent before reload read
+            setTimeout(() => window.location.reload(), 500)
+        }
+    } catch (e: any) {
+        // 4. Revert if failed
+        setEnableDistribution(!newState)
+        alert("Failed to save setting: " + e.message)
+    } finally {
+        setIsTogglingDist(false)
+    }
+  }
+
   const handleSave = async () => {
     setIsSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
@@ -423,7 +462,9 @@ export default function ProfilePage() {
         facebook_url: formData.facebookUrl,
         instagram_url: formData.instagramUrl,
         linkedin_url: formData.linkedinUrl,
-        youtube_url: formData.youtubeUrl
+        youtube_url: formData.youtubeUrl,
+        // We do NOT save enable_distribution here to avoid overwriting 
+        // if the user toggled it without saving the form.
       })
 
     if (error) alert(`Error saving: ${error.message}`)
@@ -516,7 +557,7 @@ export default function ProfilePage() {
                     )}
                     </div>
 
-                    {/* NEW: PIXEL SELECTOR */}
+                    {/* PIXEL SELECTOR */}
                     <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
                         <div className="flex justify-between items-center mb-2">
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Data Pixel</label>
@@ -645,10 +686,35 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Settings */}
+      {/* Settings (Updated with Instant Toggle) */}
       <div>
         <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Settings</h3>
         <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
+          
+          {/* Distribution Mode Toggle */}
+          <div className="p-4 flex items-center justify-between border-b border-slate-50">
+            <div className="flex items-center gap-3">
+                <div className="bg-purple-50 p-2 rounded-full text-purple-600"><Share2 size={18} /></div>
+                <div>
+                    <span className="font-bold text-sm text-slate-700 block">Distribution Mode</span>
+                    <span className="text-[10px] text-slate-400">Enable Agent Distribution Tab</span>
+                </div>
+            </div>
+            
+            {/* INSTANT TOGGLE BUTTON */}
+            <button 
+                onClick={handleToggleDistribution}
+                disabled={isTogglingDist}
+                className={`w-10 h-6 rounded-full p-1 transition-colors relative ${enableDistribution ? 'bg-purple-600' : 'bg-slate-200'}`}
+            >
+                {isTogglingDist ? (
+                    <div className="absolute inset-0 flex items-center justify-center"><Loader2 size={12} className="animate-spin text-white" /></div>
+                ) : (
+                    <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${enableDistribution ? 'translate-x-4' : 'translate-x-0'}`} />
+                )}
+            </button>
+          </div>
+
           <button className="w-full p-4 flex items-center justify-between hover:bg-slate-50 border-b border-slate-50"><div className="flex items-center gap-3"><div className="bg-blue-50 p-2 rounded-full text-blue-600"><CreditCard size={18} /></div><span className="font-bold text-sm text-slate-700">Subscription</span></div><ChevronRight size={18} className="text-slate-300" /></button>
           <button onClick={handleSignOut} className="w-full p-4 flex items-center justify-between hover:bg-red-50 group"><div className="flex items-center gap-3"><div className="bg-red-50 p-2 rounded-full text-red-500 group-hover:bg-red-100"><LogOut size={18} /></div><span className="font-bold text-sm text-red-500">Sign Out</span></div></button>
         </div>

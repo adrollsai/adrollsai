@@ -37,7 +37,11 @@ export default function AssetsPage() {
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 
-      if (data) setAssets(data)
+      if (data) {
+        // FILTER: Exclude stamped assets created by the distribution tool
+        const cleanAssets = data.filter(asset => asset.status !== 'Distributed')
+        setAssets(cleanAssets)
+      }
       setLoading(false)
     }
     fetchAssets()
@@ -236,6 +240,11 @@ export default function AssetsPage() {
               <div className={`absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ${asset.status === 'Published' ? 'bg-green-400' : 'bg-amber-400'}`} />
             </div>
           ))}
+          {filteredAssets.length === 0 && (
+              <div className="col-span-3 text-center py-10 text-slate-400 text-sm">
+                  No assets found.
+              </div>
+          )}
         </div>
       )}
 

@@ -90,6 +90,39 @@ export type Database = {
           },
         ]
       }
+      calls: {
+        Row: {
+          created_at: string
+          exotel_call_sid: string | null
+          id: string
+          name: string
+          notes: string | null
+          phone_number: string
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          exotel_call_sid?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          phone_number: string
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          exotel_call_sid?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          phone_number?: string
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       daily_drafts: {
         Row: {
           caption: string | null
@@ -155,6 +188,47 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      external_agents: {
+        Row: {
+          address: string | null
+          business_name: string
+          contact_number: string
+          created_at: string
+          email: string | null
+          id: string
+          logo_url: string | null
+          user_id: string
+        }
+        Insert: {
+          address?: string | null
+          business_name: string
+          contact_number: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          logo_url?: string | null
+          user_id?: string
+        }
+        Update: {
+          address?: string | null
+          business_name?: string
+          contact_number?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          logo_url?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_agents_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       external_listings: {
         Row: {
@@ -313,6 +387,7 @@ export type Database = {
           contact_number: string | null
           created_at: string
           email: string | null
+          enable_distribution: boolean | null
           facebook_token: string | null
           facebook_url: string | null
           google_business_location_id: string | null
@@ -340,6 +415,7 @@ export type Database = {
           contact_number?: string | null
           created_at?: string
           email?: string | null
+          enable_distribution?: boolean | null
           facebook_token?: string | null
           facebook_url?: string | null
           google_business_location_id?: string | null
@@ -367,6 +443,7 @@ export type Database = {
           contact_number?: string | null
           created_at?: string
           email?: string | null
+          enable_distribution?: boolean | null
           facebook_token?: string | null
           facebook_url?: string | null
           google_business_location_id?: string | null
