@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Upload, Plus, Trash2, Check, Loader2, Image as ImageIcon, Grid, X, Search, RefreshCw, AlertCircle, Mail, Phone, MapPin, User, ChevronRight, Download } from 'lucide-react'
+import { Upload, Plus, Trash2, Check, Loader2, Image as ImageIcon, Grid, X, Search, RefreshCw, AlertCircle, Mail, Phone, MapPin, User, ChevronRight, Download, StopCircle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 
@@ -65,7 +65,6 @@ export default function DistributePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // --- HELPER: URL Fixer ---
-  // Ensures displayed images use the /adrolls-storage/ path
   const fixUrl = (url: string | null) => {
     if (!url) return ''
     if (url.includes('r2.dev') && !url.includes('/adrolls-storage/')) {
@@ -102,10 +101,9 @@ export default function DistributePage() {
                 completed: activeBatch.completed_count,
                 status: activeBatch.status
             })
-            // If job is running, go to distribute tab and load results
+            // If job is running, go to distribute tab
             setActiveTab('distribute')
             
-            // Also set master image for context if needed
             if (activeBatch.master_image_url) {
                 setMasterImage(activeBatch.master_image_url)
             }
@@ -147,16 +145,16 @@ export default function DistributePage() {
                 setBatchResults(items)
             }
 
-            // Stop polling if complete
-            if (batch.status === 'completed') {
+            // Stop polling if complete or failed
+            if (batch.status === 'completed' || batch.status === 'failed') {
                 clearInterval(interval)
             }
         }
     }
 
-    if (activeBatchId && batchProgress.status !== 'completed') {
-        pollBatch() // Initial call
-        interval = setInterval(pollBatch, 2000) // Poll every 2s for snappy updates
+    if (activeBatchId && batchProgress.status !== 'completed' && batchProgress.status !== 'failed') {
+        pollBatch() 
+        interval = setInterval(pollBatch, 2000) 
     }
 
     return () => clearInterval(interval)
@@ -182,7 +180,6 @@ export default function DistributePage() {
         .order('created_at', { ascending: false })
 
     if (data) {
-        // Hide previously stamped assets to keep list clean
         const cleanAssets = data.filter(asset => asset.status !== 'Distributed')
         setUserAssets(cleanAssets)
     }
@@ -285,7 +282,7 @@ export default function DistributePage() {
     if (agents.length === 0) return alert("No agents to distribute to")
     
     setProcessing(true)
-    setBatchResults([]) // Clear previous view
+    setBatchResults([]) 
     
     try {
         const res = await fetch('/api/distribute', {
@@ -293,13 +290,12 @@ export default function DistributePage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 masterImageUrl: fixUrl(masterImage),
-                agents: agents.map(a => ({ ...a, logo_url: fixUrl(a.logo_url) })), // Ensure correct URLs sent
+                agents: agents.map(a => ({ ...a, logo_url: fixUrl(a.logo_url) })),
                 sendEmail: sendEmails 
             })
         })
         const data = await res.json()
         if (data.success) {
-            // Start Polling Mode
             setActiveBatchId(data.batchId)
             setBatchProgress({ total: agents.length, completed: 0, status: 'pending' })
             alert("Distribution started! You can scroll down to see results appearing.")
@@ -311,6 +307,19 @@ export default function DistributePage() {
     } finally {
         setProcessing(false)
     }
+  }
+
+  // --- NEW: Cancel Stuck Batch ---
+  const handleCancelBatch = async () => {
+      if (!activeBatchId) return
+      if (!confirm("Stop monitoring this batch? This effectively cancels it from your view.")) return
+
+      // Update DB so it doesn't auto-load again
+      await supabase.from('distribution_batches').update({ status: 'failed' }).eq('id', activeBatchId)
+      
+      setActiveBatchId(null)
+      setBatchProgress({ total: 0, completed: 0, status: 'idle' })
+      setBatchResults([])
   }
 
   return (
@@ -426,7 +435,8 @@ export default function DistributePage() {
                                                 )}
                                             </td>
                                             <td className="p-4 text-right">
-                                                <button onClick={() => handleDelete(agent.id!)} className="text-slate-300 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100">
+                                                {/* FIXED DELETE BUTTON: RED & VISIBLE */}
+                                                <button onClick={() => handleDelete(agent.id!)} className="bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700 p-2 rounded-lg transition-all shadow-sm">
                                                     <Trash2 size={16} />
                                                 </button>
                                             </td>
@@ -454,7 +464,6 @@ export default function DistributePage() {
                         
                         {!masterImage ? (
                             <div className="grid grid-cols-2 gap-4 h-48">
-                                 {/* Upload New */}
                                 <label className={`border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-all group ${processing ? 'opacity-50 pointer-events-none' : ''}`}>
                                     <div className="bg-blue-50 text-blue-600 p-3 rounded-full mb-3 group-hover:scale-110 transition-transform">
                                         <Upload size={24}/>
@@ -463,7 +472,6 @@ export default function DistributePage() {
                                     <span className="text-[10px] text-slate-400 mt-1">JPG, PNG (Max 5MB)</span>
                                     <input type="file" hidden accept="image/*" onChange={handleNewMasterUpload} disabled={processing} />
                                 </label>
-                                {/* Select Existing */}
                                 <button onClick={() => { setShowAssetModal(true); fetchAssets() }} className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-all group">
                                     <div className="bg-purple-50 text-purple-600 p-3 rounded-full mb-3 group-hover:scale-110 transition-transform">
                                         <Grid size={24}/>
@@ -540,6 +548,13 @@ export default function DistributePage() {
                             )}
                         </h3>
                         {batchResults.length > 0 && <span className="text-xs font-bold text-slate-500">{batchResults.length} Items</span>}
+                        
+                        {/* CANCEL BUTTON FOR STUCK JOBS */}
+                        {activeBatchId && batchProgress.status !== 'completed' && (
+                            <button onClick={handleCancelBatch} className="text-red-500 hover:bg-red-50 p-1 rounded-full text-xs font-bold flex items-center gap-1">
+                                <StopCircle size={14} /> Stop
+                            </button>
+                        )}
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-4 bg-slate-50/30">
