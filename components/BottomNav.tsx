@@ -1,8 +1,6 @@
-// adrollsai/adrollsai/adrollsai-builder-app-gamification-superuser/components/BottomNav.tsx
-
 'use client'
 
-import { LayoutGrid, Sparkles, Grid3X3, MessageCircle, User, Zap, Users } from 'lucide-react'
+import { LayoutGrid, Grid3X3, User, Zap, Users, Share2 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useOrganization } from '@/components/OrganizationWrapper'
@@ -16,8 +14,11 @@ export default function BottomNav() {
     // { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
     
-    // Show Ads tab if user is super_user, admin, or agent
+    // Existing: Show Ads tab if user is super_user, admin, or agent
     ...(['super_user', 'admin', 'agent'].includes(userRole || '') ? [{ name: 'Ads', icon: Zap, path: '/dashboard/ads' }] : []),
+
+    // NEW: Show Distribute tab ONLY if user is super_user or admin (Owners)
+    ...(['super_user', 'admin'].includes(userRole || '') ? [{ name: 'Distribute', icon: Share2, path: '/dashboard/distribute' }] : []),
     
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
