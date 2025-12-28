@@ -158,6 +158,113 @@ export type Database = {
           },
         ]
       }
+      distribution_batches: {
+        Row: {
+          completed_count: number | null
+          created_at: string | null
+          id: string
+          master_image_url: string | null
+          status: string | null
+          total_count: number | null
+          user_id: string | null
+        }
+        Insert: {
+          completed_count?: number | null
+          created_at?: string | null
+          id?: string
+          master_image_url?: string | null
+          status?: string | null
+          total_count?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          completed_count?: number | null
+          created_at?: string | null
+          id?: string
+          master_image_url?: string | null
+          status?: string | null
+          total_count?: number | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      distribution_items: {
+        Row: {
+          agent_data: Json | null
+          batch_id: string | null
+          created_at: string | null
+          email_sent: boolean | null
+          error_message: string | null
+          id: string
+          result_url: string | null
+          status: string | null
+          user_id: string | null
+        }
+        Insert: {
+          agent_data?: Json | null
+          batch_id?: string | null
+          created_at?: string | null
+          email_sent?: boolean | null
+          error_message?: string | null
+          id?: string
+          result_url?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          agent_data?: Json | null
+          batch_id?: string | null
+          created_at?: string | null
+          email_sent?: boolean | null
+          error_message?: string | null
+          id?: string
+          result_url?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "distribution_items_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "distribution_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_agents: {
+        Row: {
+          address: string | null
+          business_name: string
+          contact_number: string
+          created_at: string
+          email: string | null
+          id: string
+          logo_url: string | null
+          user_id: string | null
+        }
+        Insert: {
+          address?: string | null
+          business_name: string
+          contact_number: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          logo_url?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          address?: string | null
+          business_name?: string
+          contact_number?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          logo_url?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           ad_name: string | null
@@ -226,6 +333,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean | null
+          layout_config: Json | null
           property_id: string
           type: string | null
           url: string
@@ -235,6 +343,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean | null
+          layout_config?: Json | null
           property_id: string
           type?: string | null
           url: string
@@ -244,6 +353,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean | null
+          layout_config?: Json | null
           property_id?: string
           type?: string | null
           url?: string
@@ -392,6 +502,9 @@ export type Database = {
           selected_page_name: string | null
           selected_page_token: string | null
           total_xp: number | null
+          whatsapp_access_token: string | null
+          whatsapp_business_account_id: string | null
+          whatsapp_phone_number_id: string | null
           youtube_refresh_token: string | null
           youtube_token: string | null
           youtube_url: string | null
@@ -426,6 +539,9 @@ export type Database = {
           selected_page_name?: string | null
           selected_page_token?: string | null
           total_xp?: number | null
+          whatsapp_access_token?: string | null
+          whatsapp_business_account_id?: string | null
+          whatsapp_phone_number_id?: string | null
           youtube_refresh_token?: string | null
           youtube_token?: string | null
           youtube_url?: string | null
@@ -460,6 +576,9 @@ export type Database = {
           selected_page_name?: string | null
           selected_page_token?: string | null
           total_xp?: number | null
+          whatsapp_access_token?: string | null
+          whatsapp_business_account_id?: string | null
+          whatsapp_phone_number_id?: string | null
           youtube_refresh_token?: string | null
           youtube_token?: string | null
           youtube_url?: string | null
@@ -565,6 +684,7 @@ export type Database = {
           name: string
         }[]
       }
+      increment_batch_counter: { Args: { row_id: string }; Returns: undefined }
       increment_share_stat: {
         Args: { asset_id: string; platform: string }
         Returns: undefined
