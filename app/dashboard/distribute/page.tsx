@@ -1,14 +1,14 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Upload, Plus, Trash2, Check, Loader2, Image as ImageIcon, Grid, X, AlertCircle, Mail, Phone, RefreshCw, Download, StopCircle, ShieldAlert } from 'lucide-react'
+import { Upload, Plus, Trash2, Check, Loader2, Image as ImageIcon, Grid, X, AlertCircle, Mail, Phone, RefreshCw, Download, StopCircle, ShieldAlert, CheckSquare, Square } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { useOrganization } from '@/components/OrganizationWrapper'
 
 // --- TYPES ---
 type Agent = {
-  id?: string
+  id: string
   business_name: string
   contact_number: string
   logo_url: string
@@ -39,6 +39,7 @@ export default function DistributePage() {
   
   // --- STATE ---
   const [agents, setAgents] = useState<Agent[]>([])
+  const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set()) // NEW: Selection State
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [activeTab, setActiveTab] = useState<'manage' | 'distribute'>('manage')
@@ -85,7 +86,11 @@ export default function DistributePage() {
 
         // 1. Load Agents
         const { data: agentData } = await supabase.from('external_agents').select('*').order('created_at', { ascending: false })
-        if (agentData) setAgents(agentData)
+        if (agentData) {
+            setAgents(agentData)
+            // NEW: Default select all agents
+            setSelectedAgents(new Set(agentData.map(a => a.id)))
+        }
         setLoading(false)
 
         // 2. Check for Active Batch
@@ -168,7 +173,28 @@ export default function DistributePage() {
   // --- ACTIONS ---
   const fetchAgents = async () => {
     const { data } = await supabase.from('external_agents').select('*').order('created_at', { ascending: false })
-    if (data) setAgents(data)
+    if (data) {
+        setAgents(data)
+        // Only select all if selection was empty (or you can force select all on refresh)
+        if (selectedAgents.size === 0) {
+            setSelectedAgents(new Set(data.map(a => a.id)))
+        }
+    }
+  }
+
+  const toggleAgentSelection = (id: string) => {
+      const newSet = new Set(selectedAgents)
+      if (newSet.has(id)) newSet.delete(id)
+      else newSet.add(id)
+      setSelectedAgents(newSet)
+  }
+
+  const toggleAllAgents = () => {
+      if (selectedAgents.size === agents.length) {
+          setSelectedAgents(new Set())
+      } else {
+          setSelectedAgents(new Set(agents.map(a => a.id)))
+      }
   }
 
   const fetchAssets = async () => {
@@ -200,16 +226,23 @@ export default function DistributePage() {
             logoUrl = await uploadToR2(newLogo, 'agent-logos')
         }
 
-        const { error } = await supabase.from('external_agents').insert({
+        const { data, error } = await supabase.from('external_agents').insert({
             business_name: newName,
             contact_number: newPhone,
             email: newEmail, 
             logo_url: logoUrl
-        })
+        }).select().single()
 
         if (error) throw error
         setNewName(''); setNewPhone(''); setNewEmail(''); setNewLogo(null)
-        fetchAgents()
+        
+        // Optimistic update + Selection
+        if (data) {
+            setAgents(prev => [data, ...prev])
+            setSelectedAgents(prev => new Set(prev).add(data.id))
+        } else {
+            fetchAgents()
+        }
     } catch (e: any) { alert("Error: " + e.message) } finally { setProcessing(false) }
   }
 
@@ -247,6 +280,9 @@ export default function DistributePage() {
     if(!confirm("Remove this agent?")) return
     await supabase.from('external_agents').delete().eq('id', id)
     setAgents(agents.filter(a => a.id !== id))
+    const newSet = new Set(selectedAgents)
+    newSet.delete(id)
+    setSelectedAgents(newSet)
   }
 
   const handleNewMasterUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -262,7 +298,11 @@ export default function DistributePage() {
 
   const handleDistribute = async () => {
     if (!masterImage) return alert("Please select a master image")
-    if (agents.length === 0) return alert("No agents to distribute to")
+    
+    // NEW: Filter based on selection
+    const targetAgents = agents.filter(a => selectedAgents.has(a.id))
+    
+    if (targetAgents.length === 0) return alert("Please select at least one agent")
     
     setProcessing(true)
     setBatchResults([]) 
@@ -273,14 +313,14 @@ export default function DistributePage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 masterImageUrl: fixUrl(masterImage),
-                agents: agents.map(a => ({ ...a, logo_url: fixUrl(a.logo_url) })),
+                agents: targetAgents.map(a => ({ ...a, logo_url: fixUrl(a.logo_url) })),
                 sendEmail: sendEmails 
             })
         })
         const data = await res.json()
         if (data.success) {
             setActiveBatchId(data.batchId)
-            setBatchProgress({ total: agents.length, completed: 0, status: 'pending' })
+            setBatchProgress({ total: targetAgents.length, completed: 0, status: 'pending' })
             alert("Distribution started! You can scroll down to see results appearing.")
         } else {
             alert("Error: " + data.error)
@@ -328,9 +368,9 @@ export default function DistributePage() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 mb-8">
                     <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Plus size={18} className="text-blue-600"/> Add New Agent</h3>
                     <div className="flex gap-4 items-end flex-wrap">
-                        <div className="flex-1"><label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Business Name</label><input value={newName} onChange={e => setNewName(e.target.value)} className="w-full border bg-slate-50 p-2.5 rounded-xl text-sm" placeholder="Name" /></div>
-                        <div className="flex-1"><label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Phone</label><input value={newPhone} onChange={e => setNewPhone(e.target.value)} className="w-full border bg-slate-50 p-2.5 rounded-xl text-sm" placeholder="Phone" /></div>
-                        <div className="flex-1"><label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Email</label><input value={newEmail} onChange={e => setNewEmail(e.target.value)} className="w-full border bg-slate-50 p-2.5 rounded-xl text-sm" placeholder="Email" /></div>
+                        <div className="flex-1 min-w-[150px]"><label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Business Name</label><input value={newName} onChange={e => setNewName(e.target.value)} className="w-full border bg-slate-50 p-2.5 rounded-xl text-sm" placeholder="Name" /></div>
+                        <div className="flex-1 min-w-[150px]"><label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Phone</label><input value={newPhone} onChange={e => setNewPhone(e.target.value)} className="w-full border bg-slate-50 p-2.5 rounded-xl text-sm" placeholder="Phone" /></div>
+                        <div className="flex-1 min-w-[150px]"><label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Email</label><input value={newEmail} onChange={e => setNewEmail(e.target.value)} className="w-full border bg-slate-50 p-2.5 rounded-xl text-sm" placeholder="Email" /></div>
                         <div><label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Logo</label><input type="file" onChange={e => setNewLogo(e.target.files?.[0] || null)} className="text-[10px]" /></div>
                         <button onClick={handleAddAgent} disabled={processing} className="bg-slate-900 text-white px-6 py-2.5 rounded-xl flex items-center gap-2 text-sm font-bold hover:bg-slate-800">{processing ? <Loader2 className="animate-spin" size={16}/> : <Plus size={16}/>} Add</button>
                     </div>
@@ -341,7 +381,8 @@ export default function DistributePage() {
                 </div>
 
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                    <table className="w-full text-sm text-left">
+                    {/* DESKTOP TABLE */}
+                    <table className="w-full text-sm text-left hidden md:table">
                         <thead className="bg-slate-50 text-slate-500 border-b border-slate-100">
                             <tr><th className="p-4">Agent Name</th><th className="p-4">Contact</th><th className="p-4">Branding</th><th className="p-4 text-right">Action</th></tr>
                         </thead>
@@ -356,6 +397,25 @@ export default function DistributePage() {
                             ))}
                         </tbody>
                     </table>
+
+                    {/* MOBILE CARD VIEW (Stacking content) */}
+                    <div className="md:hidden divide-y divide-slate-50">
+                        {agents.map(agent => (
+                            <div key={agent.id} className="p-4 flex flex-col gap-3">
+                                <div className="flex justify-between items-start">
+                                    <div className="flex items-center gap-3">
+                                        {agent.logo_url ? <img src={fixUrl(agent.logo_url)} className="w-10 h-10 object-contain bg-white border rounded-lg" /> : <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400"><ImageIcon size={16}/></div>}
+                                        <div>
+                                            <p className="font-bold text-slate-800">{agent.business_name}</p>
+                                            <p className="text-xs text-slate-500">{agent.contact_number}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => handleDelete(agent.id!)} className="text-red-500 bg-red-50 p-2 rounded-lg"><Trash2 size={16}/></button>
+                                </div>
+                                {agent.email && <div className="text-xs text-slate-500 flex items-center gap-1 bg-slate-50 p-2 rounded"><Mail size={12}/> {agent.email}</div>}
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         )}
@@ -363,6 +423,7 @@ export default function DistributePage() {
         {activeTab === 'distribute' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="space-y-6">
+                    {/* STEP 1: MASTER CREATIVE */}
                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><span className="bg-slate-900 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span> Select Master Creative</h3>
                         {!masterImage ? (
@@ -378,13 +439,42 @@ export default function DistributePage() {
                         )}
                     </div>
 
+                    {/* NEW STEP 2: RECIPIENT SELECTION */}
                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                        <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><span className="bg-slate-900 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span> Settings</h3>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2"><span className="bg-slate-900 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span> Recipients ({selectedAgents.size})</h3>
+                            <button onClick={toggleAllAgents} className="text-xs font-bold text-blue-600 hover:underline">
+                                {selectedAgents.size === agents.length ? 'Deselect All' : 'Select All'}
+                            </button>
+                        </div>
+                        
+                        <div className="max-h-60 overflow-y-auto space-y-2 border border-slate-100 rounded-xl p-2 bg-slate-50/50 scrollbar-thin scrollbar-thumb-slate-200">
+                            {agents.length === 0 ? (
+                                <p className="text-center text-sm text-slate-400 py-4">No agents found. Add agents in the Manage tab.</p>
+                            ) : (
+                                agents.map(agent => (
+                                    <div key={agent.id} onClick={() => toggleAgentSelection(agent.id)} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${selectedAgents.has(agent.id) ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100 hover:border-blue-200'}`}>
+                                        <div className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${selectedAgents.has(agent.id) ? 'bg-blue-600 text-white' : 'bg-slate-200 text-transparent'}`}>
+                                            <Check size={14} strokeWidth={3} />
+                                        </div>
+                                        <div className="flex-1 overflow-hidden">
+                                            <p className="font-bold text-sm text-slate-800 truncate">{agent.business_name}</p>
+                                            <p className="text-xs text-slate-500 truncate">{agent.contact_number}</p>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    {/* STEP 3: SETTINGS */}
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                        <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><span className="bg-slate-900 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span> Settings</h3>
                         <label className={`flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer ${sendEmails ? 'border-blue-500 bg-blue-50/50' : 'border-slate-100'}`}>
                             <input type="checkbox" checked={sendEmails} onChange={e => setSendEmails(e.target.checked)} className="w-5 h-5 accent-blue-600 mt-1" />
                             <div><span className="font-bold block text-slate-800">Send via Email</span><span className="text-slate-500 text-xs">Automatically email results to agents.</span></div>
                         </label>
-                        <button onClick={handleDistribute} disabled={processing || !masterImage || agents.length === 0} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex justify-center items-center gap-3 mt-4 hover:bg-slate-800 disabled:opacity-50">
+                        <button onClick={handleDistribute} disabled={processing || !masterImage || selectedAgents.size === 0} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex justify-center items-center gap-3 mt-4 hover:bg-slate-800 disabled:opacity-50">
                             {processing ? <Loader2 className="animate-spin" /> : <div className="flex items-center gap-2"><RefreshCw size={20}/> <span>Start Distribution</span></div>}
                         </button>
                     </div>

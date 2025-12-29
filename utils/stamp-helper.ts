@@ -4,8 +4,7 @@ import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
 import path from 'path'
 import process from 'process'
 
-// --- HELPER: Fix R2 URL if missing folder ---
-// We use this to ensure we can FETCH the source images
+// --- HELPER: Fix R2 URL ---
 function fixR2Url(url: string) {
   if (!url) return ''
   if (url.includes('.r2.dev') && !url.includes('/adrolls-storage/')) {
@@ -14,12 +13,15 @@ function fixR2Url(url: string) {
   return url
 }
 
-// --- FONT INIT ---
+// --- FONT INIT (Reverted to Original) ---
 export function initFonts() {
   try {
     if (process.env.FONTCONFIG_PATH) return;
+    
+    // Simple, proven logic for Vercel/Next.js
     const isProd = process.env.NODE_ENV === 'production';
     const fontDir = isProd ? '/var/task/fonts' : path.join(process.cwd(), 'fonts');
+    
     process.env.FONTCONFIG_PATH = fontDir;
     process.env.FONTCONFIG_FILE = path.join(fontDir, 'fonts.conf');
   } catch (error) {
@@ -33,7 +35,7 @@ export async function generateStampedImage(params: any) {
 
   const { agentProfile, masterImageUrl, userId } = params;
 
-  // 1. Fetch Master Image (FIXED URL)
+  // 1. Fetch Master Image
   const safeMasterUrl = fixR2Url(masterImageUrl)
   const masterImageRes = await fetch(safeMasterUrl)
   if (!masterImageRes.ok) throw new Error(`Failed to fetch master image`)
@@ -58,9 +60,7 @@ export async function generateStampedImage(params: any) {
   let logoBuffer: Buffer | null = null
   if (agentProfile.logo_url) {
     try {
-      // FIX LOGO URL BEFORE FETCH
       const safeLogoUrl = fixR2Url(agentProfile.logo_url)
-      
       const logoRes = await fetch(safeLogoUrl)
       if (logoRes.ok) {
         const logoArrayBuffer = await logoRes.arrayBuffer()
@@ -73,7 +73,7 @@ export async function generateStampedImage(params: any) {
     }
   }
 
-  // 5. Design Constants
+  // 5. Design Variables
   const primaryTextColor = "#1F2937"; 
   const secondaryTextColor = "#B45309"; 
   const borderColor = "#E5E7EB"; 
@@ -87,9 +87,73 @@ export async function generateStampedImage(params: any) {
   const phoneText = agentProfile.contact_number || 'Contact Me';
   const businessName = agentProfile.business_name || 'Real Estate Agent';
 
+  // --- LAYOUT LOGIC ---
   const approxPhoneWidth = phoneText.length * (fontSizePhone * 0.6); 
   const iconX = width - padding - approxPhoneWidth - iconSize - (padding * 0.5);
   const dividerX = iconX - (padding * 1.5);
+  
+  // Calculate text boundaries
+  const rightBoundary = agentProfile.contact_number ? dividerX : (width - padding);
+  const availableWidth = rightBoundary - textStartX - padding;
+  
+  // --- TEXT WRAPPING LOGIC ---
+  const avgCharWidth = fontSizeName * 0.55; 
+  const maxChars = Math.floor(availableWidth / avgCharWidth);
+
+  const words = businessName.split(' ');
+  let lines: string[] = [];
+  let currentLine = words[0];
+
+  for (let i = 1; i < words.length; i++) {
+      if ((currentLine + " " + words[i]).length <= maxChars) {
+          currentLine += " " + words[i];
+      } else {
+          lines.push(currentLine);
+          currentLine = words[i];
+      }
+  }
+  lines.push(currentLine);
+
+  if (lines.length > 2) {
+      lines[1] = lines.slice(1).join(" ");
+      lines = lines.slice(0, 2);
+  }
+
+  // --- GENERATE NAME SVG ---
+  let nameSvg = '';
+  const lineHeight = fontSizeName * 1.15;
+
+  if (lines.length === 1) {
+      // Changed font-weight from 800 to "bold" (700) to match Poppins-Bold.ttf
+      nameSvg = `<text 
+          x="${textStartX}" 
+          y="${footerHeight / 2 + (fontSizeName / 3)}" 
+          font-family="Poppins" 
+          font-size="${fontSizeName}" 
+          fill="${primaryTextColor}" 
+          font-weight="bold"
+          style="text-transform: uppercase; letter-spacing: 0.5px;"
+      >
+        ${lines[0]}
+      </text>`;
+  } else {
+      const totalTextHeight = lines.length * lineHeight;
+      const startY = (footerHeight - totalTextHeight) / 2 + (fontSizeName * 0.8);
+      
+      lines.forEach((line, index) => {
+          nameSvg += `<text 
+              x="${textStartX}" 
+              y="${startY + (index * lineHeight)}" 
+              font-family="Poppins" 
+              font-size="${fontSizeName}" 
+              fill="${primaryTextColor}" 
+              font-weight="bold"
+              style="text-transform: uppercase; letter-spacing: 0.5px;"
+          >
+            ${line}
+          </text>`;
+      });
+  }
 
   // 6. SVG Footer
   const footerSvg = `
@@ -97,17 +161,7 @@ export async function generateStampedImage(params: any) {
       <line x1="0" y1="0" x2="${width}" y2="0" style="stroke:${borderColor};stroke-width:2" />
       ${agentProfile.contact_number ? `<line x1="${dividerX}" y1="${footerHeight * 0.2}" x2="${dividerX}" y2="${footerHeight * 0.8}" style="stroke:${dividerColor};stroke-width:2" />` : ''}
 
-      <text 
-          x="${textStartX}" 
-          y="${footerHeight / 2 + (fontSizeName / 3)}" 
-          font-family="Poppins" 
-          font-size="${fontSizeName}" 
-          fill="${primaryTextColor}" 
-          font-weight="800"
-          style="text-transform: uppercase; letter-spacing: 0.5px;"
-      >
-        ${businessName}
-      </text>
+      ${nameSvg}
       
       ${agentProfile.contact_number ? `
       <g transform="translate(${iconX}, ${(footerHeight - iconSize) / 2}) scale(${iconSize / 24})">
@@ -152,7 +206,7 @@ export async function generateStampedImage(params: any) {
     .jpeg({ quality: 90 }) 
     .toBuffer()
 
-  // 8. Upload to R2 (CLEAN KEY)
+  // 8. Upload to R2
   const fileName = `stamped/${userId}/${Date.now()}.jpg`
   
   await r2.send(new PutObjectCommand({
@@ -162,6 +216,5 @@ export async function generateStampedImage(params: any) {
       ContentType: 'image/jpeg'
   }))
 
-  // RETURN URL (FIXED FOR FETCHING)
   return `${R2_PUBLIC_URL}/adrolls-storage/${fileName}`
 }

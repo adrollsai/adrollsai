@@ -5,29 +5,38 @@ import { PutObjectCommand } from '@aws-sdk/client-s3'
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
 import path from 'path'
 import process from 'process'
+import fs from 'fs'
 
 // --- FIX: Initialize Fontconfig ---
-// This function sets the environment variables required by Sharp/librsvg
-// to find the font configuration and the font files in your project.
+// We now search for the directory because Vercel paths can vary
 function initFonts() {
   try {
+    // If already set, skip (prevents resetting on warm lambdas)
     if (process.env.FONTCONFIG_PATH) return;
 
-    // Vercel serverless functions run in /var/task
-    // We check if we are in production to use the absolute path
-    const isProd = process.env.NODE_ENV === 'production';
-    const fontDir = isProd ? '/var/task/fonts' : path.join(process.cwd(), 'fonts');
+    const cwd = process.cwd();
+    const searchPaths = [
+        path.join(cwd, 'fonts'),
+        '/var/task/fonts',
+        path.join(cwd, 'public', 'fonts')
+    ];
 
-    process.env.FONTCONFIG_PATH = fontDir;
-    process.env.FONTCONFIG_FILE = path.join(fontDir, 'fonts.conf');
-    
-    console.log("Font Config Loaded:", process.env.FONTCONFIG_FILE);
+    const fontDir = searchPaths.find(p => fs.existsSync(path.join(p, 'fonts.conf')));
+
+    if (fontDir) {
+        process.env.FONTCONFIG_PATH = fontDir;
+        process.env.FONTCONFIG_FILE = path.join(fontDir, 'fonts.conf');
+        console.log("✅ Font Config Loaded from:", fontDir);
+    } else {
+        console.error("❌ Could not find fonts.conf. Searched:", searchPaths);
+    }
   } catch (error) {
     console.error("Error initializing fonts:", error);
   }
 }
+
 export async function POST(request: Request) {
-  // Initialize fonts immediately at the start of the request
+  // Initialize fonts immediately
   initFonts();
 
   const supabase = await createClient()
@@ -48,10 +57,6 @@ export async function POST(request: Request) {
       .single()
 
     if (!agentProfile) throw new Error("Profile not found")
-
-    // DEBUG LOGS
-    console.log("--- STAMPING START ---")
-    console.log("Agent:", agentProfile.business_name)
 
     // --- GAMIFICATION LOGIC START ---
     const currentStats = agentProfile 
@@ -107,7 +112,7 @@ export async function POST(request: Request) {
     // 3. Fetch Master Image
     const masterImageRes = await fetch(masterImageUrl)
     const masterArrayBuffer = await masterImageRes.arrayBuffer()
-    const originalBuffer = Buffer.from(masterArrayBuffer) // Keep as const
+    const originalBuffer = Buffer.from(masterArrayBuffer) 
 
     // 4. OPTIMIZATION: Resize to Standard 1080px Width
     const STANDARD_WIDTH = 1080;
@@ -146,7 +151,7 @@ export async function POST(request: Request) {
     const borderColor = "#E5E7EB"; 
     const dividerColor = "#D1D5DB";
 
-    // 8. SVG Construction
+    // 8. SVG Construction & Text Wrapping
     const textStartX = logoBuffer ? (padding * 2 + logoSize) : padding
     const fontSizeName = Math.round(footerHeight * 0.28)
     const fontSizePhone = Math.round(footerHeight * 0.28)
@@ -155,20 +160,52 @@ export async function POST(request: Request) {
     const phoneText = agentProfile.contact_number || 'Contact Me';
     const businessName = agentProfile.business_name || 'Real Estate Agent';
 
+    // --- Right Side Layout (Phone) ---
     const approxPhoneWidth = phoneText.length * (fontSizePhone * 0.6); 
     const iconX = width - padding - approxPhoneWidth - iconSize - (padding * 0.5);
     const dividerX = iconX - (padding * 1.5);
+    
+    // --- Left Side Layout (Name) ---
+    // Calculate available width for the name
+    // If phone exists, stop at divider; otherwise stop at right padding
+    const rightBoundary = agentProfile.contact_number ? dividerX : (width - padding);
+    const availableWidth = rightBoundary - textStartX - padding;
+    
+    // Estimate max chars that fit in one line
+    // Avg char width for Bold Poppins is approx 0.55 * fontSize
+    const avgCharWidth = fontSizeName * 0.55; 
+    const maxChars = Math.floor(availableWidth / avgCharWidth);
 
-    // Note: We use 'sans-serif' here. Since we added fonts.conf and point to './fonts',
-    // ensure you have a .ttf file (e.g., Roboto.ttf) in your 'fonts' folder
-    // so fontconfig can pick it up as the default.
-    const footerSvg = `
-      <svg width="${width}" height="${footerHeight}">
-        <line x1="0" y1="0" x2="${width}" y2="0" style="stroke:${borderColor};stroke-width:2" />
+    // --- Text Wrapping Logic ---
+    const words = businessName.split(' ');
+    let lines: string[] = [];
+    let currentLine = words[0];
 
-        ${agentProfile.contact_number ? `<line x1="${dividerX}" y1="${footerHeight * 0.2}" x2="${dividerX}" y2="${footerHeight * 0.8}" style="stroke:${dividerColor};stroke-width:2" />` : ''}
+    for (let i = 1; i < words.length; i++) {
+        // Check if adding next word exceeds maxChars
+        if ((currentLine + " " + words[i]).length <= maxChars) {
+            currentLine += " " + words[i];
+        } else {
+            lines.push(currentLine);
+            currentLine = words[i];
+        }
+    }
+    lines.push(currentLine);
 
-        <text 
+    // Safety: Limit to 2 lines max to avoid overflow
+    if (lines.length > 2) {
+        // Join everything else into line 2
+        lines[1] = lines.slice(1).join(" ");
+        lines = lines.slice(0, 2);
+    }
+
+    // --- Generate Name SVG ---
+    let nameSvg = '';
+    const lineHeight = fontSizeName * 1.15;
+
+    if (lines.length === 1) {
+        // Single Line: Centered vertically
+        nameSvg = `<text 
             x="${textStartX}" 
             y="${footerHeight / 2 + (fontSizeName / 3)}" 
             font-family="Poppins" 
@@ -177,8 +214,37 @@ export async function POST(request: Request) {
             font-weight="800"
             style="text-transform: uppercase; letter-spacing: 0.5px;"
         >
-          ${businessName}
-        </text>
+          ${lines[0]}
+        </text>`;
+    } else {
+        // Two Lines: Stacked and Centered
+        const totalTextHeight = lines.length * lineHeight;
+        // Start Y puts the block in the middle
+        // We add fontSizeName * 0.8 to approximate the baseline of the first line
+        const startY = (footerHeight - totalTextHeight) / 2 + (fontSizeName * 0.8);
+        
+        lines.forEach((line, index) => {
+            nameSvg += `<text 
+                x="${textStartX}" 
+                y="${startY + (index * lineHeight)}" 
+                font-family="Poppins" 
+                font-size="${fontSizeName}" 
+                fill="${primaryTextColor}" 
+                font-weight="800"
+                style="text-transform: uppercase; letter-spacing: 0.5px;"
+            >
+              ${line}
+            </text>`;
+        });
+    }
+
+    const footerSvg = `
+      <svg width="${width}" height="${footerHeight}">
+        <line x1="0" y1="0" x2="${width}" y2="0" style="stroke:${borderColor};stroke-width:2" />
+
+        ${agentProfile.contact_number ? `<line x1="${dividerX}" y1="${footerHeight * 0.2}" x2="${dividerX}" y2="${footerHeight * 0.8}" style="stroke:${dividerColor};stroke-width:2" />` : ''}
+
+        ${nameSvg}
         
         ${agentProfile.contact_number ? `
         <g transform="translate(${iconX}, ${(footerHeight - iconSize) / 2}) scale(${iconSize / 24})">

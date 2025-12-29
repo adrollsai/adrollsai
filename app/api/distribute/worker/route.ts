@@ -69,8 +69,9 @@ export async function POST(request: Request) {
   
   if (!batch) return NextResponse.json({ error: 'Batch not found' })
 
-  // 3. Process the Chunk
-  for (const item of items) {
+  // 3. Process the Chunk PARALLEL
+  // Changed from sequential "for ... of" loop to Promise.all to drastically improve speed
+  await Promise.all(items.map(async (item) => {
     try {
       const agent = item.agent_data
       const masterImageUrl = batch.master_image_url
@@ -114,7 +115,7 @@ export async function POST(request: Request) {
         email_sent: emailSent
       }).eq('id', item.id)
 
-      // E. Increment Counter (Using the RPC function we created)
+      // E. Increment Counter
       const { error: rpcError } = await supabaseAdmin.rpc('increment_batch_counter', { row_id: batchId })
       if (rpcError) console.warn("Counter update failed (non-critical):", rpcError.message)
 
@@ -125,7 +126,7 @@ export async function POST(request: Request) {
         error_message: e.message
       }).eq('id', item.id)
     }
-  }
+  }))
 
   // 4. RECURSIVE TRIGGER
   // Check if there are still pending items. If so, call the worker again.
