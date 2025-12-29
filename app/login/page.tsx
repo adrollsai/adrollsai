@@ -10,6 +10,13 @@ type InviteInfo = {
   logo_url: string
 }
 
+type BrandingInfo = {
+  name: string
+  logo: string | null
+  isCustom: boolean
+  subtitle: string
+}
+
 function LoginForm() {
   const supabase = createClient()
   const router = useRouter()
@@ -18,7 +25,15 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [inviteInfo, setInviteInfo] = useState<InviteInfo | null>(null)
   
-  // New State for Email Auth
+  // NEW: State for Custom Branding (Default = AdRolls)
+  const [branding, setBranding] = useState<BrandingInfo>({
+    name: 'AdRolls.ai',
+    logo: null, 
+    isCustom: false,
+    subtitle: 'Builder & Agent Marketing OS'
+  })
+  
+  // State for Email Auth
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
@@ -28,7 +43,51 @@ function LoginForm() {
   const inviteOrg = searchParams.get('invite_org')
   const errorMsg = searchParams.get('error')
 
-  // Fetch Org Details if Invited
+  // 1. NEW: Fetch Custom Domain Branding
+  useEffect(() => {
+    const fetchBranding = async () => {
+      const hostname = window.location.hostname
+      
+      // Define System Hosts (Where we stay as default AdRolls)
+      const SYSTEM_HOSTS = [
+        'adrolls.in',
+        'www.adrolls.in',
+        'app.adrolls.in',
+        process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app'
+      ]
+
+      // If current host is in the system list, stop here (keep default branding)
+      // NOTE: We excluded 'localhost' from this list so you can test it locally.
+      if (SYSTEM_HOSTS.some(h => hostname.includes(h))) {
+        return
+      }
+
+      try {
+        // Fetch Org Name for this Custom Domain
+        const { data: org } = await supabase
+          .from('organizations')
+          .select('name')
+          .eq('custom_domain', hostname)
+          .single()
+
+        if (org) {
+          setBranding({
+            name: org.name,
+            // Use the proxy route we created to serve the logo reliably
+            logo: '/api/org-icon?type=icon', 
+            isCustom: true,
+            subtitle: `Welcome to ${org.name}`
+          })
+        }
+      } catch (error) {
+        console.error('Error fetching branding:', error)
+      }
+    }
+
+    fetchBranding()
+  }, []) // Run once on mount
+
+  // 2. Fetch Invite Details (Existing Logic)
   useEffect(() => {
     const fetchInviteDetails = async () => {
       if (!inviteOrg) return
@@ -171,18 +230,26 @@ function LoginForm() {
           </div>
           <div className="relative z-10">
             <div className="w-20 h-20 bg-white rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg p-2">
+               {/* LOGO LOGIC: 
+                   1. If Invited -> Show Invite Org Logo 
+                   2. If Custom Domain -> Show Custom Domain Logo (via Proxy)
+                   3. Fallback -> AdRolls Default Icon or Building Icon
+               */}
                {inviteInfo?.logo_url ? (
                  <img src={inviteInfo.logo_url} className="w-full h-full object-contain" alt="Org Logo"/>
+               ) : branding.isCustom && branding.logo ? (
+                 <img src={branding.logo} className="w-full h-full object-contain" alt={branding.name}/>
                ) : (
                  inviteOrg ? <User size={32} className="text-blue-600"/> : <Building2 size={32} className="text-slate-900"/>
                )}
             </div>
             
+            {/* NAME LOGIC: Prefer Invite Name, otherwise use Branding Name (Custom or Default) */}
             <h1 className="text-2xl font-black text-white tracking-tight">
-              {inviteInfo ? inviteInfo.name : 'AdRolls.ai'}
+              {inviteInfo ? inviteInfo.name : branding.name}
             </h1>
             <p className="text-slate-400 text-sm mt-1 font-medium">
-              {inviteInfo ? 'Invited you to join their team' : 'Builder & Agent Marketing OS'}
+              {inviteInfo ? 'Invited you to join their team' : branding.subtitle}
             </p>
           </div>
         </div>
