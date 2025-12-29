@@ -1,12 +1,21 @@
 import { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
 import { createClient } from '@/utils/supabase/server'
- 
+
+// 1. FORCE DYNAMIC: Prevents Next.js from caching the manifest at build time
+export const dynamic = 'force-dynamic';
+
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const headersList = await headers();
-  const host = headersList.get('host') || '';
+  
+  // 2. CRITICAL FIX: Check 'x-forwarded-host' first (preserved by Middleware)
+  // If we just check 'host', we might see the internal Vercel URL, not the Custom Domain.
+  const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
+  
+  // 3. Clean the host (remove port number if present, e.g. "localhost:3000" -> "localhost")
+  const host = rawHost.split(':')[0];
 
-  // 1. Default "System" Manifest (AdRolls)
+  // Default "System" Manifest (AdRolls)
   const defaultManifest: MetadataRoute.Manifest = {
     name: 'AdRolls AI',
     short_name: 'AdRolls',
@@ -29,8 +38,8 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     ],
   };
 
-  // 2. Identify if this is a System Host (ignore localhost for production usually, but we keep the list strict)
-  const DEFAULT_HOSTS = [
+  // Define System Hosts (where we always show AdRolls branding)
+  const SYSTEM_HOSTS = [
     'adrolls.in',
     'www.adrolls.in',
     'app.adrolls.in',
@@ -38,15 +47,14 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
   ];
 
   // If it is a known AdRolls domain, return the default manifest
-  if (DEFAULT_HOSTS.includes(host)) {
+  if (SYSTEM_HOSTS.includes(host)) {
     return defaultManifest;
   }
 
-  // 3. Dynamic Lookup for Custom Domains
+  // Dynamic Lookup for Custom Domains
   try {
     const supabase = await createClient();
 
-    // Look for organization with this custom domain
     const { data: org } = await supabase
       .from('organizations')
       .select('name, master_logo_url')
@@ -54,7 +62,6 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
       .single();
 
     if (org) {
-      // Return Dynamic Manifest for the Organization
       return {
         name: org.name || 'Partner App',
         short_name: org.name ? org.name.substring(0, 12) : 'Partner',
@@ -65,7 +72,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
         theme_color: '#FFFFFF', 
         icons: [
           {
-            // Point to our dynamic proxy route (see step 3)
+            // Point to our dynamic proxy route
             src: '/api/org-icon?type=icon', 
             sizes: '512x512', 
             type: 'image/png',
@@ -82,6 +89,6 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     console.error('Error generating dynamic manifest:', error);
   }
 
-  // Fallback to default if anything fails
+  // Fallback to default if anything fails or no org found
   return defaultManifest;
 }

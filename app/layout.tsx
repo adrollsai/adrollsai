@@ -16,15 +16,18 @@ function isSystemHost(host: string) {
     'app.adrolls.in',
     process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app'
   ];
-  // NOTE: We check if the host is in our allowed list. 
-  // If you want to test on localhost, you must remove 'localhost' from being treated as a system host here, 
-  // OR add 'localhost:3000' to your DB as a custom domain.
-  return host.includes('localhost') || host.includes('127.0.0.1') || DEFAULT_HOSTS.includes(host);
+  
+  // FIX: We removed 'host.includes("localhost")' from here.
+  // Now localhost will be treated as a "Custom Domain" so it checks the DB.
+  return DEFAULT_HOSTS.includes(host);
 }
 
 export async function generateMetadata(): Promise<Metadata> {
   const headersList = await headers();
-  const host = headersList.get('host') || '';
+  const rawHost = headersList.get('host') || '';
+  
+  // FIX: Clean port number (localhost:3000 -> localhost)
+  const host = rawHost.split(':')[0];
 
   // Default AdRolls Metadata
   const defaultMetadata: Metadata = {
@@ -58,6 +61,7 @@ export async function generateMetadata(): Promise<Metadata> {
     },
   };
 
+  // Check if system host
   if (isSystemHost(host)) {
     return defaultMetadata;
   }
@@ -78,7 +82,7 @@ export async function generateMetadata(): Promise<Metadata> {
         description: `Welcome to ${org.name}`,
         manifest: "/manifest.webmanifest",
         icons: {
-          icon: "/api/org-icon?type=favicon", // Points to route created in Step 3
+          icon: "/api/org-icon?type=favicon",
           shortcut: "/api/org-icon?type=favicon",
           apple: "/api/org-icon?type=icon",
         },

@@ -146,7 +146,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // CRITICAL UPDATE: Added 'manifest.webmanifest' and 'api/org-icon' to the ignore list.
+  // This ensures the browser can fetch these files without middleware interference.
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|auth|shared).*)',
+    '/((?!_next/static|_next/image|favicon.ico|auth|shared|api/org-icon|manifest.webmanifest).*)',
   ],
 }
