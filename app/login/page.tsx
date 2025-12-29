@@ -25,7 +25,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [inviteInfo, setInviteInfo] = useState<InviteInfo | null>(null)
   
-  // NEW: State for Custom Branding (Default = AdRolls)
+  // Custom Branding State (Default = AdRolls)
   const [branding, setBranding] = useState<BrandingInfo>({
     name: 'AdRolls.ai',
     logo: null, 
@@ -33,17 +33,15 @@ function LoginForm() {
     subtitle: 'Builder & Agent Marketing OS'
   })
   
-  // State for Email Auth
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
   const [message, setMessage] = useState<{ type: 'error' | 'success', text: string } | null>(null)
 
-  // Capture the invite code and error
   const inviteOrg = searchParams.get('invite_org')
   const errorMsg = searchParams.get('error')
 
-  // 1. NEW: Fetch Custom Domain Branding
+  // 1. FETCH CUSTOM BRANDING (Directly from DB)
   useEffect(() => {
     const fetchBranding = async () => {
       const hostname = window.location.hostname
@@ -56,25 +54,23 @@ function LoginForm() {
         process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app'
       ]
 
-      // If current host is in the system list, stop here (keep default branding)
-      // NOTE: We excluded 'localhost' from this list so you can test it locally.
+      // If current host is in the system list, stop here
       if (SYSTEM_HOSTS.some(h => hostname.includes(h))) {
         return
       }
 
       try {
-        // Fetch Org Name for this Custom Domain
+        // Fetch Name AND Logo URL directly
         const { data: org } = await supabase
           .from('organizations')
-          .select('name')
+          .select('name, master_logo_url') // <--- CRITICAL FIX: Added master_logo_url
           .eq('custom_domain', hostname)
           .single()
 
         if (org) {
           setBranding({
             name: org.name,
-            // Use the proxy route we created to serve the logo reliably
-            logo: '/api/org-icon?type=icon', 
+            logo: org.master_logo_url, // <--- CRITICAL FIX: Use direct URL, not API route
             isCustom: true,
             subtitle: `Welcome to ${org.name}`
           })
@@ -85,9 +81,9 @@ function LoginForm() {
     }
 
     fetchBranding()
-  }, []) // Run once on mount
+  }, []) 
 
-  // 2. Fetch Invite Details (Existing Logic)
+  // 2. Fetch Invite Details
   useEffect(() => {
     const fetchInviteDetails = async () => {
       if (!inviteOrg) return
@@ -136,7 +132,6 @@ function LoginForm() {
 
     try {
       if (authMode === 'signup') {
-        // 1. SIGN UP FLOW
         const origin = window.location.origin
         const redirectUrl = new URL(`${origin}/auth/callback`)
         if (inviteOrg) redirectUrl.searchParams.set('invite_org', inviteOrg)
@@ -145,7 +140,7 @@ function LoginForm() {
           email,
           password,
           options: {
-            emailRedirectTo: redirectUrl.toString() // Important: passes invite_org to callback
+            emailRedirectTo: redirectUrl.toString() 
           }
         })
 
@@ -153,7 +148,6 @@ function LoginForm() {
         setMessage({ type: 'success', text: 'Check your email for the confirmation link.' })
         
       } else {
-        // 2. LOGIN FLOW
         const { data: { user }, error } = await supabase.auth.signInWithPassword({
           email,
           password
@@ -162,10 +156,7 @@ function LoginForm() {
         if (error) throw error
         if (!user) throw new Error("Login failed")
 
-        // Manually handle Invite Linking (since login skips the callback route)
         if (inviteOrg) {
-          console.log("Linking User to Invite Org:", inviteOrg)
-          
           await supabase.from('organization_members').upsert({
               user_id: user.id,
               organization_id: inviteOrg,
@@ -187,7 +178,7 @@ function LoginForm() {
     }
   }
 
-  // --- DEMO LOGIN LOGIC ---
+  // --- DEMO LOGIN ---
   const handleDemoLogin = async () => {
     setLoading(true)
     try {
@@ -230,11 +221,7 @@ function LoginForm() {
           </div>
           <div className="relative z-10">
             <div className="w-20 h-20 bg-white rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg p-2">
-               {/* LOGO LOGIC: 
-                   1. If Invited -> Show Invite Org Logo 
-                   2. If Custom Domain -> Show Custom Domain Logo (via Proxy)
-                   3. Fallback -> AdRolls Default Icon or Building Icon
-               */}
+               {/* LOGO LOGIC */}
                {inviteInfo?.logo_url ? (
                  <img src={inviteInfo.logo_url} className="w-full h-full object-contain" alt="Org Logo"/>
                ) : branding.isCustom && branding.logo ? (
@@ -244,7 +231,6 @@ function LoginForm() {
                )}
             </div>
             
-            {/* NAME LOGIC: Prefer Invite Name, otherwise use Branding Name (Custom or Default) */}
             <h1 className="text-2xl font-black text-white tracking-tight">
               {inviteInfo ? inviteInfo.name : branding.name}
             </h1>
@@ -257,7 +243,6 @@ function LoginForm() {
         {/* Body */}
         <div className="p-8 space-y-6">
            
-           {/* Global Error/Success Messages */}
            {(errorMsg || message) && (
              <div className={`p-3 rounded-xl flex gap-2 items-center text-xs font-bold ${
                message?.type === 'success' 
@@ -281,7 +266,6 @@ function LoginForm() {
              </div>
            )}
 
-           {/* --- EMAIL FORM --- */}
            <form onSubmit={handleEmailAuth} className="space-y-4">
              <div>
                 <label className="text-xs font-bold text-slate-500 uppercase ml-1">Email Address</label>
@@ -328,7 +312,6 @@ function LoginForm() {
               </button>
            </form>
 
-           {/* Toggle Auth Mode */}
            <div className="text-center">
              <button 
                type="button"
