@@ -1,46 +1,117 @@
-// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/layout.tsx
+// adrollsai/adrollsai/adrollsai-builder-app-lander-distribute/app/layout.tsx
 
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-// 1. Import the new component
-import ApplePwaSplash from "@/components/ApplePwaSplash";
+import { headers } from "next/headers";
+import { createClient } from "@/utils/supabase/server";
 
 const inter = Inter({ subsets: ["latin"] });
 
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://adrolls.in";
 
-export const metadata: Metadata = {
-  metadataBase: new URL(baseUrl),
-  title: "AdRolls AI",
-  description: "keep your ads rolling...",
-  manifest: "/manifest.webmanifest",
-  icons: {
-    icon: "/favicon.ico",
-    shortcut: "/favicon.ico",
-    apple: "/icon-192x192.png",
-  },
-  openGraph: {
+// 1. Helper to identify System Hosts vs Custom Domains
+function isSystemHost(host: string) {
+  const DEFAULT_HOSTS = [
+    'adrolls.in',
+    'www.adrolls.in',
+    'app.adrolls.in',
+    process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app'
+  ];
+  return host.includes('localhost') || host.includes('127.0.0.1') || DEFAULT_HOSTS.includes(host);
+}
+
+// 2. Dynamic Metadata Generation
+export async function generateMetadata(): Promise<Metadata> {
+  const headersList = await headers();
+  const host = headersList.get('host') || '';
+
+  // Default Branding (AdRolls)
+  const defaultMetadata: Metadata = {
+    metadataBase: new URL(baseUrl),
     title: "AdRolls AI",
-    description: "Automate your real estate marketing",
-    url: baseUrl,
-    siteName: "AdRolls AI",
-    type: "website",
-    images: [{ url: "/icon-512x512.png", width: 512, height: 512, alt: "AdRolls AI" }],
-  },
-  twitter: {
-    card: "summary", 
-    title: "AdRolls AI",
-    description: "Automate your real estate marketing",
-    images: ["/icon-512x512.png"],
-  },
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "AdRolls AI",
-    // 2. REMOVE the 'startupImage' array from here
-  },
-};
+    description: "keep your ads rolling...",
+    manifest: "/manifest.webmanifest",
+    icons: {
+      icon: "/favicon.ico",
+      shortcut: "/favicon.ico",
+      apple: "/icon-192x192.png",
+    },
+    openGraph: {
+      title: "AdRolls AI",
+      description: "Automate your real estate marketing",
+      url: baseUrl,
+      siteName: "AdRolls AI",
+      type: "website",
+      images: [{ url: "/icon-512x512.png", width: 512, height: 512, alt: "AdRolls AI" }],
+    },
+    twitter: {
+      card: "summary", 
+      title: "AdRolls AI",
+      description: "Automate your real estate marketing",
+      images: ["/icon-512x512.png"],
+    },
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "default",
+      title: "AdRolls AI",
+    },
+  };
+
+  // If it's a System Host, return default immediately
+  if (isSystemHost(host)) {
+    return defaultMetadata;
+  }
+
+  // If Custom Domain, fetch Organization details
+  try {
+    const supabase = await createClient();
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('name, master_logo_url')
+      .eq('custom_domain', host)
+      .single();
+
+    if (org) {
+      // Return White-Labeled Metadata
+      return {
+        metadataBase: new URL(`https://${host}`),
+        title: org.name,
+        description: `Welcome to ${org.name}`,
+        manifest: "/manifest.webmanifest", // This will be handled dynamically by manifest.ts
+        icons: {
+          icon: "/api/org-icon?type=favicon", // Dynamic Route
+          shortcut: "/api/org-icon?type=favicon",
+          apple: "/api/org-icon?type=icon",
+        },
+        openGraph: {
+          title: org.name,
+          description: `Welcome to ${org.name}`,
+          url: `https://${host}`,
+          siteName: org.name,
+          type: "website",
+          images: [{ url: "/api/org-icon?type=icon", width: 512, height: 512, alt: org.name }],
+        },
+        twitter: {
+          card: "summary",
+          title: org.name,
+          description: `Welcome to ${org.name}`,
+          images: ["/api/org-icon?type=icon"],
+        },
+        appleWebApp: {
+          capable: true,
+          statusBarStyle: "default",
+          title: org.name,
+        },
+      };
+    }
+  } catch (error) {
+    console.error("Error fetching dynamic metadata:", error);
+  }
+
+  // Fallback to default if DB lookup fails
+  return defaultMetadata;
+}
 
 export const viewport: Viewport = {
   themeColor: "#D0E8FF",
@@ -59,8 +130,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        {/* 3. Render the splash screens here. Next.js will hoist them to <head> */}
-        <ApplePwaSplash />
         {children}
       </body>
     </html>
