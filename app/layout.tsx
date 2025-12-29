@@ -1,16 +1,14 @@
-// adrollsai/adrollsai/adrollsai-builder-app-lander-distribute/app/layout.tsx
-
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { headers } from "next/headers";
-import { createClient } from "@/utils/supabase/server";
+import { createClient } from '@/utils/supabase/server';
 
 const inter = Inter({ subsets: ["latin"] });
 
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://adrolls.in";
 
-// 1. Helper to identify System Hosts vs Custom Domains
+// Helper to check for System Hosts
 function isSystemHost(host: string) {
   const DEFAULT_HOSTS = [
     'adrolls.in',
@@ -18,15 +16,17 @@ function isSystemHost(host: string) {
     'app.adrolls.in',
     process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app'
   ];
+  // NOTE: We check if the host is in our allowed list. 
+  // If you want to test on localhost, you must remove 'localhost' from being treated as a system host here, 
+  // OR add 'localhost:3000' to your DB as a custom domain.
   return host.includes('localhost') || host.includes('127.0.0.1') || DEFAULT_HOSTS.includes(host);
 }
 
-// 2. Dynamic Metadata Generation
 export async function generateMetadata(): Promise<Metadata> {
   const headersList = await headers();
   const host = headersList.get('host') || '';
 
-  // Default Branding (AdRolls)
+  // Default AdRolls Metadata
   const defaultMetadata: Metadata = {
     metadataBase: new URL(baseUrl),
     title: "AdRolls AI",
@@ -58,12 +58,11 @@ export async function generateMetadata(): Promise<Metadata> {
     },
   };
 
-  // If it's a System Host, return default immediately
   if (isSystemHost(host)) {
     return defaultMetadata;
   }
 
-  // If Custom Domain, fetch Organization details
+  // Dynamic Lookup
   try {
     const supabase = await createClient();
     const { data: org } = await supabase
@@ -73,14 +72,13 @@ export async function generateMetadata(): Promise<Metadata> {
       .single();
 
     if (org) {
-      // Return White-Labeled Metadata
       return {
         metadataBase: new URL(`https://${host}`),
         title: org.name,
         description: `Welcome to ${org.name}`,
-        manifest: "/manifest.webmanifest", // This will be handled dynamically by manifest.ts
+        manifest: "/manifest.webmanifest",
         icons: {
-          icon: "/api/org-icon?type=favicon", // Dynamic Route
+          icon: "/api/org-icon?type=favicon", // Points to route created in Step 3
           shortcut: "/api/org-icon?type=favicon",
           apple: "/api/org-icon?type=icon",
         },
@@ -109,7 +107,6 @@ export async function generateMetadata(): Promise<Metadata> {
     console.error("Error fetching dynamic metadata:", error);
   }
 
-  // Fallback to default if DB lookup fails
   return defaultMetadata;
 }
 

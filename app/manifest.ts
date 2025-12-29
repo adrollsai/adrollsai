@@ -1,5 +1,3 @@
-// app/manifest.ts
-
 import { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
 import { createClient } from '@/utils/supabase/server'
@@ -8,7 +6,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const headersList = await headers();
   const host = headersList.get('host') || '';
 
-  // Default Manifest Configuration
+  // 1. Default "System" Manifest (AdRolls)
   const defaultManifest: MetadataRoute.Manifest = {
     name: 'AdRolls AI',
     short_name: 'AdRolls',
@@ -31,7 +29,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     ],
   };
 
-  // Define System Hosts
+  // 2. Identify if this is a System Host (ignore localhost for production usually, but we keep the list strict)
   const DEFAULT_HOSTS = [
     'adrolls.in',
     'www.adrolls.in',
@@ -39,11 +37,12 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app'
   ];
 
-  // If localhost or default host, return default manifest
-  if (host.includes('localhost') || host.includes('127.0.0.1') || DEFAULT_HOSTS.includes(host)) {
+  // If it is a known AdRolls domain, return the default manifest
+  if (DEFAULT_HOSTS.includes(host)) {
     return defaultManifest;
   }
 
+  // 3. Dynamic Lookup for Custom Domains
   try {
     const supabase = await createClient();
 
@@ -63,12 +62,12 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
         start_url: '/dashboard',
         display: 'standalone',
         background_color: '#FFFFFF',
-        theme_color: '#FFFFFF', // You might want to fetch brand_color from DB if available
+        theme_color: '#FFFFFF', 
         icons: [
           {
-            // Point to our dynamic proxy route
+            // Point to our dynamic proxy route (see step 3)
             src: '/api/org-icon?type=icon', 
-            sizes: '512x512', // We assume the proxy serves a high-res image suitable for both
+            sizes: '512x512', 
             type: 'image/png',
           },
           {
