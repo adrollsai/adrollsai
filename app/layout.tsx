@@ -21,17 +21,22 @@ export async function generateMetadata(): Promise<Metadata> {
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
   const host = rawHost.split(':')[0];
 
+  // 1. FIX: Added appleWebApp here for the main domain
   const defaultMetadata: Metadata = {
     metadataBase: new URL(baseUrl),
     title: "AdRolls AI",
     description: "Keep your ads rolling...",
-    manifest: "/manifest.webmanifest", // Next.js generates this from manifest.ts
+    manifest: "/manifest.webmanifest", 
     icons: {
       icon: "/favicon.ico",
       shortcut: "/favicon.ico",
-      apple: "/icon-192x192.png",
+      apple: "/icon-192x192.png", // Ensure this image exists in /public
     },
-    // ... rest of your default metadata
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "default",
+      title: "AdRolls AI",
+    },
   };
 
   if (isSystemHost(host)) return defaultMetadata;
@@ -53,7 +58,7 @@ export async function generateMetadata(): Promise<Metadata> {
         icons: {
           icon: "/api/org-icon?type=favicon",
           shortcut: "/api/org-icon?type=favicon",
-          apple: "/api/org-icon?type=icon", // Use the larger icon for Apple Touch
+          apple: "/api/org-icon?type=icon", 
         },
         openGraph: {
           title: org.name,
@@ -62,6 +67,7 @@ export async function generateMetadata(): Promise<Metadata> {
           siteName: org.name,
           images: [{ url: "/api/org-icon?type=icon", width: 512, height: 512, alt: org.name }],
         },
+        // 2. FIX: This was already correct for custom domains
         appleWebApp: {
           capable: true,
           statusBarStyle: "default",

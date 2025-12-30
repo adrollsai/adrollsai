@@ -5,9 +5,7 @@ import { createClient } from '@/utils/supabase/server'
 export const dynamic = 'force-dynamic';
 
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
-  // 1. RESTORED AWAIT: This fixes the "Property 'get' does not exist on type 'Promise'..." error
   const headersList = await headers();
-  
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
   const host = rawHost.split(':')[0];
 
@@ -16,8 +14,8 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     name: 'AdRolls AI',
     short_name: 'AdRolls',
     description: 'Automate your real estate marketing',
-    start_url: '/dashboard',
-    display: 'standalone',
+    start_url: '/dashboard', // Ensure this route exists and is accessible
+    display: 'standalone',   // REQUIRED for iOS PWA
     background_color: '#F8F9FF',
     theme_color: '#D0E8FF',
     icons: [
@@ -61,7 +59,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
         short_name: org.name ? org.name.substring(0, 12) : 'Partner',
         description: `Welcome to ${org.name}`,
         start_url: '/',
-        display: 'standalone',
+        display: 'standalone', // REQUIRED for iOS PWA
         background_color: '#FFFFFF',
         theme_color: '#FFFFFF', 
         icons: [
@@ -69,7 +67,6 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
             src: '/api/org-icon?type=icon', 
             sizes: '512x512', 
             type: 'image/png',
-            // 2. KEEP THIS FIX: Cast to 'any' to avoid strict type checking on "any maskable"
             purpose: 'any maskable' as any 
           },
           {
