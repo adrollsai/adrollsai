@@ -21,30 +21,20 @@ export async function generateMetadata(): Promise<Metadata> {
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
   const host = rawHost.split(':')[0];
 
-  // RELATIVE PATH is safest for PWA manifest
-  const manifestUrl = "/api/manifest";
-
   const defaultMetadata: Metadata = {
     metadataBase: new URL(baseUrl),
     title: "AdRolls AI",
     description: "Keep your ads rolling...",
-    manifest: manifestUrl,
+    // REMOVED: manifest property from here (we will add it manually below)
     icons: {
       icon: "/favicon.ico",
       shortcut: "/favicon.ico",
       apple: "/icon-192x192.png",
     },
-    // We keep this configuration as a backup
-    appleWebApp: {
-      capable: true,
-      statusBarStyle: "default",
-      title: "AdRolls AI",
-    },
   };
 
   if (isSystemHost(host)) return defaultMetadata;
 
-  // Custom Domain Logic
   try {
     const supabase = await createClient();
     const { data: org } = await supabase
@@ -58,7 +48,7 @@ export async function generateMetadata(): Promise<Metadata> {
         metadataBase: new URL(`https://${host}`),
         title: org.name,
         description: `Welcome to ${org.name}`,
-        manifest: manifestUrl,
+        // REMOVED: manifest property from here
         
         icons: {
           icon: "/api/org-icon?type=favicon",
@@ -71,11 +61,6 @@ export async function generateMetadata(): Promise<Metadata> {
           url: `https://${host}`,
           siteName: org.name,
           images: [{ url: "/api/org-icon?type=icon", width: 512, height: 512, alt: org.name }],
-        },
-        appleWebApp: {
-          capable: true,
-          statusBarStyle: "default",
-          title: org.name, 
         },
       };
     }
@@ -94,14 +79,14 @@ export const viewport: Viewport = {
   userScalable: false,
 };
 
-// --- FIX IS HERE: Manually inject the head tags ---
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      {/* Manually forcing the PWA meta tags to ensure they exist */}
       <head>
+        {/* MANUALLY INJECTED TAGS - GUARANTEED TO WORK */}
+        <link rel="manifest" href="/api/manifest" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
