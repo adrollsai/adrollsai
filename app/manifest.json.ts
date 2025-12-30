@@ -6,16 +6,18 @@ export const dynamic = 'force-dynamic';
 
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const headersList = await headers();
+  // robust host detection: handle commas in forwarded-host and ports
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
-  const host = rawHost.split(':')[0];
+  const host = rawHost.split(',')[0].trim().split(':')[0];
 
-  // Default Manifest
+  // Default Manifest (AdRolls)
   const defaultManifest: MetadataRoute.Manifest = {
+    id: '/?source=pwa', // Unique ID for the app
     name: 'AdRolls AI',
     short_name: 'AdRolls',
     description: 'Automate your real estate marketing',
-    start_url: '/dashboard', // Ensure this route exists and is accessible
-    display: 'standalone',   // REQUIRED for iOS PWA
+    start_url: '/dashboard', 
+    display: 'standalone',
     background_color: '#F8F9FF',
     theme_color: '#D0E8FF',
     icons: [
@@ -43,7 +45,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     return defaultManifest;
   }
 
-  // Dynamic Lookup
+  // Dynamic Lookup for Custom Domains
   try {
     const supabase = await createClient();
 
@@ -55,11 +57,12 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
 
     if (org) {
       return {
+        id: `/?org=${encodeURIComponent(org.name)}`, // Unique ID per org
         name: org.name || 'Partner App',
         short_name: org.name ? org.name.substring(0, 12) : 'Partner',
         description: `Welcome to ${org.name}`,
-        start_url: '/',
-        display: 'standalone', // REQUIRED for iOS PWA
+        start_url: '/', // Custom domains usually start at root
+        display: 'standalone',
         background_color: '#FFFFFF',
         theme_color: '#FFFFFF', 
         icons: [
