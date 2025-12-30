@@ -7,7 +7,6 @@ import { createClient } from '@/utils/supabase/server';
 const inter = Inter({ subsets: ["latin"] });
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://adrolls.in";
 
-// Helper to check for System Hosts (AdRolls branded)
 function isSystemHost(host: string) {
   const DEFAULT_HOSTS = [
     'adrolls.in', 'www.adrolls.in', 'app.adrolls.in',
@@ -21,22 +20,21 @@ export async function generateMetadata(): Promise<Metadata> {
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
   const host = rawHost.split(':')[0];
 
-  // CRITICAL: Use absolute URL for manifest pointing to our API route.
-  // This prevents relative path errors on custom domains.
-  const manifestUrl = `https://${host}/api/manifest`;
+  // FIX 1: Use RELATIVE path. This works for all domains automatically.
+  const manifestUrl = "/api/manifest";
 
-  // --- DEFAULT METADATA (AdRolls Branding) ---
+  // --- DEFAULT METADATA ---
   const defaultMetadata: Metadata = {
     metadataBase: new URL(baseUrl),
     title: "AdRolls AI",
     description: "Keep your ads rolling...",
-    manifest: manifestUrl, // Points to /api/manifest
+    manifest: manifestUrl,
     icons: {
       icon: "/favicon.ico",
       shortcut: "/favicon.ico",
-      apple: "/icon-192x192.png", // Standard AdRolls Icon
+      apple: "/icon-192x192.png",
     },
-    // iOS PWA Config for AdRolls
+    // FIX 2: Ensure default Apple config is complete
     appleWebApp: {
       capable: true,
       statusBarStyle: "default",
@@ -44,10 +42,9 @@ export async function generateMetadata(): Promise<Metadata> {
     },
   };
 
-  // If it's one of our main domains, return default immediately
   if (isSystemHost(host)) return defaultMetadata;
 
-  // --- CUSTOM DOMAIN METADATA (White-Label) ---
+  // --- CUSTOM DOMAIN METADATA ---
   try {
     const supabase = await createClient();
     const { data: org } = await supabase
@@ -61,10 +58,8 @@ export async function generateMetadata(): Promise<Metadata> {
         metadataBase: new URL(`https://${host}`),
         title: org.name,
         description: `Welcome to ${org.name}`,
-        manifest: manifestUrl, // Points to /api/manifest
+        manifest: manifestUrl, // Relative path
         
-        // DYNAMIC ICONS: This URL hits your API, which checks the host
-        // and returns the *Organization's* logo, not AdRolls.
         icons: {
           icon: "/api/org-icon?type=favicon",
           shortcut: "/api/org-icon?type=favicon",
@@ -79,11 +74,11 @@ export async function generateMetadata(): Promise<Metadata> {
           images: [{ url: "/api/org-icon?type=icon", width: 512, height: 512, alt: org.name }],
         },
 
-        // iOS PWA CONFIG FOR CLIENTS
+        // FIX 3: Robust iOS Configuration for Custom Domains
         appleWebApp: {
           capable: true,
           statusBarStyle: "default",
-          title: org.name, // The App Name on iPhone Home Screen
+          title: org.name, 
         },
       };
     }
