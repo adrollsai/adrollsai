@@ -69,9 +69,15 @@ export async function middleware(request: NextRequest) {
           rewriteUrl.searchParams.set(key, value)
       })
       
+      // FIX START: Prepare headers for the rewrite so layout.tsx sees the custom domain
+      const requestHeaders = new Headers(request.headers);
+      requestHeaders.set('x-forwarded-host', currentHost);
+      // FIX END
+
       response = NextResponse.rewrite(rewriteUrl, {
-          request: { headers: request.headers },
+          request: { headers: requestHeaders },
       })
+      
       response.headers.set('x-forwarded-host', currentHost)
     }
   }
