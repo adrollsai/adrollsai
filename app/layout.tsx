@@ -7,7 +7,7 @@ import { createClient } from '@/utils/supabase/server';
 const inter = Inter({ subsets: ["latin"] });
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://adrolls.in";
 
-// Helper to check for System Hosts
+// Helper to check for System Hosts (AdRolls branded)
 function isSystemHost(host: string) {
   const DEFAULT_HOSTS = [
     'adrolls.in', 'www.adrolls.in', 'app.adrolls.in',
@@ -21,17 +21,18 @@ export async function generateMetadata(): Promise<Metadata> {
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
   const host = rawHost.split(':')[0];
 
-  // --- DEFAULT METADATA ---
+  // --- DEFAULT METADATA (AdRolls Branding) ---
   const defaultMetadata: Metadata = {
     metadataBase: new URL(baseUrl),
     title: "AdRolls AI",
     description: "Keep your ads rolling...",
-    manifest: "/manifest.json", // UPDATED: Points to .json
+    manifest: "/manifest.json", // UPDATED: Points to our new Route Handler
     icons: {
       icon: "/favicon.ico",
       shortcut: "/favicon.ico",
-      apple: "/icon-192x192.png",
+      apple: "/icon-192x192.png", // Standard AdRolls Icon
     },
+    // iOS PWA Config for AdRolls
     appleWebApp: {
       capable: true,
       statusBarStyle: "default",
@@ -39,9 +40,10 @@ export async function generateMetadata(): Promise<Metadata> {
     },
   };
 
+  // If it's one of our main domains, return default immediately
   if (isSystemHost(host)) return defaultMetadata;
 
-  // --- CUSTOM DOMAIN METADATA ---
+  // --- CUSTOM DOMAIN METADATA (White-Label) ---
   try {
     const supabase = await createClient();
     const { data: org } = await supabase
@@ -55,8 +57,10 @@ export async function generateMetadata(): Promise<Metadata> {
         metadataBase: new URL(`https://${host}`),
         title: org.name,
         description: `Welcome to ${org.name}`,
-        manifest: "/manifest.json", // UPDATED: Points to .json
+        manifest: "/manifest.json", // UPDATED: Points to our new Route Handler
         
+        // DYNAMIC ICONS: This URL hits your API, which checks the host
+        // and returns the *Organization's* logo, not AdRolls.
         icons: {
           icon: "/api/org-icon?type=favicon",
           shortcut: "/api/org-icon?type=favicon",
@@ -71,10 +75,11 @@ export async function generateMetadata(): Promise<Metadata> {
           images: [{ url: "/api/org-icon?type=icon", width: 512, height: 512, alt: org.name }],
         },
 
+        // iOS PWA CONFIG FOR CLIENTS
         appleWebApp: {
           capable: true,
           statusBarStyle: "default",
-          title: org.name,
+          title: org.name, // The App Name on iPhone Home Screen
         },
       };
     }
