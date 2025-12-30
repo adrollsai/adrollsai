@@ -4,7 +4,7 @@ import withPWA from "@ducanh2912/next-pwa";
 const pwa = withPWA({
   dest: "public",
   register: true,
-  disable: process.env.NODE_ENV === "development", 
+  disable: process.env.NODE_ENV === "development",
   workboxOptions: {
     disableDevLogs: true,
     skipWaiting: true,
@@ -14,13 +14,6 @@ const pwa = withPWA({
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ['@supabase/supabase-js', 'sharp'],
-
-  experimental: {
-    // @ts-expect-error - This property is valid at runtime but missing from strict NextConfig types
-    outputFileTracingIncludes: {
-      '/api/**/*': ['./fonts/**/*'],
-    },
-  },
 
   images: {
     remotePatterns: [
@@ -33,7 +26,7 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  // FIX: Allow 'unsafe-eval' for PWA Service Workers
+  // CSP FIX: Allow 'unsafe-eval' for Service Workers
   async headers() {
     return [
       {

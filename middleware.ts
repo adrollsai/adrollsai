@@ -114,7 +114,6 @@ export async function middleware(request: NextRequest) {
 export const config = {
   // CRITICAL: Exclude manifest files and API routes from middleware to prevent rewrites/auth blocks
   matcher: [
-    // Ensure manifest.json is in this exclusion list
-    '/((?!_next/static|_next/image|favicon.ico|auth|shared|api/org-icon|manifest.webmanifest|manifest.json).*)',
+    '/((?!_next/static|_next/image|favicon.ico|auth|shared|api/org-icon|api/manifest|manifest.webmanifest|manifest.json).*)',
   ],
 }

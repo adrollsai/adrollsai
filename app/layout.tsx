@@ -21,15 +21,16 @@ export async function generateMetadata(): Promise<Metadata> {
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
   const host = rawHost.split(':')[0];
 
-  // CRITICAL: Use absolute URL for manifest to prevent relative path errors on custom domains
-  const manifestUrl = `https://${host}/manifest.json`;
+  // CRITICAL: Use absolute URL for manifest pointing to our API route.
+  // This prevents relative path errors on custom domains.
+  const manifestUrl = `https://${host}/api/manifest`;
 
   // --- DEFAULT METADATA (AdRolls Branding) ---
   const defaultMetadata: Metadata = {
     metadataBase: new URL(baseUrl),
     title: "AdRolls AI",
     description: "Keep your ads rolling...",
-    manifest: manifestUrl, // Absolute URL
+    manifest: manifestUrl, // Points to /api/manifest
     icons: {
       icon: "/favicon.ico",
       shortcut: "/favicon.ico",
@@ -60,9 +61,10 @@ export async function generateMetadata(): Promise<Metadata> {
         metadataBase: new URL(`https://${host}`),
         title: org.name,
         description: `Welcome to ${org.name}`,
-        manifest: manifestUrl, // Absolute URL
+        manifest: manifestUrl, // Points to /api/manifest
         
-        // DYNAMIC ICONS: Returns Organization's logo
+        // DYNAMIC ICONS: This URL hits your API, which checks the host
+        // and returns the *Organization's* logo, not AdRolls.
         icons: {
           icon: "/api/org-icon?type=favicon",
           shortcut: "/api/org-icon?type=favicon",
