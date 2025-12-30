@@ -7,6 +7,7 @@ import { createClient } from '@/utils/supabase/server';
 const inter = Inter({ subsets: ["latin"] });
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://adrolls.in";
 
+// Helper to check for System Hosts
 function isSystemHost(host: string) {
   const DEFAULT_HOSTS = [
     'adrolls.in', 'www.adrolls.in', 'app.adrolls.in',
@@ -20,10 +21,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
   const host = rawHost.split(':')[0];
 
-  // FIX 1: Use RELATIVE path. This works for all domains automatically.
+  // RELATIVE PATH is safest for PWA manifest
   const manifestUrl = "/api/manifest";
 
-  // --- DEFAULT METADATA ---
   const defaultMetadata: Metadata = {
     metadataBase: new URL(baseUrl),
     title: "AdRolls AI",
@@ -34,7 +34,7 @@ export async function generateMetadata(): Promise<Metadata> {
       shortcut: "/favicon.ico",
       apple: "/icon-192x192.png",
     },
-    // FIX 2: Ensure default Apple config is complete
+    // We keep this configuration as a backup
     appleWebApp: {
       capable: true,
       statusBarStyle: "default",
@@ -44,7 +44,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
   if (isSystemHost(host)) return defaultMetadata;
 
-  // --- CUSTOM DOMAIN METADATA ---
+  // Custom Domain Logic
   try {
     const supabase = await createClient();
     const { data: org } = await supabase
@@ -58,14 +58,13 @@ export async function generateMetadata(): Promise<Metadata> {
         metadataBase: new URL(`https://${host}`),
         title: org.name,
         description: `Welcome to ${org.name}`,
-        manifest: manifestUrl, // Relative path
+        manifest: manifestUrl,
         
         icons: {
           icon: "/api/org-icon?type=favicon",
           shortcut: "/api/org-icon?type=favicon",
           apple: "/api/org-icon?type=icon", 
         },
-
         openGraph: {
           title: org.name,
           description: `Welcome to ${org.name}`,
@@ -73,8 +72,6 @@ export async function generateMetadata(): Promise<Metadata> {
           siteName: org.name,
           images: [{ url: "/api/org-icon?type=icon", width: 512, height: 512, alt: org.name }],
         },
-
-        // FIX 3: Robust iOS Configuration for Custom Domains
         appleWebApp: {
           capable: true,
           statusBarStyle: "default",
@@ -97,11 +94,17 @@ export const viewport: Viewport = {
   userScalable: false,
 };
 
+// --- FIX IS HERE: Manually inject the head tags ---
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
+      {/* Manually forcing the PWA meta tags to ensure they exist */}
+      <head>
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+      </head>
       <body className={inter.className}>{children}</body>
     </html>
   );
