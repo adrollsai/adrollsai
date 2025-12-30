@@ -3,6 +3,7 @@ import { PutObjectCommand } from '@aws-sdk/client-s3'
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
 import path from 'path'
 import process from 'process'
+import fs from 'fs' // Added for robust font path checking
 
 // --- HELPER: Fix R2 URL ---
 function fixR2Url(url: string) {
@@ -13,17 +14,28 @@ function fixR2Url(url: string) {
   return url
 }
 
-// --- FONT INIT (Reverted to Original) ---
+// --- FONT INIT (Fixed for Cold Starts) ---
 export function initFonts() {
   try {
+    // If already set, skip (prevents resetting on warm lambdas)
     if (process.env.FONTCONFIG_PATH) return;
-    
-    // Simple, proven logic for Vercel/Next.js
-    const isProd = process.env.NODE_ENV === 'production';
-    const fontDir = isProd ? '/var/task/fonts' : path.join(process.cwd(), 'fonts');
-    
-    process.env.FONTCONFIG_PATH = fontDir;
-    process.env.FONTCONFIG_FILE = path.join(fontDir, 'fonts.conf');
+
+    const cwd = process.cwd();
+    const searchPaths = [
+        path.join(cwd, 'fonts'),
+        '/var/task/fonts',
+        path.join(cwd, 'public', 'fonts')
+    ];
+
+    // Find the directory that actually contains fonts.conf
+    const fontDir = searchPaths.find(p => fs.existsSync(path.join(p, 'fonts.conf')));
+
+    if (fontDir) {
+        process.env.FONTCONFIG_PATH = fontDir;
+        process.env.FONTCONFIG_FILE = path.join(fontDir, 'fonts.conf');
+    } else {
+        console.error("❌ Could not find fonts.conf. Searched:", searchPaths);
+    }
   } catch (error) {
     console.error("Error initializing fonts:", error);
   }
