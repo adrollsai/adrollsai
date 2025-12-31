@@ -1,24 +1,3 @@
 
-[2025-12-31T19:15:59.685Z] [INFO] Starting Clone for Property: The Grand Orchard Estate
-------------------------------------------------
-
-[2025-12-31T19:16:04.484Z] [ADSET_PAYLOAD] {
-  "name": "AdSet - AdSet - Mohali",
-  "campaign_id": "120237786067530403",
-  "status": "PAUSED",
-  "start_time": "2025-12-31T19:26:04.484Z",
-  "promoted_object": {
-    "page_id": "407449532442588"
-  },
-  "billing_event": "IMPRESSIONS",
-  "optimization_goal": "LEAD_GENERATION",
-  "access_token": "EAAMaVhrzxNABQIxqisj6yhGNScqTCZBoojtiNGNHzTPLFPZC83hCuDBixx5UI9iyWRvtomUEFZAgobuqtQzU0jNu0jWKakYJsd4LANOQdwNEnz7W1N2pDHKyoVOP8yrZBRQWtlK1lXcDCOP6uLJa7xAj5gSZAZBJse73C4c14KXybcYVptDZAl1VYXP3uGyPKlwZCnIjsSa5GZBRywQ2eqULvMVbnWREk5EdzpLfnDCCsePG5jmUicM1UkObOSErZB4D4WmvacRQ1ZCvZC4azDnOw1Aakd5dd2A9FvhXgGN7",
-  "targeting": {
-    "geo_locations": {
-      "countries": [
-        "IN"
-      ]
-    }
-  }
-}
+[2025-12-31T19:38:09.901Z] [INFO] Starting Clone for Property: The Grand Orchard Estate
 ------------------------------------------------

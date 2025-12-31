@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { getOrgAdminCredentials } from '@/utils/org-helper'; // Reuse your helper
 
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
@@ -9,38 +10,31 @@ export async function GET(request: Request) {
         const isAdminMode = searchParams.get('admin') === 'true';
 
         const supabase = await createClient();
-        
-        // 1. Auth Check
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        // 2. Get User's Ad Account ID & Token
+        // 1. Get User Profile & Role
         const { data: profile } = await supabase
             .from('profiles')
-            .select('ad_account_id, facebook_token')
+            .select('id, role, organization_id, ad_account_id, facebook_token')
             .eq('id', user.id)
             .single();
 
-        if (!profile?.ad_account_id || !profile?.facebook_token) {
-            return NextResponse.json({ campaigns: [] }); // User hasn't connected FB yet
-        }
+        if (!profile) return NextResponse.json({ campaigns: [] });
 
-        // --- NEW LOGIC: ADMIN MAPPING MODE ---
+        // --- MODE A: ADMIN MAPPING (Show All FB Campaigns) ---
         if (isAdminMode) {
-            // Fetch ALL Campaigns directly from Facebook (for the Mapping Dropdown)
-            // We want everything: Active, Paused, etc.
-            const fbUrl = `${FB_MARKETING_URL}/${profile.ad_account_id}/campaigns?fields=id,name,status,objective&limit=50&access_token=${profile.facebook_token}`;
+            if (!profile.facebook_token || !profile.ad_account_id) return NextResponse.json({ campaigns: [] });
             
+            const fbUrl = `${FB_MARKETING_URL}/${profile.ad_account_id}/campaigns?fields=id,name,status,objective&limit=50&access_token=${profile.facebook_token}`;
             const fbRes = await fetch(fbUrl);
             const fbData = await fbRes.json();
-            
-            if (fbData.error) throw new Error(fbData.error.message);
-
             return NextResponse.json({ campaigns: fbData.data || [] });
         }
 
-        // --- EXISTING LOGIC: AGENT VIEW ---
-        // Fetch ONLY this user's campaigns from Supabase (Isolation)
+        // --- MODE B: AGENT DASHBOARD (Show Only My DB Campaigns) ---
+        
+        // 2. Fetch the Agent's Campaigns from Supabase
         const { data: myCampaigns } = await supabase
             .from('campaigns')
             .select('*')
@@ -51,10 +45,31 @@ export async function GET(request: Request) {
             return NextResponse.json({ campaigns: [] });
         }
 
-        // Enrich with Live Status
+        // 3. GET THE CORRECT TOKEN (CRITICAL FIX)
+        // If I am an agent, I don't have a token. I need my Admin's token to check status.
+        let viewerToken = profile.facebook_token;
+        
+        if (profile.role === 'agent' && profile.organization_id) {
+            try {
+                // Fetch Admin Credentials using the helper
+                const creds = await getOrgAdminCredentials(profile.organization_id);
+                viewerToken = creds.facebookToken;
+            } catch (e) {
+                console.error("Could not fetch Admin Token for viewer:", e);
+                // Fallback: If we can't get token, return DB data with 'UNKNOWN' status
+                return NextResponse.json({ 
+                    campaigns: myCampaigns.map(c => ({ 
+                        id: c.meta_campaign_id, name: c.name, status: 'UNKNOWN', db_id: c.id 
+                    })) 
+                });
+            }
+        }
+
+        // 4. Enrich with Live Status from Facebook
         const enrichedCampaigns = await Promise.all(myCampaigns.map(async (camp) => {
             try {
-                const res = await fetch(`${FB_MARKETING_URL}/${camp.meta_campaign_id}?fields=status,name,objective&access_token=${profile.facebook_token}`);
+                // Fetch live status
+                const res = await fetch(`${FB_MARKETING_URL}/${camp.meta_campaign_id}?fields=status,name,objective&access_token=${viewerToken}`);
                 const metaData = await res.json();
                 
                 if (metaData.id) {
@@ -66,13 +81,14 @@ export async function GET(request: Request) {
                         db_id: camp.id 
                     };
                 }
+                // If FB returns error (e.g. campaign deleted), show as ARCHIVED
                 return { id: camp.meta_campaign_id, name: camp.name, status: 'ARCHIVED', objective: 'OUTCOME_LEADS' };
             } catch (e) {
                 return { id: camp.meta_campaign_id, name: camp.name, status: 'UNKNOWN', objective: 'OUTCOME_LEADS' };
             }
         }));
 
-        return NextResponse.json({ campaigns: enrichedCampaigns.filter(Boolean) });
+        return NextResponse.json({ campaigns: enrichedCampaigns });
 
     } catch (error: any) {
         console.error("Fetch Campaigns Error:", error);
