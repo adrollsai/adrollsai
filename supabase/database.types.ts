@@ -14,6 +14,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_ad_campaigns: {
+        Row: {
+          agent_contribution: number | null
+          created_at: string | null
+          fb_adset_id: string
+          fb_campaign_id: string
+          id: string
+          org_id: string | null
+          status: string | null
+          subsidy_amount: number | null
+          total_budget: number | null
+          user_id: string | null
+        }
+        Insert: {
+          agent_contribution?: number | null
+          created_at?: string | null
+          fb_adset_id: string
+          fb_campaign_id: string
+          id?: string
+          org_id?: string | null
+          status?: string | null
+          subsidy_amount?: number | null
+          total_budget?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          agent_contribution?: number | null
+          created_at?: string | null
+          fb_adset_id?: string
+          fb_campaign_id?: string
+          id?: string
+          org_id?: string | null
+          status?: string | null
+          subsidy_amount?: number | null
+          total_budget?: number | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_ad_campaigns_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assets: {
         Row: {
           created_at: string
@@ -402,26 +449,35 @@ export type Database = {
       }
       organizations: {
         Row: {
+          ad_subsidy_percentage: number | null
           brand_color: string | null
           created_at: string
           custom_domain: string | null
           id: string
+          master_adset_id: string | null
+          master_campaign_id: string | null
           master_logo_url: string | null
           name: string
         }
         Insert: {
+          ad_subsidy_percentage?: number | null
           brand_color?: string | null
           created_at?: string
           custom_domain?: string | null
           id?: string
+          master_adset_id?: string | null
+          master_campaign_id?: string | null
           master_logo_url?: string | null
           name: string
         }
         Update: {
+          ad_subsidy_percentage?: number | null
           brand_color?: string | null
           created_at?: string
           custom_domain?: string | null
           id?: string
+          master_adset_id?: string | null
+          master_campaign_id?: string | null
           master_logo_url?: string | null
           name?: string
         }
@@ -670,6 +726,60 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      wallet_transactions: {
+        Row: {
+          amount: number
+          created_at: string | null
+          description: string | null
+          id: string
+          provider_reference_id: string | null
+          status: string | null
+          type: string | null
+          user_id: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          provider_reference_id?: string | null
+          status?: string | null
+          type?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          provider_reference_id?: string | null
+          status?: string | null
+          type?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      wallets: {
+        Row: {
+          balance: number | null
+          currency: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          balance?: number | null
+          currency?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          balance?: number | null
+          currency?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {
