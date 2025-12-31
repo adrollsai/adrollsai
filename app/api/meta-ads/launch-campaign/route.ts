@@ -1,348 +1,236 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { getOrgAdminCredentials } from '@/utils/org-helper'
 import fs from 'fs'
 import path from 'path'
-import { callGemini } from '@/utils/external-apis' 
 
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0"
-
-// Path to the log file for debugging
 const LOG_FILE_PATH = path.join(process.cwd(), 'meta_ads_debug.txt');
 
-// --- LOGGING HELPER ---
-function logToFile(message: string, data?: any) {
+// --- LOGGER ---
+function logToFile(tag: string, data?: any) {
     try {
         const timestamp = new Date().toISOString();
-        const logEntry = `\n[${timestamp}] ${message}\n${data ? JSON.stringify(data, null, 2) : ''}\n------------------------------------------------\n`;
+        const content = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+        const logEntry = `\n[${timestamp}] [${tag}] ${content || ''}\n------------------------------------------------\n`;
         fs.appendFileSync(LOG_FILE_PATH, logEntry);
-        console.log(message); 
-    } catch (e) {
-        console.error("Logging failed:", e);
-    }
+        console.log(`[${tag}]`, content ? "(Data logged)" : ""); 
+    } catch (e) { console.error("Log failed", e); }
 }
 
 export async function POST(request: Request) {
-    // 1. Reset Log File for new run
     try { fs.writeFileSync(LOG_FILE_PATH, ''); } catch (e) {}
-
-    const supabase = await createClient()
     
-    // 2. Auth Check
+    const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // 3. Read Form Data
+    // 1. Get Agent & Org Info
+    const { data: agentProfile } = await supabase.from('profiles').select('organization_id, role, ad_credits').eq('id', user.id).single();
+    if (!agentProfile?.organization_id) return NextResponse.json({ error: 'No Org' }, { status: 400 });
+
     const formData = await request.formData();
-    
-    const adAccountId = formData.get('adAccountId')?.toString();
-    const facebookToken = formData.get('facebookToken')?.toString();
-    const sourceType = formData.get('sourceType')?.toString();
-    const targetLocation = formData.get('targetLocation')?.toString(); 
-    const dailyBudgetINR = parseFloat(formData.get('dailyBudgetINR')?.toString() || '0');
-    const pageId = formData.get('pageId')?.toString();
-    const linkUrl = formData.get('linkUrl')?.toString();
-    const privacyPolicyUrl = formData.get('privacyPolicyUrl')?.toString();
+    const propertyId = formData.get('propertyId')?.toString();
+    const dailyBudgetINR = parseFloat(formData.get('dailyBudgetINR')?.toString() || '0'); 
 
-    // FIX: Removed the '[]' to match the Frontend
-    const selectedSourceIds = formData.getAll('selectedSourceIds').map(String); 
-    
-    const creativeFiles = [];
-    for (const [key, value] of formData.entries()) {
-        if (key.startsWith('creativeFiles[') && value instanceof Blob) {
-            creativeFiles.push(value);
-        }
+    // 2. Get Org Admin Credentials
+    let creds;
+    try {
+        creds = await getOrgAdminCredentials(agentProfile.organization_id);
+    } catch (e: any) {
+        return NextResponse.json({ error: e.message }, { status: 400 });
     }
+    const { adAccountId, facebookToken, pageId } = creds;
 
-    if (!facebookToken || !adAccountId || !pageId || !linkUrl || !privacyPolicyUrl) {
-        return NextResponse.json({ error: 'Missing essential data: Token, Account, Page, Link, or Privacy Policy.' }, { status: 400 });
+    // 3. Credit Check
+    if (agentProfile.role === 'agent' && (agentProfile.ad_credits || 0) < dailyBudgetINR) {
+        return NextResponse.json({ error: 'Insufficient Credits' }, { status: 402 });
     }
-
-    logToFile("=== STARTING AI CAMPAIGN LAUNCH ===");
-    logToFile(`Source Type: ${sourceType} | Account: ${adAccountId}`);
-    logToFile(`Selected IDs:`, selectedSourceIds);
+    await supabase.from('profiles').update({ ad_credits: (agentProfile.ad_credits - dailyBudgetINR) }).eq('id', user.id);
 
     try {
-        // --- Step A: Get Source Data (Title/Description/Images) ---
-        let propertyTitle: string = '';
-        let propertyDescription: string = '';
-        let initialImageUrls: string[] = []; 
+        // 4. Fetch Project & Template
+        const { data: property } = await supabase.from('properties').select('*').eq('id', propertyId).single();
+        if (!property?.template_adset_id) throw new Error("This project is not linked to an Ad Template yet.");
 
-        if (sourceType === 'inventory' && selectedSourceIds.length > 0) {
-            const id = selectedSourceIds[0];
-            
-            // Select BOTH 'images' (array) and 'image_url' (single string)
-            const { data: prop, error } = await supabase.from('properties')
-                .select('title, description, images, image_url')
-                .eq('id', id)
-                .single();
-            
-            if (error) {
-                logToFile("❌ Database Error:", error);
-                throw new Error("Failed to fetch property details.");
-            }
+        const templateAdSetId = property.template_adset_id;
+        logToFile("INFO", `Starting Clone for Property: ${property.title}`);
 
-            if (prop) {
-                propertyTitle = prop.title || '';
-                propertyDescription = prop.description || '';
-                
-                // ROBUST IMAGE CHECK:
-                if (prop.images && Array.isArray(prop.images) && prop.images.length > 0) {
-                    initialImageUrls = prop.images;
-                    logToFile(`✅ Found ${prop.images.length} images in array.`);
-                } 
-                else if (prop.image_url) {
-                    initialImageUrls = [prop.image_url];
-                    logToFile(`✅ Found single image URL.`);
-                }
-            }
-        } else if (sourceType === 'asset' && selectedSourceIds.length > 0) {
-             const id = selectedSourceIds[0];
-             const { data: asset } = await supabase.from('assets').select('url').eq('id', id).single();
-             if (asset && asset.url) {
-                 initialImageUrls = [asset.url];
-                 logToFile(`✅ Found Asset URL.`);
-             }
-        }
-
-        // Validate we found images before proceeding
-        if (creativeFiles.length === 0 && initialImageUrls.length === 0) {
-            const msg = "No images found in the selected property or asset. Please check your inventory.";
-            logToFile(`❌ ${msg}`);
-            throw new Error(msg);
-        }
-
-        // --- Step B: Create Lead Form ---
-        logToFile("--- 1. CREATING LEAD FORM ---");
-        const formName = `AI Form - ${propertyTitle.substring(0, 10)} - ${Date.now().toString().slice(-6)}`;
+        // --- A. READ TEMPLATE DATA ---
+        const adSetFetch = await fetch(`${FB_MARKETING_URL}/${templateAdSetId}?fields=name,targeting&access_token=${facebookToken}`);
+        const templateAdSet = await adSetFetch.json();
+        if (templateAdSet.error) throw new Error(`Template Read Error: ${templateAdSet.error.message}`);
         
-        const leadFormPayload = {
-            name: formName,
-            follow_up_action_url: linkUrl, 
-            question_page_custom_headline: `Details for ${propertyTitle.substring(0,30) || 'this property'}`,
-            question_page_custom_text: "Confirm details to view pricing.",
-            privacy_policy: { url: privacyPolicyUrl, link_text: "Privacy Policy" },
-            questions: [
-                { type: "FULL_NAME", key: "full_name" },
-                { type: "EMAIL", key: "email" },
-                { type: "PHONE", key: "phone_number" }
-            ],
-            access_token: facebookToken
-        };
+        // Get Creative & Form
+        const adsFetch = await fetch(`${FB_MARKETING_URL}/${templateAdSetId}/ads?fields=creative&limit=1&access_token=${facebookToken}`);
+        const adsData = await adsFetch.json();
+        if(!adsData.data?.[0]) throw new Error("Template has no Ads.");
+        const templateCreativeId = adsData.data[0].creative.id;
 
-        const formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(leadFormPayload)
-        });
-        const formDataRes = await formCreateRes.json();
-
-        if (!formCreateRes.ok) {
-            logToFile("❌ Lead Form Failed:", formDataRes);
-            throw new Error(`Lead Form Error: ${formDataRes.error?.message} (Code: ${formDataRes.error?.code})`);
-        }
-        const leadFormId = formDataRes.id;
-        logToFile(`✅ Lead Form Created: ${leadFormId}`);
-
-
-        // --- Step C: Upload Creatives (PROXY UPLOAD) ---
-        logToFile("--- 2. UPLOADING CREATIVES ---");
-        const metaCreativeHashes: string[] = [];
-        const creativeUploadPromises = [];
-
-        // 1. Local Files (Direct Upload)
-        if (creativeFiles.length > 0) {
-            logToFile(`Uploading ${creativeFiles.length} local file(s)...`);
-            for (const file of creativeFiles) {
-                const uploadFormData = new FormData();
-                uploadFormData.append('source', file, file.name); 
-                uploadFormData.append('access_token', facebookToken);
-                creativeUploadPromises.push(fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, { method: 'POST', body: uploadFormData }).then(res => res.json()));
-            }
-        } 
-        // 2. Database URLs (PROXY DOWNLOAD & UPLOAD)
-        else if (initialImageUrls.length > 0) {
-            logToFile(`Processing ${initialImageUrls.length} URL(s)...`);
+        const creativeFetch = await fetch(`${FB_MARKETING_URL}/${templateCreativeId}?fields=object_story_spec&access_token=${facebookToken}`);
+        const templateCreative = await creativeFetch.json();
+        const oldFormId = templateCreative.object_story_spec?.link_data?.call_to_action?.value?.lead_gen_form_id;
+        
+        // --- B. DUPLICATE LEAD FORM ---
+        let newFormId = oldFormId; 
+        if (oldFormId) {
+            const formFetch = await fetch(`${FB_MARKETING_URL}/${oldFormId}?fields=name,questions,privacy_policy,context_card,follow_up_action_url&access_token=${facebookToken}`);
+            const oldForm = await formFetch.json();
             
-            for (const url of initialImageUrls.slice(0, 3)) {
-                logToFile(`Fetching & Uploading: ${url}`);
-                
-                // A. Download Image to Server Memory
-                const imageFetch = await fetch(url);
-                if (!imageFetch.ok) {
-                    logToFile(`❌ Failed to download image from source: ${url}`);
-                    continue; 
-                }
-                const imageBlob = await imageFetch.blob();
-
-                // B. Upload Binary to Facebook
-                const uploadFormData = new FormData();
-                uploadFormData.append('source', imageBlob, 'property_image.png');
-                uploadFormData.append('access_token', facebookToken);
-                
-                creativeUploadPromises.push(
-                    fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, {
-                        method: 'POST',
-                        body: uploadFormData
-                    }).then(res => res.json())
-                );
+            if (!oldForm.error) {
+                const newFormPayload = {
+                    name: `${oldForm.name} - ${Date.now()}`,
+                    questions: oldForm.questions,
+                    privacy_policy: oldForm.privacy_policy,
+                    follow_up_action_url: oldForm.follow_up_action_url,
+                    access_token: facebookToken
+                };
+                const formCreate = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newFormPayload)
+                });
+                const formResult = await formCreate.json();
+                if (formResult.id) newFormId = formResult.id;
             }
         }
-        
-        const uploadResults = await Promise.all(creativeUploadPromises);
-        
-        uploadResults.forEach((data, i) => {
-            if (data.images) {
-                const hash = data.images[Object.keys(data.images)[0]].hash;
-                metaCreativeHashes.push(hash);
-                logToFile(`✅ Image ${i+1} Uploaded: ${hash}`);
-            } else {
-                logToFile(`❌ Image ${i+1} Failed:`, data);
-            }
-        });
 
-        if (metaCreativeHashes.length === 0) throw new Error("Creative upload failed. Could not upload any images to Facebook.");
-        const mainCreativeHash = metaCreativeHashes[0]; 
-
-
-        // --- Step D: AI Copy ---
-        logToFile("--- 3. AI COPYWRITING ---");
-        const llmPrompt = `Write 1 catchy Primary Text (max 125 chars) and 1 Headline (max 25 chars) for a real estate Lead Ad. Property: "${propertyTitle}". Description: "${propertyDescription}". Location: "${targetLocation}". Return JSON: {"primary_text": "...", "headline": "..."}`;
-        let primaryText = "Exclusive Property Deal";
-        let headline = "View Details";
-
-        try {
-            const llmResponse = await callGemini(llmPrompt);
-            const cleanedJson = llmResponse.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-            const parsed = JSON.parse(cleanedJson);
-            if(parsed.primary_text) primaryText = parsed.primary_text;
-            if(parsed.headline) headline = parsed.headline;
-            logToFile("AI Copy:", parsed);
-        } catch (e) {
-            logToFile("AI Generation Failed (using defaults).");
-        }
-
-
-        // --- Step E: Campaign ---
-        logToFile("--- 4. CAMPAIGN ---");
+        // --- C. CREATE CAMPAIGN ---
         const campaignPayload = {
-            name: `AI Leads - ${propertyTitle.substring(0, 15)} - ${new Date().toISOString().slice(0, 10)}`,
-            objective: 'OUTCOME_LEADS', 
-            status: 'PAUSED', 
+            name: `[AGT] ${user.id.slice(0,4)} - ${property.title} - ${Date.now()}`,
+            objective: 'OUTCOME_LEADS',
+            status: 'PAUSED',
             buying_type: 'AUCTION',
-            daily_budget: dailyBudgetINR, 
-            bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-            special_ad_categories: ['HOUSING'],
-            special_ad_category_country: ['IN'], 
+            daily_budget: dailyBudgetINR * 100, 
+            
+            // --- CRITICAL FIX: EXPLICIT BID STRATEGY ---
+            // This forces "Highest Volume" so FB doesn't ask for a Bid Cap
+            bid_strategy: 'LOWEST_COST_WITHOUT_CAP', 
+            
+            special_ad_categories: ['HOUSING'], 
+            special_ad_category_country: ['IN'],
             access_token: facebookToken,
         };
 
         const campaignRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/campaigns`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(campaignPayload),
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(campaignPayload)
         });
         const campaignData = await campaignRes.json();
-        if (!campaignRes.ok) throw new Error(`Campaign Error: ${campaignData.error?.message}`);
+        
+        if (campaignData.error) {
+            logToFile("CAMPAIGN_FAIL", campaignData.error);
+            throw new Error(`Campaign Creation Failed: ${campaignData.error.message}`);
+        }
         const campaignId = campaignData.id;
-        logToFile(`✅ Campaign ID: ${campaignId}`);
 
+        // --- D. CREATE AD SET ---
+        // 10 min buffer for start time
+        const startTime = new Date(Date.now() + 10 * 60 * 1000).toISOString(); 
 
-        // --- Step F: Ad Set ---
-        logToFile("--- 5. AD SET ---");
-        const startTime = new Date(Date.now() + 30 * 60 * 1000).toISOString(); 
-
-        const adSetPayload = {
-            name: `AdSet - ${targetLocation}`,
+        const adSetPayload: any = {
+            name: `AdSet - ${templateAdSet.name}`,
             campaign_id: campaignId,
-            destination_type: 'ON_AD', 
-            optimization_goal: 'LEAD_GENERATION', 
-            billing_event: 'IMPRESSIONS', 
-            targeting: { geo_locations: { countries: ['IN'] } }, 
-            promoted_object: { page_id: pageId },
-            start_time: startTime, 
             status: 'PAUSED',
-            access_token: facebookToken,
+            start_time: startTime,
+            promoted_object: { page_id: pageId },
+            billing_event: 'IMPRESSIONS', 
+            optimization_goal: 'LEAD_GENERATION', 
+            access_token: facebookToken
         };
 
-        const adSetRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adsets`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(adSetPayload),
-        });
-        const adSetData = await adSetRes.json();
-        if (!adSetRes.ok) throw new Error(`Ad Set Error: ${adSetData.error?.message}`);
-        const adSetId = adSetData.id;
-        logToFile(`✅ Ad Set ID: ${adSetId}`);
-
-
-        // --- Step G: Creative ---
-        logToFile("--- 6. CREATIVE ---");
-        const creativePayload = {
-            name: `Creative - ${Date.now()}`,
-            object_story_spec: {
-                page_id: pageId, 
-                link_data: {
-                    message: primaryText, 
-                    name: headline, 
-                    link: linkUrl, 
-                    image_hash: mainCreativeHash, 
-                    call_to_action: { type: 'SIGN_UP', value: { lead_gen_form_id: leadFormId } }
-                }
-            },
-            access_token: facebookToken,
+        // Construct Safe Targeting (No Age/Gender/LocationTypes)
+        const safeTargeting = {
+            geo_locations: templateAdSet.targeting?.geo_locations || { countries: ['IN'] },
+            flexible_spec: templateAdSet.targeting?.flexible_spec 
         };
+        if(safeTargeting.geo_locations?.location_types) {
+             delete safeTargeting.geo_locations.location_types;
+        }
+        adSetPayload.targeting = safeTargeting;
 
-        const creativeRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adcreatives`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(creativePayload),
+        logToFile("ADSET_PAYLOAD", adSetPayload);
+
+        let adSetRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adsets`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify(adSetPayload)
         });
-        const creativeData = await creativeRes.json();
-        if (!creativeRes.ok) throw new Error(`Creative Error: ${creativeData.error?.message}`);
-        const creativeId = creativeData.id;
-        logToFile(`✅ Creative ID: ${creativeId}`);
+        let newAdSet = await adSetRes.json();
 
-
-        // --- Step H: Final Ad (Soft Fail) ---
-        logToFile("--- 7. FINAL AD ---");
-        const adPayload = {
-            name: `Ad - ${headline}`,
-            adset_id: adSetId,
-            creative: { creative_id: creativeId },
-            status: 'PAUSED', 
-            access_token: facebookToken,
-        };
-
-        const adRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(adPayload),
-        });
-        const adData = await adRes.json();
-
-        if (!adRes.ok) {
-            logToFile("❌ Final Ad Failed (Drafted):", adData);
+        // FAIL-SAFE: If targeting fails, fallback to bare minimum
+        if (newAdSet.error) {
+            logToFile("ADSET_ERROR_1", newAdSet.error);
+            logToFile("WARN", "Retrying with BARE MINIMUM Targeting...");
             
-            if (adData.error?.error_subcode === 1359188 || adData.error?.code === 100) {
-                return NextResponse.json({ 
-                    success: true, 
-                    campaignId: campaignId, 
-                    message: "Campaign DRAFTED! \n\n⚠️ Payment Method Missing: Saved in Ads Manager." 
-                });
-            }
-            throw new Error(`Final Ad Error: ${adData.error?.message}`);
+            adSetPayload.name = "AdSet - Fallback";
+            adSetPayload.targeting = { geo_locations: { countries: ['IN'] } };
+
+            adSetRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adsets`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify(adSetPayload)
+            });
+            newAdSet = await adSetRes.json();
+        }
+
+        if (newAdSet.error) {
+            logToFile("CRITICAL_ADSET_FAIL", newAdSet.error);
+            throw new Error(`AD SET FAILED: ${newAdSet.error.message}`);
         }
         
-        logToFile(`✅ Ad Created: ${adData.id}`);
+        const newAdSetId = newAdSet.id;
+        
+        // --- E. CREATE CREATIVE ---
+        const newCreativePayload = {
+            name: `Creative - ${Date.now()}`,
+            object_story_spec: templateCreative.object_story_spec,
+            access_token: facebookToken
+        };
+        if (newCreativePayload.object_story_spec?.link_data?.call_to_action?.value) {
+            newCreativePayload.object_story_spec.link_data.call_to_action.value.lead_gen_form_id = newFormId;
+        }
 
-        return NextResponse.json({ 
-            success: true, 
-            campaignId: campaignId, 
-            message: "Campaign Successfully Launched!" 
+        const creativeRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adcreatives`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCreativePayload)
+        });
+        const newCreative = await creativeRes.json();
+        
+        // --- F. CREATE AD ---
+        const adPayload = {
+            name: `Ad - Agent ${user.id.slice(0,4)}`,
+            adset_id: newAdSetId,
+            creative: { creative_id: newCreative.id },
+            status: 'PAUSED',
+            access_token: facebookToken
+        };
+        const adRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(adPayload)
+        });
+        const newAd = await adRes.json();
+
+        // --- G. SAVE & FINISH ---
+        await supabase.from('campaigns').insert({
+            user_id: user.id,
+            meta_campaign_id: campaignId,
+            meta_adset_id: newAdSetId,
+            meta_ad_id: newAd.id,
+            name: campaignPayload.name,
+            total_budget: dailyBudgetINR,
+            status: 'PAUSED'
         });
 
+        await supabase.from('transactions').insert({
+            user_id: user.id,
+            amount: dailyBudgetINR * 100,
+            status: 'SUCCESS',
+            type: 'DEBIT',
+            description: `Ad Run: ${property.title}`,
+            order_id: `SPEND_${Date.now()}`
+        });
+
+        return NextResponse.json({ success: true, message: "Campaign Launched!" });
+
     } catch (error: any) {
-        logToFile("!!! API CRASH !!!", error);
-        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+        logToFile("CRITICAL_ERROR", error);
+        // Refund
+        const { data: curr } = await supabase.from('profiles').select('ad_credits').eq('id', user.id).single();
+        await supabase.from('profiles').update({ ad_credits: (curr?.ad_credits || 0) + dailyBudgetINR }).eq('id', user.id);
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

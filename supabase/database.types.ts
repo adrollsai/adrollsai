@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      ads: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          image_url: string | null
+          price: number
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          price: number
+          title: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          price?: number
+          title?: string
+        }
+        Relationships: []
+      }
       agent_ad_campaigns: {
         Row: {
           agent_contribution: number | null
@@ -159,6 +186,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      campaigns: {
+        Row: {
+          budget_type: string | null
+          created_at: string
+          end_time: string | null
+          id: string
+          meta_ad_id: string | null
+          meta_adset_id: string | null
+          meta_campaign_id: string
+          name: string
+          start_time: string | null
+          status: string | null
+          total_budget: number | null
+          user_id: string
+        }
+        Insert: {
+          budget_type?: string | null
+          created_at?: string
+          end_time?: string | null
+          id?: string
+          meta_ad_id?: string | null
+          meta_adset_id?: string | null
+          meta_campaign_id: string
+          name: string
+          start_time?: string | null
+          status?: string | null
+          total_budget?: number | null
+          user_id: string
+        }
+        Update: {
+          budget_type?: string | null
+          created_at?: string
+          end_time?: string | null
+          id?: string
+          meta_ad_id?: string | null
+          meta_adset_id?: string | null
+          meta_campaign_id?: string
+          name?: string
+          start_time?: string | null
+          status?: string | null
+          total_budget?: number | null
+          user_id?: string
+        }
+        Relationships: []
       }
       creative_prompts: {
         Row: {
@@ -530,6 +602,7 @@ export type Database = {
       profiles: {
         Row: {
           ad_account_id: string | null
+          ad_credits: number | null
           badges: string[] | null
           brand_color: string | null
           business_name: string | null
@@ -567,6 +640,7 @@ export type Database = {
         }
         Insert: {
           ad_account_id?: string | null
+          ad_credits?: number | null
           badges?: string[] | null
           brand_color?: string | null
           business_name?: string | null
@@ -604,6 +678,7 @@ export type Database = {
         }
         Update: {
           ad_account_id?: string | null
+          ad_credits?: number | null
           badges?: string[] | null
           brand_color?: string | null
           business_name?: string | null
@@ -662,11 +737,15 @@ export type Database = {
           images: string[] | null
           marketing_copy_template: string | null
           master_creatives: string[] | null
+          meta_campaign_id: string | null
+          meta_campaign_status: string | null
           organization_id: string | null
           price: string | null
           property_type: string | null
           rera_number: string | null
           status: string | null
+          template_adset_id: string | null
+          template_campaign_id: string | null
           title: string
           user_id: string | null
         }
@@ -682,11 +761,15 @@ export type Database = {
           images?: string[] | null
           marketing_copy_template?: string | null
           master_creatives?: string[] | null
+          meta_campaign_id?: string | null
+          meta_campaign_status?: string | null
           organization_id?: string | null
           price?: string | null
           property_type?: string | null
           rera_number?: string | null
           status?: string | null
+          template_adset_id?: string | null
+          template_campaign_id?: string | null
           title: string
           user_id?: string | null
         }
@@ -702,11 +785,15 @@ export type Database = {
           images?: string[] | null
           marketing_copy_template?: string | null
           master_creatives?: string[] | null
+          meta_campaign_id?: string | null
+          meta_campaign_status?: string | null
           organization_id?: string | null
           price?: string | null
           property_type?: string | null
           rera_number?: string | null
           status?: string | null
+          template_adset_id?: string | null
+          template_campaign_id?: string | null
           title?: string
           user_id?: string | null
         }
@@ -723,6 +810,44 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transactions: {
+        Row: {
+          ad_id: string | null
+          amount: number
+          created_at: string
+          order_id: string
+          provider_reference_id: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          ad_id?: string | null
+          amount: number
+          created_at?: string
+          order_id: string
+          provider_reference_id?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          ad_id?: string | null
+          amount?: number
+          created_at?: string
+          order_id?: string
+          provider_reference_id?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_ad_id_fkey"
+            columns: ["ad_id"]
+            isOneToOne: false
+            referencedRelation: "ads"
             referencedColumns: ["id"]
           },
         ]

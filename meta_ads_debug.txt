@@ -1,93 +1,24 @@
 
-[2025-12-08T15:18:24.954Z] === STARTING AI CAMPAIGN LAUNCH ===
-
+[2025-12-31T19:15:59.685Z] [INFO] Starting Clone for Property: The Grand Orchard Estate
 ------------------------------------------------
 
-[2025-12-08T15:18:24.959Z] Source Type: inventory | Account: act_3659699197644830
-
-------------------------------------------------
-
-[2025-12-08T15:18:24.970Z] Selected IDs:
-[
-  "0ba1996d-bd16-4825-b482-5dd6128b9500"
-]
-------------------------------------------------
-
-[2025-12-08T15:18:25.347Z] ✅ Found 2 images in array.
-
-------------------------------------------------
-
-[2025-12-08T15:18:25.351Z] --- 1. CREATING LEAD FORM ---
-
-------------------------------------------------
-
-[2025-12-08T15:18:27.169Z] ✅ Lead Form Created: 847244421245644
-
-------------------------------------------------
-
-[2025-12-08T15:18:27.173Z] --- 2. UPLOADING CREATIVES ---
-
-------------------------------------------------
-
-[2025-12-08T15:18:27.176Z] Processing 2 URL(s)...
-
-------------------------------------------------
-
-[2025-12-08T15:18:27.187Z] Fetching & Uploading: https://ihyhqxlizxxxfmqthsaa.supabase.co/storage/v1/object/public/properties/b3d9fb26-038b-4505-a3c1-be33e13a8579-1764504206069-8pwyzq.png
-
-------------------------------------------------
-
-[2025-12-08T15:18:28.972Z] Fetching & Uploading: https://ihyhqxlizxxxfmqthsaa.supabase.co/storage/v1/object/public/properties/b3d9fb26-038b-4505-a3c1-be33e13a8579-1764504206072-2gxaev.webp
-
-------------------------------------------------
-
-[2025-12-08T15:18:35.216Z] ✅ Image 1 Uploaded: d2b5e42c8e6d06b99c9a568a68ec7aae
-
-------------------------------------------------
-
-[2025-12-08T15:18:35.220Z] ✅ Image 2 Uploaded: 67b97ee34c4f6b9f9e9a0b7d65324f3d
-
-------------------------------------------------
-
-[2025-12-08T15:18:35.224Z] --- 3. AI COPYWRITING ---
-
-------------------------------------------------
-
-[2025-12-08T15:18:42.040Z] AI Copy:
-{
-  "primary_text": "Live smart at Ananta Aspire! Spacious 3/4 BHK homes with a rooftop infinity pool & automated luxury. Unmatched connectivity to Mohali. Your green oasis!",
-  "headline": "Ananta Aspire: Smart Living"
+[2025-12-31T19:16:04.484Z] [ADSET_PAYLOAD] {
+  "name": "AdSet - AdSet - Mohali",
+  "campaign_id": "120237786067530403",
+  "status": "PAUSED",
+  "start_time": "2025-12-31T19:26:04.484Z",
+  "promoted_object": {
+    "page_id": "407449532442588"
+  },
+  "billing_event": "IMPRESSIONS",
+  "optimization_goal": "LEAD_GENERATION",
+  "access_token": "EAAMaVhrzxNABQIxqisj6yhGNScqTCZBoojtiNGNHzTPLFPZC83hCuDBixx5UI9iyWRvtomUEFZAgobuqtQzU0jNu0jWKakYJsd4LANOQdwNEnz7W1N2pDHKyoVOP8yrZBRQWtlK1lXcDCOP6uLJa7xAj5gSZAZBJse73C4c14KXybcYVptDZAl1VYXP3uGyPKlwZCnIjsSa5GZBRywQ2eqULvMVbnWREk5EdzpLfnDCCsePG5jmUicM1UkObOSErZB4D4WmvacRQ1ZCvZC4azDnOw1Aakd5dd2A9FvhXgGN7",
+  "targeting": {
+    "geo_locations": {
+      "countries": [
+        "IN"
+      ]
+    }
+  }
 }
-------------------------------------------------
-
-[2025-12-08T15:18:42.046Z] --- 4. CAMPAIGN ---
-
-------------------------------------------------
-
-[2025-12-08T15:18:43.372Z] ✅ Campaign ID: 120236876189000403
-
-------------------------------------------------
-
-[2025-12-08T15:18:43.376Z] --- 5. AD SET ---
-
-------------------------------------------------
-
-[2025-12-08T15:18:45.183Z] ✅ Ad Set ID: 120236876189260403
-
-------------------------------------------------
-
-[2025-12-08T15:18:45.185Z] --- 6. CREATIVE ---
-
-------------------------------------------------
-
-[2025-12-08T15:18:46.709Z] ✅ Creative ID: 2115602755641958
-
-------------------------------------------------
-
-[2025-12-08T15:18:46.710Z] --- 7. FINAL AD ---
-
-------------------------------------------------
-
-[2025-12-08T15:18:48.573Z] ✅ Ad Created: 120236876190140403
-
 ------------------------------------------------
