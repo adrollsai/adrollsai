@@ -14,7 +14,6 @@ function logToFile(tag: string, data?: any) {
         const content = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
         const logEntry = `\n[${timestamp}] [${tag}] ${content || ''}\n------------------------------------------------\n`;
         fs.appendFileSync(LOG_FILE_PATH, logEntry);
-        // Print key errors to console
         if (tag.includes('FAIL') || tag.includes('ERROR')) console.error(`[${tag}]`, content);
         else console.log(`[${tag}] Data logged.`); 
     } catch (e) { console.error("Log failed", e); }
@@ -34,7 +33,10 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
     const propertyId = formData.get('propertyId')?.toString();
-    const dailyBudgetINR = parseFloat(formData.get('dailyBudgetINR')?.toString() || '0'); 
+    // CHANGED: Renamed variable to avoid confusion, though form key can remain same or change. 
+    // We expect 'lifetimeBudgetINR' or 'dailyBudgetINR' from frontend, let's look for 'dailyBudgetINR' as legacy or 'lifetimeBudgetINR'
+    const budgetInput = formData.get('lifetimeBudgetINR') || formData.get('dailyBudgetINR');
+    const lifetimeBudgetINR = parseFloat(budgetInput?.toString() || '0'); 
 
     // 3. Get Org Admin Credentials
     let creds;
@@ -46,12 +48,12 @@ export async function POST(request: Request) {
     const { adAccountId, facebookToken, pageId } = creds;
 
     // 4. Credit Check
-    if (agentProfile.role === 'agent' && (agentProfile.ad_credits || 0) < dailyBudgetINR) {
+    if (agentProfile.role === 'agent' && (agentProfile.ad_credits || 0) < lifetimeBudgetINR) {
         return NextResponse.json({ error: 'Insufficient Credits' }, { status: 402 });
     }
     
     // Deduct Credits
-    await supabase.from('profiles').update({ ad_credits: (agentProfile.ad_credits - dailyBudgetINR) }).eq('id', user.id);
+    await supabase.from('profiles').update({ ad_credits: (agentProfile.ad_credits - lifetimeBudgetINR) }).eq('id', user.id);
 
     try {
         // 5. Fetch Project & Template
@@ -62,18 +64,15 @@ export async function POST(request: Request) {
         logToFile("INFO", `Starting Clone for Property: ${property.title}`);
 
         // --- A. READ TEMPLATE DATA ---
-        // Fetch Ad Set Targeting
         const adSetFetch = await fetch(`${FB_MARKETING_URL}/${templateAdSetId}?fields=name,targeting&access_token=${facebookToken}`);
         const templateAdSet = await adSetFetch.json();
         if (templateAdSet.error) throw new Error(`Template Read Error: ${templateAdSet.error.message}`);
         
-        // Fetch Ad & Creative ID
         const adsFetch = await fetch(`${FB_MARKETING_URL}/${templateAdSetId}/ads?fields=creative&limit=1&access_token=${facebookToken}`);
         const adsData = await adsFetch.json();
         if(!adsData.data?.[0]) throw new Error("Template AdSet has no Ads to copy.");
         const templateCreativeId = adsData.data[0].creative.id;
 
-        // Fetch Creative Details & Form ID
         const creativeFetch = await fetch(`${FB_MARKETING_URL}/${templateCreativeId}?fields=object_story_spec&access_token=${facebookToken}`);
         const templateCreative = await creativeFetch.json();
         const oldFormId = templateCreative.object_story_spec?.link_data?.call_to_action?.value?.lead_gen_form_id;
@@ -100,13 +99,14 @@ export async function POST(request: Request) {
             }
         }
 
-        // --- C. CREATE DEDICATED CAMPAIGN ---
+        // --- C. CREATE DEDICATED CAMPAIGN (LIFETIME BUDGET) ---
         const campaignPayload = {
             name: `[AGT] ${user.id.slice(0,4)} - ${property.title} - ${Date.now()}`,
             objective: 'OUTCOME_LEADS',
             status: 'PAUSED',
             buying_type: 'AUCTION',
-            daily_budget: dailyBudgetINR * 100, 
+            // FIXED: Use lifetime_budget instead of daily_budget
+            lifetime_budget: lifetimeBudgetINR * 100, 
             bid_strategy: 'LOWEST_COST_WITHOUT_CAP', 
             special_ad_categories: ['HOUSING'], 
             special_ad_category_country: ['IN'],
@@ -124,18 +124,17 @@ export async function POST(request: Request) {
         }
         const campaignId = campaignData.id;
 
-        // --- D. CREATE AD SET ---
-        const startTime = new Date(Date.now() + 10 * 60 * 1000).toISOString(); 
+        // --- D. CREATE AD SET (WITH END TIME) ---
+        const startTime = new Date(Date.now() + 15 * 60 * 1000); // Start in 15 mins
+        const endTime = new Date(startTime.getTime() + 30 * 24 * 60 * 60 * 1000); // End in 30 Days
 
         const baseAdSetPayload: any = {
             campaign_id: campaignId,
             status: 'PAUSED',
-            start_time: startTime,
+            start_time: startTime.toISOString(),
+            end_time: endTime.toISOString(), // REQUIRED for Lifetime Budget
             promoted_object: { page_id: pageId },
-            
-            // --- CRITICAL FIX: ADD 'destination_type' ---
             destination_type: 'ON_AD', 
-            
             billing_event: 'IMPRESSIONS', 
             optimization_goal: 'LEAD_GENERATION', 
             access_token: facebookToken
@@ -229,16 +228,17 @@ export async function POST(request: Request) {
             meta_adset_id: newAdSetId,
             meta_ad_id: newAd.id,
             name: campaignPayload.name,
-            total_budget: dailyBudgetINR,
-            status: 'PAUSED'
+            total_budget: lifetimeBudgetINR,
+            status: 'PAUSED',
+            budget_type: 'LIFETIME'
         });
 
         await supabase.from('transactions').insert({
             user_id: user.id,
-            amount: dailyBudgetINR * 100,
+            amount: lifetimeBudgetINR * 100,
             status: 'SUCCESS',
             type: 'DEBIT',
-            description: `Ad Run: ${property.title}`,
+            // description: `Ad Run: ${property.title}`, // Uncomment if description column exists
             order_id: `SPEND_${Date.now()}`
         });
 
@@ -248,7 +248,7 @@ export async function POST(request: Request) {
         logToFile("CRITICAL_ERROR", error);
         // Refund Logic
         const { data: curr } = await supabase.from('profiles').select('ad_credits').eq('id', user.id).single();
-        await supabase.from('profiles').update({ ad_credits: (curr?.ad_credits || 0) + dailyBudgetINR }).eq('id', user.id);
+        await supabase.from('profiles').update({ ad_credits: (curr?.ad_credits || 0) + lifetimeBudgetINR }).eq('id', user.id);
         
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

@@ -1,7 +1,6 @@
-/* adrollsai/adrollsai/adrollsai-builder-app/app/dashboard/layout.tsx */
 import BottomNav from "@/components/BottomNav";
-import FloatingAgent from "@/components/FloatingAgent"; 
-import OrganizationWrapper from "@/components/OrganizationWrapper"; // Import
+import OrganizationWrapper from "@/components/OrganizationWrapper";
+import WalletHeader from "@/components/WalletHeader"; // IMPORT THIS
 
 export default function DashboardLayout({
   children,
@@ -11,8 +10,8 @@ export default function DashboardLayout({
   return (
     <OrganizationWrapper>
       <div className="min-h-screen bg-surface pb-32 relative transition-colors duration-500"> 
+        <WalletHeader /> {/* ADD THIS */}
         {children}
-        {/* <FloatingAgent />  */}
         <BottomNav />
       </div>
     </OrganizationWrapper>

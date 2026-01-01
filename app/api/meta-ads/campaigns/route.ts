@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { getOrgAdminCredentials } from '@/utils/org-helper'; // Reuse your helper
+import { getOrgAdminCredentials } from '@/utils/org-helper';
+
+// --- FORCE DYNAMIC TO PREVENT CACHING DELETED DATA ---
+export const dynamic = 'force-dynamic'; 
 
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
@@ -32,43 +35,37 @@ export async function GET(request: Request) {
             return NextResponse.json({ campaigns: fbData.data || [] });
         }
 
-        // --- MODE B: AGENT DASHBOARD (Show Only My DB Campaigns) ---
+        // --- MODE B: AGENT DASHBOARD ---
         
         // 2. Fetch the Agent's Campaigns from Supabase
         const { data: myCampaigns } = await supabase
             .from('campaigns')
             .select('*')
             .eq('user_id', user.id)
+            .neq('status', 'ARCHIVED') // Filter out archived ones on DB level too
             .order('created_at', { ascending: false });
 
         if (!myCampaigns || myCampaigns.length === 0) {
             return NextResponse.json({ campaigns: [] });
         }
 
-        // 3. GET THE CORRECT TOKEN (CRITICAL FIX)
-        // If I am an agent, I don't have a token. I need my Admin's token to check status.
+        // 3. Get Admin Token for Status Check
         let viewerToken = profile.facebook_token;
-        
         if (profile.role === 'agent' && profile.organization_id) {
             try {
-                // Fetch Admin Credentials using the helper
                 const creds = await getOrgAdminCredentials(profile.organization_id);
                 viewerToken = creds.facebookToken;
             } catch (e) {
-                console.error("Could not fetch Admin Token for viewer:", e);
-                // Fallback: If we can't get token, return DB data with 'UNKNOWN' status
+                // If token fails, just return what we have in DB
                 return NextResponse.json({ 
-                    campaigns: myCampaigns.map(c => ({ 
-                        id: c.meta_campaign_id, name: c.name, status: 'UNKNOWN', db_id: c.id 
-                    })) 
+                    campaigns: myCampaigns.map(c => ({ ...c, status: c.status || 'UNKNOWN' })) 
                 });
             }
         }
 
-        // 4. Enrich with Live Status from Facebook
+        // 4. Enrich with Live Status
         const enrichedCampaigns = await Promise.all(myCampaigns.map(async (camp) => {
             try {
-                // Fetch live status
                 const res = await fetch(`${FB_MARKETING_URL}/${camp.meta_campaign_id}?fields=status,name,objective&access_token=${viewerToken}`);
                 const metaData = await res.json();
                 
@@ -81,14 +78,19 @@ export async function GET(request: Request) {
                         db_id: camp.id 
                     };
                 }
-                // If FB returns error (e.g. campaign deleted), show as ARCHIVED
-                return { id: camp.meta_campaign_id, name: camp.name, status: 'ARCHIVED', objective: 'OUTCOME_LEADS' };
+                
+                // If FB returns error, it's likely deleted on FB.
+                // We should mark it ARCHIVED in our DB so we don't fetch it again.
+                await supabase.from('campaigns').update({ status: 'ARCHIVED' }).eq('id', camp.id);
+                return null; // Filter this out below
+
             } catch (e) {
                 return { id: camp.meta_campaign_id, name: camp.name, status: 'UNKNOWN', objective: 'OUTCOME_LEADS' };
             }
         }));
 
-        return NextResponse.json({ campaigns: enrichedCampaigns });
+        // Filter out nulls (deleted campaigns)
+        return NextResponse.json({ campaigns: enrichedCampaigns.filter(Boolean) });
 
     } catch (error: any) {
         console.error("Fetch Campaigns Error:", error);

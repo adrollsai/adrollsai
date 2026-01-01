@@ -1,5 +1,3 @@
-// adrollsai/adrollsai/adrollsai-builder-app/app/dashboard/profile/page.tsx
-
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -92,6 +90,9 @@ export default function ProfilePage() {
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
   
+  // WEBHOOK FIX STATE
+  const [isFixing, setIsFixing] = useState(false)
+  
   // Custom Domain State
   const [customDomainInput, setCustomDomainInput] = useState('')
   const [isSavingCustomDomain, setIsSavingCustomDomain] = useState(false)
@@ -146,14 +147,12 @@ export default function ProfilePage() {
 
   // --- GAMIFICATION CHECK ---
   const checkSocialRewards = async () => {
-    // Admins don't participate in gamification
     if (userRole === 'admin') return
 
     try {
         const res = await fetch('/api/gamification/check-socials', { method: 'POST' })
         const data = await res.json()
         
-        // Only alert if they earned something NEW
         if (data.success && data.xpGained > 0) {
             let msg = `🎉 Social Connected!`
             msg += `\n\n✨ +${data.xpGained} XP Earned!`
@@ -165,7 +164,6 @@ export default function ProfilePage() {
             }
             alert(msg)
             
-            // Refresh local badge state
             if (data.earnedBadges) {
                 const { data: { user } } = await supabase.auth.getUser()
                 if (user) {
@@ -278,6 +276,58 @@ export default function ProfilePage() {
     await supabase.from('profiles').update({ pixel_id: pixelId }).eq('id', userId)
   }
 
+  // --- WEBHOOK SUBSCRIPTION HANDLER ---
+  const handleFixConnection = async () => {
+    if(!selectedPageId) return alert("Please select a Facebook Page first.");
+    
+    setIsFixing(true);
+    try {
+        const res = await fetch('/api/facebook/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pageId: selectedPageId })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            alert("✅ Success! App subscribed to Page. Real-time leads enabled.");
+        } else {
+            alert("Error: " + (data.error || "Subscription failed"));
+        }
+    } catch (e) {
+        alert("Connection Failed. Check console.");
+        console.error(e);
+    } finally {
+        setIsFixing(false);
+    }
+  };
+
+  // --- NEW: CHECK STATUS HANDLER ---
+  const handleCheckStatus = async () => {
+    if(!selectedPageId) {
+        alert("Select a page first.");
+        return;
+    }
+    try {
+        const res = await fetch('/api/facebook/check-subscription', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pageId: selectedPageId })
+        });
+        const data = await res.json();
+        console.log("Subscription Status:", data);
+        
+        if (data.data && data.data.length > 0) {
+            alert(`✅ Verified! This page is subscribed to: ${JSON.stringify(data.data[0].subscribed_fields)}`);
+        } else {
+            alert("❌ No subscription found. Please click 'Enable Real-Time Leads' again.");
+        }
+    } catch(e) { 
+        console.error(e);
+        alert("Check failed"); 
+    }
+  }
+
   // --- CORE: Load Data ---
   useEffect(() => {
     let isMounted = true
@@ -330,12 +380,10 @@ export default function ProfilePage() {
             instagramUrl: profile.instagram_url || ''
           })
           
-          // Facebook Logic
           if (profile.facebook_token && isValidFacebookToken(profile.facebook_token)) {
             setIsFacebookConnected(true)
             setFacebookToken(profile.facebook_token); 
             
-            // Trigger Gamification Check (Logic inside handles admin check)
             if (profile.role !== 'admin') {
                 checkSocialRewards() 
             }
@@ -380,7 +428,6 @@ export default function ProfilePage() {
     }
   }, [router, supabase])
 
-  // Load Org Data into Form when context is ready
   useEffect(() => {
     if (org) {
       setOrgForm({
@@ -392,7 +439,6 @@ export default function ProfilePage() {
     }
   }, [org])
 
-  // --- CUSTOM DOMAIN HANDLER ---
   const handleSaveCustomDomain = async (e: React.FormEvent) => { 
     e.preventDefault()
     if (userRole !== 'admin' || !org?.id) return
@@ -441,12 +487,13 @@ export default function ProfilePage() {
     }
   }
 
-  // --- ACTIONS ---
+  // --- UPDATED CONNECT FUNCTION ---
   const handleConnectFacebook = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'facebook',
       options: {
-        scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management, pages_manage_ads, leads_retrieval',
+        // ADDED 'pages_manage_metadata' HERE
+        scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,pages_manage_metadata,instagram_basic,instagram_content_publish,business_management,ads_management,pages_manage_ads,leads_retrieval',
         redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=facebook',
       }
     })
@@ -472,8 +519,6 @@ export default function ProfilePage() {
     setSelectedPixelId('')
     setIsDisconnecting(false)
   }
-
-  // --- FILE UPLOADS & SAVING ---
 
   const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -799,7 +844,7 @@ export default function ProfilePage() {
           </div>
       </div>
 
-      {/* 3. SOCIAL ACCOUNTS (Filtered for Facebook/Insta Only) */}
+      {/* 3. SOCIAL ACCOUNTS */}
       <div className="mb-6">
         <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Social Accounts</h3>
         <div className="bg-white rounded-[2rem] shadow-sm border border-blue-100 overflow-hidden p-5 space-y-4">
@@ -842,6 +887,33 @@ export default function ProfilePage() {
                             <div className="py-2"><p className="text-xs text-slate-400 mb-2">No pages found.</p></div>
                         )}
                     </div>
+                    
+                    {/* WEBHOOK / FIX CONNECTION BUTTON */}
+                    {selectedPageId && (
+                        <div className="ml-11 mt-1">
+                             <div className="flex gap-2">
+                                <button 
+                                    onClick={handleFixConnection} 
+                                    disabled={isFixing}
+                                    className="flex-1 bg-blue-50 text-blue-600 px-4 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors border border-blue-200"
+                                >
+                                    {isFixing ? <Loader2 className="animate-spin" size={12} /> : <Zap size={12} />}
+                                    {isFixing ? "Fixing..." : "Enable Real-Time Leads"}
+                                </button>
+                                
+                                <button 
+                                    onClick={handleCheckStatus}
+                                    className="bg-slate-50 text-slate-500 px-3 py-2 rounded-lg text-xs font-bold border border-slate-200 hover:bg-slate-100"
+                                    title="Verify Facebook Connection"
+                                >
+                                    Check Status
+                                </button>
+                             </div>
+                            <p className="text-[10px] text-slate-400 mt-1 text-center">
+                                Tap this if leads don't appear in CRM automatically.
+                            </p>
+                        </div>
+                    )}
                     
                     {/* ADMIN ONLY: ADS & PIXELS */}
                     {userRole === 'admin' && (
