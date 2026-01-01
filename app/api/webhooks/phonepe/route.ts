@@ -3,44 +3,51 @@ import { NextResponse } from 'next/server';
 export async function POST(request: Request) {
     try {
         console.log("----------------------------------------------");
-        console.log("🔔 WEBHOOK HIT (Dashboard Method)");
+        console.log("🔔 DASHBOARD WEBHOOK TRIGGERED");
         console.log("----------------------------------------------");
 
         // 1. Get the Authorization Header
-        // PhonePe sends your username/password encoded here
+        // PhonePe sends "Basic base64(username:password)"
         const authHeader = request.headers.get('authorization');
-        
-        console.log("📥 Auth Header Received:", authHeader);
 
-        // 2. Verify Credentials (The ones you set in the Dashboard)
-        // We manually create the "Basic ..." string to match what PhonePe sends
-        const username = "olivia19";    // From your screenshot
-        const password = "olivia123";   // From your screenshot
+        // 2. Verify Credentials (from your Dashboard Screenshot)
+        const username = "admin"; 
+        const password = "admin1234";
         
-        // Basic Auth format is always "Basic base64(username:password)"
+        // Create the expected Basic Auth string
         const encodedCreds = Buffer.from(`${username}:${password}`).toString('base64');
         const expectedAuth = `Basic ${encodedCreds}`;
 
-        // Simple String Comparison
-        if (authHeader !== expectedAuth) {
-            console.log("❌ Auth Failed. Expected:", expectedAuth);
-            // We return 200 anyway to prevent PhonePe from retrying endlessly during testing
-            // return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        } else {
-             console.log("✅ Auth Successful: Credentials Match");
+        // 3. Authenticate
+        if (!authHeader || authHeader !== expectedAuth) {
+            console.error("❌ Auth Failed!");
+            console.log("   Received:", authHeader);
+            console.log("   Expected:", expectedAuth);
+            // In Test Mode, we still return 200 to prevent retries, but log the error
+            return NextResponse.json({ status: "success" }); 
         }
 
-        // 3. Get the Data
+        console.log("✅ Authorization Successful");
+
+        // 4. Parse the Body (It is PLAIN JSON in this version, not Base64)
         const body = await request.json();
         
-        // Log the actual event so you can see it
-        console.log("📦 Event Type:", body.event); 
-        console.log("📄 Payment Data:", JSON.stringify(body.payload, null, 2));
+        console.log("📦 Event:", body.event);
+        console.log("📄 Payload:", JSON.stringify(body.payload, null, 2));
 
-        return NextResponse.json({ success: true });
+        // 5. Handle Database Update
+        // Note: The Dashboard Webhook uses "state" (e.g., 'COMPLETED'), not "code"
+        if (body.event === 'checkout.order.completed' && body.payload.state === 'COMPLETED') {
+             const { merchantTransactionId, amount } = body.payload;
+             console.log(`💰 Payment Success: ${merchantTransactionId} for ₹${amount / 100}`);
+             
+             // TODO: Add your Supabase update logic here
+        }
+
+        return NextResponse.json({ status: "success" });
 
     } catch (error: any) {
-        console.error("⚠️ Error processing webhook:", error.message);
-        return NextResponse.json({ success: true }); // Always return true to PhonePe
+        console.error("⚠️ Webhook Error:", error.message);
+        return NextResponse.json({ status: "success" });
     }
 }
