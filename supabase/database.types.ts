@@ -820,6 +820,7 @@ export type Database = {
           amount: number
           created_at: string
           order_id: string
+          payment_id: string | null
           provider_reference_id: string | null
           status: string
           user_id: string
@@ -829,6 +830,7 @@ export type Database = {
           amount: number
           created_at?: string
           order_id: string
+          payment_id?: string | null
           provider_reference_id?: string | null
           status?: string
           user_id: string
@@ -838,6 +840,7 @@ export type Database = {
           amount?: number
           created_at?: string
           order_id?: string
+          payment_id?: string | null
           provider_reference_id?: string | null
           status?: string
           user_id?: string
