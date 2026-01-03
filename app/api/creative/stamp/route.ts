@@ -6,9 +6,9 @@ import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
 import path from 'path'
 import process from 'process'
 import fs from 'fs'
+import { checkAndNotifyRivalry, sendNotification } from '@/utils/notification-helper'
 
 // --- FIX: Initialize Fontconfig ---
-// We now search for the directory because Vercel paths can vary
 function initFonts() {
   try {
     // If already set, skip (prevents resetting on warm lambdas)
@@ -58,33 +58,39 @@ export async function POST(request: Request) {
 
     if (!agentProfile) throw new Error("Profile not found")
 
-    // --- GAMIFICATION LOGIC START ---
+    // --- GAMIFICATION & NOTIFICATION LOGIC START ---
     const currentStats = agentProfile 
+    
+    // Dates Setup
     const now = new Date()
-    const lastDate = currentStats?.last_activity_date ? new Date(currentStats.last_activity_date) : null
+    const todayStr = now.toDateString()
+    const lastActivityDate = currentStats?.last_activity_date ? new Date(currentStats.last_activity_date) : null
+    const lastActivityStr = lastActivityDate ? lastActivityDate.toDateString() : null
     
     let newStreak = currentStats?.current_streak || 0
-    let newXp = (currentStats?.total_xp || 0) + 50 
+    const oldXp = currentStats?.total_xp || 0
+    let newXp = oldXp + 50 
     let currentBadges = currentStats?.badges || []
     let newBadges: string[] = [...currentBadges]
     let earnedBadgeName: string | null = null
     
-    if (lastDate) {
-      const isToday = lastDate.toDateString() === now.toDateString()
-      const isYesterday = new Date(now.setDate(now.getDate() - 1)).toDateString() === lastDate.toDateString()
-      now.setDate(new Date().getDate()) 
-
-      if (!isToday) {
-        if (isYesterday) {
-          newStreak += 1
-        } else {
-          newStreak = 1 
-        }
-      }
+    // STREAK RESET LOGIC
+    if (lastActivityStr === todayStr) {
+        // Already active today, do nothing to streak
+        newStreak = newStreak
     } else {
-      newStreak = 1 
+        // Check if active yesterday
+        const yesterday = new Date()
+        yesterday.setDate(yesterday.getDate() - 1)
+        
+        if (lastActivityStr === yesterday.toDateString()) {
+            newStreak += 1 // Streak continues
+        } else {
+            newStreak = 1 // Streak broken, reset to 1
+        }
     }
 
+    // MILESTONES CHECK
     const MILESTONES = [
         { days: 7, id: 'streak_7', xp: 500, name: 'Week Warrior' },
         { days: 30, id: 'streak_30', xp: 2000, name: 'Consistency King' },
@@ -96,10 +102,23 @@ export async function POST(request: Request) {
         newBadges.push(milestone.id)
         newXp += milestone.xp
         earnedBadgeName = milestone.name
+        
+        // Notify user of new badge
+        await sendNotification(
+            supabase, 
+            user.id, 
+            "🏆 Badge Unlocked!", 
+            `You earned the '${milestone.name}' badge and +${milestone.xp} XP!`, 
+            'system'
+        )
     }
 
     const newLevel = Math.floor(newXp / 1000) + 1
 
+    // RIVALRY CHECK (Notify if they beat someone)
+    await checkAndNotifyRivalry(supabase, user.id, oldXp, newXp)
+
+    // Update DB
     await supabase.from('profiles').update({
         current_streak: newStreak,
         last_activity_date: new Date().toISOString(),
@@ -167,12 +186,10 @@ export async function POST(request: Request) {
     
     // --- Left Side Layout (Name) ---
     // Calculate available width for the name
-    // If phone exists, stop at divider; otherwise stop at right padding
     const rightBoundary = agentProfile.contact_number ? dividerX : (width - padding);
     const availableWidth = rightBoundary - textStartX - padding;
     
     // Estimate max chars that fit in one line
-    // Avg char width for Bold Poppins is approx 0.55 * fontSize
     const avgCharWidth = fontSizeName * 0.55; 
     const maxChars = Math.floor(availableWidth / avgCharWidth);
 
@@ -194,7 +211,6 @@ export async function POST(request: Request) {
 
     // Safety: Limit to 2 lines max to avoid overflow
     if (lines.length > 2) {
-        // Join everything else into line 2
         lines[1] = lines.slice(1).join(" ");
         lines = lines.slice(0, 2);
     }
@@ -219,8 +235,6 @@ export async function POST(request: Request) {
     } else {
         // Two Lines: Stacked and Centered
         const totalTextHeight = lines.length * lineHeight;
-        // Start Y puts the block in the middle
-        // We add fontSizeName * 0.8 to approximate the baseline of the first line
         const startY = (footerHeight - totalTextHeight) / 2 + (fontSizeName * 0.8);
         
         lines.forEach((line, index) => {
@@ -316,7 +330,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ 
         success: true, 
         url: publicUrl, 
-        xpEarned: newXp - (currentStats?.total_xp || 0),
+        xpEarned: newXp - oldXp,
         streak: newStreak,
         newBadge: earnedBadgeName 
     })

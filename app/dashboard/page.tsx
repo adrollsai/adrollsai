@@ -1,9 +1,7 @@
-// adrollsai/adrollsai/adrollsai-builder-app/app/dashboard/page.tsx
-
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -50,10 +48,10 @@ type FeedItem =
       author?: { business_name: string, logo_url: string }
     }
 
-type AssetStat = {
-    agent_name: string
-    status: string
-    share_stats: { whatsapp: number, facebook: number, instagram: number, download: number }
+// Modified for Agents Tab
+type AgentProfile = Profile & {
+    leads_count?: number
+    assets_count?: number
 }
 
 type Profile = {
@@ -63,8 +61,11 @@ type Profile = {
     business_name: string
     contact_number: string
     logo_url: string
+    email?: string
+    ad_credits?: number
     // Gamification Fields
     current_streak?: number
+    last_activity_date?: string
     total_xp?: number
     level?: number
 }
@@ -77,16 +78,15 @@ export default function DashboardPage() {
   const { org } = useOrganization()
   
   // --- STATE ---
-  // Added 'leaderboard' to activeTab
-  const [activeTab, setActiveTab] = useState<'feed' | 'inventory' | 'leaderboard' | 'analytics'>('feed')
+  const [activeTab, setActiveTab] = useState<'feed' | 'inventory' | 'leaderboard' | 'agents'>('feed')
   const [userProfile, setUserProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   
   // Data
   const [properties, setProperties] = useState<Property[]>([])
   const [feedItems, setFeedItems] = useState<FeedItem[]>([])
-  const [analytics, setAnalytics] = useState<AssetStat[]>([])
-  const [leaderboard, setLeaderboard] = useState<Profile[]>([]) // New State
+  const [agentsList, setAgentsList] = useState<AgentProfile[]>([]) 
+  const [leaderboard, setLeaderboard] = useState<Profile[]>([]) 
   const [claimedCreativeIds, setClaimedCreativeIds] = useState<Set<string>>(new Set()) 
   
   // Modals
@@ -94,6 +94,7 @@ export default function DashboardPage() {
   const [showAddCreative, setShowAddCreative] = useState(false)
   const [showAddNews, setShowAddNews] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
+  const [selectedAgent, setSelectedAgent] = useState<AgentProfile | null>(null) 
   
   // Image Slider State
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
@@ -102,6 +103,10 @@ export default function DashboardPage() {
   // Forms
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  
+  // Agent Credit Editing
+  const [editCreditsValue, setEditCreditsValue] = useState<string>('')
+  const [isUpdatingCredits, setIsUpdatingCredits] = useState(false)
   
   // -- Add Project Form --
   const [newProject, setNewProject] = useState({
@@ -120,6 +125,26 @@ export default function DashboardPage() {
 
   // -- Add News Form --
   const [newNews, setNewNews] = useState({ title: '', content: '' })
+
+  // --- STREAK HELPER ---
+  // Calculates streak based on last activity date to show "0" if missed
+  const getEffectiveStreak = () => {
+      if (!userProfile?.last_activity_date) return 0
+      
+      const last = new Date(userProfile.last_activity_date)
+      const now = new Date()
+      
+      const isToday = last.toDateString() === now.toDateString()
+      
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+      const isYesterday = last.toDateString() === yesterday.toDateString()
+      
+      if (isToday || isYesterday) return userProfile.current_streak || 0
+      return 0 // Streak broken
+  }
+
+  const effectiveStreak = getEffectiveStreak()
 
   // 1. FETCH DATA
   const fetchData = async () => {
@@ -226,7 +251,6 @@ export default function DashboardPage() {
       }
 
       // 7. Get Leaderboard (Everyone)
-      // Exclude 'admin' role so the admin doesn't appear in rankings
       const { data: lb } = await supabase
          .from('profiles')
          .select('*')
@@ -238,32 +262,17 @@ export default function DashboardPage() {
       if (lb) setLeaderboard(lb as Profile[])
 
 
-      // 8. Get Analytics (Admin Only & Filtered)
+      // 8. Get Agents List (Admin Only)
       if (profile.role === 'admin') {
-          // Filter out the admin themselves from the user list
-          const { data: orgUsers } = await supabase
+          const { data: agents } = await supabase
             .from('profiles')
-            .select('id, business_name')
+            .select('*')
             .eq('organization_id', orgId)
-            .neq('role', 'admin')
-
-          const orgUserIds = orgUsers?.map(u => u.id) || []
-
-          if (orgUserIds.length > 0) {
-            const { data: stats } = await supabase
-                .from('assets')
-                .select(`status, share_stats, user:profiles(business_name)`)
-                .in('user_id', orgUserIds)
-                .not('share_stats', 'is', null)
+            .eq('role', 'agent')
+            .order('created_at', { ascending: false })
             
-            if (stats) {
-                const formatted = stats.map((s: any) => ({
-                    agent_name: s.user?.business_name || 'Unknown',
-                    status: s.status,
-                    share_stats: s.share_stats
-                }))
-                setAnalytics(formatted)
-            }
+          if (agents) {
+             setAgentsList(agents as AgentProfile[])
           }
       }
 
@@ -278,7 +287,6 @@ export default function DashboardPage() {
 
   // --- HANDLERS ---
 
-  // 1. Add Project
   const handleAddProject = async () => {
       if (!newProject.title || !newProject.rera || projectFiles.images.length === 0) {
           alert("Title, RERA, and at least 1 image are required.")
@@ -314,7 +322,6 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // 2. Add Creative to Feed
   const handleAddCreative = async () => {
       if (!newCreative.property_id || !creativeFile) {
           alert("Select a project and upload a file.")
@@ -338,7 +345,6 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // 3. Add News Post (Admin)
   const handleAddNews = async () => {
       if (!newNews.title || !newNews.content) return
       setIsSubmitting(true)
@@ -361,7 +367,6 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // 4. Agent: Claim Creative
   const handleClaim = async (creative: FeedItem) => {
       if (creative.kind !== 'creative') return
       
@@ -370,12 +375,9 @@ export default function DashboardPage() {
           return
       }
 
-      // Check for prior claim
       const isAlreadyClaimed = claimedCreativeIds.has(creative.id)
       if (isAlreadyClaimed) {
-          if (!confirm("You have already claimed this asset. Do you want to generate it again?")) {
-              return
-          }
+          if (!confirm("You have already claimed this asset. Do you want to generate it again?")) return
       }
 
       setIsSubmitting(true)
@@ -394,24 +396,25 @@ export default function DashboardPage() {
           
           if(res.ok) {
               setClaimedCreativeIds(prev => new Set(prev).add(creative.id))
+              if (data.xpEarned) alert(`Creative Claimed!\n\n🔥 Streak: ${data.streak} Days\n✨ XP Earned: +${data.xpEarned}`)
               
-              // Gamification Alert
-              if (data.xpEarned) {
-                  alert(`Creative Claimed!\n\n🔥 Streak: ${data.streak} Days\n✨ XP Earned: +${data.xpEarned}`)
-              }
-
+              // Optimistically update profile to show new streak instantly
+              setUserProfile(prev => prev ? ({ 
+                  ...prev, 
+                  current_streak: data.streak, 
+                  total_xp: (prev.total_xp || 0) + data.xpEarned, 
+                  last_activity_date: new Date().toISOString() 
+              }) : null)
+              
               router.push('/dashboard/assets')
-              
           } else {
              throw new Error(data.error || "Stamping failed.")
           }
       } catch (e: any) {
-          console.error(e)
           alert("Failed to claim asset: " + e.message)
       } finally { setIsSubmitting(false) }
   }
 
-  // 5. Delete Item (Admin)
   const handleDeleteItem = async (item: FeedItem, e: React.MouseEvent) => {
       e.stopPropagation()
       if (!confirm("Are you sure you want to delete this?")) return
@@ -430,7 +433,6 @@ export default function DashboardPage() {
       }
   }
 
-  // 6. Pin/Unpin Post
   const handleTogglePin = async (post: FeedItem, e: React.MouseEvent) => {
       e.stopPropagation()
       if (post.kind !== 'post') return
@@ -456,7 +458,6 @@ export default function DashboardPage() {
       await supabase.from('posts').update({ tags: newTags }).eq('id', post.id)
   }
 
-  // 7. Delete Project
   const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!confirm("Are you sure? This will delete the project and all its templates.")) return
@@ -480,12 +481,44 @@ export default function DashboardPage() {
     }
   }
   
-  // 8. Invite Link
   const handleCopyInvite = () => {
       if (!userProfile?.organization_id) return
       const link = `${window.location.origin}/?invite_org=${userProfile.organization_id}`
       navigator.clipboard.writeText(link)
       alert("Invite link copied to clipboard! Send this to your agents.")
+  }
+
+  // --- NEW: Agent Management Handlers ---
+
+  const handleOpenAgent = async (agent: AgentProfile) => {
+      setSelectedAgent(agent)
+      setEditCreditsValue(agent.ad_credits?.toString() || '0')
+      
+      // Fetch stats for this agent
+      const { count: leadsCount } = await supabase.from('leads').select('*', { count: 'exact', head: true }).eq('user_id', agent.id)
+      const { count: assetsCount } = await supabase.from('assets').select('*', { count: 'exact', head: true }).eq('user_id', agent.id)
+      
+      setSelectedAgent(prev => prev ? ({ ...prev, leads_count: leadsCount || 0, assets_count: assetsCount || 0 }) : null)
+  }
+
+  const handleUpdateCredits = async () => {
+      if (!selectedAgent || !editCreditsValue) return
+      setIsUpdatingCredits(true)
+      try {
+          const newAmount = parseFloat(editCreditsValue)
+          const { error } = await supabase.from('profiles').update({ ad_credits: newAmount }).eq('id', selectedAgent.id)
+          
+          if (error) throw error
+
+          // Update local state
+          setAgentsList(prev => prev.map(a => a.id === selectedAgent.id ? { ...a, ad_credits: newAmount } : a))
+          setSelectedAgent(prev => prev ? { ...prev, ad_credits: newAmount } : null)
+          alert("Credits updated successfully.")
+      } catch (e: any) {
+          alert("Failed to update credits: " + e.message)
+      } finally {
+          setIsUpdatingCredits(false)
+      }
   }
 
   // --- UI HELPERS ---
@@ -553,11 +586,11 @@ export default function DashboardPage() {
                        </div>
                        <div>
                           <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">Daily Streak</p>
-                          <p className="text-xs font-bold text-white">{userProfile.current_streak || 0} Days</p>
+                          {/* USE EFFECTIVE STREAK HERE */}
+                          <p className="text-xs font-bold text-white">{effectiveStreak} Days</p>
                        </div>
                   </div>
 
-                  {/* Decorative BG */}
                   <div className="absolute top-0 right-0 p-2 opacity-5 pointer-events-none">
                       <Trophy size={80} />
                   </div>
@@ -573,14 +606,13 @@ export default function DashboardPage() {
                   <Building size={14}/> Projects
               </button>
               
-              {/* Leaderboard Tab (All Users) */}
               <button onClick={() => setActiveTab('leaderboard')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'leaderboard' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
                   <Trophy size={14}/> Rankings
               </button>
 
               {userProfile?.role === 'admin' && (
-                  <button onClick={() => setActiveTab('analytics')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'analytics' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
-                      <BarChart3 size={14}/> Stats
+                  <button onClick={() => setActiveTab('agents')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'agents' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
+                      <Users size={14}/> Agents
                   </button>
               )}
           </div>
@@ -692,7 +724,7 @@ export default function DashboardPage() {
           {/* --- TAB: INVENTORY --- */}
           {activeTab === 'inventory' && (
               <>
-                <div className="flex justify-between items-center">
+                 <div className="flex justify-between items-center">
                     <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">All Projects</h2>
                     {userProfile?.role === 'admin' && (
                         <button onClick={() => setShowAddProject(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-lg active:scale-95 transition-transform">
@@ -805,24 +837,41 @@ export default function DashboardPage() {
               </div>
           )}
 
-          {/* --- TAB: ANALYTICS (Admin Only) --- */}
-          {activeTab === 'analytics' && (
-              <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-                  <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><Share2 size={16}/> Team Activity</h3>
-                  <div className="space-y-4">
-                      {analytics.map((stat, i) => (
-                          <div key={i} className="flex items-center justify-between border-b border-slate-50 pb-3 last:border-0">
-                              <div>
-                                  <p className="text-xs font-bold text-slate-800">{stat.agent_name}</p>
-                                  <p className="text-[10px] text-slate-400">Status: {stat.status}</p>
+          {/* --- TAB: AGENTS (Admin Only) --- */}
+          {activeTab === 'agents' && (
+              <div className="space-y-4">
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                      <Users size={18}/> Managed Agents
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 gap-3">
+                      {agentsList.map(agent => (
+                          <div 
+                             key={agent.id} 
+                             onClick={() => handleOpenAgent(agent)}
+                             className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors active:scale-98"
+                          >
+                              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-lg font-bold text-slate-500 overflow-hidden border border-slate-200">
+                                  {agent.logo_url ? <img src={agent.logo_url} className="w-full h-full object-cover"/> : agent.business_name?.[0]}
                               </div>
-                              <div className="flex gap-3 text-xs font-mono text-slate-600">
-                                  <div className="flex items-center gap-1"><Share2 size={10} className="text-green-500"/> {stat.share_stats.whatsapp}</div>
-                                  <div className="flex items-center gap-1"><Download size={10} className="text-blue-500"/> {stat.share_stats.download}</div>
+                              <div className="flex-1">
+                                  <h4 className="font-bold text-slate-900 text-sm">{agent.business_name}</h4>
+                                  <p className="text-xs text-slate-500">{agent.contact_number}</p>
+                                  <div className="flex items-center gap-3 mt-1.5">
+                                      <span className="text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded font-bold border border-green-100 flex items-center gap-1">
+                                          <Coins size={10}/> ₹{(agent.ad_credits || 0).toLocaleString()}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
+                                          <Star size={10} className="text-yellow-400 fill-current"/> Lvl {agent.level || 1}
+                                      </span>
+                                  </div>
+                              </div>
+                              <div className="text-slate-300">
+                                  <ChevronRight size={20}/>
                               </div>
                           </div>
                       ))}
-                      {analytics.length === 0 && <div className="text-center text-xs text-slate-400 py-4">No activity recorded yet.</div>}
+                      {agentsList.length === 0 && <div className="text-center py-10 text-slate-400 text-xs">No agents found in your organization.</div>}
                   </div>
               </div>
           )}
@@ -953,13 +1002,6 @@ export default function DashboardPage() {
                <div className="absolute top-4 left-4 z-10 bg-black/40 backdrop-blur-md text-white text-[10px] font-bold px-3 py-1.5 rounded-full">
                    {currentImageIndex + 1} / {getDisplayImages(selectedProperty).length}
                </div>
-               {getDisplayImages(selectedProperty).length > 1 && (
-                   <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5 z-10">
-                       {getDisplayImages(selectedProperty).map((_, idx) => (
-                           <div key={idx} className={`w-1.5 h-1.5 rounded-full transition-colors ${idx === currentImageIndex ? 'bg-white' : 'bg-white/40'}`} />
-                       ))}
-                   </div>
-               )}
            </div>
 
            {/* Content Section */}
@@ -988,6 +1030,82 @@ export default function DashboardPage() {
                )}
            </div>
         </div>
+      )}
+
+      {/* --- MODAL: AGENT DETAIL --- */}
+      {selectedAgent && (
+          <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in">
+              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
+                  <div className="flex justify-between items-start mb-6">
+                      <div className="flex items-center gap-3">
+                          <div className="w-14 h-14 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xl font-bold text-slate-500 overflow-hidden">
+                              {selectedAgent.logo_url ? <img src={selectedAgent.logo_url} className="w-full h-full object-cover"/> : selectedAgent.business_name?.[0]}
+                          </div>
+                          <div>
+                              <h2 className="text-lg font-black text-slate-900">{selectedAgent.business_name}</h2>
+                              <p className="text-xs text-slate-500 font-medium">{selectedAgent.contact_number}</p>
+                              {selectedAgent.email && <p className="text-[10px] text-slate-400">{selectedAgent.email}</p>}
+                          </div>
+                      </div>
+                      <button onClick={() => setSelectedAgent(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button>
+                  </div>
+
+                  {/* WALLET SECTION */}
+                  <div className="bg-slate-900 p-5 rounded-2xl text-white mb-6 relative overflow-hidden">
+                      <div className="relative z-10">
+                           <div className="flex justify-between items-center mb-2">
+                               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">Ad Wallet Balance</p>
+                               <Coins size={16} className="text-green-400"/>
+                           </div>
+                           <div className="flex items-center gap-2">
+                                <span className="text-2xl font-bold">₹</span>
+                                <input 
+                                    type="number"
+                                    value={editCreditsValue}
+                                    onChange={(e) => setEditCreditsValue(e.target.value)}
+                                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-1 text-2xl font-bold w-full outline-none focus:bg-white/20 transition-all"
+                                />
+                           </div>
+                           <button 
+                               onClick={handleUpdateCredits}
+                               disabled={isUpdatingCredits}
+                               className="mt-4 w-full bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                           >
+                               {isUpdatingCredits ? <Loader2 size={12} className="animate-spin"/> : <Save size={12}/>}
+                               Update Credits
+                           </button>
+                      </div>
+                      <div className="absolute -right-4 -bottom-4 opacity-10"><Coins size={100}/></div>
+                  </div>
+
+                  {/* STATS GRID */}
+                  <div className="grid grid-cols-2 gap-3 mb-6">
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <p className="text-xs text-slate-400 font-bold mb-1">Total Leads</p>
+                          <p className="text-xl font-black text-slate-900">{selectedAgent.leads_count}</p>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <p className="text-xs text-slate-400 font-bold mb-1">Assets Shared</p>
+                          <p className="text-xl font-black text-slate-900">{selectedAgent.assets_count}</p>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <p className="text-xs text-slate-400 font-bold mb-1">XP Earned</p>
+                          <p className="text-xl font-black text-slate-900">{selectedAgent.total_xp || 0}</p>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <p className="text-xs text-slate-400 font-bold mb-1">Current Streak</p>
+                          <p className="text-xl font-black text-slate-900">{selectedAgent.current_streak || 0} <span className="text-xs text-slate-400 font-normal">days</span></p>
+                      </div>
+                  </div>
+
+                  <a 
+                      href={`tel:${selectedAgent.contact_number}`}
+                      className="w-full bg-white border-2 border-slate-100 text-slate-700 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors"
+                  >
+                      <User size={16}/> Call Agent
+                  </a>
+              </div>
+          </div>
       )}
 
     </div>

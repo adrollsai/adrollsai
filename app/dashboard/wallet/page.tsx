@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
-import { Wallet, CreditCard, History, ArrowUpRight, Loader2 } from 'lucide-react'
+import { Wallet, CreditCard, History, ArrowUpRight, Loader2, Info } from 'lucide-react'
 
 export default function WalletPage() {
     const supabase = createClient()
     const [balance, setBalance] = useState(0)
-    const [amount, setAmount] = useState(1000)
-    const [loading, setLoading] = useState(false)
+    // Removed payment state
+    // const [amount, setAmount] = useState(1000)
+    // const [loading, setLoading] = useState(false)
     const [transactions, setTransactions] = useState<any[]>([])
 
     useEffect(() => {
@@ -34,24 +35,7 @@ export default function WalletPage() {
         if(txs) setTransactions(txs)
     }
 
-    const handleTopUp = async () => {
-        if(amount < 1000 || amount % 1000 !== 0) {
-            alert("Amount must be a multiple of ₹1000 (Min ₹1000)")
-            return
-        }
-        setLoading(true)
-        try {
-            const res = await fetch('/api/phonepe/pay', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount }) // No adId
-            })
-            const data = await res.json()
-            if(data.url) window.location.href = data.url
-            else alert("Error initiating payment")
-        } catch(e) { console.error(e); alert("Payment Error") }
-        setLoading(false)
-    }
+    // Removed handleTopUp
 
     return (
         <div className="p-6 max-w-2xl mx-auto space-y-8 mt-12">
@@ -70,33 +54,18 @@ export default function WalletPage() {
                 </div>
             </div>
 
-            {/* TOP UP SECTION */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <ArrowUpRight size={18} /> Add Funds
-                </h3>
-                <div className="flex gap-4 items-center">
-                    <div className="relative flex-1">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
-                        <input 
-                            type="number" 
-                            step="1000"
-                            min="1000"
-                            value={amount}
-                            onChange={(e) => setAmount(parseInt(e.target.value))}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 pl-8 pr-4 font-bold text-lg outline-none focus:ring-2 focus:ring-slate-900"
-                        />
-                    </div>
-                    <button 
-                        onClick={handleTopUp}
-                        disabled={loading}
-                        className="bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-xl font-bold flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
-                    >
-                        {loading ? <Loader2 className="animate-spin"/> : <CreditCard size={20} />}
-                        Pay Now
-                    </button>
+            {/* INFO SECTION (Replaces Top Up) */}
+            <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 flex items-start gap-4">
+                <div className="bg-blue-100 p-2 rounded-full text-blue-600">
+                    <Info size={24} />
                 </div>
-                <p className="text-xs text-slate-400 mt-2 ml-1">Minimum ₹1,000. Multiples of ₹1,000 only.</p>
+                <div>
+                    <h3 className="font-bold text-blue-900 mb-1">Need more credits?</h3>
+                    <p className="text-sm text-blue-700 leading-relaxed">
+                        Credit top-ups are currently managed by your organization administrator. 
+                        Please contact your admin to add funds to your wallet for running ad campaigns.
+                    </p>
+                </div>
             </div>
 
             {/* HISTORY */}
@@ -108,12 +77,11 @@ export default function WalletPage() {
                     {transactions.length === 0 ? (
                         <div className="p-8 text-center text-slate-400 text-sm">No transactions yet.</div>
                     ) : (
-                        // FIX: Added index as fallback key to prevent uniqueness error
                         transactions.map((tx, index) => (
                             <div key={tx.id || index} className="p-4 border-b border-slate-100 last:border-0 flex justify-between items-center hover:bg-slate-50">
                                 <div>
                                     <p className="font-bold text-slate-800 text-sm">
-                                        {tx.ad_id ? 'Ad Campaign Purchase' : 'Wallet Top Up'}
+                                        {tx.ad_id ? 'Ad Campaign Purchase' : 'Wallet Update'}
                                     </p>
                                     <p className="text-xs text-slate-400 font-mono">{tx.order_id}</p>
                                 </div>
