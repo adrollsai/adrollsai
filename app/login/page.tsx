@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Loader2, Building2, User, LayoutGrid, CheckCircle2, TestTube2, AlertCircle, Mail, Lock, ArrowRight } from 'lucide-react'
+import { Loader2, Building2, User, LayoutGrid, CheckCircle2, TestTube2, AlertCircle, Mail, Lock, ArrowRight, ShieldCheck } from 'lucide-react'
 
 type InviteInfo = {
   name: string
@@ -25,28 +25,27 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [inviteInfo, setInviteInfo] = useState<InviteInfo | null>(null)
   
-  // Custom Branding State (Default = AdRolls)
+  // Custom Branding State (Default = AdRolls.in)
   const [branding, setBranding] = useState<BrandingInfo>({
-    name: 'AdRolls.ai',
-    logo: null, 
+    name: 'AdRolls.in',
+    logo: '/icon.png', // Default logo
     isCustom: false,
     subtitle: 'Builder & Agent Marketing OS'
   })
   
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
+  // REMOVED: authMode state (Login Only)
   const [message, setMessage] = useState<{ type: 'error' | 'success', text: string } | null>(null)
 
   const inviteOrg = searchParams.get('invite_org')
   const errorMsg = searchParams.get('error')
 
-  // 1. FETCH CUSTOM BRANDING (Directly from DB)
+  // 1. FETCH CUSTOM BRANDING
   useEffect(() => {
     const fetchBranding = async () => {
       const hostname = window.location.hostname
       
-      // Define System Hosts (Where we stay as default AdRolls)
       const SYSTEM_HOSTS = [
         'adrolls.in',
         'www.adrolls.in',
@@ -54,23 +53,21 @@ function LoginForm() {
         process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app'
       ]
 
-      // If current host is in the system list, stop here
       if (SYSTEM_HOSTS.some(h => hostname.includes(h))) {
         return
       }
 
       try {
-        // Fetch Name AND Logo URL directly
         const { data: org } = await supabase
           .from('organizations')
-          .select('name, master_logo_url') // <--- CRITICAL FIX: Added master_logo_url
+          .select('name, master_logo_url') 
           .eq('custom_domain', hostname)
           .single()
 
         if (org) {
           setBranding({
             name: org.name,
-            logo: org.master_logo_url, // <--- CRITICAL FIX: Use direct URL, not API route
+            logo: org.master_logo_url, 
             isCustom: true,
             subtitle: `Welcome to ${org.name}`
           })
@@ -96,58 +93,14 @@ function LoginForm() {
     fetchInviteDetails()
   }, [inviteOrg])
 
-  // --- OAUTH LOGIN ---
-  const handleOAuthLogin = async (provider: 'google' | 'linkedin_oidc') => {
-    setLoading(true)
-    try {
-      const origin = window.location.origin
-      const redirectUrl = new URL(`${origin}/auth/callback`)
-      
-      if (inviteOrg) {
-        redirectUrl.searchParams.set('invite_org', inviteOrg)
-      }
-
-      await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: redirectUrl.toString(),
-          queryParams: {
-            config_id: '25664675166502911',
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-        },
-      })
-    } catch (error) {
-      console.error(error)
-      setLoading(false)
-    }
-  }
-
-  // --- EMAIL LOGIN / SIGNUP ---
+  // --- EMAIL LOGIN (Signup Removed) ---
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
 
     try {
-      if (authMode === 'signup') {
-        const origin = window.location.origin
-        const redirectUrl = new URL(`${origin}/auth/callback`)
-        if (inviteOrg) redirectUrl.searchParams.set('invite_org', inviteOrg)
-
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: redirectUrl.toString() 
-          }
-        })
-
-        if (error) throw error
-        setMessage({ type: 'success', text: 'Check your email for the confirmation link.' })
-        
-      } else {
+        // LOGIN LOGIC ONLY
         const { data: { user }, error } = await supabase.auth.signInWithPassword({
           email,
           password
@@ -156,6 +109,7 @@ function LoginForm() {
         if (error) throw error
         if (!user) throw new Error("Login failed")
 
+        // Handle Invite Acceptance on Login
         if (inviteOrg) {
           await supabase.from('organization_members').upsert({
               user_id: user.id,
@@ -170,7 +124,7 @@ function LoginForm() {
         }
 
         router.push('/dashboard')
-      }
+      
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message })
     } finally {
@@ -178,7 +132,7 @@ function LoginForm() {
     }
   }
 
-  // --- DEMO LOGIN ---
+  // --- DEMO AGENT LOGIN ---
   const handleDemoLogin = async () => {
     setLoading(true)
     try {
@@ -210,6 +164,26 @@ function LoginForm() {
     }
   }
 
+  // --- DEMO ADMIN LOGIN ---
+  const handleDemoAdminLogin = async () => {
+    setLoading(true)
+    try {
+      const { data: { user }, error } = await supabase.auth.signInWithPassword({
+        email: 'demo-admin@adrolls.in', 
+        password: 'demo@123'
+      })
+      
+      if (error) throw error
+      if (!user) throw new Error("No user returned")
+
+      router.push('/dashboard')
+
+    } catch (error: any) {
+      alert("Demo Admin Login Failed: " + error.message)
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <div className="bg-white w-full max-w-md rounded-3xl shadow-xl overflow-hidden">
@@ -221,10 +195,10 @@ function LoginForm() {
           </div>
           <div className="relative z-10">
             <div className="w-20 h-20 bg-white rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg p-2">
-               {/* LOGO LOGIC */}
+               {/* Logo Logic */}
                {inviteInfo?.logo_url ? (
                  <img src={inviteInfo.logo_url} className="w-full h-full object-contain" alt="Org Logo"/>
-               ) : branding.isCustom && branding.logo ? (
+               ) : branding.logo ? (
                  <img src={branding.logo} className="w-full h-full object-contain" alt={branding.name}/>
                ) : (
                  inviteOrg ? <User size={32} className="text-blue-600"/> : <Building2 size={32} className="text-slate-900"/>
@@ -259,8 +233,9 @@ function LoginForm() {
                 <CheckCircle2 size={20} className="text-blue-600 shrink-0 mt-0.5" />
                 <div>
                   <h3 className="text-sm font-bold text-blue-900">Accept Invitation</h3>
+                  {/* Updated text: Removed 'Sign up' mention */}
                   <p className="text-xs text-blue-700 leading-relaxed mt-1">
-                    {authMode === 'login' ? 'Sign in' : 'Sign up'} to join <b>{inviteInfo?.name || 'the organization'}</b> as an Agent.
+                    Sign in to join <b>{inviteInfo?.name || 'the organization'}</b> as an Agent.
                   </p>
                 </div>
              </div>
@@ -305,50 +280,37 @@ function LoginForm() {
               >
                 {loading ? <Loader2 size={18} className="animate-spin"/> : (
                   <>
-                    {authMode === 'login' ? 'Sign In' : 'Create Account'}
+                    Sign In
                     <ArrowRight size={16} />
                   </>
                 )}
               </button>
            </form>
 
-           <div className="text-center">
-             <button 
-               type="button"
-               onClick={() => {
-                 setAuthMode(authMode === 'login' ? 'signup' : 'login')
-                 setMessage(null)
-               }}
-               className="text-sm text-slate-500 hover:text-slate-800 font-medium transition-colors"
-             >
-               {authMode === 'login' 
-                 ? "Don't have an account? Sign up" 
-                 : "Already have an account? Sign in"}
-             </button>
-           </div>
+           {/* REMOVED: Sign Up Toggle Button Section */}
 
            <div className="relative">
               <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
               <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400">Or continue with</span></div>
            </div>
 
-           <div className="space-y-3">
-              <button 
-                onClick={() => handleOAuthLogin('google')} 
-                disabled={loading}
-                className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 p-4 rounded-xl text-slate-700 font-bold text-sm hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98]"
-              >
-                <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google"/>
-                Google
-              </button>
-
+           <div className="grid grid-cols-2 gap-3">
               <button 
                 onClick={handleDemoLogin} 
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-3 bg-indigo-50 border border-indigo-100 p-4 rounded-xl text-indigo-700 font-bold text-sm hover:bg-indigo-100 transition-all active:scale-[0.98]"
+                className="flex items-center justify-center gap-2 bg-indigo-50 border border-indigo-100 p-4 rounded-xl text-indigo-700 font-bold text-[10px] hover:bg-indigo-100 transition-all active:scale-[0.98]"
               >
-                 <TestTube2 size={20} className="text-indigo-600" />
-                 Demo Agent Login
+                 <TestTube2 size={16} className="text-indigo-600" />
+                 Demo Agent
+              </button>
+
+              <button 
+                onClick={handleDemoAdminLogin} 
+                disabled={loading}
+                className="flex items-center justify-center gap-2 bg-purple-50 border border-purple-100 p-4 rounded-xl text-purple-700 font-bold text-[10px] hover:bg-purple-100 transition-all active:scale-[0.98]"
+              >
+                 <ShieldCheck size={16} className="text-purple-600" />
+                 Demo Admin
               </button>
            </div>
         </div>

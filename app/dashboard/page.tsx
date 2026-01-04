@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check, UserPlus } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -96,6 +96,10 @@ export default function DashboardPage() {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [selectedAgent, setSelectedAgent] = useState<AgentProfile | null>(null) 
   
+  // New Agent State
+  const [showAddAgent, setShowAddAgent] = useState(false)
+  const [newAgent, setNewAgent] = useState({ name: '', email: '', password: '', phone: '' })
+
   // Image Slider State
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const sliderRef = useRef<HTMLDivElement>(null)
@@ -104,8 +108,8 @@ export default function DashboardPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   
-  // Agent Credit Top-Up State
-  const [topUpAmount, setTopUpAmount] = useState<string>('')
+  // Agent Credit Editing
+  const [editCreditsValue, setEditCreditsValue] = useState<string>('')
   const [isUpdatingCredits, setIsUpdatingCredits] = useState(false)
   
   // -- Add Project Form --
@@ -152,6 +156,7 @@ export default function DashboardPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
 
+      // 1. Get Profile to determine Organization
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -171,6 +176,7 @@ export default function DashboardPage() {
           return
       }
 
+      // 2. Get Properties (FILTERED BY ORG)
       const { data: props } = await supabase
         .from('properties')
         .select('*')
@@ -179,18 +185,21 @@ export default function DashboardPage() {
       
       if (props) setProperties(props)
 
+      // 3. Get Creatives Feed (FILTERED BY ORG via Property relation)
       const { data: creatives } = await supabase
         .from('master_creatives')
         .select(`*, property:properties!inner(title, organization_id)`) 
         .eq('property.organization_id', orgId)
         .order('created_at', { ascending: false })
 
+      // 4. Get News Posts (FILTERED BY ORG via Author relation)
       const { data: posts } = await supabase
         .from('posts')
         .select(`*, author:profiles!inner(organization_id, business_name, logo_url)`)
         .eq('author.organization_id', orgId)
         .order('created_at', { ascending: false })
 
+      // 5. Merge and Sort Feed
       const combinedFeed: FeedItem[] = []
       
       if (creatives) {
@@ -218,6 +227,7 @@ export default function DashboardPage() {
           }))
       }
 
+      // Sort: Pinned posts first, then newest
       combinedFeed.sort((a, b) => {
           const isAPinned = a.kind === 'post' && a.tags?.includes('pinned')
           const isBPinned = b.kind === 'post' && b.tags?.includes('pinned')
@@ -228,6 +238,7 @@ export default function DashboardPage() {
 
       setFeedItems(combinedFeed)
 
+      // 6. Get Claimed Creatives (For Agents)
       if (profile.role === 'agent') {
           const { data: claims } = await supabase
              .from('assets')
@@ -242,6 +253,7 @@ export default function DashboardPage() {
           setClaimedCreativeIds(claimedSet)
       }
 
+      // 7. Get Leaderboard (Everyone)
       const { data: lb } = await supabase
          .from('profiles')
          .select('*')
@@ -253,6 +265,7 @@ export default function DashboardPage() {
       if (lb) setLeaderboard(lb as Profile[])
 
 
+      // 8. Get Agents List (Admin Only)
       if (profile.role === 'admin') {
           const { data: agents } = await supabase
             .from('profiles')
@@ -388,6 +401,7 @@ export default function DashboardPage() {
               setClaimedCreativeIds(prev => new Set(prev).add(creative.id))
               if (data.xpEarned) alert(`Creative Claimed!\n\n🔥 Streak: ${data.streak} Days\n✨ XP Earned: +${data.xpEarned}`)
               
+              // Optimistically update profile to show new streak instantly
               setUserProfile(prev => prev ? ({ 
                   ...prev, 
                   current_streak: data.streak, 
@@ -479,45 +493,59 @@ export default function DashboardPage() {
 
   // --- NEW: Agent Management Handlers ---
 
+  const handleCreateAgent = async () => {
+      if (!newAgent.name || !newAgent.email || !newAgent.password) {
+          alert("Name, Email and Password are required.")
+          return
+      }
+      setIsSubmitting(true)
+      try {
+          const res = await fetch('/api/org/create-agent', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newAgent)
+          })
+          const data = await res.json()
+          
+          if (!res.ok) throw new Error(data.error)
+          
+          alert(`✅ Agent ${newAgent.name} added successfully!`)
+          setNewAgent({ name: '', email: '', password: '', phone: '' })
+          setShowAddAgent(false)
+          fetchData() // Refresh list
+      } catch (e: any) {
+          alert("Error: " + e.message)
+      } finally {
+          setIsSubmitting(false)
+      }
+  }
+
   const handleOpenAgent = async (agent: AgentProfile) => {
       setSelectedAgent(agent)
-      // Reset Top Up field
-      setTopUpAmount('')
+      setEditCreditsValue(agent.ad_credits?.toString() || '0')
       
+      // Fetch stats for this agent
       const { count: leadsCount } = await supabase.from('leads').select('*', { count: 'exact', head: true }).eq('user_id', agent.id)
       const { count: assetsCount } = await supabase.from('assets').select('*', { count: 'exact', head: true }).eq('user_id', agent.id)
       
       setSelectedAgent(prev => prev ? ({ ...prev, leads_count: leadsCount || 0, assets_count: assetsCount || 0 }) : null)
   }
 
-  const handleTopUpWallet = async () => {
-      if (!selectedAgent || !topUpAmount) return
+  const handleUpdateCredits = async () => {
+      if (!selectedAgent || !editCreditsValue) return
       setIsUpdatingCredits(true)
       try {
-          const amount = parseFloat(topUpAmount)
-          if (amount <= 0) throw new Error("Amount must be positive")
-
-          const res = await fetch('/api/wallet/topup', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                  targetUserId: selectedAgent.id, 
-                  amount: amount 
-              })
-          })
-
-          const data = await res.json()
-          if (!data.success) throw new Error(data.error)
+          const newAmount = parseFloat(editCreditsValue)
+          const { error } = await supabase.from('profiles').update({ ad_credits: newAmount }).eq('id', selectedAgent.id)
+          
+          if (error) throw error
 
           // Update local state
-          const newBalance = data.newBalance
-          setAgentsList(prev => prev.map(a => a.id === selectedAgent.id ? { ...a, ad_credits: newBalance } : a))
-          setSelectedAgent(prev => prev ? { ...prev, ad_credits: newBalance } : null)
-          
-          setTopUpAmount('')
-          alert(`Success! Added ₹${amount}. New Balance: ₹${newBalance}`)
+          setAgentsList(prev => prev.map(a => a.id === selectedAgent.id ? { ...a, ad_credits: newAmount } : a))
+          setSelectedAgent(prev => prev ? { ...prev, ad_credits: newAmount } : null)
+          alert("Credits updated successfully.")
       } catch (e: any) {
-          alert("Top Up Failed: " + e.message)
+          alert("Failed to update credits: " + e.message)
       } finally {
           setIsUpdatingCredits(false)
       }
@@ -588,6 +616,7 @@ export default function DashboardPage() {
                        </div>
                        <div>
                           <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">Daily Streak</p>
+                          {/* USE EFFECTIVE STREAK HERE */}
                           <p className="text-xs font-bold text-white">{effectiveStreak} Days</p>
                        </div>
                   </div>
@@ -841,9 +870,18 @@ export default function DashboardPage() {
           {/* --- TAB: AGENTS (Admin Only) --- */}
           {activeTab === 'agents' && (
               <div className="space-y-4">
-                  <h3 className="font-bold text-slate-900 flex items-center gap-2">
-                      <Users size={18}/> Managed Agents
-                  </h3>
+                  <div className="flex justify-between items-center">
+                    <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                        <Users size={18}/> Managed Agents
+                    </h3>
+                    {/* Add Agent Button */}
+                    <button 
+                        onClick={() => setShowAddAgent(true)}
+                        className="bg-slate-900 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 shadow-lg active:scale-95 transition-transform"
+                    >
+                        <UserPlus size={12}/> Add Agent
+                    </button>
+                  </div>
                   
                   <div className="grid grid-cols-1 gap-3">
                       {agentsList.map(agent => (
@@ -872,7 +910,7 @@ export default function DashboardPage() {
                               </div>
                           </div>
                       ))}
-                      {agentsList.length === 0 && <div className="text-center py-10 text-slate-400 text-xs">No agents found in your organization.</div>}
+                      {agentsList.length === 0 && <div className="text-center py-10 text-slate-400 text-xs">No agents found. Add one above.</div>}
                   </div>
               </div>
           )}
@@ -918,6 +956,46 @@ export default function DashboardPage() {
 
                       <button onClick={handleAddProject} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm mt-2">
                           {isSubmitting ? 'Saving...' : 'Create Project'}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* --- MODAL: ADD AGENT --- */}
+      {showAddAgent && (
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
+                  <div className="flex justify-between mb-4">
+                      <h2 className="font-bold text-lg">Add New Agent</h2>
+                      <button onClick={() => setShowAddAgent(false)}><X size={20}/></button>
+                  </div>
+                  <div className="space-y-3">
+                      <input 
+                          placeholder="Full Name" 
+                          className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-slate-900"
+                          value={newAgent.name} onChange={e => setNewAgent({...newAgent, name: e.target.value})} 
+                      />
+                      <input 
+                          placeholder="Email Address" 
+                          type="email"
+                          className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-slate-900"
+                          value={newAgent.email} onChange={e => setNewAgent({...newAgent, email: e.target.value})} 
+                      />
+                      <input 
+                          placeholder="Phone Number (Optional)" 
+                          className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-slate-900"
+                          value={newAgent.phone} onChange={e => setNewAgent({...newAgent, phone: e.target.value})} 
+                      />
+                      <input 
+                          placeholder="Set Password" 
+                          type="text" // Visible so admin can copy
+                          className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-slate-900"
+                          value={newAgent.password} onChange={e => setNewAgent({...newAgent, password: e.target.value})} 
+                      />
+                      
+                      <button onClick={handleCreateAgent} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm mt-2 hover:bg-slate-800 transition-colors">
+                          {isSubmitting ? 'Creating...' : 'Create Account'}
                       </button>
                   </div>
               </div>
@@ -1060,27 +1138,21 @@ export default function DashboardPage() {
                            </div>
                            <div className="flex items-center gap-2">
                                 <span className="text-2xl font-bold">₹</span>
-                                <span className="text-2xl font-bold">{(selectedAgent.ad_credits || 0).toLocaleString()}</span>
-                           </div>
-                           
-                           {/* TOP UP INPUT */}
-                           <div className="mt-4 flex items-center gap-2">
                                 <input 
                                     type="number"
-                                    placeholder="Enter amount to add"
-                                    value={topUpAmount}
-                                    onChange={(e) => setTopUpAmount(e.target.value)}
-                                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm font-bold w-full outline-none focus:bg-white/20 transition-all placeholder:text-slate-500"
+                                    value={editCreditsValue}
+                                    onChange={(e) => setEditCreditsValue(e.target.value)}
+                                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-1 text-2xl font-bold w-full outline-none focus:bg-white/20 transition-all"
                                 />
-                                <button 
-                                   onClick={handleTopUpWallet}
-                                   disabled={isUpdatingCredits || !topUpAmount}
-                                   className="bg-green-600 hover:bg-green-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50 whitespace-nowrap"
-                                >
-                                   {isUpdatingCredits ? <Loader2 size={12} className="animate-spin"/> : <Plus size={12}/>}
-                                   Add Credits
-                                </button>
                            </div>
+                           <button 
+                               onClick={handleUpdateCredits}
+                               disabled={isUpdatingCredits}
+                               className="mt-4 w-full bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                           >
+                               {isUpdatingCredits ? <Loader2 size={12} className="animate-spin"/> : <Save size={12}/>}
+                               Update Credits
+                           </button>
                       </div>
                       <div className="absolute -right-4 -bottom-4 opacity-10"><Coins size={100}/></div>
                   </div>
