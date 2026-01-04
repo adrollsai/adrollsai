@@ -1,7 +1,17 @@
 {
-    "functions": {
-      "app/api/creative/stamp/route.ts": {
-        "includeFiles": "fonts/**"
-      }
+  "crons": [
+    {
+      "path": "/api/cron/ads-monitor",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/retention",
+      "schedule": "0 14 * * *"
+    }
+  ],
+  "functions": {
+    "app/api/creative/stamp/route.ts": {
+      "includeFiles": "fonts/**"
     }
   }
+}

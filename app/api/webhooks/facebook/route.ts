@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendLeadEmail } from '@/utils/email-helper';
-import { sendNotification } from '@/utils/notification-helper';
+import { sendNotification } from '@/utils/notification-helper'; // IMPORT ADDED
 
 const VERIFY_TOKEN = 'ADROLLS_SECURE_TOKEN_2024'; 
 
@@ -154,10 +154,10 @@ async function processLead(value: any) {
     if (error && error.code !== '23505') {
         console.error("DB Insert Error:", error);
     } else if (!error) {
-        // 7. NOTIFICATIONS (Push + Email)
+        // 7. NOTIFICATIONS (Push + Email) [UPDATED]
         console.log(`✅ Lead Saved. Notifying User: ${assignedUserId}`);
         
-        // A. PUSH NOTIFICATION (High ROI - Instant Alert)
+        // A. PUSH NOTIFICATION (Speed to Lead)
         await sendNotification(
             supabase,
             assignedUserId,
