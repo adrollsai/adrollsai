@@ -26,7 +26,6 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: new URL(baseUrl),
     title: "AdRolls AI",
     description: "Keep your ads rolling...",
-    // REMOVED: manifest property from here (we will add it manually below)
     icons: {
       icon: "/favicon.ico",
       shortcut: "/favicon.ico",
@@ -49,7 +48,6 @@ export async function generateMetadata(): Promise<Metadata> {
         metadataBase: new URL(`https://${host}`),
         title: org.name,
         description: `Welcome to ${org.name}`,
-        // REMOVED: manifest property from here
         
         icons: {
           icon: "/api/org-icon?type=favicon",
@@ -73,7 +71,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export const viewport: Viewport = {
-  themeColor: "#D0E8FF",
+  themeColor: "#FFFFFF", // Changed from #D0E8FF to White to match the white splash screen
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -90,6 +88,8 @@ export default function RootLayout({
         <link rel="manifest" href="/api/manifest" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        {/* iOS Splash Screen: Points to our dynamic generator */}
+        <link rel="apple-touch-startup-image" href="/api/org-icon?type=splash" />
       </head>
       <body className={inter.className}>
         {children}
