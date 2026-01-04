@@ -6,6 +6,7 @@ export const runtime = 'nodejs'
 const DEFAULT_APP_HOST = process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app' 
 
 export async function middleware(request: NextRequest) {
+  console.log(`[Middleware] Incoming: ${request.method} ${request.nextUrl.pathname}`);
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -114,6 +115,9 @@ export async function middleware(request: NextRequest) {
 export const config = {
   // CRITICAL: Exclude manifest files and API routes from middleware to prevent rewrites/auth blocks
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|auth|shared|api/org-icon|api/manifest|manifest.webmanifest|manifest.json).*)',
+    /* * We added '|api/webhooks' to the exclusion list below.
+     * This tells Next.js: "Do NOT run middleware on any route starting with /api/webhooks"
+     */
+    '/((?!_next/static|_next/image|favicon.ico|auth|shared|api/org-icon|api/manifest|api/webhooks|manifest.webmanifest|manifest.json).*)',
   ],
 }

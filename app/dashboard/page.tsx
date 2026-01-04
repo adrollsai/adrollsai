@@ -104,8 +104,8 @@ export default function DashboardPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   
-  // Agent Credit Editing
-  const [editCreditsValue, setEditCreditsValue] = useState<string>('')
+  // Agent Credit Top-Up State
+  const [topUpAmount, setTopUpAmount] = useState<string>('')
   const [isUpdatingCredits, setIsUpdatingCredits] = useState(false)
   
   // -- Add Project Form --
@@ -127,7 +127,6 @@ export default function DashboardPage() {
   const [newNews, setNewNews] = useState({ title: '', content: '' })
 
   // --- STREAK HELPER ---
-  // Calculates streak based on last activity date to show "0" if missed
   const getEffectiveStreak = () => {
       if (!userProfile?.last_activity_date) return 0
       
@@ -153,7 +152,6 @@ export default function DashboardPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
 
-      // 1. Get Profile to determine Organization
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -173,7 +171,6 @@ export default function DashboardPage() {
           return
       }
 
-      // 2. Get Properties (FILTERED BY ORG)
       const { data: props } = await supabase
         .from('properties')
         .select('*')
@@ -182,21 +179,18 @@ export default function DashboardPage() {
       
       if (props) setProperties(props)
 
-      // 3. Get Creatives Feed (FILTERED BY ORG via Property relation)
       const { data: creatives } = await supabase
         .from('master_creatives')
         .select(`*, property:properties!inner(title, organization_id)`) 
         .eq('property.organization_id', orgId)
         .order('created_at', { ascending: false })
 
-      // 4. Get News Posts (FILTERED BY ORG via Author relation)
       const { data: posts } = await supabase
         .from('posts')
         .select(`*, author:profiles!inner(organization_id, business_name, logo_url)`)
         .eq('author.organization_id', orgId)
         .order('created_at', { ascending: false })
 
-      // 5. Merge and Sort Feed
       const combinedFeed: FeedItem[] = []
       
       if (creatives) {
@@ -224,7 +218,6 @@ export default function DashboardPage() {
           }))
       }
 
-      // Sort: Pinned posts first, then newest
       combinedFeed.sort((a, b) => {
           const isAPinned = a.kind === 'post' && a.tags?.includes('pinned')
           const isBPinned = b.kind === 'post' && b.tags?.includes('pinned')
@@ -235,7 +228,6 @@ export default function DashboardPage() {
 
       setFeedItems(combinedFeed)
 
-      // 6. Get Claimed Creatives (For Agents)
       if (profile.role === 'agent') {
           const { data: claims } = await supabase
              .from('assets')
@@ -250,7 +242,6 @@ export default function DashboardPage() {
           setClaimedCreativeIds(claimedSet)
       }
 
-      // 7. Get Leaderboard (Everyone)
       const { data: lb } = await supabase
          .from('profiles')
          .select('*')
@@ -262,7 +253,6 @@ export default function DashboardPage() {
       if (lb) setLeaderboard(lb as Profile[])
 
 
-      // 8. Get Agents List (Admin Only)
       if (profile.role === 'admin') {
           const { data: agents } = await supabase
             .from('profiles')
@@ -398,7 +388,6 @@ export default function DashboardPage() {
               setClaimedCreativeIds(prev => new Set(prev).add(creative.id))
               if (data.xpEarned) alert(`Creative Claimed!\n\n🔥 Streak: ${data.streak} Days\n✨ XP Earned: +${data.xpEarned}`)
               
-              // Optimistically update profile to show new streak instantly
               setUserProfile(prev => prev ? ({ 
                   ...prev, 
                   current_streak: data.streak, 
@@ -492,30 +481,43 @@ export default function DashboardPage() {
 
   const handleOpenAgent = async (agent: AgentProfile) => {
       setSelectedAgent(agent)
-      setEditCreditsValue(agent.ad_credits?.toString() || '0')
+      // Reset Top Up field
+      setTopUpAmount('')
       
-      // Fetch stats for this agent
       const { count: leadsCount } = await supabase.from('leads').select('*', { count: 'exact', head: true }).eq('user_id', agent.id)
       const { count: assetsCount } = await supabase.from('assets').select('*', { count: 'exact', head: true }).eq('user_id', agent.id)
       
       setSelectedAgent(prev => prev ? ({ ...prev, leads_count: leadsCount || 0, assets_count: assetsCount || 0 }) : null)
   }
 
-  const handleUpdateCredits = async () => {
-      if (!selectedAgent || !editCreditsValue) return
+  const handleTopUpWallet = async () => {
+      if (!selectedAgent || !topUpAmount) return
       setIsUpdatingCredits(true)
       try {
-          const newAmount = parseFloat(editCreditsValue)
-          const { error } = await supabase.from('profiles').update({ ad_credits: newAmount }).eq('id', selectedAgent.id)
-          
-          if (error) throw error
+          const amount = parseFloat(topUpAmount)
+          if (amount <= 0) throw new Error("Amount must be positive")
+
+          const res = await fetch('/api/wallet/topup', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                  targetUserId: selectedAgent.id, 
+                  amount: amount 
+              })
+          })
+
+          const data = await res.json()
+          if (!data.success) throw new Error(data.error)
 
           // Update local state
-          setAgentsList(prev => prev.map(a => a.id === selectedAgent.id ? { ...a, ad_credits: newAmount } : a))
-          setSelectedAgent(prev => prev ? { ...prev, ad_credits: newAmount } : null)
-          alert("Credits updated successfully.")
+          const newBalance = data.newBalance
+          setAgentsList(prev => prev.map(a => a.id === selectedAgent.id ? { ...a, ad_credits: newBalance } : a))
+          setSelectedAgent(prev => prev ? { ...prev, ad_credits: newBalance } : null)
+          
+          setTopUpAmount('')
+          alert(`Success! Added ₹${amount}. New Balance: ₹${newBalance}`)
       } catch (e: any) {
-          alert("Failed to update credits: " + e.message)
+          alert("Top Up Failed: " + e.message)
       } finally {
           setIsUpdatingCredits(false)
       }
@@ -586,7 +588,6 @@ export default function DashboardPage() {
                        </div>
                        <div>
                           <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">Daily Streak</p>
-                          {/* USE EFFECTIVE STREAK HERE */}
                           <p className="text-xs font-bold text-white">{effectiveStreak} Days</p>
                        </div>
                   </div>
@@ -1059,21 +1060,27 @@ export default function DashboardPage() {
                            </div>
                            <div className="flex items-center gap-2">
                                 <span className="text-2xl font-bold">₹</span>
+                                <span className="text-2xl font-bold">{(selectedAgent.ad_credits || 0).toLocaleString()}</span>
+                           </div>
+                           
+                           {/* TOP UP INPUT */}
+                           <div className="mt-4 flex items-center gap-2">
                                 <input 
                                     type="number"
-                                    value={editCreditsValue}
-                                    onChange={(e) => setEditCreditsValue(e.target.value)}
-                                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-1 text-2xl font-bold w-full outline-none focus:bg-white/20 transition-all"
+                                    placeholder="Enter amount to add"
+                                    value={topUpAmount}
+                                    onChange={(e) => setTopUpAmount(e.target.value)}
+                                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm font-bold w-full outline-none focus:bg-white/20 transition-all placeholder:text-slate-500"
                                 />
+                                <button 
+                                   onClick={handleTopUpWallet}
+                                   disabled={isUpdatingCredits || !topUpAmount}
+                                   className="bg-green-600 hover:bg-green-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50 whitespace-nowrap"
+                                >
+                                   {isUpdatingCredits ? <Loader2 size={12} className="animate-spin"/> : <Plus size={12}/>}
+                                   Add Credits
+                                </button>
                            </div>
-                           <button 
-                               onClick={handleUpdateCredits}
-                               disabled={isUpdatingCredits}
-                               className="mt-4 w-full bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                           >
-                               {isUpdatingCredits ? <Loader2 size={12} className="animate-spin"/> : <Save size={12}/>}
-                               Update Credits
-                           </button>
                       </div>
                       <div className="absolute -right-4 -bottom-4 opacity-10"><Coins size={100}/></div>
                   </div>
