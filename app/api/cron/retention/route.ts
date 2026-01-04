@@ -9,7 +9,9 @@ const supabaseAdmin = createClient(
     { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-export const runtime = 'edge' 
+// FIX: Change runtime from 'edge' to 'nodejs' to support 'web-push'
+export const runtime = 'nodejs' 
+export const dynamic = 'force-dynamic' // Ensure it doesn't cache
 
 export async function GET(request: Request) {
     // Basic Auth via Header (optional security)
@@ -19,7 +21,7 @@ export async function GET(request: Request) {
     }
 
     const now = new Date()
-    const currentHour = now.getHours() // 0-23 (UTC usually, adjust logic if needed)
+    // const currentHour = now.getHours() // Unused in this snippet but kept for logic
     
     // --- 1. STREAK SAVER LOGIC (Run only between 6PM - 8PM approx) ---
     // Assuming server time is UTC, 6PM IST is ~12:30 PM UTC. Adjust accordingly.
