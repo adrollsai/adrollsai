@@ -2,7 +2,8 @@ import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 
-export const runtime = 'nodejs'; // Required for 'sharp'
+// Change runtime to 'nodejs' to support 'sharp' image processing
+export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -23,9 +24,8 @@ export async function GET(request: NextRequest) {
     'localhost'
   ];
 
-  // If system host, return redirect immediately (unless testing splash)
+  // If system host, return redirect immediately
   if (SYSTEM_HOSTS.includes(host)) {
-    // For system host splash, you might want to return a static image, but redirecting to icon is a safe fallback
     return NextResponse.redirect(iconType === 'favicon' ? FALLBACK_FAVICON : FALLBACK_ICON);
   }
 
@@ -52,18 +52,17 @@ export async function GET(request: NextRequest) {
     const inputBuffer = await imageResponse.arrayBuffer();
 
     // --- IMAGE PROCESSING WITH SHARP ---
-    // We process the image to ensure it's square, has a white background, and fits correctly.
-    
     let pipeline = sharp(Buffer.from(inputBuffer));
     
     if (iconType === 'favicon') {
-        // Favicon: 32x32, keep transparency if possible, or flattened if preferred.
-        // Usually transparency is fine for favicons.
-        pipeline = pipeline.resize(32, 32, { fit: 'contain', background: { r:255, g:255, b:255, alpha:0 } });
+        // Favicon: 32x32
+        pipeline = pipeline.resize(32, 32, { 
+            fit: 'contain', 
+            background: { r: 255, g: 255, b: 255, alpha: 0 } 
+        });
     } 
     else if (iconType === 'splash') {
-        // Splash Screen: High Res Portrait (e.g. 1170x2532 covers most iPhones)
-        // White background, logo centered and contained with padding
+        // Splash Screen: High Res Portrait (1170x2532)
         pipeline = pipeline
             .resize(1170, 2532, { 
                 fit: 'contain', 
@@ -73,18 +72,20 @@ export async function GET(request: NextRequest) {
     }
     else {
         // Standard Icon (PWA): 512x512 Square
-        // We add a white background to fix the "Black Screen" transparency issue on home screen
+        // 1. Resize to fit within 512x512 (adding padding if non-square)
+        // 2. Flatten: Replaces transparency with solid WHITE background
         pipeline = pipeline
             .resize(512, 512, { 
                 fit: 'contain', 
                 background: { r: 255, g: 255, b: 255, alpha: 1 } 
             })
-            .flatten({ background: { r: 255, g: 255, b: 255 } }); // Remove transparency
+            .flatten({ background: { r: 255, g: 255, b: 255 } });
     }
 
     const processedBuffer = await pipeline.png().toBuffer();
 
-    return new NextResponse(processedBuffer, {
+    // FIX: Cast to 'any' to satisfy TypeScript 'BodyInit' requirement
+    return new NextResponse(processedBuffer as any, {
       headers: {
         'Content-Type': 'image/png',
         'Cache-Control': 'public, max-age=86400, s-maxage=86400', // Cache for 24h
