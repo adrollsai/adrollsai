@@ -2,7 +2,6 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
 
 // 1. Configure Web Push
-// We check if keys exist to avoid crashing during build time if envs are missing
 if (process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
     try {
         webpush.setVapidDetails(
@@ -41,7 +40,6 @@ export async function sendNotification(
 
         if (error) {
             console.error("[NOTIF DEBUG] ❌ DB Insert Error:", error.message)
-            // We usually continue even if DB fails, to try Push, but usually if DB fails, Push might too.
         } else {
             console.log("[NOTIF DEBUG] ✅ DB Insert Success")
         }
@@ -62,8 +60,6 @@ export async function sendNotification(
             console.error("[NOTIF DEBUG] ❌ Error fetching subscriptions:", subError.message)
             return
         }
-
-        console.log(`[NOTIF DEBUG] Found ${subscriptions?.length || 0} subscriptions for user.`)
 
         if (!subscriptions || subscriptions.length === 0) {
             console.log("[NOTIF DEBUG] ℹ️ No subscriptions found. Skipping Web Push.")
@@ -95,7 +91,6 @@ export async function sendNotification(
                     console.error(`[NOTIF DEBUG] ❌ Push Failed for ${sub.id.substring(0,8)}... Code: ${err.statusCode}`)
                     
                     if (err.statusCode === 404 || err.statusCode === 410) {
-                        // Subscription is dead (user reset permissions), remove it
                         console.log('[NOTIF DEBUG] 🗑️ Removing stale subscription from DB')
                         supabase.from('push_subscriptions').delete().eq('id', sub.id).then()
                     }
@@ -103,7 +98,6 @@ export async function sendNotification(
         })
 
         await Promise.all(sendPromises)
-        console.log("[NOTIF DEBUG] Finished processing all pushes.")
 
     } catch (error: any) {
         console.error("[NOTIF DEBUG] 🔥 Critical Failure:", error.message)
@@ -117,22 +111,19 @@ export async function checkAndNotifyRivalry(
     oldXp: number, 
     newXp: number
 ) {
-    // If we didn't gain XP, or somehow lost XP, skip
     if (newXp <= oldXp) return;
 
-    // Check if we passed anyone in the XP gap
     const { data: passedAgents } = await supabase
         .from('profiles')
         .select('id, business_name')
-        .gt('total_xp', oldXp)     // Who had more XP than I used to...
-        .lt('total_xp', newXp)     // ...but now has less XP than I do?
+        .gt('total_xp', oldXp)     
+        .lt('total_xp', newXp)    
         .neq('id', userId)
         .limit(1)
 
     if (passedAgents && passedAgents.length > 0) {
         const rivalName = passedAgents[0].business_name
         
-        // Notify ME (The Winner)
         await sendNotification(
             supabase,
             userId,
@@ -142,7 +133,6 @@ export async function checkAndNotifyRivalry(
             '/dashboard?tab=leaderboard'
         )
 
-        // Notify THE RIVAL (The Loser) - High ROI
         try {
             const { data: myProfile } = await supabase
                 .from('profiles')
@@ -152,9 +142,6 @@ export async function checkAndNotifyRivalry(
                 
             const myName = myProfile?.business_name || 'A competitor'
 
-            // Note: We need a Service Role client usually to notify OTHER users securely,
-            // but if this function runs in a server action/cron context that has admin rights, it works.
-            // If running from client-side trigger, RLS might block this specific call unless configured.
             await sendNotification(
                 supabase,
                 passedAgents[0].id,
@@ -167,4 +154,38 @@ export async function checkAndNotifyRivalry(
             console.error("Rivalry notification error", err)
         }
     }
+}
+
+// --- NEW FUNCTION: Broadcast to Org Agents ---
+export async function broadcastNotificationToOrg(
+    supabase: SupabaseClient,
+    orgId: string,
+    title: string,
+    message: string,
+    actionLink?: string,
+    excludeUserId?: string
+) {
+    console.log(`[NOTIF BROADCAST] Starting broadcast for Org: ${orgId}`)
+
+    // 1. Get all agents in the Org
+    const { data: agents, error } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('organization_id', orgId)
+        .eq('role', 'agent') // Notify only agents
+        .neq('id', excludeUserId || '')
+
+    if (error || !agents) {
+        console.error("[NOTIF BROADCAST] ❌ Error fetching agents:", error?.message)
+        return
+    }
+
+    console.log(`[NOTIF BROADCAST] Found ${agents.length} agents to notify.`)
+
+    // 2. Loop and Send (Parallelized)
+    await Promise.all(agents.map(agent => 
+        sendNotification(supabase, agent.id, title, message, 'system', actionLink)
+    ))
+
+    console.log("[NOTIF BROADCAST] ✅ Broadcast complete.")
 }

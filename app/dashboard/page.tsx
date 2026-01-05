@@ -349,49 +349,66 @@ export default function DashboardPage() {
   }
 
   const handleAddCreative = async () => {
-      if (!newCreative.property_id || !creativeFile) {
-          alert("Select a project and upload a file.")
-          return
-      }
-      setIsSubmitting(true)
-      try {
-          const publicUrl = await uploadToR2(creativeFile, 'feed')
-          
-          await supabase.from('master_creatives').insert({
-              property_id: newCreative.property_id,
-              url: publicUrl,
-              type: creativeFile.type.startsWith('video') ? 'video' : 'image',
-              caption_template: newCreative.caption
-          })
+    if (!newCreative.property_id || !creativeFile) {
+        alert("Select a project and upload a file.")
+        return
+    }
+    setIsSubmitting(true)
+    try {
+        // 1. Upload to R2 (Keep this on client side)
+        const publicUrl = await uploadToR2(creativeFile, 'feed')
+        
+        // 2. Call API to Insert DB + Notify Agents (REPLACED direct insert)
+        const response = await fetch('/api/creative/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                propertyId: newCreative.property_id,
+                url: publicUrl,
+                type: creativeFile.type.startsWith('video') ? 'video' : 'image',
+                caption: newCreative.caption
+            })
+        })
 
-          await fetchData()
-          setShowAddCreative(false)
-      } catch (e: any) {
-          alert(e.message)
-      } finally { setIsSubmitting(false) }
-  }
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || "Failed to post creative")
+
+        await fetchData()
+        setShowAddCreative(false)
+        alert("Creative posted and agents notified!")
+    } catch (e: any) {
+        alert(e.message)
+    } finally { setIsSubmitting(false) }
+}
 
   const handleAddNews = async () => {
-      if (!newNews.title || !newNews.content) return
-      setIsSubmitting(true)
-      try {
-          const { data: { user } } = await supabase.auth.getUser()
-          
-          await supabase.from('posts').insert({
-              user_id: user?.id,
-              title: newNews.title,
-              content: newNews.content,
-              status: 'published',
-              tags: []
-          })
-          
-          await fetchData()
-          setShowAddNews(false)
-          setNewNews({title: '', content: ''})
-      } catch(e: any) {
-          alert(e.message)
-      } finally { setIsSubmitting(false) }
-  }
+    if (!newNews.title || !newNews.content) return
+    setIsSubmitting(true)
+    try {
+        // REPLACED: Direct DB Insert -> API Call
+        const response = await fetch('/api/posts/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: newNews.title,
+                content: newNews.content
+            })
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+            throw new Error(data.error || "Failed to post news")
+        }
+        
+        await fetchData()
+        setShowAddNews(false)
+        setNewNews({title: '', content: ''})
+        alert("News posted and agents notified!") // Optional feedback
+    } catch(e: any) {
+        alert(e.message)
+    } finally { setIsSubmitting(false) }
+}
 
   const handleClaim = async (creative: FeedItem) => {
       if (creative.kind !== 'creative') return
