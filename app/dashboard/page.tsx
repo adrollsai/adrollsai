@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check, UserPlus } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check, UserPlus, RefreshCw } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -111,6 +111,7 @@ export default function DashboardPage() {
   // Agent Credit Editing
   const [editCreditsValue, setEditCreditsValue] = useState<string>('')
   const [isUpdatingCredits, setIsUpdatingCredits] = useState(false)
+  const [creditMode, setCreditMode] = useState<'add' | 'set'>('add')
   
   // -- Add Project Form --
   const [newProject, setNewProject] = useState({
@@ -537,7 +538,8 @@ export default function DashboardPage() {
 
   const handleOpenAgent = async (agent: AgentProfile) => {
       setSelectedAgent(agent)
-      setEditCreditsValue(agent.ad_credits?.toString() || '0')
+      setEditCreditsValue('') // Reset input on open
+      setCreditMode('add')    // Default to 'Add' mode
       
       // Fetch stats for this agent
       const { count: leadsCount } = await supabase.from('leads').select('*', { count: 'exact', head: true }).eq('user_id', agent.id)
@@ -546,19 +548,33 @@ export default function DashboardPage() {
       setSelectedAgent(prev => prev ? ({ ...prev, leads_count: leadsCount || 0, assets_count: assetsCount || 0 }) : null)
   }
 
+  // --- UPDATED CREDIT HANDLER (Uses API) ---
   const handleUpdateCredits = async () => {
       if (!selectedAgent || !editCreditsValue) return
       setIsUpdatingCredits(true)
       try {
-          const newAmount = parseFloat(editCreditsValue)
-          const { error } = await supabase.from('profiles').update({ ad_credits: newAmount }).eq('id', selectedAgent.id)
-          
-          if (error) throw error
+          // Call the API which handles notifications and transaction logging
+          const res = await fetch('/api/admin/update-credits', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  agentId: selectedAgent.id,
+                  amount: editCreditsValue,
+                  type: creditMode // 'add' or 'set'
+              })
+          })
 
-          // Update local state
-          setAgentsList(prev => prev.map(a => a.id === selectedAgent.id ? { ...a, ad_credits: newAmount } : a))
-          setSelectedAgent(prev => prev ? { ...prev, ad_credits: newAmount } : null)
-          alert("Credits updated successfully.")
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error)
+
+          const newBalance = data.newBalance
+
+          // Update local state to reflect change instantly
+          setAgentsList(prev => prev.map(a => a.id === selectedAgent.id ? { ...a, ad_credits: newBalance } : a))
+          setSelectedAgent(prev => prev ? { ...prev, ad_credits: newBalance } : null)
+          
+          alert(`Success! Credits updated. Agent has been notified.`)
+          setEditCreditsValue('') 
       } catch (e: any) {
           alert("Failed to update credits: " + e.message)
       } finally {
@@ -584,13 +600,8 @@ export default function DashboardPage() {
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-slate-400"/></div>
 
   return (
-    // FULL WIDTH FIX: max-w-7xl
     <div className="min-h-screen bg-slate-50 max-w-7xl mx-auto pb-24 shadow-2xl">
       
-      {/* NOTE: We removed the 'Header' block (Logo/Title) because it's now in the TopBar. 
-         However, we MUST KEEP the TABS (Feed, Projects, etc.) here as requested.
-      */}
-
       <div className="p-4 md:p-6 space-y-6">
 
           {/* --- GAMIFICATION STATUS BAR --- */}
@@ -616,7 +627,6 @@ export default function DashboardPage() {
                        </div>
                        <div>
                           <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">Daily Streak</p>
-                          {/* USE EFFECTIVE STREAK HERE */}
                           <p className="text-sm font-bold text-white">{effectiveStreak} Days</p>
                        </div>
                   </div>
@@ -627,10 +637,7 @@ export default function DashboardPage() {
               </div>
           )}
 
-          {/* --- PAGE TABS --- 
-             These are the local tabs you asked to put back.
-             They are now sticky so they stay visible when scrolling.
-          */}
+          {/* --- PAGE TABS --- */}
           <div className="sticky top-20 z-40 bg-white p-1.5 rounded-xl shadow-sm border border-slate-100 max-w-lg mx-auto flex gap-1">
               <button onClick={() => setActiveTab('feed')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'feed' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
                   <Zap size={14}/> Feed
@@ -716,7 +723,7 @@ export default function DashboardPage() {
                                         </div>
                                         <div className="flex-1">
                                             <p className="text-xs font-bold text-slate-900 truncate">{item.property?.title || 'General Update'}</p>
-                                            <p className="text-[10px] text-slate-400">{new Date(item.created_at).toLocaleDateString()}</p>
+                                            <p className="text-xs text-slate-400">{new Date(item.created_at).toLocaleDateString()}</p>
                                         </div>
                                         {userProfile?.role === 'admin' && (
                                             <button onClick={(e) => handleDeleteItem(item, e)} className="text-slate-300 hover:text-red-500 p-1">
@@ -1158,29 +1165,54 @@ export default function DashboardPage() {
                       <button onClick={() => setSelectedAgent(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button>
                   </div>
 
-                  {/* WALLET SECTION */}
+                  {/* WALLET SECTION (UPDATED) */}
                   <div className="bg-slate-900 p-5 rounded-2xl text-white mb-6 relative overflow-hidden">
                       <div className="relative z-10">
-                           <div className="flex justify-between items-center mb-2">
-                               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">Ad Wallet Balance</p>
-                               <Coins size={16} className="text-green-400"/>
+                           <div className="flex justify-between items-center mb-4">
+                               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">Manage Wallet</p>
+                               {/* MODE TOGGLE */}
+                               <div className="bg-slate-800 p-1 rounded-lg flex text-[10px] font-bold">
+                                   <button 
+                                     onClick={() => setCreditMode('add')}
+                                     className={`px-3 py-1 rounded-md transition-all ${creditMode === 'add' ? 'bg-green-500 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                   >
+                                     ADD
+                                   </button>
+                                   <button 
+                                     onClick={() => setCreditMode('set')}
+                                     className={`px-3 py-1 rounded-md transition-all ${creditMode === 'set' ? 'bg-red-500 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                   >
+                                     SET
+                                   </button>
+                               </div>
                            </div>
-                           <div className="flex items-center gap-2">
-                                <span className="text-2xl font-bold">₹</span>
+                           
+                           {/* CURRENT BALANCE DISPLAY (New Feature) */}
+                           <div className="mb-4 text-center">
+                               <p className="text-xs text-slate-400 uppercase font-bold">Current Balance</p>
+                               <p className="text-3xl font-black">₹{(selectedAgent.ad_credits || 0).toLocaleString()}</p>
+                           </div>
+
+                           <div className="flex items-center gap-2 mb-2">
+                                <span className={`text-2xl font-bold ${creditMode === 'add' ? 'text-green-400' : 'text-white'}`}>
+                                    {creditMode === 'add' ? '+' : '₹'}
+                                </span>
                                 <input 
                                     type="number"
+                                    placeholder={creditMode === 'add' ? "Amount to add" : "New Balance"}
                                     value={editCreditsValue}
                                     onChange={(e) => setEditCreditsValue(e.target.value)}
-                                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-1 text-2xl font-bold w-full outline-none focus:bg-white/20 transition-all"
+                                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-xl font-bold w-full outline-none focus:bg-white/20 transition-all placeholder:text-white/20"
                                 />
                            </div>
+                           
                            <button 
                                onClick={handleUpdateCredits}
-                               disabled={isUpdatingCredits}
-                               className="mt-4 w-full bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                               disabled={isUpdatingCredits || !editCreditsValue}
+                               className="mt-3 w-full bg-white text-slate-900 hover:bg-slate-200 text-xs font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                            >
-                               {isUpdatingCredits ? <Loader2 size={12} className="animate-spin"/> : <Save size={12}/>}
-                               Update Credits
+                               {isUpdatingCredits ? <Loader2 size={14} className="animate-spin"/> : <RefreshCw size={14}/>}
+                               {creditMode === 'add' ? 'Add Credits' : 'Set Balance'}
                            </button>
                       </div>
                       <div className="absolute -right-4 -bottom-4 opacity-10"><Coins size={100}/></div>
