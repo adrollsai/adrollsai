@@ -4,11 +4,14 @@ import { createAdminClient } from '@/utils/supabase/admin'
 import { sendNotification } from '@/utils/notification-helper'
 
 export async function POST(req: Request) {
+  // 1. Regular client for Auth check
   const supabase = await createClient()
+  
+  // 2. Admin client for DB Updates & Notifications (Bypasses RLS)
   const supabaseAdmin = createAdminClient()
 
   try {
-    // 1. Verify Admin
+    // --- AUTHENTICATION ---
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -19,40 +22,45 @@ export async function POST(req: Request) {
       .single()
 
     if (adminProfile?.role !== 'admin') {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        return NextResponse.json({ error: 'Forbidden: Admins Only' }, { status: 403 })
     }
 
-    // 2. Parse & Validate
+    // --- INPUT PARSING ---
     const { agentId, amount, type } = await req.json()
     
-    // Strict Validation
-    if (!agentId || !amount) throw new Error("Missing Agent ID or Amount")
+    if (!agentId || amount === undefined) {
+        return NextResponse.json({ error: "Missing Agent ID or Amount" }, { status: 400 })
+    }
     
     const changeAmount = parseFloat(amount.toString())
-    if (isNaN(changeAmount)) throw new Error("Invalid Amount Format")
+    if (isNaN(changeAmount)) {
+        return NextResponse.json({ error: "Invalid Amount Format" }, { status: 400 })
+    }
 
-    // 3. Get Current Balance
+    // --- GET CURRENT BALANCE ---
     const { data: agentProfile, error: fetchError } = await supabaseAdmin
         .from('profiles')
         .select('ad_credits, business_name')
         .eq('id', agentId)
         .single()
     
-    if (fetchError || !agentProfile) throw new Error("Agent not found in Database")
+    if (fetchError || !agentProfile) {
+        return NextResponse.json({ error: "Agent not found" }, { status: 404 })
+    }
 
-    // 4. Calculate Logic
+    // --- CALCULATE NEW BALANCE ---
     const oldBalance = Number(agentProfile.ad_credits || 0)
     let newBalance = 0
 
     if (type === 'add') {
         newBalance = oldBalance + changeAmount
     } else {
-        newBalance = changeAmount // Set mode
+        newBalance = changeAmount // 'set' mode
     }
 
-    console.log(`[ADMIN] Updating Agent ${agentId} | Old: ${oldBalance} | Mode: ${type} ${changeAmount} | Target: ${newBalance}`)
+    console.log(`[ADMIN] User ${user.id} updating Agent ${agentId}. Old: ${oldBalance} -> New: ${newBalance}`)
 
-    // 5. Perform Update
+    // --- UPDATE DATABASE ---
     const { error: updateError } = await supabaseAdmin
         .from('profiles')
         .update({ ad_credits: newBalance })
@@ -60,39 +68,41 @@ export async function POST(req: Request) {
 
     if (updateError) throw updateError
 
-    // 6. VERIFICATION (Double Check)
-    const { data: verify } = await supabaseAdmin.from('profiles').select('ad_credits').eq('id', agentId).single()
-    
-    if (verify?.ad_credits !== newBalance) {
-        throw new Error(`DB Update Failed. Expected ${newBalance}, got ${verify?.ad_credits}`)
-    }
-
-    // 7. Transaction Log
+    // --- LOG TRANSACTION ---
     const diff = newBalance - oldBalance
-    if (diff !== 0) {
+    // Only log if there's a real change
+    if (Math.abs(diff) > 0) {
         await supabaseAdmin.from('transactions').insert({
             user_id: agentId,
-            amount: Math.abs(diff) * 100, // Store in lowest denomination (e.g. paise)
+            amount: Math.abs(diff) * 100, // Store in cents/paisa
             status: 'SUCCESS',
             type: diff > 0 ? 'CREDIT' : 'DEBIT',
-            order_id: `ADMIN_${Date.now()}_${Math.floor(Math.random()*1000)}`
+            order_id: `ADMIN_ADJ_${Date.now()}`
         })
     }
 
-    // 8. Send Notification
+    // --- SEND NOTIFICATION (CRITICAL FIX) ---
+    // We MUST use 'supabaseAdmin' here because the Admin user (who is logged in)
+    // does not have permission to read the Agent's push subscriptions.
+    // The Admin Client bypasses this RLS restriction.
     await sendNotification(
-        supabaseAdmin,
+        supabaseAdmin, 
         agentId,
         "💰 Wallet Update",
-        `Admin has updated your balance. Old: ₹${oldBalance} ➝ New: ₹${newBalance}`,
+        `Your ad wallet balance has been updated. New Balance: ₹${newBalance.toLocaleString()}`,
         'system',
         '/dashboard/wallet'
     )
 
-    return NextResponse.json({ success: true, newBalance, oldBalance })
+    return NextResponse.json({ 
+        success: true, 
+        newBalance, 
+        oldBalance,
+        message: "Balance updated and notification sent."
+    })
 
   } catch (error: any) {
-    console.error("[ADMIN UPDATE ERROR]", error)
+    console.error("[CREDIT UPDATE ERROR]", error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

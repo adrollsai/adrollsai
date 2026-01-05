@@ -9,3 +9,17 @@
   --primary-text: #001D35;
   --surface: #F8F9FF;
 }
+
+/* ... existing styles ... */
+
+/* ENABLE NATIVE SWIPE TO REFRESH */
+body {
+  overscroll-behavior-y: auto !important; /* Allows pull-to-refresh */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure the main wrapper allows scrolling */
+html, body {
+  height: 100%;
+  overflow-y: auto; 
+}
