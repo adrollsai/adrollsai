@@ -1,11 +1,15 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { LogOut, Save, Loader2, Building, Facebook, CheckCircle, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck, Globe, Award, Lock, Flame, Zap, Crown, Share2, Link as LinkIcon, Briefcase, Headphones } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { LogOut, Save, Loader2, Building, Facebook, CheckCircle, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck, Globe, Award, Lock, Flame, Zap, Crown, Share2, Link as LinkIcon, Headphones } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { useOrganization } from '@/components/OrganizationWrapper'
+
+// Import components
+import PushManager from '@/components/PushManager'
+import NotificationTester from '@/components/NotificationTester'
 
 // --- LOCAL TYPE DEFINITIONS ---
 type OrganizationWithDomain = {
@@ -391,7 +395,8 @@ export default function ProfilePage() {
                   setAdminContact({
                       name: adminData.business_name,
                       email: adminData.email,
-                      phone: adminData.contact_number
+                      // FIX: Safe access for contact_number
+                      phone: (adminData as any).contact_number 
                   })
               }
           }
@@ -508,7 +513,6 @@ export default function ProfilePage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'facebook',
       options: {
-        // ADDED 'pages_manage_metadata' HERE
         scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,pages_manage_metadata,instagram_basic,instagram_content_publish,business_management,ads_management,pages_manage_ads,leads_retrieval',
         redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=facebook',
       }
@@ -561,6 +565,7 @@ export default function ProfilePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
+    // FIX: Type assertion here to allow contact_number
     const { error } = await supabase.from('profiles').update({
         business_name: formData.businessName,
         mission_statement: formData.mission,
@@ -569,7 +574,7 @@ export default function ProfilePage() {
         logo_url: formData.logoUrl,
         facebook_url: formData.facebookUrl,
         instagram_url: formData.instagramUrl
-      }).eq('id', user.id)
+      } as any).eq('id', user.id)
 
     if (error) alert(`Error saving: ${error.message}`)
     else alert("Profile saved successfully!")
@@ -626,7 +631,6 @@ export default function ProfilePage() {
     
 
   return (
-    // FIX: Changed max-w-md to max-w-7xl
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold text-slate-900">Your Profile</h1>
 
@@ -1008,6 +1012,14 @@ export default function ProfilePage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* 4. NOTIFICATION SETTINGS (NEW) */}
+      <PushManager />
+
+      {/* 5. DEBUG / TESTER (Optional) */}
+      <div className="mb-6">
+         <NotificationTester />
       </div>
 
       {/* ADDITIONAL SETTINGS */}

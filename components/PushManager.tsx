@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BellRing, Check, Loader2, Send, AlertCircle, Share, Bug } from 'lucide-react'
+import { BellRing, Check, Loader2, Send, AlertCircle, Share, Bell, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -26,16 +26,11 @@ export default function PushManager() {
   const [permissionState, setPermissionState] = useState<NotificationPermission>('default')
   const [isIOS, setIsIOS] = useState(false)
   const [isStandalone, setIsStandalone] = useState(false)
-  const [showDebug, setShowDebug] = useState(false)
 
   useEffect(() => {
-    // 1. Browser Support & Device Checks
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       setIsSupported(true)
-      
-      // CRITICAL: We manually register custom-sw.js to overwrite next-pwa's default
-      registerCustomSW()
-      
+      checkExistingSubscription()
       if ('Notification' in window) {
           setPermissionState(Notification.permission)
       }
@@ -47,44 +42,24 @@ export default function PushManager() {
     const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
                              (window.navigator as any).standalone === true
     setIsStandalone(isStandaloneMode)
-
   }, [])
 
-  async function registerCustomSW() {
+  async function checkExistingSubscription() {
     try {
-      // We explicitly register /custom-sw.js
-      // This call will 'win' the race against next-pwa's default registration
-      const registration = await navigator.serviceWorker.register('/custom-sw.js', {
-        scope: '/',
-        updateViaCache: 'none',
-      })
-      
-      // If it's waiting (iOS sometimes holds it), force it to update
-      if (registration.waiting) {
-        registration.waiting.postMessage({ type: 'SKIP_WAITING' })
-      }
-
-      // Check if we already have a subscription on THIS worker
-      const sub = await registration.pushManager.getSubscription()
-      if (sub) setSubscription(sub)
-
+        const registration = await navigator.serviceWorker.ready
+        const sub = await registration.pushManager.getSubscription()
+        if (sub) setSubscription(sub)
     } catch (error) {
-      console.error('Custom SW registration failed:', error)
+        console.error("Error checking subscription:", error)
     }
   }
 
   async function subscribeToPush() {
     setLoading(true)
     try {
-      // We get the registration specifically for custom-sw.js logic
+      // Register/Ensure SW is ready
       const registration = await navigator.serviceWorker.ready
       
-      // Double check this is OUR worker (optional, but good for debugging)
-      if (!registration.active?.scriptURL.includes('custom-sw.js')) {
-          console.warn("Active worker is NOT custom-sw.js. Attempting to reregister...")
-          await registerCustomSW()
-      }
-
       const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
       if (!vapidKey) {
         toast.error("Configuration Error: Missing VAPID Key")
@@ -110,8 +85,6 @@ export default function PushManager() {
           toast.success("Notifications Enabled!", {
             description: "You will now receive high-value alerts."
           })
-      } else {
-          throw new Error('Backend failed')
       }
 
     } catch (error: any) {
@@ -150,74 +123,82 @@ export default function PushManager() {
   if (!isSupported) return null
 
   return (
-    <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2 pointer-events-none">
-      <div className="pointer-events-auto flex flex-col items-end gap-2">
+    <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6">
+      <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+          <Bell size={18}/> Push Notifications
+      </h3>
       
-      {/* DEBUG TOGGLE - Click to see what's happening on the phone */}
-      <button onClick={() => setShowDebug(!showDebug)} className="text-[10px] text-slate-400 bg-slate-100/50 p-1 rounded hover:bg-slate-200 backdrop-blur-md">
-         {showDebug ? 'Hide Debug' : 'Debug Info'}
-      </button>
+      <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+        
+        {/* IOS INSTRUCTION CARD */}
+        {isIOS && !isStandalone && (
+           <div className="bg-slate-900 text-white p-4 rounded-xl shadow-lg flex items-start gap-3 mb-4">
+              <Share size={20} className="shrink-0 mt-0.5 text-blue-400" />
+              <div>
+                  <p className="text-sm font-bold mb-1">Install App Required</p>
+                  <p className="text-xs opacity-80 leading-relaxed">
+                      To receive notifications on iOS, you must install this app to your home screen.
+                      <br/><br/>
+                      Tap <span className="font-bold text-blue-300">Share Icon</span> → <span className="font-bold text-blue-300">Add to Home Screen</span>.
+                  </p>
+              </div>
+           </div>
+        )}
 
-      {showDebug && (
-          <div className="bg-black/90 text-green-400 p-3 rounded-lg text-[10px] font-mono max-w-[300px] break-all mb-2 shadow-2xl overflow-y-auto max-h-[200px]">
-              <p><strong>iOS:</strong> {isIOS ? 'Yes' : 'No'}</p>
-              <p><strong>Standalone:</strong> {isStandalone ? 'Yes' : 'No'}</p>
-              <p><strong>Permission:</strong> {permissionState}</p>
-              <p><strong>Subscribed:</strong> {subscription ? 'YES' : 'NO'}</p>
-          </div>
-      )}
-
-      {/* iOS Warning */}
-      {isIOS && !isStandalone && (
-         <div className="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-start gap-3 max-w-[280px] animate-in slide-in-from-right mb-2">
-            <Share size={20} className="shrink-0 mt-0.5 text-blue-400" />
-            <div>
-                <p className="text-xs font-bold mb-1">Install App for Notifications</p>
-                <p className="text-[10px] opacity-80 leading-relaxed">
-                    iOS requires this app to be installed to receive notifications. Tap <span className="font-bold">Share</span> then <span className="font-bold">"Add to Home Screen"</span>.
-                </p>
-            </div>
-         </div>
-      )}
-
-      {permissionState === 'denied' && !subscription && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-2xl shadow-xl flex items-start gap-3 max-w-[250px] animate-in slide-in-from-right">
+        {/* PERMISSION DENIED CARD */}
+        {permissionState === 'denied' && !subscription && (
+           <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-100 flex items-start gap-3 mb-2">
               <AlertCircle size={20} className="shrink-0 mt-0.5" />
               <div>
                   <p className="text-xs font-bold mb-1">Notifications Blocked</p>
                   <p className="text-[10px] leading-relaxed opacity-80">
-                      Please check your device settings to allow notifications for AdRolls AI.
+                      You have blocked notifications. Please reset permissions for this site in your browser settings (Lock Icon in URL bar).
                   </p>
               </div>
-          </div>
-      )}
+           </div>
+        )}
 
-      {!subscription && permissionState !== 'denied' && (
-          <button
-            onClick={subscribeToPush}
-            disabled={loading}
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-3 rounded-full shadow-xl shadow-blue-600/30 hover:bg-blue-700 transition-all font-bold text-xs active:scale-95 animate-in slide-in-from-right"
-          >
-            {loading ? <Loader2 size={16} className="animate-spin"/> : <BellRing size={16} />}
-            Enable Alerts
-          </button>
-      )}
+        {/* MAIN ACTION AREA */}
+        <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${subscription ? 'bg-green-100 text-green-600' : 'bg-slate-200 text-slate-500'}`}>
+                    {subscription ? <Check size={20} strokeWidth={3} /> : <BellRing size={20} />}
+                </div>
+                <div>
+                    <p className="text-sm font-bold text-slate-900">
+                        {subscription ? 'Active' : 'Updates & Alerts'}
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                        {subscription 
+                            ? 'You are receiving real-time alerts.' 
+                            : 'Get notified about leads and campaign updates.'}
+                    </p>
+                </div>
+            </div>
 
-      {subscription && (
-          <div className="flex flex-col items-end gap-1 animate-in slide-in-from-right">
-              <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold flex items-center gap-1 shadow-sm mb-1">
-                  <Check size={10} strokeWidth={4} /> Push Active
-              </span>
-              <button 
-                  onClick={triggerBackgroundTest}
-                  disabled={loading}
-                  className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-full shadow-lg hover:bg-slate-800 transition-all font-bold text-xs"
-              >
-                  {loading ? <Loader2 size={14} className="animate-spin"/> : <Send size={14}/>}
-                  Test Background Push
-              </button>
-          </div>
-      )}
+            {!subscription && permissionState !== 'denied' && (
+                <button
+                    onClick={subscribeToPush}
+                    disabled={loading}
+                    className="bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-slate-800 transition-colors"
+                >
+                    {loading ? <Loader2 size={14} className="animate-spin"/> : <Bell size={14} />}
+                    Enable
+                </button>
+            )}
+
+            {subscription && (
+                 <button 
+                    onClick={triggerBackgroundTest}
+                    disabled={loading}
+                    className="bg-white border border-slate-200 text-slate-600 px-3 py-2 rounded-lg text-[10px] font-bold flex items-center gap-2 hover:bg-slate-50 transition-colors"
+                >
+                    {loading ? <Loader2 size={12} className="animate-spin"/> : <Send size={12}/>}
+                    Test
+                </button>
+            )}
+        </div>
+
       </div>
     </div>
   )

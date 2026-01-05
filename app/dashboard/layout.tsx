@@ -1,8 +1,9 @@
 import BottomNav from "@/components/BottomNav";
 import OrganizationWrapper from "@/components/OrganizationWrapper";
 import TopBar from "@/components/TopBar";
-import PushManager from "@/components/PushManager"; 
 import PullToRefresh from "@/components/PullToRefresh";
+
+// NOTE: PushManager removed from here. It is now in Profile Page.
 
 export default function DashboardLayout({
   children,
@@ -27,8 +28,6 @@ export default function DashboardLayout({
             </div>
         </PullToRefresh>
         
-        {/* Floating Utilities */}
-        <PushManager />
         <BottomNav />
       </div>
     </OrganizationWrapper>

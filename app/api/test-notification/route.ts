@@ -1,33 +1,71 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { createAdminClient } from '@/utils/supabase/admin'
 import { sendNotification } from '@/utils/notification-helper'
 
-export async function POST(request: Request) {
+export async function POST(req: Request) {
   const supabase = await createClient()
+  const supabaseAdmin = createAdminClient()
   
-  // 1. Authenticate
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // 2. Get delay from body (default to 0)
-  const { delay } = await request.json()
+  const { type, delay } = await req.json()
 
-  // 3. Wait (Simulate background event)
+  // Simulate delay if requested (for background testing)
   if (delay) {
-      console.log(`Waiting ${delay} seconds...`)
       await new Promise(resolve => setTimeout(resolve, delay * 1000))
   }
 
-  // 4. Send Notification
-  console.log("Sending test notification now...")
-  await sendNotification(
-    supabase,
-    user.id,
-    "🔔 Background Test",
-    "If you see this, your Service Worker is alive!",
-    "system",
-    "/dashboard"
-  )
+  try {
+      let title = "Test Notification"
+      let body = "This is a test."
+      let notifType: 'system' | 'lead' | 'rivalry' | 'roi' = 'system'
+      let link = '/dashboard'
 
-  return NextResponse.json({ success: true })
+      // SCENARIO SELECTOR
+      switch (type) {
+          case 'lead':
+              title = "🔥 New Lead: Sarah Jones"
+              body = "Looking for 3BHK in Indiranagar. Budget: ₹1.5 Cr."
+              notifType = 'lead'
+              link = '/dashboard/crm'
+              break;
+          
+          case 'rivalry':
+              title = "🚀 Rank Up!"
+              body = "You just surpassed 'Urban Nest Realty' on the leaderboard! Keep pushing!"
+              notifType = 'rivalry'
+              link = '/dashboard?tab=leaderboard'
+              break;
+          
+          case 'roi':
+              title = "💰 High ROI Alert"
+              body = "Campaign 'Summer Villa' is performing at 12x ROAS! Consider increasing budget."
+              notifType = 'roi'
+              link = '/dashboard/ads'
+              break;
+              
+          default:
+              title = "🔔 System Test"
+              body = "Checking background sync reliability."
+              notifType = 'system'
+      }
+
+      // Send using Admin client (bypasses RLS for push_subscriptions)
+      await sendNotification(
+          supabaseAdmin,
+          user.id,
+          title,
+          body,
+          notifType,
+          link
+      )
+
+      return NextResponse.json({ success: true, message: `Sent ${notifType}` })
+
+  } catch (error: any) {
+      console.error("Test Error:", error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+  }
 }
