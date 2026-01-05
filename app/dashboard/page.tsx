@@ -1,3 +1,5 @@
+// adrollsai/adrollsai/adrollsai-builder-app-lander-notifications/app/dashboard/page.tsx
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -348,67 +350,66 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
+  // UPDATED: Now calls API Route to handle Notification Broadcast
   const handleAddCreative = async () => {
-    if (!newCreative.property_id || !creativeFile) {
-        alert("Select a project and upload a file.")
-        return
-    }
-    setIsSubmitting(true)
-    try {
-        // 1. Upload to R2 (Keep this on client side)
-        const publicUrl = await uploadToR2(creativeFile, 'feed')
-        
-        // 2. Call API to Insert DB + Notify Agents (REPLACED direct insert)
-        const response = await fetch('/api/creative/create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                propertyId: newCreative.property_id,
-                url: publicUrl,
-                type: creativeFile.type.startsWith('video') ? 'video' : 'image',
-                caption: newCreative.caption
-            })
-        })
+      if (!newCreative.property_id || !creativeFile) {
+          alert("Select a project and upload a file.")
+          return
+      }
+      setIsSubmitting(true)
+      try {
+          // 1. Upload to R2 (Client Side)
+          const publicUrl = await uploadToR2(creativeFile, 'feed')
+          
+          // 2. Call API (Server Side) -> Inserts DB & Sends Notifications
+          const res = await fetch('/api/creative/create', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  propertyId: newCreative.property_id,
+                  url: publicUrl,
+                  type: creativeFile.type.startsWith('video') ? 'video' : 'image',
+                  caption: newCreative.caption
+              })
+          })
 
-        const data = await response.json()
-        if (!response.ok) throw new Error(data.error || "Failed to post creative")
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error || "Failed to create creative")
 
-        await fetchData()
-        setShowAddCreative(false)
-        alert("Creative posted and agents notified!")
-    } catch (e: any) {
-        alert(e.message)
-    } finally { setIsSubmitting(false) }
-}
+          await fetchData()
+          setShowAddCreative(false)
+          setCreativeFile(null) // Reset file
+          alert("Creative posted & Agents notified! 🚀")
+      } catch (e: any) {
+          alert(e.message)
+      } finally { setIsSubmitting(false) }
+  }
 
+  // UPDATED: Now calls API Route to handle Notification Broadcast
   const handleAddNews = async () => {
-    if (!newNews.title || !newNews.content) return
-    setIsSubmitting(true)
-    try {
-        // REPLACED: Direct DB Insert -> API Call
-        const response = await fetch('/api/posts/create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                title: newNews.title,
-                content: newNews.content
-            })
-        })
+      if (!newNews.title || !newNews.content) return
+      setIsSubmitting(true)
+      try {
+          const res = await fetch('/api/posts/create', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  title: newNews.title,
+                  content: newNews.content
+              })
+          })
 
-        const data = await response.json()
-
-        if (!response.ok) {
-            throw new Error(data.error || "Failed to post news")
-        }
-        
-        await fetchData()
-        setShowAddNews(false)
-        setNewNews({title: '', content: ''})
-        alert("News posted and agents notified!") // Optional feedback
-    } catch(e: any) {
-        alert(e.message)
-    } finally { setIsSubmitting(false) }
-}
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error || "Failed to post news")
+          
+          await fetchData()
+          setShowAddNews(false)
+          setNewNews({title: '', content: ''})
+          alert("News posted & Agents notified! 📢")
+      } catch(e: any) {
+          alert(e.message)
+      } finally { setIsSubmitting(false) }
+  }
 
   const handleClaim = async (creative: FeedItem) => {
       if (creative.kind !== 'creative') return
@@ -951,7 +952,7 @@ export default function DashboardPage() {
 
       {/* --- MODAL: ADD PROJECT --- */}
       {showAddProject && (
-          <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed top-0 left-0 w-screen h-screen z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 max-h-[90vh] overflow-y-auto">
                   <div className="flex justify-between mb-4">
                       <h2 className="font-bold text-lg">New Project</h2>
@@ -1009,7 +1010,7 @@ export default function DashboardPage() {
 
       {/* --- MODAL: ADD AGENT --- */}
       {showAddAgent && (
-          <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="fixed top-0 left-0 w-screen h-screen z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
                   <div className="flex justify-between mb-4">
                       <h2 className="font-bold text-lg">Add New Agent</h2>
@@ -1049,7 +1050,7 @@ export default function DashboardPage() {
 
       {/* --- MODAL: ADD CREATIVE --- */}
       {showAddCreative && (
-          <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed top-0 left-0 w-screen h-screen z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6">
                   <div className="flex justify-between mb-4">
                       <h2 className="font-bold text-lg">Post Creative</h2>
@@ -1085,7 +1086,7 @@ export default function DashboardPage() {
 
       {/* --- MODAL: ADD NEWS --- */}
       {showAddNews && (
-          <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed top-0 left-0 w-screen h-screen z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6">
                   <div className="flex justify-between mb-4">
                       <h2 className="font-bold text-lg">Post News</h2>
@@ -1105,7 +1106,7 @@ export default function DashboardPage() {
       
       {/* --- MODAL: VIEW PROPERTY DETAILS --- */}
       {selectedProperty && (
-        <div className="fixed inset-0 z-[150] bg-white flex flex-col animate-in slide-in-from-bottom-10">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[200] bg-white flex flex-col animate-in slide-in-from-bottom-10">
            {/* Close Button */}
            <button onClick={() => setSelectedProperty(null)} className="absolute top-4 right-4 z-20 bg-black/40 backdrop-blur-md text-white p-2.5 rounded-full hover:bg-black/60 transition-colors"><X size={20}/></button>
            
@@ -1166,7 +1167,7 @@ export default function DashboardPage() {
 
       {/* --- MODAL: AGENT DETAIL --- */}
       {selectedAgent && (
-          <div className="fixed inset-0 z-[150] bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in">
+          <div className="fixed top-0 left-0 w-screen h-screen z-[200] bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
                   <div className="flex justify-between items-start mb-6">
                       <div className="flex items-center gap-3">

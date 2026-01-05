@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { createAdminClient } from '@/utils/supabase/admin' // Import Admin Client
 import { broadcastNotificationToOrg } from '@/utils/notification-helper'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const supabaseAdmin = createAdminClient() // Initialize Admin Client
   
   try {
     // 1. Auth Check
@@ -19,7 +21,6 @@ export async function POST(request: Request) {
 
     if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
 
-    // Check permissions (Admin/Super User only)
     if (profile.role !== 'admin' && profile.role !== 'super_user') {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // 4. Insert Creative into DB
+    // 4. Insert Creative (Using Standard Client)
     const { data: creative, error: insertError } = await supabase
         .from('master_creatives')
         .insert({
@@ -55,13 +56,14 @@ export async function POST(request: Request) {
     
     const propertyTitle = property?.title || 'a project'
 
-    // 6. Trigger Notification Broadcast
+    // 6. Trigger Notification Broadcast (USING ADMIN CLIENT)
+    // Using supabaseAdmin allows inserting notifications into agents' tables
     if (profile.organization_id) {
         await broadcastNotificationToOrg(
-            supabase,
+            supabaseAdmin,
             profile.organization_id,
             "New Creative Available 🎨",
-            `New marketing assets added for ${propertyTitle}. Claim them now!`,
+            `Marketing assets added for ${propertyTitle}. Tap to view!`,
             '/dashboard?tab=feed',
             user.id
         )

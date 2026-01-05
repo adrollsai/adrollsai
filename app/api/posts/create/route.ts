@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { createAdminClient } from '@/utils/supabase/admin' // Import Admin Client
 import { broadcastNotificationToOrg } from '@/utils/notification-helper'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const supabaseAdmin = createAdminClient() // Initialize Admin Client
   
   try {
-    // 1. Auth Check
+    // 1. Auth Check (Verify it's a real user)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // 2. Get User Profile & Org
+    // 2. Get User Profile & Org details
     const { data: profile } = await supabase
       .from('profiles')
       .select('organization_id, role, business_name')
@@ -19,7 +21,7 @@ export async function POST(request: Request) {
 
     if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
 
-    // Optional: Ensure only Admin can post to feed
+    // Only Admins/Super Users can post
     if (profile.role !== 'admin' && profile.role !== 'super_user') {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -31,7 +33,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Title and Content are required' }, { status: 400 })
     }
 
-    // 3. Insert Post into DB
+    // 3. Insert Post (Using Standard Client - safe because user inserts their own post)
     const { data: post, error: insertError } = await supabase.from('posts').insert({
         user_id: user.id,
         title,
@@ -42,17 +44,16 @@ export async function POST(request: Request) {
 
     if (insertError) throw insertError
 
-    // 4. Trigger Notification Broadcast
+    // 4. Broadcast Notification (USING ADMIN CLIENT TO BYPASS RLS)
+    // We use supabaseAdmin here because we are inserting notifications for OTHER users
     if (profile.organization_id) {
-        // We do not await this if we want a faster response, 
-        // but awaiting ensures logs appear in server console.
         await broadcastNotificationToOrg(
-            supabase,
+            supabaseAdmin, 
             profile.organization_id,
-            "New Announcement",
+            "New Announcement 📢",
             `${profile.business_name}: ${title}`,
-            '/dashboard?tab=feed', // Link to the feed tab
-            user.id // Exclude the sender
+            '/dashboard?tab=feed',
+            user.id // Exclude the admin from receiving their own push notification
         )
     }
 
