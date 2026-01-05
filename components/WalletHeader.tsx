@@ -28,17 +28,12 @@ export default function WalletHeader() {
     if (userRole !== 'agent' || credits === null) return null
 
     return (
-        // CHANGED: 'right-0' instead of 'left-0'
-        <div className="fixed top-0 right-0 z-50 p-4 pointer-events-none">
-            <Link 
-                href="/dashboard/wallet"
-                // Compact styling: text-[10px], reduced padding
-                className="bg-slate-900/90 backdrop-blur-md text-white px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2 pointer-events-auto hover:scale-105 transition-transform cursor-pointer border border-white/10"
-            >
-                <Wallet size={12} className="text-green-400" />
-                <span className="text-[10px] font-bold tracking-wide">₹{credits.toLocaleString()}</span>
-                <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse ml-0.5"/>
-            </Link>
-        </div>
+        <Link 
+            href="/dashboard/wallet"
+            className="bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-sm flex items-center gap-2 hover:bg-slate-800 transition-colors border border-slate-800"
+        >
+            <Wallet size={12} className="text-green-400" />
+            <span className="text-[10px] font-bold tracking-wide">₹{credits.toLocaleString()}</span>
+        </Link>
     )
 }

@@ -774,17 +774,7 @@ export default function ProfilePage() {
                     </button>
                 </form>
 
-                <div className="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
-                    <h5 className="font-bold text-sm text-slate-800 mb-2">Agent Invitation Link</h5>
-                    <p className="text-[10px] text-slate-500 mb-2">Share this dynamic link. It redirects agents to sign in on the correct domain.</p>
-                    <code className="block p-3 bg-white rounded-lg text-xs break-all text-blue-600 border border-slate-100">
-                        <a href={getAgentInviteLink()} target="_blank" rel="noopener noreferrer">
-                            {getAgentInviteLink()}
-                        </a>
-                    </code>
-                    {isCustomDomainSet && <p className="text-[10px] text-green-600 mt-2">Currently using custom domain: <span className="font-bold">{org.custom_domain}</span></p>}
-                    {!isCustomDomainSet && <p className="text-[10px] text-slate-500 mt-2">Currently using default host: <span className="font-bold">{DEFAULT_APP_HOST}</span></p>}
-                </div>
+                
             </div>
         </div>
       )}

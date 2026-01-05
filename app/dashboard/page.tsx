@@ -118,6 +118,8 @@ export default function DashboardPage() {
       configs: [] as Configuration[]
   })
   const [tempConfig, setTempConfig] = useState({ name: '', size: '', price: '' })
+  
+  // UPDATED: Added typing for brochure and floorPlan
   const [projectFiles, setProjectFiles] = useState<{images: File[], brochure?: File, floorPlan?: File}>({ images: [] })
   
   // -- Add Creative Form --
@@ -300,12 +302,26 @@ export default function DashboardPage() {
           const { data: { user } } = await supabase.auth.getUser()
           if (!user) throw new Error("No user")
 
+          // 1. Upload Images
           const imageUrls = []
           for (const file of projectFiles.images) {
              const publicUrl = await uploadToR2(file, 'properties')
              imageUrls.push(publicUrl)
           }
 
+          // 2. Upload Brochure (if present)
+          let brochureUrl = null
+          if (projectFiles.brochure) {
+              brochureUrl = await uploadToR2(projectFiles.brochure, 'documents')
+          }
+
+          // 3. Upload Floor Plan (if present)
+          let floorPlanUrl = null
+          if (projectFiles.floorPlan) {
+              floorPlanUrl = await uploadToR2(projectFiles.floorPlan, 'documents')
+          }
+
+          // 4. Insert into DB
           await supabase.from('properties').insert({
               user_id: user.id,
               organization_id: userProfile?.organization_id,
@@ -315,11 +331,17 @@ export default function DashboardPage() {
               description: newProject.description,
               image_url: imageUrls[0],
               images: imageUrls,
+              brochure_url: brochureUrl,
+              floor_plan_url: floorPlanUrl,
               configurations: newProject.configs
           })
           
           await fetchData()
           setShowAddProject(false)
+          // Reset Form
+          setNewProject({ title: '', address: '', rera: '', description: '', configs: [] })
+          setProjectFiles({ images: [], brochure: undefined, floorPlan: undefined })
+          
       } catch (e: any) {
           alert(e.message)
       } finally { setIsSubmitting(false) }
@@ -484,13 +506,6 @@ export default function DashboardPage() {
     }
   }
   
-  const handleCopyInvite = () => {
-      if (!userProfile?.organization_id) return
-      const link = `${window.location.origin}/?invite_org=${userProfile.organization_id}`
-      navigator.clipboard.writeText(link)
-      alert("Invite link copied to clipboard! Send this to your agents.")
-  }
-
   // --- NEW: Agent Management Handlers ---
 
   const handleCreateAgent = async () => {
@@ -585,12 +600,6 @@ export default function DashboardPage() {
                     {userProfile?.role === 'admin' ? 'Organization Admin' : 'Sales Agent'}
                 </p>
             </div>
-            {/* INVITE BUTTON (Admin Only) */}
-            {userProfile?.role === 'admin' && (
-                <button onClick={handleCopyInvite} className="bg-slate-100 p-2 rounded-full text-slate-600 active:scale-95 transition-transform" title="Copy Invite Link">
-                    <LinkIcon size={18} />
-                </button>
-            )}
           </div>
           
           {/* --- GAMIFICATION STATUS BAR --- */}
@@ -949,9 +958,22 @@ export default function DashboardPage() {
                           </div>
                       </div>
 
+                      {/* Image Upload */}
                       <div className="border-2 border-dashed border-slate-200 p-4 rounded-xl text-center">
                           <p className="text-xs text-slate-400 mb-2">Project Images (Required)</p>
-                          <input type="file" multiple accept="image/*" onChange={e => e.target.files && setProjectFiles({...projectFiles, images: Array.from(e.target.files)})} className="text-xs text-slate-500 w-full" />
+                          <input type="file" multiple accept="image/*" onChange={e => e.target.files && setProjectFiles(prev => ({...prev, images: Array.from(e.target.files!)}))} className="text-xs text-slate-500 w-full" />
+                      </div>
+
+                      {/* PDF Uploads (Brochure & Floor Plan) */}
+                      <div className="grid grid-cols-2 gap-3">
+                          <div className="border-2 border-dashed border-slate-200 p-3 rounded-xl text-center">
+                                <p className="text-xs text-slate-400 mb-1">Brochure (PDF)</p>
+                                <input type="file" accept="application/pdf" onChange={e => e.target.files?.[0] && setProjectFiles(prev => ({...prev, brochure: e.target.files![0]}))} className="text-[10px] w-full text-slate-500" />
+                          </div>
+                          <div className="border-2 border-dashed border-slate-200 p-3 rounded-xl text-center">
+                                 <p className="text-xs text-slate-400 mb-1">Floor Plan (PDF)</p>
+                                 <input type="file" accept="application/pdf" onChange={e => e.target.files?.[0] && setProjectFiles(prev => ({...prev, floorPlan: e.target.files![0]}))} className="text-[10px] w-full text-slate-500" />
+                          </div>
                       </div>
 
                       <button onClick={handleAddProject} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm mt-2">
@@ -1099,14 +1121,22 @@ export default function DashboardPage() {
                    ))}
                </div>
 
+               {/* DOCUMENTS SECTION */}
+               <div className="flex gap-2 mb-6">
+                   {selectedProperty.brochure_url && (
+                       <a href={selectedProperty.brochure_url} target="_blank" className="flex-1 border border-slate-200 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 text-slate-700 hover:bg-slate-50 transition-colors">
+                           <FileText size={16}/> Brochure
+                       </a>
+                   )}
+                   {selectedProperty.floor_plan_url && (
+                       <a href={selectedProperty.floor_plan_url} target="_blank" className="flex-1 border border-slate-200 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 text-slate-700 hover:bg-slate-50 transition-colors">
+                           <MapPin size={16}/> Floor Plan
+                       </a>
+                   )}
+               </div>
+
                <h3 className="font-bold text-slate-900 text-sm mb-2">About Project</h3>
                <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line mb-6">{selectedProperty.description}</p>
-               
-               {selectedProperty.brochure_url && (
-                   <button className="w-full border border-slate-200 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 mb-2">
-                       <FileText size={16}/> Download Brochure
-                   </button>
-               )}
            </div>
         </div>
       )}
