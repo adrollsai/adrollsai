@@ -14,15 +14,10 @@ export async function POST(request: Request) {
   try {
     const { endpoint, keys } = subscription
     
-    // 1. CLEANUP: Remove this endpoint from ANY other user (Fixes Zombie/Admin issue)
-    // This ensures if you login as Admin on a device previously used by Agent, 
-    // the device is "stolen" by Admin and Agent stops receiving notifs here.
-    await supabase
-        .from('push_subscriptions')
-        .delete()
-        .eq('endpoint', endpoint)
+    // 1. DELETE: Remove this device from ANY other user to prevent "Zombie" notifs
+    await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint)
 
-    // 2. INSERT: Add for the current user
+    // 2. INSERT: Assign device to current user
     const { error } = await supabase
       .from('push_subscriptions')
       .insert({
