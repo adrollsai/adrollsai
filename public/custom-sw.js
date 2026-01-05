@@ -1,20 +1,22 @@
-// 1. Force immediate activation (Critical for iOS updates)
+// 1. Force Immediate Activation (The "Greedy" Fix)
 self.addEventListener('install', (event) => {
-  self.skipWaiting()
+  // This tells the browser to throw out the old SW and use this one NOW
+  self.skipWaiting() 
 })
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(clients.claim())
+  // This tells the SW to control the page immediately, not wait for reload
+  event.waitUntil(clients.claim()) 
 })
 
-// 2. Handle Incoming Push
+// 2. Handle Push Event
 self.addEventListener('push', function(event) {
   if (event.data) {
     const data = event.data.json()
     const options = {
       body: data.body,
       icon: '/icon-192x192.png',
-      badge: '/icon-192x192.png', // Kept from your working version
+      badge: '/icon-192x192.png',
       vibrate: [100, 50, 100],
       data: {
         dateOfArrival: Date.now(),
@@ -24,8 +26,7 @@ self.addEventListener('push', function(event) {
       actions: [
         {
           action: 'explore', 
-          title: 'View Details',
-          icon: '/check.png'
+          title: 'View',
         }
       ]
     }
@@ -33,26 +34,23 @@ self.addEventListener('push', function(event) {
   }
 })
 
-// 3. Handle Notification Click (Improved for iOS PWA)
+// 3. Handle Click (iOS Focus Fix)
 self.addEventListener('notificationclick', function(event) {
   event.notification.close()
   const targetUrl = event.notification.data.url
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-      // Check if there is already a window/tab open with the target URL
+      // A. Try to find an existing window to focus
       for (var i = 0; i < windowClients.length; i++) {
         var client = windowClients[i]
-        
-        // RELIABLE MATCHING: Check if the client matches the origin, not just exact URL
-        // This fixes issues where 'dashboard/' vs 'dashboard' caused failures
+        // Match origin to ensure we own the window
+        // We check if the client URL starts with our scope or is just on the same origin
         if (client.url && 'focus' in client) {
-           // If we are already on the site, focus it and navigate
            return client.focus().then(c => c.navigate(targetUrl))
         }
       }
-      
-      // If not, then open the target URL in a new window/tab.
+      // B. If no window open, open a new one
       if (clients.openWindow) {
         return clients.openWindow(targetUrl)
       }

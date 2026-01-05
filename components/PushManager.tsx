@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BellRing, Check, Loader2, Send, AlertCircle, Share } from 'lucide-react'
+import { BellRing, Check, Loader2, Send, AlertCircle, Share, Bug } from 'lucide-react'
 import { toast } from 'sonner'
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -26,19 +26,21 @@ export default function PushManager() {
   const [permissionState, setPermissionState] = useState<NotificationPermission>('default')
   const [isIOS, setIsIOS] = useState(false)
   const [isStandalone, setIsStandalone] = useState(false)
+  const [showDebug, setShowDebug] = useState(false)
 
   useEffect(() => {
-    // 1. Check Browser Support
+    // 1. Browser Support & Device Checks
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       setIsSupported(true)
-      registerServiceWorker()
+      
+      // CRITICAL: We manually register custom-sw.js to overwrite next-pwa's default
+      registerCustomSW()
       
       if ('Notification' in window) {
           setPermissionState(Notification.permission)
       }
     }
 
-    // 2. iOS & Standalone Detection
     const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
     setIsIOS(isIosDevice)
     
@@ -48,34 +50,42 @@ export default function PushManager() {
 
   }, [])
 
-  async function registerServiceWorker() {
+  async function registerCustomSW() {
     try {
-      // We explicitly register custom-sw.js
-      // This ensures OUR worker handles the push events, not the default workbox one
+      // We explicitly register /custom-sw.js
+      // This call will 'win' the race against next-pwa's default registration
       const registration = await navigator.serviceWorker.register('/custom-sw.js', {
         scope: '/',
         updateViaCache: 'none',
       })
       
-      // Force update if one is waiting
+      // If it's waiting (iOS sometimes holds it), force it to update
       if (registration.waiting) {
         registration.waiting.postMessage({ type: 'SKIP_WAITING' })
       }
 
+      // Check if we already have a subscription on THIS worker
       const sub = await registration.pushManager.getSubscription()
-      setSubscription(sub)
+      if (sub) setSubscription(sub)
+
     } catch (error) {
-      console.error('Service Worker registration failed:', error)
+      console.error('Custom SW registration failed:', error)
     }
   }
 
   async function subscribeToPush() {
     setLoading(true)
     try {
-      // Wait specifically for our custom registration
+      // We get the registration specifically for custom-sw.js logic
       const registration = await navigator.serviceWorker.ready
-      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
       
+      // Double check this is OUR worker (optional, but good for debugging)
+      if (!registration.active?.scriptURL.includes('custom-sw.js')) {
+          console.warn("Active worker is NOT custom-sw.js. Attempting to reregister...")
+          await registerCustomSW()
+      }
+
+      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
       if (!vapidKey) {
         toast.error("Configuration Error: Missing VAPID Key")
         return
@@ -89,25 +99,28 @@ export default function PushManager() {
       setSubscription(sub)
       setPermissionState('granted')
 
-      // Send to backend
-      await fetch('/api/web-push/subscribe', {
+      // Sync with backend
+      const res = await fetch('/api/web-push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subscription: sub }),
       })
 
-      toast.success("Notifications Enabled!", {
-        description: "You will now receive high-value alerts."
-      })
+      if (res.ok) {
+          toast.success("Notifications Enabled!", {
+            description: "You will now receive high-value alerts."
+          })
+      } else {
+          throw new Error('Backend failed')
+      }
 
     } catch (error: any) {
       console.error('Failed to subscribe:', error)
-      
       if (Notification.permission === 'denied') {
           setPermissionState('denied')
           toast.error("Permission Denied")
       } else {
-          toast.error("Failed to enable notifications. Try reloading.")
+          toast.error("Failed to enable notifications.")
       }
     } finally {
         setLoading(false)
@@ -137,9 +150,24 @@ export default function PushManager() {
   if (!isSupported) return null
 
   return (
-    <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2">
+    <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2 pointer-events-none">
+      <div className="pointer-events-auto flex flex-col items-end gap-2">
       
-      {/* iOS Warning: User must be in App mode (Standalone) for Push to work reliably */}
+      {/* DEBUG TOGGLE - Click to see what's happening on the phone */}
+      <button onClick={() => setShowDebug(!showDebug)} className="text-[10px] text-slate-400 bg-slate-100/50 p-1 rounded hover:bg-slate-200 backdrop-blur-md">
+         {showDebug ? 'Hide Debug' : 'Debug Info'}
+      </button>
+
+      {showDebug && (
+          <div className="bg-black/90 text-green-400 p-3 rounded-lg text-[10px] font-mono max-w-[300px] break-all mb-2 shadow-2xl overflow-y-auto max-h-[200px]">
+              <p><strong>iOS:</strong> {isIOS ? 'Yes' : 'No'}</p>
+              <p><strong>Standalone:</strong> {isStandalone ? 'Yes' : 'No'}</p>
+              <p><strong>Permission:</strong> {permissionState}</p>
+              <p><strong>Subscribed:</strong> {subscription ? 'YES' : 'NO'}</p>
+          </div>
+      )}
+
+      {/* iOS Warning */}
       {isIOS && !isStandalone && (
          <div className="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-start gap-3 max-w-[280px] animate-in slide-in-from-right mb-2">
             <Share size={20} className="shrink-0 mt-0.5 text-blue-400" />
@@ -190,6 +218,7 @@ export default function PushManager() {
               </button>
           </div>
       )}
+      </div>
     </div>
   )
 }
