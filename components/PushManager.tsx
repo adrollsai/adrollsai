@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BellRing, Check, Loader2, Send, AlertCircle, Share, Bell, Smartphone } from 'lucide-react'
+import { BellRing, Check, Loader2, Send, AlertCircle, Share, Bell } from 'lucide-react'
 import { toast } from 'sonner'
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -30,7 +30,9 @@ export default function PushManager() {
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       setIsSupported(true)
-      checkExistingSubscription()
+      // RESTORED: Explicitly register your custom worker
+      registerServiceWorker()
+      
       if ('Notification' in window) {
           setPermissionState(Notification.permission)
       }
@@ -44,13 +46,22 @@ export default function PushManager() {
     setIsStandalone(isStandaloneMode)
   }, [])
 
-  async function checkExistingSubscription() {
+  // RESTORED: This function manually registers custom-sw.js
+  async function registerServiceWorker() {
     try {
-        const registration = await navigator.serviceWorker.ready
-        const sub = await registration.pushManager.getSubscription()
-        if (sub) setSubscription(sub)
+      // We explicitly register '/custom-sw.js' to ensure your Push Listeners are active
+      const registration = await navigator.serviceWorker.register('/custom-sw.js', {
+        scope: '/',
+        updateViaCache: 'none',
+      })
+      
+      // Wait for it to be ready before checking subscription
+      await navigator.serviceWorker.ready
+      
+      const sub = await registration.pushManager.getSubscription()
+      if (sub) setSubscription(sub)
     } catch (error) {
-        console.error("Error checking subscription:", error)
+      console.error('Service Worker registration failed:', error)
     }
   }
 
