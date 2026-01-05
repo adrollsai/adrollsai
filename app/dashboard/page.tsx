@@ -119,7 +119,7 @@ export default function DashboardPage() {
   })
   const [tempConfig, setTempConfig] = useState({ name: '', size: '', price: '' })
   
-  // UPDATED: Added typing for brochure and floorPlan
+  // PDF Support
   const [projectFiles, setProjectFiles] = useState<{images: File[], brochure?: File, floorPlan?: File}>({ images: [] })
   
   // -- Add Creative Form --
@@ -584,351 +584,350 @@ export default function DashboardPage() {
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-slate-400"/></div>
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-24 max-w-md mx-auto relative shadow-2xl">
+    // FULL WIDTH FIX: max-w-7xl
+    <div className="min-h-screen bg-slate-50 max-w-7xl mx-auto pb-24 shadow-2xl">
       
-      {/* Header */}
-      <div className="bg-white p-5 pt-8 rounded-b-[2rem] shadow-sm z-10 sticky top-0">
-          <div className="flex justify-between items-center mb-4">
-            <div>
-                <div className="flex items-center gap-2 mb-1">
-                   {org?.master_logo_url && <img src={org.master_logo_url} className="w-8 h-8 object-contain" alt="Org Logo"/>}
-                   <h1 className="text-xl font-black text-slate-900 tracking-tight">
-                     {org?.name || (userProfile?.role === 'admin' ? 'Builder Console' : 'Agent Hub')}
-                   </h1>
-                </div>
-                <p className="text-xs font-medium text-slate-400">
-                    {userProfile?.role === 'admin' ? 'Organization Admin' : 'Sales Agent'}
-                </p>
-            </div>
-          </div>
-          
+      {/* NOTE: We removed the 'Header' block (Logo/Title) because it's now in the TopBar. 
+         However, we MUST KEEP the TABS (Feed, Projects, etc.) here as requested.
+      */}
+
+      <div className="p-4 md:p-6 space-y-6">
+
           {/* --- GAMIFICATION STATUS BAR --- */}
           {userProfile?.role === 'agent' && (
-              <div className="flex items-center gap-2 mb-4 bg-slate-900 text-white p-3 rounded-xl shadow-lg relative overflow-hidden">
-                  <div className="flex-1 flex items-center gap-2 relative z-10">
-                      <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center font-black text-sm border-2 border-white/30">
+              <div className="flex items-center gap-4 bg-slate-900 text-white p-4 rounded-2xl shadow-lg relative overflow-hidden max-w-4xl mx-auto">
+                  <div className="flex-1 flex items-center gap-3 relative z-10">
+                      <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center font-black text-lg border-2 border-white/30">
                           {userProfile.level || 1}
                       </div>
                       <div>
                           <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">Current Level</p>
-                          <p className="text-xs font-bold text-white flex items-center gap-1">
-                              <Star size={10} className="text-yellow-400 fill-current"/> {userProfile.total_xp || 0} XP
+                          <p className="text-sm font-bold text-white flex items-center gap-1">
+                              <Star size={14} className="text-yellow-400 fill-current"/> {userProfile.total_xp || 0} XP
                           </p>
                       </div>
                   </div>
                   
-                  <div className="h-8 w-[1px] bg-white/10"></div>
+                  <div className="h-10 w-[1px] bg-white/10"></div>
 
-                  <div className="flex-1 flex items-center gap-2 relative z-10 pl-2">
-                       <div className="bg-orange-500/20 p-2 rounded-lg text-orange-400">
-                           <Flame size={18} fill="currentColor" />
+                  <div className="flex-1 flex items-center gap-3 relative z-10 pl-2">
+                       <div className="bg-orange-500/20 p-2.5 rounded-xl text-orange-400">
+                           <Flame size={20} fill="currentColor" />
                        </div>
                        <div>
                           <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">Daily Streak</p>
                           {/* USE EFFECTIVE STREAK HERE */}
-                          <p className="text-xs font-bold text-white">{effectiveStreak} Days</p>
+                          <p className="text-sm font-bold text-white">{effectiveStreak} Days</p>
                        </div>
                   </div>
 
                   <div className="absolute top-0 right-0 p-2 opacity-5 pointer-events-none">
-                      <Trophy size={80} />
+                      <Trophy size={100} />
                   </div>
               </div>
           )}
 
-          {/* TABS */}
-          <div className="flex bg-slate-100 p-1 rounded-xl">
-              <button onClick={() => setActiveTab('feed')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'feed' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
+          {/* --- PAGE TABS --- 
+             These are the local tabs you asked to put back.
+             They are now sticky so they stay visible when scrolling.
+          */}
+          <div className="sticky top-20 z-40 bg-white p-1.5 rounded-xl shadow-sm border border-slate-100 max-w-lg mx-auto flex gap-1">
+              <button onClick={() => setActiveTab('feed')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'feed' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
                   <Zap size={14}/> Feed
               </button>
-              <button onClick={() => setActiveTab('inventory')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'inventory' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
+              <button onClick={() => setActiveTab('inventory')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'inventory' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
                   <Building size={14}/> Projects
               </button>
               
-              <button onClick={() => setActiveTab('leaderboard')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'leaderboard' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
+              <button onClick={() => setActiveTab('leaderboard')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'leaderboard' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
                   <Trophy size={14}/> Rankings
               </button>
 
               {userProfile?.role === 'admin' && (
-                  <button onClick={() => setActiveTab('agents')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${activeTab === 'agents' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
+                  <button onClick={() => setActiveTab('agents')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'agents' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
                       <Users size={14}/> Agents
                   </button>
               )}
           </div>
-      </div>
-
-      <div className="p-5 space-y-4">
           
-          {/* --- TAB: FEED --- */}
-          {activeTab === 'feed' && (
-              <>
-                 <div className="flex justify-between items-center">
-                    <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Latest Updates</h2>
-                    {userProfile?.role === 'admin' && (
-                        <div className="flex gap-2">
-                             <button onClick={() => setShowAddNews(true)} className="flex items-center gap-1 text-xs font-bold bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-full shadow-sm active:scale-95 transition-transform">
-                                <Megaphone size={12}/> News
-                            </button>
-                            <button onClick={() => setShowAddCreative(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-lg active:scale-95 transition-transform">
-                                <Plus size={12}/> Creative
-                            </button>
-                        </div>
-                    )}
-                 </div>
-
-                 {feedItems.map(item => {
-                     // RENDER NEWS POST
-                     if (item.kind === 'post') {
-                         const isPinned = item.tags?.includes('pinned')
-                         return (
-                            <div key={item.id} className={`bg-white rounded-2xl p-4 shadow-sm border ${isPinned ? 'border-blue-200 bg-blue-50/30' : 'border-slate-100'} relative group`}>
-                                {isPinned && <div className="absolute top-2 right-2 text-blue-500"><Pin size={14} fill="currentColor"/></div>}
-                                
-                                <div className="flex items-center gap-2 mb-2">
-                                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center font-bold text-xs text-blue-600">
-                                         {item.author?.business_name?.[0] || 'N'}
-                                     </div>
-                                     <div>
-                                         <p className="text-xs font-bold text-slate-900">{item.title}</p>
-                                         <p className="text-[10px] text-slate-400">{new Date(item.created_at).toLocaleDateString()}</p>
-                                     </div>
-                                </div>
-                                <p className="text-sm text-slate-700 whitespace-pre-line mb-2">{item.content}</p>
-
-                                {/* ADMIN ACTIONS */}
-                                {userProfile?.role === 'admin' && (
-                                    <div className="flex gap-3 mt-3 pt-3 border-t border-slate-100 justify-end">
-                                        <button onClick={(e) => handleTogglePin(item, e)} className={`text-xs font-bold flex items-center gap-1 ${isPinned ? 'text-blue-600' : 'text-slate-400'}`}>
-                                            <Pin size={12}/> {isPinned ? 'Unpin' : 'Pin'}
-                                        </button>
-                                        <button onClick={(e) => handleDeleteItem(item, e)} className="text-xs font-bold text-red-400 flex items-center gap-1 hover:text-red-600">
-                                            <Trash2 size={12}/> Delete
-                                        </button>
-                                    </div>
-                                )}
+          {/* --- TAB CONTENT AREA --- */}
+          <div className="max-w-4xl mx-auto">
+              
+              {/* --- TAB: FEED --- */}
+              {activeTab === 'feed' && (
+                  <div className="space-y-4">
+                     <div className="flex justify-between items-center mb-2">
+                        <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Latest Updates</h2>
+                        {userProfile?.role === 'admin' && (
+                            <div className="flex gap-2">
+                                 <button onClick={() => setShowAddNews(true)} className="flex items-center gap-1 text-xs font-bold bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-full shadow-sm hover:bg-slate-50 transition-colors">
+                                    <Megaphone size={12}/> News
+                                </button>
+                                <button onClick={() => setShowAddCreative(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-lg hover:bg-slate-800 transition-colors">
+                                    <Plus size={12}/> Creative
+                                </button>
                             </div>
-                         )
-                     }
-
-                     // RENDER CREATIVE CARD
-                     const isClaimed = claimedCreativeIds.has(item.id)
-
-                     return (
-                         <div key={item.id} className="bg-white rounded-2xl p-3 shadow-sm border border-slate-100 group relative">
-                             <div className="flex items-center gap-2 mb-3">
-                                 <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-500">
-                                     P
-                                 </div>
-                                 <div className="flex-1">
-                                     <p className="text-xs font-bold text-slate-900">{item.property?.title || 'General Update'}</p>
-                                     <p className="text-[10px] text-slate-400">{new Date(item.created_at).toLocaleDateString()}</p>
-                                 </div>
-                                 {userProfile?.role === 'admin' && (
-                                     <button onClick={(e) => handleDeleteItem(item, e)} className="text-slate-300 hover:text-red-500 p-1">
-                                         <Trash2 size={14}/>
-                                     </button>
-                                 )}
-                             </div>
-                             <div className="rounded-xl overflow-hidden bg-slate-50 aspect-square mb-3 relative">
-                                 {item.type === 'video' ? (
-                                    <video src={item.url} controls className="w-full h-full object-cover" />
-                                 ) : (
-                                    <img src={item.url} className="w-full h-full object-cover" />
-                                 )}
-                                 
-                                 {userProfile?.role === 'agent' && (
-                                     <button 
-                                        onClick={() => handleClaim(item)} 
-                                        disabled={isSubmitting} 
-                                        className={`absolute bottom-3 right-3 backdrop-blur text-xs font-bold px-4 py-2 rounded-full shadow-md active:scale-95 transition-transform flex items-center gap-1 
-                                            ${isClaimed ? 'bg-green-100/90 text-green-800' : 'bg-white/90 text-slate-900'}
-                                        `}
-                                     >
-                                         {isSubmitting ? '...' : isClaimed ? (
-                                            <>Claim Again</>
-                                         ) : 'Claim & Share'}
-                                     </button>
-                                 )}
-                             </div>
-                             <div className="px-1">
-                                 <p className="text-xs text-slate-600 line-clamp-2">{item.caption_template || 'New marketing creative available.'}</p>
-                             </div>
-                         </div>
-                     )
-                 })}
-                 {feedItems.length === 0 && <div className="text-center py-10 text-slate-400 text-xs">No updates yet.</div>}
-              </>
-          )}
-
-          {/* --- TAB: INVENTORY --- */}
-          {activeTab === 'inventory' && (
-              <>
-                 <div className="flex justify-between items-center">
-                    <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">All Projects</h2>
-                    {userProfile?.role === 'admin' && (
-                        <button onClick={() => setShowAddProject(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-lg active:scale-95 transition-transform">
-                            <Plus size={12}/> Add Project
-                        </button>
-                    )}
-                 </div>
-
-                 {properties.map(p => (
-                     <div key={p.id} onClick={() => { setSelectedProperty(p); setCurrentImageIndex(0); }} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex gap-3 cursor-pointer hover:bg-slate-50 transition-colors relative group">
-                         <img src={p.image_url} className="w-20 h-20 rounded-xl object-cover bg-slate-200" />
-                         <div className="flex-1 py-1">
-                             <div className="flex justify-between items-start">
-                                 <h3 className="font-bold text-slate-900 text-sm">{p.title}</h3>
-                                 {userProfile?.role === 'admin' && (
-                                     <button 
-                                         onClick={(e) => handleDeleteProject(p.id, e)}
-                                         disabled={isDeleting}
-                                         className="text-slate-300 hover:text-red-500 transition-colors p-1"
-                                     >
-                                         <Trash2 size={16} />
-                                     </button>
-                                 )}
-                             </div>
-                             <p className="text-xs text-slate-500 mt-1">{p.address}</p>
-                             <div className="flex gap-2 mt-2">
-                                 {p.configurations?.map((c, i) => (
-                                     <span key={i} className="px-1.5 py-0.5 bg-slate-100 rounded text-[10px] font-bold text-slate-600">{c.name}</span>
-                                 )).slice(0, 3)}
-                             </div>
-                         </div>
+                        )}
                      </div>
-                 ))}
-                 {properties.length === 0 && <div className="text-center py-10 text-slate-400 text-xs">No projects assigned to your organization.</div>}
-              </>
-          )}
 
-          {/* --- TAB: LEADERBOARD --- */}
-          {activeTab === 'leaderboard' && (
-              <div className="space-y-4">
-                  <div className="bg-slate-900 p-6 rounded-3xl relative overflow-hidden text-white shadow-xl">
-                      <div className="absolute top-0 right-0 p-6 opacity-10"><Trophy size={120} /></div>
-                      <h2 className="text-xl font-bold mb-1">Top Performers</h2>
-                      <p className="text-xs text-slate-400 mb-6">Based on activity and sales</p>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {feedItems.map(item => {
+                            // RENDER NEWS POST
+                            if (item.kind === 'post') {
+                                const isPinned = item.tags?.includes('pinned')
+                                return (
+                                    <div key={item.id} className={`bg-white rounded-2xl p-5 shadow-sm border ${isPinned ? 'border-blue-200 bg-blue-50/30' : 'border-slate-100'} relative group`}>
+                                        {isPinned && <div className="absolute top-3 right-3 text-blue-500"><Pin size={16} fill="currentColor"/></div>}
+                                        
+                                        <div className="flex items-center gap-3 mb-3">
+                                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center font-bold text-sm text-blue-600 border border-blue-200">
+                                                {item.author?.business_name?.[0] || 'N'}
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-bold text-slate-900">{item.title}</p>
+                                                <p className="text-xs text-slate-400">{new Date(item.created_at).toLocaleDateString()}</p>
+                                            </div>
+                                        </div>
+                                        <p className="text-sm text-slate-700 whitespace-pre-line mb-3 leading-relaxed">{item.content}</p>
+
+                                        {/* ADMIN ACTIONS */}
+                                        {userProfile?.role === 'admin' && (
+                                            <div className="flex gap-3 pt-3 border-t border-slate-100 justify-end opacity-50 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={(e) => handleTogglePin(item, e)} className={`text-xs font-bold flex items-center gap-1 ${isPinned ? 'text-blue-600' : 'text-slate-400'}`}>
+                                                    <Pin size={12}/> {isPinned ? 'Unpin' : 'Pin'}
+                                                </button>
+                                                <button onClick={(e) => handleDeleteItem(item, e)} className="text-xs font-bold text-red-400 flex items-center gap-1 hover:text-red-600">
+                                                    <Trash2 size={12}/> Delete
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                            }
+
+                            // RENDER CREATIVE CARD
+                            const isClaimed = claimedCreativeIds.has(item.id)
+
+                            return (
+                                <div key={item.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 group relative flex flex-col">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-500">
+                                            P
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-xs font-bold text-slate-900 truncate">{item.property?.title || 'General Update'}</p>
+                                            <p className="text-[10px] text-slate-400">{new Date(item.created_at).toLocaleDateString()}</p>
+                                        </div>
+                                        {userProfile?.role === 'admin' && (
+                                            <button onClick={(e) => handleDeleteItem(item, e)} className="text-slate-300 hover:text-red-500 p-1">
+                                                <Trash2 size={14}/>
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="rounded-xl overflow-hidden bg-slate-50 aspect-square mb-3 relative group-hover:shadow-md transition-shadow">
+                                        {item.type === 'video' ? (
+                                            <video src={item.url} controls className="w-full h-full object-cover" />
+                                        ) : (
+                                            <img src={item.url} className="w-full h-full object-cover" />
+                                        )}
+                                        
+                                        {userProfile?.role === 'agent' && (
+                                            <button 
+                                                onClick={() => handleClaim(item)} 
+                                                disabled={isSubmitting} 
+                                                className={`absolute bottom-3 right-3 backdrop-blur text-xs font-bold px-4 py-2 rounded-full shadow-md active:scale-95 transition-transform flex items-center gap-1 
+                                                    ${isClaimed ? 'bg-green-100/90 text-green-800' : 'bg-white/90 text-slate-900'}
+                                                `}
+                                            >
+                                                {isSubmitting ? '...' : isClaimed ? (
+                                                    <>Claim Again</>
+                                                ) : 'Claim & Share'}
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="px-1 mt-auto">
+                                        <p className="text-xs text-slate-600 line-clamp-2">{item.caption_template || 'New marketing creative available.'}</p>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                     </div>
+                     {feedItems.length === 0 && <div className="text-center py-10 text-slate-400 text-sm">No updates yet.</div>}
+                  </div>
+              )}
+
+              {/* --- TAB: INVENTORY --- */}
+              {activeTab === 'inventory' && (
+                  <div className="space-y-4">
+                     <div className="flex justify-between items-center mb-2">
+                        <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">All Projects</h2>
+                        {userProfile?.role === 'admin' && (
+                            <button onClick={() => setShowAddProject(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-4 py-2 rounded-full shadow-lg hover:bg-slate-800 transition-colors">
+                                <Plus size={14}/> Add Project
+                            </button>
+                        )}
+                     </div>
+
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {properties.map(p => (
+                            <div key={p.id} onClick={() => { setSelectedProperty(p); setCurrentImageIndex(0); }} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex gap-4 cursor-pointer hover:bg-slate-50 transition-colors relative group">
+                                <img src={p.image_url} className="w-24 h-24 rounded-xl object-cover bg-slate-200 shadow-sm" />
+                                <div className="flex-1 py-1">
+                                    <div className="flex justify-between items-start">
+                                        <h3 className="font-bold text-slate-900 text-base">{p.title}</h3>
+                                        {userProfile?.role === 'admin' && (
+                                            <button 
+                                                onClick={(e) => handleDeleteProject(p.id, e)}
+                                                disabled={isDeleting}
+                                                className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><MapPin size={12}/> {p.address}</p>
+                                    <div className="flex gap-2 mt-3 flex-wrap">
+                                        {p.configurations?.map((c, i) => (
+                                            <span key={i} className="px-2 py-1 bg-slate-100 rounded-md text-[10px] font-bold text-slate-600 border border-slate-200">{c.name}</span>
+                                        )).slice(0, 3)}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                     </div>
+                     {properties.length === 0 && <div className="text-center py-10 text-slate-400 text-sm">No projects assigned to your organization.</div>}
+                  </div>
+              )}
+
+              {/* --- TAB: LEADERBOARD --- */}
+              {activeTab === 'leaderboard' && (
+                  <div className="space-y-6">
+                      <div className="bg-slate-900 p-8 rounded-[2rem] relative overflow-hidden text-white shadow-xl text-center">
+                          <div className="absolute top-0 right-0 p-8 opacity-10"><Trophy size={150} /></div>
+                          <h2 className="text-2xl font-bold mb-2 relative z-10">Top Performers</h2>
+                          <p className="text-sm text-slate-400 mb-8 relative z-10">Ranking based on sales & activity</p>
+                          
+                          {leaderboard.length > 0 && (
+                              <div className="flex items-end justify-center gap-6 relative z-10">
+                                  {/* 2nd Place */}
+                                  {leaderboard[1] && (
+                                      <div className="flex flex-col items-center">
+                                          <div className="w-16 h-16 rounded-full border-2 border-slate-500 bg-slate-800 flex items-center justify-center font-bold text-lg mb-2 overflow-hidden relative shadow-lg">
+                                              {leaderboard[1].logo_url ? <img src={leaderboard[1].logo_url} className="w-full h-full object-cover"/> : leaderboard[1].business_name?.[0]}
+                                              <div className="absolute -bottom-2 -right-2 bg-slate-500 rounded-full p-1 border-2 border-slate-900"><Medal size={14}/></div>
+                                          </div>
+                                          <p className="text-xs font-bold text-slate-300 w-20 text-center truncate">{leaderboard[1].business_name}</p>
+                                          <p className="text-[10px] font-bold text-slate-500">{leaderboard[1].total_xp || 0} XP</p>
+                                      </div>
+                                  )}
+                                  {/* 1st Place */}
+                                  {leaderboard[0] && (
+                                      <div className="flex flex-col items-center -mt-8">
+                                          <Crown size={32} className="text-yellow-400 mb-2 animate-bounce"/>
+                                          <div className="w-24 h-24 rounded-full border-4 border-yellow-400 bg-slate-800 flex items-center justify-center font-bold text-2xl mb-3 overflow-hidden shadow-xl shadow-yellow-500/20">
+                                              {leaderboard[0].logo_url ? <img src={leaderboard[0].logo_url} className="w-full h-full object-cover"/> : leaderboard[0].business_name?.[0]}
+                                          </div>
+                                          <p className="text-sm font-bold text-white w-24 text-center truncate">{leaderboard[0].business_name}</p>
+                                          <p className="text-xs font-bold text-yellow-400">{leaderboard[0].total_xp || 0} XP</p>
+                                      </div>
+                                  )}
+                                  {/* 3rd Place */}
+                                  {leaderboard[2] && (
+                                      <div className="flex flex-col items-center">
+                                          <div className="w-16 h-16 rounded-full border-2 border-orange-700 bg-slate-800 flex items-center justify-center font-bold text-lg mb-2 overflow-hidden relative shadow-lg">
+                                              {leaderboard[2].logo_url ? <img src={leaderboard[2].logo_url} className="w-full h-full object-cover"/> : leaderboard[2].business_name?.[0]}
+                                              <div className="absolute -bottom-2 -right-2 bg-orange-700 rounded-full p-1 border-2 border-slate-900"><Medal size={14}/></div>
+                                          </div>
+                                          <p className="text-xs font-bold text-slate-300 w-20 text-center truncate">{leaderboard[2].business_name}</p>
+                                          <p className="text-[10px] font-bold text-slate-500">{leaderboard[2].total_xp || 0} XP</p>
+                                      </div>
+                                  )}
+                              </div>
+                          )}
+                      </div>
+
+                      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                          {leaderboard.map((agent, i) => (
+                              <div key={agent.id} className={`p-4 flex items-center gap-4 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors ${agent.id === userProfile?.id ? 'bg-blue-50/50' : ''}`}>
+                                  <span className={`w-8 text-center font-black text-sm ${i < 3 ? 'text-yellow-500' : 'text-slate-300'}`}>#{i + 1}</span>
+                                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-600 overflow-hidden border border-slate-200">
+                                      {agent.logo_url ? <img src={agent.logo_url} className="w-full h-full object-cover"/> : agent.business_name?.[0]}
+                                  </div>
+                                  <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                          <h4 className="font-bold text-sm text-slate-900">{agent.business_name}</h4>
+                                          {agent.id === userProfile?.id && <span className="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">YOU</span>}
+                                      </div>
+                                      <div className="flex gap-3 text-[10px] text-slate-500 font-medium">
+                                          <span className="flex items-center gap-1"><Flame size={10} className="text-orange-500"/> {agent.current_streak || 0} Day Streak</span>
+                                          <span>Level {agent.level || 1}</span>
+                                      </div>
+                                  </div>
+                                  <div className="text-right">
+                                      <p className="font-bold text-sm text-slate-900">{agent.total_xp || 0}</p>
+                                      <p className="text-[10px] text-slate-400">XP</p>
+                                  </div>
+                              </div>
+                          ))}
+                          {leaderboard.length === 0 && <div className="p-8 text-center text-slate-400 text-xs">No rankings available yet.</div>}
+                      </div>
+                  </div>
+              )}
+
+              {/* --- TAB: AGENTS (Admin Only) --- */}
+              {activeTab === 'agents' && (
+                  <div className="space-y-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                            <Users size={18}/> Managed Agents
+                        </h3>
+                        {/* Add Agent Button */}
+                        <button 
+                            onClick={() => setShowAddAgent(true)}
+                            className="bg-slate-900 text-white px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg hover:bg-slate-800 transition-colors"
+                        >
+                            <UserPlus size={14}/> Add Agent
+                        </button>
+                      </div>
                       
-                      {leaderboard.length > 0 && (
-                          <div className="flex items-end justify-center gap-4 mb-4">
-                              {/* 2nd Place */}
-                              {leaderboard[1] && (
-                                  <div className="flex flex-col items-center">
-                                      <div className="w-12 h-12 rounded-full border-2 border-slate-500 bg-slate-800 flex items-center justify-center font-bold text-sm mb-2 overflow-hidden relative">
-                                          {leaderboard[1].logo_url ? <img src={leaderboard[1].logo_url} className="w-full h-full object-cover"/> : leaderboard[1].business_name?.[0]}
-                                          <div className="absolute -bottom-1 -right-1 bg-slate-500 rounded-full p-0.5"><Medal size={12}/></div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {agentsList.map(agent => (
+                              <div 
+                                 key={agent.id} 
+                                 onClick={() => handleOpenAgent(agent)}
+                                 className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors active:scale-98 relative group"
+                              >
+                                  <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-lg font-bold text-slate-500 overflow-hidden border border-slate-200 group-hover:border-slate-300">
+                                      {agent.logo_url ? <img src={agent.logo_url} className="w-full h-full object-cover"/> : agent.business_name?.[0]}
+                                  </div>
+                                  <div className="flex-1">
+                                      <h4 className="font-bold text-slate-900 text-sm">{agent.business_name}</h4>
+                                      <p className="text-xs text-slate-500">{agent.contact_number}</p>
+                                      <div className="flex items-center gap-3 mt-1.5">
+                                          <span className="text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded font-bold border border-green-100 flex items-center gap-1">
+                                              <Coins size={10}/> ₹{(agent.ad_credits || 0).toLocaleString()}
+                                          </span>
+                                          <span className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
+                                              <Star size={10} className="text-yellow-400 fill-current"/> Lvl {agent.level || 1}
+                                          </span>
                                       </div>
-                                      <p className="text-[10px] font-bold text-slate-300 w-16 text-center truncate">{leaderboard[1].business_name}</p>
-                                      <p className="text-[10px] font-bold text-slate-500">{leaderboard[1].total_xp || 0} XP</p>
                                   </div>
-                              )}
-                              {/* 1st Place */}
-                              {leaderboard[0] && (
-                                  <div className="flex flex-col items-center -mt-6">
-                                      <Crown size={24} className="text-yellow-400 mb-2 animate-bounce"/>
-                                      <div className="w-16 h-16 rounded-full border-4 border-yellow-400 bg-slate-800 flex items-center justify-center font-bold text-lg mb-2 overflow-hidden shadow-lg shadow-yellow-500/20">
-                                          {leaderboard[0].logo_url ? <img src={leaderboard[0].logo_url} className="w-full h-full object-cover"/> : leaderboard[0].business_name?.[0]}
-                                      </div>
-                                      <p className="text-xs font-bold text-white w-20 text-center truncate">{leaderboard[0].business_name}</p>
-                                      <p className="text-[10px] font-bold text-yellow-400">{leaderboard[0].total_xp || 0} XP</p>
+                                  <div className="text-slate-300">
+                                      <ChevronRight size={20}/>
                                   </div>
-                              )}
-                              {/* 3rd Place */}
-                              {leaderboard[2] && (
-                                  <div className="flex flex-col items-center">
-                                      <div className="w-12 h-12 rounded-full border-2 border-orange-700 bg-slate-800 flex items-center justify-center font-bold text-sm mb-2 overflow-hidden relative">
-                                          {leaderboard[2].logo_url ? <img src={leaderboard[2].logo_url} className="w-full h-full object-cover"/> : leaderboard[2].business_name?.[0]}
-                                          <div className="absolute -bottom-1 -right-1 bg-orange-700 rounded-full p-0.5"><Medal size={12}/></div>
-                                      </div>
-                                      <p className="text-[10px] font-bold text-slate-300 w-16 text-center truncate">{leaderboard[2].business_name}</p>
-                                      <p className="text-[10px] font-bold text-slate-500">{leaderboard[2].total_xp || 0} XP</p>
-                                  </div>
-                              )}
-                          </div>
-                      )}
+                              </div>
+                          ))}
+                          {agentsList.length === 0 && <div className="text-center py-10 text-slate-400 text-sm">No agents found. Add one above.</div>}
+                      </div>
                   </div>
-
-                  <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                      {leaderboard.map((agent, i) => (
-                          <div key={agent.id} className={`p-4 flex items-center gap-3 border-b border-slate-50 last:border-0 ${agent.id === userProfile?.id ? 'bg-blue-50' : ''}`}>
-                              <span className={`w-6 text-center font-bold text-sm ${i < 3 ? 'text-yellow-500' : 'text-slate-400'}`}>#{i + 1}</span>
-                              <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-600 overflow-hidden">
-                                  {agent.logo_url ? <img src={agent.logo_url} className="w-full h-full object-cover"/> : agent.business_name?.[0]}
-                              </div>
-                              <div className="flex-1">
-                                  <div className="flex items-center gap-2">
-                                      <h4 className="font-bold text-sm text-slate-900">{agent.business_name}</h4>
-                                      {agent.id === userProfile?.id && <span className="bg-blue-200 text-blue-800 text-[10px] font-bold px-1.5 py-0.5 rounded">YOU</span>}
-                                  </div>
-                                  <div className="flex gap-3 text-[10px] text-slate-500 font-medium">
-                                      <span className="flex items-center gap-1"><Flame size={10} className="text-orange-500"/> {agent.current_streak || 0} Day Streak</span>
-                                      <span>Level {agent.level || 1}</span>
-                                  </div>
-                              </div>
-                              <div className="text-right">
-                                  <p className="font-bold text-sm text-slate-900">{agent.total_xp || 0}</p>
-                                  <p className="text-[10px] text-slate-400">XP</p>
-                              </div>
-                          </div>
-                      ))}
-                      {leaderboard.length === 0 && <div className="p-8 text-center text-slate-400 text-xs">No rankings available yet.</div>}
-                  </div>
-              </div>
-          )}
-
-          {/* --- TAB: AGENTS (Admin Only) --- */}
-          {activeTab === 'agents' && (
-              <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="font-bold text-slate-900 flex items-center gap-2">
-                        <Users size={18}/> Managed Agents
-                    </h3>
-                    {/* Add Agent Button */}
-                    <button 
-                        onClick={() => setShowAddAgent(true)}
-                        className="bg-slate-900 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 shadow-lg active:scale-95 transition-transform"
-                    >
-                        <UserPlus size={12}/> Add Agent
-                    </button>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 gap-3">
-                      {agentsList.map(agent => (
-                          <div 
-                             key={agent.id} 
-                             onClick={() => handleOpenAgent(agent)}
-                             className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors active:scale-98"
-                          >
-                              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-lg font-bold text-slate-500 overflow-hidden border border-slate-200">
-                                  {agent.logo_url ? <img src={agent.logo_url} className="w-full h-full object-cover"/> : agent.business_name?.[0]}
-                              </div>
-                              <div className="flex-1">
-                                  <h4 className="font-bold text-slate-900 text-sm">{agent.business_name}</h4>
-                                  <p className="text-xs text-slate-500">{agent.contact_number}</p>
-                                  <div className="flex items-center gap-3 mt-1.5">
-                                      <span className="text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded font-bold border border-green-100 flex items-center gap-1">
-                                          <Coins size={10}/> ₹{(agent.ad_credits || 0).toLocaleString()}
-                                      </span>
-                                      <span className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
-                                          <Star size={10} className="text-yellow-400 fill-current"/> Lvl {agent.level || 1}
-                                      </span>
-                                  </div>
-                              </div>
-                              <div className="text-slate-300">
-                                  <ChevronRight size={20}/>
-                              </div>
-                          </div>
-                      ))}
-                      {agentsList.length === 0 && <div className="text-center py-10 text-slate-400 text-xs">No agents found. Add one above.</div>}
-                  </div>
-              </div>
-          )}
+              )}
+          </div>
 
       </div>
 
       {/* --- MODAL: ADD PROJECT --- */}
       {showAddProject && (
-          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 max-h-[90vh] overflow-y-auto">
                   <div className="flex justify-between mb-4">
                       <h2 className="font-bold text-lg">New Project</h2>
@@ -986,7 +985,7 @@ export default function DashboardPage() {
 
       {/* --- MODAL: ADD AGENT --- */}
       {showAddAgent && (
-          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
                   <div className="flex justify-between mb-4">
                       <h2 className="font-bold text-lg">Add New Agent</h2>
@@ -1026,7 +1025,7 @@ export default function DashboardPage() {
 
       {/* --- MODAL: ADD CREATIVE --- */}
       {showAddCreative && (
-          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6">
                   <div className="flex justify-between mb-4">
                       <h2 className="font-bold text-lg">Post Creative</h2>
@@ -1062,7 +1061,7 @@ export default function DashboardPage() {
 
       {/* --- MODAL: ADD NEWS --- */}
       {showAddNews && (
-          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6">
                   <div className="flex justify-between mb-4">
                       <h2 className="font-bold text-lg">Post News</h2>
@@ -1082,7 +1081,7 @@ export default function DashboardPage() {
       
       {/* --- MODAL: VIEW PROPERTY DETAILS --- */}
       {selectedProperty && (
-        <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-bottom-10">
+        <div className="fixed inset-0 z-[150] bg-white flex flex-col animate-in slide-in-from-bottom-10">
            {/* Close Button */}
            <button onClick={() => setSelectedProperty(null)} className="absolute top-4 right-4 z-20 bg-black/40 backdrop-blur-md text-white p-2.5 rounded-full hover:bg-black/60 transition-colors"><X size={20}/></button>
            
@@ -1106,7 +1105,7 @@ export default function DashboardPage() {
            </div>
 
            {/* Content Section */}
-           <div className="flex-1 p-6 overflow-y-auto -mt-6 bg-white rounded-t-[2rem] relative z-10">
+           <div className="flex-1 p-6 overflow-y-auto -mt-6 bg-white rounded-t-[2rem] relative z-10 max-w-4xl mx-auto w-full">
                <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider mb-2 inline-block">RERA: {selectedProperty.rera_number || 'Pending'}</span>
                <h1 className="text-2xl font-black text-slate-900 mb-1">{selectedProperty.title}</h1>
                <p className="text-slate-500 text-sm flex items-center gap-1 mb-6"><MapPin size={14}/> {selectedProperty.address}</p>
@@ -1143,7 +1142,7 @@ export default function DashboardPage() {
 
       {/* --- MODAL: AGENT DETAIL --- */}
       {selectedAgent && (
-          <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in">
+          <div className="fixed inset-0 z-[150] bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
                   <div className="flex justify-between items-start mb-6">
                       <div className="flex items-center gap-3">

@@ -1,7 +1,6 @@
 import BottomNav from "@/components/BottomNav";
 import OrganizationWrapper from "@/components/OrganizationWrapper";
-import WalletHeader from "@/components/WalletHeader"; 
-import NotificationSystem from "@/components/NotificationSystem";
+import TopBar from "@/components/TopBar";
 import PushManager from "@/components/PushManager"; 
 
 export default function DashboardLayout({
@@ -11,21 +10,16 @@ export default function DashboardLayout({
 }) {
   return (
     <OrganizationWrapper>
-      <div className="min-h-screen bg-slate-50 pb-32 relative"> 
+      <div className="min-h-screen bg-slate-50 relative"> 
         
-        {/* --- NEW FIXED TOP BAR --- */}
-        <header className="fixed top-0 left-0 right-0 h-14 bg-white/80 backdrop-blur-md border-b border-slate-200 z-50 flex items-center justify-end px-4 gap-3 shadow-sm">
-             {/* Notification Bell */}
-             <NotificationSystem />
+        {/* Fixed Top Bar */}
+        <TopBar />
 
-             {/* Wallet Display (Agents Only) */}
-             <WalletHeader />
-        </header>
-
-        {/* Main Content Wrapper 
-            Added 'pt-14' so content starts below the fixed header 
+        {/* Main Content Area 
+            - pt-16: Pushes content down to clear the TopBar
+            - pb-32: Leaves space for BottomNav
         */}
-        <div className="pt-14">
+        <div className="pt-16 pb-32">
             {children}
         </div>
         

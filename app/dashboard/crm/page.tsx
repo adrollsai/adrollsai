@@ -1,5 +1,3 @@
-// adrollsai/adrollsai/adrollsai-builder-app/app/dashboard/crm/page.tsx
-
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -248,16 +246,13 @@ export default function CRMPage() {
   })
 
   return (
-    <div className="p-5 max-w-md mx-auto min-h-screen pb-24 relative bg-slate-50">
+    // FIX: Changed max-w-md to max-w-7xl
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       
-      {/* Header */}
-      <div className="flex justify-between items-end mb-6">
+      {/* Header - Cleaned up (Logo removed) */}
+      <div className="flex justify-between items-end">
         <div>
-            {/* Dynamic Logo integration */}
-            <div className="flex items-center gap-2">
-               {org?.master_logo_url && <img src={org.master_logo_url} className="w-6 h-6 object-contain" />}
-               <h1 className="text-2xl font-black text-slate-900 tracking-tight">CRM</h1>
-            </div>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">CRM</h1>
             <p className="text-slate-500 text-xs mt-1 font-medium">Pipeline & Leads</p>
         </div>
         <div className="flex gap-2">
@@ -272,31 +267,31 @@ export default function CRMPage() {
 
       {/* ADMIN SECTION: LEADERBOARD */}
       {userProfile?.role === 'admin' && (
-          <div className="mb-6 animate-in slide-in-from-top-4">
-              <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-4 text-white shadow-xl mb-4 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-4 opacity-10"><Trophy size={80} /></div>
-                  <h3 className="text-sm font-bold text-slate-300 mb-3 flex items-center gap-2"><BarChart3 size={16}/> Team Performance</h3>
+          <div className="animate-in slide-in-from-top-4">
+              <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-6 text-white shadow-xl mb-6 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-4 opacity-10"><Trophy size={100} /></div>
+                  <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><BarChart3 size={16}/> Team Performance</h3>
                   
-                  <div className="flex gap-4 overflow-x-auto pb-1 scrollbar-hide">
-                      <div className="flex-1 min-w-[100px]">
-                          <p className="text-3xl font-black">{leads.length}</p>
-                          <p className="text-[10px] opacity-70 uppercase tracking-wider font-bold">Total Leads</p>
+                  <div className="flex gap-8 overflow-x-auto pb-2 scrollbar-hide">
+                      <div className="flex-1 min-w-[120px]">
+                          <p className="text-4xl font-black mb-1">{leads.length}</p>
+                          <p className="text-xs opacity-70 uppercase tracking-wider font-bold">Total Leads</p>
                       </div>
-                      {teamStats.slice(0, 2).map((stat, i) => (
-                          <div key={stat.agentId} className="min-w-[100px] border-l border-white/10 pl-4">
-                              <p className="text-xl font-bold flex items-center gap-1">
-                                  {i===0 && <Trophy size={14} className="text-yellow-400"/>}
+                      {teamStats.slice(0, 3).map((stat, i) => (
+                          <div key={stat.agentId} className="min-w-[120px] border-l border-white/10 pl-6">
+                              <p className="text-2xl font-bold flex items-center gap-2">
+                                  {i===0 && <Trophy size={18} className="text-yellow-400"/>}
                                   {stat.count}
                               </p>
-                              <p className="text-[10px] opacity-70 truncate max-w-[80px]">{stat.name.split(' ')[0]}</p>
+                              <p className="text-xs opacity-70 truncate">{stat.name.split(' ')[0]}</p>
                           </div>
                       ))}
                   </div>
               </div>
 
               {/* Agent Filter */}
-              <div className="relative">
-                  <select value={selectedAgentFilter} onChange={e => setSelectedAgentFilter(e.target.value)} className="w-full appearance-none bg-white p-3 pl-10 rounded-xl text-xs font-bold border-none shadow-sm outline-none text-slate-600">
+              <div className="relative max-w-sm">
+                  <select value={selectedAgentFilter} onChange={e => setSelectedAgentFilter(e.target.value)} className="w-full appearance-none bg-white p-3 pl-10 rounded-xl text-sm font-bold border-none shadow-sm outline-none text-slate-600 cursor-pointer">
                       <option value="all">View All Agents</option>
                       {teamMembers.map(m => <option key={m.id} value={m.id}>{m.business_name} ({teamStats.find(s=>s.agentId===m.id)?.count || 0})</option>)}
                   </select>
@@ -306,42 +301,51 @@ export default function CRMPage() {
       )}
 
       {/* Search */}
-      <div className="relative mb-4">
+      <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <input type="text" placeholder="Search leads..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white pl-10 pr-4 py-3 rounded-xl text-sm border-none shadow-sm focus:ring-2 focus:ring-slate-200 outline-none"/>
+          <input type="text" placeholder="Search leads by name or phone..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white pl-10 pr-4 py-3 rounded-xl text-sm border-none shadow-sm focus:ring-2 focus:ring-slate-200 outline-none"/>
       </div>
 
       {/* Pipeline Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-2 -mx-5 px-5 scrollbar-hide mb-2">
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
         {STAGES.map(stage => (
-            <button key={stage} onClick={() => setActiveStage(stage)} className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${activeStage === stage ? 'bg-blue-600 text-white shadow-blue-200' : 'bg-white text-slate-500'}`}>
+            <button key={stage} onClick={() => setActiveStage(stage)} className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm ${activeStage === stage ? 'bg-blue-600 text-white shadow-blue-200' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
                 {stage} <span className="ml-1 opacity-60">({leads.filter(l => (l.pipeline_stage || 'New') === stage).length})</span>
             </button>
         ))}
       </div>
 
-      {/* Lead List */}
-      <div className="space-y-3 min-h-[50vh]">
+      {/* Lead List - Grid Layout for larger screens */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 min-h-[50vh] content-start">
         {filteredLeads.map(lead => (
-            <div key={lead.id} onClick={() => setSelectedLead(lead)} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100/50 active:scale-98 transition-transform cursor-pointer relative group">
-                <div className="flex justify-between items-start">
+            <div key={lead.id} onClick={() => setSelectedLead(lead)} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:border-blue-100 hover:shadow-md active:scale-[0.99] transition-all cursor-pointer relative group flex flex-col justify-between h-full">
+                <div className="flex justify-between items-start mb-4">
                     <div>
-                        <h3 className="font-bold text-slate-800">{lead.name || 'Unknown Lead'}</h3>
-                        <p className="text-xs text-slate-400 mt-0.5 font-medium">{lead.phone}</p>
+                        <h3 className="font-bold text-slate-800 text-base">{lead.name || 'Unknown Lead'}</h3>
+                        <p className="text-sm text-slate-400 mt-0.5 font-medium">{lead.phone}</p>
                     </div>
-                    <div className="flex gap-2">
-                        {lead.phone && (
-                            <>
-                                <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} onClick={e => e.stopPropagation()} target="_blank" className="p-2 bg-green-50 text-green-600 rounded-full hover:bg-green-100 transition-colors"><MessageCircle size={18} /></a>
-                                <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} className="p-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-colors"><Phone size={18} /></a>
-                            </>
-                        )}
-                        <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2 bg-red-50 text-red-400 rounded-full hover:bg-red-100 transition-colors"><Trash2 size={18} /></button>
+                    <div className="flex gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2 bg-red-50 text-red-400 rounded-full hover:bg-red-100 transition-colors"><Trash2 size={16} /></button>
                     </div>
                 </div>
-                <div className="mt-3 pt-3 border-t border-slate-50 flex items-center justify-between">
-                    <div className="flex flex-wrap gap-1">
-                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-md">{lead.source}</span>
+                
+                {/* Actions Bar */}
+                <div className="flex gap-2 mb-4">
+                     {lead.phone && (
+                        <>
+                            <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} onClick={e => e.stopPropagation()} target="_blank" className="flex-1 py-2 bg-green-50 text-green-700 rounded-lg flex items-center justify-center gap-2 text-xs font-bold hover:bg-green-100 transition-colors">
+                                <MessageCircle size={14} /> WhatsApp
+                            </a>
+                            <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} className="flex-1 py-2 bg-blue-50 text-blue-700 rounded-lg flex items-center justify-center gap-2 text-xs font-bold hover:bg-blue-100 transition-colors">
+                                <Phone size={14} /> Call
+                            </a>
+                        </>
+                    )}
+                </div>
+
+                <div className="pt-3 border-t border-slate-50 flex items-center justify-between mt-auto">
+                    <div className="flex flex-wrap gap-2">
+                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-md">{lead.source || 'Unknown Source'}</span>
                         {userProfile?.role === 'admin' && selectedAgentFilter === 'all' && (
                             <span className="text-[10px] font-bold bg-purple-50 text-purple-600 px-2 py-1 rounded-md flex items-center gap-1">
                                 <Users size={10}/> {teamMembers.find(m => m.id === lead.user_id)?.business_name?.split(' ')[0] || 'Agent'}
@@ -352,8 +356,8 @@ export default function CRMPage() {
                 </div>
             </div>
         ))}
-        {loading && <div className="text-center py-10 text-slate-400 flex justify-center"><RefreshCw className="animate-spin"/></div>}
-        {!loading && filteredLeads.length === 0 && <div className="text-center py-10 text-slate-400 text-xs">No leads found.</div>}
+        {loading && <div className="col-span-full text-center py-20 text-slate-400 flex justify-center"><RefreshCw className="animate-spin"/></div>}
+        {!loading && filteredLeads.length === 0 && <div className="col-span-full text-center py-20 text-slate-400 text-sm">No leads found in this stage.</div>}
       </div>
 
       {/* --- ADD MODAL --- */}
@@ -362,7 +366,7 @@ export default function CRMPage() {
             <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><UserPlus size={20}/> Add Lead</h2>
-                    <button onClick={() => setIsAddModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={18} /></button>
+                    <button onClick={() => setIsAddModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={18} /></button>
                 </div>
                 <div className="space-y-3">
                     <input type="text" value={newLead.name} onChange={e => setNewLead({...newLead, name: e.target.value})} className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none" placeholder="Name" />
@@ -379,7 +383,7 @@ export default function CRMPage() {
             <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-lg font-bold text-slate-800">Sync Leads</h2>
-                    <button onClick={() => setIsSyncModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={18} /></button>
+                    <button onClick={() => setIsSyncModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={18} /></button>
                 </div>
                 <div className="space-y-4">
                      <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
@@ -402,7 +406,7 @@ export default function CRMPage() {
             <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-bold text-slate-800">Details</h2>
-                    <button onClick={() => setSelectedLead(null)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
+                    <button onClick={() => setSelectedLead(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={20} /></button>
                 </div>
 
                 <div className="space-y-4">

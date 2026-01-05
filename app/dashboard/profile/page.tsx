@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { LogOut, Save, Loader2, Building, Facebook, CheckCircle, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck, Globe, Award, Lock, Flame, Zap, Crown, Share2, Link as LinkIcon, Briefcase } from 'lucide-react'
+import { LogOut, Save, Loader2, Building, Facebook, CheckCircle, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck, Globe, Award, Lock, Flame, Zap, Crown, Share2, Link as LinkIcon, Briefcase, Headphones } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -128,6 +128,9 @@ export default function ProfilePage() {
   
   // Gamification State
   const [myBadges, setMyBadges] = useState<string[]>([])
+  
+  // Admin Contact State
+  const [adminContact, setAdminContact] = useState<{name: string | null, email: string | null, phone: string | null} | null>(null)
 
   // New Org Form State
   const [orgForm, setOrgForm] = useState({ name: '', color: '#D0E8FF', logo: '' })
@@ -138,12 +141,6 @@ export default function ProfilePage() {
 
   // --- HELPERS ---
   const isValidFacebookToken = (token: string) => token && token.startsWith('EAA')
-  
-  const getAgentInviteLink = useCallback(() => {
-    if (!org?.id) return 'N/A'
-    const domain = org.custom_domain || DEFAULT_APP_HOST
-    return `https://${domain}/?invite_org=${org.id}`
-  }, [org])
 
   // --- GAMIFICATION CHECK ---
   const checkSocialRewards = async () => {
@@ -380,6 +377,25 @@ export default function ProfilePage() {
             instagramUrl: profile.instagram_url || ''
           })
           
+          // Fetch Admin Contact for Agents
+          if (profile.role === 'agent' && profile.organization?.id) {
+              const { data: adminData } = await supabase
+                  .from('profiles')
+                  .select('business_name, email, contact_number')
+                  .eq('organization_id', profile.organization.id)
+                  .eq('role', 'admin')
+                  .limit(1)
+                  .maybeSingle()
+                  
+              if (adminData) {
+                  setAdminContact({
+                      name: adminData.business_name,
+                      email: adminData.email,
+                      phone: adminData.contact_number
+                  })
+              }
+          }
+          
           if (profile.facebook_token && isValidFacebookToken(profile.facebook_token)) {
             setIsFacebookConnected(true)
             setFacebookToken(profile.facebook_token); 
@@ -610,14 +626,15 @@ export default function ProfilePage() {
     
 
   return (
-    <div className="p-5 max-w-md mx-auto min-h-screen pb-32">
-      <h1 className="text-2xl font-bold text-slate-900 mb-6">Your Profile</h1>
+    // FIX: Changed max-w-md to max-w-7xl
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold text-slate-900">Your Profile</h1>
 
       {/* --- ACTIVE ORGANIZATION BADGE --- */}
       {org && (
-          <div className="bg-slate-900 text-white p-5 rounded-2xl flex items-center gap-4 relative overflow-hidden shadow-lg mb-6">
+          <div className="bg-slate-900 text-white p-6 rounded-2xl flex items-center gap-4 relative overflow-hidden shadow-lg">
               <div className="absolute right-[-10px] top-[-10px] opacity-10 rotate-12 pointer-events-none">
-                  <Building2 size={120}/>
+                  <Building2 size={150}/>
               </div>
               
               <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center overflow-hidden shrink-0 shadow-sm border border-slate-100 z-10">
@@ -630,17 +647,17 @@ export default function ProfilePage() {
 
               <div className="z-10">
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Active Organization</p>
-                  <h2 className="text-xl font-bold leading-tight">{org.name}</h2>
-                  <div className="flex items-center gap-1.5 mt-2">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 border ${
+                  <h2 className="text-2xl font-bold leading-tight">{org.name}</h2>
+                  <div className="flex items-center gap-1.5 mt-3">
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-md flex items-center gap-1 border ${
                           userRole === 'admin' 
                           ? 'bg-purple-500/20 text-purple-200 border-purple-500/30' 
                           : 'bg-blue-500/20 text-blue-200 border-blue-500/30'
                       }`}>
                           {userRole === 'admin' ? (
-                              <><ShieldCheck size={10} /> Organization Owner</>
+                              <><ShieldCheck size={12} /> Organization Owner</>
                           ) : (
-                              <><BadgeCheck size={10} /> Authorized Agent</>
+                              <><BadgeCheck size={12} /> Authorized Agent</>
                           )}
                       </span>
                   </div>
@@ -648,27 +665,63 @@ export default function ProfilePage() {
           </div>
       )}
 
+      {/* ADMIN CONTACT SECTION (Agent Only) */}
+      {userRole === 'agent' && adminContact && (
+        <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6">
+            <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <Headphones size={18}/> Support & Contact
+            </h3>
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                 <div className="flex items-center gap-3 mb-4">
+                     <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-600 border border-slate-300">
+                         {adminContact.name?.[0] || 'A'}
+                     </div>
+                     <div>
+                         <p className="font-bold text-sm text-slate-900">{adminContact.name || 'Admin'}</p>
+                         <p className="text-[10px] text-slate-500 font-medium">Organization Admin</p>
+                     </div>
+                 </div>
+                 
+                 <div className="flex gap-2">
+                     {adminContact.phone && (
+                         <a href={`tel:${adminContact.phone}`} className="flex-1 bg-white border border-slate-200 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-100 transition-colors text-slate-700">
+                             <Phone size={14}/> Call
+                         </a>
+                     )}
+                     {adminContact.email && (
+                         <a href={`mailto:${adminContact.email}`} className="flex-1 bg-white border border-slate-200 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-100 transition-colors text-slate-700">
+                             <Mail size={14}/> Email
+                         </a>
+                     )}
+                 </div>
+                 {!adminContact.phone && !adminContact.email && (
+                     <p className="text-[10px] text-slate-400 text-center italic">No contact details provided by admin.</p>
+                 )}
+            </div>
+        </div>
+      )}
+
       {/* 1. IDENTITY CARD */}
       <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 text-center relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-20 bg-gradient-to-r from-slate-900 to-slate-800 z-0"></div>
+          <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-slate-900 to-slate-800 z-0"></div>
           
-          <div className="relative z-10 flex flex-col items-center">
+          <div className="relative z-10 flex flex-col items-center mt-8">
               <div className="relative group cursor-pointer" onClick={() => !uploadingLogo && fileInputRef.current?.click()}>
-                  <div className="w-24 h-24 rounded-full bg-white border-4 border-white shadow-lg flex items-center justify-center overflow-hidden">
+                  <div className="w-28 h-28 rounded-full bg-white border-4 border-white shadow-xl flex items-center justify-center overflow-hidden">
                       {uploadingLogo ? <Loader2 className="animate-spin text-slate-400"/> : formData.logoUrl ? (
                           <img src={formData.logoUrl} className="w-full h-full object-contain" />
                       ) : (
-                          <User size={40} className="text-slate-300" />
+                          <User size={48} className="text-slate-300" />
                       )}
                   </div>
-                  <div className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full shadow-md group-hover:scale-110 transition-transform">
-                      <Camera size={14} />
+                  <div className="absolute bottom-0 right-0 bg-blue-600 text-white p-2.5 rounded-full shadow-md group-hover:scale-110 transition-transform">
+                      <Camera size={16} />
                   </div>
                   <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
               </div>
               
-              <h2 className="mt-3 font-bold text-lg text-slate-900">{formData.businessName || 'Your Business'}</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="mt-4 font-bold text-xl text-slate-900">{formData.businessName || 'Your Business'}</h2>
+              <p className="text-sm text-slate-500">
                   {userRole === 'admin' ? 'Owner' : 'Agent'} @ {orgName}
               </p>
           </div>
@@ -773,8 +826,6 @@ export default function ProfilePage() {
                         {domainButtonText}
                     </button>
                 </form>
-
-                
             </div>
         </div>
       )}
