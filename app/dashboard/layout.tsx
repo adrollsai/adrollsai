@@ -2,6 +2,7 @@ import BottomNav from "@/components/BottomNav";
 import OrganizationWrapper from "@/components/OrganizationWrapper";
 import TopBar from "@/components/TopBar";
 import PushManager from "@/components/PushManager"; 
+import PullToRefresh from "@/components/PullToRefresh";
 
 export default function DashboardLayout({
   children,
@@ -15,13 +16,16 @@ export default function DashboardLayout({
         {/* Fixed Top Bar */}
         <TopBar />
 
-        {/* Main Content Area 
-            - pt-16: Pushes content down to clear the TopBar
-            - pb-32: Leaves space for BottomNav
-        */}
-        <div className="pt-16 pb-32">
-            {children}
-        </div>
+        {/* Pull To Refresh Wrapper */}
+        <PullToRefresh>
+            {/* Main Content Area 
+                - pt-16: Pushes content down to clear the TopBar
+                - pb-32: Leaves space for BottomNav
+            */}
+            <div className="pt-16 pb-32">
+                {children}
+            </div>
+        </PullToRefresh>
         
         {/* Floating Utilities */}
         <PushManager />

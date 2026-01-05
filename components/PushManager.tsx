@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BellRing, Check, Loader2, Send, AlertCircle } from 'lucide-react'
+import { BellRing, Check, Loader2, Send, AlertCircle, Share } from 'lucide-react'
 import { toast } from 'sonner'
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -24,28 +24,48 @@ export default function PushManager() {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null)
   const [loading, setLoading] = useState(false)
   const [permissionState, setPermissionState] = useState<NotificationPermission>('default')
+  const [isStandalone, setIsStandalone] = useState(false)
+  const [isIOS, setIsIOS] = useState(false)
 
   useEffect(() => {
+    // 1. Detect Browser capabilities
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       setIsSupported(true)
-      
-      // CRITICAL: This line forces your custom file to load
       registerServiceWorker()
       
       if ('Notification' in window) {
           setPermissionState(Notification.permission)
       }
     }
+
+    // 2. Detect Standalone Mode (PWA installed)
+    const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
+                             (window.navigator as any).standalone === true
+    setIsStandalone(isStandaloneMode)
+
+    // 3. Detect iOS
+    const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
+    setIsIOS(isIosDevice)
+
   }, [])
 
   async function registerServiceWorker() {
     try {
-      // We manually register /custom-sw.js here
+      // Explicitly register our custom worker with root scope
       const registration = await navigator.serviceWorker.register('/custom-sw.js', {
         scope: '/',
         updateViaCache: 'none',
       })
       
+      // Ensure it's active
+      if (registration.installing) {
+        console.log('Service worker installing');
+      } else if (registration.waiting) {
+        console.log('Service worker installed');
+      } else if (registration.active) {
+        console.log('Service worker active');
+      }
+
       const sub = await registration.pushManager.getSubscription()
       setSubscription(sub)
     } catch (error) {
@@ -56,7 +76,6 @@ export default function PushManager() {
   async function subscribeToPush() {
     setLoading(true)
     try {
-      // Wait for our custom registration to be ready
       const registration = await navigator.serviceWorker.ready
       const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
       
@@ -65,6 +84,7 @@ export default function PushManager() {
         return
       }
 
+      // iOS requires explicit user interaction for this promise to resolve
       const sub = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapidKey)
@@ -73,7 +93,7 @@ export default function PushManager() {
       setSubscription(sub)
       setPermissionState('granted')
 
-      // Send to backend
+      // Sync with backend
       await fetch('/api/web-push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -88,7 +108,7 @@ export default function PushManager() {
       console.error('Failed to subscribe:', error)
       if (Notification.permission === 'denied') {
           setPermissionState('denied')
-          toast.error("Permission Denied")
+          toast.error("Permission Denied", { description: "Check browser settings." })
       } else {
           toast.error("Failed to enable notifications.")
       }
@@ -100,7 +120,7 @@ export default function PushManager() {
   async function triggerBackgroundTest() {
       setLoading(true)
       toast.info("Testing...", { 
-        description: "Close this tab NOW! Notification comes in 5 seconds." 
+        description: "Close this tab/app NOW! Notification comes in 5 seconds." 
       })
 
       try {
@@ -122,13 +142,26 @@ export default function PushManager() {
   return (
     <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2">
       
+      {/* iOS Instruction Warning: iOS Push works best in Standalone */}
+      {isIOS && !isStandalone && (
+         <div className="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-start gap-3 max-w-[280px] animate-in slide-in-from-right mb-2">
+            <Share size={20} className="shrink-0 mt-0.5 text-blue-400" />
+            <div>
+                <p className="text-xs font-bold mb-1">Install App for Notifications</p>
+                <p className="text-[10px] opacity-80 leading-relaxed">
+                    iOS requires this app to be installed to receive notifications. Tap <span className="font-bold">Share</span> then <span className="font-bold">"Add to Home Screen"</span>.
+                </p>
+            </div>
+         </div>
+      )}
+
       {permissionState === 'denied' && !subscription && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-2xl shadow-xl flex items-start gap-3 max-w-[250px] animate-in slide-in-from-right">
               <AlertCircle size={20} className="shrink-0 mt-0.5" />
               <div>
                   <p className="text-xs font-bold mb-1">Notifications Blocked</p>
                   <p className="text-[10px] leading-relaxed opacity-80">
-                      Please click the 🔒 Lock Icon in your URL bar and select "Allow" or "Reset" to enable alerts.
+                      Please check your device settings to allow notifications for AdRolls AI.
                   </p>
               </div>
           </div>
