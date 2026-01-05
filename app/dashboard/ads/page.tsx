@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Zap, Plus, X, Loader2, RefreshCw, ExternalLink, ShoppingBag, LayoutGrid, List, Building2, Wallet, BarChart2, TrendingUp, Users, MousePointer, IndianRupee } from 'lucide-react'
+import { Zap, Plus, X, Loader2, RefreshCw, BarChart2, TrendingUp, Users, MousePointer, IndianRupee } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useOrganization } from '@/components/OrganizationWrapper'
@@ -15,10 +15,10 @@ type Property = {
 }
 
 type Campaign = {
-    id: string
-    name: string
-    status: string 
-    objective: string
+  id: string
+  name: string
+  status: string 
+  objective: string | null // Safety: Allow null
 }
 
 type MarketplaceAd = {
@@ -30,20 +30,23 @@ type MarketplaceAd = {
 }
 
 type Insights = {
-    spend: number
-    impressions: number
-    clicks: number
-    cpc: number
-    ctr: number
-    leads: number
-    cost_per_lead: number
+  spend: number
+  impressions: number
+  clicks: number
+  cpc: number
+  ctr: number
+  leads: number
+  cost_per_lead: number
 }
 
 export default function AdsPage() {
   const router = useRouter()
   const supabase = createClient()
   
-  const { org, userRole } = useOrganization()
+  // FIX 1: Safe access to Organization Context to prevent crash if undefined
+  const orgData = useOrganization()
+  const org = orgData?.org
+  const userRole = orgData?.userRole
   
   const [activeTab, setActiveTab] = useState<'campaigns' | 'market'>('campaigns')
   const [loading, setLoading] = useState(true)
@@ -71,9 +74,15 @@ export default function AdsPage() {
   const fetchCampaigns = async () => {
       try {
           const res = await fetch('/api/meta-ads/campaigns');
+          if (!res.ok) throw new Error('Failed to fetch');
           const data = await res.json();
-          if (data.campaigns) setCampaigns(data.campaigns);
-      } catch (e) { console.error("Failed to load campaigns", e); }
+          if (data.campaigns && Array.isArray(data.campaigns)) {
+             setCampaigns(data.campaigns);
+          }
+      } catch (e) { 
+        console.error("Failed to load campaigns", e); 
+        // Optional: setCampaigns([]) on error to prevent map errors
+      }
   }
 
   const fetchMarketAds = async () => {
@@ -85,7 +94,7 @@ export default function AdsPage() {
   const fetchInsights = async (campaignId: string) => {
       setAnalyticsId(campaignId);
       setLoadingInsights(true);
-      setInsights(null); // Clear previous
+      setInsights(null); 
       try {
           const res = await fetch(`/api/meta-ads/insights?campaignId=${campaignId}`);
           const data = await res.json();
@@ -93,7 +102,7 @@ export default function AdsPage() {
           else throw new Error(data.error || "No data");
       } catch (e) {
           console.error(e);
-          alert("Could not load insights. Campaign might be too new.");
+          // Don't use alert() for insights errors, just log it
           setAnalyticsId(null);
       } finally {
           setLoadingInsights(false);
@@ -104,7 +113,10 @@ export default function AdsPage() {
   const handleToggleStatus = async (id: string, currentStatus: string) => {
       const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
       setTogglingId(id);
+      
+      // Optimistic Update
       setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c));
+      
       try {
           const res = await fetch('/api/meta-ads/update-status', {
               method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId: id, newStatus })
@@ -112,6 +124,7 @@ export default function AdsPage() {
           if (!res.ok) throw new Error("Failed");
       } catch (error) {
           alert(`Failed to update status.`);
+          // Revert on failure
           setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: currentStatus } : c));
       } finally { setTogglingId(null); }
   }
@@ -130,26 +143,39 @@ export default function AdsPage() {
 
   // --- INITIAL LOAD ---
   useEffect(() => {
-    const loadData = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/'); return }
+    let mounted = true;
 
-      const { data: profile } = await supabase.from('profiles').select('role, ad_credits, organization_id').eq('id', user.id).single()
-      
-      if (profile) {
-        setAdCredits(profile.ad_credits || 0)
-        await fetchCampaigns();
-        if (profile.role === 'agent') {
-            await fetchMarketAds();
-            if (profile.organization_id) {
-                const { data: props } = await supabase.from('properties').select('id, title, template_adset_id').eq('organization_id', profile.organization_id).order('created_at', { ascending: false });
-                if (props) setProperties(props);
+    const loadData = async () => {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        if (authError || !user) { 
+            router.push('/login'); // Redirect to login, not just '/'
+            return 
+        }
+
+        const { data: profile } = await supabase.from('profiles').select('role, ad_credits, organization_id').eq('id', user.id).single()
+        
+        if (profile && mounted) {
+            setAdCredits(profile.ad_credits || 0)
+            await fetchCampaigns();
+            
+            if (profile.role === 'agent') {
+                await fetchMarketAds();
+                if (profile.organization_id) {
+                    const { data: props } = await supabase.from('properties').select('id, title, template_adset_id').eq('organization_id', profile.organization_id).order('created_at', { ascending: false });
+                    if (props) setProperties(props);
+                }
             }
         }
+      } catch (err) {
+          console.error("Critical Load Error:", err)
+      } finally {
+          if (mounted) setLoading(false)
       }
-      setLoading(false)
     }
+    
     loadData()
+    return () => { mounted = false }
   }, [])
   
   // --- LAUNCH HANDLER ---
@@ -231,7 +257,10 @@ export default function AdsPage() {
                       <div className="flex justify-between items-start mb-4">
                           <div className="max-w-[65%]">
                               <h3 className="text-sm font-bold text-slate-800 truncate leading-tight">{campaign.name}</h3>
-                              <p className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">{campaign.objective.replace('OUTCOME_', '')}</p>
+                              <p className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">
+                                {/* FIX 2: Safe string replacement */}
+                                {campaign.objective ? campaign.objective.replace('OUTCOME_', '') : 'CAMPAIGN'}
+                              </p>
                           </div>
                           <div className="flex items-center gap-2">
                               {/* STATUS TOGGLE */}
@@ -245,15 +274,15 @@ export default function AdsPage() {
                       <div className="flex justify-between items-center pt-3 border-t border-slate-50">
                            <span className={`flex items-center gap-1 text-[10px] font-bold ${campaign.status === 'ACTIVE' ? 'text-green-600' : 'text-slate-400'}`}>
                              {campaign.status}
-                          </span>
+                           </span>
                           
-                          {/* ANALYTICS BUTTON */}
-                          <button 
-                            onClick={() => fetchInsights(campaign.id)}
-                            className="text-xs font-bold text-slate-600 flex items-center gap-1 hover:text-blue-600 transition-colors bg-slate-100 px-3 py-1.5 rounded-full"
-                          >
+                           {/* ANALYTICS BUTTON */}
+                           <button 
+                             onClick={() => fetchInsights(campaign.id)}
+                             className="text-xs font-bold text-slate-600 flex items-center gap-1 hover:text-blue-600 transition-colors bg-slate-100 px-3 py-1.5 rounded-full"
+                           >
                              <BarChart2 size={14} /> Analytics
-                          </button>
+                           </button>
                       </div>
                   </div>
               ))
@@ -323,9 +352,9 @@ export default function AdsPage() {
                   <select value={adForm.propertyId} onChange={(e) => setAdForm(prev => ({...prev, propertyId: e.target.value}))} className="w-full bg-slate-50 border border-slate-100 text-slate-700 text-sm rounded-xl py-3 pl-4 pr-8 outline-none">
                       <option value="">-- Choose Project --</option>
                       {properties.map(p => (
-                         <option key={p.id} value={p.id}>
-                            {p.title} {p.template_adset_id ? '' : '(Not Configured)'}
-                         </option>
+                          <option key={p.id} value={p.id}>
+                             {p.title} {p.template_adset_id ? '' : '(Not Configured)'}
+                          </option>
                       ))}
                   </select>
               </div>

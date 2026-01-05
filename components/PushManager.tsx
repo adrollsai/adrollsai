@@ -24,11 +24,11 @@ export default function PushManager() {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null)
   const [loading, setLoading] = useState(false)
   const [permissionState, setPermissionState] = useState<NotificationPermission>('default')
-  const [isStandalone, setIsStandalone] = useState(false)
   const [isIOS, setIsIOS] = useState(false)
+  const [isStandalone, setIsStandalone] = useState(false)
 
   useEffect(() => {
-    // 1. Detect Browser capabilities
+    // 1. Check Browser Support
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       setIsSupported(true)
       registerServiceWorker()
@@ -38,32 +38,28 @@ export default function PushManager() {
       }
     }
 
-    // 2. Detect Standalone Mode (PWA installed)
+    // 2. iOS & Standalone Detection
+    const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
+    setIsIOS(isIosDevice)
+    
     const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
                              (window.navigator as any).standalone === true
     setIsStandalone(isStandaloneMode)
-
-    // 3. Detect iOS
-    const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
-    setIsIOS(isIosDevice)
 
   }, [])
 
   async function registerServiceWorker() {
     try {
-      // Explicitly register our custom worker with root scope
+      // We explicitly register custom-sw.js
+      // This ensures OUR worker handles the push events, not the default workbox one
       const registration = await navigator.serviceWorker.register('/custom-sw.js', {
         scope: '/',
         updateViaCache: 'none',
       })
       
-      // Ensure it's active
-      if (registration.installing) {
-        console.log('Service worker installing');
-      } else if (registration.waiting) {
-        console.log('Service worker installed');
-      } else if (registration.active) {
-        console.log('Service worker active');
+      // Force update if one is waiting
+      if (registration.waiting) {
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' })
       }
 
       const sub = await registration.pushManager.getSubscription()
@@ -76,6 +72,7 @@ export default function PushManager() {
   async function subscribeToPush() {
     setLoading(true)
     try {
+      // Wait specifically for our custom registration
       const registration = await navigator.serviceWorker.ready
       const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
       
@@ -84,7 +81,6 @@ export default function PushManager() {
         return
       }
 
-      // iOS requires explicit user interaction for this promise to resolve
       const sub = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapidKey)
@@ -93,7 +89,7 @@ export default function PushManager() {
       setSubscription(sub)
       setPermissionState('granted')
 
-      // Sync with backend
+      // Send to backend
       await fetch('/api/web-push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -106,11 +102,12 @@ export default function PushManager() {
 
     } catch (error: any) {
       console.error('Failed to subscribe:', error)
+      
       if (Notification.permission === 'denied') {
           setPermissionState('denied')
-          toast.error("Permission Denied", { description: "Check browser settings." })
+          toast.error("Permission Denied")
       } else {
-          toast.error("Failed to enable notifications.")
+          toast.error("Failed to enable notifications. Try reloading.")
       }
     } finally {
         setLoading(false)
@@ -120,7 +117,7 @@ export default function PushManager() {
   async function triggerBackgroundTest() {
       setLoading(true)
       toast.info("Testing...", { 
-        description: "Close this tab/app NOW! Notification comes in 5 seconds." 
+        description: "Close this app/tab NOW! Notification comes in 5 seconds." 
       })
 
       try {
@@ -142,7 +139,7 @@ export default function PushManager() {
   return (
     <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2">
       
-      {/* iOS Instruction Warning: iOS Push works best in Standalone */}
+      {/* iOS Warning: User must be in App mode (Standalone) for Push to work reliably */}
       {isIOS && !isStandalone && (
          <div className="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-start gap-3 max-w-[280px] animate-in slide-in-from-right mb-2">
             <Share size={20} className="shrink-0 mt-0.5 text-blue-400" />
