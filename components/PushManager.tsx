@@ -26,11 +26,8 @@ export default function PushManager() {
   const [permissionState, setPermissionState] = useState<NotificationPermission>('default')
 
   useEffect(() => {
-    // 1. Check Browser Support
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       setIsSupported(true)
-      
-      // RESTORED: Manually register your custom SW immediately
       registerCustomSW()
       
       if ('Notification' in window) {
@@ -39,39 +36,53 @@ export default function PushManager() {
     }
   }, [])
 
-  // This function ensures YOUR file is the one controlling the PWA
   async function registerCustomSW() {
     try {
-      // Force registration of custom-sw.js
       const registration = await navigator.serviceWorker.register('/custom-sw.js', {
         scope: '/',
-        updateViaCache: 'none', // Ensure we always get the latest version
+        updateViaCache: 'none',
       })
-
-      // Wait for it to be ready
       await navigator.serviceWorker.ready
       
       const sub = await registration.pushManager.getSubscription()
       setSubscription(sub)
-      console.log("Custom SW Registered ✅")
+      
+      // --- CRITICAL FIX: Auto-Sync Ownership ---
+      // If a subscription exists, tell the backend "I am the current user of this device"
+      if (sub) {
+          syncSubscriptionWithBackend(sub)
+      }
+
     } catch (error) {
       console.error('Service Worker registration failed:', error)
     }
   }
 
+  // Helper to sync ownership silently
+  async function syncSubscriptionWithBackend(sub: PushSubscription) {
+      try {
+          await fetch('/api/web-push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscription: sub }),
+          })
+          console.log("Device ownership synced to current user.")
+      } catch (e) {
+          console.error("Failed to sync ownership", e)
+      }
+  }
+
   async function subscribeToPush() {
     setLoading(true)
     try {
-      // We wait for the registration we just triggered above
       const registration = await navigator.serviceWorker.ready
       
-      // Double check if the active worker is ours
+      // Check active worker
       if (registration.active?.scriptURL.includes('custom-sw.js')) {
-          console.log("Confirmed: Using Custom SW")
+          console.log("Using Custom SW")
       }
 
       const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-      
       if (!vapidKey) {
         toast.error("Configuration Error: Missing VAPID Key")
         return
@@ -86,11 +97,7 @@ export default function PushManager() {
       setPermissionState('granted')
 
       // Send to backend
-      await fetch('/api/web-push/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription: sub }),
-      })
+      await syncSubscriptionWithBackend(sub)
 
       toast.success("Notifications Enabled!", {
         description: "You will now receive high-value alerts."
@@ -116,7 +123,6 @@ export default function PushManager() {
       })
 
       try {
-          // Use the test API
           await fetch('/api/test-notification', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -133,7 +139,6 @@ export default function PushManager() {
 
   return (
     <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2">
-      
       {/* CASE 1: BLOCKED */}
       {permissionState === 'denied' && !subscription && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-2xl shadow-xl flex items-start gap-3 max-w-[250px] animate-in slide-in-from-right">

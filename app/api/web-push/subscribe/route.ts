@@ -12,20 +12,25 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Extract keys properly from the subscription object
-    const p256dh = subscription.keys.p256dh
-    const auth = subscription.keys.auth
-    const endpoint = subscription.endpoint
+    const { endpoint, keys } = subscription
+    
+    // 1. CLEANUP: Remove this endpoint from ANY other user (Fixes Zombie/Admin issue)
+    // This ensures if you login as Admin on a device previously used by Agent, 
+    // the device is "stolen" by Admin and Agent stops receiving notifs here.
+    await supabase
+        .from('push_subscriptions')
+        .delete()
+        .eq('endpoint', endpoint)
 
-    // Upsert to avoid duplicates
+    // 2. INSERT: Add for the current user
     const { error } = await supabase
       .from('push_subscriptions')
-      .upsert({
+      .insert({
         user_id: user.id,
         endpoint,
-        p256dh,
-        auth
-      }, { onConflict: 'user_id, endpoint' })
+        p256dh: keys.p256dh,
+        auth: keys.auth
+      })
 
     if (error) throw error
 
