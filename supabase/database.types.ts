@@ -601,8 +601,11 @@ export type Database = {
           content: string | null
           created_at: string
           excerpt: string | null
+          file_path: string | null
           id: string
           image_url: string | null
+          media_type: string | null
+          media_url: string | null
           status: string | null
           tags: string[] | null
           title: string | null
@@ -612,8 +615,11 @@ export type Database = {
           content?: string | null
           created_at?: string
           excerpt?: string | null
+          file_path?: string | null
           id?: string
           image_url?: string | null
+          media_type?: string | null
+          media_url?: string | null
           status?: string | null
           tags?: string[] | null
           title?: string | null
@@ -623,8 +629,11 @@ export type Database = {
           content?: string | null
           created_at?: string
           excerpt?: string | null
+          file_path?: string | null
           id?: string
           image_url?: string | null
+          media_type?: string | null
+          media_url?: string | null
           status?: string | null
           tags?: string[] | null
           title?: string | null

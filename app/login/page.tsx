@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Loader2, Building2, User, LayoutGrid, CheckCircle2, TestTube2, AlertCircle, Mail, Lock, ArrowRight, ShieldCheck } from 'lucide-react'
+import { Loader2, Building2, User, LayoutGrid, CheckCircle2, TestTube2, AlertCircle, Mail, Lock, ArrowRight, ShieldCheck, ArrowLeft } from 'lucide-react'
 
 type InviteInfo = {
   name: string
@@ -33,9 +33,11 @@ function LoginForm() {
     subtitle: 'Builder & Agent Marketing OS'
   })
   
+  // View State: 'login' or 'forgot_password'
+  const [view, setView] = useState<'login' | 'forgot_password'>('login')
+  
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  // REMOVED: authMode state (Login Only)
   const [message, setMessage] = useState<{ type: 'error' | 'success', text: string } | null>(null)
 
   const inviteOrg = searchParams.get('invite_org')
@@ -93,14 +95,13 @@ function LoginForm() {
     fetchInviteDetails()
   }, [inviteOrg])
 
-  // --- EMAIL LOGIN (Signup Removed) ---
+  // --- EMAIL LOGIN ---
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
 
     try {
-        // LOGIN LOGIC ONLY
         const { data: { user }, error } = await supabase.auth.signInWithPassword({
           email,
           password
@@ -124,6 +125,34 @@ function LoginForm() {
         }
 
         router.push('/dashboard')
+      
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // --- FORGOT PASSWORD ---
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setMessage(null)
+
+    try {
+      // Create the callback URL explicitly
+      const redirectTo = `${window.location.origin}/auth/callback?next=/update-password`
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo
+      })
+
+      if (error) throw error
+
+      setMessage({ 
+        type: 'success', 
+        text: 'Password reset link sent! Check your email.' 
+      })
       
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message })
@@ -209,7 +238,10 @@ function LoginForm() {
               {inviteInfo ? inviteInfo.name : branding.name}
             </h1>
             <p className="text-slate-400 text-sm mt-1 font-medium">
-              {inviteInfo ? 'Invited you to join their team' : branding.subtitle}
+              {view === 'forgot_password' 
+                ? 'Reset your password'
+                : (inviteInfo ? 'Invited you to join their team' : branding.subtitle)
+              }
             </p>
           </div>
         </div>
@@ -228,12 +260,11 @@ function LoginForm() {
              </div>
            )}
 
-           {inviteOrg && !message && (
+           {inviteOrg && !message && view === 'login' && (
              <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex gap-3 items-start">
                 <CheckCircle2 size={20} className="text-blue-600 shrink-0 mt-0.5" />
                 <div>
                   <h3 className="text-sm font-bold text-blue-900">Accept Invitation</h3>
-                  {/* Updated text: Removed 'Sign up' mention */}
                   <p className="text-xs text-blue-700 leading-relaxed mt-1">
                     Sign in to join <b>{inviteInfo?.name || 'the organization'}</b> as an Agent.
                   </p>
@@ -241,78 +272,144 @@ function LoginForm() {
              </div>
            )}
 
-           <form onSubmit={handleEmailAuth} className="space-y-4">
-             <div>
-                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Email Address</label>
-                <div className="relative mt-1">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    type="email" 
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all"
-                    placeholder="name@company.com"
-                  />
+           {view === 'login' ? (
+             // --- LOGIN VIEW ---
+             <>
+               <form onSubmit={handleEmailAuth} className="space-y-4">
+                 <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Email Address</label>
+                    <div className="relative mt-1">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                      <input 
+                        type="email" 
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all"
+                        placeholder="name@company.com"
+                      />
+                    </div>
+                 </div>
+                 
+                 <div>
+                    <div className="flex justify-between items-center mb-1 ml-1">
+                      <label className="text-xs font-bold text-slate-500 uppercase">Password</label>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setView('forgot_password')
+                          setMessage(null)
+                        }}
+                        className="text-xs font-bold text-slate-900 hover:underline"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+                    <div className="relative mt-1">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                      <input 
+                        type="password" 
+                        required
+                        minLength={6}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all"
+                        placeholder="••••••••"
+                      />
+                    </div>
+                 </div>
+
+                 <button 
+                    type="submit"
+                    disabled={loading}
+                    className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white p-4 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all active:scale-[0.98]"
+                  >
+                    {loading ? <Loader2 size={18} className="animate-spin"/> : (
+                      <>
+                        Sign In
+                        <ArrowRight size={16} />
+                      </>
+                    )}
+                  </button>
+               </form>
+
+               <div className="relative">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
+                  <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400">Or continue with</span></div>
+               </div>
+
+               <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    onClick={handleDemoLogin} 
+                    disabled={loading}
+                    className="flex items-center justify-center gap-2 bg-indigo-50 border border-indigo-100 p-4 rounded-xl text-indigo-700 font-bold text-[10px] hover:bg-indigo-100 transition-all active:scale-[0.98]"
+                  >
+                     <TestTube2 size={16} className="text-indigo-600" />
+                     Demo Agent
+                  </button>
+
+                  <button 
+                    onClick={handleDemoAdminLogin} 
+                    disabled={loading}
+                    className="flex items-center justify-center gap-2 bg-purple-50 border border-purple-100 p-4 rounded-xl text-purple-700 font-bold text-[10px] hover:bg-purple-100 transition-all active:scale-[0.98]"
+                  >
+                     <ShieldCheck size={16} className="text-purple-600" />
+                     Demo Admin
+                  </button>
+               </div>
+             </>
+           ) : (
+             // --- FORGOT PASSWORD VIEW ---
+             <>
+                <div className="text-sm text-slate-600 mb-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  Enter the email address associated with your account and we'll send you a link to reset your password.
                 </div>
-             </div>
-             
-             <div>
-                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Password</label>
-                <div className="relative mt-1">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    type="password" 
-                    required
-                    minLength={6}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all"
-                    placeholder="••••••••"
-                  />
-                </div>
-             </div>
 
-             <button 
-                type="submit"
-                disabled={loading}
-                className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white p-4 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all active:scale-[0.98]"
-              >
-                {loading ? <Loader2 size={18} className="animate-spin"/> : (
-                  <>
-                    Sign In
-                    <ArrowRight size={16} />
-                  </>
-                )}
-              </button>
-           </form>
+                <form onSubmit={handleForgotPassword} className="space-y-4">
+                 <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Email Address</label>
+                    <div className="relative mt-1">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                      <input 
+                        type="email" 
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all"
+                        placeholder="name@company.com"
+                      />
+                    </div>
+                 </div>
 
-           {/* REMOVED: Sign Up Toggle Button Section */}
+                 <button 
+                    type="submit"
+                    disabled={loading}
+                    className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white p-4 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all active:scale-[0.98]"
+                  >
+                    {loading ? <Loader2 size={18} className="animate-spin"/> : (
+                      <>
+                        Send Reset Link
+                        <ArrowRight size={16} />
+                      </>
+                    )}
+                  </button>
 
-           <div className="relative">
-              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
-              <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400">Or continue with</span></div>
-           </div>
+                  <button 
+                    type="button"
+                    disabled={loading}
+                    onClick={() => {
+                        setView('login')
+                        setMessage(null)
+                    }}
+                    className="w-full flex items-center justify-center gap-2 text-slate-500 font-bold text-xs hover:text-slate-800 transition-all"
+                  >
+                     <ArrowLeft size={14} />
+                     Back to Login
+                  </button>
+               </form>
+             </>
+           )}
 
-           <div className="grid grid-cols-2 gap-3">
-              <button 
-                onClick={handleDemoLogin} 
-                disabled={loading}
-                className="flex items-center justify-center gap-2 bg-indigo-50 border border-indigo-100 p-4 rounded-xl text-indigo-700 font-bold text-[10px] hover:bg-indigo-100 transition-all active:scale-[0.98]"
-              >
-                 <TestTube2 size={16} className="text-indigo-600" />
-                 Demo Agent
-              </button>
-
-              <button 
-                onClick={handleDemoAdminLogin} 
-                disabled={loading}
-                className="flex items-center justify-center gap-2 bg-purple-50 border border-purple-100 p-4 rounded-xl text-purple-700 font-bold text-[10px] hover:bg-purple-100 transition-all active:scale-[0.98]"
-              >
-                 <ShieldCheck size={16} className="text-purple-600" />
-                 Demo Admin
-              </button>
-           </div>
         </div>
       </div>
     </div>

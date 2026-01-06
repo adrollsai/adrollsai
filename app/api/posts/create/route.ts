@@ -27,17 +27,20 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { title, content } = body
+    const { title, content, mediaUrl, mediaType } = body
 
     if (!title || !content) {
         return NextResponse.json({ error: 'Title and Content are required' }, { status: 400 })
     }
 
     // 3. Insert Post (Using Standard Client - safe because user inserts their own post)
+    // Note: Ensure your 'posts' table has 'media_url' and 'media_type' columns
     const { data: post, error: insertError } = await supabase.from('posts').insert({
         user_id: user.id,
         title,
         content,
+        media_url: mediaUrl || null,
+        media_type: mediaType || null,
         status: 'published',
         tags: []
     }).select().single()
@@ -45,12 +48,12 @@ export async function POST(request: Request) {
     if (insertError) throw insertError
 
     // 4. Broadcast Notification (USING ADMIN CLIENT TO BYPASS RLS)
-    // We use supabaseAdmin here because we are inserting notifications for OTHER users
     if (profile.organization_id) {
+        const notificationTitle = mediaUrl ? "New Update with Media 📸" : "New Announcement 📢"
         await broadcastNotificationToOrg(
             supabaseAdmin, 
             profile.organization_id,
-            "New Announcement 📢",
+            notificationTitle,
             `${profile.business_name}: ${title}`,
             '/dashboard?tab=feed',
             user.id // Exclude the admin from receiving their own push notification

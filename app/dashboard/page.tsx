@@ -3,7 +3,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check, UserPlus, RefreshCw } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check, UserPlus, RefreshCw, Paperclip, Video } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -45,6 +45,8 @@ type FeedItem =
       id: string
       title: string
       content: string
+      media_url?: string | null
+      media_type?: 'image' | 'video' | null
       created_at: string
       tags: string[] | null 
       author?: { business_name: string, logo_url: string }
@@ -71,6 +73,52 @@ type Profile = {
     total_xp?: number
     level?: number
 }
+
+// --- UTILS: Client Side Compression ---
+const compressImage = async (file: File): Promise<File> => {
+    if (!file.type.startsWith('image/')) return file;
+    
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return resolve(file);
+
+            // Max dimensions (e.g., 1280px)
+            const MAX_SIZE = 1280;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > MAX_SIZE) {
+                    height *= MAX_SIZE / width;
+                    width = MAX_SIZE;
+                }
+            } else {
+                if (height > MAX_SIZE) {
+                    width *= MAX_SIZE / height;
+                    height = MAX_SIZE;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Compress to JPEG with 0.8 quality
+            canvas.toBlob((blob) => {
+                if (!blob) return resolve(file);
+                resolve(new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), {
+                    type: 'image/jpeg',
+                    lastModified: Date.now(),
+                }));
+            }, 'image/jpeg', 0.8); 
+        };
+        img.onerror = (err) => reject(err);
+    });
+};
 
 export default function DashboardPage() {
   const supabase = createClient()
@@ -132,8 +180,9 @@ export default function DashboardPage() {
   })
   const [creativeFile, setCreativeFile] = useState<File | null>(null)
 
-  // -- Add News Form --
+  // -- Add News Form (Updated) --
   const [newNews, setNewNews] = useState({ title: '', content: '' })
+  const [newsFile, setNewsFile] = useState<File | null>(null)
 
   // --- STREAK HELPER ---
   const getEffectiveStreak = () => {
@@ -226,6 +275,8 @@ export default function DashboardPage() {
               id: p.id,
               title: p.title,
               content: p.content,
+              media_url: p.media_url,
+              media_type: p.media_type,
               created_at: p.created_at,
               tags: p.tags,
               author: p.author
@@ -308,7 +359,12 @@ export default function DashboardPage() {
           // 1. Upload Images
           const imageUrls = []
           for (const file of projectFiles.images) {
-             const publicUrl = await uploadToR2(file, 'properties')
+             // Compress if image
+             let fileToUpload = file;
+             if (file.type.startsWith('image/')) {
+                 fileToUpload = await compressImage(file);
+             }
+             const publicUrl = await uploadToR2(fileToUpload, 'properties')
              imageUrls.push(publicUrl)
           }
 
@@ -359,7 +415,13 @@ export default function DashboardPage() {
       setIsSubmitting(true)
       try {
           // 1. Upload to R2 (Client Side)
-          const publicUrl = await uploadToR2(creativeFile, 'feed')
+          let fileToUpload = creativeFile;
+          // Apply compression if it's an image
+          if (fileToUpload.type.startsWith('image/')) {
+              fileToUpload = await compressImage(fileToUpload)
+          }
+
+          const publicUrl = await uploadToR2(fileToUpload, 'feed')
           
           // 2. Call API (Server Side) -> Inserts DB & Sends Notifications
           const res = await fetch('/api/creative/create', {
@@ -385,17 +447,37 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // UPDATED: Now calls API Route to handle Notification Broadcast
+  // UPDATED: Now supports Media Upload with Compression
   const handleAddNews = async () => {
-      if (!newNews.title || !newNews.content) return
+      if (!newNews.title || !newNews.content) {
+          alert("Title and content are required")
+          return
+      }
       setIsSubmitting(true)
       try {
+          let mediaUrl = null;
+          let mediaType = null;
+
+          if (newsFile) {
+              mediaType = newsFile.type.startsWith('video') ? 'video' : 'image';
+              
+              // Compress if image
+              let fileToUpload = newsFile;
+              if (mediaType === 'image') {
+                  fileToUpload = await compressImage(newsFile);
+              }
+
+              mediaUrl = await uploadToR2(fileToUpload, 'feed');
+          }
+
           const res = await fetch('/api/posts/create', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                   title: newNews.title,
-                  content: newNews.content
+                  content: newNews.content,
+                  mediaUrl,
+                  mediaType
               })
           })
 
@@ -405,6 +487,7 @@ export default function DashboardPage() {
           await fetchData()
           setShowAddNews(false)
           setNewNews({title: '', content: ''})
+          setNewsFile(null)
           alert("News posted & Agents notified! 📢")
       } catch(e: any) {
           alert(e.message)
@@ -713,7 +796,20 @@ export default function DashboardPage() {
                                                 <p className="text-xs text-slate-400">{new Date(item.created_at).toLocaleDateString()}</p>
                                             </div>
                                         </div>
+                                        
+                                        {/* POST CONTENT */}
                                         <p className="text-sm text-slate-700 whitespace-pre-line mb-3 leading-relaxed">{item.content}</p>
+
+                                        {/* ATTACHED MEDIA */}
+                                        {item.media_url && (
+                                            <div className="rounded-xl overflow-hidden mb-3 border border-slate-100">
+                                                {item.media_type === 'video' ? (
+                                                    <video src={item.media_url} controls className="w-full max-h-64 object-cover" />
+                                                ) : (
+                                                    <img src={item.media_url} className="w-full max-h-64 object-cover" alt="Post attachment" />
+                                                )}
+                                            </div>
+                                        )}
 
                                         {/* ADMIN ACTIONS */}
                                         {userProfile?.role === 'admin' && (
@@ -1084,20 +1180,64 @@ export default function DashboardPage() {
           </div>
       )}
 
-      {/* --- MODAL: ADD NEWS --- */}
+      {/* --- MODAL: ADD NEWS (UPDATED) --- */}
       {showAddNews && (
           <div className="fixed top-0 left-0 w-screen h-screen z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6">
+              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl">
                   <div className="flex justify-between mb-4">
                       <h2 className="font-bold text-lg">Post News</h2>
                       <button onClick={() => setShowAddNews(false)}><X size={20}/></button>
                   </div>
                   <div className="space-y-4">
-                      <input placeholder="Headline / Title" className="w-full bg-slate-50 p-3 rounded-xl text-sm font-bold" value={newNews.title} onChange={e => setNewNews({...newNews, title: e.target.value})} />
-                      <textarea placeholder="Write your announcement here..." className="w-full bg-slate-50 p-3 rounded-xl text-sm h-32" value={newNews.content} onChange={e => setNewNews({...newNews, content: e.target.value})} />
+                      <input 
+                          placeholder="Headline / Title" 
+                          className="w-full bg-slate-50 p-3 rounded-xl text-sm font-bold focus:ring-2 focus:ring-slate-900 outline-none" 
+                          value={newNews.title} 
+                          onChange={e => setNewNews({...newNews, title: e.target.value})} 
+                      />
+                      
+                      <textarea 
+                          placeholder="Write your announcement here..." 
+                          className="w-full bg-slate-50 p-3 rounded-xl text-sm h-28 focus:ring-2 focus:ring-slate-900 outline-none resize-none" 
+                          value={newNews.content} 
+                          onChange={e => setNewNews({...newNews, content: e.target.value})} 
+                      />
 
-                      <button onClick={handleAddNews} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm">
-                          {isSubmitting ? 'Publishing...' : 'Publish'}
+                      {/* File Upload for News */}
+                      <div className="relative group">
+                           <div className={`border-2 border-dashed ${newsFile ? 'border-green-300 bg-green-50' : 'border-slate-200'} p-3 rounded-xl text-center cursor-pointer transition-colors hover:border-slate-400`}>
+                               <input 
+                                  type="file" 
+                                  accept="image/*,video/*" 
+                                  className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+                                  onChange={e => e.target.files?.[0] && setNewsFile(e.target.files[0])} 
+                                />
+                               <div className="flex flex-col items-center justify-center gap-1">
+                                   {newsFile ? (
+                                       <>
+                                           <Check size={20} className="text-green-600"/>
+                                           <p className="text-xs font-bold text-green-700 truncate max-w-[200px]">{newsFile.name}</p>
+                                       </>
+                                   ) : (
+                                       <>
+                                           <Paperclip size={18} className="text-slate-400"/>
+                                           <p className="text-xs font-bold text-slate-500">Attach Image or Video (Optional)</p>
+                                       </>
+                                   )}
+                               </div>
+                           </div>
+                           {newsFile && (
+                               <button 
+                                  onClick={() => setNewsFile(null)} 
+                                  className="absolute top-2 right-2 z-20 bg-slate-200 text-slate-500 rounded-full p-1 hover:bg-red-100 hover:text-red-500"
+                               >
+                                   <X size={12}/>
+                               </button>
+                           )}
+                      </div>
+
+                      <button onClick={handleAddNews} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all active:scale-95">
+                          {isSubmitting ? <Loader2 className="animate-spin mx-auto"/> : 'Publish'}
                       </button>
                   </div>
               </div>
