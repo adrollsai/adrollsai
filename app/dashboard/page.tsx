@@ -631,12 +631,19 @@ export default function DashboardPage() {
     
     if (p.description) text += `${p.description}\n\n`
     if (p.brochure_url) text += `📄 *Brochure:* ${p.brochure_url}\n\n`
-    text += `_Shared via AdRolls AI_`
+    text += ``
 
     // Check if Web Share API is supported at all
     if (!navigator.canShare || !navigator.share) {
          alert("Sharing is not supported on this device.")
          return
+    }
+
+    // FIX: Automatically copy text to clipboard because WhatsApp often ignores the caption when sharing multiple files
+    try {
+        await navigator.clipboard.writeText(text)
+    } catch (err) {
+        console.error("Clipboard write failed", err)
     }
 
     setSharingId(p.id)
@@ -656,11 +663,14 @@ export default function DashboardPage() {
         // 3. Share using Native Share Sheet
         const shareData = {
             files: filesArray,
-            text: text
+            text: text,
+            title: p.title // Added title for better compatibility
         }
 
         if (navigator.canShare(shareData)) {
             await navigator.share(shareData)
+            // Inform user about clipboard fallback if needed (optional, keeping it clean for now)
+            // alert("Caption copied! Paste it in WhatsApp.") 
         } else {
              alert("Sharing this combination of files is not supported on this device.")
         }
