@@ -1,9 +1,7 @@
-// adrollsai/adrollsai/adrollsai-builder-app-lander-feed-notifications/app/dashboard/page.tsx
-
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check, UserPlus, RefreshCw, Paperclip, Video, MessageCircle, Pencil, Gift } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check, UserPlus, RefreshCw, Paperclip, Video, MessageCircle, Pencil, Gift, AlertTriangle, Clock } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -139,6 +137,10 @@ export default function DashboardPage() {
   const [leaderboard, setLeaderboard] = useState<Profile[]>([]) 
   const [claimedCreativeIds, setClaimedCreativeIds] = useState<Set<string>>(new Set()) 
   
+  // --- NEW: Pending Approvals & XP ---
+  const [pendingApprovals, setPendingApprovals] = useState<any[]>([])
+  const [xpSettings, setXpSettings] = useState({ site_visit: 50, closed: 500 })
+
   // Modals
   const [showAddProject, setShowAddProject] = useState(false)
   const [showAddCreative, setShowAddCreative] = useState(false)
@@ -146,7 +148,7 @@ export default function DashboardPage() {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [selectedAgent, setSelectedAgent] = useState<AgentProfile | null>(null) 
   
-  // --- NEW: Edit & Share State ---
+  // Edit & Share State
   const [showEditProject, setShowEditProject] = useState(false)
   const [editingProject, setEditingProject] = useState<Property | null>(null)
   const [sharingId, setSharingId] = useState<string | null>(null) 
@@ -168,7 +170,7 @@ export default function DashboardPage() {
   const [isUpdatingCredits, setIsUpdatingCredits] = useState(false)
   const [creditMode, setCreditMode] = useState<'add' | 'set'>('add')
 
-  // --- NEW: XP Awarding State ---
+  // XP Awarding State
   const [awardXpValue, setAwardXpValue] = useState<string>('') 
   const [isAwardingXp, setIsAwardingXp] = useState(false)
   
@@ -189,7 +191,7 @@ export default function DashboardPage() {
   })
   const [creativeFile, setCreativeFile] = useState<File | null>(null)
 
-  // -- Add News Form (Updated) --
+  // -- Add News Form --
   const [newNews, setNewNews] = useState({ title: '', content: '' })
   const [newsFile, setNewsFile] = useState<File | null>(null)
 
@@ -219,7 +221,7 @@ export default function DashboardPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
 
-      // 1. Get Profile to determine Organization
+      // 1. Get Profile
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -248,14 +250,14 @@ export default function DashboardPage() {
       
       if (props) setProperties(props)
 
-      // 3. Get Creatives Feed (FILTERED BY ORG via Property relation)
+      // 3. Get Creatives Feed
       const { data: creatives } = await supabase
         .from('master_creatives')
         .select(`*, property:properties!inner(title, organization_id)`) 
         .eq('property.organization_id', orgId)
         .order('created_at', { ascending: false })
 
-      // 4. Get News Posts (FILTERED BY ORG via Author relation)
+      // 4. Get News Posts
       const { data: posts } = await supabase
         .from('posts')
         .select(`*, author:profiles!inner(organization_id, business_name, logo_url)`)
@@ -342,6 +344,26 @@ export default function DashboardPage() {
           if (agents) {
              setAgentsList(agents as AgentProfile[])
           }
+
+          // --- NEW: FETCH PENDING APPROVALS ---
+          const { data: pendings } = await supabase
+            .from('leads')
+            .select('*, agent:profiles!inner(business_name, organization_id)')
+            .eq('status', 'Pending Approval')
+            .eq('agent.organization_id', orgId)
+          
+          if (pendings) setPendingApprovals(pendings)
+
+          // --- NEW: FETCH ORG SETTINGS ---
+          const { data: orgData } = await supabase
+             .from('organizations')
+             .select('xp_structure')
+             .eq('id', orgId)
+             .single()
+          
+          if (orgData?.xp_structure) {
+             setXpSettings(orgData.xp_structure as any)
+          }
       }
 
     } catch (error) {
@@ -353,19 +375,48 @@ export default function DashboardPage() {
 
   useEffect(() => { fetchData() }, [])
 
-  // --- NEW: Track Share Helper ---
+  // --- Track Share Helper ---
   const trackShare = async () => {
     try {
         const res = await fetch('/api/gamification/track-share', { method: 'POST' })
         const data = await res.json()
         if (data.success && userProfile) {
-            // Optimistic update for self
             setUserProfile(prev => prev ? ({ ...prev, current_streak: data.streak, total_xp: (prev.total_xp || 0) + data.xpGained }) : null)
         }
     } catch(e) { console.error("Tracking error", e) }
   }
 
   // --- HANDLERS ---
+
+  // --- NEW: Handle Approve Lead ---
+  const handleApproveLead = async (leadId: string, stage: string, approved: boolean) => {
+      if (!approved && !confirm("Reject change and revert to Qualified?")) return
+      
+      try {
+          // Calculate XP to award based on stage
+          let xpToAward = 0
+          if (stage === 'Site Visit Done') xpToAward = xpSettings.site_visit
+          if (stage === 'Closed') xpToAward = xpSettings.closed
+
+          const res = await fetch('/api/admin/approve-stage', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  leadId,
+                  approved,
+                  xpReward: approved ? xpToAward : 0
+              })
+          })
+
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error)
+
+          alert(approved ? "Request Approved & XP Awarded!" : "Request Rejected.")
+          fetchData() // Refresh list
+      } catch (e: any) {
+          alert("Action failed: " + e.message)
+      }
+  }
 
   const handleAddProject = async () => {
       if (!newProject.title || !newProject.rera || projectFiles.images.length === 0) {
@@ -427,7 +478,6 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // UPDATED: Now calls API Route to handle Notification Broadcast
   const handleAddCreative = async () => {
       if (!newCreative.property_id || !creativeFile) {
           alert("Select a project and upload a file.")
@@ -468,7 +518,6 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // UPDATED: Now supports Media Upload with Compression
   const handleAddNews = async () => {
       if (!newNews.title || !newNews.content) {
           alert("Title and content are required")
@@ -515,7 +564,6 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
-  // --- UPDATED: HANDLE CLAIM (Call trackShare) ---
   const handleClaim = async (creative: FeedItem) => {
       if (creative.kind !== 'creative') return
       
@@ -625,7 +673,7 @@ export default function DashboardPage() {
     }
   }
 
-  // --- UPDATED: WhatsApp Share Handler (Call trackShare) ---
+  // WhatsApp Share Handler
   const handleWhatsAppShare = async (p: Property, e: React.MouseEvent) => {
     e.stopPropagation()
 
@@ -645,13 +693,11 @@ export default function DashboardPage() {
     if (p.brochure_url) text += `📄 *Brochure:* ${p.brochure_url}\n\n`
     text += `_Shared via AdRolls AI_`
 
-    // Check if Web Share API is supported at all
     if (!navigator.canShare || !navigator.share) {
          alert("Sharing is not supported on this device.")
          return
     }
 
-    // FIX: Automatically copy text to clipboard because WhatsApp often ignores the caption when sharing multiple files
     try {
         await navigator.clipboard.writeText(text)
     } catch (err) {
@@ -676,7 +722,7 @@ export default function DashboardPage() {
         const shareData = {
             files: filesArray,
             text: text,
-            title: p.title // Added title for better compatibility
+            title: p.title 
         }
 
         if (navigator.canShare(shareData)) {
@@ -688,7 +734,6 @@ export default function DashboardPage() {
              alert("Sharing this combination of files is not supported on this device.")
         }
     } catch (error: any) {
-        // Handle user cancellation silently
         if (error.name === 'AbortError' || error.message.toLowerCase().includes('abort') || error.code === 20) {
             return
         }
@@ -699,7 +744,7 @@ export default function DashboardPage() {
     }
   }
   
-  // --- NEW: Edit Project Handlers ---
+  // Edit Project Handlers
   const handleEditProject = (property: Property, e: React.MouseEvent) => {
       e.stopPropagation()
       setEditingProject(property)
@@ -759,7 +804,7 @@ export default function DashboardPage() {
       }
   }
 
-  // --- NEW: Agent Management Handlers ---
+  // Agent Management Handlers
 
   const handleCreateAgent = async () => {
       if (!newAgent.name || !newAgent.email || !newAgent.password) {
@@ -800,12 +845,10 @@ export default function DashboardPage() {
       setSelectedAgent(prev => prev ? ({ ...prev, leads_count: leadsCount || 0, assets_count: assetsCount || 0 }) : null)
   }
 
-  // --- UPDATED CREDIT HANDLER (Uses API) ---
   const handleUpdateCredits = async () => {
       if (!selectedAgent || !editCreditsValue) return
       setIsUpdatingCredits(true)
       try {
-          // Call the API which handles notifications and transaction logging
           const res = await fetch('/api/admin/update-credits', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -834,7 +877,6 @@ export default function DashboardPage() {
       }
   }
 
-  // --- NEW: Handle Award XP ---
   const handleAwardXp = async () => {
       if (!selectedAgent || !awardXpValue) return
       setIsAwardingXp(true)
@@ -923,7 +965,8 @@ export default function DashboardPage() {
 
               {userProfile?.role === 'admin' && (
                   <button onClick={() => setActiveTab('agents')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'agents' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
-                      <Users size={14}/> Agents
+                      <Users size={14}/> Agents 
+                      {pendingApprovals.length > 0 && <span className="bg-red-500 text-white text-[9px] px-1.5 py-0.5 rounded-full ml-1 shadow-sm">{pendingApprovals.length}</span>}
                   </button>
               )}
           </div>
@@ -1188,8 +1231,56 @@ export default function DashboardPage() {
 
               {/* --- TAB: AGENTS (Admin Only) --- */}
               {activeTab === 'agents' && (
-                  <div className="space-y-4">
-                      <div className="flex justify-between items-center mb-2">
+                  <div className="space-y-6">
+                      
+                      {/* 1. APPROVAL QUEUE (New Feature) */}
+                      {pendingApprovals.length > 0 && (
+                          <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 shadow-sm animate-in slide-in-from-top-2">
+                              <h3 className="font-bold text-yellow-800 text-sm mb-3 flex items-center gap-2"><AlertTriangle size={16}/> Pending Approvals</h3>
+                              <div className="space-y-3">
+                                  {pendingApprovals.map(p => (
+                                      <div key={p.id} className="bg-white p-4 rounded-xl border border-yellow-100 flex items-center justify-between shadow-sm">
+                                          <div>
+                                              <p className="font-bold text-slate-900 text-sm">{p.name} <span className="text-slate-400 font-normal">({p.pipeline_stage})</span></p>
+                                              <p className="text-xs text-slate-500">Agent: <span className="font-bold">{p.agent?.business_name}</span></p>
+                                          </div>
+                                          <div className="flex gap-2">
+                                              <button 
+                                                  onClick={() => handleApproveLead(p.id, p.pipeline_stage, false)}
+                                                  className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 font-bold text-xs"
+                                              >
+                                                  Reject
+                                              </button>
+                                              <button 
+                                                  onClick={() => handleApproveLead(p.id, p.pipeline_stage, true)}
+                                                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 font-bold text-xs flex items-center gap-1 shadow-md"
+                                              >
+                                                  <Check size={14}/> Approve
+                                              </button>
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
+                      )}
+
+                      {/* 2. XP SETTINGS (New Feature) */}
+                      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                          <h3 className="font-bold text-slate-900 text-sm mb-3 flex items-center gap-2"><Sparkles size={16} className="text-purple-500"/> Reward Configuration</h3>
+                          <div className="flex gap-4">
+                                <div className="flex-1">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Site Visit XP</label>
+                                    <input type="number" className="w-full bg-slate-50 p-2 rounded-lg text-sm font-bold mt-1" value={xpSettings.site_visit} disabled /> 
+                                    <p className="text-[10px] text-slate-300 mt-1">Change in DB settings</p>
+                                </div>
+                                <div className="flex-1">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Closure XP</label>
+                                    <input type="number" className="w-full bg-slate-50 p-2 rounded-lg text-sm font-bold mt-1" value={xpSettings.closed} disabled />
+                                </div>
+                          </div>
+                      </div>
+
+                      <div className="flex justify-between items-center mb-2 mt-4">
                         <h3 className="font-bold text-slate-900 flex items-center gap-2">
                             <Users size={18}/> Managed Agents
                         </h3>

@@ -1,14 +1,15 @@
-// adrollsai/adrollsai/adrollsai-builder-app-lander-feed-notifications/app/dashboard/crm/page.tsx
+// adrollsai/adrollsai/adrollsai-builder-app-reward-system/app/dashboard/crm/page.tsx
 
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, Phone, MessageCircle, RefreshCw, Upload, Plus, CheckCircle2, X, Download, Trash2, UserPlus, Trophy, Users, BarChart3, ArrowRightLeft } from 'lucide-react'
+import { Search, Phone, MessageCircle, RefreshCw, Upload, Plus, CheckCircle2, X, Download, Trash2, UserPlus, Trophy, Users, BarChart3, ArrowRightLeft, Clock, AlertCircle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useOrganization } from '@/components/OrganizationWrapper'
 
-const STAGES = ['New', 'Qualified', 'Site Visit Done', 'Closed']
+// ADDED 'Disqualified'
+const STAGES = ['New', 'Qualified', 'Site Visit Done', 'Closed', 'Disqualified']
 const CACHE_KEY = 'crm_leads_cache'
 
 type Lead = {
@@ -21,6 +22,7 @@ type Lead = {
     source?: string
     ad_name?: string
     pipeline_stage: string
+    status?: string | null // Added status to type
     created_at: string
 }
 
@@ -85,7 +87,7 @@ export default function CRMPage() {
         setUserProfile(profile as Profile)
 
         let fetchedLeads: Lead[] = []
-        let fetchedMembers: Profile[] = [] // FIX: Local variable to hold members immediately
+        let fetchedMembers: Profile[] = []
 
         // B. Fetch Leads based on Role
         if (profile.role === 'admin') {
@@ -96,8 +98,8 @@ export default function CRMPage() {
                 .eq('organization_id', profile.organization_id)
             
             if (members) {
-                fetchedMembers = members as Profile[] // Store in local variable
-                setTeamMembers(fetchedMembers)      // Store in State (async)
+                fetchedMembers = members as Profile[]
+                setTeamMembers(fetchedMembers)
                 
                 const memberIds = members.map(m => m.id)
                 
@@ -121,7 +123,6 @@ export default function CRMPage() {
         }
 
         setLeads(fetchedLeads)
-        // FIX: Pass the local variable 'fetchedMembers' instead of the state 'teamMembers'
         calculateStats(fetchedLeads, fetchedMembers) 
 
     } catch (e) {
@@ -138,12 +139,9 @@ export default function CRMPage() {
 
   // Calculate Leaderboard
   const calculateStats = (allLeads: Lead[], members: Profile[]) => {
-      // Safety check
       if (!members || members.length === 0) return
 
       const stats: Record<string, number> = {}
-      
-      // Calculate counts
       allLeads.forEach(l => {
           if (l.user_id) {
             stats[l.user_id] = (stats[l.user_id] || 0) + 1
@@ -180,7 +178,6 @@ export default function CRMPage() {
           setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, user_id: agentId } : l))
           setSelectedLead(prev => prev ? { ...prev, user_id: agentId } : null)
           
-          // Recalculate stats immediately to reflect change in UI
           const updatedLeads = leads.map(l => l.id === selectedLead.id ? { ...l, user_id: agentId } : l)
           calculateStats(updatedLeads, teamMembers)
 
@@ -199,7 +196,6 @@ export default function CRMPage() {
     setIsAdding(true)
     
     try {
-        // Use the new Gamified API
         const res = await fetch('/api/crm/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -210,7 +206,6 @@ export default function CRMPage() {
         
         if (!res.ok) throw new Error(data.error || "Failed to add lead")
 
-        // Display Gamification Rewards
         let msg = "Lead Added Successfully!"
         if (data.xpGained) msg += `\n\n✨ +${data.xpGained} XP Earned!`
         if (data.leveledUp) msg += `\n🏆 LEVEL UP! You reached Level ${data.newLevel}!`
@@ -235,12 +230,11 @@ export default function CRMPage() {
     // Optimistic Delete
     const updatedLeads = leads.filter(l => l.id !== id)
     setLeads(updatedLeads)
-    calculateStats(updatedLeads, teamMembers) // Update stats UI
+    calculateStats(updatedLeads, teamMembers)
 
     await supabase.from('leads').delete().eq('id', id)
   }
 
-  // Sync Logic
   const openSyncModal = async () => {
      setIsSyncModalOpen(true)
      try {
@@ -257,14 +251,40 @@ export default function CRMPage() {
       setIsSyncing(false); setIsSyncModalOpen(false)
   }
 
+  // --- UPDATED: Update Stage with Logic for Approval ---
   const updateStage = async (leadId: string, newStage: string) => {
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, pipeline_stage: newStage } : l))
+    // 1. Optimistic Update (Show "Pending" if sensitive stage and user is Agent)
+    const isRestricted = newStage === 'Site Visit Done' || newStage === 'Closed'
+    const isAgent = userProfile?.role === 'agent'
+    
+    let newStatus = 'Active'
+    if (isRestricted && isAgent) {
+        newStatus = 'Pending Approval'
+    }
+
+    setLeads(prev => prev.map(l => l.id === leadId ? { 
+        ...l, 
+        pipeline_stage: newStage,
+        status: newStatus 
+    } : l))
+    
     setSelectedLead(null)
-    await fetch('/api/crm/update-stage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId, newStage })
-    })
+    
+    // 2. API Call
+    try {
+        await fetch('/api/crm/update-stage', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ leadId, newStage })
+        })
+
+        if (isRestricted && isAgent) {
+            alert(`Request submitted for ${newStage}! Admin approval pending.`)
+        }
+    } catch(e) {
+        alert("Failed to update stage")
+        fetchCRMData() // Revert
+    }
   }
 
   // Filter Logic
@@ -354,15 +374,24 @@ export default function CRMPage() {
         ))}
       </div>
 
-      {/* Lead List - Grid Layout for larger screens */}
+      {/* Lead List */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 min-h-[50vh] content-start">
         {filteredLeads.map(lead => (
             <div key={lead.id} onClick={() => setSelectedLead(lead)} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:border-blue-100 hover:shadow-md active:scale-[0.99] transition-all cursor-pointer relative group flex flex-col justify-between h-full">
+                
+                {/* PENDING APPROVAL BADGE */}
+                {lead.status === 'Pending Approval' && (
+                    <div className="absolute top-2 right-2 bg-yellow-50 text-yellow-700 text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 border border-yellow-200 z-10">
+                        <Clock size={10} /> Pending Approval
+                    </div>
+                )}
+                
                 <div className="flex justify-between items-start mb-4">
                     <div>
                         <h3 className="font-bold text-slate-800 text-base">{lead.name || 'Unknown Lead'}</h3>
                         <p className="text-sm text-slate-400 mt-0.5 font-medium">{lead.phone}</p>
                     </div>
+                    {/* Delete only if not pending or if Admin */}
                     <div className="flex gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2 bg-red-50 text-red-400 rounded-full hover:bg-red-100 transition-colors"><Trash2 size={16} /></button>
                     </div>
@@ -454,8 +483,13 @@ export default function CRMPage() {
                     </div>
 
                     <div className="space-y-4">
-                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                            <h3 className="font-bold text-lg text-slate-900">{selectedLead.name}</h3>
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 relative overflow-hidden">
+                             {selectedLead.status === 'Pending Approval' && (
+                                <div className="absolute top-0 right-0 left-0 bg-yellow-100 text-yellow-800 text-[10px] font-bold text-center py-1 border-b border-yellow-200">
+                                    Pending Admin Approval
+                                </div>
+                             )}
+                            <h3 className="font-bold text-lg text-slate-900 mt-2">{selectedLead.name}</h3>
                             <p className="text-sm text-slate-500">{selectedLead.phone}</p>
                             
                             {/* ADMIN ONLY: REASSIGN */}
@@ -478,13 +512,22 @@ export default function CRMPage() {
 
                         <div>
                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-2">Stage</label>
-                            <div className="grid grid-cols-2 gap-2">
-                                {STAGES.map(stage => (
-                                    <button key={stage} onClick={() => updateStage(selectedLead.id, stage)} className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${selectedLead.pipeline_stage === stage ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}>
-                                        {stage}
-                                    </button>
-                                ))}
-                            </div>
+                            
+                            {selectedLead.status === 'Pending Approval' ? (
+                                <div className="bg-yellow-50 border border-yellow-100 p-4 rounded-xl text-center">
+                                    <AlertCircle className="mx-auto text-yellow-500 mb-2" size={24}/>
+                                    <p className="text-sm font-bold text-slate-800">Waiting for Approval</p>
+                                    <p className="text-xs text-slate-500">Stage change to '{selectedLead.pipeline_stage}' is pending admin review.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-2">
+                                    {STAGES.map(stage => (
+                                        <button key={stage} onClick={() => updateStage(selectedLead.id, stage)} className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${selectedLead.pipeline_stage === stage ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}>
+                                            {stage}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

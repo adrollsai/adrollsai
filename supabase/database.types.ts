@@ -571,6 +571,7 @@ export type Database = {
           master_campaign_id: string | null
           master_logo_url: string | null
           name: string
+          xp_structure: Json | null
         }
         Insert: {
           ad_subsidy_percentage?: number | null
@@ -582,6 +583,7 @@ export type Database = {
           master_campaign_id?: string | null
           master_logo_url?: string | null
           name: string
+          xp_structure?: Json | null
         }
         Update: {
           ad_subsidy_percentage?: number | null
@@ -593,6 +595,7 @@ export type Database = {
           master_campaign_id?: string | null
           master_logo_url?: string | null
           name?: string
+          xp_structure?: Json | null
         }
         Relationships: []
       }
