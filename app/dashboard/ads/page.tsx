@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Zap, Plus, X, Loader2, RefreshCw, BarChart2, TrendingUp, Users, MousePointer, IndianRupee } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -59,6 +60,7 @@ export default function AdsPage() {
   const [analyticsId, setAnalyticsId] = useState<string | null>(null)
   const [insights, setInsights] = useState<Insights | null>(null)
   const [loadingInsights, setLoadingInsights] = useState(false)
+  const [mounted, setMounted] = useState(false)
   
   const [adCredits, setAdCredits] = useState<number>(0)
   const [campaigns, setCampaigns] = useState<Campaign[]>([]) 
@@ -143,6 +145,7 @@ export default function AdsPage() {
 
   // --- INITIAL LOAD ---
   useEffect(() => {
+    setMounted(true)
     let mounted = true;
 
     const loadData = async () => {
@@ -213,6 +216,12 @@ export default function AdsPage() {
     } finally {
       setIsSubmitting(false)
     }
+  }
+  
+  // Portal Helper
+  const ModalPortal = ({ children }: { children: React.ReactNode }) => {
+    if (!mounted) return null
+    return createPortal(children, document.body)
   }
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-slate-400"/></div>
@@ -291,7 +300,8 @@ export default function AdsPage() {
       
       {/* ANALYTICS MODAL */}
       {analyticsId && (
-          <div className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <ModalPortal>
+          <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
               <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl relative">
                   <button onClick={() => setAnalyticsId(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-800"><X size={20} /></button>
                   
@@ -334,64 +344,67 @@ export default function AdsPage() {
                   )}
               </div>
           </div>
+        </ModalPortal>
       )}
 
       {/* LAUNCH MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">New Campaign</h2>
-              <button onClick={() => setIsModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
-            </div>
-            
-            <div className="space-y-6">
-              {/* Project Select */}
-              <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Select Project</label>
-                  <select value={adForm.propertyId} onChange={(e) => setAdForm(prev => ({...prev, propertyId: e.target.value}))} className="w-full bg-slate-50 border border-slate-100 text-slate-700 text-sm rounded-xl py-3 pl-4 pr-8 outline-none">
-                      <option value="">-- Choose Project --</option>
-                      {properties.map(p => (
-                          <option key={p.id} value={p.id}>
-                             {p.title} {p.template_adset_id ? '' : '(Not Configured)'}
-                          </option>
-                      ))}
-                  </select>
-              </div>
+        <ModalPortal>
+            <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
+                <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-slate-800">New Campaign</h2>
+                <button onClick={() => setIsModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
+                </div>
+                
+                <div className="space-y-6">
+                {/* Project Select */}
+                <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Select Project</label>
+                    <select value={adForm.propertyId} onChange={(e) => setAdForm(prev => ({...prev, propertyId: e.target.value}))} className="w-full bg-slate-50 border border-slate-100 text-slate-700 text-sm rounded-xl py-3 pl-4 pr-8 outline-none">
+                        <option value="">-- Choose Project --</option>
+                        {properties.map(p => (
+                            <option key={p.id} value={p.id}>
+                                {p.title} {p.template_adset_id ? '' : '(Not Configured)'}
+                            </option>
+                        ))}
+                    </select>
+                </div>
 
-              {/* Budget Input */}
-              <div>
-                  <div className="flex justify-between">
-                     <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Lifetime Budget (30 Days)</label>
-                     <span className={`text-[10px] font-bold ${adCredits < adForm.lifetimeBudgetINR ? 'text-red-500' : 'text-green-600'}`}>
-                        Credits: ₹{adCredits}
-                     </span>
-                  </div>
-                  <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span>
-                      <input 
-                        type="number" 
-                        min="3000" 
-                        step="100" 
-                        value={adForm.lifetimeBudgetINR} 
-                        onChange={(e) => setAdForm(prev => ({...prev, lifetimeBudgetINR: parseInt(e.target.value) || 0}))} 
-                        className="w-full bg-slate-50 py-3 pl-6 pr-4 rounded-xl text-slate-800 text-sm outline-none font-bold" 
-                      />
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-1 ml-1">Minimum ₹3,000 required for 30 days.</p>
-              </div>
+                {/* Budget Input */}
+                <div>
+                    <div className="flex justify-between">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Lifetime Budget (30 Days)</label>
+                        <span className={`text-[10px] font-bold ${adCredits < adForm.lifetimeBudgetINR ? 'text-red-500' : 'text-green-600'}`}>
+                            Credits: ₹{adCredits}
+                        </span>
+                    </div>
+                    <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span>
+                        <input 
+                            type="number" 
+                            min="3000" 
+                            step="100" 
+                            value={adForm.lifetimeBudgetINR} 
+                            onChange={(e) => setAdForm(prev => ({...prev, lifetimeBudgetINR: parseInt(e.target.value) || 0}))} 
+                            className="w-full bg-slate-50 py-3 pl-6 pr-4 rounded-xl text-slate-800 text-sm outline-none font-bold" 
+                        />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1 ml-1">Minimum ₹3,000 required for 30 days.</p>
+                </div>
 
-              <button 
-                onClick={handleLaunchCampaign} 
-                disabled={isSubmitting || !adForm.propertyId} 
-                className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 disabled:opacity-70"
-              >
-                  {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
-                  {isSubmitting ? 'Launching...' : `Launch Campaign (₹${adForm.lifetimeBudgetINR})`}
-              </button>
+                <button 
+                    onClick={handleLaunchCampaign} 
+                    disabled={isSubmitting || !adForm.propertyId} 
+                    className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 disabled:opacity-70"
+                >
+                    {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
+                    {isSubmitting ? 'Launching...' : `Launch Campaign (₹${adForm.lifetimeBudgetINR})`}
+                </button>
+                </div>
             </div>
-          </div>
-        </div>
+            </div>
+        </ModalPortal>
       )}
     </div>
   )

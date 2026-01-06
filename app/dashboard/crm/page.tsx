@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Search, Phone, MessageCircle, RefreshCw, Upload, Plus, CheckCircle2, X, Download, Trash2, UserPlus, Trophy, Users, BarChart3, ArrowRightLeft } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useOrganization } from '@/components/OrganizationWrapper'
@@ -56,6 +57,7 @@ export default function CRMPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [isAssigning, setIsAssigning] = useState(false) 
+  const [mounted, setMounted] = useState(false)
 
   // Sync Logic
   const [forms, setForms] = useState<any[]>([])
@@ -123,7 +125,10 @@ export default function CRMPage() {
     }
   }
 
-  useEffect(() => { fetchCRMData() }, [])
+  useEffect(() => { 
+    fetchCRMData() 
+    setMounted(true)
+  }, [])
 
   // Calculate Leaderboard
   const calculateStats = (allLeads: Lead[], members: Profile[]) => {
@@ -245,6 +250,12 @@ export default function CRMPage() {
       return matchStage && matchSearch && matchAgent
   })
 
+  // Helper for Portals
+  const ModalPortal = ({ children }: { children: React.ReactNode }) => {
+    if (!mounted) return null
+    return createPortal(children, document.body)
+  }
+
   return (
     // FIX: Changed max-w-md to max-w-7xl
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
@@ -362,24 +373,27 @@ export default function CRMPage() {
 
       {/* --- ADD MODAL --- */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-            <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><UserPlus size={20}/> Add Lead</h2>
-                    <button onClick={() => setIsAddModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={18} /></button>
-                </div>
-                <div className="space-y-3">
-                    <input type="text" value={newLead.name} onChange={e => setNewLead({...newLead, name: e.target.value})} className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none" placeholder="Name" />
-                    <input type="tel" value={newLead.phone} onChange={e => setNewLead({...newLead, phone: e.target.value})} className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none" placeholder="Phone" />
-                    <button onClick={handleAddLead} disabled={isAdding} className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-bold mt-2">{isAdding ? 'Saving...' : 'Save Lead'}</button>
+        <ModalPortal>
+            <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+                <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><UserPlus size={20}/> Add Lead</h2>
+                        <button onClick={() => setIsAddModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={18} /></button>
+                    </div>
+                    <div className="space-y-3">
+                        <input type="text" value={newLead.name} onChange={e => setNewLead({...newLead, name: e.target.value})} className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none" placeholder="Name" />
+                        <input type="tel" value={newLead.phone} onChange={e => setNewLead({...newLead, phone: e.target.value})} className="w-full bg-slate-50 p-3 rounded-xl text-sm outline-none" placeholder="Phone" />
+                        <button onClick={handleAddLead} disabled={isAdding} className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-bold mt-2">{isAdding ? 'Saving...' : 'Save Lead'}</button>
+                    </div>
                 </div>
             </div>
-        </div>
+        </ModalPortal>
       )}
       
       {/* --- SYNC MODAL --- */}
       {isSyncModalOpen && (
-          <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+        <ModalPortal>
+          <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
             <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-lg font-bold text-slate-800">Sync Leads</h2>
@@ -398,53 +412,56 @@ export default function CRMPage() {
                 </div>
             </div>
           </div>
+        </ModalPortal>
       )}
 
       {/* --- VIEW/EDIT MODAL --- */}
       {selectedLead && (
-        <div className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in">
-            <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold text-slate-800">Details</h2>
-                    <button onClick={() => setSelectedLead(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={20} /></button>
-                </div>
-
-                <div className="space-y-4">
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                        <h3 className="font-bold text-lg text-slate-900">{selectedLead.name}</h3>
-                        <p className="text-sm text-slate-500">{selectedLead.phone}</p>
-                        
-                        {/* ADMIN ONLY: REASSIGN */}
-                        {userProfile?.role === 'admin' && (
-                             <div className="mt-3 pt-3 border-t border-slate-200">
-                                 <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 flex items-center gap-1"><ArrowRightLeft size={10}/> Assigned To</label>
-                                 <select 
-                                    className="w-full bg-white p-2 rounded-lg text-xs font-bold border border-slate-200 outline-none"
-                                    value={selectedLead.user_id}
-                                    onChange={(e) => handleAssignLead(e.target.value)}
-                                    disabled={isAssigning}
-                                 >
-                                     {teamMembers.map(m => (
-                                         <option key={m.id} value={m.id}>{m.business_name}</option>
-                                     ))}
-                                 </select>
-                             </div>
-                        )}
+        <ModalPortal>
+            <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in">
+                <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-xl font-bold text-slate-800">Details</h2>
+                        <button onClick={() => setSelectedLead(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={20} /></button>
                     </div>
 
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-2">Stage</label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {STAGES.map(stage => (
-                                <button key={stage} onClick={() => updateStage(selectedLead.id, stage)} className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${selectedLead.pipeline_stage === stage ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}>
-                                    {stage}
-                                </button>
-                            ))}
+                    <div className="space-y-4">
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                            <h3 className="font-bold text-lg text-slate-900">{selectedLead.name}</h3>
+                            <p className="text-sm text-slate-500">{selectedLead.phone}</p>
+                            
+                            {/* ADMIN ONLY: REASSIGN */}
+                            {userProfile?.role === 'admin' && (
+                                <div className="mt-3 pt-3 border-t border-slate-200">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 flex items-center gap-1"><ArrowRightLeft size={10}/> Assigned To</label>
+                                    <select 
+                                        className="w-full bg-white p-2 rounded-lg text-xs font-bold border border-slate-200 outline-none"
+                                        value={selectedLead.user_id}
+                                        onChange={(e) => handleAssignLead(e.target.value)}
+                                        disabled={isAssigning}
+                                    >
+                                        {teamMembers.map(m => (
+                                            <option key={m.id} value={m.id}>{m.business_name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-2">Stage</label>
+                            <div className="grid grid-cols-2 gap-2">
+                                {STAGES.map(stage => (
+                                    <button key={stage} onClick={() => updateStage(selectedLead.id, stage)} className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${selectedLead.pipeline_stage === stage ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}>
+                                        {stage}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
+        </ModalPortal>
       )}
 
     </div>

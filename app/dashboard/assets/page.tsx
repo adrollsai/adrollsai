@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Linkedin, Youtube, Film, MessageCircle, Share2, Rocket } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useOrganization } from '@/components/OrganizationWrapper'
@@ -37,12 +38,14 @@ export default function AssetsPage() {
   // Modal State
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
   const [caption, setCaption] = useState('')
+  const [mounted, setMounted] = useState(false)
   
   // Tracking which platform is currently posting (null, 'universal', 'facebook', 'instagram')
   const [postingState, setPostingState] = useState<string | null>(null)
 
   // 1. Fetch Assets
   useEffect(() => {
+    setMounted(true)
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
@@ -187,6 +190,12 @@ export default function AssetsPage() {
 
   const filteredAssets = activeFilter === 'All' ? assets : assets.filter(asset => asset.type === activeFilter)
 
+  // Portal Helper
+  const ModalPortal = ({ children }: { children: React.ReactNode }) => {
+    if (!mounted) return null
+    return createPortal(children, document.body)
+  }
+
   return (
     // FIX: Changed max-w-md to max-w-7xl
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
@@ -230,72 +239,74 @@ export default function AssetsPage() {
       )}
 
       {selectedAsset && (
-        <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-[2rem] p-5 shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-slate-800">Share Asset</h2>
-              <button onClick={() => setSelectedAsset(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={20}/></button>
+        <ModalPortal>
+            <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-sm rounded-[2rem] p-5 shadow-2xl animate-in zoom-in-95 duration-200">
+                <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-bold text-slate-800">Share Asset</h2>
+                <button onClick={() => setSelectedAsset(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={20}/></button>
+                </div>
+
+                <div className="rounded-2xl overflow-hidden bg-slate-100 mb-4 border border-slate-100 relative shadow-inner">
+                {selectedAsset.type === 'video' ? (
+                    <video src={selectedAsset.url} controls className="w-full max-h-[300px] object-contain bg-black" />
+                ) : (
+                    <img src={selectedAsset.url} className="w-full max-h-[300px] object-contain" />
+                )}
+                </div>
+
+                <div className="mb-4">
+                <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Caption</label>
+                <textarea value={caption} onChange={(e) => setCaption(e.target.value)} className="w-full bg-slate-50 p-3 rounded-xl text-xs focus:ring-2 focus:ring-blue-100 outline-none resize-none border border-slate-100" rows={3} />
+                </div>
+
+                <div className="flex flex-col gap-3">
+                {/* UNIVERSAL POST BUTTON */}
+                <button 
+                    onClick={() => handlePost(['facebook', 'instagram'], 'universal')}
+                    disabled={!!postingState} 
+                    className="w-full bg-gradient-to-r from-blue-600 to-pink-600 text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform disabled:opacity-70"
+                >
+                    {postingState === 'universal' ? <Loader2 size={18} className="animate-spin" /> : <Rocket size={18} />} 
+                    {postingState === 'universal' ? 'Posting...' : 'Universal Post (FB + Insta)'}
+                </button>
+
+                {/* WHATSAPP / NATIVE SHARE BUTTON */}
+                <button onClick={handleNativeShare} className="w-full bg-[#25D366] text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-100 active:scale-95 transition-transform">
+                    <MessageCircle size={18} /> Share on WhatsApp
+                </button>
+
+                {/* Standalone Actions */}
+                <div className="flex gap-2">
+                    {/* FACEBOOK ONLY POST */}
+                    <button 
+                        onClick={() => handlePost(['facebook'], 'facebook')} 
+                        disabled={!!postingState}
+                        className="flex-1 bg-blue-600 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform disabled:opacity-70" 
+                        title="Post to Facebook Only"
+                    >
+                        {postingState === 'facebook' ? <Loader2 size={18} className="animate-spin" /> : <Facebook size={18} />}
+                    </button>
+                    
+                    {/* INSTAGRAM ONLY POST */}
+                    <button 
+                        onClick={() => handlePost(['instagram'], 'instagram')} 
+                        disabled={!!postingState}
+                        className="flex-1 bg-pink-600 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform disabled:opacity-70" 
+                        title="Post to Instagram Only"
+                    >
+                        {postingState === 'instagram' ? <Loader2 size={18} className="animate-spin" /> : <Instagram size={18} />}
+                    </button>
+                    
+                    {/* DOWNLOAD */}
+                    <button onClick={handleDownload} className="flex-1 bg-slate-800 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform" title="Download">
+                        <Download size={18} />
+                    </button>
+                </div>
+                </div>
             </div>
-
-            <div className="rounded-2xl overflow-hidden bg-slate-100 mb-4 border border-slate-100 relative shadow-inner">
-               {selectedAsset.type === 'video' ? (
-                   <video src={selectedAsset.url} controls className="w-full max-h-[300px] object-contain bg-black" />
-               ) : (
-                   <img src={selectedAsset.url} className="w-full max-h-[300px] object-contain" />
-               )}
             </div>
-
-            <div className="mb-4">
-              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Caption</label>
-              <textarea value={caption} onChange={(e) => setCaption(e.target.value)} className="w-full bg-slate-50 p-3 rounded-xl text-xs focus:ring-2 focus:ring-blue-100 outline-none resize-none border border-slate-100" rows={3} />
-            </div>
-
-            <div className="flex flex-col gap-3">
-               {/* UNIVERSAL POST BUTTON */}
-               <button 
-                 onClick={() => handlePost(['facebook', 'instagram'], 'universal')}
-                 disabled={!!postingState} 
-                 className="w-full bg-gradient-to-r from-blue-600 to-pink-600 text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform disabled:opacity-70"
-               >
-                 {postingState === 'universal' ? <Loader2 size={18} className="animate-spin" /> : <Rocket size={18} />} 
-                 {postingState === 'universal' ? 'Posting...' : 'Universal Post (FB + Insta)'}
-               </button>
-
-               {/* WHATSAPP / NATIVE SHARE BUTTON */}
-               <button onClick={handleNativeShare} className="w-full bg-[#25D366] text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-100 active:scale-95 transition-transform">
-                 <MessageCircle size={18} /> Share on WhatsApp
-               </button>
-
-               {/* Standalone Actions */}
-               <div className="flex gap-2">
-                 {/* FACEBOOK ONLY POST */}
-                 <button 
-                    onClick={() => handlePost(['facebook'], 'facebook')} 
-                    disabled={!!postingState}
-                    className="flex-1 bg-blue-600 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform disabled:opacity-70" 
-                    title="Post to Facebook Only"
-                 >
-                    {postingState === 'facebook' ? <Loader2 size={18} className="animate-spin" /> : <Facebook size={18} />}
-                 </button>
-                 
-                 {/* INSTAGRAM ONLY POST */}
-                 <button 
-                    onClick={() => handlePost(['instagram'], 'instagram')} 
-                    disabled={!!postingState}
-                    className="flex-1 bg-pink-600 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform disabled:opacity-70" 
-                    title="Post to Instagram Only"
-                 >
-                    {postingState === 'instagram' ? <Loader2 size={18} className="animate-spin" /> : <Instagram size={18} />}
-                 </button>
-                 
-                 {/* DOWNLOAD */}
-                 <button onClick={handleDownload} className="flex-1 bg-slate-800 text-white py-3 rounded-xl flex justify-center shadow-sm active:scale-95 transition-transform" title="Download">
-                    <Download size={18} />
-                 </button>
-               </div>
-            </div>
-          </div>
-        </div>
+        </ModalPortal>
       )}
     </div>
   )
