@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Linkedin, Youtube, Film, MessageCircle, Share2, Rocket } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, X, Loader2, Film, MessageCircle, Rocket } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useOrganization } from '@/components/OrganizationWrapper'
 
@@ -96,10 +96,11 @@ export default function AssetsPage() {
   // 3. TRACKING FUNCTION
   const trackShare = async (platform: string) => {
       if (!selectedAsset) return
-      await supabase.rpc('increment_share_stat', { 
+      // We don't await this in UI handlers to prevent blocking user actions
+      supabase.rpc('increment_share_stat', { 
           asset_id: selectedAsset.id, 
           platform: platform 
-      })
+      }).then(() => console.log(`Tracked ${platform}`))
   }
 
   // 4. POST HANDLER (Universal & Individual)
@@ -155,27 +156,25 @@ export default function AssetsPage() {
     }
   }
 
-  // 5. Native Share / WhatsApp
-  const handleNativeShare = async () => {
+  // 5. WhatsApp Share (Direct Link + Clipboard)
+  const handleWhatsAppShare = () => {
       if (!selectedAsset) return
-      await trackShare('whatsapp') 
+      
+      // Fire tracking (don't await to keep UI snappy)
+      trackShare('whatsapp') 
 
-      if (navigator.share) {
-          try {
-              const response = await fetch(selectedAsset.url)
-              const blob = await response.blob()
-              
-              const fileType = selectedAsset.url.endsWith('.jpg') ? 'image/jpeg' : blob.type
-              const fileName = selectedAsset.url.endsWith('.jpg') ? 'property.jpg' : 'property.png'
+      // Construct content
+      const shareText = `${caption}\n\n${selectedAsset.url}`
 
-              const file = new File([blob], fileName, { type: fileType })
-              await navigator.share({ title: "Property", text: caption, files: [file] })
-          } catch (e) {
-              window.open(`https://wa.me/?text=${encodeURIComponent(caption + " " + selectedAsset.url)}`, '_blank')
-          }
-      } else {
-          window.open(`https://wa.me/?text=${encodeURIComponent(caption + " " + selectedAsset.url)}`, '_blank')
-      }
+      // 1. Copy to Clipboard (as requested)
+      // This allows users to paste the text if they choose a different method later
+      navigator.clipboard.writeText(shareText).catch(err => console.error("Clipboard write failed", err))
+
+      // 2. Open WhatsApp Direct Link
+      // This avoids the 'popup blocked' issue because it runs synchronously in the click handler
+      // It will open the WhatsApp App on mobile or Web on desktop
+      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`
+      window.open(whatsappUrl, '_blank')
   }
 
   const handleDownload = async () => {
@@ -197,10 +196,9 @@ export default function AssetsPage() {
   }
 
   return (
-    // FIX: Changed max-w-md to max-w-7xl
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       
-      {/* HEADER - Removed Logo */}
+      {/* HEADER */}
       <div className="flex justify-between items-end">
         <div>
             <h1 className="text-2xl font-bold text-slate-900">My Assets</h1>
@@ -271,8 +269,8 @@ export default function AssetsPage() {
                     {postingState === 'universal' ? 'Posting...' : 'Universal Post (FB + Insta)'}
                 </button>
 
-                {/* WHATSAPP / NATIVE SHARE BUTTON */}
-                <button onClick={handleNativeShare} className="w-full bg-[#25D366] text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-100 active:scale-95 transition-transform">
+                {/* WHATSAPP / DIRECT SHARE BUTTON */}
+                <button onClick={handleWhatsAppShare} className="w-full bg-[#25D366] text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-100 active:scale-95 transition-transform">
                     <MessageCircle size={18} /> Share on WhatsApp
                 </button>
 

@@ -14,11 +14,13 @@ export default function DashboardLayout({
     <OrganizationWrapper>
       <div className="min-h-screen bg-slate-50 relative"> 
         
-        {/* Fixed Top Bar */}
-        <TopBar />
-
-        {/* Pull To Refresh Wrapper */}
+        {/* Pull To Refresh Wrapper 
+            Now wraps the TopBar so it pulls down with the rest of the page 
+        */}
         <PullToRefresh>
+            {/* Fixed Top Bar (Behaves as fixed when idle, moves when pulled) */}
+            <TopBar />
+
             {/* Main Content Area 
                 - pt-16: Pushes content down to clear the TopBar
                 - pb-32: Leaves space for BottomNav

@@ -5,15 +5,18 @@ import { Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 export default function PullToRefresh({ children }: { children: React.ReactNode }) {
-  const [startPoint, setStartPoint] = useState(0)
   const [pullChange, setPullChange] = useState(0)
   const [loading, setLoading] = useState(false)
-  const refreshThreshold = 150
+  const [isDragging, setIsDragging] = useState(false)
+  
+  // Use Refs for synchronous tracking during gestures to avoid render lag
+  const startPointRef = useRef(0)
+  const pullChangeRef = useRef(0)
+  
   const router = useRouter()
 
   useEffect(() => {
-    // Prevent default pull-to-refresh on mobile specifically to use ours
-    // functionality might vary by browser version
+    // Prevent default browser refresh to allow our custom implementation
     document.body.style.overscrollBehavior = 'contain'
     return () => {
       document.body.style.overscrollBehavior = 'auto'
@@ -22,54 +25,85 @@ export default function PullToRefresh({ children }: { children: React.ReactNode 
 
   const pullStart = (e: React.TouchEvent) => {
     const { screenY } = e.targetTouches[0]
-    setStartPoint(screenY)
+    startPointRef.current = screenY
+    setIsDragging(true) // Disable transition for 1:1 movement
   }
 
   const pull = (e: React.TouchEvent) => {
     const touch = e.targetTouches[0]
     const { screenY } = touch
     
-    // Only enable pull if we are at the top of the page
-    if (window.scrollY === 0 && !loading) {
-      const pullLength = screenY - startPoint
-      if (pullLength > 0) {
-        // Resistance effect
-        setPullChange(pullLength * 0.4) 
-      }
+    // SEAMLESS LOGIC:
+    // If the user isn't at the top yet, keep resetting the start point.
+    // This prevents the page from "jumping" if they scroll up and immediately pull.
+    if (window.scrollY > 0) {
+        startPointRef.current = screenY
+        return
+    }
+
+    // We are at the top (or overscrolled)
+    const pullLength = screenY - startPointRef.current
+    
+    // Only allow pulling down, and stop if already loading
+    if (pullLength > 0 && !loading) {
+      // Apply resistance (dampening) to make it feel physical
+      const val = pullLength * 0.45 
+      
+      setPullChange(val)
+      pullChangeRef.current = val
+    } else {
+        // If pushing up (negative) while at top, keep it at 0
+        setPullChange(0)
+        pullChangeRef.current = 0
     }
   }
 
   const endPull = () => {
-    if (pullChange > 60) { // Trigger threshold
+    setIsDragging(false) // Re-enable transition for smooth snap back
+    
+    if (pullChangeRef.current > 70) { // Threshold to trigger refresh
       setLoading(true)
-      setPullChange(80) // Snap to loading position
+      setPullChange(80) // Snap to a visible loading height
       
       // Perform Refresh
       setTimeout(() => {
         window.location.reload()
-      }, 1000)
+      }, 800)
     } else {
       setPullChange(0)
     }
+    
+    // Reset refs
+    startPointRef.current = 0
+    pullChangeRef.current = 0
   }
 
   return (
     <div 
-      className="min-h-screen transition-transform duration-200 ease-out"
+      className="min-h-screen w-full relative"
       onTouchStart={pullStart}
       onTouchMove={pull}
       onTouchEnd={endPull}
       style={{ 
-        transform: `translateY(${pullChange}px)` 
+        // CRITICAL: Use 'none' when 0. This allows fixed children (like TopBar) 
+        // to attach to the viewport normally. When > 0, they attach to this div.
+        transform: pullChange > 0 ? `translateY(${pullChange}px)` : 'none',
+        
+        // CRITICAL: Remove transition during drag for instant response, add it for snap back
+        transition: isDragging ? 'none' : 'transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)' 
       }}
     >
-      {/* Loading Indicator Spinner */}
+      {/* Loading Indicator - Positioned nicely above the content */}
       <div 
-        className="absolute top-[-60px] left-0 w-full flex justify-center items-center h-[60px]"
-        style={{ opacity: pullChange > 0 ? 1 : 0 }}
+        className="absolute w-full flex justify-center items-center h-[80px]"
+        style={{ 
+            top: '-80px', 
+            left: 0,
+            opacity: pullChange > 0 ? 1 : 0 
+        }}
       >
-        <div className="bg-white p-2 rounded-full shadow-md border border-slate-100">
-           <Loader2 className={`text-blue-600 ${loading ? 'animate-spin' : ''}`} size={20} />
+        <div className="bg-white/90 backdrop-blur-md p-2.5 rounded-full shadow-lg border border-slate-200/50">
+           <Loader2 className={`text-slate-900 ${loading ? 'animate-spin' : ''}`} size={22} />
         </div>
       </div>
 
