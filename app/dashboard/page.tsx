@@ -1,9 +1,9 @@
-// adrollsai/adrollsai/adrollsai-builder-app-lander-notifications/app/dashboard/page.tsx
+// adrollsai/adrollsai/adrollsai-builder-app-lander-feed-notifications/app/dashboard/page.tsx
 
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check, UserPlus, RefreshCw, Paperclip, Video } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check, UserPlus, RefreshCw, Paperclip, Video, MessageCircle, Pencil } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -145,6 +145,11 @@ export default function DashboardPage() {
   const [showAddNews, setShowAddNews] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [selectedAgent, setSelectedAgent] = useState<AgentProfile | null>(null) 
+  
+  // --- NEW: Edit & Share State ---
+  const [showEditProject, setShowEditProject] = useState(false)
+  const [editingProject, setEditingProject] = useState<Property | null>(null)
+  const [sharingId, setSharingId] = useState<string | null>(null) 
   
   // New Agent State
   const [showAddAgent, setShowAddAgent] = useState(false)
@@ -607,7 +612,130 @@ export default function DashboardPage() {
         fetchData()
     }
   }
+
+  // --- NEW: WhatsApp Share Handler (Downloads BG images) ---
+  const handleWhatsAppShare = async (p: Property, e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    // 1. Construct Text Info
+    let text = `*${p.title}*\n`
+    text += `📍 ${p.address}\n\n`
+    
+    if (p.configurations && p.configurations.length > 0) {
+        text += `*Configurations:*\n`
+        p.configurations.forEach(c => {
+            text += `• ${c.name} (${c.size}) - ${c.price}\n`
+        })
+        text += `\n`
+    }
+    
+    if (p.description) text += `${p.description}\n\n`
+    if (p.brochure_url) text += `📄 *Brochure:* ${p.brochure_url}\n\n`
+    text += `_Shared via AdRolls AI_`
+
+    // Check if Web Share API is supported at all
+    if (!navigator.canShare || !navigator.share) {
+         alert("Sharing is not supported on this device.")
+         return
+    }
+
+    setSharingId(p.id)
+    try {
+        // 2. Download Images in Parallel (Faster)
+        const imagesToShare = (p.images && p.images.length > 0 ? p.images : [p.image_url]).slice(0, 10)
+        
+        const filePromises = imagesToShare.map(async (url, i) => {
+            const response = await fetch(url)
+            const blob = await response.blob()
+            // Use jpg to be safe for WhatsApp
+            return new File([blob], `image_${i + 1}.jpg`, { type: 'image/jpeg' })
+        })
+
+        const filesArray = await Promise.all(filePromises)
+
+        // 3. Share using Native Share Sheet
+        const shareData = {
+            files: filesArray,
+            text: text
+        }
+
+        if (navigator.canShare(shareData)) {
+            await navigator.share(shareData)
+        } else {
+             alert("Sharing this combination of files is not supported on this device.")
+        }
+    } catch (error: any) {
+        // Handle user cancellation silently
+        if (error.name === 'AbortError' || error.message.toLowerCase().includes('abort') || error.code === 20) {
+            return
+        }
+        console.error("Share failed:", error)
+        alert("Share failed: " + error.message)
+    } finally {
+        setSharingId(null)
+    }
+  }
   
+  // --- NEW: Edit Project Handlers ---
+  const handleEditProject = (property: Property, e: React.MouseEvent) => {
+      e.stopPropagation()
+      setEditingProject(property)
+      setProjectFiles({ images: [] }) // Reset file inputs
+      setShowEditProject(true)
+  }
+
+  const handleSaveEdit = async () => {
+      if (!editingProject) return
+      setIsSubmitting(true)
+      try {
+          let imageUrls = editingProject.images || []
+          
+          // 1. Upload NEW Images if any and append
+          if (projectFiles.images.length > 0) {
+              for (const file of projectFiles.images) {
+                  let fileToUpload = file.type.startsWith('image/') ? await compressImage(file) : file
+                  const publicUrl = await uploadToR2(fileToUpload, 'properties')
+                  imageUrls.push(publicUrl)
+              }
+          }
+
+          // 2. Upload NEW Brochure
+          let brochureUrl = editingProject.brochure_url
+          if (projectFiles.brochure) {
+              brochureUrl = await uploadToR2(projectFiles.brochure, 'documents')
+          }
+
+          // 3. Upload NEW Floor Plan
+          let floorPlanUrl = editingProject.floor_plan_url
+          if (projectFiles.floorPlan) {
+              floorPlanUrl = await uploadToR2(projectFiles.floorPlan, 'documents')
+          }
+
+          // 4. Update Supabase
+          const { error } = await supabase.from('properties').update({
+              title: editingProject.title,
+              address: editingProject.address,
+              rera_number: editingProject.rera_number,
+              description: editingProject.description,
+              configurations: editingProject.configurations,
+              images: imageUrls,
+              image_url: imageUrls[0], // Keep main image updated
+              brochure_url: brochureUrl,
+              floor_plan_url: floorPlanUrl
+          }).eq('id', editingProject.id)
+
+          if (error) throw error
+          
+          alert("Project updated successfully!")
+          setShowEditProject(false)
+          fetchData()
+      } catch (e: any) {
+          alert("Update failed: " + e.message)
+      } finally {
+          setIsSubmitting(false)
+      }
+  }
+
   // --- NEW: Agent Management Handlers ---
 
   const handleCreateAgent = async () => {
@@ -896,15 +1024,36 @@ export default function DashboardPage() {
                                 <div className="flex-1 py-1">
                                     <div className="flex justify-between items-start">
                                         <h3 className="font-bold text-slate-900 text-base">{p.title}</h3>
-                                        {userProfile?.role === 'admin' && (
+                                        <div className="flex items-center gap-1">
+                                            {/* WhatsApp Share Button */}
                                             <button 
-                                                onClick={(e) => handleDeleteProject(p.id, e)}
-                                                disabled={isDeleting}
-                                                className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                                                onClick={(e) => handleWhatsAppShare(p, e)}
+                                                className="text-white bg-green-500 hover:bg-green-600 p-1.5 rounded-full transition-colors shadow-sm z-10"
+                                                title="Share on WhatsApp"
                                             >
-                                                <Trash2 size={16} />
+                                                {sharingId === p.id ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />}
                                             </button>
-                                        )}
+
+                                            {/* Admin Edit & Delete */}
+                                            {userProfile?.role === 'admin' && (
+                                                <>
+                                                    <button 
+                                                        onClick={(e) => handleEditProject(p, e)}
+                                                        className="text-white bg-blue-500 hover:bg-blue-600 p-1.5 rounded-full transition-colors shadow-sm z-10 ml-1"
+                                                        title="Edit Project"
+                                                    >
+                                                        <Pencil size={14} />
+                                                    </button>
+                                                    <button 
+                                                        onClick={(e) => handleDeleteProject(p.id, e)}
+                                                        disabled={isDeleting}
+                                                        className="text-slate-300 hover:text-red-500 transition-colors p-1.5 z-10"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                     <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><MapPin size={12}/> {p.address}</p>
                                     <div className="flex gap-2 mt-3 flex-wrap">
@@ -1098,6 +1247,69 @@ export default function DashboardPage() {
 
                       <button onClick={handleAddProject} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm mt-2">
                           {isSubmitting ? 'Saving...' : 'Create Project'}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* --- MODAL: EDIT PROJECT (NEW) --- */}
+      {showEditProject && editingProject && (
+          <div className="fixed top-0 left-0 w-screen h-screen z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between mb-4">
+                      <h2 className="font-bold text-lg">Edit Project</h2>
+                      <button onClick={() => setShowEditProject(false)}><X size={20}/></button>
+                  </div>
+                  <div className="space-y-3">
+                      <input 
+                          value={editingProject.title} 
+                          onChange={e => setEditingProject({...editingProject, title: e.target.value})} 
+                          className="w-full bg-slate-50 p-3 rounded-xl text-sm" placeholder="Title" 
+                      />
+                      <input 
+                          value={editingProject.address} 
+                          onChange={e => setEditingProject({...editingProject, address: e.target.value})} 
+                          className="w-full bg-slate-50 p-3 rounded-xl text-sm" placeholder="Address" 
+                      />
+                      <input 
+                          value={editingProject.rera_number || ''} 
+                          onChange={e => setEditingProject({...editingProject, rera_number: e.target.value})} 
+                          className="w-full bg-slate-50 p-3 rounded-xl text-sm" placeholder="RERA" 
+                      />
+                      <textarea 
+                          value={editingProject.description || ''} 
+                          onChange={e => setEditingProject({...editingProject, description: e.target.value})} 
+                          className="w-full bg-slate-50 p-3 rounded-xl text-sm" rows={3} placeholder="Description" 
+                      />
+                      
+                      <div className="bg-slate-50 p-3 rounded-xl">
+                          <p className="text-xs font-bold text-slate-400 mb-2">Configurations</p>
+                          <div className="flex gap-2 mb-2">
+                              <input placeholder="Type" className="flex-1 bg-white p-2 rounded-lg text-xs" value={tempConfig.name} onChange={e => setTempConfig({...tempConfig, name: e.target.value})} />
+                              <input placeholder="Price" className="w-20 bg-white p-2 rounded-lg text-xs" value={tempConfig.price} onChange={e => setTempConfig({...tempConfig, price: e.target.value})} />
+                              <button onClick={() => { 
+                                  if(tempConfig.name) setEditingProject(prev => prev ? ({...prev, configurations: [...(prev.configurations||[]), tempConfig]}) : null); 
+                                  setTempConfig({name:'', size:'', price:''}) 
+                              }} className="bg-slate-900 text-white px-3 rounded-lg text-xs font-bold">+</button>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                              {editingProject.configurations?.map((c, i) => (
+                                  <div key={i} className="text-[10px] bg-white border px-2 py-1 rounded-md flex items-center gap-2">
+                                      {c.name} - {c.price}
+                                      <button onClick={() => setEditingProject(prev => prev ? ({...prev, configurations: prev.configurations?.filter((_, idx) => idx !== i)}) : null)} className="text-red-500"><X size={10}/></button>
+                                  </div>
+                              ))}
+                          </div>
+                      </div>
+
+                      <div className="border-2 border-dashed border-slate-200 p-3 rounded-xl">
+                          <p className="text-xs text-slate-400 mb-2">Add New Images (Appends to existing)</p>
+                          <input type="file" multiple accept="image/*" onChange={e => e.target.files && setProjectFiles(prev => ({...prev, images: Array.from(e.target.files!)}))} className="text-xs w-full" />
+                      </div>
+
+                      <button onClick={handleSaveEdit} disabled={isSubmitting} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm mt-2">
+                          {isSubmitting ? 'Updating...' : 'Save Changes'}
                       </button>
                   </div>
               </div>
