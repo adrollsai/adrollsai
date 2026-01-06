@@ -3,7 +3,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check, UserPlus, RefreshCw, Paperclip, Video, MessageCircle, Pencil } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Image as ImageIcon, Filter, FileText, Upload, Sparkles, LayoutGrid, Zap, BarChart3, Share2, Download, Building, Trash2, ChevronLeft, ChevronRight, User, Megaphone, Pin, Link as LinkIcon, Copy, Flame, Star, Trophy, Crown, Medal, Users, Coins, Save, Check, UserPlus, RefreshCw, Paperclip, Video, MessageCircle, Pencil, Gift } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -167,6 +167,10 @@ export default function DashboardPage() {
   const [editCreditsValue, setEditCreditsValue] = useState<string>('')
   const [isUpdatingCredits, setIsUpdatingCredits] = useState(false)
   const [creditMode, setCreditMode] = useState<'add' | 'set'>('add')
+
+  // --- NEW: XP Awarding State ---
+  const [awardXpValue, setAwardXpValue] = useState<string>('') 
+  const [isAwardingXp, setIsAwardingXp] = useState(false)
   
   // -- Add Project Form --
   const [newProject, setNewProject] = useState({
@@ -349,6 +353,18 @@ export default function DashboardPage() {
 
   useEffect(() => { fetchData() }, [])
 
+  // --- NEW: Track Share Helper ---
+  const trackShare = async () => {
+    try {
+        const res = await fetch('/api/gamification/track-share', { method: 'POST' })
+        const data = await res.json()
+        if (data.success && userProfile) {
+            // Optimistic update for self
+            setUserProfile(prev => prev ? ({ ...prev, current_streak: data.streak, total_xp: (prev.total_xp || 0) + data.xpGained }) : null)
+        }
+    } catch(e) { console.error("Tracking error", e) }
+  }
+
   // --- HANDLERS ---
 
   const handleAddProject = async () => {
@@ -499,6 +515,7 @@ export default function DashboardPage() {
       } finally { setIsSubmitting(false) }
   }
 
+  // --- UPDATED: HANDLE CLAIM (Call trackShare) ---
   const handleClaim = async (creative: FeedItem) => {
       if (creative.kind !== 'creative') return
       
@@ -528,16 +545,11 @@ export default function DashboardPage() {
           
           if(res.ok) {
               setClaimedCreativeIds(prev => new Set(prev).add(creative.id))
-              if (data.xpEarned) alert(`Creative Claimed!\n\n🔥 Streak: ${data.streak} Days\n✨ XP Earned: +${data.xpEarned}`)
               
-              // Optimistically update profile to show new streak instantly
-              setUserProfile(prev => prev ? ({ 
-                  ...prev, 
-                  current_streak: data.streak, 
-                  total_xp: (prev.total_xp || 0) + data.xpEarned, 
-                  last_activity_date: new Date().toISOString() 
-              }) : null)
-              
+              // Trigger Share Tracking Logic (Awards XP & Streak)
+              await trackShare()
+
+              alert(`Creative Claimed! It's saved to your Assets tab.`)
               router.push('/dashboard/assets')
           } else {
              throw new Error(data.error || "Stamping failed.")
@@ -613,7 +625,7 @@ export default function DashboardPage() {
     }
   }
 
-  // --- NEW: WhatsApp Share Handler (Downloads BG images) ---
+  // --- UPDATED: WhatsApp Share Handler (Call trackShare) ---
   const handleWhatsAppShare = async (p: Property, e: React.MouseEvent) => {
     e.stopPropagation()
 
@@ -631,7 +643,7 @@ export default function DashboardPage() {
     
     if (p.description) text += `${p.description}\n\n`
     if (p.brochure_url) text += `📄 *Brochure:* ${p.brochure_url}\n\n`
-    text += ``
+    text += `_Shared via AdRolls AI_`
 
     // Check if Web Share API is supported at all
     if (!navigator.canShare || !navigator.share) {
@@ -669,8 +681,9 @@ export default function DashboardPage() {
 
         if (navigator.canShare(shareData)) {
             await navigator.share(shareData)
-            // Inform user about clipboard fallback if needed (optional, keeping it clean for now)
-            // alert("Caption copied! Paste it in WhatsApp.") 
+            
+            // TRACK SHARE HERE
+            await trackShare()
         } else {
              alert("Sharing this combination of files is not supported on this device.")
         }
@@ -819,6 +832,25 @@ export default function DashboardPage() {
       } finally {
           setIsUpdatingCredits(false)
       }
+  }
+
+  // --- NEW: Handle Award XP ---
+  const handleAwardXp = async () => {
+      if (!selectedAgent || !awardXpValue) return
+      setIsAwardingXp(true)
+      try {
+          const res = await fetch('/api/admin/award-xp', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ agentId: selectedAgent.id, amount: awardXpValue })
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error)
+          
+          setAgentsList(prev => prev.map(a => a.id === selectedAgent.id ? { ...a, total_xp: data.newTotal } : a))
+          setSelectedAgent(prev => prev ? { ...prev, total_xp: data.newTotal } : null)
+          alert("XP Awarded!")
+          setAwardXpValue('')
+      } catch(e: any) { alert("Error: " + e.message) } finally { setIsAwardingXp(false) }
   }
 
   // --- UI HELPERS ---
@@ -1527,10 +1559,10 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* --- MODAL: AGENT DETAIL --- */}
+      {/* --- MODAL: AGENT DETAIL (With XP Award) --- */}
       {selectedAgent && (
           <div className="fixed top-0 left-0 w-screen h-screen z-[200] bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in">
-              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
+              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
                   <div className="flex justify-between items-start mb-6">
                       <div className="flex items-center gap-3">
                           <div className="w-14 h-14 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xl font-bold text-slate-500 overflow-hidden">
@@ -1545,8 +1577,8 @@ export default function DashboardPage() {
                       <button onClick={() => setSelectedAgent(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button>
                   </div>
 
-                  {/* WALLET SECTION (UPDATED) */}
-                  <div className="bg-slate-900 p-5 rounded-2xl text-white mb-6 relative overflow-hidden">
+                  {/* WALLET SECTION */}
+                  <div className="bg-slate-900 p-5 rounded-2xl text-white mb-4 relative overflow-hidden">
                       <div className="relative z-10">
                            <div className="flex justify-between items-center mb-4">
                                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">Manage Wallet</p>
@@ -1567,7 +1599,7 @@ export default function DashboardPage() {
                                </div>
                            </div>
                            
-                           {/* CURRENT BALANCE DISPLAY (New Feature) */}
+                           {/* CURRENT BALANCE DISPLAY */}
                            <div className="mb-4 text-center">
                                <p className="text-xs text-slate-400 uppercase font-bold">Current Balance</p>
                                <p className="text-3xl font-black">₹{(selectedAgent.ad_credits || 0).toLocaleString()}</p>
@@ -1598,19 +1630,42 @@ export default function DashboardPage() {
                       <div className="absolute -right-4 -bottom-4 opacity-10"><Coins size={100}/></div>
                   </div>
 
+                  {/* ADMIN ONLY: XP AWARD (New Feature) */}
+                  <div className="bg-gradient-to-r from-yellow-500 to-orange-500 p-5 rounded-2xl text-white mb-6 relative overflow-hidden">
+                        <div className="relative z-10">
+                            <p className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2">Award Performance XP</p>
+                            <p className="text-3xl font-black mb-2 flex items-center gap-2">
+                                <Star fill="currentColor" className="text-white"/> {selectedAgent.total_xp}
+                            </p>
+                            
+                            <div className="flex items-center gap-2">
+                                <span className="text-2xl font-bold">+</span>
+                                <input 
+                                    type="number"
+                                    placeholder="XP Amount"
+                                    value={awardXpValue}
+                                    onChange={(e) => setAwardXpValue(e.target.value)}
+                                    className="bg-white/20 border border-white/30 rounded-lg px-3 py-2 text-xl font-bold w-full outline-none focus:bg-white/30 transition-all placeholder:text-white/50 text-white"
+                                />
+                            </div>
+                            
+                            <button 
+                                onClick={handleAwardXp}
+                                disabled={isAwardingXp || !awardXpValue}
+                                className="mt-3 w-full bg-white text-orange-600 hover:bg-orange-50 text-xs font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shadow-md"
+                            >
+                                {isAwardingXp ? <Loader2 size={14} className="animate-spin"/> : <Gift size={14}/>}
+                                Give XP Reward
+                            </button>
+                        </div>
+                        <div className="absolute -right-2 -bottom-2 opacity-10"><Trophy size={100}/></div>
+                  </div>
+
                   {/* STATS GRID */}
                   <div className="grid grid-cols-2 gap-3 mb-6">
                       <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                           <p className="text-xs text-slate-400 font-bold mb-1">Total Leads</p>
                           <p className="text-xl font-black text-slate-900">{selectedAgent.leads_count}</p>
-                      </div>
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                          <p className="text-xs text-slate-400 font-bold mb-1">Assets Shared</p>
-                          <p className="text-xl font-black text-slate-900">{selectedAgent.assets_count}</p>
-                      </div>
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                          <p className="text-xs text-slate-400 font-bold mb-1">XP Earned</p>
-                          <p className="text-xl font-black text-slate-900">{selectedAgent.total_xp || 0}</p>
                       </div>
                       <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                           <p className="text-xs text-slate-400 font-bold mb-1">Current Streak</p>

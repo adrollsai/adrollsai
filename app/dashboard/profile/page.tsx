@@ -1,3 +1,5 @@
+// adrollsai/adrollsai/adrollsai-builder-app-lander-feed-notifications/app/dashboard/profile/page.tsx
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -65,13 +67,12 @@ type Pixel = {
 }
 
 // --- BADGE CONFIGURATION ---
+// UPDATED: Removed Networker & Omnichannel King. Kept Connected and Streaks.
 const ALL_BADGES = [
     { id: 'streak_7', name: 'Week Warrior', desc: '7 Day Streak', icon: Flame, color: 'text-orange-500', bg: 'bg-orange-100' },
     { id: 'streak_30', name: 'Consistency King', desc: '30 Day Streak', icon: Zap, color: 'text-yellow-500', bg: 'bg-yellow-100' },
     { id: 'streak_100', name: 'Century Club', desc: '100 Day Streak', icon: Crown, color: 'text-purple-500', bg: 'bg-purple-100' },
-    { id: 'social_connected', name: 'Connected', desc: '1 Social Linked', icon: LinkIcon, color: 'text-blue-400', bg: 'bg-blue-50' },
-    { id: 'social_networker', name: 'Networker', desc: '2 Socials Linked', icon: Share2, color: 'text-indigo-500', bg: 'bg-indigo-50' },
-    { id: 'social_king', name: 'Omnichannel King', desc: 'All Socials Linked', icon: Globe, color: 'text-green-500', bg: 'bg-green-100' },
+    { id: 'social_connected', name: 'Connected', desc: 'Social Linked', icon: LinkIcon, color: 'text-blue-400', bg: 'bg-blue-50' },
 ]
 
 const DEFAULT_APP_HOST = process.env.NEXT_PUBLIC_DEFAULT_HOST || 'app.adrollsai.com' 
@@ -154,23 +155,18 @@ export default function ProfilePage() {
         const res = await fetch('/api/gamification/check-socials', { method: 'POST' })
         const data = await res.json()
         
-        if (data.success && data.xpGained > 0) {
-            let msg = `🎉 Social Connected!`
-            msg += `\n\n✨ +${data.xpGained} XP Earned!`
-            if (data.earnedBadges && data.earnedBadges.length > 0) {
-                msg += `\n🏅 Badge Unlocked: ${data.earnedBadges.join(', ')}`
-            }
-            if (data.newLevel) {
-                 msg += `\n🏆 LEVEL UP! You are now Level ${data.newLevel}!`
-            }
+        // Updated logic: Only award/notify for "Connected" badge if new
+        if (data.success && data.earnedBadges && data.earnedBadges.length > 0) {
+            let msg = `🎉 Badge Unlocked!`
+            // Removed XP notification here since XP is removed for socials
+            msg += `\n🏅 You earned the '${data.earnedBadges.join(', ')}' badge!`
+            
             alert(msg)
             
-            if (data.earnedBadges) {
-                const { data: { user } } = await supabase.auth.getUser()
-                if (user) {
-                   const { data: p } = await supabase.from('profiles').select('badges').eq('id', user.id).single()
-                   if (p?.badges) setMyBadges(p.badges)
-                }
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) {
+               const { data: p } = await supabase.from('profiles').select('badges').eq('id', user.id).single()
+               if (p?.badges) setMyBadges(p.badges)
             }
         }
     } catch (e) {

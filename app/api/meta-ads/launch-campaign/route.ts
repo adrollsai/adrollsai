@@ -1,13 +1,15 @@
+// adrollsai/adrollsai/adrollsai-builder-app-lander-feed-notifications/app/api/meta-ads/launch-campaign/route.ts
+
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { getOrgAdminCredentials } from '@/utils/org-helper'
+import { sendNotification } from '@/utils/notification-helper'
 import fs from 'fs'
 import path from 'path'
 
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0"
 const LOG_FILE_PATH = path.join(process.cwd(), 'meta_ads_debug.txt');
 
-// --- LOGGER HELPER ---
 function logToFile(tag: string, data?: any) {
     try {
         const timestamp = new Date().toISOString();
@@ -15,30 +17,24 @@ function logToFile(tag: string, data?: any) {
         const logEntry = `\n[${timestamp}] [${tag}] ${content || ''}\n------------------------------------------------\n`;
         fs.appendFileSync(LOG_FILE_PATH, logEntry);
         if (tag.includes('FAIL') || tag.includes('ERROR')) console.error(`[${tag}]`, content);
-        else console.log(`[${tag}] Data logged.`); 
     } catch (e) { console.error("Log failed", e); }
 }
 
 export async function POST(request: Request) {
-    // 1. Clear log
     try { fs.writeFileSync(LOG_FILE_PATH, ''); } catch (e) {}
     
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // 2. Get Agent & Org Info
-    const { data: agentProfile } = await supabase.from('profiles').select('organization_id, role, ad_credits').eq('id', user.id).single();
+    const { data: agentProfile } = await supabase.from('profiles').select('organization_id, role, ad_credits, total_xp, level').eq('id', user.id).single();
     if (!agentProfile?.organization_id) return NextResponse.json({ error: 'No Org' }, { status: 400 });
 
     const formData = await request.formData();
     const propertyId = formData.get('propertyId')?.toString();
-    // CHANGED: Renamed variable to avoid confusion, though form key can remain same or change. 
-    // We expect 'lifetimeBudgetINR' or 'dailyBudgetINR' from frontend, let's look for 'dailyBudgetINR' as legacy or 'lifetimeBudgetINR'
     const budgetInput = formData.get('lifetimeBudgetINR') || formData.get('dailyBudgetINR');
     const lifetimeBudgetINR = parseFloat(budgetInput?.toString() || '0'); 
 
-    // 3. Get Org Admin Credentials
     let creds;
     try {
         creds = await getOrgAdminCredentials(agentProfile.organization_id);
@@ -47,23 +43,20 @@ export async function POST(request: Request) {
     }
     const { adAccountId, facebookToken, pageId } = creds;
 
-    // 4. Credit Check
     if (agentProfile.role === 'agent' && (agentProfile.ad_credits || 0) < lifetimeBudgetINR) {
         return NextResponse.json({ error: 'Insufficient Credits' }, { status: 402 });
     }
     
     // Deduct Credits
-    await supabase.from('profiles').update({ ad_credits: (agentProfile.ad_credits - lifetimeBudgetINR) }).eq('id', user.id);
+    await supabase.from('profiles').update({ ad_credits: (agentProfile.ad_credits || 0) - lifetimeBudgetINR }).eq('id', user.id);
 
     try {
-        // 5. Fetch Project & Template
         const { data: property } = await supabase.from('properties').select('*').eq('id', propertyId).single();
         if (!property?.template_adset_id) throw new Error("This project is not linked to an Ad Template yet.");
 
         const templateAdSetId = property.template_adset_id;
-        logToFile("INFO", `Starting Clone for Property: ${property.title}`);
 
-        // --- A. READ TEMPLATE DATA ---
+        // --- Facebook API Calls (Abbreviated for clarity, logic remains same) ---
         const adSetFetch = await fetch(`${FB_MARKETING_URL}/${templateAdSetId}?fields=name,targeting&access_token=${facebookToken}`);
         const templateAdSet = await adSetFetch.json();
         if (templateAdSet.error) throw new Error(`Template Read Error: ${templateAdSet.error.message}`);
@@ -77,7 +70,6 @@ export async function POST(request: Request) {
         const templateCreative = await creativeFetch.json();
         const oldFormId = templateCreative.object_story_spec?.link_data?.call_to_action?.value?.lead_gen_form_id;
         
-        // --- B. DUPLICATE LEAD FORM ---
         let newFormId = oldFormId; 
         if (oldFormId) {
             const formFetch = await fetch(`${FB_MARKETING_URL}/${oldFormId}?fields=name,questions,privacy_policy,context_card,follow_up_action_url&access_token=${facebookToken}`);
@@ -99,13 +91,11 @@ export async function POST(request: Request) {
             }
         }
 
-        // --- C. CREATE DEDICATED CAMPAIGN (LIFETIME BUDGET) ---
         const campaignPayload = {
             name: `[AGT] ${user.id.slice(0,4)} - ${property.title} - ${Date.now()}`,
             objective: 'OUTCOME_LEADS',
             status: 'PAUSED',
             buying_type: 'AUCTION',
-            // FIXED: Use lifetime_budget instead of daily_budget
             lifetime_budget: lifetimeBudgetINR * 100, 
             bid_strategy: 'LOWEST_COST_WITHOUT_CAP', 
             special_ad_categories: ['HOUSING'], 
@@ -117,22 +107,17 @@ export async function POST(request: Request) {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(campaignPayload)
         });
         const campaignData = await campaignRes.json();
-        
-        if (campaignData.error) {
-            logToFile("CAMPAIGN_FAIL", campaignData.error);
-            throw new Error(`Campaign Creation Failed: ${campaignData.error.message}`);
-        }
+        if (campaignData.error) throw new Error(`Campaign Creation Failed: ${campaignData.error.message}`);
         const campaignId = campaignData.id;
 
-        // --- D. CREATE AD SET (WITH END TIME) ---
-        const startTime = new Date(Date.now() + 15 * 60 * 1000); // Start in 15 mins
-        const endTime = new Date(startTime.getTime() + 30 * 24 * 60 * 60 * 1000); // End in 30 Days
+        const startTime = new Date(Date.now() + 15 * 60 * 1000); 
+        const endTime = new Date(startTime.getTime() + 30 * 24 * 60 * 60 * 1000); 
 
         const baseAdSetPayload: any = {
             campaign_id: campaignId,
             status: 'PAUSED',
             start_time: startTime.toISOString(),
-            end_time: endTime.toISOString(), // REQUIRED for Lifetime Budget
+            end_time: endTime.toISOString(), 
             promoted_object: { page_id: pageId },
             destination_type: 'ON_AD', 
             billing_event: 'IMPRESSIONS', 
@@ -140,49 +125,28 @@ export async function POST(request: Request) {
             access_token: facebookToken
         };
 
-        // Construct Targeting
         const riskyTargeting = {
             geo_locations: templateAdSet.targeting?.geo_locations || { countries: ['IN'] },
             flexible_spec: templateAdSet.targeting?.flexible_spec 
         };
-        if(riskyTargeting.geo_locations?.location_types) {
-             delete riskyTargeting.geo_locations.location_types;
-        }
+        if(riskyTargeting.geo_locations?.location_types) delete riskyTargeting.geo_locations.location_types;
 
-        // Try 1: Template Targeting
         let adSetRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adsets`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ 
-                ...baseAdSetPayload,
-                name: `AdSet - ${templateAdSet.name}`,
-                targeting: riskyTargeting
-            })
+            body: JSON.stringify({ ...baseAdSetPayload, name: `AdSet - ${templateAdSet.name}`, targeting: riskyTargeting })
         });
         let newAdSet = await adSetRes.json();
 
-        // Try 2: Fail-Safe Retry
         if (newAdSet.error) {
-            logToFile("ADSET_RETRY", "Template Targeting failed. Retrying with BARE MINIMUM.");
             const safeTargeting = { geo_locations: { countries: ['IN'] } }; 
             adSetRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adsets`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify({ 
-                    ...baseAdSetPayload,
-                    name: `AdSet - Fallback`,
-                    targeting: safeTargeting
-                })
+                body: JSON.stringify({ ...baseAdSetPayload, name: `AdSet - Fallback`, targeting: safeTargeting })
             });
             newAdSet = await adSetRes.json();
         }
-
-        if (newAdSet.error) {
-            logToFile("ADSET_CRITICAL_FAIL", newAdSet.error);
-            throw new Error(`AD SET FAILED: ${newAdSet.error.message}`);
-        }
+        if (newAdSet.error) throw new Error(`AD SET FAILED: ${newAdSet.error.message}`);
         
-        const newAdSetId = newAdSet.id;
-        
-        // --- E. CREATE CREATIVE ---
         const newCreativePayload = {
             name: `Creative - ${Date.now()}`,
             object_story_spec: templateCreative.object_story_spec,
@@ -196,16 +160,11 @@ export async function POST(request: Request) {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCreativePayload)
         });
         const newCreative = await creativeRes.json();
-        
-        if (newCreative.error) {
-            logToFile("CREATIVE_FAIL", newCreative.error);
-            throw new Error(`Creative Failed: ${newCreative.error.message}`);
-        }
+        if (newCreative.error) throw new Error(`Creative Failed: ${newCreative.error.message}`);
 
-        // --- F. CREATE FINAL AD ---
         const adPayload = {
             name: `Ad - Agent ${user.id.slice(0,4)}`,
-            adset_id: newAdSetId,
+            adset_id: newAdSet.id,
             creative: { creative_id: newCreative.id },
             status: 'PAUSED',
             access_token: facebookToken
@@ -215,17 +174,19 @@ export async function POST(request: Request) {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(adPayload)
         });
         const newAd = await adRes.json();
-        
-        if (newAd.error) {
-            logToFile("AD_FAIL", newAd.error);
-            throw new Error(`Ad Creation Failed: ${newAd.error.message}`);
-        }
+        if (newAd.error) throw new Error(`Ad Creation Failed: ${newAd.error.message}`);
 
-        // --- G. SAVE TO DB ---
+        // --- XP AWARD LOGIC (1 XP = 1 INR) ---
+        const xpEarned = Math.floor(lifetimeBudgetINR);
+        const newXp = (agentProfile.total_xp || 0) + xpEarned;
+        const newLevel = Math.floor(newXp / 1000) + 1;
+
+        await supabase.from('profiles').update({ total_xp: newXp, level: newLevel }).eq('id', user.id);
+        
         await supabase.from('campaigns').insert({
             user_id: user.id,
             meta_campaign_id: campaignId,
-            meta_adset_id: newAdSetId,
+            meta_adset_id: newAdSet.id,
             meta_ad_id: newAd.id,
             name: campaignPayload.name,
             total_budget: lifetimeBudgetINR,
@@ -238,15 +199,17 @@ export async function POST(request: Request) {
             amount: lifetimeBudgetINR * 100,
             status: 'SUCCESS',
             type: 'DEBIT',
-            // description: `Ad Run: ${property.title}`, // Uncomment if description column exists
             order_id: `SPEND_${Date.now()}`
         });
+
+        // Notify XP
+        await sendNotification(supabase, user.id, "Campaign Launched! 🚀", `Ads are live. You earned +${xpEarned} XP for your budget!`, "system");
 
         return NextResponse.json({ success: true, message: "Campaign Launched Successfully!" });
 
     } catch (error: any) {
         logToFile("CRITICAL_ERROR", error);
-        // Refund Logic
+        // Refund
         const { data: curr } = await supabase.from('profiles').select('ad_credits').eq('id', user.id).single();
         await supabase.from('profiles').update({ ad_credits: (curr?.ad_credits || 0) + lifetimeBudgetINR }).eq('id', user.id);
         

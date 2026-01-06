@@ -1,3 +1,5 @@
+// adrollsai/adrollsai/adrollsai-builder-app-lander-feed-notifications/app/dashboard/crm/page.tsx
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -83,6 +85,7 @@ export default function CRMPage() {
         setUserProfile(profile as Profile)
 
         let fetchedLeads: Lead[] = []
+        let fetchedMembers: Profile[] = [] // FIX: Local variable to hold members immediately
 
         // B. Fetch Leads based on Role
         if (profile.role === 'admin') {
@@ -93,7 +96,9 @@ export default function CRMPage() {
                 .eq('organization_id', profile.organization_id)
             
             if (members) {
-                setTeamMembers(members as Profile[])
+                fetchedMembers = members as Profile[] // Store in local variable
+                setTeamMembers(fetchedMembers)      // Store in State (async)
+                
                 const memberIds = members.map(m => m.id)
                 
                 const { data } = await supabase
@@ -116,7 +121,8 @@ export default function CRMPage() {
         }
 
         setLeads(fetchedLeads)
-        calculateStats(fetchedLeads, teamMembers)
+        // FIX: Pass the local variable 'fetchedMembers' instead of the state 'teamMembers'
+        calculateStats(fetchedLeads, fetchedMembers) 
 
     } catch (e) {
         console.error("CRM Error", e)
@@ -132,15 +138,24 @@ export default function CRMPage() {
 
   // Calculate Leaderboard
   const calculateStats = (allLeads: Lead[], members: Profile[]) => {
-      if (members.length === 0) return
+      // Safety check
+      if (!members || members.length === 0) return
 
       const stats: Record<string, number> = {}
+      
+      // Calculate counts
       allLeads.forEach(l => {
-          stats[l.user_id] = (stats[l.user_id] || 0) + 1
+          if (l.user_id) {
+            stats[l.user_id] = (stats[l.user_id] || 0) + 1
+          }
       })
 
       const leaderboard = members
-          .map(m => ({ agentId: m.id, name: m.business_name || 'Agent', count: stats[m.id] || 0 }))
+          .map(m => ({ 
+              agentId: m.id, 
+              name: m.business_name || 'Agent', 
+              count: stats[m.id] || 0 
+          }))
           .sort((a, b) => b.count - a.count)
       
       setTeamStats(leaderboard)
@@ -164,6 +179,11 @@ export default function CRMPage() {
           // Optimistic Update
           setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, user_id: agentId } : l))
           setSelectedLead(prev => prev ? { ...prev, user_id: agentId } : null)
+          
+          // Recalculate stats immediately to reflect change in UI
+          const updatedLeads = leads.map(l => l.id === selectedLead.id ? { ...l, user_id: agentId } : l)
+          calculateStats(updatedLeads, teamMembers)
+
           alert("Lead reassigned successfully!")
           
       } catch (e) {
@@ -173,7 +193,7 @@ export default function CRMPage() {
       }
   }
 
-  // --- MODIFIED: ADD LEAD WITH GAMIFICATION ---
+  // --- ADD LEAD ---
   const handleAddLead = async () => {
     if (!newLead.name || !newLead.phone) return alert("Name/Phone required")
     setIsAdding(true)
@@ -211,7 +231,12 @@ export default function CRMPage() {
   const handleDeleteLead = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!confirm("Delete lead?")) return
-    setLeads(prev => prev.filter(l => l.id !== id)) 
+    
+    // Optimistic Delete
+    const updatedLeads = leads.filter(l => l.id !== id)
+    setLeads(updatedLeads)
+    calculateStats(updatedLeads, teamMembers) // Update stats UI
+
     await supabase.from('leads').delete().eq('id', id)
   }
 
@@ -257,10 +282,9 @@ export default function CRMPage() {
   }
 
   return (
-    // FIX: Changed max-w-md to max-w-7xl
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       
-      {/* Header - Cleaned up (Logo removed) */}
+      {/* Header */}
       <div className="flex justify-between items-end">
         <div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">CRM</h1>
@@ -304,7 +328,11 @@ export default function CRMPage() {
               <div className="relative max-w-sm">
                   <select value={selectedAgentFilter} onChange={e => setSelectedAgentFilter(e.target.value)} className="w-full appearance-none bg-white p-3 pl-10 rounded-xl text-sm font-bold border-none shadow-sm outline-none text-slate-600 cursor-pointer">
                       <option value="all">View All Agents</option>
-                      {teamMembers.map(m => <option key={m.id} value={m.id}>{m.business_name} ({teamStats.find(s=>s.agentId===m.id)?.count || 0})</option>)}
+                      {teamMembers.map(m => (
+                          <option key={m.id} value={m.id}>
+                              {m.business_name} ({teamStats.find(s=>s.agentId===m.id)?.count || 0})
+                          </option>
+                      ))}
                   </select>
                   <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               </div>
