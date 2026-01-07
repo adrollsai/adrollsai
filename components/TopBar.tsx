@@ -8,13 +8,21 @@ import { Building2, Menu } from 'lucide-react'
 export default function TopBar() {
     const { org, userRole } = useOrganization()
 
+    const handleRefresh = () => {
+        window.location.reload();
+    };
+
     return (
         <header className="fixed top-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 z-[50] px-4 md:px-6 flex items-center justify-between shadow-sm">
             
             {/* LEFT: Identity (Logo + Name) */}
             <div className="flex items-center gap-3">
-                {/* Organization Logo */}
-                <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm">
+                {/* Organization Logo - Click to Refresh */}
+                <div 
+                    onClick={handleRefresh}
+                    className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm cursor-pointer active:scale-95 transition-transform"
+                    title="Click to refresh page"
+                >
                     {org?.master_logo_url ? (
                         <img src={org.master_logo_url} className="w-full h-full object-contain p-1.5" alt="Logo" />
                     ) : (
