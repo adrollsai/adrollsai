@@ -25,12 +25,11 @@ export async function GET(request: Request) {
         if (!profile?.organization_id) return NextResponse.json({ error: 'No Organization Found' }, { status: 400 });
 
         // 2. Get Admin Token (We need the Admin's token to read insights)
-        // Note: Even if the ad account belongs to the org, the token must have permission to read it.
-        const creds = await getOrgAdminCredentials(profile.organization_id);
+        // FIX: Passed 'supabase' client here
+        const creds = await getOrgAdminCredentials(supabase, profile.organization_id);
         const accessToken = creds.facebookToken;
 
         // 3. Fetch Insights from Facebook
-        // We request: Spend, Impressions, Clicks, CPC, CTR, and Actions (to find Leads)
         const fields = 'spend,impressions,clicks,cpc,ctr,actions';
         const url = `${FB_MARKETING_URL}/${campaignId}/insights?fields=${fields}&date_preset=maximum&access_token=${accessToken}`;
 
@@ -46,7 +45,6 @@ export async function GET(request: Request) {
         const data = fbData.data && fbData.data.length > 0 ? fbData.data[0] : null;
         
         if (!data) {
-             // No data yet (campaign might be new)
              return NextResponse.json({ 
                  insights: { 
                      spend: 0, 
@@ -60,7 +58,6 @@ export async function GET(request: Request) {
              });
         }
 
-        // Extract Leads from "actions" array
         const leadAction = data.actions?.find((a: any) => a.action_type === 'lead');
         const leads = leadAction ? parseInt(leadAction.value) : 0;
         const spend = parseFloat(data.spend || '0');

@@ -53,7 +53,8 @@ export async function GET(request: Request) {
         let viewerToken = profile.facebook_token;
         if (profile.role === 'agent' && profile.organization_id) {
             try {
-                const creds = await getOrgAdminCredentials(profile.organization_id);
+                // FIX: Passed 'supabase' client here
+                const creds = await getOrgAdminCredentials(supabase, profile.organization_id);
                 viewerToken = creds.facebookToken;
             } catch (e) {
                 // If token fails, just return what we have in DB
