@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
-import { Wallet, History, Info, RefreshCw } from 'lucide-react'
+import { Wallet, History, Info, RefreshCw, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap } from 'lucide-react'
 
 export default function WalletPage() {
     const supabase = createClient()
@@ -10,7 +10,7 @@ export default function WalletPage() {
     const [transactions, setTransactions] = useState<any[]>([])
     const [refreshing, setRefreshing] = useState(false)
 
-    // Helper function to fetch data (used by Init, Realtime, and Manual Refresh)
+    // Helper function to fetch data
     const loadWalletData = async () => {
         setRefreshing(true)
         try {
@@ -21,9 +21,9 @@ export default function WalletPage() {
             const { data: profile } = await supabase.from('profiles').select('ad_credits').eq('id', user.id).single()
             if(profile) setBalance(profile.ad_credits || 0)
 
-            // 2. Get History
+            // 2. Get History (Reverted to 'transactions' so you see your history)
             const { data: txs } = await supabase
-                .from('transactions')
+                .from('transactions') 
                 .select('*')
                 .eq('user_id', user.id)
                 .order('created_at', { ascending: false })
@@ -44,10 +44,9 @@ export default function WalletPage() {
             const { data: { user } } = await supabase.auth.getUser()
             if(!user) return
 
-            // 1. Initial Load
             loadWalletData()
 
-            // 2. Realtime Subscription (Listen for Balance Updates)
+            // 2. Realtime Subscription
             channel = supabase
                 .channel('page_wallet_sub')
                 .on(
@@ -61,7 +60,6 @@ export default function WalletPage() {
                     (payload) => { 
                         if (payload.new) {
                             setBalance(payload.new.ad_credits)
-                            // Reload transactions to show the new entry
                             loadWalletData() 
                         }
                     }
@@ -71,11 +69,8 @@ export default function WalletPage() {
 
         init()
 
-        // 3. PWA Visibility Handler (Robustness Fix)
-        // Forces a refresh when the user switches back to the app tab/window
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
-                console.log("App foregrounded: Refreshing wallet...")
                 loadWalletData() 
             }
         }
@@ -87,13 +82,48 @@ export default function WalletPage() {
         }
     }, [])
 
+    // --- HELPER TO PARSE TRANSACTIONS ---
+    const getTxDetails = (tx: any) => {
+        const orderId = tx.order_id || ''
+        
+        // 1. Admin Actions (New Feature)
+        if (orderId.includes('ADMIN_')) {
+            const isDebit = orderId.includes('DEBIT')
+            const isTopUp = orderId.includes('TOPUP')
+            
+            return {
+                title: isTopUp ? "Wallet Top-up (Admin)" : "Admin Adjustment",
+                isCredit: !isDebit, // Default to credit unless explicitly DEBIT
+                icon: <ShieldCheck size={16} />,
+                sub: orderId // Show ID for reference
+            }
+        }
+
+        // 2. Ad Purchases
+        if (tx.ad_id) {
+            return {
+                title: "Ad Campaign Purchase",
+                isCredit: false, // Spending money
+                icon: <Zap size={16} />,
+                sub: tx.ad_id
+            }
+        }
+
+        // 3. Regular Wallet Load (Payment Gateway)
+        return {
+            title: "Wallet Load",
+            isCredit: true,
+            icon: <Wallet size={16} />,
+            sub: orderId
+        }
+    }
+
     return (
         <div className="p-6 max-w-2xl mx-auto space-y-8 mt-12">
             <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-bold flex items-center gap-2">
                     <Wallet className="text-slate-900"/> My Wallet
                 </h1>
-                {/* Manual Refresh Button (Fallback) */}
                 <button 
                     onClick={() => loadWalletData()} 
                     disabled={refreshing}
@@ -108,7 +138,6 @@ export default function WalletPage() {
             <div className="bg-slate-900 text-white p-8 rounded-3xl shadow-xl relative overflow-hidden transition-all duration-300">
                 <div className="relative z-10">
                     <p className="text-slate-400 text-sm font-medium mb-1">Available Credits</p>
-                    {/* Animate value change */}
                     <h2 className="text-5xl font-bold transition-all">₹{balance.toLocaleString()}</h2>
                 </div>
                 <div className="absolute right-[-20px] top-[-20px] opacity-10">
@@ -139,22 +168,38 @@ export default function WalletPage() {
                     {transactions.length === 0 ? (
                         <div className="p-8 text-center text-slate-400 text-sm">No transactions yet.</div>
                     ) : (
-                        transactions.map((tx, index) => (
-                            <div key={tx.id || index} className="p-4 border-b border-slate-100 last:border-0 flex justify-between items-center hover:bg-slate-50">
-                                <div>
-                                    <p className="font-bold text-slate-800 text-sm">
-                                        {tx.ad_id ? 'Ad Campaign Purchase' : 'Wallet Update'}
-                                    </p>
-                                    <p className="text-xs text-slate-400 font-mono">{tx.order_id}</p>
+                        transactions.map((tx, index) => {
+                            const { title, isCredit, icon, sub } = getTxDetails(tx)
+                            
+                            return (
+                                <div key={tx.id || index} className="p-4 border-b border-slate-100 last:border-0 flex justify-between items-center hover:bg-slate-50">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-full ${isCredit ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                            {isCredit ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-slate-800 text-sm">
+                                                {title}
+                                            </p>
+                                            <div className="flex items-center gap-1.5 mt-0.5">
+                                                {icon && <span className="text-slate-400 scale-75 origin-left opacity-70">{icon}</span>}
+                                                <p className="text-[10px] text-slate-400 font-mono truncate max-w-[150px]">
+                                                    {sub}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className={`font-bold text-sm ${isCredit ? 'text-green-600' : 'text-slate-900'}`}>
+                                            {isCredit ? '+' : '-'}₹{(tx.amount / 100).toLocaleString()}
+                                        </p>
+                                        <p className="text-[10px] text-slate-400">
+                                            {new Date(tx.created_at).toLocaleDateString()}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div className="text-right">
-                                    <p className={`font-bold text-sm ${tx.status === 'SUCCESS' ? 'text-green-600' : 'text-slate-500'}`}>
-                                        {tx.status === 'SUCCESS' ? '+' : ''}₹{(tx.amount / 100).toLocaleString()}
-                                    </p>
-                                    <p className="text-[10px] text-slate-400">{new Date(tx.created_at).toLocaleDateString()}</p>
-                                </div>
-                            </div>
-                        ))
+                            )
+                        })
                     )}
                 </div>
             </div>

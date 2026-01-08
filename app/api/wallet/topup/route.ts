@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js' // Changed import
+import { createClient as createAdminClient } from '@supabase/supabase-js' 
 import { sendNotification } from '@/utils/notification-helper'
 
 export async function POST(request: Request) {
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Only Admins can top up wallets' }, { status: 403 })
     }
 
-    // 5. Get Target Profile (Agent) - Use Admin Client to ensure visibility
+    // 5. Get Target Profile (Agent)
     const { data: targetUser } = await supabaseAdmin
         .from('profiles')
         .select('organization_id, ad_credits')
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     
     if (!targetUser) return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
 
-    // 6. Security Check: Must belong to same Org (unless Super User)
+    // 6. Security Check
     if (requester.role !== 'super_user') {
         if (targetUser.organization_id !== requester.organization_id) {
             return NextResponse.json({ error: 'Agent belongs to a different organization' }, { status: 403 })
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
 
     const newBalance = (targetUser.ad_credits || 0) + topUpValue
 
-    // 7. Update Balance (Using Admin Client to be safe, though RLS might allow Org Admin update)
+    // 7. Update Balance
     const { error: updateError } = await supabaseAdmin
         .from('profiles')
         .update({ ad_credits: newBalance })
@@ -69,16 +69,27 @@ export async function POST(request: Request) {
     if (updateError) throw updateError
 
     // 8. Log Transaction
+    // Format: ADMIN_TOPUP_[CREDIT]_[TIMESTAMP]
+    const orderId = `ADMIN_TOPUP_CREDIT_${Date.now()}`
+    
     await supabaseAdmin.from('transactions').insert({
         user_id: targetUserId,
         amount: topUpValue * 100, // Store in paise
         status: 'SUCCESS',
-        type: 'CREDIT',
-        order_id: `ADMIN_TOPUP_${Date.now()}`,
+        order_id: orderId,
     })
 
-    // 9. Send Notification (CRITICAL FIX: Use supabaseAdmin)
-    // This allows inserting into the Agent's notification table and reading their push subs
+    // 8b. Log to Backup Ledger (optional)
+    await supabaseAdmin.from('wallet_transactions').insert({
+        user_id: targetUserId,
+        amount: topUpValue * 100,
+        status: 'SUCCESS',
+        type: 'CREDIT',
+        description: `Wallet Top-up via Admin`,
+        provider_reference_id: orderId
+    })
+
+    // 9. Send Notification
     await sendNotification(
         supabaseAdmin,
         targetUserId,

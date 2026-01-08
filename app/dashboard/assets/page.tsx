@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Filter, Download, Facebook, Instagram, X, Loader2, Film, MessageCircle, Rocket } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, X, Loader2, Film, MessageCircle, Rocket, AlertTriangle } from 'lucide-react' // Added AlertTriangle
 import { createClient } from '@/utils/supabase/client'
 import { useOrganization } from '@/components/OrganizationWrapper'
 
@@ -43,12 +43,19 @@ export default function AssetsPage() {
   // Tracking which platform is currently posting (null, 'universal', 'facebook', 'instagram')
   const [postingState, setPostingState] = useState<string | null>(null)
 
-  // 1. Fetch Assets
+  // 1. Fetch Assets & Trigger Cleanup
   useEffect(() => {
     setMounted(true)
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+
+      // --- NEW: Trigger Lazy Cleanup (Fire and Forget) ---
+      // We don't await this to keep the UI snappy, but it cleans the DB for next time
+      fetch('/api/assets/cleanup').then(res => res.json()).then(data => {
+          if (data.deletedCount > 0) console.log(`Cleaned up ${data.deletedCount} expired assets`)
+      }).catch(err => console.error("Cleanup failed", err))
+      // ---------------------------------------------------
 
       const { data: profile } = await supabase.from('profiles').select('business_name, contact_number').eq('id', user.id).single()
       if (profile) setUserProfile(profile as Profile)
@@ -57,6 +64,11 @@ export default function AssetsPage() {
       await new Promise(resolve => setTimeout(resolve, 500)) 
 
       // Fetch assets with templates from either Property or Master Creative
+      // We also filter out expired assets in the fetch to ensure the UI is instant
+      // even if the background cleanup hasn't finished yet.
+      const sevenDaysAgo = new Date()
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+
       const { data, error } = await supabase
         .from('assets')
         .select(`
@@ -65,6 +77,7 @@ export default function AssetsPage() {
             master_creative:master_creatives ( caption_template )
         `)
         .eq('user_id', user.id)
+        .gte('created_at', sevenDaysAgo.toISOString()) // Filter at query level for instant UI update
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -206,6 +219,18 @@ export default function AssetsPage() {
         </div>
         <div className="p-2.5 bg-white text-slate-700 rounded-full shadow-sm border border-slate-100"><Filter size={18} /></div>
       </div>
+
+      {/* --- NEW: RETENTION WARNING BANNER --- */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+        <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={18} />
+        <div>
+          <h3 className="font-bold text-amber-900 text-sm">Action Required: Download Your Assets</h3>
+          <p className="text-amber-700 text-xs mt-1">
+            Your assets will be deleted after 7 days automatically. Please download them or post them to your social media to avoid losing them.
+          </p>
+        </div>
+      </div>
+      {/* ------------------------------------ */}
 
       {/* FILTER TABS */}
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">

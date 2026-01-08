@@ -563,6 +563,7 @@ export type Database = {
       organizations: {
         Row: {
           ad_subsidy_percentage: number | null
+          agent_limit: number | null
           brand_color: string | null
           created_at: string
           custom_domain: string | null
@@ -575,6 +576,7 @@ export type Database = {
         }
         Insert: {
           ad_subsidy_percentage?: number | null
+          agent_limit?: number | null
           brand_color?: string | null
           created_at?: string
           custom_domain?: string | null
@@ -587,6 +589,7 @@ export type Database = {
         }
         Update: {
           ad_subsidy_percentage?: number | null
+          agent_limit?: number | null
           brand_color?: string | null
           created_at?: string
           custom_domain?: string | null

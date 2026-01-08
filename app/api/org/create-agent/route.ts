@@ -21,6 +21,37 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Forbidden: Admins only' }, { status: 403 })
     }
 
+    // --- CHANGE START: ENFORCE LIMIT ---
+    
+    // A. Fetch Organization Limit
+    const { data: orgData, error: orgError } = await supabaseAdmin
+        .from('organizations')
+        .select('agent_limit')
+        .eq('id', adminProfile.organization_id)
+        .single()
+    
+    if (orgError || !orgData) throw new Error("Organization not found")
+
+    // B. Count Existing Agents
+    const { count, error: countError } = await supabaseAdmin
+        .from('profiles')
+        .select('*', { count: 'exact', head: true }) // head: true means don't fetch data, just count
+        .eq('organization_id', adminProfile.organization_id)
+        .eq('role', 'agent')
+
+    if (countError) throw countError
+
+    const limit = orgData.agent_limit || 5 // Default fallback
+    const currentCount = count || 0
+
+    if (currentCount >= limit) {
+        return NextResponse.json({ 
+            error: `Agent limit reached (${currentCount}/${limit}). Please contact support to upgrade.` 
+        }, { status: 403 })
+    }
+
+    // --- CHANGE END ---
+
     const body = await req.json()
     const { email, password, name, phone } = body
 

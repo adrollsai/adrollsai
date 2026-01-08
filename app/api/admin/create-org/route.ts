@@ -17,22 +17,26 @@ export async function POST(req: Request) {
       .eq('id', user.id)
       .single()
 
-    // Assuming you have a specific role or you can check specific email
-    if (profile?.role !== 'super_user' && user.email !== 'admin@adrolls.ai') { // Replace with your logic
+    if (profile?.role !== 'super_user') { 
        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const body = await req.json()
-    const { orgName, adminEmail, adminPassword, adminName } = body
+    // --- CHANGE 1: Destructure agentLimit ---
+    const { orgName, adminEmail, adminPassword, adminName, agentLimit } = body
 
     if (!orgName || !adminEmail || !adminPassword) {
         return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
     }
 
     // 2. Create Organization
+    // --- CHANGE 2: Insert agent_limit ---
     const { data: newOrg, error: orgError } = await supabaseAdmin
         .from('organizations')
-        .insert({ name: orgName })
+        .insert({ 
+            name: orgName,
+            agent_limit: agentLimit ? parseInt(agentLimit) : 5 // Default to 5 if not provided
+        })
         .select()
         .single()
     
@@ -42,7 +46,7 @@ export async function POST(req: Request) {
     const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
         email: adminEmail,
         password: adminPassword,
-        email_confirm: true, // Auto-confirm so they can login immediately
+        email_confirm: true, 
         user_metadata: {
             full_name: adminName,
             business_name: orgName
@@ -53,7 +57,6 @@ export async function POST(req: Request) {
     if (!newUser.user) throw new Error("Failed to create user")
 
     // 4. Create Profile & Member Entry
-    // Note: We use upsert to handle cases where a user might already exist in Auth but not Profile
     await supabaseAdmin.from('profiles').upsert({
         id: newUser.user.id,
         email: adminEmail,

@@ -68,23 +68,37 @@ export async function POST(req: Request) {
 
     if (updateError) throw updateError
 
-    // --- LOG TRANSACTION ---
+    // --- LOG TRANSACTION (Legacy Table - Primary Source) ---
     const diff = newBalance - oldBalance
     // Only log if there's a real change
     if (Math.abs(diff) > 0) {
+        // We encode the type in the order_id so the frontend can parse it
+        // Format: ADMIN_ADJ_[CREDIT|DEBIT]_[TIMESTAMP]
+        const typeStr = diff > 0 ? 'CREDIT' : 'DEBIT'
+        const orderId = `ADMIN_ADJ_${typeStr}_${Date.now()}`
+
         await supabaseAdmin.from('transactions').insert({
             user_id: agentId,
             amount: Math.abs(diff) * 100, // Store in cents/paisa
             status: 'SUCCESS',
-            type: diff > 0 ? 'CREDIT' : 'DEBIT',
-            order_id: `ADMIN_ADJ_${Date.now()}`
+            order_id: orderId
+        })
+
+        // (Optional) We still write to wallet_transactions for future proofing, 
+        // but the frontend will rely on 'transactions' for now.
+        await supabaseAdmin.from('wallet_transactions').insert({
+            user_id: agentId,
+            amount: Math.abs(diff) * 100,
+            status: 'SUCCESS',
+            type: typeStr,
+            description: type === 'add' 
+                ? `Admin adjustment: Added ${changeAmount}` 
+                : `Admin adjustment: Balance set to ${newBalance}`,
+            provider_reference_id: orderId
         })
     }
 
-    // --- SEND NOTIFICATION (CRITICAL FIX) ---
-    // We MUST use 'supabaseAdmin' here because the Admin user (who is logged in)
-    // does not have permission to read the Agent's push subscriptions.
-    // The Admin Client bypasses this RLS restriction.
+    // --- SEND NOTIFICATION ---
     await sendNotification(
         supabaseAdmin, 
         agentId,
