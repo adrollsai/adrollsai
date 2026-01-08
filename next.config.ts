@@ -13,9 +13,13 @@ const pwa = withPWA({
 });
 
 const nextConfig: NextConfig = {
+  // Reduces memory usage on Vercel
   serverExternalPackages: ['@supabase/supabase-js', 'sharp'],
 
   images: {
+    // CRITICAL: Unoptimized = True prevents Vercel from processing R2 images
+    // preventing the 1000 image limit and timeout errors.
+    unoptimized: true, 
     remotePatterns: [
       {
         protocol: 'https',
@@ -26,7 +30,6 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  // CSP FIX: Allow 'unsafe-eval' for Service Workers
   async headers() {
     return [
       {

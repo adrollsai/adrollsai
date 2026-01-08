@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
-import { Bell, X, Check } from 'lucide-react'
+import { Bell, X } from 'lucide-react'
 import { toast, Toaster } from 'sonner'
 import Link from 'next/link'
 
@@ -23,62 +23,43 @@ export default function NotificationSystem() {
     const [unreadCount, setUnreadCount] = useState(0)
 
     useEffect(() => {
+        // 1. Initial Fetch
         fetchNotifications()
-        subscribeToNotifications()
+
+        // 2. SCALABILITY FIX: Polling instead of Realtime
+        // Checks every 60 seconds. Much cheaper and doesn't hit connection limits.
+        const interval = setInterval(() => {
+            fetchNotifications(true) // Pass true to indicate background update
+        }, 60000)
+
+        return () => clearInterval(interval)
     }, [])
 
-    const fetchNotifications = async () => {
+    const fetchNotifications = async (isBackground = false) => {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        const { data } = await supabase
+        const { data, error } = await supabase
             .from('notifications')
             .select('*')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false })
-            .limit(20)
+            .limit(20) // Limit to last 20 to save data
         
         if (data) {
-            setNotifications(data as Notification[])
-            setUnreadCount(data.filter((n: any) => !n.is_read).length)
-        }
-    }
-
-    const subscribeToNotifications = async () => {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-
-        const channel = supabase
-            .channel('realtime-notifications')
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'notifications',
-                    filter: `user_id=eq.${user.id}`
-                },
-                (payload) => {
-                    const newNotif = payload.new as Notification
-                    
-                    // 1. Show Toast
-                    toast(newNotif.title, {
-                        description: newNotif.message,
-                        action: newNotif.action_link ? {
-                            label: 'View',
-                            onClick: () => window.location.href = newNotif.action_link!
-                        } : undefined,
-                        duration: 5000,
-                    })
-
-                    // 2. Update List
-                    setNotifications(prev => [newNotif, ...prev])
-                    setUnreadCount(prev => prev + 1)
+            const typedData = data as Notification[]
+            
+            // If background update, check if we have new unread items to toast
+            if (isBackground) {
+                const newUnread = typedData.filter(n => !n.is_read).length
+                if (newUnread > unreadCount) {
+                    toast.info("You have new notifications")
                 }
-            )
-            .subscribe()
+            }
 
-        return () => { supabase.removeChannel(channel) }
+            setNotifications(typedData)
+            setUnreadCount(typedData.filter(n => !n.is_read).length)
+        }
     }
 
     const markAsRead = async () => {
@@ -86,21 +67,21 @@ export default function NotificationSystem() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
+        // Optimistic UI Update
+        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+        setUnreadCount(0)
+
         await supabase
             .from('notifications')
             .update({ is_read: true })
             .eq('user_id', user.id)
             .eq('is_read', false)
-        
-        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
-        setUnreadCount(0)
     }
 
     return (
         <>
             <Toaster position="top-right" richColors />
             
-            {/* Bell Icon in Header Area */}
             <div className="relative">
                 <button 
                     onClick={() => { setIsOpen(!isOpen); markAsRead(); }}
@@ -112,7 +93,6 @@ export default function NotificationSystem() {
                     )}
                 </button>
 
-                {/* Dropdown / Popover */}
                 {isOpen && (
                     <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-slate-100 z-[60] overflow-hidden animate-in slide-in-from-top-2 fade-in">
                         <div className="p-3 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">

@@ -29,82 +29,69 @@ export async function sendNotification(
 
     try {
         // --- STEP 1: Insert into Internal DB (In-App Notification) ---
-        const { data: notif, error } = await supabase.from('notifications').insert({
+        const { error } = await supabase.from('notifications').insert({
             user_id: userId,
             title,
             message,
             type,
             action_link: actionLink,
             is_read: false
-        }).select().single()
+        })
 
         if (error) {
             console.error("[NOTIF DEBUG] ❌ DB Insert Error:", error.message)
-        } else {
-            console.log("[NOTIF DEBUG] ✅ DB Insert Success")
         }
 
-        // --- STEP 2: Check VAPID Keys ---
-        if (!process.env.VAPID_PRIVATE_KEY) {
-            console.error("[NOTIF DEBUG] ⚠️ VAPID_PRIVATE_KEY is missing in .env.local")
-            return
-        }
-
-        // --- STEP 3: Fetch User's Push Subscriptions ---
-        const { data: subscriptions, error: subError } = await supabase
-            .from('push_subscriptions')
-            .select('*')
-            .eq('user_id', userId)
-
-        if (subError) {
-            console.error("[NOTIF DEBUG] ❌ Error fetching subscriptions:", subError.message)
-            return
-        }
-
-        if (!subscriptions || subscriptions.length === 0) {
-            console.log("[NOTIF DEBUG] ℹ️ No subscriptions found. Skipping Web Push.")
-            return
-        }
-
-        // --- STEP 4: Send Web Push to all registered devices ---
-        const payload = JSON.stringify({
-            title: title,
-            body: message,
-            url: actionLink || '/dashboard'
-        })
-
-        const sendPromises = subscriptions.map(sub => {
-            const pushConfig = {
-                endpoint: sub.endpoint,
-                keys: {
-                    auth: sub.auth,
-                    p256dh: sub.p256dh
-                }
-            }
-            
-            // @ts-ignore - web-push types matching
-            return webpush.sendNotification(pushConfig, payload)
-                .then(() => {
-                    console.log(`[NOTIF DEBUG] 🚀 PUSH SENT to subscription ${sub.id.substring(0,8)}...`)
-                })
-                .catch(err => {
-                    console.error(`[NOTIF DEBUG] ❌ Push Failed for ${sub.id.substring(0,8)}... Code: ${err.statusCode}`)
-                    
-                    if (err.statusCode === 404 || err.statusCode === 410) {
-                        console.log('[NOTIF DEBUG] 🗑️ Removing stale subscription from DB')
-                        supabase.from('push_subscriptions').delete().eq('id', sub.id).then()
-                    }
-                })
-        })
-
-        await Promise.all(sendPromises)
+        // --- STEP 2: Send Web Push (Best Effort) ---
+        // We do not await this to prevent blocking the UI/Response if it's slow
+        sendWebPushSafely(supabase, userId, title, message, actionLink).catch(err => 
+            console.error("Background Push Failed", err)
+        )
 
     } catch (error: any) {
         console.error("[NOTIF DEBUG] 🔥 Critical Failure:", error.message)
     }
 }
 
-// Logic to check if user surpassed someone and notify them
+// Separated Web Push Logic to prevent timeouts
+async function sendWebPushSafely(
+    supabase: SupabaseClient, 
+    userId: string, 
+    title: string, 
+    message: string, 
+    url?: string
+) {
+    if (!process.env.VAPID_PRIVATE_KEY) return
+
+    const { data: subscriptions } = await supabase
+        .from('push_subscriptions')
+        .select('*')
+        .eq('user_id', userId)
+
+    if (!subscriptions?.length) return
+
+    const payload = JSON.stringify({ title, body: message, url: url || '/dashboard' })
+
+    const promises = subscriptions.map(async (sub) => {
+        try {
+            await webpush.sendNotification({
+                endpoint: sub.endpoint,
+                keys: { auth: sub.auth, p256dh: sub.p256dh }
+            }, payload)
+        } catch (err: any) {
+            if (err.statusCode === 404 || err.statusCode === 410) {
+                await supabase.from('push_subscriptions').delete().eq('id', sub.id)
+            }
+        }
+    })
+
+    // Wait for all pushes, but with a timeout so we don't hang forever
+    await Promise.race([
+        Promise.all(promises),
+        new Promise(resolve => setTimeout(resolve, 2000)) // 2s Hard Timeout for pushes
+    ])
+}
+
 export async function checkAndNotifyRivalry(
     supabase: SupabaseClient, 
     userId: string, 
@@ -132,31 +119,10 @@ export async function checkAndNotifyRivalry(
             'rivalry',
             '/dashboard?tab=leaderboard'
         )
-
-        try {
-            const { data: myProfile } = await supabase
-                .from('profiles')
-                .select('business_name')
-                .eq('id', userId)
-                .single()
-                
-            const myName = myProfile?.business_name || 'A competitor'
-
-            await sendNotification(
-                supabase,
-                passedAgents[0].id,
-                "⚔️ Rivalry Alert",
-                `${myName} just passed you on the leaderboard. Log in now to reclaim your spot!`,
-                'rivalry',
-                '/dashboard?tab=leaderboard'
-            )
-        } catch (err) {
-            console.error("Rivalry notification error", err)
-        }
     }
 }
 
-// --- NEW FUNCTION: Broadcast to Org Agents ---
+// --- NEW OPTIMIZED BROADCAST FUNCTION ---
 export async function broadcastNotificationToOrg(
     supabase: SupabaseClient,
     orgId: string,
@@ -165,27 +131,40 @@ export async function broadcastNotificationToOrg(
     actionLink?: string,
     excludeUserId?: string
 ) {
-    console.log(`[NOTIF BROADCAST] Starting broadcast for Org: ${orgId}`)
+    console.log(`[NOTIF BROADCAST] Starting optimized broadcast for Org: ${orgId}`)
 
     // 1. Get all agents in the Org
     const { data: agents, error } = await supabase
         .from('profiles')
         .select('id')
         .eq('organization_id', orgId)
-        .eq('role', 'agent') // Notify only agents
+        .eq('role', 'agent')
         .neq('id', excludeUserId || '')
 
-    if (error || !agents) {
-        console.error("[NOTIF BROADCAST] ❌ Error fetching agents:", error?.message)
-        return
+    if (error || !agents || agents.length === 0) return
+
+    // 2. Prepare Bulk Payload (SCALABILITY FIX)
+    const notifications = agents.map(agent => ({
+        user_id: agent.id,
+        title,
+        message,
+        type: 'system',
+        action_link: actionLink,
+        is_read: false,
+        created_at: new Date().toISOString()
+    }))
+
+    // 3. Single Bulk Insert (1 DB Call instead of 50)
+    const { error: insertError } = await supabase
+        .from('notifications')
+        .insert(notifications)
+
+    if (insertError) {
+        console.error("Broadcast DB Error:", insertError.message)
+    } else {
+        console.log(`[NOTIF BROADCAST] ✅ Successfully inserted ${notifications.length} notifications.`)
     }
 
-    console.log(`[NOTIF BROADCAST] Found ${agents.length} agents to notify.`)
-
-    // 2. Loop and Send (Parallelized)
-    await Promise.all(agents.map(agent => 
-        sendNotification(supabase, agent.id, title, message, 'system', actionLink)
-    ))
-
-    console.log("[NOTIF BROADCAST] ✅ Broadcast complete.")
+    // NOTE: We intentionally SKIP Web Push for broadcasts on the Free Plan
+    // to prevent timeout crashes. Users will see the notification when they open the app.
 }

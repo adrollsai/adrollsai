@@ -1,10 +1,10 @@
-import { createClient } from '@/utils/supabase/server'
+import { SupabaseClient } from '@supabase/supabase-js'
 
-export async function getOrgAdminCredentials(orgId: string) {
-  const supabase = await createClient();
+// UPDATED: Now accepts 'supabase' as a dependency to reuse the connection
+export async function getOrgAdminCredentials(supabase: SupabaseClient, orgId: string) {
   
   // 1. Find the Admin/SuperUser for this Org
-  // Assuming the creator of the org is the admin, or check roles
+  // We use the passed 'supabase' client which is already authenticated/context-aware
   const { data: adminProfile, error } = await supabase
     .from('profiles')
     .select('ad_account_id, facebook_token, selected_page_id')

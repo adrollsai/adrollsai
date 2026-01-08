@@ -6,7 +6,6 @@ export const runtime = 'nodejs'
 const DEFAULT_APP_HOST = process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app' 
 
 export async function middleware(request: NextRequest) {
-  console.log(`[Middleware] Incoming: ${request.method} ${request.nextUrl.pathname}`);
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -51,35 +50,29 @@ export async function middleware(request: NextRequest) {
   const isMarketingHost = MARKETING_HOSTS.includes(currentHost);
   const isDefaultHost = currentHost === DEFAULT_APP_HOST;
 
-  // --- 1. Custom Domain Logic ---
+  // --- 1. Custom Domain Logic (OPTIMIZED) ---
   if (!isLocalhost && !isDefaultHost && !isMarketingHost && !isAppHost) {
-    // Check DB for Organization Custom Domain
-    const { data: orgData } = await supabase
-      .from('organizations')
-      .select('custom_domain')
-      .eq('custom_domain', currentHost)
-      .single()
+    
+    // CACHE CHECK: Do we already know this domain is valid?
+    const domainVerifiedCookie = request.cookies.get('x-domain-verified')
+    
+    if (domainVerifiedCookie?.value === currentHost) {
+       // It's valid, skip DB check!
+       response = rewriteToCustomDomain(url, currentHost, request);
+    } else {
+       // DB CHECK: Check DB for Organization Custom Domain
+       // Optimized: Select ONLY 'id', not the whole row
+       const { data: orgData } = await supabase
+         .from('organizations')
+         .select('id') 
+         .eq('custom_domain', currentHost)
+         .single()
 
-    if (orgData) {
-      // Rewrite root to login for custom domains
-      const targetPath = url.pathname === '/' ? '/login' : url.pathname;
-      const rewriteUrl = new URL(targetPath, `https://${DEFAULT_APP_HOST}`)
-      
-      // Preserve params
-      url.searchParams.forEach((value, key) => {
-          rewriteUrl.searchParams.set(key, value)
-      })
-      
-      // FIX START: Prepare headers for the rewrite so layout.tsx sees the custom domain
-      const requestHeaders = new Headers(request.headers);
-      requestHeaders.set('x-forwarded-host', currentHost);
-      // FIX END
-
-      response = NextResponse.rewrite(rewriteUrl, {
-          request: { headers: requestHeaders },
-      })
-      
-      response.headers.set('x-forwarded-host', currentHost)
+       if (orgData) {
+         response = rewriteToCustomDomain(url, currentHost, request);
+         // SET CACHE: Save cookie so next time is fast
+         response.cookies.set('x-domain-verified', currentHost, { maxAge: 60 * 60 * 24 }); // 24 hours
+       }
     }
   }
   
@@ -112,12 +105,28 @@ export async function middleware(request: NextRequest) {
   return response
 }
 
+// Helper to keep code clean
+function rewriteToCustomDomain(url: URL, currentHost: string, request: NextRequest) {
+    const targetPath = url.pathname === '/' ? '/login' : url.pathname;
+    const rewriteUrl = new URL(targetPath, `https://${process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app'}`)
+    
+    url.searchParams.forEach((value, key) => {
+        rewriteUrl.searchParams.set(key, value)
+    })
+    
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-forwarded-host', currentHost);
+
+    const response = NextResponse.rewrite(rewriteUrl, {
+        request: { headers: requestHeaders },
+    })
+    
+    response.headers.set('x-forwarded-host', currentHost)
+    return response;
+}
+
 export const config = {
-  // CRITICAL: Exclude manifest files and API routes from middleware to prevent rewrites/auth blocks
   matcher: [
-    /* * We added '|api/webhooks' to the exclusion list below.
-     * This tells Next.js: "Do NOT run middleware on any route starting with /api/webhooks"
-     */
     '/((?!_next/static|_next/image|favicon.ico|auth|shared|api/org-icon|api/manifest|api/webhooks|manifest.webmanifest|manifest.json).*)',
   ],
 }

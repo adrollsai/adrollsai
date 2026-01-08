@@ -15,15 +15,23 @@ function logToFile(tag: string, data?: any) {
         const timestamp = new Date().toISOString();
         const content = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
         const logEntry = `\n[${timestamp}] [${tag}] ${content || ''}\n------------------------------------------------\n`;
-        fs.appendFileSync(LOG_FILE_PATH, logEntry);
+        // In serverless, writing to file system is ephemeral and may fail or be lost.
+        // It's better to use console.log which Vercel captures.
+        if (process.env.NODE_ENV === 'development') {
+            try { fs.appendFileSync(LOG_FILE_PATH, logEntry); } catch {}
+        }
         if (tag.includes('FAIL') || tag.includes('ERROR')) console.error(`[${tag}]`, content);
     } catch (e) { console.error("Log failed", e); }
 }
 
 export async function POST(request: Request) {
-    try { fs.writeFileSync(LOG_FILE_PATH, ''); } catch (e) {}
+    try { 
+        if (process.env.NODE_ENV === 'development') fs.writeFileSync(LOG_FILE_PATH, ''); 
+    } catch (e) {}
     
+    // 1. Create the Single Shared Client
     const supabase = await createClient()
+    
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -37,7 +45,8 @@ export async function POST(request: Request) {
 
     let creds;
     try {
-        creds = await getOrgAdminCredentials(agentProfile.organization_id);
+        // FIX: Pass the shared 'supabase' client here
+        creds = await getOrgAdminCredentials(supabase, agentProfile.organization_id);
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 400 });
     }
@@ -56,7 +65,7 @@ export async function POST(request: Request) {
 
         const templateAdSetId = property.template_adset_id;
 
-        // --- Facebook API Calls (Abbreviated for clarity, logic remains same) ---
+        // --- Facebook API Calls (Logic Preserved) ---
         const adSetFetch = await fetch(`${FB_MARKETING_URL}/${templateAdSetId}?fields=name,targeting&access_token=${facebookToken}`);
         const templateAdSet = await adSetFetch.json();
         if (templateAdSet.error) throw new Error(`Template Read Error: ${templateAdSet.error.message}`);

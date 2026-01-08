@@ -250,19 +250,21 @@ export default function DashboardPage() {
       
       if (props) setProperties(props)
 
-      // 3. Get Creatives Feed
-      const { data: creatives } = await supabase
-        .from('master_creatives')
-        .select(`*, property:properties!inner(title, organization_id)`) 
-        .eq('property.organization_id', orgId)
-        .order('created_at', { ascending: false })
+     // 3. Get Creatives Feed (SCALABILITY FIX: Added Limit)
+     const { data: creatives } = await supabase
+     .from('master_creatives')
+     .select(`*, property:properties!inner(title, organization_id)`) 
+     .eq('property.organization_id', orgId)
+     .order('created_at', { ascending: false })
+     .limit(30) // <--- ADDED LIMIT
 
-      // 4. Get News Posts
-      const { data: posts } = await supabase
-        .from('posts')
-        .select(`*, author:profiles!inner(organization_id, business_name, logo_url)`)
-        .eq('author.organization_id', orgId)
-        .order('created_at', { ascending: false })
+   // 4. Get News Posts (SCALABILITY FIX: Added Limit)
+   const { data: posts } = await supabase
+     .from('posts')
+     .select(`*, author:profiles!inner(organization_id, business_name, logo_url)`)
+     .eq('author.organization_id', orgId)
+     .order('created_at', { ascending: false })
+     .limit(20) // <--- ADDED LIMIT
 
       // 5. Merge and Sort Feed
       const combinedFeed: FeedItem[] = []
