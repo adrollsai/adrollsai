@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Filter, Download, Facebook, Instagram, X, Loader2, Film, MessageCircle, Rocket, AlertTriangle } from 'lucide-react' // Added AlertTriangle
+import { Filter, Download, Facebook, Instagram, X, Loader2, Film, MessageCircle, Rocket, AlertTriangle, RefreshCw } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useOrganization } from '@/components/OrganizationWrapper'
 
@@ -18,6 +18,7 @@ type Asset = {
   master_creative?: {
       caption_template: string
   }
+  created_at?: string // Added for logic if needed
 }
 
 type Profile = {
@@ -30,8 +31,11 @@ const filters = ['All', 'image', 'video']
 export default function AssetsPage() {
   const supabase = createClient()
   const { org } = useOrganization()
+  
+  // --- STATE ---
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [activeFilter, setActiveFilter] = useState('All')
   const [userProfile, setUserProfile] = useState<Profile | null>(null)
 
@@ -40,54 +44,104 @@ export default function AssetsPage() {
   const [caption, setCaption] = useState('')
   const [mounted, setMounted] = useState(false)
   
-  // Tracking which platform is currently posting (null, 'universal', 'facebook', 'instagram')
+  // Tracking which platform is currently posting
   const [postingState, setPostingState] = useState<string | null>(null)
 
-  // 1. Fetch Assets & Trigger Cleanup
+  // --- CACHE HELPERS ---
+  const saveToCache = (userId: string, data: any) => {
+    try {
+        localStorage.setItem(`assets_cache_${userId}`, JSON.stringify(data));
+        localStorage.setItem(`assets_cache_time_${userId}`, Date.now().toString());
+    } catch (e) {
+        console.error("Cache Save Error", e);
+    }
+  }
+
+  const loadFromCache = (userId: string) => {
+      try {
+          const cached = localStorage.getItem(`assets_cache_${userId}`);
+          return cached ? JSON.parse(cached) : null;
+      } catch (e) {
+          return null;
+      }
+  }
+
+  // --- 1. FETCH ASSETS ---
+  const fetchAssetsData = async (forceRefresh = false) => {
+    try {
+        if (!forceRefresh) setLoading(true)
+        else setIsRefreshing(true)
+
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+
+        // --- TRY CACHE FIRST ---
+        if (!forceRefresh) {
+            const cachedData = loadFromCache(user.id);
+            if (cachedData) {
+                console.log("⚡ Loading Assets from Cache");
+                setAssets(cachedData.assets);
+                setUserProfile(cachedData.userProfile);
+                setLoading(false);
+                return; // STOP HERE IF CACHED
+            }
+        }
+
+        console.log("🌐 Fetching Assets from Database...");
+
+        // Trigger Cleanup (Only on fresh fetch)
+        // Fire and forget, but useful before we select
+        fetch('/api/assets/cleanup').then(res => res.json()).then(data => {
+            if (data.deletedCount > 0) console.log(`Cleaned up ${data.deletedCount} expired assets`)
+        }).catch(err => console.error("Cleanup failed", err))
+
+        // Get Profile
+        const { data: profile } = await supabase.from('profiles').select('business_name, contact_number').eq('id', user.id).single()
+        
+        // Add delay for consistency if refreshing
+        if (forceRefresh) {
+             await new Promise(resolve => setTimeout(resolve, 500)) 
+        }
+
+        // Fetch Assets
+        const sevenDaysAgo = new Date()
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+
+        const { data, error } = await supabase
+            .from('assets')
+            .select(`
+                *,
+                property:properties ( marketing_copy_template ),
+                master_creative:master_creatives ( caption_template )
+            `)
+            .eq('user_id', user.id)
+            .gte('created_at', sevenDaysAgo.toISOString()) // Filter at query level
+            .order('created_at', { ascending: false })
+
+        if (error) console.error("ASSETS FETCH ERROR:", error)
+        
+        // --- UPDATE STATE ---
+        const fetchedAssets = (data || []) as unknown as Asset[]
+        setAssets(fetchedAssets)
+        if (profile) setUserProfile(profile as Profile)
+
+        // --- SAVE TO CACHE ---
+        saveToCache(user.id, {
+            assets: fetchedAssets,
+            userProfile: profile
+        })
+
+    } catch (e) {
+        console.error("Assets Load Error", e)
+    } finally {
+        setLoading(false)
+        setIsRefreshing(false)
+    }
+  }
+
   useEffect(() => {
     setMounted(true)
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      // --- NEW: Trigger Lazy Cleanup (Fire and Forget) ---
-      // We don't await this to keep the UI snappy, but it cleans the DB for next time
-      fetch('/api/assets/cleanup').then(res => res.json()).then(data => {
-          if (data.deletedCount > 0) console.log(`Cleaned up ${data.deletedCount} expired assets`)
-      }).catch(err => console.error("Cleanup failed", err))
-      // ---------------------------------------------------
-
-      const { data: profile } = await supabase.from('profiles').select('business_name, contact_number').eq('id', user.id).single()
-      if (profile) setUserProfile(profile as Profile)
-      
-      // Add a small delay (500ms) to allow eventual consistency to resolve
-      await new Promise(resolve => setTimeout(resolve, 500)) 
-
-      // Fetch assets with templates from either Property or Master Creative
-      // We also filter out expired assets in the fetch to ensure the UI is instant
-      // even if the background cleanup hasn't finished yet.
-      const sevenDaysAgo = new Date()
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-
-      const { data, error } = await supabase
-        .from('assets')
-        .select(`
-            *,
-            property:properties ( marketing_copy_template ),
-            master_creative:master_creatives ( caption_template )
-        `)
-        .eq('user_id', user.id)
-        .gte('created_at', sevenDaysAgo.toISOString()) // Filter at query level for instant UI update
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error("ASSETS FETCH ERROR:", error)
-      }
-      
-      if (data) setAssets(data as unknown as Asset[])
-      setLoading(false)
-    }
-    init()
+    fetchAssetsData(false) // Default: Load from Cache
   }, [])
 
   // 2. Open & Template Logic
@@ -179,13 +233,10 @@ export default function AssetsPage() {
       // Construct content
       const shareText = `${caption}\n\n${selectedAsset.url}`
 
-      // 1. Copy to Clipboard (as requested)
-      // This allows users to paste the text if they choose a different method later
+      // 1. Copy to Clipboard
       navigator.clipboard.writeText(shareText).catch(err => console.error("Clipboard write failed", err))
 
       // 2. Open WhatsApp Direct Link
-      // This avoids the 'popup blocked' issue because it runs synchronously in the click handler
-      // It will open the WhatsApp App on mobile or Web on desktop
       const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`
       window.open(whatsappUrl, '_blank')
   }
@@ -217,10 +268,20 @@ export default function AssetsPage() {
             <h1 className="text-2xl font-bold text-slate-900">My Assets</h1>
             <p className="text-slate-500 text-xs mt-1">Ready to share</p>
         </div>
-        <div className="p-2.5 bg-white text-slate-700 rounded-full shadow-sm border border-slate-100"><Filter size={18} /></div>
+        <div className="flex gap-2">
+            {/* REFRESH BUTTON */}
+            <button 
+                onClick={() => fetchAssetsData(true)}
+                disabled={isRefreshing}
+                className="p-2.5 bg-white text-slate-500 hover:text-slate-900 rounded-full shadow-sm border border-slate-100 disabled:opacity-50 transition-all active:scale-95"
+            >
+                <RefreshCw size={18} className={isRefreshing ? "animate-spin" : ""} />
+            </button>
+            <div className="p-2.5 bg-white text-slate-700 rounded-full shadow-sm border border-slate-100"><Filter size={18} /></div>
+        </div>
       </div>
 
-      {/* --- NEW: RETENTION WARNING BANNER --- */}
+      {/* --- RETENTION WARNING BANNER --- */}
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
         <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={18} />
         <div>
@@ -230,7 +291,6 @@ export default function AssetsPage() {
           </p>
         </div>
       </div>
-      {/* ------------------------------------ */}
 
       {/* FILTER TABS */}
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">

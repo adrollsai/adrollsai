@@ -129,6 +129,7 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'feed' | 'inventory' | 'leaderboard' | 'agents'>('feed')
   const [userProfile, setUserProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   
   // Data
   const [properties, setProperties] = useState<Property[]>([])
@@ -214,14 +215,58 @@ export default function DashboardPage() {
 
   const effectiveStreak = getEffectiveStreak()
 
-  // 1. FETCH DATA
-  const fetchData = async () => {
+  // --- CACHE HELPERS ---
+  const saveToCache = (userId: string, data: any) => {
     try {
-      setLoading(true)
+        localStorage.setItem(`dashboard_cache_${userId}`, JSON.stringify(data));
+        // Also save timestamp if needed in future
+        localStorage.setItem(`dashboard_cache_time_${userId}`, Date.now().toString());
+    } catch (e) {
+        console.error("Cache Save Error", e);
+    }
+  }
+
+  const loadFromCache = (userId: string) => {
+      try {
+          const cached = localStorage.getItem(`dashboard_cache_${userId}`);
+          return cached ? JSON.parse(cached) : null;
+      } catch (e) {
+          return null;
+      }
+  }
+
+  // 1. FETCH DATA (Updated for Caching)
+  const fetchData = async (forceRefresh = false) => {
+    try {
+      if (!forceRefresh) setLoading(true)
+      else setIsRefreshing(true)
+
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
 
-      // 1. Get Profile
+      // --- 1. TRY CACHE FIRST ---
+      if (!forceRefresh) {
+          const cachedData = loadFromCache(user.id);
+          if (cachedData) {
+              console.log("⚡ Loading Dashboard from Cache");
+              setUserProfile(cachedData.userProfile);
+              setProperties(cachedData.properties);
+              setFeedItems(cachedData.feedItems);
+              // Convert Array back to Set for claimed IDs
+              setClaimedCreativeIds(new Set(cachedData.claimedCreativeIds || []));
+              setLeaderboard(cachedData.leaderboard);
+              setAgentsList(cachedData.agentsList);
+              setPendingApprovals(cachedData.pendingApprovals);
+              setXpSettings(cachedData.xpSettings);
+              setLoading(false);
+              return; // STOP HERE IF CACHED
+          }
+      }
+
+      // --- 2. FETCH FROM DB (If Force Refresh or No Cache) ---
+      console.log("🌐 Fetching Dashboard from Database...");
+
+      // Get Profile
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -233,71 +278,47 @@ export default function DashboardPage() {
           return
       }
 
-      setUserProfile(profile as Profile)
       const orgId = profile.organization_id
+      if (!orgId) { setLoading(false); return }
 
-      if (!orgId) {
-          setLoading(false)
-          return
-      }
-
-      // 2. Get Properties (FILTERED BY ORG)
+      // Get Properties
       const { data: props } = await supabase
         .from('properties')
         .select('*')
         .eq('organization_id', orgId) 
         .order('created_at', { ascending: false })
-        .limit(50) // <--- LIMIT ADDED FOR SCALABILITY
+        .limit(50)
       
-      if (props) setProperties(props)
-
-     // 3. Get Creatives Feed (SCALABILITY FIX: Added Limit)
+      // Get Creatives
      const { data: creatives } = await supabase
      .from('master_creatives')
      .select(`*, property:properties!inner(title, organization_id)`) 
      .eq('property.organization_id', orgId)
      .order('created_at', { ascending: false })
-     .limit(30) // <--- ADDED LIMIT
+     .limit(30)
 
-   // 4. Get News Posts (SCALABILITY FIX: Added Limit)
-   const { data: posts } = await supabase
+     // Get News Posts
+     const { data: posts } = await supabase
      .from('posts')
      .select(`*, author:profiles!inner(organization_id, business_name, logo_url)`)
      .eq('author.organization_id', orgId)
      .order('created_at', { ascending: false })
-     .limit(20) // <--- ADDED LIMIT
+     .limit(20)
 
-      // 5. Merge and Sort Feed
+      // Merge Feed
       const combinedFeed: FeedItem[] = []
-      
-      if (creatives) {
-          creatives.forEach((c: any) => combinedFeed.push({
-              kind: 'creative',
-              id: c.id,
-              url: c.url,
-              type: c.type,
-              caption_template: c.caption_template,
-              created_at: c.created_at,
-              property_id: c.property_id, 
-              property: c.property
-          }))
-      }
+      if (creatives) creatives.forEach((c: any) => combinedFeed.push({
+          kind: 'creative', id: c.id, url: c.url, type: c.type,
+          caption_template: c.caption_template, created_at: c.created_at,
+          property_id: c.property_id, property: c.property
+      }))
 
-      if (posts) {
-          posts.forEach((p: any) => combinedFeed.push({
-              kind: 'post',
-              id: p.id,
-              title: p.title,
-              content: p.content,
-              media_url: p.media_url,
-              media_type: p.media_type,
-              created_at: p.created_at,
-              tags: p.tags,
-              author: p.author
-          }))
-      }
+      if (posts) posts.forEach((p: any) => combinedFeed.push({
+          kind: 'post', id: p.id, title: p.title, content: p.content,
+          media_url: p.media_url, media_type: p.media_type,
+          created_at: p.created_at, tags: p.tags, author: p.author
+      }))
 
-      // Sort: Pinned posts first, then newest
       combinedFeed.sort((a, b) => {
           const isAPinned = a.kind === 'post' && a.tags?.includes('pinned')
           const isBPinned = b.kind === 'post' && b.tags?.includes('pinned')
@@ -306,24 +327,18 @@ export default function DashboardPage() {
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       })
 
-      setFeedItems(combinedFeed)
-
-      // 6. Get Claimed Creatives (For Agents)
+      // Get Claimed (Agent)
+      let claimedSet = new Set<string>()
       if (profile.role === 'agent') {
           const { data: claims } = await supabase
              .from('assets')
              .select('master_creative_id')
              .eq('user_id', user.id)
              .not('master_creative_id', 'is', null)
-          
-          const claimedSet = new Set<string>()
-          claims?.forEach((c: any) => {
-              if (c.master_creative_id) claimedSet.add(c.master_creative_id)
-          })
-          setClaimedCreativeIds(claimedSet)
+          claims?.forEach((c: any) => { if (c.master_creative_id) claimedSet.add(c.master_creative_id) })
       }
 
-      // 7. Get Leaderboard (Everyone)
+      // Get Leaderboard
       const { data: lb } = await supabase
          .from('profiles')
          .select('*')
@@ -331,53 +346,69 @@ export default function DashboardPage() {
          .neq('role', 'admin') 
          .order('total_xp', { ascending: false })
          .limit(20)
-      
-      if (lb) setLeaderboard(lb as Profile[])
 
+      // Get Admin Data
+      let agents: any[] = []
+      let pendings: any[] = []
+      let settings = { site_visit: 50, closed: 500 }
 
-      // 8. Get Agents List (Admin Only)
       if (profile.role === 'admin') {
-          const { data: agents } = await supabase
+          const { data: ag } = await supabase
             .from('profiles')
             .select('*')
             .eq('organization_id', orgId)
             .eq('role', 'agent')
             .order('created_at', { ascending: false })
-            .limit(50) // <--- LIMIT ADDED FOR SCALABILITY
-            
-          if (agents) {
-             setAgentsList(agents as AgentProfile[])
-          }
+            .limit(50)
+          if (ag) agents = ag
 
-          // --- NEW: FETCH PENDING APPROVALS ---
-          const { data: pendings } = await supabase
+          const { data: pen } = await supabase
             .from('leads')
             .select('*, agent:profiles!inner(business_name, organization_id)')
             .eq('status', 'Pending Approval')
             .eq('agent.organization_id', orgId)
-          
-          if (pendings) setPendingApprovals(pendings)
+          if (pen) pendings = pen
 
-          // --- NEW: FETCH ORG SETTINGS ---
           const { data: orgData } = await supabase
              .from('organizations')
              .select('xp_structure')
              .eq('id', orgId)
              .single()
-          
-          if (orgData?.xp_structure) {
-             setXpSettings(orgData.xp_structure as any)
-          }
+          if (orgData?.xp_structure) settings = orgData.xp_structure as any
       }
+
+      // --- 3. UPDATE STATE ---
+      setUserProfile(profile as Profile)
+      setProperties(props as Property[] || [])
+      setFeedItems(combinedFeed)
+      setClaimedCreativeIds(claimedSet)
+      setLeaderboard(lb as Profile[] || [])
+      setAgentsList(agents as AgentProfile[])
+      setPendingApprovals(pendings)
+      setXpSettings(settings)
+
+      // --- 4. SAVE TO CACHE ---
+      const cachePayload = {
+          userProfile: profile,
+          properties: props || [],
+          feedItems: combinedFeed,
+          claimedCreativeIds: Array.from(claimedSet), // Store Set as Array
+          leaderboard: lb || [],
+          agentsList: agents,
+          pendingApprovals: pendings,
+          xpSettings: settings
+      }
+      saveToCache(user.id, cachePayload)
 
     } catch (error) {
       console.error("Dashboard Error:", error)
     } finally {
       setLoading(false)
+      setIsRefreshing(false)
     }
   }
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => { fetchData(false) }, []) // Default: Load from Cache
 
   // --- Track Share Helper ---
   const trackShare = async () => {
@@ -416,7 +447,7 @@ export default function DashboardPage() {
           if (!res.ok) throw new Error(data.error)
 
           alert(approved ? "Request Approved & XP Awarded!" : "Request Rejected.")
-          fetchData() // Refresh list
+          fetchData(true) // Force Refresh to update cache
       } catch (e: any) {
           alert("Action failed: " + e.message)
       }
@@ -471,7 +502,7 @@ export default function DashboardPage() {
               configurations: newProject.configs
           })
           
-          await fetchData()
+          await fetchData(true) // Force Refresh
           setShowAddProject(false)
           // Reset Form
           setNewProject({ title: '', address: '', rera: '', description: '', configs: [] })
@@ -513,7 +544,7 @@ export default function DashboardPage() {
           const data = await res.json()
           if (!res.ok) throw new Error(data.error || "Failed to create creative")
 
-          await fetchData()
+          await fetchData(true) // Force Refresh
           setShowAddCreative(false)
           setCreativeFile(null) // Reset file
           alert("Creative posted & Agents notified! 🚀")
@@ -558,7 +589,7 @@ export default function DashboardPage() {
           const data = await res.json()
           if (!res.ok) throw new Error(data.error || "Failed to post news")
           
-          await fetchData()
+          await fetchData(true) // Force Refresh
           setShowAddNews(false)
           setNewNews({title: '', content: ''})
           setNewsFile(null)
@@ -600,6 +631,9 @@ export default function DashboardPage() {
               
               // Trigger Share Tracking Logic (Awards XP & Streak)
               await trackShare()
+              
+              // We don't necessarily need to fetch full data here, just updating local state is fine 
+              // as Assets page will handle its own fetching.
 
               alert(`Creative Claimed! It's saved to your Assets tab.`)
               router.push('/dashboard/assets')
@@ -623,9 +657,10 @@ export default function DashboardPage() {
           } else {
               await supabase.from('posts').delete().eq('id', item.id)
           }
+          fetchData(true) // Sync Cache in background
       } catch (err) {
           console.error(err)
-          fetchData()
+          fetchData(true) // Revert on error
       }
   }
 
@@ -638,6 +673,7 @@ export default function DashboardPage() {
          ? (post.tags || []).filter(t => t !== 'pinned')
          : [...(post.tags || []), 'pinned']
 
+      // Optimistic Update
       setFeedItems(prev => prev.map(i => {
           if (i.id === post.id && i.kind === 'post') {
               return { ...i, tags: newTags }
@@ -652,6 +688,7 @@ export default function DashboardPage() {
       }))
 
       await supabase.from('posts').update({ tags: newTags }).eq('id', post.id)
+      // Note: We don't force refresh here to keep UI snappy, next refresh/load will sync.
   }
 
   const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
@@ -667,13 +704,13 @@ export default function DashboardPage() {
         await supabase.from('master_creatives').delete().eq('property_id', id)
         const { error } = await supabase.from('properties').delete().eq('id', id)
         if (error) throw error
+        fetchData(true) // Sync Cache
     } catch (err: any) {
         console.error("Delete failed:", err)
         alert("Failed to delete: " + err.message)
         setProperties(backupProperties)
     } finally {
         setIsDeleting(false)
-        fetchData()
     }
   }
 
@@ -800,7 +837,7 @@ export default function DashboardPage() {
           
           alert("Project updated successfully!")
           setShowEditProject(false)
-          fetchData()
+          fetchData(true) // Force Refresh
       } catch (e: any) {
           alert("Update failed: " + e.message)
       } finally {
@@ -829,7 +866,7 @@ export default function DashboardPage() {
           alert(`✅ Agent ${newAgent.name} added successfully!`)
           setNewAgent({ name: '', email: '', password: '', phone: '' })
           setShowAddAgent(false)
-          fetchData() // Refresh list
+          fetchData(true) // Force Refresh
       } catch (e: any) {
           alert("Error: " + e.message)
       } finally {
@@ -874,6 +911,7 @@ export default function DashboardPage() {
           
           alert(`Success! Credits updated. Agent has been notified.`)
           setEditCreditsValue('') 
+          fetchData(true) // Sync Cache
       } catch (e: any) {
           alert("Failed to update credits: " + e.message)
       } finally {
@@ -896,6 +934,7 @@ export default function DashboardPage() {
           setSelectedAgent(prev => prev ? { ...prev, total_xp: data.newTotal } : null)
           alert("XP Awarded!")
           setAwardXpValue('')
+          fetchData(true) // Sync Cache
       } catch(e: any) { alert("Error: " + e.message) } finally { setIsAwardingXp(false) }
   }
 
@@ -954,25 +993,36 @@ export default function DashboardPage() {
               </div>
           )}
 
-          {/* --- PAGE TABS --- */}
-          <div className="sticky top-20 z-40 bg-white p-1.5 rounded-xl shadow-sm border border-slate-100 max-w-lg mx-auto flex gap-1">
-              <button onClick={() => setActiveTab('feed')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'feed' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
-                  <Zap size={14}/> Feed
-              </button>
-              <button onClick={() => setActiveTab('inventory')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'inventory' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
-                  <Building size={14}/> Projects
-              </button>
-              
-              <button onClick={() => setActiveTab('leaderboard')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'leaderboard' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
-                  <Trophy size={14}/> Rankings
-              </button>
+          {/* --- PAGE TABS & REFRESH --- */}
+          <div className="sticky top-20 z-40 max-w-lg mx-auto flex gap-2 items-stretch">
+            <div className="flex-1 bg-white p-1.5 rounded-xl shadow-sm border border-slate-100 flex gap-1">
+                <button onClick={() => setActiveTab('feed')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'feed' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+                    <Zap size={14}/> Feed
+                </button>
+                <button onClick={() => setActiveTab('inventory')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'inventory' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+                    <Building size={14}/> Projects
+                </button>
+                
+                <button onClick={() => setActiveTab('leaderboard')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'leaderboard' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+                    <Trophy size={14}/> Rankings
+                </button>
 
-              {userProfile?.role === 'admin' && (
-                  <button onClick={() => setActiveTab('agents')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'agents' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
-                      <Users size={14}/> Agents 
-                      {pendingApprovals.length > 0 && <span className="bg-red-500 text-white text-[9px] px-1.5 py-0.5 rounded-full ml-1 shadow-sm">{pendingApprovals.length}</span>}
-                  </button>
-              )}
+                {userProfile?.role === 'admin' && (
+                    <button onClick={() => setActiveTab('agents')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'agents' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+                        <Users size={14}/> Agents 
+                        {pendingApprovals.length > 0 && <span className="bg-red-500 text-white text-[9px] px-1.5 py-0.5 rounded-full ml-1 shadow-sm">{pendingApprovals.length}</span>}
+                    </button>
+                )}
+            </div>
+            
+            {/* REFRESH BUTTON */}
+            <button 
+                onClick={() => fetchData(true)} 
+                disabled={isRefreshing}
+                className="bg-white px-4 rounded-xl shadow-sm border border-slate-100 text-slate-500 hover:text-slate-900 hover:border-slate-300 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center"
+            >
+                <RefreshCw size={20} className={isRefreshing ? "animate-spin" : ""} />
+            </button>
           </div>
           
           {/* --- TAB CONTENT AREA --- */}

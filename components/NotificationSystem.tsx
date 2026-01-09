@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react' // Added useRef
 import { createClient } from '@/utils/supabase/client'
 import { Bell, X } from 'lucide-react'
 import { toast, Toaster } from 'sonner'
@@ -21,13 +21,15 @@ export default function NotificationSystem() {
     const [notifications, setNotifications] = useState<Notification[]>([])
     const [isOpen, setIsOpen] = useState(false)
     const [unreadCount, setUnreadCount] = useState(0)
+    
+    // FIX 1: Track the ID of the most recent notification we've seen
+    const lastSeenIdRef = useRef<string | null>(null)
 
     useEffect(() => {
         // 1. Initial Fetch
         fetchNotifications()
 
         // 2. SCALABILITY FIX: Polling instead of Realtime
-        // Checks every 60 seconds. Much cheaper and doesn't hit connection limits.
         const interval = setInterval(() => {
             fetchNotifications(true) // Pass true to indicate background update
         }, 60000)
@@ -44,17 +46,27 @@ export default function NotificationSystem() {
             .select('*')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false })
-            .limit(20) // Limit to last 20 to save data
+            .limit(20) 
         
         if (data) {
             const typedData = data as Notification[]
+            const newestItem = typedData[0]
             
-            // If background update, check if we have new unread items to toast
-            if (isBackground) {
-                const newUnread = typedData.filter(n => !n.is_read).length
-                if (newUnread > unreadCount) {
+            // FIX 2: Better Toast Logic
+            // Only toast if:
+            // A. It's a background check
+            // B. We actually have items
+            // C. The newest item is unread
+            // D. The newest item ID is DIFFERENT from the last one we processed
+            if (isBackground && newestItem) {
+                if (!newestItem.is_read && newestItem.id !== lastSeenIdRef.current) {
                     toast.info("You have new notifications")
                 }
+            }
+
+            // Update the ref to the current top item so we don't alert on it again
+            if (newestItem) {
+                lastSeenIdRef.current = newestItem.id
             }
 
             setNotifications(typedData)

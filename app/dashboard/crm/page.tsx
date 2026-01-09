@@ -10,7 +10,6 @@ import { useOrganization } from '@/components/OrganizationWrapper'
 
 // ADDED 'Disqualified'
 const STAGES = ['New', 'Qualified', 'Site Visit Done', 'Closed', 'Disqualified']
-const CACHE_KEY = 'crm_leads_cache'
 
 type Lead = {
     id: string
@@ -30,6 +29,7 @@ type Profile = {
     id: string
     business_name: string
     role: 'admin' | 'agent'
+    organization_id: string
 }
 
 type TeamStat = {
@@ -45,6 +45,7 @@ export default function CRMPage() {
   // --- STATE ---
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false) // Added refreshing state
   const [activeStage, setActiveStage] = useState('New')
   
   // Admin / Team State
@@ -74,28 +75,68 @@ export default function CRMPage() {
   
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // --- 1. FETCH DATA ---
-  const fetchCRMData = async (force = false) => {
+  // --- CACHE HELPERS ---
+  const saveToCache = (userId: string, data: any) => {
     try {
-        setLoading(true)
+        localStorage.setItem(`crm_cache_${userId}`, JSON.stringify(data));
+        localStorage.setItem(`crm_cache_time_${userId}`, Date.now().toString());
+    } catch (e) {
+        console.error("Cache Save Error", e);
+    }
+  }
+
+  const loadFromCache = (userId: string) => {
+      try {
+          const cached = localStorage.getItem(`crm_cache_${userId}`);
+          return cached ? JSON.parse(cached) : null;
+      } catch (e) {
+          return null;
+      }
+  }
+
+  // --- 1. FETCH DATA ---
+  const fetchCRMData = async (forceRefresh = false) => {
+    try {
+        if (!forceRefresh) setLoading(true)
+        else setIsRefreshing(true)
+
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
+
+        // --- TRY CACHE FIRST ---
+        if (!forceRefresh) {
+            const cachedData = loadFromCache(user.id);
+            if (cachedData) {
+                console.log("⚡ Loading CRM from Cache");
+                setUserProfile(cachedData.userProfile);
+                setLeads(cachedData.leads);
+                setTeamMembers(cachedData.teamMembers);
+                setTeamStats(cachedData.teamStats);
+                setLoading(false);
+                return; // STOP HERE IF CACHED
+            }
+        }
+
+        console.log("🌐 Fetching CRM from Database...");
 
         // A. Get Profile to determine Role
         const { data: profile } = await supabase.from('profiles').select('id, business_name, role, organization_id').eq('id', user.id).single()
         if (!profile) return
-        setUserProfile(profile as Profile)
+        
+        // Cast profile safely
+        const currentProfile = profile as Profile
+        setUserProfile(currentProfile)
 
         let fetchedLeads: Lead[] = []
         let fetchedMembers: Profile[] = []
 
         // B. Fetch Leads based on Role
-        if (profile.role === 'admin') {
+        if (currentProfile.role === 'admin') {
             // ADMIN: Fetch ALL team members and ALL leads
             const { data: members } = await supabase
                 .from('profiles')
-                .select('id, business_name, role')
-                .eq('organization_id', profile.organization_id)
+                .select('id, business_name, role, organization_id')
+                .eq('organization_id', currentProfile.organization_id)
             
             if (members) {
                 fetchedMembers = members as Profile[]
@@ -122,24 +163,38 @@ export default function CRMPage() {
             if (data) fetchedLeads = data
         }
 
+        // Calculate Stats
+        const calculatedStats = calculateStatsReturn(fetchedLeads, fetchedMembers)
+
+        // Update State
         setLeads(fetchedLeads)
-        calculateStats(fetchedLeads, fetchedMembers) 
+        setTeamStats(calculatedStats)
+
+        // --- SAVE TO CACHE ---
+        const cachePayload = {
+            userProfile: currentProfile,
+            leads: fetchedLeads,
+            teamMembers: fetchedMembers,
+            teamStats: calculatedStats
+        }
+        saveToCache(user.id, cachePayload)
 
     } catch (e) {
         console.error("CRM Error", e)
     } finally {
         setLoading(false)
+        setIsRefreshing(false)
     }
   }
 
   useEffect(() => { 
-    fetchCRMData() 
+    fetchCRMData(false) // Load from cache by default
     setMounted(true)
   }, [])
 
-  // Calculate Leaderboard
-  const calculateStats = (allLeads: Lead[], members: Profile[]) => {
-      if (!members || members.length === 0) return
+  // Calculate Leaderboard (Helper for both Render and Cache)
+  const calculateStatsReturn = (allLeads: Lead[], members: Profile[]) => {
+      if (!members || members.length === 0) return []
 
       const stats: Record<string, number> = {}
       allLeads.forEach(l => {
@@ -156,7 +211,13 @@ export default function CRMPage() {
           }))
           .sort((a, b) => b.count - a.count)
       
-      setTeamStats(leaderboard)
+      return leaderboard
+  }
+
+  // Wrapper for existing stats usage (to maintain compatibility if needed)
+  const calculateStats = (allLeads: Lead[], members: Profile[]) => {
+      const stats = calculateStatsReturn(allLeads, members)
+      setTeamStats(stats)
   }
 
   // --- 2. ACTIONS ---
@@ -175,13 +236,16 @@ export default function CRMPage() {
           if (!res.ok) throw new Error("Assignment failed")
           
           // Optimistic Update
-          setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, user_id: agentId } : l))
+          const updatedLeads = leads.map(l => l.id === selectedLead.id ? { ...l, user_id: agentId } : l)
+          setLeads(updatedLeads)
           setSelectedLead(prev => prev ? { ...prev, user_id: agentId } : null)
           
-          const updatedLeads = leads.map(l => l.id === selectedLead.id ? { ...l, user_id: agentId } : l)
           calculateStats(updatedLeads, teamMembers)
 
           alert("Lead reassigned successfully!")
+          
+          // Force Sync Cache
+          fetchCRMData(true)
           
       } catch (e) {
           alert("Failed to reassign lead")
@@ -212,9 +276,11 @@ export default function CRMPage() {
         
         alert(msg)
 
-        fetchCRMData()
         setIsAddModalOpen(false)
         setNewLead({ name: '', phone: '', email: '', notes: '' })
+        
+        // Force Sync Cache
+        fetchCRMData(true)
 
     } catch (e: any) {
         alert("Error: " + e.message)
@@ -232,7 +298,14 @@ export default function CRMPage() {
     setLeads(updatedLeads)
     calculateStats(updatedLeads, teamMembers)
 
-    await supabase.from('leads').delete().eq('id', id)
+    try {
+        await supabase.from('leads').delete().eq('id', id)
+        // Sync Cache in Background
+        fetchCRMData(true)
+    } catch (err) {
+        console.error(err)
+        fetchCRMData(true) // Revert on error
+    }
   }
 
   const openSyncModal = async () => {
@@ -247,8 +320,9 @@ export default function CRMPage() {
   const handleSync = async () => {
       setIsSyncing(true)
       await fetch('/api/crm/sync', { method: 'POST', body: JSON.stringify({ formId: selectedFormId }) })
-      fetchCRMData()
-      setIsSyncing(false); setIsSyncModalOpen(false)
+      setIsSyncing(false); 
+      setIsSyncModalOpen(false)
+      fetchCRMData(true) // Force Refresh
   }
 
   // --- UPDATED: Update Stage with Logic for Approval ---
@@ -281,9 +355,13 @@ export default function CRMPage() {
         if (isRestricted && isAgent) {
             alert(`Request submitted for ${newStage}! Admin approval pending.`)
         }
+        
+        // Sync Cache
+        fetchCRMData(true)
+        
     } catch(e) {
         alert("Failed to update stage")
-        fetchCRMData() // Revert
+        fetchCRMData(true) // Revert
     }
   }
 
@@ -311,6 +389,15 @@ export default function CRMPage() {
             <p className="text-slate-500 text-xs mt-1 font-medium">Pipeline & Leads</p>
         </div>
         <div className="flex gap-2">
+            {/* Refresh Button */}
+            <button 
+                onClick={() => fetchCRMData(true)} 
+                disabled={isRefreshing}
+                className="bg-white p-3 rounded-full shadow-sm border border-slate-100 text-slate-500 hover:text-slate-900 active:scale-95 transition-all disabled:opacity-50"
+            >
+                <RefreshCw size={20} className={isRefreshing ? "animate-spin" : ""}/>
+            </button>
+
             {userProfile?.role === 'admin' && (
                 <button onClick={openSyncModal} className="bg-white p-3 rounded-full shadow-sm border border-slate-100"><Download size={20} className="text-slate-600"/></button>
             )}

@@ -44,13 +44,14 @@ export default function AdsPage() {
   const router = useRouter()
   const supabase = createClient()
   
-  // FIX 1: Safe access to Organization Context to prevent crash if undefined
+  // Organization Context
   const orgData = useOrganization()
   const org = orgData?.org
   const userRole = orgData?.userRole
   
   const [activeTab, setActiveTab] = useState<'campaigns' | 'market'>('campaigns')
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false) // Added refreshing state
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
@@ -62,49 +63,162 @@ export default function AdsPage() {
   const [loadingInsights, setLoadingInsights] = useState(false)
   const [mounted, setMounted] = useState(false)
   
+  // Data State
   const [adCredits, setAdCredits] = useState<number>(0)
   const [campaigns, setCampaigns] = useState<Campaign[]>([]) 
   const [marketAds, setMarketAds] = useState<MarketplaceAd[]>([]) 
   const [properties, setProperties] = useState<Property[]>([]) 
+  
+  // Insights Cache Map (CampaignID -> Insights)
+  const [insightsCache, setInsightsCache] = useState<Record<string, Insights>>({})
 
   const [adForm, setAdForm] = useState({
     propertyId: '', 
     lifetimeBudgetINR: 3000, 
   })
 
-  // --- DATA FETCHING ---
-  const fetchCampaigns = async () => {
+  // --- CACHE HELPERS ---
+  const saveToCache = (userId: string, data: any) => {
+    try {
+        localStorage.setItem(`ads_cache_${userId}`, JSON.stringify(data));
+        localStorage.setItem(`ads_cache_time_${userId}`, Date.now().toString());
+    } catch (e) {
+        console.error("Cache Save Error", e);
+    }
+  }
+
+  const loadFromCache = (userId: string) => {
       try {
-          const res = await fetch('/api/meta-ads/campaigns');
-          if (!res.ok) throw new Error('Failed to fetch');
-          const data = await res.json();
-          if (data.campaigns && Array.isArray(data.campaigns)) {
-             setCampaigns(data.campaigns);
-          }
-      } catch (e) { 
-        console.error("Failed to load campaigns", e); 
-        // Optional: setCampaigns([]) on error to prevent map errors
+          const cached = localStorage.getItem(`ads_cache_${userId}`);
+          return cached ? JSON.parse(cached) : null;
+      } catch (e) {
+          return null;
       }
   }
 
-  const fetchMarketAds = async () => {
-    const { data, error } = await supabase.from('ads').select('*')
-    if (error) console.error("Error fetching market ads:", error)
-    else setMarketAds(data || [])
+  // --- 1. FETCH DATA (Unified) ---
+  const fetchAdsData = async (forceRefresh = false) => {
+    try {
+        if (!forceRefresh) setLoading(true)
+        else setIsRefreshing(true)
+
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { router.push('/login'); return }
+
+        // --- TRY CACHE FIRST ---
+        if (!forceRefresh) {
+            const cachedData = loadFromCache(user.id);
+            if (cachedData) {
+                console.log("⚡ Loading Ads from Cache");
+                setAdCredits(cachedData.adCredits);
+                setCampaigns(cachedData.campaigns);
+                setMarketAds(cachedData.marketAds);
+                setProperties(cachedData.properties);
+                setInsightsCache(cachedData.insightsCache || {});
+                setLoading(false);
+                return; // STOP HERE IF CACHED
+            }
+        }
+
+        console.log("🌐 Fetching Ads from APIs...");
+
+        // 1. Fetch Profile (Credits)
+        const { data: profile } = await supabase.from('profiles').select('role, ad_credits, organization_id').eq('id', user.id).single()
+        if (!profile) return
+
+        const currentCredits = profile.ad_credits || 0
+        let fetchedCampaigns: Campaign[] = []
+        let fetchedMarketAds: MarketplaceAd[] = []
+        let fetchedProperties: Property[] = []
+
+        // 2. Fetch Campaigns (Meta API)
+        try {
+            const res = await fetch('/api/meta-ads/campaigns');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.campaigns && Array.isArray(data.campaigns)) {
+                   fetchedCampaigns = data.campaigns;
+                }
+            }
+        } catch (e) { console.error("Failed to load campaigns", e); }
+
+        // 3. Fetch Market Ads & Properties (If Agent)
+        if (profile.role === 'agent') {
+            const { data: ads } = await supabase.from('ads').select('*')
+            fetchedMarketAds = ads || []
+
+            if (profile.organization_id) {
+                const { data: props } = await supabase.from('properties').select('id, title, template_adset_id').eq('organization_id', profile.organization_id).order('created_at', { ascending: false });
+                fetchedProperties = props || []
+            }
+        }
+
+        // --- UPDATE STATE ---
+        setAdCredits(currentCredits)
+        setCampaigns(fetchedCampaigns)
+        setMarketAds(fetchedMarketAds)
+        setProperties(fetchedProperties)
+
+        // Keep existing insights cache if just refreshing list, unless force refresh clears it?
+        // Let's keep insights cache on refresh to be nice, or clear it if we want "fresh" fresh.
+        // The prompt implies "load until refresh clicked", so refresh should probably update everything.
+        // However, fetching *all* insights for *all* campaigns at once is too heavy.
+        // So we will just keep the existing insights cache in memory/localstorage, 
+        // but rely on individual fetch if the user clicks "Analytics" again (handled in fetchInsights).
+        
+        // --- SAVE TO CACHE ---
+        const cachePayload = {
+            adCredits: currentCredits,
+            campaigns: fetchedCampaigns,
+            marketAds: fetchedMarketAds,
+            properties: fetchedProperties,
+            insightsCache: insightsCache // Persist known insights
+        }
+        saveToCache(user.id, cachePayload)
+
+    } catch (err) {
+        console.error("Critical Load Error:", err)
+    } finally {
+        setLoading(false)
+        setIsRefreshing(false)
+    }
   }
 
+  // --- 2. FETCH INSIGHTS (On Demand with Cache) ---
   const fetchInsights = async (campaignId: string) => {
       setAnalyticsId(campaignId);
       setLoadingInsights(true);
       setInsights(null); 
+      
+      // A. Check Cache
+      if (insightsCache[campaignId]) {
+          console.log("⚡ Insight loaded from cache");
+          setInsights(insightsCache[campaignId]);
+          setLoadingInsights(false);
+          return;
+      }
+
+      // B. Fetch Fresh
       try {
           const res = await fetch(`/api/meta-ads/insights?campaignId=${campaignId}`);
           const data = await res.json();
-          if (data.insights) setInsights(data.insights);
+          if (data.insights) {
+              setInsights(data.insights);
+              
+              // Update Cache
+              const newCache = { ...insightsCache, [campaignId]: data.insights }
+              setInsightsCache(newCache)
+              
+              // Persist to LocalStorage
+              const { data: { user } } = await supabase.auth.getUser()
+              if (user) {
+                  const currentCache = loadFromCache(user.id) || {}
+                  saveToCache(user.id, { ...currentCache, insightsCache: newCache })
+              }
+          }
           else throw new Error(data.error || "No data");
       } catch (e) {
           console.error(e);
-          // Don't use alert() for insights errors, just log it
           setAnalyticsId(null);
       } finally {
           setLoadingInsights(false);
@@ -117,8 +231,16 @@ export default function AdsPage() {
       setTogglingId(id);
       
       // Optimistic Update
-      setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c));
+      const updatedCampaigns = campaigns.map(c => c.id === id ? { ...c, status: newStatus } : c)
+      setCampaigns(updatedCampaigns);
       
+      // Update Cache Immediately (Optimistic)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+          const currentCache = loadFromCache(user.id) || {}
+          saveToCache(user.id, { ...currentCache, campaigns: updatedCampaigns })
+      }
+
       try {
           const res = await fetch('/api/meta-ads/update-status', {
               method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId: id, newStatus })
@@ -127,7 +249,12 @@ export default function AdsPage() {
       } catch (error) {
           alert(`Failed to update status.`);
           // Revert on failure
-          setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: currentStatus } : c));
+          const reverted = campaigns.map(c => c.id === id ? { ...c, status: currentStatus } : c)
+          setCampaigns(reverted);
+          if (user) {
+             const currentCache = loadFromCache(user.id) || {}
+             saveToCache(user.id, { ...currentCache, campaigns: reverted })
+          }
       } finally { setTogglingId(null); }
   }
 
@@ -146,39 +273,7 @@ export default function AdsPage() {
   // --- INITIAL LOAD ---
   useEffect(() => {
     setMounted(true)
-    let mounted = true;
-
-    const loadData = async () => {
-      try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser()
-        if (authError || !user) { 
-            router.push('/login'); // Redirect to login, not just '/'
-            return 
-        }
-
-        const { data: profile } = await supabase.from('profiles').select('role, ad_credits, organization_id').eq('id', user.id).single()
-        
-        if (profile && mounted) {
-            setAdCredits(profile.ad_credits || 0)
-            await fetchCampaigns();
-            
-            if (profile.role === 'agent') {
-                await fetchMarketAds();
-                if (profile.organization_id) {
-                    const { data: props } = await supabase.from('properties').select('id, title, template_adset_id').eq('organization_id', profile.organization_id).order('created_at', { ascending: false });
-                    if (props) setProperties(props);
-                }
-            }
-        }
-      } catch (err) {
-          console.error("Critical Load Error:", err)
-      } finally {
-          if (mounted) setLoading(false)
-      }
-    }
-    
-    loadData()
-    return () => { mounted = false }
+    fetchAdsData(false) // Default: Load from Cache
   }, [])
   
   // --- LAUNCH HANDLER ---
@@ -205,8 +300,10 @@ export default function AdsPage() {
         alert(`${data.message}`);
         setIsModalOpen(false)
         setAdForm(prev => ({ ...prev, propertyId: '', lifetimeBudgetINR: 3000 })) 
-        fetchCampaigns();
-        setAdCredits(prev => prev - adForm.lifetimeBudgetINR); 
+        
+        // Force Refresh to get new campaign & update credits
+        fetchAdsData(true); 
+
       } else {
         throw new Error(data.error || 'Launch Failed');
       }
@@ -245,7 +342,16 @@ export default function AdsPage() {
                     <RefreshCw size={16}/> Map Projects
                 </Link>
             )}
-            <button onClick={() => { fetchCampaigns(); }} className="bg-white text-slate-500 p-3 rounded-full shadow-sm border border-slate-100"><RefreshCw size={20} /></button>
+            
+            {/* Refresh Button */}
+            <button 
+                onClick={() => fetchAdsData(true)} 
+                disabled={isRefreshing}
+                className="bg-white text-slate-500 p-3 rounded-full shadow-sm border border-slate-100 hover:text-slate-900 active:scale-95 transition-all disabled:opacity-50"
+            >
+                <RefreshCw size={20} className={isRefreshing ? "animate-spin" : ""} />
+            </button>
+
             {userRole === 'agent' && (
               <button onClick={() => setIsModalOpen(true)} className="bg-slate-900 hover:bg-slate-800 text-white p-3 rounded-full shadow-md">
                 <Plus size={20} strokeWidth={3} />
@@ -267,7 +373,6 @@ export default function AdsPage() {
                           <div className="max-w-[65%]">
                               <h3 className="text-sm font-bold text-slate-800 truncate leading-tight">{campaign.name}</h3>
                               <p className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">
-                                {/* FIX 2: Safe string replacement */}
                                 {campaign.objective ? campaign.objective.replace('OUTCOME_', '') : 'CAMPAIGN'}
                               </p>
                           </div>

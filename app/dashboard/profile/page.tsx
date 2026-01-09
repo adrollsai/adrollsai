@@ -3,7 +3,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { LogOut, Save, Loader2, Building, Facebook, CheckCircle, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck, Globe, Award, Lock, Flame, Zap, Crown, Share2, Link as LinkIcon, Headphones } from 'lucide-react'
+import { LogOut, Save, Loader2, Building, Facebook, CheckCircle, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck, Globe, Award, Lock, Flame, Zap, Crown, Share2, Link as LinkIcon, Headphones, RefreshCw } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -67,7 +67,6 @@ type Pixel = {
 }
 
 // --- BADGE CONFIGURATION ---
-// UPDATED: Removed Networker & Omnichannel King. Kept Connected and Streaks.
 const ALL_BADGES = [
     { id: 'streak_7', name: 'Week Warrior', desc: '7 Day Streak', icon: Flame, color: 'text-orange-500', bg: 'bg-orange-100' },
     { id: 'streak_30', name: 'Consistency King', desc: '30 Day Streak', icon: Zap, color: 'text-yellow-500', bg: 'bg-yellow-100' },
@@ -86,6 +85,7 @@ export default function ProfilePage() {
 
   // --- STATE ---
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false) // Added refreshing state
   const [userId, setUserId] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<'admin' | 'agent'>('agent')
   const [orgName, setOrgName] = useState<string>('')
@@ -144,8 +144,215 @@ export default function ProfilePage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // --- CACHE HELPERS ---
+  const saveToCache = (uId: string, data: any) => {
+    try {
+        localStorage.setItem(`profile_cache_${uId}`, JSON.stringify(data));
+        localStorage.setItem(`profile_cache_time_${uId}`, Date.now().toString());
+    } catch (e) {
+        console.error("Cache Save Error", e);
+    }
+  }
+
+  const loadFromCache = (uId: string) => {
+      try {
+          const cached = localStorage.getItem(`profile_cache_${uId}`);
+          return cached ? JSON.parse(cached) : null;
+      } catch (e) {
+          return null;
+      }
+  }
+
   // --- HELPERS ---
   const isValidFacebookToken = (token: string) => token && token.startsWith('EAA')
+
+  // --- DATA FETCHING (Unified) ---
+  const fetchProfileData = async (forceRefresh = false) => {
+      try {
+        if (!forceRefresh) setLoading(true)
+        else setIsRefreshing(true)
+
+        const { data: { session } } = await supabase.auth.getSession()
+        const user = session?.user
+
+        if (!user) {
+          router.push('/')
+          return
+        }
+        setUserId(user.id)
+
+        // --- TRY CACHE FIRST ---
+        if (!forceRefresh) {
+            const cachedData = loadFromCache(user.id);
+            if (cachedData) {
+                console.log("⚡ Loading Profile from Cache");
+                setUserRole(cachedData.userRole);
+                setOrgName(cachedData.orgName);
+                setMyBadges(cachedData.myBadges);
+                setFormData(cachedData.formData);
+                setAdminContact(cachedData.adminContact);
+                setOrgForm(cachedData.orgForm);
+                setCustomDomainInput(cachedData.customDomainInput);
+                
+                // Socials
+                setIsFacebookConnected(cachedData.isFacebookConnected);
+                setFacebookToken(cachedData.facebookToken);
+                setFbPages(cachedData.fbPages || []);
+                setAdAccounts(cachedData.adAccounts || []);
+                setPixels(cachedData.pixels || []);
+                setSelectedPageId(cachedData.selectedPageId || '');
+                setSelectedAdAccountId(cachedData.selectedAdAccountId || '');
+                setSelectedPixelId(cachedData.selectedPixelId || '');
+
+                setLoading(false);
+                return; // STOP HERE IF CACHED
+            }
+        }
+
+        console.log("🌐 Fetching Profile from DB...");
+
+        const { data: rawProfileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('*, organization:organizations(name, id, custom_domain, brand_color, master_logo_url)') 
+          .eq('id', user.id)
+          .single()
+
+        if (profileError) throw profileError;
+
+        const profile = rawProfileData as unknown as LocalProfile;
+        
+        // Prepare State Variables
+        const role = profile.role || 'agent';
+        const oName = profile.organization?.name || 'Independent';
+        const badges = profile.badges || [];
+        
+        const newFormData = {
+            businessName: profile.business_name || '',
+            mission: profile.mission_statement || '',
+            color: profile.brand_color || '#D0E8FF',
+            contact: profile.contact_number || '',
+            email: profile.email || user.email || '', 
+            logoUrl: profile.logo_url || '',
+            facebookUrl: profile.facebook_url || '',
+            instagramUrl: profile.instagram_url || ''
+        };
+
+        const newOrgForm = {
+            name: profile.organization?.name || '',
+            color: profile.organization?.brand_color || '#D0E8FF',
+            logo: profile.organization?.master_logo_url || ''
+        }
+
+        const newCustomDomain = profile.organization?.custom_domain || '';
+
+        // Admin Contact
+        let newAdminContact = null;
+        if (role === 'agent' && profile.organization?.id) {
+             const { data: adminData } = await supabase
+                  .from('profiles')
+                  .select('business_name, email, contact_number')
+                  .eq('organization_id', profile.organization.id)
+                  .eq('role', 'admin')
+                  .limit(1)
+                  .maybeSingle()
+                  
+              if (adminData) {
+                  newAdminContact = {
+                      name: adminData.business_name,
+                      email: adminData.email,
+                      phone: (adminData as any).contact_number 
+                  }
+              }
+        }
+
+        // Social Connections
+        let connected = false;
+        let token = null;
+        let pages: FBPage[] = [];
+        let ads: AdAccount[] = [];
+        let pix: Pixel[] = [];
+        let sPageId = profile.selected_page_id || '';
+        let sAdId = profile.ad_account_id || '';
+        let sPixId = profile.pixel_id || '';
+
+        if (profile.facebook_token && isValidFacebookToken(profile.facebook_token)) {
+            connected = true;
+            token = profile.facebook_token;
+            
+            // Fetch Social Data Fresh
+            // 1. Pages
+            try {
+                const res = await fetch('/api/facebook/pages');
+                const pData = await res.json();
+                if (pData.pages) pages = pData.pages;
+            } catch (e) { console.error("Page fetch error", e) }
+
+            // 2. Ad Accounts
+            try {
+                const res = await fetch(`https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name&access_token=${token}`);
+                const aData = await res.json();
+                if(aData.data) ads = aData.data.map((acc: any) => ({ id: acc.id, name: acc.name }));
+            } catch(e) { console.error("Ad Account error", e) }
+
+            // 3. Pixels (if ad account selected)
+            if (sAdId) {
+                try {
+                     const res = await fetch('/api/facebook/pixels', { method: 'POST', body: JSON.stringify({ adAccountId: sAdId }) });
+                     const piData = await res.json();
+                     if (piData.pixels) pix = piData.pixels;
+                } catch(e) { console.error("Pixel error", e) }
+            }
+
+            if (role !== 'admin') {
+                checkSocialRewards(); // Fire and forget
+            }
+        }
+
+        // --- UPDATE STATE ---
+        setUserRole(role);
+        setOrgName(oName);
+        setMyBadges(badges);
+        setFormData(newFormData);
+        setOrgForm(newOrgForm);
+        setCustomDomainInput(newCustomDomain);
+        setAdminContact(newAdminContact);
+        
+        setIsFacebookConnected(connected);
+        setFacebookToken(token);
+        setFbPages(pages);
+        setAdAccounts(ads);
+        setPixels(pix);
+        setSelectedPageId(sPageId);
+        setSelectedAdAccountId(sAdId);
+        setSelectedPixelId(sPixId);
+
+        // --- SAVE TO CACHE ---
+        const cachePayload = {
+            userRole: role,
+            orgName: oName,
+            myBadges: badges,
+            formData: newFormData,
+            orgForm: newOrgForm,
+            customDomainInput: newCustomDomain,
+            adminContact: newAdminContact,
+            isFacebookConnected: connected,
+            facebookToken: token,
+            fbPages: pages,
+            adAccounts: ads,
+            pixels: pix,
+            selectedPageId: sPageId,
+            selectedAdAccountId: sAdId,
+            selectedPixelId: sPixId
+        }
+        saveToCache(user.id, cachePayload);
+
+      } catch (error) {
+          console.error("Load error:", error)
+      } finally {
+          setLoading(false)
+          setIsRefreshing(false)
+      }
+  }
 
   // --- GAMIFICATION CHECK ---
   const checkSocialRewards = async () => {
@@ -155,27 +362,21 @@ export default function ProfilePage() {
         const res = await fetch('/api/gamification/check-socials', { method: 'POST' })
         const data = await res.json()
         
-        // Updated logic: Only award/notify for "Connected" badge if new
         if (data.success && data.earnedBadges && data.earnedBadges.length > 0) {
             let msg = `🎉 Badge Unlocked!`
-            // Removed XP notification here since XP is removed for socials
             msg += `\n🏅 You earned the '${data.earnedBadges.join(', ')}' badge!`
-            
             alert(msg)
-            
-            const { data: { user } } = await supabase.auth.getUser()
-            if (user) {
-               const { data: p } = await supabase.from('profiles').select('badges').eq('id', user.id).single()
-               if (p?.badges) setMyBadges(p.badges)
-            }
+            // No need to full refresh, just let user know. 
+            // Next refresh will pull the badge icon update.
         }
     } catch (e) {
         console.error("Gamification check failed:", e)
     }
   }
 
-
-  // 1. Fetch Pages
+  // --- ACTIONS (API Wrappers to update Cache) ---
+  
+  // 1. Fetch Pages (Manual Refresh for just pages)
   const fetchPages = async () => {
     setIsLoadingPages(true)
     try {
@@ -183,37 +384,34 @@ export default function ProfilePage() {
       const data = await res.json()
       if (data.pages && Array.isArray(data.pages)) {
         setFbPages(data.pages)
-      } else {
-        setFbPages([])
+        // Update Cache Partial
+        if (userId) {
+            const current = loadFromCache(userId) || {}
+            saveToCache(userId, { ...current, fbPages: data.pages })
+        }
       }
     } catch (e) {
       console.error("Error fetching pages:", e)
-      setFbPages([])
     } finally {
       setIsLoadingPages(false)
     }
   }
 
-  // 2. Fetch Ad Accounts
+  // 2. Fetch Ad Accounts (Manual)
   const fetchAdAccounts = async (token: string) => {
     setIsLoadingAdAccounts(true);
     try {
         const res = await fetch(`https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name&access_token=${token}`);
         const data = await res.json();
-        
-        const formattedAccounts = data.data?.map((acc: any) => ({
-            id: acc.id,
-            name: acc.name,
-        })) || [];
-
-        if (formattedAccounts.length > 0) {
-            setAdAccounts(formattedAccounts);
-        } else {
-            setAdAccounts([]);
+        const formatted = data.data?.map((acc: any) => ({ id: acc.id, name: acc.name, })) || [];
+        setAdAccounts(formatted);
+         // Update Cache Partial
+         if (userId) {
+            const current = loadFromCache(userId) || {}
+            saveToCache(userId, { ...current, adAccounts: formatted })
         }
     } catch (e) {
-        console.error("Network error fetching ad accounts:", e);
-        setAdAccounts([]);
+        console.error(e);
     } finally {
         setIsLoadingAdAccounts(false);
     }
@@ -230,16 +428,16 @@ export default function ProfilePage() {
         const data = await res.json()
         if (data.pixels) {
             setPixels(data.pixels)
+             // Update Cache Partial
+            if (userId) {
+                const current = loadFromCache(userId) || {}
+                saveToCache(userId, { ...current, pixels: data.pixels, selectedPixelId: data.pixels.length === 1 ? data.pixels[0].id : selectedPixelId })
+            }
             if (data.pixels.length === 1 && !selectedPixelId) {
                 handlePixelSelect(data.pixels[0].id)
             }
-        } else {
-            setPixels([])
         }
-    } catch (e) { 
-        console.error(e) 
-        setPixels([])
-    } 
+    } catch (e) { console.error(e) } 
     finally { setIsLoadingPixels(false) }
   }
 
@@ -249,6 +447,11 @@ export default function ProfilePage() {
     if (!page || !userId) return
 
     setSelectedPageId(pageId)
+    
+    // Optimistic Cache Update
+    const current = loadFromCache(userId) || {}
+    saveToCache(userId, { ...current, selectedPageId: pageId })
+
     await supabase.from('profiles').update({
       selected_page_id: page.id,
       selected_page_name: page.name,
@@ -260,6 +463,10 @@ export default function ProfilePage() {
     if (!userId) return
 
     setSelectedAdAccountId(adAccountId)
+    // Optimistic Cache
+    const current = loadFromCache(userId) || {}
+    saveToCache(userId, { ...current, selectedAdAccountId: adAccountId })
+
     await supabase.from('profiles').update({
       ad_account_id: adAccountId, 
     }).eq('id', userId)
@@ -270,6 +477,10 @@ export default function ProfilePage() {
   const handlePixelSelect = async (pixelId: string) => {
     if (!userId) return
     setSelectedPixelId(pixelId)
+     // Optimistic Cache
+    const current = loadFromCache(userId) || {}
+    saveToCache(userId, { ...current, selectedPixelId: pixelId })
+
     await supabase.from('profiles').update({ pixel_id: pixelId }).eq('id', userId)
   }
 
@@ -285,7 +496,6 @@ export default function ProfilePage() {
             body: JSON.stringify({ pageId: selectedPageId })
         });
         const data = await res.json();
-        
         if (data.success) {
             alert("✅ Success! App subscribed to Page. Real-time leads enabled.");
         } else {
@@ -293,7 +503,6 @@ export default function ProfilePage() {
         }
     } catch (e) {
         alert("Connection Failed. Check console.");
-        console.error(e);
     } finally {
         setIsFixing(false);
     }
@@ -301,10 +510,7 @@ export default function ProfilePage() {
 
   // --- NEW: CHECK STATUS HANDLER ---
   const handleCheckStatus = async () => {
-    if(!selectedPageId) {
-        alert("Select a page first.");
-        return;
-    }
+    if(!selectedPageId) { alert("Select a page first."); return; }
     try {
         const res = await fetch('/api/facebook/check-subscription', {
             method: 'POST',
@@ -312,150 +518,21 @@ export default function ProfilePage() {
             body: JSON.stringify({ pageId: selectedPageId })
         });
         const data = await res.json();
-        console.log("Subscription Status:", data);
         
         if (data.data && data.data.length > 0) {
             alert(`✅ Verified! This page is subscribed to: ${JSON.stringify(data.data[0].subscribed_fields)}`);
         } else {
             alert("❌ No subscription found. Please click 'Enable Real-Time Leads' again.");
         }
-    } catch(e) { 
-        console.error(e);
-        alert("Check failed"); 
-    }
+    } catch(e) { alert("Check failed"); }
   }
 
-  // --- CORE: Load Data ---
+  // --- CORE: Load Data Effect ---
   useEffect(() => {
-    let isMounted = true
+    fetchProfileData(false) // Load from cache
+  }, [])
 
-    const init = async () => {
-      try {
-        const params = new URLSearchParams(window.location.search)
-        const errorMsg = params.get('error')
-
-        if (errorMsg) {
-          alert(`⚠️ Connection Failed: ${errorMsg}`)
-          router.replace('/dashboard/profile')
-          return 
-        }
-
-        const { data: { session } } = await supabase.auth.getSession()
-        const user = session?.user
-
-        if (!user) {
-          if (isMounted) router.push('/')
-          return
-        }
-        if (isMounted) setUserId(user.id)
-
-        const { data: rawProfileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*, organization:organizations(name, id, custom_domain)') 
-          .eq('id', user.id)
-          .single()
-
-        if (profileError) throw profileError;
-
-        const profile = rawProfileData as unknown as LocalProfile;
-
-        if (profile && isMounted) {
-          setUserRole(profile.role || 'agent')
-          setOrgName(profile.organization?.name || 'Independent')
-          setMyBadges(profile.badges || [])
-          
-          setCustomDomainInput(profile.organization?.custom_domain || '') 
-          
-          setFormData({
-            businessName: profile.business_name || '',
-            mission: profile.mission_statement || '',
-            color: profile.brand_color || '#D0E8FF',
-            contact: profile.contact_number || '',
-            email: profile.email || user.email || '', 
-            logoUrl: profile.logo_url || '',
-            facebookUrl: profile.facebook_url || '',
-            instagramUrl: profile.instagram_url || ''
-          })
-          
-          // Fetch Admin Contact for Agents
-          if (profile.role === 'agent' && profile.organization?.id) {
-              const { data: adminData } = await supabase
-                  .from('profiles')
-                  .select('business_name, email, contact_number')
-                  .eq('organization_id', profile.organization.id)
-                  .eq('role', 'admin')
-                  .limit(1)
-                  .maybeSingle()
-                  
-              if (adminData) {
-                  setAdminContact({
-                      name: adminData.business_name,
-                      email: adminData.email,
-                      // FIX: Safe access for contact_number
-                      phone: (adminData as any).contact_number 
-                  })
-              }
-          }
-          
-          if (profile.facebook_token && isValidFacebookToken(profile.facebook_token)) {
-            setIsFacebookConnected(true)
-            setFacebookToken(profile.facebook_token); 
-            
-            if (profile.role !== 'admin') {
-                checkSocialRewards() 
-            }
-            
-            if (profile.selected_page_id) setSelectedPageId(profile.selected_page_id)
-            else fetchPages()
-
-            if (profile.ad_account_id) {
-                setSelectedAdAccountId(profile.ad_account_id)
-                fetchPixels(profile.ad_account_id)
-            }
-            if (profile.pixel_id) setSelectedPixelId(profile.pixel_id)
-            
-            fetchAdAccounts(profile.facebook_token); 
-            
-          } else {
-             setIsFacebookConnected(false)
-             setFacebookToken(null);
-             setAdAccounts([]); 
-             setPixels([]);
-          }
-        }
-
-      } catch (error) {
-        console.error("Load error:", error)
-      } finally {
-        if (isMounted) setLoading(false)
-      }
-    }
-
-    init()
-    
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event) => {
-      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-         if (isMounted) init() 
-      }
-    })
-
-    return () => {
-      isMounted = false
-      authListener.subscription.unsubscribe()
-    }
-  }, [router, supabase])
-
-  useEffect(() => {
-    if (org) {
-      setOrgForm({
-        name: org.name || '',
-        color: org.brand_color || '#D0E8FF',
-        logo: org.master_logo_url || ''
-      })
-      setCustomDomainInput(org.custom_domain || '') 
-    }
-  }, [org])
-
+  // --- DOMAIN SAVE ---
   const handleSaveCustomDomain = async (e: React.FormEvent) => { 
     e.preventDefault()
     if (userRole !== 'admin' || !org?.id) return
@@ -480,10 +557,7 @@ export default function ProfilePage() {
       })
 
       const data = await response.json()
-
-      if (!response.ok) {
-          throw new Error(data.error || 'Failed to add domain')
-      }
+      if (!response.ok) throw new Error(data.error || 'Failed to add domain')
 
       setCustomDomainInput(data.domain)
       await refreshOrg() 
@@ -494,9 +568,14 @@ export default function ProfilePage() {
       } else {
           setTimeout(() => setSaveDomainStatus('idle'), 3000)
       }
+      
+      // Update Cache
+      if (userId) {
+          const current = loadFromCache(userId) || {}
+          saveToCache(userId, { ...current, customDomainInput: data.domain })
+      }
 
     } catch (error: any) {
-      console.error('Error saving custom domain:', error.message)
       alert('Failed to save custom domain: ' + error.message)
       setSaveDomainStatus('error')
     } finally {
@@ -504,7 +583,7 @@ export default function ProfilePage() {
     }
   }
 
-  // --- UPDATED CONNECT FUNCTION ---
+  // --- SOCIAL CONNECT ---
   const handleConnectFacebook = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'facebook',
@@ -524,6 +603,13 @@ export default function ProfilePage() {
         facebook_token: null, selected_page_id: null, selected_page_name: null, selected_page_token: null,
         ad_account_id: null, pixel_id: null
       }).eq('id', userId)
+      
+      // Clear Cache Part
+      const current = loadFromCache(userId) || {}
+      saveToCache(userId, { 
+          ...current, 
+          facebookToken: null, isFacebookConnected: false, fbPages: [], adAccounts: [], pixels: []
+      })
     }
     setIsFacebookConnected(false)
     setFacebookToken(null)
@@ -547,6 +633,11 @@ export default function ProfilePage() {
 
       setFormData(prev => ({ ...prev, logoUrl: publicUrl }))
       await supabase.from('profiles').update({ logo_url: publicUrl }).eq('id', userId)
+      
+      // Update Cache
+      const current = loadFromCache(userId) || {}
+      saveToCache(userId, { ...current, formData: { ...formData, logoUrl: publicUrl } })
+      
       alert("Logo updated!")
 
     } catch (error: any) {
@@ -561,7 +652,6 @@ export default function ProfilePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // FIX: Type assertion here to allow contact_number
     const { error } = await supabase.from('profiles').update({
         business_name: formData.businessName,
         mission_statement: formData.mission,
@@ -573,7 +663,14 @@ export default function ProfilePage() {
       } as any).eq('id', user.id)
 
     if (error) alert(`Error saving: ${error.message}`)
-    else alert("Profile saved successfully!")
+    else {
+        alert("Profile saved successfully!")
+        // Update Cache
+        if (userId) {
+            const current = loadFromCache(userId) || {}
+            saveToCache(userId, { ...current, formData: formData })
+        }
+    }
     setIsSaving(false)
   }
 
@@ -599,6 +696,11 @@ export default function ProfilePage() {
     } else {
         alert("Organization settings saved!")
         await refreshOrg() 
+        // Update Cache
+        if (userId) {
+            const current = loadFromCache(userId) || {}
+            saveToCache(userId, { ...current, orgForm: orgForm, orgName: orgForm.name })
+        }
     }
     setIsSavingOrg(false)
   }
@@ -614,6 +716,14 @@ export default function ProfilePage() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
+    // Clear all caches on signout to be safe
+    if (userId) {
+        localStorage.removeItem(`profile_cache_${userId}`)
+        localStorage.removeItem(`dashboard_cache_${userId}`)
+        localStorage.removeItem(`crm_cache_${userId}`)
+        localStorage.removeItem(`assets_cache_${userId}`)
+        localStorage.removeItem(`ads_cache_${userId}`)
+    }
     router.push('/')
   }
 
@@ -628,7 +738,18 @@ export default function ProfilePage() {
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold text-slate-900">Your Profile</h1>
+      
+      <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-slate-900">Your Profile</h1>
+          {/* REFRESH BUTTON */}
+          <button 
+              onClick={() => fetchProfileData(true)} 
+              disabled={isRefreshing}
+              className="bg-white p-2.5 rounded-full shadow-sm border border-slate-100 text-slate-500 hover:text-slate-900 active:scale-95 transition-all disabled:opacity-50"
+          >
+              <RefreshCw size={20} className={isRefreshing ? "animate-spin" : ""} />
+          </button>
+      </div>
 
       {/* --- ACTIVE ORGANIZATION BADGE --- */}
       {org && (

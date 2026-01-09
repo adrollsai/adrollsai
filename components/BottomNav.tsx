@@ -14,11 +14,11 @@ export default function BottomNav() {
     // { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
     
-    // Existing: Show Ads tab if user is super_user, admin, or agent
-    ...(['super_user', 'admin', 'agent'].includes(userRole || '') ? [{ name: 'Ads', icon: Zap, path: '/dashboard/ads' }] : []),
+    // UPDATED: Ads tab is now standard (removes the loading delay)
+    { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
 
-    // NEW: Show Distribute tab ONLY if user is super_user or admin (Owners)
-    ...(['super_user', 'admin'].includes(userRole || '') ? [{ name: 'Distribute', icon: Share2, path: '/dashboard/distribute' }] : []),
+    // UPDATED: Show Distribute tab ONLY if user is super_user (Removed 'admin')
+    ...(['super_user'].includes(userRole || '') ? [{ name: 'Distribute', icon: Share2, path: '/dashboard/distribute' }] : []),
     
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
