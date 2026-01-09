@@ -29,26 +29,41 @@ export async function POST(request: Request) {
         formId
     );
 
-    let newCount = 0;
-    for (const lead of leads) {
-        const { error } = await supabase.from('leads').upsert({
-            user_id: user.id,
-            name: lead.name,
-            email: lead.email,
-            phone: lead.phone,
-            source: 'Facebook',
-            ad_name: lead.ad_name,
-            facebook_lead_id: lead.facebook_lead_id,
-            status: 'New', 
-            pipeline_stage: 'New'
-        }, { onConflict: 'facebook_lead_id' })
-        
-        if (!error) newCount++;
+    if (!leads || leads.length === 0) {
+       return NextResponse.json({ success: true, count: 0, total: 0, message: "No leads found." })
     }
 
-    return NextResponse.json({ success: true, count: newCount, total: leads.length })
+    // CRITICAL FIX: BULK UPSERT
+    // Map leads to the database structure
+    const leadsToUpsert = leads.map((lead: any) => ({
+        user_id: user.id,
+        name: lead.name,
+        email: lead.email,
+        phone: lead.phone,
+        source: 'Facebook',
+        ad_name: lead.ad_name,
+        facebook_lead_id: lead.facebook_lead_id,
+        status: 'New', 
+        pipeline_stage: 'New'
+    }));
+
+    // Perform a single database call instead of looping
+    // onConflict: 'facebook_lead_id' ensures we don't create duplicates
+    const { data: insertedData, error } = await supabase
+        .from('leads')
+        .upsert(leadsToUpsert, { onConflict: 'facebook_lead_id' })
+        .select()
+
+    if (error) throw error;
+
+    return NextResponse.json({ 
+        success: true, 
+        count: insertedData?.length || 0, 
+        total: leads.length 
+    })
 
   } catch (error: any) {
+    console.error("CRM Sync Error:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

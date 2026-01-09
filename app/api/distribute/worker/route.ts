@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     .select('*')
     .eq('batch_id', batchId)
     .eq('status', 'pending')
-    .limit(3) 
+    .limit(2) 
 
   if (fetchError) {
       console.error("[Worker] Fetch Error:", fetchError)

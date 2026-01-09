@@ -39,22 +39,29 @@ export async function POST(request: Request) {
     const { error: itemsError } = await supabase.from('distribution_items').insert(items)
     if (itemsError) throw itemsError
 
-    // 3. TRIGGER THE WORKER (Fire and Forget strategy)
+    // 3. TRIGGER THE WORKER (Reliable "Fire and Forget")
     // We construct the absolute URL to call our own API
     const headersList = await headers()
     const host = headersList.get('host')
     const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https'
     const workerUrl = `${protocol}://${host}/api/distribute/worker`
 
-    // Fire asynchronously
-    fetch(workerUrl, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        // Optional: Add a secret key here if you want to secure the worker route
-      },
-      body: JSON.stringify({ batchId: batch.id })
-    }).catch(err => console.error("Worker trigger failed:", err))
+    // CRITICAL FIX: We MUST await this fetch to ensure the request leaves the server
+    // before the Vercel function terminates.
+    try {
+      await fetch(workerUrl, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          // Optional: Add a secret key here if you want to secure the worker route
+        },
+        body: JSON.stringify({ batchId: batch.id })
+      })
+    } catch (err) {
+      console.error("Worker trigger failed (Background processing may be delayed):", err)
+      // We don't throw here because the batch IS created, so we can still return success
+      // and a cron job or manual retry could pick it up later if needed.
+    }
 
     // 4. Return immediately to user
     return NextResponse.json({ 
