@@ -1,3 +1,0 @@
-
-[2026-01-01T09:09:42.158Z] [INFO] Starting Clone for Property: The Grand Orchard Estate
-------------------------------------------------
