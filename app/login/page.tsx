@@ -32,6 +32,9 @@ function LoginForm() {
     isCustom: false,
     subtitle: 'Builder & Agent Marketing OS'
   })
+
+  // State to control visibility of Demo buttons
+  const [showDemoButtons, setShowDemoButtons] = useState(false)
   
   // View State: 'login' or 'forgot_password'
   const [view, setView] = useState<'login' | 'forgot_password'>('login')
@@ -43,10 +46,15 @@ function LoginForm() {
   const inviteOrg = searchParams.get('invite_org')
   const errorMsg = searchParams.get('error')
 
-  // 1. FETCH CUSTOM BRANDING
+  // 1. FETCH CUSTOM BRANDING & CHECK DOMAIN
   useEffect(() => {
     const fetchBranding = async () => {
       const hostname = window.location.hostname
+      
+      // LOGIC: Show Demo buttons ONLY on app.adrolls.in (and localhost for dev)
+      if (hostname === 'app.adrolls.in' || hostname.includes('localhost')) {
+        setShowDemoButtons(true)
+      }
       
       const SYSTEM_HOSTS = [
         'adrolls.in',
@@ -333,30 +341,35 @@ function LoginForm() {
                   </button>
                </form>
 
-               <div className="relative">
-                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
-                  <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400">Or continue with</span></div>
-               </div>
+               {/* Only show Demo buttons on the main App domain */}
+               {showDemoButtons && (
+                 <>
+                   <div className="relative">
+                      <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
+                      <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400">Or continue with</span></div>
+                   </div>
 
-               <div className="grid grid-cols-2 gap-3">
-                  <button 
-                    onClick={handleDemoLogin} 
-                    disabled={loading}
-                    className="flex items-center justify-center gap-2 bg-indigo-50 border border-indigo-100 p-4 rounded-xl text-indigo-700 font-bold text-[10px] hover:bg-indigo-100 transition-all active:scale-[0.98]"
-                  >
-                     <TestTube2 size={16} className="text-indigo-600" />
-                     Demo Agent
-                  </button>
+                   <div className="grid grid-cols-2 gap-3">
+                      <button 
+                        onClick={handleDemoLogin} 
+                        disabled={loading}
+                        className="flex items-center justify-center gap-2 bg-indigo-50 border border-indigo-100 p-4 rounded-xl text-indigo-700 font-bold text-[10px] hover:bg-indigo-100 transition-all active:scale-[0.98]"
+                      >
+                         <TestTube2 size={16} className="text-indigo-600" />
+                         Demo Agent
+                      </button>
 
-                  <button 
-                    onClick={handleDemoAdminLogin} 
-                    disabled={loading}
-                    className="flex items-center justify-center gap-2 bg-purple-50 border border-purple-100 p-4 rounded-xl text-purple-700 font-bold text-[10px] hover:bg-purple-100 transition-all active:scale-[0.98]"
-                  >
-                     <ShieldCheck size={16} className="text-purple-600" />
-                     Demo Admin
-                  </button>
-               </div>
+                      <button 
+                        onClick={handleDemoAdminLogin} 
+                        disabled={loading}
+                        className="flex items-center justify-center gap-2 bg-purple-50 border border-purple-100 p-4 rounded-xl text-purple-700 font-bold text-[10px] hover:bg-purple-100 transition-all active:scale-[0.98]"
+                      >
+                         <ShieldCheck size={16} className="text-purple-600" />
+                         Demo Admin
+                      </button>
+                   </div>
+                 </>
+               )}
              </>
            ) : (
              // --- FORGOT PASSWORD VIEW ---
