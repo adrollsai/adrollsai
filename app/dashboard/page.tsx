@@ -340,12 +340,12 @@ export default function DashboardPage() {
 
       // Get Leaderboard
       const { data: lb } = await supabase
-         .from('profiles')
-         .select('*')
-         .eq('organization_id', orgId)
-         .neq('role', 'admin') 
-         .order('total_xp', { ascending: false })
-         .limit(20)
+          .from('profiles')
+          .select('*')
+          .eq('organization_id', orgId)
+          .neq('role', 'admin') 
+          .order('total_xp', { ascending: false })
+          .limit(20)
 
       // Get Admin Data
       let agents: any[] = []
@@ -978,13 +978,13 @@ export default function DashboardPage() {
                   <div className="h-10 w-[1px] bg-white/10"></div>
 
                   <div className="flex-1 flex items-center gap-3 relative z-10 pl-2">
-                       <div className="bg-orange-500/20 p-2.5 rounded-xl text-orange-400">
-                           <Flame size={20} fill="currentColor" />
-                       </div>
-                       <div>
+                        <div className="bg-orange-500/20 p-2.5 rounded-xl text-orange-400">
+                            <Flame size={20} fill="currentColor" />
+                        </div>
+                        <div>
                           <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">Daily Streak</p>
                           <p className="text-sm font-bold text-white">{effectiveStreak} Days</p>
-                       </div>
+                        </div>
                   </div>
 
                   <div className="absolute top-0 right-0 p-2 opacity-5 pointer-events-none">
@@ -993,7 +993,7 @@ export default function DashboardPage() {
               </div>
           )}
 
-          {/* --- PAGE TABS & REFRESH --- */}
+          {/* --- PAGE TABS (FIXED: REMOVED REFRESH BUTTON FROM HERE) --- */}
           <div className="sticky top-20 z-40 max-w-lg mx-auto flex gap-2 items-stretch">
             <div className="flex-1 bg-white p-1.5 rounded-xl shadow-sm border border-slate-100 flex gap-1">
                 <button onClick={() => setActiveTab('feed')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'feed' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
@@ -1014,15 +1014,6 @@ export default function DashboardPage() {
                     </button>
                 )}
             </div>
-            
-            {/* REFRESH BUTTON */}
-            <button 
-                onClick={() => fetchData(true)} 
-                disabled={isRefreshing}
-                className="bg-white px-4 rounded-xl shadow-sm border border-slate-100 text-slate-500 hover:text-slate-900 hover:border-slate-300 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center"
-            >
-                <RefreshCw size={20} className={isRefreshing ? "animate-spin" : ""} />
-            </button>
           </div>
           
           {/* --- TAB CONTENT AREA --- */}
@@ -1031,22 +1022,34 @@ export default function DashboardPage() {
               {/* --- TAB: FEED --- */}
               {activeTab === 'feed' && (
                   <div className="space-y-4">
-                     <div className="flex justify-between items-center mb-2">
-                        <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Latest Updates</h2>
-                        {userProfile?.role === 'admin' && (
-                            <div className="flex gap-2">
-                                 <button onClick={() => setShowAddNews(true)} className="flex items-center gap-1 text-xs font-bold bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-full shadow-sm hover:bg-slate-50 transition-colors">
-                                    <Megaphone size={12}/> News
-                                </button>
-                                <button onClick={() => setShowAddCreative(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-lg hover:bg-slate-800 transition-colors">
-                                    <Plus size={12}/> Creative
-                                </button>
-                            </div>
-                        )}
-                     </div>
+                      <div className="flex justify-between items-center mb-2">
+                         <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Latest Updates</h2>
+                         <div className="flex items-center gap-2">
+                             {/* MOVED REFRESH BUTTON HERE */}
+                             <button 
+                                onClick={() => fetchData(true)} 
+                                disabled={isRefreshing}
+                                className="p-2 bg-white border border-slate-200 rounded-full text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-all shadow-sm"
+                                title="Refresh Feed"
+                             >
+                                <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
+                             </button>
 
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {feedItems.map(item => {
+                             {userProfile?.role === 'admin' && (
+                                <>
+                                     <button onClick={() => setShowAddNews(true)} className="flex items-center gap-1 text-xs font-bold bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-full shadow-sm hover:bg-slate-50 transition-colors">
+                                        <Megaphone size={12}/> News
+                                    </button>
+                                    <button onClick={() => setShowAddCreative(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-lg hover:bg-slate-800 transition-colors">
+                                        <Plus size={12}/> Creative
+                                    </button>
+                                </>
+                             )}
+                         </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         {feedItems.map(item => {
                             // RENDER NEWS POST
                             if (item.kind === 'post') {
                                 const isPinned = item.tags?.includes('pinned')
@@ -1139,25 +1142,36 @@ export default function DashboardPage() {
                                 </div>
                             )
                         })}
-                     </div>
-                     {feedItems.length === 0 && <div className="text-center py-10 text-slate-400 text-sm">No updates yet.</div>}
+                      </div>
+                      {feedItems.length === 0 && <div className="text-center py-10 text-slate-400 text-sm">No updates yet.</div>}
                   </div>
               )}
 
               {/* --- TAB: INVENTORY --- */}
               {activeTab === 'inventory' && (
                   <div className="space-y-4">
-                     <div className="flex justify-between items-center mb-2">
-                        <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">All Projects</h2>
-                        {userProfile?.role === 'admin' && (
-                            <button onClick={() => setShowAddProject(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-4 py-2 rounded-full shadow-lg hover:bg-slate-800 transition-colors">
-                                <Plus size={14}/> Add Project
-                            </button>
-                        )}
-                     </div>
+                      <div className="flex justify-between items-center mb-2">
+                         <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">All Projects</h2>
+                         <div className="flex items-center gap-2">
+                             {/* REFRESH BUTTON ADDED HERE TOO */}
+                             <button 
+                                onClick={() => fetchData(true)} 
+                                disabled={isRefreshing}
+                                className="p-2 bg-white border border-slate-200 rounded-full text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-all shadow-sm"
+                             >
+                                <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
+                             </button>
 
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {properties.map(p => (
+                             {userProfile?.role === 'admin' && (
+                                <button onClick={() => setShowAddProject(true)} className="flex items-center gap-1 text-xs font-bold bg-slate-900 text-white px-4 py-2 rounded-full shadow-lg hover:bg-slate-800 transition-colors">
+                                    <Plus size={14}/> Add Project
+                                </button>
+                             )}
+                         </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         {properties.map(p => (
                             <div key={p.id} onClick={() => { setSelectedProperty(p); setCurrentImageIndex(0); }} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex gap-4 cursor-pointer hover:bg-slate-50 transition-colors relative group">
                                 <img src={p.image_url} className="w-24 h-24 rounded-xl object-cover bg-slate-200 shadow-sm" />
                                 <div className="flex-1 py-1">
@@ -1202,15 +1216,26 @@ export default function DashboardPage() {
                                     </div>
                                 </div>
                             </div>
-                        ))}
-                     </div>
-                     {properties.length === 0 && <div className="text-center py-10 text-slate-400 text-sm">No projects assigned to your organization.</div>}
+                         ))}
+                      </div>
+                      {properties.length === 0 && <div className="text-center py-10 text-slate-400 text-sm">No projects assigned to your organization.</div>}
                   </div>
               )}
 
               {/* --- TAB: LEADERBOARD --- */}
               {activeTab === 'leaderboard' && (
                   <div className="space-y-6">
+                      <div className="flex justify-end">
+                          {/* REFRESH BUTTON ADDED HERE */}
+                          <button 
+                                onClick={() => fetchData(true)} 
+                                disabled={isRefreshing}
+                                className="p-2 bg-white border border-slate-200 rounded-full text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-all shadow-sm"
+                          >
+                                <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
+                          </button>
+                      </div>
+
                       <div className="bg-slate-900 p-8 rounded-[2rem] relative overflow-hidden text-white shadow-xl text-center">
                           <div className="absolute top-0 right-0 p-8 opacity-10"><Trophy size={150} /></div>
                           <h2 className="text-2xl font-bold mb-2 relative z-10">Top Performers</h2>
@@ -1338,13 +1363,23 @@ export default function DashboardPage() {
                         <h3 className="font-bold text-slate-900 flex items-center gap-2">
                             <Users size={18}/> Managed Agents
                         </h3>
-                        {/* Add Agent Button */}
-                        <button 
-                            onClick={() => setShowAddAgent(true)}
-                            className="bg-slate-900 text-white px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg hover:bg-slate-800 transition-colors"
-                        >
-                            <UserPlus size={14}/> Add Agent
-                        </button>
+                        <div className="flex items-center gap-2">
+                             {/* REFRESH BUTTON ADDED HERE */}
+                            <button 
+                                onClick={() => fetchData(true)} 
+                                disabled={isRefreshing}
+                                className="p-2 bg-white border border-slate-200 rounded-full text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-all shadow-sm"
+                            >
+                                <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
+                            </button>
+                            {/* Add Agent Button */}
+                            <button 
+                                onClick={() => setShowAddAgent(true)}
+                                className="bg-slate-900 text-white px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg hover:bg-slate-800 transition-colors"
+                            >
+                                <UserPlus size={14}/> Add Agent
+                            </button>
+                        </div>
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1610,18 +1645,18 @@ export default function DashboardPage() {
                                   accept="image/*,video/*" 
                                   className="absolute inset-0 opacity-0 cursor-pointer z-10" 
                                   onChange={e => e.target.files?.[0] && setNewsFile(e.target.files[0])} 
-                                />
+                               />
                                <div className="flex flex-col items-center justify-center gap-1">
                                    {newsFile ? (
-                                       <>
-                                           <Check size={20} className="text-green-600"/>
-                                           <p className="text-xs font-bold text-green-700 truncate max-w-[200px]">{newsFile.name}</p>
-                                       </>
+                                        <>
+                                            <Check size={20} className="text-green-600"/>
+                                            <p className="text-xs font-bold text-green-700 truncate max-w-[200px]">{newsFile.name}</p>
+                                        </>
                                    ) : (
-                                       <>
-                                           <Paperclip size={18} className="text-slate-400"/>
-                                           <p className="text-xs font-bold text-slate-500">Attach Image or Video (Optional)</p>
-                                       </>
+                                        <>
+                                            <Paperclip size={18} className="text-slate-400"/>
+                                            <p className="text-xs font-bold text-slate-500">Attach Image or Video (Optional)</p>
+                                        </>
                                    )}
                                </div>
                            </div>
