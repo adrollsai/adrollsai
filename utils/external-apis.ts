@@ -335,7 +335,7 @@ export async function fetchLeadForms(accessToken: string, pageId: string): Promi
 
 /**
  * 8. Fetch Facebook Leads from Lead Forms (CRM FEATURE)
- * Updated with pagination loop and optional formId filtering.
+ * Updated with pagination loop safety break and optional formId filtering.
  */
 export async function fetchFacebookLeads(accessToken: string, pageId: string, specificFormId?: string): Promise<any[]> {
     try {
@@ -354,14 +354,16 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
         }
 
         const allLeads = [];
+        const MAX_PAGES = 3; // Safety break for pagination
 
         // 2. Iterate Forms and Get Leads
         for (const form of formsToProcess) {
             // Initial request for this form's leads
             let nextUrl = `${FACEBOOK_GRAPH_URL}/${form.id}/leads?fields=id,created_time,field_data,ad_id,ad_name&limit=200&access_token=${accessToken}`;
-            
+            let pageCount = 0;
+
             // PAGINATION LOOP: Keep fetching while there is a 'next' page
-            while (nextUrl) {
+            while (nextUrl && pageCount < MAX_PAGES) {
                 const leadsRes = await fetch(nextUrl);
                 const leadsData = await leadsRes.json();
                 
@@ -390,6 +392,7 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
 
                 // Update nextUrl for the next loop iteration (or null to stop)
                 nextUrl = leadsData.paging?.next || null;
+                pageCount++;
             }
         }
         return allLeads;

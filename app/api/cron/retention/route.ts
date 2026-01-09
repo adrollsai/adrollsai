@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendNotification } from '@/utils/notification-helper'
+// Removed sendNotification import to avoid accidental push loops
+// import { sendNotification } from '@/utils/notification-helper' 
 
 // Service Role for accessing all users/leads
 const supabaseAdmin = createClient(
@@ -9,7 +10,7 @@ const supabaseAdmin = createClient(
     { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-// FIX: Change runtime from 'edge' to 'nodejs' to support 'web-push'
+// FIX: Change runtime from 'edge' to 'nodejs' 
 export const runtime = 'nodejs' 
 export const dynamic = 'force-dynamic' // Ensure it doesn't cache
 
@@ -21,15 +22,11 @@ export async function GET(request: Request) {
     }
 
     const now = new Date()
-    // const currentHour = now.getHours() // Unused in this snippet but kept for logic
     
     // --- 1. STREAK SAVER LOGIC (Run only between 6PM - 8PM approx) ---
-    // Assuming server time is UTC, 6PM IST is ~12:30 PM UTC. Adjust accordingly.
-    // For simplicity: We fetch users active yesterday but NOT today.
+    // Assuming server time is UTC.
     
     let streakCount = 0
-    // Check local time roughly or run specifically triggered by cron schedule
-    // We'll run this logic if it's "Evening"
     
     const yesterday = new Date(now)
     yesterday.setDate(yesterday.getDate() - 1)
@@ -45,20 +42,18 @@ export async function GET(request: Request) {
         .gt('current_streak', 0) // Only those with a streak to lose
 
     if (riskUsers && riskUsers.length > 0) {
-        // Send Notification
-        const notifications = riskUsers.map(user => {
-             // We check if we already notified them today to avoid spam 
-             // (Ideally query notifications table, but for now we trust the CRON runs once/evening)
-             return sendNotification(
-                supabaseAdmin,
-                user.id,
-                "🔥 Streak at Risk!",
-                `You have a ${user.current_streak} day streak! Log in now to keep your XP multiplier.`,
-                "system",
-                "/dashboard"
-             )
-        })
-        await Promise.all(notifications)
+        // BULK INSERT NOTIFICATIONS (Fast & Safe)
+        // We skip Web Push to prevent timeout on free tier with >50 users.
+        const notifications = riskUsers.map(user => ({
+            user_id: user.id,
+            title: "🔥 Streak at Risk!",
+            message: `You have a ${user.current_streak} day streak! Log in now to keep your XP multiplier.`,
+            type: "system",
+            action_link: "/dashboard",
+            is_read: false
+        }));
+        
+        await supabaseAdmin.from('notifications').insert(notifications);
         streakCount = riskUsers.length
     }
 
@@ -83,22 +78,24 @@ export async function GET(request: Request) {
             userLeadsMap[l.user_id] = (userLeadsMap[l.user_id] || 0) + 1
         })
 
-        const leadPromises = Object.keys(userLeadsMap).map(userId => {
+        // Construct bulk notifications
+        const leadNotifications = Object.keys(userLeadsMap).map(userId => {
             const count = userLeadsMap[userId]
             const msg = count === 1 
                 ? "⏳ Hot Lead Waiting! A new lead is waiting for over 15 mins. Call now!"
                 : `⏳ You have ${count} uncontacted leads waiting. Speed to lead is key!`
             
-            return sendNotification(
-                supabaseAdmin,
-                userId,
-                "💰 Money on the Table",
-                msg,
-                "lead",
-                "/dashboard/crm"
-            )
+            return {
+                user_id: userId,
+                title: "💰 Money on the Table",
+                message: msg,
+                type: "lead",
+                action_link: "/dashboard/crm",
+                is_read: false
+            }
         })
-        await Promise.all(leadPromises)
+        
+        await supabaseAdmin.from('notifications').insert(leadNotifications);
         leadCount = staleLeads.length
     }
 

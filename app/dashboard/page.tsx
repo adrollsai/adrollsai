@@ -247,6 +247,7 @@ export default function DashboardPage() {
         .select('*')
         .eq('organization_id', orgId) 
         .order('created_at', { ascending: false })
+        .limit(50) // <--- LIMIT ADDED FOR SCALABILITY
       
       if (props) setProperties(props)
 
@@ -342,6 +343,7 @@ export default function DashboardPage() {
             .eq('organization_id', orgId)
             .eq('role', 'agent')
             .order('created_at', { ascending: false })
+            .limit(50) // <--- LIMIT ADDED FOR SCALABILITY
             
           if (agents) {
              setAgentsList(agents as AgentProfile[])

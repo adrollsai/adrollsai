@@ -4,8 +4,6 @@ import { generateStampedImage } from '@/utils/stamp-helper'
 import { sendDistributionEmail } from '@/utils/email-helper'
 import { headers } from 'next/headers'
 
-// Allow Vercel functions to run longer (up to 60s)
-export const maxDuration = 60; 
 // Force Node.js runtime for Sharp image processing
 export const runtime = 'nodejs';
 
@@ -39,14 +37,13 @@ export async function POST(request: Request) {
   console.log(`[Worker] Processing batch: ${batchId}`)
 
   // 2. Fetch PENDING items
-  // MEMORY FIX: Reduced limit from 5 to 3 to prevent Vercel 1GB RAM OOM (Out Of Memory) crashes
-  // Image processing is RAM heavy.
+  // MEMORY FIX: Reduced limit to 1 to prevent Vercel Timeout (10s limit on Free Tier)
   const { data: items, error: fetchError } = await supabaseAdmin
     .from('distribution_items')
     .select('*')
     .eq('batch_id', batchId)
     .eq('status', 'pending')
-    .limit(2) 
+    .limit(1) 
 
   if (fetchError) {
       console.error("[Worker] Fetch Error:", fetchError)
@@ -106,12 +103,9 @@ export async function POST(request: Request) {
         status: 'Distributed', 
       })
 
-      // C. Send Email (With Jitter)
+      // C. Send Email (Without Jitter for speed)
       let emailSent = false
       if (agent.sendEmail && agent.email) {
-         // SMTP SAFETY: Wait random 100ms-1000ms to prevent "Spam Spike" blocking
-         await new Promise(resolve => setTimeout(resolve, Math.random() * 900 + 100));
-
          try {
             const res = await sendDistributionEmail(agent.email, agent.business_name, stampedUrl, senderName)
             emailSent = res.success
