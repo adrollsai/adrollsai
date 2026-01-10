@@ -1,4 +1,4 @@
-// adrollsai/adrollsai/adrollsai-builder-app-lander-feed-notifications/app/api/creative/stamp/route.ts
+// adrollsai/adrollsai/adrollsai-builder-app-local-cache/app/api/creative/stamp/route.ts
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
@@ -58,19 +58,37 @@ export async function POST(request: Request) {
     const masterArrayBuffer = await masterImageRes.arrayBuffer()
     const originalBuffer = Buffer.from(masterArrayBuffer) 
 
-    // 4. Resize to Standard 1080px Width
+    // 4. Analyze Dimensions & Calculate Layout
     const STANDARD_WIDTH = 1080;
-    const resizedImage = await sharp(originalBuffer)
-        .resize(STANDARD_WIDTH, null, { withoutEnlargement: true })
-        .toBuffer({ resolveWithObject: true }); 
     
-    const optimizedBuffer = resizedImage.data; 
-    const { width, height } = resizedImage.info;
+    // Get original metadata
+    const metadata = await sharp(originalBuffer).metadata();
+    const originalWidth = metadata.width || 1080;
+    const originalHeight = metadata.height || 1080;
+    
+    // Calculate final target height to maintain exact aspect ratio
+    const scaleFactor = STANDARD_WIDTH / originalWidth;
+    const targetHeight = Math.round(originalHeight * scaleFactor);
 
-    // 5. Calculate Footer Dimensions
-    const footerHeight = Math.round(width * 0.15) 
+    // Calculate Footer Dimensions
+    const footerHeight = Math.round(STANDARD_WIDTH * 0.15) 
     const padding = Math.round(footerHeight * 0.15)
     const logoSize = Math.round(footerHeight * 0.70)
+
+    // Calculate Available Height for the Image
+    const availableImageHeight = targetHeight - footerHeight;
+
+    // 5. Process Master Image (FIT WITHOUT CROP)
+    // Scales image down to fit fully visible within the space above the footer.
+    // Fills remaining side/vertical space with white.
+    const resizedImageBuffer = await sharp(originalBuffer)
+        .resize({
+            width: STANDARD_WIDTH,
+            height: availableImageHeight,
+            fit: 'contain',
+            background: { r: 255, g: 255, b: 255, alpha: 1 }
+        })
+        .toBuffer(); 
 
     // 6. Process Agent Logo
     let logoBuffer: Buffer | null = null
@@ -101,9 +119,9 @@ export async function POST(request: Request) {
 
     // Layout Logic
     const approxPhoneWidth = phoneText.length * (fontSizePhone * 0.6); 
-    const iconX = width - padding - approxPhoneWidth - iconSize - (padding * 0.5);
+    const iconX = STANDARD_WIDTH - padding - approxPhoneWidth - iconSize - (padding * 0.5);
     const dividerX = iconX - (padding * 1.5);
-    const rightBoundary = agentProfile.contact_number ? dividerX : (width - padding);
+    const rightBoundary = agentProfile.contact_number ? dividerX : (STANDARD_WIDTH - padding);
     const availableWidth = rightBoundary - textStartX - padding;
     const avgCharWidth = fontSizeName * 0.55; 
     const maxChars = Math.floor(availableWidth / avgCharWidth);
@@ -129,48 +147,51 @@ export async function POST(request: Request) {
     let nameSvg = '';
     const lineHeight = fontSizeName * 1.15;
 
+    // FIX: Changed font-weight from "800" to "bold" to match Poppins-Bold.ttf
     if (lines.length === 1) {
-        nameSvg = `<text x="${textStartX}" y="${footerHeight / 2 + (fontSizeName / 3)}" font-family="Poppins" font-size="${fontSizeName}" fill="${primaryTextColor}" font-weight="800" style="text-transform: uppercase; letter-spacing: 0.5px;">${lines[0]}</text>`;
+        nameSvg = `<text x="${textStartX}" y="${footerHeight / 2 + (fontSizeName / 3)}" font-family="Poppins" font-size="${fontSizeName}" fill="${primaryTextColor}" font-weight="bold" style="text-transform: uppercase; letter-spacing: 0.5px;">${lines[0]}</text>`;
     } else {
         const totalTextHeight = lines.length * lineHeight;
         const startY = (footerHeight - totalTextHeight) / 2 + (fontSizeName * 0.8);
         lines.forEach((line, index) => {
-            nameSvg += `<text x="${textStartX}" y="${startY + (index * lineHeight)}" font-family="Poppins" font-size="${fontSizeName}" fill="${primaryTextColor}" font-weight="800" style="text-transform: uppercase; letter-spacing: 0.5px;">${line}</text>`;
+            nameSvg += `<text x="${textStartX}" y="${startY + (index * lineHeight)}" font-family="Poppins" font-size="${fontSizeName}" fill="${primaryTextColor}" font-weight="bold" style="text-transform: uppercase; letter-spacing: 0.5px;">${line}</text>`;
         });
     }
 
     const footerSvg = `
-      <svg width="${width}" height="${footerHeight}">
-        <line x1="0" y1="0" x2="${width}" y2="0" style="stroke:${borderColor};stroke-width:2" />
+      <svg width="${STANDARD_WIDTH}" height="${footerHeight}">
+        <line x1="0" y1="0" x2="${STANDARD_WIDTH}" y2="0" style="stroke:${borderColor};stroke-width:2" />
         ${agentProfile.contact_number ? `<line x1="${dividerX}" y1="${footerHeight * 0.2}" x2="${dividerX}" y2="${footerHeight * 0.8}" style="stroke:${dividerColor};stroke-width:2" />` : ''}
         ${nameSvg}
         ${agentProfile.contact_number ? `
         <g transform="translate(${iconX}, ${(footerHeight - iconSize) / 2}) scale(${iconSize / 24})">
             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.05 12.05 0 0 0 .57 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.03 12.03 0 0 0 2.81.57A2 2 0 0 1 22 16.92z" fill="${secondaryTextColor}" />
         </g>
-        <text x="${width - padding}" y="${footerHeight / 2 + (fontSizePhone / 3)}" font-family="Poppins" font-size="${fontSizePhone}" fill="${secondaryTextColor}" font-weight="bold" text-anchor="end">${phoneText}</text>
+        <text x="${STANDARD_WIDTH - padding}" y="${footerHeight / 2 + (fontSizePhone / 3)}" font-family="Poppins" font-size="${fontSizePhone}" fill="${secondaryTextColor}" font-weight="bold" text-anchor="end">${phoneText}</text>
         ` : ''}
       </svg>
     `
     const footerBuffer = Buffer.from(footerSvg)
 
     // 9. Composite
-    const extendedImage = await sharp(optimizedBuffer) 
-        .extend({
-            bottom: footerHeight,
-            background: { r: 255, g: 255, b: 255, alpha: 1 }
-        })
-
     const layers: sharp.OverlayOptions[] = [
-      { input: footerBuffer, top: height, left: 0 }
+      { input: resizedImageBuffer, top: 0, left: 0 },
+      { input: footerBuffer, top: availableImageHeight, left: 0 }
     ]
 
     if (logoBuffer) {
-      const logoTop = height + Math.round((footerHeight - logoSize) / 2)
+      const logoTop = availableImageHeight + Math.round((footerHeight - logoSize) / 2)
       layers.push({ input: logoBuffer as any, top: logoTop, left: padding })
     }
 
-    const finalImageBuffer = await extendedImage
+    const finalImageBuffer = await sharp({
+        create: {
+            width: STANDARD_WIDTH,
+            height: targetHeight,
+            channels: 4,
+            background: { r: 255, g: 255, b: 255, alpha: 1 }
+        }
+    })
       .composite(layers)
       .jpeg({ quality: 90 }) 
       .toBuffer()
@@ -191,7 +212,6 @@ export async function POST(request: Request) {
         share_stats: { whatsapp: 0, facebook: 0, instagram: 0, download: 0 }
     })
 
-    // No XP Award here anymore
     return NextResponse.json({ success: true, url: publicUrl })
 
   } catch (error: any) {

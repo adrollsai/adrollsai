@@ -1,9 +1,11 @@
+// adrollsai/adrollsai/adrollsai-builder-app-local-cache/utils/stamp-helper.ts
+
 import sharp from 'sharp'
 import { PutObjectCommand } from '@aws-sdk/client-s3'
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
 import path from 'path'
 import process from 'process'
-import fs from 'fs' // Added for robust font path checking
+import fs from 'fs' 
 
 // --- HELPER: Fix R2 URL ---
 function fixR2Url(url: string) {
@@ -14,10 +16,9 @@ function fixR2Url(url: string) {
   return url
 }
 
-// --- FONT INIT (Fixed for Cold Starts) ---
+// --- FONT INIT ---
 export function initFonts() {
   try {
-    // If already set, skip (prevents resetting on warm lambdas)
     if (process.env.FONTCONFIG_PATH) return;
 
     const cwd = process.cwd();
@@ -27,14 +28,11 @@ export function initFonts() {
         path.join(cwd, 'public', 'fonts')
     ];
 
-    // Find the directory that actually contains fonts.conf
     const fontDir = searchPaths.find(p => fs.existsSync(path.join(p, 'fonts.conf')));
 
     if (fontDir) {
         process.env.FONTCONFIG_PATH = fontDir;
         process.env.FONTCONFIG_FILE = path.join(fontDir, 'fonts.conf');
-    } else {
-        console.error("❌ Could not find fonts.conf. Searched:", searchPaths);
     }
   } catch (error) {
     console.error("Error initializing fonts:", error);
@@ -54,21 +52,38 @@ export async function generateStampedImage(params: any) {
   const masterArrayBuffer = await masterImageRes.arrayBuffer()
   const originalBuffer = Buffer.from(masterArrayBuffer)
 
-  // 2. Resize
+  // 2. Analyze Dimensions
   const STANDARD_WIDTH = 1080;
-  const resizedImage = await sharp(originalBuffer)
-      .resize(STANDARD_WIDTH, null, { withoutEnlargement: true })
-      .toBuffer({ resolveWithObject: true });
   
-  const optimizedBuffer = resizedImage.data; 
-  const { width, height } = resizedImage.info;
+  // Get original metadata
+  const metadata = await sharp(originalBuffer).metadata();
+  const originalWidth = metadata.width || 1080;
+  const originalHeight = metadata.height || 1080;
+  
+  // Calculate target height to preserve exact aspect ratio of input
+  const scaleFactor = STANDARD_WIDTH / originalWidth;
+  const targetHeight = Math.round(originalHeight * scaleFactor);
 
   // 3. Footer Calculations
-  const footerHeight = Math.round(width * 0.15) 
+  const footerHeight = Math.round(STANDARD_WIDTH * 0.15) 
   const padding = Math.round(footerHeight * 0.15)
   const logoSize = Math.round(footerHeight * 0.70)
 
-  // 4. Process Agent Logo
+  // 4. Calculate Image Area
+  const availableImageHeight = targetHeight - footerHeight;
+
+  // 5. Resize Image (FIT WITHOUT CROP)
+  // fit: 'contain' ensures the entire image is visible within the box
+  const resizedImageBuffer = await sharp(originalBuffer)
+      .resize({
+          width: STANDARD_WIDTH,
+          height: availableImageHeight,
+          fit: 'contain', 
+          background: { r: 255, g: 255, b: 255, alpha: 1 }
+      })
+      .toBuffer();
+
+  // 6. Process Agent Logo
   let logoBuffer: Buffer | null = null
   if (agentProfile.logo_url) {
     try {
@@ -85,7 +100,7 @@ export async function generateStampedImage(params: any) {
     }
   }
 
-  // 5. Design Variables
+  // 7. Design Variables
   const primaryTextColor = "#1F2937"; 
   const secondaryTextColor = "#B45309"; 
   const borderColor = "#E5E7EB"; 
@@ -101,11 +116,10 @@ export async function generateStampedImage(params: any) {
 
   // --- LAYOUT LOGIC ---
   const approxPhoneWidth = phoneText.length * (fontSizePhone * 0.6); 
-  const iconX = width - padding - approxPhoneWidth - iconSize - (padding * 0.5);
+  const iconX = STANDARD_WIDTH - padding - approxPhoneWidth - iconSize - (padding * 0.5);
   const dividerX = iconX - (padding * 1.5);
   
-  // Calculate text boundaries
-  const rightBoundary = agentProfile.contact_number ? dividerX : (width - padding);
+  const rightBoundary = agentProfile.contact_number ? dividerX : (STANDARD_WIDTH - padding);
   const availableWidth = rightBoundary - textStartX - padding;
   
   // --- TEXT WRAPPING LOGIC ---
@@ -136,7 +150,6 @@ export async function generateStampedImage(params: any) {
   const lineHeight = fontSizeName * 1.15;
 
   if (lines.length === 1) {
-      // Changed font-weight from 800 to "bold" (700) to match Poppins-Bold.ttf
       nameSvg = `<text 
           x="${textStartX}" 
           y="${footerHeight / 2 + (fontSizeName / 3)}" 
@@ -167,10 +180,10 @@ export async function generateStampedImage(params: any) {
       });
   }
 
-  // 6. SVG Footer
+  // 8. SVG Footer
   const footerSvg = `
-    <svg width="${width}" height="${footerHeight}">
-      <line x1="0" y1="0" x2="${width}" y2="0" style="stroke:${borderColor};stroke-width:2" />
+    <svg width="${STANDARD_WIDTH}" height="${footerHeight}">
+      <line x1="0" y1="0" x2="${STANDARD_WIDTH}" y2="0" style="stroke:${borderColor};stroke-width:2" />
       ${agentProfile.contact_number ? `<line x1="${dividerX}" y1="${footerHeight * 0.2}" x2="${dividerX}" y2="${footerHeight * 0.8}" style="stroke:${dividerColor};stroke-width:2" />` : ''}
 
       ${nameSvg}
@@ -183,7 +196,7 @@ export async function generateStampedImage(params: any) {
           />
       </g>
       <text 
-          x="${width - padding}" 
+          x="${STANDARD_WIDTH - padding}" 
           y="${footerHeight / 2 + (fontSizePhone / 3)}" 
           font-family="Poppins" 
           font-size="${fontSizePhone}" 
@@ -197,28 +210,30 @@ export async function generateStampedImage(params: any) {
     </svg>
   `
 
-  // 7. Composite
-  const extendedImage = await sharp(optimizedBuffer) 
-      .extend({
-          bottom: footerHeight,
-          background: { r: 255, g: 255, b: 255, alpha: 1 }
-      })
-
+  // 9. Composite
   const layers: any[] = [
-    { input: Buffer.from(footerSvg), top: height, left: 0 }
+    { input: resizedImageBuffer, top: 0, left: 0 },
+    { input: Buffer.from(footerSvg), top: availableImageHeight, left: 0 }
   ]
 
   if (logoBuffer) {
-    const logoTop = height + Math.round((footerHeight - logoSize) / 2)
+    const logoTop = availableImageHeight + Math.round((footerHeight - logoSize) / 2)
     layers.push({ input: logoBuffer, top: logoTop, left: padding })
   }
 
-  const finalImageBuffer = await extendedImage
+  const finalImageBuffer = await sharp({
+      create: {
+          width: STANDARD_WIDTH,
+          height: targetHeight,
+          channels: 4,
+          background: { r: 255, g: 255, b: 255, alpha: 1 }
+      }
+  })
     .composite(layers)
     .jpeg({ quality: 90 }) 
     .toBuffer()
 
-  // 8. Upload to R2
+  // 10. Upload to R2
   const fileName = `stamped/${userId}/${Date.now()}.jpg`
   
   await r2.send(new PutObjectCommand({
