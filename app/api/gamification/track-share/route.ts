@@ -45,7 +45,11 @@ export async function POST(request: Request) {
     // 3. Award XP (50 XP per share)
     const XP_PER_SHARE = 50
     const newXp = (profile.total_xp || 0) + XP_PER_SHARE
-    const newLevel = Math.floor(newXp / 1000) + 1
+    
+    // RATCHET MECHANISM: Ensure Level never drops due to monthly XP reset
+    const calculatedLevel = Math.floor(newXp / 1000) + 1
+    const currentLevel = profile.level || 1
+    const finalLevel = Math.max(currentLevel, calculatedLevel)
 
     // 4. Check Streak Milestones (Badges)
     let newBadges: string[] = profile.badges || []
@@ -57,15 +61,10 @@ export async function POST(request: Request) {
         { days: 100, id: 'streak_100', xp: 5000, name: 'Century Club' }
     ]
 
-    // Only check milestones if streak actually increased today
     if (streakUpdated) {
         const milestone = MILESTONES.find(m => m.days === newStreak)
         if (milestone && !newBadges.includes(milestone.id)) {
             newBadges.push(milestone.id)
-            // Bonus XP for milestone
-            // Note: User said "XP will only be awarded... share... spent... admin". 
-            // Usually milestones give bonus XP, I will keep this small bonus or remove if strictly following instructions.
-            // keeping it as it's part of the streak system requested to be kept.
             earnedBadgeName = milestone.name
             
             await sendNotification(
@@ -83,7 +82,7 @@ export async function POST(request: Request) {
         current_streak: newStreak,
         last_activity_date: now.toISOString(),
         total_xp: newXp,
-        level: newLevel,
+        level: finalLevel,
         badges: newBadges
     }).eq('id', user.id)
 
@@ -91,7 +90,7 @@ export async function POST(request: Request) {
         success: true, 
         xpGained: XP_PER_SHARE,
         streak: newStreak,
-        newLevel,
+        newLevel: finalLevel,
         newBadge: earnedBadgeName
     })
 

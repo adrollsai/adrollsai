@@ -28,13 +28,18 @@ export async function POST(request: Request) {
     const { data: agent } = await supabase.from('profiles').select('total_xp, level').eq('id', agentId).single()
     if (!agent) throw new Error("Agent not found")
 
-    // 3. Update XP
+    // 3. Update XP & Calculate Level
     const newXp = (agent.total_xp || 0) + xpAmount
-    const newLevel = Math.floor(newXp / 1000) + 1
+    
+    // RATCHET MECHANISM: Since XP resets monthly, we ensure Level never drops.
+    // Level is now a "High Water Mark".
+    const calculatedLevel = Math.floor(newXp / 1000) + 1
+    const currentLevel = agent.level || 1
+    const finalLevel = Math.max(currentLevel, calculatedLevel)
 
     await supabase.from('profiles').update({
         total_xp: newXp,
-        level: newLevel
+        level: finalLevel
     }).eq('id', agentId)
 
     // 4. Notify Agent
@@ -46,7 +51,7 @@ export async function POST(request: Request) {
         'system'
     )
 
-    return NextResponse.json({ success: true, newTotal: newXp })
+    return NextResponse.json({ success: true, newTotal: newXp, newLevel: finalLevel })
 
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
