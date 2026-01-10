@@ -1,3 +1,5 @@
+// adrollsai/adrollsai/adrollsai-builder-app-local-cache/app/dashboard/page.tsx
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -174,6 +176,9 @@ export default function DashboardPage() {
   // XP Awarding State
   const [awardXpValue, setAwardXpValue] = useState<string>('') 
   const [isAwardingXp, setIsAwardingXp] = useState(false)
+  
+  // --- NEW: Full Image Viewer ---
+  const [expandedImage, setExpandedImage] = useState<string | null>(null)
   
   // -- Add Project Form --
   const [newProject, setNewProject] = useState({
@@ -1072,11 +1077,16 @@ export default function DashboardPage() {
 
                                         {/* ATTACHED MEDIA */}
                                         {item.media_url && (
-                                            <div className="rounded-xl overflow-hidden mb-3 border border-slate-100">
+                                            <div className="rounded-xl overflow-hidden mb-3 border border-slate-100 bg-black/5">
                                                 {item.media_type === 'video' ? (
                                                     <video src={item.media_url} controls className="w-full max-h-64 object-cover" />
                                                 ) : (
-                                                    <img src={item.media_url} className="w-full max-h-64 object-cover" alt="Post attachment" />
+                                                    <img 
+                                                        src={item.media_url} 
+                                                        className="w-full max-h-64 object-cover cursor-pointer hover:opacity-95 transition-opacity" 
+                                                        alt="Post attachment" 
+                                                        onClick={() => setExpandedImage(item.media_url!)}
+                                                    />
                                                 )}
                                             </div>
                                         )}
@@ -1119,7 +1129,11 @@ export default function DashboardPage() {
                                         {item.type === 'video' ? (
                                             <video src={item.url} controls className="w-full h-full object-cover" />
                                         ) : (
-                                            <img src={item.url} className="w-full h-full object-cover" />
+                                            <img 
+                                                src={item.url} 
+                                                className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-500" 
+                                                onClick={() => setExpandedImage(item.url)}
+                                            />
                                         )}
                                         
                                         {userProfile?.role === 'agent' && (
@@ -1861,6 +1875,20 @@ export default function DashboardPage() {
                   </a>
               </div>
           </div>
+      )}
+
+      {/* --- FULL IMAGE MODAL --- */}
+      {expandedImage && (
+            <div className="fixed inset-0 z-[300] bg-black/90 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setExpandedImage(null)}>
+                <button className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors">
+                    <X size={32} />
+                </button>
+                <img 
+                    src={expandedImage} 
+                    className="max-w-full max-h-full object-contain rounded-md shadow-2xl" 
+                    onClick={(e) => e.stopPropagation()} 
+                />
+            </div>
       )}
 
     </div>
