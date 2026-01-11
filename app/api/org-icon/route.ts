@@ -4,7 +4,7 @@ import sharp from 'sharp';
 
 // Change runtime to 'nodejs' to support 'sharp' image processing
 export const runtime = 'nodejs';
-
+export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const iconType = searchParams.get('type') || 'icon'; // 'icon', 'favicon', or 'splash'
@@ -88,7 +88,8 @@ export async function GET(request: NextRequest) {
     return new NextResponse(processedBuffer as any, {
       headers: {
         'Content-Type': 'image/png',
-        'Cache-Control': 'public, max-age=86400, s-maxage=86400', // Cache for 24h
+        // CHANGED: Disable caching to ensure logo updates are reflected immediately during demos
+        'Cache-Control': 'no-store, must-revalidate',
       },
     });
 

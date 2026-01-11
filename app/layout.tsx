@@ -44,22 +44,25 @@ export async function generateMetadata(): Promise<Metadata> {
       .single();
 
     if (org) {
+      // Create version hash for metadata icons too
+      const logoVersion = org.master_logo_url ? encodeURIComponent(org.master_logo_url.split('/').pop() || 'v1') : 'v1';
+      
       return {
         metadataBase: new URL(`https://${host}`),
         title: org.name,
         description: `Welcome to ${org.name}`,
         
         icons: {
-          icon: "/api/org-icon?type=favicon",
-          shortcut: "/api/org-icon?type=favicon",
-          apple: "/api/org-icon?type=icon", 
+          icon: `/api/org-icon?type=favicon&v=${logoVersion}`,
+          shortcut: `/api/org-icon?type=favicon&v=${logoVersion}`,
+          apple: `/api/org-icon?type=icon&v=${logoVersion}`, 
         },
         openGraph: {
           title: org.name,
           description: `Welcome to ${org.name}`,
           url: `https://${host}`,
           siteName: org.name,
-          images: [{ url: "/api/org-icon?type=icon", width: 512, height: 512, alt: org.name }],
+          images: [{ url: `/api/org-icon?type=icon&v=${logoVersion}`, width: 512, height: 512, alt: org.name }],
         },
       };
     }
@@ -71,16 +74,36 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export const viewport: Viewport = {
-  themeColor: "#FFFFFF", // Changed from #D0E8FF to White to match the white splash screen
+  themeColor: "#FFFFFF",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Fetch Org Data for Splash Screen Link
+  const headersList = await headers();
+  const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
+  const host = rawHost.split(':')[0];
+  
+  let splashUrl = "/api/org-icon?type=splash";
+  
+  if (!isSystemHost(host)) {
+     try {
+        const supabase = await createClient();
+        const { data: org } = await supabase.from('organizations').select('master_logo_url').eq('custom_domain', host).single();
+        if (org?.master_logo_url) {
+            const v = encodeURIComponent(org.master_logo_url.split('/').pop() || 'v1');
+            splashUrl = `/api/org-icon?type=splash&v=${v}`;
+        }
+     } catch (e) {
+         // ignore error, fallback to default
+     }
+  }
+
   return (
     <html lang="en">
       <head>
@@ -88,8 +111,8 @@ export default function RootLayout({
         <link rel="manifest" href="/api/manifest" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        {/* iOS Splash Screen: Points to our dynamic generator */}
-        <link rel="apple-touch-startup-image" href="/api/org-icon?type=splash" />
+        {/* iOS Splash Screen: Points to our dynamic generator with version hash */}
+        <link rel="apple-touch-startup-image" href={splashUrl} />
       </head>
       <body className={inter.className}>
         {children}

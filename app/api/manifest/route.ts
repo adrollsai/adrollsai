@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     short_name: 'AdRolls',
     description: 'Automate your real estate marketing',
     start_url: '/dashboard',
-    scope: '/', // CRITICAL: Defines the PWA navigation scope
+    scope: '/',
     display: 'standalone',
     background_color: '#F8F9FF',
     theme_color: '#D0E8FF',
@@ -43,39 +43,45 @@ export async function GET(request: Request) {
     process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app'
   ];
 
-  // Initialize with default; use 'any' to allow dynamic property changes
+  // Initialize with default
   let manifestData: any = defaultManifest;
 
   // --- Custom Domain Logic ---
   if (!SYSTEM_HOSTS.includes(host)) {
     try {
       const supabase = await createClient();
+      // CHANGED: Fetch 'master_logo_url' to create a version hash
       const { data: org } = await supabase
         .from('organizations')
-        .select('name')
+        .select('name, master_logo_url')
         .eq('custom_domain', host)
         .single();
 
       if (org) {
+        // Create a short version hash from the logo URL to bust cache
+        const logoVersion = org.master_logo_url ? encodeURIComponent(org.master_logo_url.split('/').pop() || 'v1') : 'v1';
+
         manifestData = {
           id: `/?org=${encodeURIComponent(org.name)}`,
           name: org.name || 'Partner App',
           short_name: org.name ? org.name.substring(0, 12) : 'Partner',
           description: `Welcome to ${org.name}`,
           start_url: '/',
-          scope: '/', // CRITICAL for custom domains
+          scope: '/',
           display: 'standalone',
           background_color: '#FFFFFF',
           theme_color: '#FFFFFF',
           icons: [
             {
-              src: '/api/org-icon?type=icon',
+              // CHANGED: Appended version param
+              src: `/api/org-icon?type=icon&v=${logoVersion}`,
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any maskable'
             },
             {
-              src: '/api/org-icon?type=icon',
+              // CHANGED: Appended version param
+              src: `/api/org-icon?type=icon&v=${logoVersion}`,
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any maskable'
@@ -88,7 +94,6 @@ export async function GET(request: Request) {
     }
   }
 
-  // Return with correct Content-Type for PWA recognition
   return new NextResponse(JSON.stringify(manifestData), {
     headers: {
       'Content-Type': 'application/manifest+json',
