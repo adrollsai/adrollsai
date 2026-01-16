@@ -1,5 +1,3 @@
-// adrollsai/adrollsai/adrollsai-builder-app-local-cache/app/dashboard/page.tsx
-
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -1063,8 +1061,9 @@ export default function DashboardPage() {
                                         {isPinned && <div className="absolute top-3 right-3 text-blue-500"><Pin size={16} fill="currentColor"/></div>}
                                         
                                         <div className="flex items-center gap-3 mb-3">
-                                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center font-bold text-sm text-blue-600 border border-blue-200">
-                                                {item.author?.business_name?.[0] || 'N'}
+                                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center font-bold text-sm text-blue-600 border border-blue-200 overflow-hidden">
+                                                {/* FIX: LOGO IN FEED */}
+                                                {item.author?.logo_url ? <img src={item.author.logo_url} className="w-full h-full object-contain p-0.5 bg-white"/> : item.author?.business_name?.[0] || 'N'}
                                             </div>
                                             <div>
                                                 <p className="text-sm font-bold text-slate-900">{item.title}</p>
@@ -1261,7 +1260,8 @@ export default function DashboardPage() {
                                   {leaderboard[1] && (
                                       <div className="flex flex-col items-center">
                                           <div className="w-16 h-16 rounded-full border-2 border-slate-500 bg-slate-800 flex items-center justify-center font-bold text-lg mb-2 overflow-hidden relative shadow-lg">
-                                              {leaderboard[1].logo_url ? <img src={leaderboard[1].logo_url} className="w-full h-full object-cover"/> : leaderboard[1].business_name?.[0]}
+                                              {/* FIX: LEADERBOARD 2nd PLACE */}
+                                              {leaderboard[1].logo_url ? <img src={leaderboard[1].logo_url} className="w-full h-full object-contain p-1 bg-white"/> : leaderboard[1].business_name?.[0]}
                                               <div className="absolute -bottom-2 -right-2 bg-slate-500 rounded-full p-1 border-2 border-slate-900"><Medal size={14}/></div>
                                           </div>
                                           <p className="text-xs font-bold text-slate-300 w-20 text-center truncate">{leaderboard[1].business_name}</p>
@@ -1273,7 +1273,8 @@ export default function DashboardPage() {
                                       <div className="flex flex-col items-center -mt-8">
                                           <Crown size={32} className="text-yellow-400 mb-2 animate-bounce"/>
                                           <div className="w-24 h-24 rounded-full border-4 border-yellow-400 bg-slate-800 flex items-center justify-center font-bold text-2xl mb-3 overflow-hidden shadow-xl shadow-yellow-500/20">
-                                              {leaderboard[0].logo_url ? <img src={leaderboard[0].logo_url} className="w-full h-full object-cover"/> : leaderboard[0].business_name?.[0]}
+                                              {/* FIX: LEADERBOARD 1st PLACE */}
+                                              {leaderboard[0].logo_url ? <img src={leaderboard[0].logo_url} className="w-full h-full object-contain p-1 bg-white"/> : leaderboard[0].business_name?.[0]}
                                           </div>
                                           <p className="text-sm font-bold text-white w-24 text-center truncate">{leaderboard[0].business_name}</p>
                                           <p className="text-xs font-bold text-yellow-400">{leaderboard[0].total_xp || 0} XP</p>
@@ -1283,7 +1284,8 @@ export default function DashboardPage() {
                                   {leaderboard[2] && (
                                       <div className="flex flex-col items-center">
                                           <div className="w-16 h-16 rounded-full border-2 border-orange-700 bg-slate-800 flex items-center justify-center font-bold text-lg mb-2 overflow-hidden relative shadow-lg">
-                                              {leaderboard[2].logo_url ? <img src={leaderboard[2].logo_url} className="w-full h-full object-cover"/> : leaderboard[2].business_name?.[0]}
+                                              {/* FIX: LEADERBOARD 3rd PLACE */}
+                                              {leaderboard[2].logo_url ? <img src={leaderboard[2].logo_url} className="w-full h-full object-contain p-1 bg-white"/> : leaderboard[2].business_name?.[0]}
                                               <div className="absolute -bottom-2 -right-2 bg-orange-700 rounded-full p-1 border-2 border-slate-900"><Medal size={14}/></div>
                                           </div>
                                           <p className="text-xs font-bold text-slate-300 w-20 text-center truncate">{leaderboard[2].business_name}</p>
@@ -1299,7 +1301,8 @@ export default function DashboardPage() {
                               <div key={agent.id} className={`p-4 flex items-center gap-4 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors ${agent.id === userProfile?.id ? 'bg-blue-50/50' : ''}`}>
                                   <span className={`w-8 text-center font-black text-sm ${i < 3 ? 'text-yellow-500' : 'text-slate-300'}`}>#{i + 1}</span>
                                   <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-600 overflow-hidden border border-slate-200">
-                                      {agent.logo_url ? <img src={agent.logo_url} className="w-full h-full object-cover"/> : agent.business_name?.[0]}
+                                      {/* FIX: LEADERBOARD LIST */}
+                                      {agent.logo_url ? <img src={agent.logo_url} className="w-full h-full object-contain p-0.5 bg-white"/> : agent.business_name?.[0]}
                                   </div>
                                   <div className="flex-1">
                                       <div className="flex items-center gap-2">
@@ -1404,7 +1407,8 @@ export default function DashboardPage() {
                                  className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors active:scale-98 relative group"
                               >
                                   <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-lg font-bold text-slate-500 overflow-hidden border border-slate-200 group-hover:border-slate-300">
-                                      {agent.logo_url ? <img src={agent.logo_url} className="w-full h-full object-cover"/> : agent.business_name?.[0]}
+                                      {/* FIX: AGENT LIST */}
+                                      {agent.logo_url ? <img src={agent.logo_url} className="w-full h-full object-contain p-1 bg-white"/> : agent.business_name?.[0]}
                                   </div>
                                   <div className="flex-1">
                                       <h4 className="font-bold text-slate-900 text-sm">{agent.business_name}</h4>
@@ -1760,7 +1764,8 @@ export default function DashboardPage() {
                   <div className="flex justify-between items-start mb-6">
                       <div className="flex items-center gap-3">
                           <div className="w-14 h-14 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xl font-bold text-slate-500 overflow-hidden">
-                              {selectedAgent.logo_url ? <img src={selectedAgent.logo_url} className="w-full h-full object-cover"/> : selectedAgent.business_name?.[0]}
+                              {/* FIX: AGENT DETAIL MODAL */}
+                              {selectedAgent.logo_url ? <img src={selectedAgent.logo_url} className="w-full h-full object-contain p-1 bg-white"/> : selectedAgent.business_name?.[0]}
                           </div>
                           <div>
                               <h2 className="text-lg font-black text-slate-900">{selectedAgent.business_name}</h2>

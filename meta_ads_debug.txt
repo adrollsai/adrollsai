@@ -1,0 +1,52 @@
+
+[2026-01-16T14:32:09.840Z] [INIT]
+Starting Campaign Launch - Strict Payment Mode
+------------------------------------------------
+[2026-01-16T14:32:10.273Z] [PRE_CHECK]
+Verifying Ad Account Status & Payment...
+------------------------------------------------
+[2026-01-16T14:32:11.206Z] [ACCOUNT_INFO]
+{
+  "account_status": 1,
+  "funding_source_details": {
+    "id": "6579321095512703",
+    "display_string": "Available balance (₹0.00 INR)",
+    "type": 20
+  },
+  "disable_reason": 0,
+  "id": "act_293430697011354"
+}
+------------------------------------------------
+[2026-01-16T14:32:11.209Z] [FETCH_TEMPLATE]
+Fetching Admin Credentials...
+------------------------------------------------
+[2026-01-16T14:32:11.604Z] [READ_TEMPLATE_ADSET]
+120237582599510403
+------------------------------------------------
+[2026-01-16T14:32:15.169Z] [CAMPAIGN_CREATED]
+120236646068380464
+------------------------------------------------
+[2026-01-16T14:32:16.439Z] [ADSET_CREATED]
+120236646069900464
+------------------------------------------------
+[2026-01-16T14:32:18.326Z] [CREATIVE_CREATED]
+4275443399370081
+------------------------------------------------
+[2026-01-16T14:32:20.502Z] [AD_CREATION_FAILED]
+{
+  "message": "This request requires the user to take a pending action",
+  "type": "OAuthException",
+  "code": 31,
+  "error_subcode": 3858385,
+  "is_transient": false,
+  "error_user_title": "Please authenticate your account",
+  "error_user_msg": "We think that someone may have tried to access your account without permission. For your protection, you won't be able to create or modify ads until you've authenticated your account in Ads Manager. Your existing ads will continue to run normally.",
+  "fbtrace_id": "AM3o8u9VUiaVApTo6zvjJ2i"
+}
+------------------------------------------------
+[2026-01-16T14:32:20.503Z] [ROLLBACK]
+Deleting Campaign 120236646068380464...
+------------------------------------------------
+[2026-01-16T14:32:23.770Z] [FATAL_ERROR]
+Facebook Security Check: Facebook requires you to verify your identity. Please log into Ads Manager to fix this.
+------------------------------------------------

@@ -2,205 +2,67 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
-import { Wallet, History, Info, RefreshCw, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap } from 'lucide-react'
+import { Wallet, CreditCard, ExternalLink, ShieldCheck } from 'lucide-react'
+import Link from 'next/link'
 
 export default function WalletPage() {
     const supabase = createClient()
-    const [balance, setBalance] = useState(0)
-    const [transactions, setTransactions] = useState<any[]>([])
-    const [refreshing, setRefreshing] = useState(false)
-
-    // Helper function to fetch data
-    const loadWalletData = async () => {
-        setRefreshing(true)
-        try {
-            const { data: { user } } = await supabase.auth.getUser()
-            if(!user) return
-
-            // 1. Get Balance
-            const { data: profile } = await supabase.from('profiles').select('ad_credits').eq('id', user.id).single()
-            if(profile) setBalance(profile.ad_credits || 0)
-
-            // 2. Get History (Reverted to 'transactions' so you see your history)
-            const { data: txs } = await supabase
-                .from('transactions') 
-                .select('*')
-                .eq('user_id', user.id)
-                .order('created_at', { ascending: false })
-                .limit(20)
-            
-            if(txs) setTransactions(txs)
-        } catch (error) {
-            console.error("Wallet Load Error:", error)
-        } finally {
-            setRefreshing(false)
-        }
-    }
+    const [adAccountId, setAdAccountId] = useState<string | null>(null)
+    const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        let channel: any;
-
-        const init = async () => {
+        const load = async () => {
             const { data: { user } } = await supabase.auth.getUser()
-            if(!user) return
-
-            loadWalletData()
-
-            // 2. Realtime Subscription
-            channel = supabase
-                .channel('page_wallet_sub')
-                .on(
-                    'postgres_changes',
-                    { 
-                        event: 'UPDATE', 
-                        schema: 'public', 
-                        table: 'profiles', 
-                        filter: `id=eq.${user.id}` 
-                    },
-                    (payload) => { 
-                        if (payload.new) {
-                            setBalance(payload.new.ad_credits)
-                            loadWalletData() 
-                        }
-                    }
-                )
-                .subscribe()
-        }
-
-        init()
-
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
-                loadWalletData() 
+            if(user) {
+                const { data } = await supabase.from('profiles').select('ad_account_id').eq('id', user.id).single()
+                setAdAccountId(data?.ad_account_id || null)
             }
+            setLoading(false)
         }
-        document.addEventListener('visibilitychange', handleVisibilityChange)
-
-        return () => {
-            if(channel) supabase.removeChannel(channel)
-            document.removeEventListener('visibilitychange', handleVisibilityChange)
-        }
+        load()
     }, [])
-
-    // --- HELPER TO PARSE TRANSACTIONS ---
-    const getTxDetails = (tx: any) => {
-        const orderId = tx.order_id || ''
-        
-        // 1. Admin Actions (New Feature)
-        if (orderId.includes('ADMIN_')) {
-            const isDebit = orderId.includes('DEBIT')
-            const isTopUp = orderId.includes('TOPUP')
-            
-            return {
-                title: isTopUp ? "Wallet Top-up (Admin)" : "Admin Adjustment",
-                isCredit: !isDebit, // Default to credit unless explicitly DEBIT
-                icon: <ShieldCheck size={16} />,
-                sub: orderId // Show ID for reference
-            }
-        }
-
-        // 2. Ad Purchases
-        if (tx.ad_id) {
-            return {
-                title: "Ad Campaign Purchase",
-                isCredit: false, // Spending money
-                icon: <Zap size={16} />,
-                sub: tx.ad_id
-            }
-        }
-
-        // 3. Regular Wallet Load (Payment Gateway)
-        return {
-            title: "Wallet Load",
-            isCredit: true,
-            icon: <Wallet size={16} />,
-            sub: orderId
-        }
-    }
 
     return (
         <div className="p-6 max-w-2xl mx-auto space-y-8 mt-12">
-            <div className="flex justify-between items-center">
-                <h1 className="text-2xl font-bold flex items-center gap-2">
-                    <Wallet className="text-slate-900"/> My Wallet
-                </h1>
-                <button 
-                    onClick={() => loadWalletData()} 
-                    disabled={refreshing}
-                    className="p-2 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
-                    title="Refresh Balance"
-                >
-                    <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
-                </button>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+                <Wallet className="text-slate-900"/> Billing & Payments
+            </h1>
+
+            <div className="bg-white p-8 rounded-3xl shadow-lg border border-slate-100 text-center">
+                <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <CreditCard size={32} />
+                </div>
+                
+                <h2 className="text-xl font-bold text-slate-900 mb-2">Manage Ad Payments</h2>
+                <p className="text-slate-500 mb-8 max-w-md mx-auto">
+                    Your ads are billed directly to your Meta Ad Account. Manage your payment methods and view invoices securely on Facebook.
+                </p>
+
+                {loading ? (
+                    <p className="text-slate-400">Loading...</p>
+                ) : adAccountId ? (
+                    <a 
+                        href={`https://secure.facebook.com/ads/manager/billing_history/summary/?act=${adAccountId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors"
+                    >
+                        <ExternalLink size={18} /> Go to Meta Billing
+                    </a>
+                ) : (
+                    <Link href="/dashboard/profile" className="inline-flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl font-bold">
+                        Connect Ad Account
+                    </Link>
+                )}
             </div>
 
-            {/* BALANCE CARD */}
-            <div className="bg-slate-900 text-white p-8 rounded-3xl shadow-xl relative overflow-hidden transition-all duration-300">
-                <div className="relative z-10">
-                    <p className="text-slate-400 text-sm font-medium mb-1">Available Credits</p>
-                    <h2 className="text-5xl font-bold transition-all">₹{balance.toLocaleString()}</h2>
-                </div>
-                <div className="absolute right-[-20px] top-[-20px] opacity-10">
-                    <Wallet size={200} />
-                </div>
-            </div>
-
-            {/* INFO SECTION */}
-            <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 flex items-start gap-4">
-                <div className="bg-blue-100 p-2 rounded-full text-blue-600">
-                    <Info size={24} />
-                </div>
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 flex gap-4">
+                <ShieldCheck className="text-green-600 shrink-0" size={24} />
                 <div>
-                    <h3 className="font-bold text-blue-900 mb-1">Need more credits?</h3>
-                    <p className="text-sm text-blue-700 leading-relaxed">
-                        Credit top-ups are currently managed by your organization administrator. 
-                        Please contact your admin to add funds to your wallet for running ad campaigns.
+                    <h3 className="font-bold text-slate-900">Decentralized Billing</h3>
+                    <p className="text-sm text-slate-500 mt-1">
+                        We no longer hold your funds. You pay Facebook directly. This ensures complete transparency and control over your ad spend.
                     </p>
-                </div>
-            </div>
-
-            {/* HISTORY */}
-            <div>
-                <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <History size={18} /> Transaction History
-                </h3>
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-                    {transactions.length === 0 ? (
-                        <div className="p-8 text-center text-slate-400 text-sm">No transactions yet.</div>
-                    ) : (
-                        transactions.map((tx, index) => {
-                            const { title, isCredit, icon, sub } = getTxDetails(tx)
-                            
-                            return (
-                                <div key={tx.id || index} className="p-4 border-b border-slate-100 last:border-0 flex justify-between items-center hover:bg-slate-50">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`p-2 rounded-full ${isCredit ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                                            {isCredit ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
-                                        </div>
-                                        <div>
-                                            <p className="font-bold text-slate-800 text-sm">
-                                                {title}
-                                            </p>
-                                            <div className="flex items-center gap-1.5 mt-0.5">
-                                                {icon && <span className="text-slate-400 scale-75 origin-left opacity-70">{icon}</span>}
-                                                <p className="text-[10px] text-slate-400 font-mono truncate max-w-[150px]">
-                                                    {sub}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className={`font-bold text-sm ${isCredit ? 'text-green-600' : 'text-slate-900'}`}>
-                                            {isCredit ? '+' : '-'}₹{(tx.amount / 100).toLocaleString()}
-                                        </p>
-                                        <p className="text-[10px] text-slate-400">
-                                            {new Date(tx.created_at).toLocaleDateString()}
-                                        </p>
-                                    </div>
-                                </div>
-                            )
-                        })
-                    )}
                 </div>
             </div>
         </div>

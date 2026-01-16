@@ -1,9 +1,7 @@
-// adrollsai/adrollsai/adrollsai-builder-app-lander-feed-notifications/app/dashboard/profile/page.tsx
-
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { LogOut, Save, Loader2, Building, Facebook, CheckCircle, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck, Globe, Award, Lock, Flame, Zap, Crown, Share2, Link as LinkIcon, Headphones, RefreshCw } from 'lucide-react'
+import { LogOut, Save, Loader2, Building, Facebook, CheckCircle, Building2, ShieldCheck, User, Camera, Mail, Phone, BadgeCheck, Globe, Award, Lock, Flame, Zap, Crown, Link as LinkIcon, Headphones, RefreshCw } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -85,7 +83,7 @@ export default function ProfilePage() {
 
   // --- STATE ---
   const [loading, setLoading] = useState(true)
-  const [isRefreshing, setIsRefreshing] = useState(false) // Added refreshing state
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<'admin' | 'agent'>('agent')
   const [orgName, setOrgName] = useState<string>('')
@@ -165,6 +163,25 @@ export default function ProfilePage() {
 
   // --- HELPERS ---
   const isValidFacebookToken = (token: string) => token && token.startsWith('EAA')
+
+  // --- GAMIFICATION CHECK ---
+  const checkSocialRewards = async () => {
+    // Only agents get badges usually
+    if (userRole === 'admin') return
+
+    try {
+        const res = await fetch('/api/gamification/check-socials', { method: 'POST' })
+        const data = await res.json()
+        
+        if (data.success && data.earnedBadges && data.earnedBadges.length > 0) {
+            let msg = `🎉 Badge Unlocked!`
+            msg += `\n🏅 You earned the '${data.earnedBadges.join(', ')}' badge!`
+            alert(msg)
+        }
+    } catch (e) {
+        console.error("Gamification check failed:", e)
+    }
+  }
 
   // --- DATA FETCHING (Unified) ---
   const fetchProfileData = async (forceRefresh = false) => {
@@ -352,26 +369,6 @@ export default function ProfilePage() {
           setLoading(false)
           setIsRefreshing(false)
       }
-  }
-
-  // --- GAMIFICATION CHECK ---
-  const checkSocialRewards = async () => {
-    if (userRole === 'admin') return
-
-    try {
-        const res = await fetch('/api/gamification/check-socials', { method: 'POST' })
-        const data = await res.json()
-        
-        if (data.success && data.earnedBadges && data.earnedBadges.length > 0) {
-            let msg = `🎉 Badge Unlocked!`
-            msg += `\n🏅 You earned the '${data.earnedBadges.join(', ')}' badge!`
-            alert(msg)
-            // No need to full refresh, just let user know. 
-            // Next refresh will pull the badge icon update.
-        }
-    } catch (e) {
-        console.error("Gamification check failed:", e)
-    }
   }
 
   // --- ACTIONS (API Wrappers to update Cache) ---
@@ -1052,7 +1049,7 @@ export default function ProfilePage() {
                     
                     {/* WEBHOOK / FIX CONNECTION BUTTON */}
                     {selectedPageId && (
-                        <div className="ml-11 mt-1">
+                        <div className="ml-11 mt-1 mb-4">
                              <div className="flex gap-2">
                                 <button 
                                     onClick={handleFixConnection} 
@@ -1077,53 +1074,49 @@ export default function ProfilePage() {
                         </div>
                     )}
                     
-                    {/* ADMIN ONLY: ADS & PIXELS */}
-                    {userRole === 'admin' && (
-                        <>
-                            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
-                                <div className="flex justify-between items-center mb-2">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Account</label>
-                                    <button onClick={() => facebookToken && fetchAdAccounts(facebookToken)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
-                                </div>
-                                {isLoadingAdAccounts ? (
-                                    <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing...</div>
-                                ) : adAccounts.length > 0 ? (
-                                    <div className="space-y-2 max-h-40 overflow-y-auto">
-                                    {adAccounts.map(account => (
-                                        <button key={account.id} onClick={() => handleAdAccountSelect(account.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedAdAccountId === account.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                                            <span className={`text-xs font-bold truncate ${selectedAdAccountId === account.id ? 'text-slate-800' : 'text-slate-500'}`}>{account.name}</span>
-                                            {selectedAdAccountId === account.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-                                        </button>
-                                    ))}
-                                    </div>
-                                ) : (
-                                    <div className="py-2"><p className="text-xs text-slate-400">No Ad Accounts.</p></div>
-                                )}
+                    {/* AD ACCOUNTS - AVAILABLE TO ALL USERS NOW */}
+                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Account</label>
+                            <button onClick={() => facebookToken && fetchAdAccounts(facebookToken)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
+                        </div>
+                        {isLoadingAdAccounts ? (
+                            <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing...</div>
+                        ) : adAccounts.length > 0 ? (
+                            <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {adAccounts.map(account => (
+                                <button key={account.id} onClick={() => handleAdAccountSelect(account.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedAdAccountId === account.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
+                                    <span className={`text-xs font-bold truncate ${selectedAdAccountId === account.id ? 'text-slate-800' : 'text-slate-500'}`}>{account.name}</span>
+                                    {selectedAdAccountId === account.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                                </button>
+                            ))}
                             </div>
+                        ) : (
+                            <div className="py-2"><p className="text-xs text-slate-400">No Ad Accounts. (Create in Meta Business Manager)</p></div>
+                        )}
+                    </div>
 
-                            {selectedAdAccountId && (
-                                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Data Pixel</label>
-                                        <button onClick={() => fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
-                                    </div>
-                                    {isLoadingPixels ? (
-                                        <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Searching...</div>
-                                    ) : pixels.length > 0 ? (
-                                        <div className="space-y-2 max-h-40 overflow-y-auto">
-                                        {pixels.map(pixel => (
-                                            <button key={pixel.id} onClick={() => handlePixelSelect(pixel.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPixelId === pixel.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                                                <span className={`text-xs font-bold truncate ${selectedPixelId === pixel.id ? 'text-slate-800' : 'text-slate-500'}`}>{pixel.name}</span>
-                                                {selectedPixelId === pixel.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-                                            </button>
-                                        ))}
-                                        </div>
-                                    ) : (
-                                        <div className="py-2"><p className="text-xs text-slate-400">No Pixels found.</p></div>
-                                    )}
+                    {selectedAdAccountId && (
+                        <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Data Pixel</label>
+                                <button onClick={() => fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
+                            </div>
+                            {isLoadingPixels ? (
+                                <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Searching...</div>
+                            ) : pixels.length > 0 ? (
+                                <div className="space-y-2 max-h-40 overflow-y-auto">
+                                {pixels.map(pixel => (
+                                    <button key={pixel.id} onClick={() => handlePixelSelect(pixel.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPixelId === pixel.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
+                                        <span className={`text-xs font-bold truncate ${selectedPixelId === pixel.id ? 'text-slate-800' : 'text-slate-500'}`}>{pixel.name}</span>
+                                        {selectedPixelId === pixel.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                                    </button>
+                                ))}
                                 </div>
+                            ) : (
+                                <div className="py-2"><p className="text-xs text-slate-400">No Pixels found.</p></div>
                             )}
-                        </>
+                        </div>
                     )}
                 </div>
             )}
@@ -1131,7 +1124,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* 4. NOTIFICATION SETTINGS (NEW) */}
+      {/* 4. NOTIFICATION SETTINGS */}
       <PushManager />
 
       {/* 5. DEBUG / TESTER (Optional) */}
