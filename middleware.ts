@@ -50,18 +50,13 @@ export async function middleware(request: NextRequest) {
   const isMarketingHost = MARKETING_HOSTS.includes(currentHost);
   const isDefaultHost = currentHost === DEFAULT_APP_HOST;
 
-  // --- 1. Custom Domain Logic (OPTIMIZED) ---
+  // --- 1. Custom Domain Logic (Preserved) ---
   if (!isLocalhost && !isDefaultHost && !isMarketingHost && !isAppHost) {
-    
-    // CACHE CHECK: Do we already know this domain is valid?
     const domainVerifiedCookie = request.cookies.get('x-domain-verified')
     
     if (domainVerifiedCookie?.value === currentHost) {
-       // It's valid, skip DB check!
        response = rewriteToCustomDomain(url, currentHost, request);
     } else {
-       // DB CHECK: Check DB for Organization Custom Domain
-       // Optimized: Select ONLY 'id', not the whole row
        const { data: orgData } = await supabase
          .from('organizations')
          .select('id') 
@@ -70,8 +65,7 @@ export async function middleware(request: NextRequest) {
 
        if (orgData) {
          response = rewriteToCustomDomain(url, currentHost, request);
-         // SET CACHE: Save cookie so next time is fast
-         response.cookies.set('x-domain-verified', currentHost, { maxAge: 60 * 60 * 24 }); // 24 hours
+         response.cookies.set('x-domain-verified', currentHost, { maxAge: 60 * 60 * 24 }); 
        }
     }
   }
@@ -83,20 +77,46 @@ export async function middleware(request: NextRequest) {
       response = NextResponse.rewrite(loginUrl);
   }
 
-  // --- 3. Auth Logic ---
+  // --- 3. Auth & Role Logic (UPDATED) ---
   const { data: { user } } = await supabase.auth.getUser()
   const finalUrl = response.headers.get('x-middleware-rewrite') 
     ? new URL(response.headers.get('x-middleware-rewrite')!) 
     : url
 
   if (user) {
+    // A. Fetch Role
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+    
+    const isCustomer = profile?.role === 'customer';
+
+    // B. Login Redirection (Send them to the right home)
     if (finalUrl.pathname === '/login') {
+        if (isCustomer) {
+            return NextResponse.redirect(new URL('/portal', request.url))
+        } else {
+            return NextResponse.redirect(new URL('/dashboard', request.url))
+        }
+    }
+
+    // C. Protect Routes
+    // Prevent Customers from seeing Agent Dashboard
+    if (isCustomer && finalUrl.pathname.startsWith('/dashboard')) {
+        return NextResponse.redirect(new URL('/portal', request.url))
+    }
+
+    // Prevent Agents from seeing Customer Portal
+    if (!isCustomer && finalUrl.pathname.startsWith('/portal')) {
         return NextResponse.redirect(new URL('/dashboard', request.url))
     }
   }
 
   if (!user) {
-    if (finalUrl.pathname.startsWith('/dashboard')) {
+    // Protect both Dashboard and Portal
+    if (finalUrl.pathname.startsWith('/dashboard') || finalUrl.pathname.startsWith('/portal')) {
         const redirectPath = isAppHost ? '/' : '/login'; 
         return NextResponse.redirect(new URL(redirectPath, request.url))
     }
@@ -105,7 +125,7 @@ export async function middleware(request: NextRequest) {
   return response
 }
 
-// Helper to keep code clean
+// Helper to keep code clean (Preserved)
 function rewriteToCustomDomain(url: URL, currentHost: string, request: NextRequest) {
     const targetPath = url.pathname === '/' ? '/login' : url.pathname;
     const rewriteUrl = new URL(targetPath, `https://${process.env.NEXT_PUBLIC_DEFAULT_HOST || 'adrollsai-builder-app.vercel.app'}`)

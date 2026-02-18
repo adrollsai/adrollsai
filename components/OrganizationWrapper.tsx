@@ -1,5 +1,3 @@
-// adrollsai/adrollsai/adrollsai-builder-app-gamification-superuser/components/OrganizationWrapper.tsx
-
 'use client'
 
 import { createContext, useContext, useEffect, useState, Suspense } from 'react'
@@ -7,18 +5,20 @@ import { createClient } from '@/utils/supabase/client'
 import { useSearchParams } from 'next/navigation'
 import { Shield } from 'lucide-react'
 
-type Organization = {
+// UPDATED: Added 'business_model' to the type definition
+export type Organization = {
   id: string
   name: string
   master_logo_url: string | null
   brand_color: string | null
+  business_model: string | null // <--- NEW FIELD
 }
 
 type OrgContextType = {
   org: Organization | null
   loading: boolean
   isImpersonating: boolean
-  userRole: string | null // Added userRole to context
+  userRole: string | null
   refreshOrg: () => void
 }
 
@@ -40,7 +40,7 @@ function OrgContent({ children }: { children: React.ReactNode }) {
   const [org, setOrg] = useState<Organization | null>(null)
   const [loading, setLoading] = useState(true)
   const [isImpersonating, setIsImpersonating] = useState(false)
-  const [userRole, setUserRole] = useState<string | null>(null) // State for Role
+  const [userRole, setUserRole] = useState<string | null>(null)
 
   const fetchOrg = async () => {
     try {
@@ -55,7 +55,7 @@ function OrgContent({ children }: { children: React.ReactNode }) {
         .single()
       
       if (profile) {
-          setUserRole(profile.role) // Set the role state
+          setUserRole(profile.role)
       }
 
       let targetOrgId = profile?.organization_id
@@ -75,6 +75,7 @@ function OrgContent({ children }: { children: React.ReactNode }) {
       }
 
       if (targetOrgId) {
+        // Fetch Org Details (including the new business_model column)
         const { data: orgData } = await supabase
           .from('organizations')
           .select('*')
@@ -92,13 +93,17 @@ function OrgContent({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // --- THEME LOGIC (Preserved) ---
   const getContrastColor = (hexColor: string) => {
     if (!hexColor) return '#001D35'
+    // Convert hex to RGB
     const hex = hexColor.replace('#', '')
     const r = parseInt(hex.substr(0, 2), 16)
     const g = parseInt(hex.substr(2, 2), 16)
     const b = parseInt(hex.substr(4, 2), 16)
+    // Calculate YIQ ratio
     const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000
+    // Return black or white depending on contrast
     return yiq >= 128 ? '#001D35' : '#FFFFFF'
   }
 
