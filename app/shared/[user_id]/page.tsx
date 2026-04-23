@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useSearchParams, usePathname } from 'next/navigation'
-import { MapPin, Phone, Loader2, Image as ImageIcon, LayoutGrid, BookOpen, ChevronRight, X, Filter, Check, Facebook, Instagram, Linkedin, Youtube } from 'lucide-react'
+import { MapPin, Phone, Loader2, Image as ImageIcon, LayoutGrid, BookOpen, ChevronRight, X, Filter, Check, Facebook, Instagram, Linkedin, Youtube, Share2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
-// ... (Keep existing Types and Helpers) ...
+// --- TYPES ---
 type Property = {
   id: string
   title: string
@@ -58,6 +58,9 @@ export default function PublicProfilePage() {
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
+
+  // Sharing State
+  const [sharingId, setSharingId] = useState<string | null>(null)
 
   // --- 1. ID EXTRACTION ---
   const getSafeUserId = () => {
@@ -126,6 +129,59 @@ export default function PublicProfilePage() {
     return matchesPrice && matchesType
   })
 
+  // --- 4. SHARE LOGIC (Native Web Share API) ---
+  const handleShare = async (prop: Property) => {
+    try {
+      setSharingId(prop.id)
+      
+      // Determine what text to share
+      const shareText = `Check out this property!\n\n*${prop.title}*\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description ? prop.description : ''}`
+
+      // Check if the browser supports sharing files
+      if (navigator.canShare) {
+        const filesToShare: File[] = []
+        
+        // Grab the main image (or loop through multiple if you want to share up to 3)
+        // Here we just grab the primary image to ensure it loads fast
+        const imageUrls = prop.images && prop.images.length > 0 ? prop.images.slice(0, 3) : [prop.image_url]
+
+        for (let i = 0; i < imageUrls.length; i++) {
+          if (!imageUrls[i]) continue;
+          try {
+            const response = await fetch(imageUrls[i])
+            const blob = await response.blob()
+            const file = new File([blob], `property_image_${i}.jpg`, { type: blob.type })
+            filesToShare.push(file)
+          } catch (e) {
+            console.error("Failed to fetch image for sharing:", e)
+          }
+        }
+
+        const shareData = {
+          title: prop.title,
+          text: shareText,
+          files: filesToShare
+        }
+
+        // Trigger native share sheet
+        if (navigator.canShare(shareData)) {
+          await navigator.share(shareData)
+        } else {
+          // Fallback if the device can share, but specifically rejected the files
+          await navigator.share({ title: prop.title, text: `${shareText}\n\n${prop.image_url}` })
+        }
+      } else {
+        // Fallback for desktop/unsupported browsers: Just copy to clipboard or open normal intent
+        alert("Native file sharing is not supported on this device. The link has been copied instead.")
+        navigator.clipboard.writeText(`${shareText}\n\nLink: ${prop.image_url}`)
+      }
+    } catch (error) {
+      console.error('Error sharing property:', error)
+    } finally {
+      setSharingId(null)
+    }
+  }
+
   if (loading) return <div className="flex h-screen items-center justify-center text-slate-400 bg-slate-50"><Loader2 className="animate-spin" /></div>
   if (errorMsg) return <div className="flex h-screen items-center justify-center text-slate-400"><p>{errorMsg}</p></div>
 
@@ -181,7 +237,7 @@ export default function PublicProfilePage() {
         </div>
       </div>
 
-      {/* CONTENT AREA (Inventory & Blog Rendering - Unchanged) */}
+      {/* CONTENT AREA */}
       <div className="max-w-md mx-auto px-5 py-6">
         
         {activeTab === 'inventory' && (
@@ -246,8 +302,30 @@ export default function PublicProfilePage() {
                             </div>
                             <div className="px-1">
                                 <h3 className="text-lg font-bold text-slate-800">{prop.title}</h3>
-                                <div className="flex items-center gap-1.5 text-slate-500 mt-1 mb-3"><MapPin size={14} /><span className="text-xs font-medium truncate">{prop.address}</span></div>
-                                <a href={`https://wa.me/${profile?.contact_number?.replace(/[^0-9]/g,'')}?text=I'm interested in ${prop.title} (${prop.price})`} target="_blank" className="block w-full text-center bg-slate-900 text-white py-3 rounded-xl text-xs font-bold hover:opacity-90 active:scale-95 transition-all">Contact Agent</a>
+                                <div className="flex items-center gap-1.5 text-slate-500 mt-1 mb-3">
+                                    <MapPin size={14} />
+                                    <span className="text-xs font-medium truncate">{prop.address}</span>
+                                </div>
+                                
+                                {/* UPDATED BUTTON ROW */}
+                                <div className="flex gap-2 w-full">
+                                    <a href={`https://wa.me/${profile?.contact_number?.replace(/[^0-9]/g,'')}?text=I'm interested in ${prop.title} (${prop.price})`} target="_blank" rel="noopener noreferrer" className="flex-1 text-center bg-slate-900 text-white py-3 rounded-xl text-xs font-bold hover:opacity-90 active:scale-95 transition-all">
+                                        Contact Agent
+                                    </a>
+                                    
+                                    <button 
+                                        onClick={() => handleShare(prop)}
+                                        disabled={sharingId === prop.id}
+                                        className="w-12 flex items-center justify-center bg-green-50 text-green-600 rounded-xl hover:bg-green-100 active:scale-95 transition-all disabled:opacity-50"
+                                        title="Share Images + Details"
+                                    >
+                                        {sharingId === prop.id ? (
+                                            <Loader2 size={16} className="animate-spin" />
+                                        ) : (
+                                            <Share2 size={16} />
+                                        )}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ))
