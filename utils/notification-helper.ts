@@ -7,8 +7,6 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY!
 );
 
-// 1. Initialize Supabase Admin Client using Service Role Key
-// This bypasses RLS, allowing background processes (like webhooks) to read subscriptions
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -21,32 +19,33 @@ export async function sendPushNotification(
     url: string = '/dashboard/crm',
     type: string = 'general'
 ) {
-  // 2. Fetch user subscriptions using Admin Client
+  console.log(`[PUSH DEBUG] Attempting to find subscriptions for User ID: ${userId}`);
+
   const { data: subscriptions, error } = await supabaseAdmin
     .from('push_subscriptions')
     .select('*')
     .eq('user_id', userId);
 
   if (error) {
-    console.error('[PUSH] Error fetching subscriptions:', error);
+    console.error('[PUSH DEBUG] Supabase Error fetching subscriptions:', error);
     return;
   }
 
   if (!subscriptions || subscriptions.length === 0) {
-    console.log(`[PUSH] No active subscriptions for user ${userId}`);
+    console.log(`[PUSH DEBUG] FAILED: 0 active subscriptions found in DB for User ID: ${userId}`);
     return;
   }
 
+  console.log(`[PUSH DEBUG] Found ${subscriptions.length} active devices for this user.`);
+
   const payload = JSON.stringify({ title, body, url, type });
 
-  // Move 'Urgency' safely into the headers object. This forces iOS to prioritize
-  // the notification without triggering a 400 Bad Request from the endpoint.
+  // CRITICAL FIX: 'urgency' must be a direct property, not inside a headers object.
+  // Apple will silently drop notifications if this is formatted wrong.
   const options = {
-    TTL: 86400, // 24 hours
-    headers: {
-      'Urgency': 'high'
-    }
-  };
+    TTL: 86400,
+    urgency: 'high' 
+  } as webpush.RequestOptions; 
 
   const sendPromises = subscriptions.map(async (sub) => {
     const pushSubscription = {
@@ -56,17 +55,16 @@ export async function sendPushNotification(
 
     try {
       await webpush.sendNotification(pushSubscription, payload, options);
-      console.log(`[PUSH] Sent successfully to device ID: ${sub.id}`);
+      console.log(`[PUSH SUCCESS] Notification delivered to device ID: ${sub.id}`);
     } catch (error: any) {
-      console.error(`[PUSH] Failed for ${sub.id}:`, error.statusCode, error.body || '');
+      console.error(`[PUSH ERROR] Failed for device ${sub.id}. Status:`, error.statusCode);
       
-      // If the browser unsubscribed, delete the ghost record using Admin Client
       if (error.statusCode === 404 || error.statusCode === 410) {
+        console.log(`[PUSH DEBUG] Device token expired. Cleaning up DB...`);
         await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id);
       }
     }
   });
 
-  // allSettled ensures that if one dead device fails, it doesn't block active devices
   await Promise.allSettled(sendPromises);
 }
