@@ -19,23 +19,22 @@ export async function sendPushNotification(
     url: string = '/dashboard/crm',
     type: string = 'general'
 ) {
-  const { data: subscriptions, error } = await supabaseAdmin
+  const { data: subscriptions } = await supabaseAdmin
     .from('push_subscriptions')
     .select('*')
     .eq('user_id', userId);
 
-  if (error || !subscriptions || subscriptions.length === 0) {
-    return;
-  }
+  if (!subscriptions || subscriptions.length === 0) return;
 
   const payload = JSON.stringify({ title, body, url, type });
 
-  // Add the 'topic' field for iOS. This tells Apple to group the notifications
-  // and prevents the OS from flagging rapid bursts as spam.
+  // Bulletproof options: No 'topic', and urgency applied to both root and headers
   const options = {
     TTL: 86400,
     urgency: 'high',
-    topic: 'adrolls-crm-alert' 
+    headers: {
+        'Urgency': 'high'
+    }
   } as webpush.RequestOptions; 
 
   const sendPromises = subscriptions.map(async (sub) => {
