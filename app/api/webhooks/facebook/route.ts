@@ -85,10 +85,12 @@ export async function POST(request: Request) {
           if (error) continue;
 
           // FIRE THE RICHER NOTIFICATION
+          const cleanSource = adCampaignString.split(' / ')[0];
+          
           await sendPushNotification(
               profile.id,
               "🔥 New Facebook Lead!",
-              `Name: ${name}\nPhone: ${phone}\nFrom: ${adCampaignString.split(' / ')[0]}`,
+              `${name} • ${phone} • ${cleanSource}`,
               `/dashboard/crm/${savedLead.id}` 
           )
         }
