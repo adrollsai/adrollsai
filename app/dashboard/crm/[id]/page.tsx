@@ -67,18 +67,33 @@ export default function LeadProfilePage() {
     })
   }
 
+  // --- CRITICAL TIMEZONE FIX APPLIED HERE ---
   const handleSetReminder = async () => {
     if (!reminderDate) return
-    const desc = `Follow-up set for ${new Date(reminderDate).toLocaleString()}`
+    
+    // 1. Create a true local Date object from the HTML input
+    const localDateObj = new Date(reminderDate)
+    
+    // 2. Convert it to a strict UTC format so Supabase stores it perfectly
+    const utcIsoString = localDateObj.toISOString()
+    
+    const desc = `Follow-up set for ${localDateObj.toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'})}`
     
     setLeadHistory([{ id: Date.now(), action_type: 'REMINDER_SET', description: desc, created_at: new Date().toISOString() }, ...leadHistory])
-    setLead({ ...lead, next_followup: reminderDate })
+    
+    // Update local state with the precise UTC string
+    setLead({ ...lead, next_followup: utcIsoString })
     setReminderDate('')
 
     await fetch('/api/crm/lead-action', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ leadId: id, actionType: 'REMINDER_SET', description: desc, nextFollowup: reminderDate }) 
+        body: JSON.stringify({ 
+            leadId: id, 
+            actionType: 'REMINDER_SET', 
+            description: desc, 
+            nextFollowup: utcIsoString // Send the strict UTC string to the database
+        }) 
     })
   }
 
@@ -150,7 +165,7 @@ export default function LeadProfilePage() {
                 </label>
                 <div className="flex gap-2 w-full pl-1">
                     <input type="datetime-local" value={reminderDate} onChange={e => setReminderDate(e.target.value)} className="flex-1 min-w-0 bg-slate-50 p-2.5 rounded-xl text-sm border outline-none" />
-                    <button onClick={handleSetReminder} className="bg-amber-100 text-amber-700 px-5 rounded-xl text-xs font-bold shrink-0">Set Alert</button>
+                    <button onClick={handleSetReminder} className="bg-amber-100 text-amber-700 px-5 rounded-xl text-xs font-bold shrink-0 hover:bg-amber-200 transition-colors">Set Alert</button>
                 </div>
             </div>
 
