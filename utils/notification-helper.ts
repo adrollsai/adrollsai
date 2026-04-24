@@ -28,12 +28,13 @@ export async function sendPushNotification(
 
   const payload = JSON.stringify({ title, body, url, type });
 
-  // Add strict delivery rules for iOS (APNs) and Android (FCM)
+  // ROBUST iOS CONFIGURATION
+  // 'urgency' triggers APNs priority 10 (immediately wake device)
+  // 'topic' tells Apple to group them, preventing them from being dropped as spam
   const options = {
-    TTL: 86400, // 24 hours - if the phone is off, keep trying for a day
-    headers: {
-      'Urgency': 'high' // CRITICAL FOR iOS: Forces immediate delivery instead of background batching
-    }
+    TTL: 86400, // 24 hours
+    urgency: 'high', 
+    topic: 'adrolls-crm-alert' 
   };
 
   const sendPromises = subscriptions.map(async (sub) => {
@@ -43,16 +44,17 @@ export async function sendPushNotification(
     };
 
     try {
-      await webpush.sendNotification(pushSubscription, payload, options);
+      await webpush.sendNotification(pushSubscription, payload, options as any);
       console.log(`[PUSH] Sent successfully to device ID: ${sub.id}`);
     } catch (error: any) {
       console.error(`[PUSH] Failed for ${sub.id}:`, error.statusCode);
-      // Clean up stale or unsubscribed devices immediately so they don't clog the system
+      // Clean up stale or unsubscribed devices
       if (error.statusCode === 404 || error.statusCode === 410) {
         await supabase.from('push_subscriptions').delete().eq('id', sub.id);
       }
     }
   });
 
-  await Promise.all(sendPromises);
+  // Use allSettled! If one old token fails, it won't crash the current valid token's delivery
+  await Promise.allSettled(sendPromises);
 }
