@@ -11,7 +11,7 @@ type Message = {
   role: 'user' | 'ai'
   text: string
   mediaUrl?: string
-  mediaType?: 'image' | 'video'
+  mediaType?: 'image'
   steps?: string[]
 }
 
@@ -49,7 +49,6 @@ export default function CreationPage() {
   const supabase = createClient()
   
   // State
-  const [mode, setMode] = useState<'image' | 'video'>('image')
   const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
   const [currentStep, setCurrentStep] = useState<string>('') 
@@ -68,6 +67,7 @@ export default function CreationPage() {
   const refFileInputRef = useRef<HTMLInputElement>(null)
   
   // Data State
+  const [userId, setUserId] = useState<string | null>(null)
   const [properties, setProperties] = useState<Property[]>([]) 
   const [profile, setProfile] = useState<Profile | null>(null)
   const [selectedPropId, setSelectedPropId] = useState<string>('')
@@ -79,6 +79,8 @@ export default function CreationPage() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+      
+      setUserId(user.id)
 
       const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       if (profileData) {
@@ -187,14 +189,13 @@ export default function CreationPage() {
             propertyTitle: prop?.title || "",
             contactNumber: profile?.contact_number || "",
             businessName: profile?.business_name || "",
-            logoUrl: profile?.logo_url || "", // Explicitly passing logo
+            logoUrl: profile?.logo_url || "", 
             
             // Context
             propImages: propImages,
             templateUrl: activeReferenceUrl, 
             
             // Config
-            mode: mode,
             aspectRatio: selectedRatio
         })
       })
@@ -208,7 +209,7 @@ export default function CreationPage() {
       if (startData.taskId) {
         const taskId = startData.taskId 
         let attempts = 0
-        const maxAttempts = 30 
+        const maxAttempts = 30 // Approx 2 minutes maximum waiting time
         let finalImageUrl = ''
 
         while (attempts < maxAttempts) {
@@ -247,12 +248,12 @@ export default function CreationPage() {
 
         if (finalImageUrl) {
             console.log("[LOG] Final Image URL:", finalImageUrl);
-            // Save to DB
-            if (profile) {
+            // Save to DB using verified userId instead of profile to prevent failure
+            if (userId) {
                 const { error: dbError } = await supabase.from('assets').insert({
-                    user_id: profile.id,
+                    user_id: userId,
                     url: finalImageUrl,
-                    type: mode,
+                    type: 'image',
                     status: 'Draft'
                 })
                 if (dbError) console.error("[LOG] DB Save Error:", dbError);
@@ -263,7 +264,7 @@ export default function CreationPage() {
               id: Date.now() + 1, 
               role: 'ai', 
               text: `Here is your design!`, 
-              mediaType: mode,
+              mediaType: 'image',
               mediaUrl: finalImageUrl
             }
             setMessages(prev => [...prev, aiMsg])
@@ -292,10 +293,6 @@ export default function CreationPage() {
                 <Sparkles size={18} className="text-primary" />
                 Creator
             </h1>
-            <div className="bg-slate-100 p-1 rounded-full flex">
-                <button onClick={() => setMode('image')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${mode === 'image' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>Image</button>
-                <button onClick={() => setMode('video')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${mode === 'video' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>Video</button>
-            </div>
         </div>
 
         {/* CONTROLS BAR */}
@@ -406,7 +403,7 @@ export default function CreationPage() {
                   {msg.text}
                 </div>
                 {msg.mediaUrl && (
-                  <div className={`relative overflow-hidden rounded-2xl border-4 border-white shadow-lg group ${msg.mediaType === 'image' ? 'w-64' : 'w-48'}`}>
+                  <div className={`relative overflow-hidden rounded-2xl border-4 border-white shadow-lg group w-64`}>
                     <img src={msg.mediaUrl} alt="Generated content" className="w-full h-auto object-cover" />
                   </div>
                 )}
@@ -433,26 +430,27 @@ export default function CreationPage() {
 
       {/* --- INPUT AREA --- */}
       <div className="bg-white p-3 border-t border-slate-100">
-        {/* WRAPPED IN FORM TO PREVENT DEFAULT SUBMIT RELOAD */}
         <form 
             onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-            className="relative flex items-center max-w-4xl mx-auto pr-20 md:pr-24"
+            className="flex items-center gap-2 max-w-4xl mx-auto"
         >
-          <input 
-            type="text" 
-            value={input} 
-            onChange={(e) => setInput(e.target.value)} 
-            placeholder={selectedPropId ? "Instructions (e.g. 'Make it look luxurious')..." : "Describe what to generate..."} 
-            disabled={isThinking} 
-            className="w-full bg-slate-50 border border-slate-200 py-3.5 pl-5 pr-4 rounded-full text-sm text-slate-700 focus:ring-2 focus:ring-primary outline-none transition-all disabled:opacity-50" 
-          />
-          <button 
-            type="submit" 
-            disabled={isThinking || (!input.trim() && !selectedPropId)} 
-            className="absolute right-24 md:right-28 bg-slate-900 hover:bg-slate-700 text-white p-2 rounded-full transition-all disabled:opacity-50 disabled:bg-slate-300 shadow-lg shadow-slate-200"
-          >
-            <Send size={18} className="ml-0.5" />
-          </button>
+          <div className="relative flex-1">
+            <input 
+              type="text" 
+              value={input} 
+              onChange={(e) => setInput(e.target.value)} 
+              placeholder={selectedPropId ? "Instructions (e.g. 'Make it look luxurious')..." : "Describe what to generate..."} 
+              disabled={isThinking} 
+              className="w-full bg-slate-50 border border-slate-200 py-3.5 pl-5 pr-14 rounded-full text-sm text-slate-700 focus:ring-2 focus:ring-primary outline-none transition-all disabled:opacity-50" 
+            />
+            <button 
+              type="submit" 
+              disabled={isThinking || (!input.trim() && !selectedPropId)} 
+              className="absolute right-1.5 top-1.5 bottom-1.5 aspect-square bg-slate-900 hover:bg-slate-700 text-white flex items-center justify-center rounded-full transition-all disabled:opacity-50 disabled:bg-slate-300 shadow-sm"
+            >
+              <Send size={16} className="ml-0.5" />
+            </button>
+          </div>
         </form>
       </div>
 

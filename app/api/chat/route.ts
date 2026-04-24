@@ -22,8 +22,7 @@ export async function POST(request: Request) {
         logoUrl,
         propImages, 
         templateUrl, 
-        aspectRatio = "1:1",
-        mode = "image"
+        aspectRatio = "1:1"
     } = body;
 
     console.log("--- DIRECT GENERATION START ---")
@@ -77,17 +76,15 @@ export async function POST(request: Request) {
     console.log("[LOG] Final Prompt:", finalImagePrompt);
     console.log("[LOG] Image Inputs Order:", JSON.stringify(allInputImages, null, 2));
 
-    // 6. PREPARE PAYLOAD
+    // 6. PREPARE PAYLOAD FOR NANO BANANA 2
     const payload = {
-      "model": "nano-banana-pro", 
+      "model": "nano-banana-2", 
       "input": {
         "prompt": finalImagePrompt,
         "image_input": allInputImages, 
         "aspect_ratio": aspectRatio,
         "resolution": "1K",
-        "output_format": "png",
-        // We still pass this just in case, but the image_input is the key fix
-        "logo_url": logoUrl || undefined 
+        "output_format": "png"
       }
     };
     
