@@ -34,7 +34,7 @@ export async function POST(request: Request) {
           const leadData = change.value
           const { leadgen_id, page_id, ad_id } = leadData
 
-          // Find the User based on the Page ID
+          // Find the User based on the Page ID using Admin Client
           const { data: profile } = await supabaseAdmin
             .from('profiles')
             .select('id, selected_page_token')
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
             }
           }
 
-          // Save to DB
+          // Save to DB using Admin Client
           const { data: savedLead, error } = await supabaseAdmin.from('leads').insert({
             user_id: profile.id,
             name,
@@ -84,18 +84,19 @@ export async function POST(request: Request) {
 
           if (error) continue;
 
-          // RICHER NOTIFICATION
+          // FIRE THE RICHER NOTIFICATION
           await sendPushNotification(
               profile.id,
               "🔥 New Facebook Lead!",
               `Name: ${name}\nPhone: ${phone}\nFrom: ${adCampaignString.split(' / ')[0]}`,
-              `/dashboard/crm/${savedLead.id}` // Link directly to the new lead profile page
+              `/dashboard/crm/${savedLead.id}` 
           )
         }
       }
     }
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error) {
+    console.error('Webhook Error:', error)
     return NextResponse.json({ error: 'Internal Error' }, { status: 500 })
   }
 }

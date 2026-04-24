@@ -7,6 +7,7 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY!
 );
 
+// Bypasses RLS so the server can find subscriptions without needing a user cookie
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -36,8 +37,6 @@ export async function sendPushNotification(
     return;
   }
 
-  console.log(`[PUSH DEBUG] Found ${subscriptions.length} active devices for this user.`);
-
   const payload = JSON.stringify({ title, body, url, type });
 
   // CRITICAL FIX: 'urgency' must be a direct property, not inside a headers object.
@@ -60,7 +59,6 @@ export async function sendPushNotification(
       console.error(`[PUSH ERROR] Failed for device ${sub.id}. Status:`, error.statusCode);
       
       if (error.statusCode === 404 || error.statusCode === 410) {
-        console.log(`[PUSH DEBUG] Device token expired. Cleaning up DB...`);
         await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id);
       }
     }
