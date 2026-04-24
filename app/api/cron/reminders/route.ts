@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
 
-// Forces Vercel to treat this as a dynamic route
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
@@ -12,10 +11,9 @@ export async function GET(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Get exact current time
     const now = new Date().toISOString()
 
-    // Query leads where a reminder is scheduled and the time has passed
+    // Find all overdue reminders
     const { data: leadsToRemind, error } = await supabaseAdmin
       .from('leads')
       .select('id, user_id, name, phone, next_followup')
@@ -33,15 +31,20 @@ export async function GET(request: Request) {
           lead.user_id,
           "⏰ Follow-Up Reminder",
           `It's time to follow up with ${lead.name} (${lead.phone || 'No phone'})`,
-          `/dashboard/crm/${lead.id}`, // Redirect exactly to their profile
+          `/dashboard/crm/${lead.id}`, 
           "reminder"
       )
 
-      // 2. Clear the reminder from DB so it doesn't fire again
+      // 2. Clear the reminder from DB
       await supabaseAdmin
           .from('leads')
           .update({ next_followup: null })
           .eq('id', lead.id)
+
+      // CRITICAL APPLE FIX: 
+      // Add a 2-second delay before sending the next reminder.
+      // This prevents iOS from triggering its anti-spam filter and dropping the alerts.
+      await new Promise(resolve => setTimeout(resolve, 2000))
     }
 
     return NextResponse.json({ success: true, processed: leadsToRemind.length })
