@@ -1,7 +1,6 @@
 import webpush from 'web-push';
 import { createClient } from '@/utils/supabase/server';
 
-// Ensure you have NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT (e.g., mailto:your@email.com) in your .env.local
 webpush.setVapidDetails(
   process.env.VAPID_SUBJECT || 'mailto:hello@adrolls.in',
   process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
@@ -29,6 +28,14 @@ export async function sendPushNotification(
 
   const payload = JSON.stringify({ title, body, url, type });
 
+  // Add strict delivery rules for iOS (APNs) and Android (FCM)
+  const options = {
+    TTL: 86400, // 24 hours - if the phone is off, keep trying for a day
+    headers: {
+      'Urgency': 'high' // CRITICAL FOR iOS: Forces immediate delivery instead of background batching
+    }
+  };
+
   const sendPromises = subscriptions.map(async (sub) => {
     const pushSubscription = {
       endpoint: sub.endpoint,
@@ -36,11 +43,11 @@ export async function sendPushNotification(
     };
 
     try {
-      await webpush.sendNotification(pushSubscription, payload);
+      await webpush.sendNotification(pushSubscription, payload, options);
       console.log(`[PUSH] Sent successfully to device ID: ${sub.id}`);
     } catch (error: any) {
       console.error(`[PUSH] Failed for ${sub.id}:`, error.statusCode);
-      // Clean up stale or unsubscribed devices
+      // Clean up stale or unsubscribed devices immediately so they don't clog the system
       if (error.statusCode === 404 || error.statusCode === 410) {
         await supabase.from('push_subscriptions').delete().eq('id', sub.id);
       }
