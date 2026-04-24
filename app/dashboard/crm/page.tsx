@@ -1,13 +1,24 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Search, Phone, MessageCircle, Filter, RefreshCw, Upload, Plus, CheckCircle2, X, Download, Trash2, UserPlus } from 'lucide-react'
+import { Search, Phone, MessageCircle, RefreshCw, Upload, Plus, CheckCircle2, X, Download, Trash2, UserPlus, Clock, Send, Bell } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import TestNotificationBtn from '@/components/TestNotificationBtn'
 
 const STAGES = ['New', 'Qualified', 'Site Visit Done', 'Closed']
 const CACHE_KEY = 'crm_leads_cache'
 const CACHE_TIME_KEY = 'crm_leads_last_fetch'
 const CACHE_DURATION = 5 * 60 * 1000 // 5 Minutes
+
+// Utility for Push Notification key conversion
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) { outputArray[i] = rawData.charCodeAt(i); }
+  return outputArray;
+}
 
 export default function CRMPage() {
   const supabase = createClient()
@@ -32,17 +43,65 @@ export default function CRMPage() {
   const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', notes: '' })
   const [isAdding, setIsAdding] = useState(false)
 
-  // Edit/View State
+  // Edit/View State (Expanded for Profile/History)
   const [selectedLead, setSelectedLead] = useState<any>(null)
   
+  // New: History & Reminders State
+  const [leadHistory, setLeadHistory] = useState<any[]>([])
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [remarkInput, setRemarkInput] = useState('')
+  const [reminderDate, setReminderDate] = useState('')
+  const [isPushEnabled, setIsPushEnabled] = useState(false)
+
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // --- 1. DATA FETCHING WITH CACHING ---
+  // --- 1. DATA FETCHING & INITIALIZATION ---
+  useEffect(() => { 
+    fetchLeads()
+    checkPushSubscription()
+  }, [])
+
+  const checkPushSubscription = async () => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      setIsPushEnabled(!!subscription);
+    }
+  }
+
+  const enablePushNotifications = async () => {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return alert('Permission denied');
+
+      const registration = await navigator.serviceWorker.ready;
+      const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      
+      const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey!);
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey
+      });
+
+      const subData = JSON.parse(JSON.stringify(subscription));
+      await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: subData.endpoint, keys: subData.keys })
+      });
+      setIsPushEnabled(true);
+      alert('Notifications Enabled!');
+    } catch (e) {
+      console.error(e);
+      alert('Push setup failed. Make sure VAPID keys are configured.');
+    }
+  }
+
   const fetchLeads = async (force = false) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // A. Try Local Cache First (Instant Load)
+    // A. Try Local Cache First
     const cachedData = localStorage.getItem(CACHE_KEY)
     const lastFetch = localStorage.getItem(CACHE_TIME_KEY)
     const now = Date.now()
@@ -51,15 +110,13 @@ export default function CRMPage() {
         setLeads(JSON.parse(cachedData))
         setLoading(false)
         
-        // If cache is fresh (< 5 mins), stop here to save requests
+        // If cache is fresh (< 5 mins), stop here
         if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) {
-            console.log("Using cached leads")
             return
         }
     }
 
-    // B. Fetch from DB (Background Update or Force)
-    console.log("Fetching fresh leads from DB...")
+    // B. Fetch from DB
     const { data } = await supabase
         .from('leads')
         .select('*')
@@ -68,16 +125,30 @@ export default function CRMPage() {
     
     if (data) {
         setLeads(data)
-        // Update Cache
         localStorage.setItem(CACHE_KEY, JSON.stringify(data))
         localStorage.setItem(CACHE_TIME_KEY, now.toString())
     }
     setLoading(false)
   }
 
-  useEffect(() => { fetchLeads() }, [])
+  const fetchLeadHistory = async (leadId: string) => {
+      setIsLoadingHistory(true)
+      const { data } = await supabase
+        .from('lead_history')
+        .select('*')
+        .eq('lead_id', leadId)
+        .order('created_at', { ascending: false })
+      if (data) setLeadHistory(data)
+      setIsLoadingHistory(false)
+  }
 
   // --- 2. ACTIONS ---
+
+  const handleLeadClick = (lead: any) => {
+      setSelectedLead(lead)
+      setLeadHistory([])
+      fetchLeadHistory(lead.id)
+  }
 
   // Manual Add
   const handleAddLead = async () => {
@@ -99,7 +170,7 @@ export default function CRMPage() {
             pipeline_stage: 'New'
         }
 
-        // Optimistic Update (Show immediately)
+        // Optimistic Update
         const optimisticLead = { ...leadPayload, id: 'temp-' + Date.now(), created_at: new Date().toISOString() }
         setLeads(prev => [optimisticLead, ...prev])
         setIsAddModalOpen(false)
@@ -109,14 +180,12 @@ export default function CRMPage() {
         const { data, error } = await supabase.from('leads').insert(leadPayload).select().single()
         
         if (data) {
-            // Replace temp lead with real one in state
             setLeads(prev => prev.map(l => l.id === optimisticLead.id ? data : l))
-            // Update Cache
             const currentCache = JSON.parse(localStorage.getItem(CACHE_KEY) || '[]')
             localStorage.setItem(CACHE_KEY, JSON.stringify([data, ...currentCache]))
         } else {
             alert("Failed to save lead.")
-            fetchLeads(true) // Revert on error
+            fetchLeads(true)
         }
     }
     setIsAdding(false)
@@ -124,13 +193,12 @@ export default function CRMPage() {
 
   // Delete Lead
   const handleDeleteLead = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent opening modal
+    e.stopPropagation() 
     if (!confirm("Are you sure you want to delete this lead?")) return
 
-    // Optimistic Delete
     const updatedLeads = leads.filter(l => l.id !== id)
     setLeads(updatedLeads)
-    localStorage.setItem(CACHE_KEY, JSON.stringify(updatedLeads)) // Update cache immediately
+    localStorage.setItem(CACHE_KEY, JSON.stringify(updatedLeads)) 
 
     await supabase.from('leads').delete().eq('id', id)
   }
@@ -158,7 +226,7 @@ export default function CRMPage() {
         const data = await res.json()
         if (data.success) {
             alert(`Success! Imported ${data.count} new leads out of ${data.total} found.`)
-            fetchLeads(true) // Force refresh
+            fetchLeads(true)
             setIsSyncModalOpen(false)
         } else {
             alert('Sync failed: ' + data.error)
@@ -175,7 +243,7 @@ export default function CRMPage() {
     const reader = new FileReader()
     reader.onload = async (event) => {
         const text = event.target?.result as string
-        const rows = text.split('\n').slice(1) // Skip header
+        const rows = text.split('\n').slice(1) 
         const { data: { user } } = await supabase.auth.getUser()
         const newLeads = []
 
@@ -205,14 +273,58 @@ export default function CRMPage() {
   const updateStage = async (leadId: string, newStage: string) => {
     const updated = leads.map(l => l.id === leadId ? { ...l, pipeline_stage: newStage } : l)
     setLeads(updated)
-    localStorage.setItem(CACHE_KEY, JSON.stringify(updated)) // Update cache
-    setSelectedLead(null)
+    localStorage.setItem(CACHE_KEY, JSON.stringify(updated))
+    
+    // Log history
+    const desc = `Moved to ${newStage}`
+    setLeadHistory([{ id: Date.now(), action_type: 'STATUS_CHANGE', description: desc, created_at: new Date().toISOString() }, ...leadHistory])
 
     await fetch('/api/crm/update-stage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leadId, newStage, notes: selectedLead?.notes })
     })
+
+    // Log to new backend history table
+    await fetch('/api/crm/lead-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId, actionType: 'STATUS_CHANGE', description: desc })
+    })
+  }
+
+  // Add Remark
+  const handleAddRemark = async () => {
+      if (!remarkInput.trim()) return
+      
+      const newAction = { id: Date.now(), action_type: 'REMARK', description: remarkInput, created_at: new Date().toISOString() }
+      setLeadHistory([newAction, ...leadHistory])
+      const text = remarkInput
+      setRemarkInput('')
+
+      await fetch('/api/crm/lead-action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leadId: selectedLead.id, actionType: 'REMARK', description: text })
+      })
+  }
+
+  // Set Reminder
+  const handleSetReminder = async () => {
+      if (!reminderDate) return
+      
+      const desc = `Follow-up set for ${new Date(reminderDate).toLocaleString()}`
+      const newAction = { id: Date.now(), action_type: 'REMINDER_SET', description: desc, created_at: new Date().toISOString() }
+      setLeadHistory([newAction, ...leadHistory])
+      
+      setLeads(leads.map(l => l.id === selectedLead.id ? { ...l, next_followup: reminderDate } : l))
+      setReminderDate('')
+
+      await fetch('/api/crm/lead-action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leadId: selectedLead.id, actionType: 'REMINDER_SET', description: desc, nextFollowup: reminderDate })
+      })
   }
 
   // Filter Logic
@@ -229,10 +341,16 @@ export default function CRMPage() {
       <div className="flex justify-between items-end mb-6">
         <div>
             <h1 className="text-2xl font-bold text-slate-900">CRM</h1>
-            <p className="text-slate-500 text-xs mt-1">Manage leads & pipeline</p>
+            {!isPushEnabled ? (
+                <button onClick={enablePushNotifications} className="text-[10px] text-primary font-bold flex items-center gap-1 mt-1 bg-blue-50 px-2 py-0.5 rounded">
+                    <Bell size={10} /> Enable Notifications
+                </button>
+            ) : (
+                <TestNotificationBtn />
+            )}
         </div>
         <div className="flex gap-2">
-            <button onClick={() => fetchLeads(true)} disabled={loading} className={`p-3 rounded-full shadow-sm border border-slate-100 active:scale-95 transition-transform bg-white`}>
+            <button onClick={() => fetchLeads(true)} disabled={loading} className="p-3 rounded-full shadow-sm border border-slate-100 active:scale-95 transition-transform bg-white">
                 <RefreshCw size={20} className={`text-slate-600 ${loading ? 'animate-spin' : ''}`} />
             </button>
             <button onClick={openSyncModal} className="p-3 rounded-full shadow-sm border border-slate-100 active:scale-95 transition-transform bg-white">
@@ -276,11 +394,16 @@ export default function CRMPage() {
       {/* Lead List */}
       <div className="space-y-3 min-h-[50vh]">
         {filteredLeads.map(lead => (
-            <div key={lead.id} onClick={() => setSelectedLead(lead)} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 active:scale-98 transition-transform cursor-pointer relative group">
+            <div key={lead.id} onClick={() => handleLeadClick(lead)} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 active:scale-98 transition-transform cursor-pointer relative group">
                 <div className="flex justify-between items-start">
                     <div>
                         <h3 className="font-bold text-slate-800">{lead.name || 'Unknown Lead'}</h3>
                         <p className="text-xs text-slate-400 mt-0.5">{lead.phone}</p>
+                        {lead.next_followup && new Date(lead.next_followup) > new Date() && (
+                            <p className="text-[10px] text-amber-600 font-bold flex items-center gap-1 mt-1 bg-amber-50 w-fit px-1.5 py-0.5 rounded">
+                                <Clock size={10} /> {new Date(lead.next_followup).toLocaleDateString()}
+                            </p>
+                        )}
                     </div>
                     {/* Action Buttons */}
                     <div className="flex gap-2">
@@ -397,54 +520,119 @@ export default function CRMPage() {
         </div>
       )}
 
-      {/* 3. EDIT/VIEW MODAL */}
+      {/* 3. EXPANDED LEAD PROFILE & HISTORY MODAL */}
       {selectedLead && (
         <div className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in">
-            <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold text-slate-800">Lead Details</h2>
-                    <button onClick={() => setSelectedLead(null)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
+          <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl animate-in slide-in-from-bottom-10 flex flex-col max-h-[90vh]">
+            
+            {/* Header */}
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0">
+                <div>
+                    <h2 className="text-xl font-bold text-slate-800">{selectedLead.name}</h2>
+                    <p className="text-xs text-slate-500 mt-1">{selectedLead.phone} {selectedLead.email ? `• ${selectedLead.email}` : ''}</p>
                 </div>
+                <button onClick={() => setSelectedLead(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 shrink-0"><X size={20} /></button>
+            </div>
 
-                <div className="space-y-4">
-                    <div className="bg-slate-50 p-4 rounded-xl">
-                        <h3 className="font-bold text-lg">{selectedLead.name}</h3>
-                        <p className="text-sm text-slate-500">{selectedLead.email}</p>
-                        <p className="text-sm text-slate-500">{selectedLead.phone}</p>
-                        <p className="text-xs text-slate-400 mt-2 pt-2 border-t border-slate-200">
-                            Source: {selectedLead.ad_name || selectedLead.source}
-                        </p>
-                    </div>
-
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-2">Move Pipeline Stage</label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {STAGES.map(stage => (
-                                <button 
-                                    key={stage}
-                                    onClick={() => updateStage(selectedLead.id, stage)}
-                                    className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${selectedLead.pipeline_stage === stage ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}
-                                >
-                                    {stage}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Notes</label>
+            {/* Scrollable Content Area */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/50">
+                
+                {/* Source & Notes Block (From Original App) */}
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                    <p className="text-xs font-medium text-slate-600">
+                        <span className="font-bold text-slate-400">Source:</span> {selectedLead.ad_name || selectedLead.source}
+                    </p>
+                    <div className="mt-3 pt-3 border-t border-slate-100">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Static Notes</label>
                         <textarea 
                             className="w-full bg-slate-50 p-3 rounded-xl text-sm focus:ring-2 focus:ring-blue-100 outline-none resize-none" 
-                            rows={3}
-                            placeholder="Add notes..."
+                            rows={2}
+                            placeholder="Add basic notes..."
                             defaultValue={selectedLead.notes || ''}
-                            onBlur={(e) => {
-                                setSelectedLead({...selectedLead, notes: e.target.value})
-                            }}
+                            onBlur={(e) => setSelectedLead({...selectedLead, notes: e.target.value})}
                         />
                     </div>
                 </div>
+
+                {/* Stage Selector */}
+                <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-2">Pipeline Stage</label>
+                    <div className="flex flex-wrap gap-2">
+                        {STAGES.map(stage => (
+                            <button 
+                                key={stage} 
+                                onClick={() => updateStage(selectedLead.id, stage)} 
+                                className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${selectedLead.pipeline_stage === stage ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+                            >
+                                {stage}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Reminder Setup */}
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1 mb-2">
+                        <Clock size={12}/> Set Follow-up Reminder
+                    </label>
+                    <div className="flex gap-2">
+                        <input type="datetime-local" value={reminderDate} onChange={e => setReminderDate(e.target.value)} className="flex-1 bg-slate-50 p-2.5 rounded-xl text-sm border border-slate-100 outline-none focus:ring-2 focus:ring-primary" />
+                        <button onClick={handleSetReminder} className="bg-slate-900 text-white px-5 rounded-xl text-xs font-bold active:scale-95 transition-transform">Set</button>
+                    </div>
+                </div>
+
+                {/* History Timeline */}
+                <div>
+                    <h3 className="text-sm font-bold text-slate-800 mb-4 ml-1">Activity Log</h3>
+                    <div className="space-y-4 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
+                        
+                        {isLoadingHistory ? (
+                            <p className="text-xs text-slate-400 ml-10">Loading history...</p>
+                        ) : leadHistory.length === 0 ? (
+                            <p className="text-xs text-slate-400 ml-10">No history logged yet.</p>
+                        ) : (
+                            leadHistory.map((item) => (
+                                <div key={item.id} className="relative flex items-center gap-4">
+                                    <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 border-white shrink-0 shadow-sm z-10 ml-1 ${item.action_type === 'REMARK' ? 'bg-blue-100 text-blue-500' : 'bg-slate-100 text-slate-500'}`}>
+                                        {item.action_type === 'REMARK' ? <MessageCircle size={14}/> : <CheckCircle2 size={14} />}
+                                    </div>
+                                    <div className="flex-1 bg-white p-3.5 rounded-2xl shadow-sm border border-slate-100">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <div className="font-bold text-xs text-slate-800 capitalize">{item.action_type.replace('_', ' ')}</div>
+                                            <time className="text-[9px] font-medium text-slate-400">{new Date(item.created_at).toLocaleString()}</time>
+                                        </div>
+                                        <div className="text-xs text-slate-500 leading-relaxed">{item.description}</div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+
             </div>
+
+            {/* Sticky Footer for Remarks Input */}
+            <div className="p-4 border-t border-slate-100 bg-white rounded-b-[2rem] shrink-0">
+                <div className="flex gap-2">
+                    <input 
+                        type="text" 
+                        value={remarkInput} 
+                        onChange={e => setRemarkInput(e.target.value)} 
+                        onKeyDown={e => e.key === 'Enter' && handleAddRemark()} 
+                        placeholder="Add a remark or note to history..." 
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-full px-5 text-sm outline-none focus:ring-2 focus:ring-blue-100 transition-shadow" 
+                    />
+                    <button 
+                        onClick={handleAddRemark} 
+                        disabled={!remarkInput.trim()} 
+                        className="w-11 h-11 rounded-full bg-slate-900 text-white flex items-center justify-center disabled:opacity-50 active:scale-95 transition-transform shrink-0"
+                    >
+                        <Send size={16} className="ml-1" />
+                    </button>
+                </div>
+            </div>
+
+          </div>
         </div>
       )}
 

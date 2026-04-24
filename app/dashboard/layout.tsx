@@ -1,5 +1,6 @@
 import BottomNav from "@/components/BottomNav";
-import FloatingAgent from "@/components/FloatingAgent"; // <--- Import this
+import FloatingAgent from "@/components/FloatingAgent";
+import PushManager from "@/components/PushManager"; // <--- Import this
 
 export default function DashboardLayout({
   children,
@@ -11,8 +12,9 @@ export default function DashboardLayout({
       
       {children}
       
-      {/* The Global AI Agent Button */}
+      {/* Global Components */}
       <FloatingAgent /> 
+      <PushManager /> {/* <--- Mount it here */}
       
       <BottomNav />
     </div>
