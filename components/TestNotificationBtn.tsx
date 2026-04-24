@@ -7,12 +7,22 @@ export default function TestNotificationBtn() {
   const [isTesting, setIsTesting] = useState(false)
 
   const handleTest = async () => {
+    // 1. Show the prompt IMMEDIATELY before doing any network requests.
+    // This pauses the screen so the user can read it, and the 5-second timer
+    // on the server won't start until they click "OK".
+    alert("Test triggered! Click OK, then quickly close the app or lock your phone. The notification will arrive in 5 seconds.")
+
     setIsTesting(true)
     try {
-      const res = await fetch('/api/test-notification', { method: 'POST' })
-      if (res.ok) {
-        alert("Test triggered! Quickly close the app or lock your phone. The notification will arrive in 5 seconds.")
-      } else {
+      // 2. Add `keepalive: true`. 
+      // This is crucial for PWAs/mobile web. It tells the OS *not* to cancel 
+      // this network request when the user minimizes the app.
+      const res = await fetch('/api/test-notification', { 
+        method: 'POST',
+        keepalive: true 
+      })
+      
+      if (!res.ok) {
         alert("Failed to trigger test.")
       }
     } catch (error) {
