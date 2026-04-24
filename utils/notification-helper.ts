@@ -1,10 +1,17 @@
 import webpush from 'web-push';
-import { createClient } from '@/utils/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 webpush.setVapidDetails(
   process.env.VAPID_SUBJECT || 'mailto:hello@adrolls.in',
   process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
   process.env.VAPID_PRIVATE_KEY!
+);
+
+// 1. Initialize Supabase Admin Client using Service Role Key
+// This bypasses RLS, allowing background processes (like webhooks) to read subscriptions
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 export async function sendPushNotification(
@@ -14,12 +21,16 @@ export async function sendPushNotification(
     url: string = '/dashboard/crm',
     type: string = 'general'
 ) {
-  const supabase = await createClient();
-
-  const { data: subscriptions } = await supabase
+  // 2. Fetch user subscriptions using Admin Client
+  const { data: subscriptions, error } = await supabaseAdmin
     .from('push_subscriptions')
     .select('*')
     .eq('user_id', userId);
+
+  if (error) {
+    console.error('[PUSH] Error fetching subscriptions:', error);
+    return;
+  }
 
   if (!subscriptions || subscriptions.length === 0) {
     console.log(`[PUSH] No active subscriptions for user ${userId}`);
@@ -28,7 +39,6 @@ export async function sendPushNotification(
 
   const payload = JSON.stringify({ title, body, url, type });
 
-  // FIX FOR 400 ERROR:
   // Move 'Urgency' safely into the headers object. This forces iOS to prioritize
   // the notification without triggering a 400 Bad Request from the endpoint.
   const options = {
@@ -50,9 +60,9 @@ export async function sendPushNotification(
     } catch (error: any) {
       console.error(`[PUSH] Failed for ${sub.id}:`, error.statusCode, error.body || '');
       
-      // If the browser unsubscribed, delete the ghost record
+      // If the browser unsubscribed, delete the ghost record using Admin Client
       if (error.statusCode === 404 || error.statusCode === 410) {
-        await supabase.from('push_subscriptions').delete().eq('id', sub.id);
+        await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id);
       }
     }
   });

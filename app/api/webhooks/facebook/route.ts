@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
+import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
 
 // 1. Facebook Verification (GET)
@@ -10,7 +10,6 @@ export async function GET(request: Request) {
   const token = searchParams.get('hub.verify_token')
   const challenge = searchParams.get('hub.challenge')
 
-  // Make sure this matches the token you enter in the Meta portal
   const VERIFY_TOKEN = process.env.FACEBOOK_WEBHOOK_VERIFY_TOKEN || 'adrolls_secure_webhook_token'
 
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
@@ -19,11 +18,17 @@ export async function GET(request: Request) {
   return new NextResponse('Forbidden', { status: 403 })
 }
 
-// 2. Receiving the Lead (POST)
+// 2. Initialize Supabase Admin Client outside the request handler
+// We use the Service Role Key because Webhooks do not have user cookies/sessions.
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+// 3. Receiving the Lead (POST)
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const supabase = await createClient()
 
     if (body.object !== 'page') {
       return NextResponse.json({ success: true }, { status: 200 })
@@ -35,18 +40,16 @@ export async function POST(request: Request) {
           const leadData = change.value
           const leadgen_id = leadData.leadgen_id
           const page_id = leadData.page_id
-          const ad_id = leadData.ad_id
-          const form_id = leadData.form_id
 
-          // A. Find which user owns this page
-          const { data: profile } = await supabase
+          // A. Find which user owns this page using Admin Client (bypasses RLS)
+          const { data: profile, error: profileError } = await supabaseAdmin
             .from('profiles')
             .select('id, selected_page_token')
             .eq('selected_page_id', page_id)
             .single()
 
-          if (!profile || !profile.selected_page_token) {
-             console.error('No page token found for page:', page_id)
+          if (profileError || !profile || !profile.selected_page_token) {
+             console.error('No page token found for page:', page_id, profileError)
              continue;
           }
 
@@ -67,8 +70,8 @@ export async function POST(request: Request) {
             if (field.name === 'email') email = field.values[0]
           })
 
-          // C. Save Lead to DB
-          const { data: savedLead, error } = await supabase.from('leads').insert({
+          // C. Save Lead to DB using Admin Client
+          const { error } = await supabaseAdmin.from('leads').insert({
             user_id: profile.id,
             name,
             phone,
