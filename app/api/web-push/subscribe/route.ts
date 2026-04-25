@@ -29,15 +29,22 @@ export async function POST(request: Request) {
         process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // 3. Save the token
-    const { error } = await supabaseAdmin.from('push_subscriptions').upsert({
+    // BULLETPROOF FIX: 
+    // Step A: Delete any existing subscriptions for this user to prevent duplicates
+    await supabaseAdmin.from('push_subscriptions').delete().eq('user_id', user.id)
+
+    // Step B: Forcefully insert the new token (bypassing the onConflict crash entirely)
+    const { error } = await supabaseAdmin.from('push_subscriptions').insert({
         user_id: user.id,
         endpoint: endpoint,
         p256dh: p256dh,
         auth: auth
-    }, { onConflict: 'endpoint' })
+    })
 
-    if (error) throw error;
+    if (error) {
+        console.error("DB Insert Error:", error)
+        throw error;
+    }
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
