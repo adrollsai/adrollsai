@@ -1,15 +1,15 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Zap, Plus, X, Loader2, Building2, Image as ImageIcon, Upload, RefreshCw, ExternalLink, TrendingUp, CreditCard, Eye, MousePointerClick, Users } from 'lucide-react'
+import { Zap, Plus, X, Loader2, Building2, Image as ImageIcon, Upload, RefreshCw, ExternalLink, TrendingUp, CreditCard, Eye, MousePointerClick, Users, Settings2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
-// --- TYPES ---
 type Property = { id: string; title: string; price: string; image_url: string; description?: string }
 type Asset = { id: string; type: 'image' | 'video'; url: string }
 type Campaign = { id: string; name: string; status: string; objective: string }
 type LocationOption = { key: string; name: string; type: string; region?: string; country_code?: string; }
+type CustomQuestion = { label: string; type: 'SHORT_ANSWER' | 'MULTIPLE_CHOICE'; options?: string[] }
 
 const GENDERS = ['All', 'Male', 'Female']
 
@@ -18,7 +18,6 @@ export default function AdsPage() {
   const supabase = createClient()
   const fileInputRef = useRef<HTMLInputElement>(null) 
   
-  // --- STATE ---
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -31,15 +30,16 @@ export default function AdsPage() {
   const [facebookToken, setFacebookToken] = useState<string | null>(null)
   const [accountStatus, setAccountStatus] = useState<any>(null)
 
-  // Location Search State
   const [locationSearchText, setLocationSearchText] = useState('')
   const [locationResults, setLocationResults] = useState<LocationOption[]>([])
   const [isSearchingLocation, setIsSearchingLocation] = useState(false)
 
-  // Stats Modal State
   const [statsModal, setStatsModal] = useState<{ isOpen: boolean, campaign: Campaign | null, insights: any, loading: boolean }>({ isOpen: false, campaign: null, insights: null, loading: false })
 
-  // Form State
+  const [formQuestions, setFormQuestions] = useState<CustomQuestion[]>([])
+  const [isAddingQuestion, setIsAddingQuestion] = useState(false)
+  const [newQuestion, setNewQuestion] = useState<CustomQuestion>({ label: '', type: 'SHORT_ANSWER', options: [''] })
+
   const [adForm, setAdForm] = useState({
     sourceType: 'inventory' as 'inventory' | 'asset' | 'localUpload', 
     selectedSourceIds: [] as string[], 
@@ -47,8 +47,8 @@ export default function AdsPage() {
     gender: 'All',
     dailyBudgetINR: 500,
     pageId: '', 
-    linkUrl: 'https://yourbusiness.com', 
-    privacyPolicyUrl: '', 
+    linkUrl: 'https://adrolls.in', 
+    privacyPolicyUrl: 'https://adrolls.in/privacy-policy', 
   })
   
   const [localCreatives, setLocalCreatives] = useState<File[]>([]);
@@ -56,7 +56,6 @@ export default function AdsPage() {
 
   const isVideoFile = (file: File) => file.type.startsWith('video/');
 
-  // --- DATA FETCHING ---
   const fetchCampaigns = async () => {
       try {
           const res = await fetch('/api/meta-ads/campaigns');
@@ -103,7 +102,6 @@ export default function AdsPage() {
     return () => { localCreativePreviews.forEach(url => URL.revokeObjectURL(url)); };
   }, [])
 
-  // Location Search Effect (Debounced)
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
         if (locationSearchText.length > 2 && facebookToken) {
@@ -119,7 +117,6 @@ export default function AdsPage() {
     return () => clearTimeout(delayDebounceFn)
   }, [locationSearchText, facebookToken])
   
-  // --- HANDLERS ---
   const handleToggleStatus = async (id: string, currentStatus: string) => {
       const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
       setTogglingId(id);
@@ -145,6 +142,14 @@ export default function AdsPage() {
       }
   }
 
+  const handleAddPresetQuestion = (type: 'budget' | 'timeline') => {
+      if (type === 'budget') {
+          setFormQuestions(prev => [...prev, { label: "What is your investment budget?", type: "MULTIPLE_CHOICE", options: ["Under INR 25L", "INR 25L - 50L", "INR 50L - 1Cr", "INR 1Cr+"] }]);
+      } else if (type === 'timeline') {
+          setFormQuestions(prev => [...prev, { label: "When are you planning to invest?", type: "MULTIPLE_CHOICE", options: ["Immediately", "1-3 Months", "3-6 Months", "Just exploring"] }]);
+      }
+  }
+
   const handleLaunchCampaign = async () => {
     if (isSubmitting) return
     if (!adForm.pageId || !selectedAdAccountId) { alert("Missing Facebook Page or Ad Account in Profile."); return }
@@ -161,7 +166,6 @@ export default function AdsPage() {
     formPayload.append('pageId', adForm.pageId);
     formPayload.append('sourceType', adForm.sourceType);
     
-    // Pass precise location config and string fallback for AI
     const locString = `${adForm.metaLocation.location.name}, ${adForm.metaLocation.location.region || adForm.metaLocation.location.country_code}`;
     formPayload.append('targetLocation', locString);
     formPayload.append('metaLocation', JSON.stringify(adForm.metaLocation));
@@ -170,6 +174,8 @@ export default function AdsPage() {
     formPayload.append('dailyBudgetINR', (adForm.dailyBudgetINR * 100).toString()); 
     formPayload.append('linkUrl', adForm.linkUrl);
     formPayload.append('privacyPolicyUrl', adForm.privacyPolicyUrl);
+
+    formPayload.append('customQuestions', JSON.stringify(formQuestions));
 
     adForm.selectedSourceIds.forEach((id) => formPayload.append('selectedSourceIds', id));
     localCreatives.forEach((file, index) => formPayload.append(`creativeFiles[${index}]`, file, file.name));
@@ -181,7 +187,7 @@ export default function AdsPage() {
         alert(`${data.message}`);
         setIsModalOpen(false)
         setAdForm(prev => ({ ...prev, selectedSourceIds: [], metaLocation: { location: null, radius: 20 }, dailyBudgetINR: 500 })) 
-        setLocalCreatives([]); setLocalCreativePreviews([]);
+        setLocalCreatives([]); setLocalCreativePreviews([]); setFormQuestions([]);
         fetchCampaigns();
       } else throw new Error(data.error || 'Failed to Start');
     } catch (e: any) { alert('Launch Failed: ' + e.message); } 
@@ -233,7 +239,6 @@ export default function AdsPage() {
         )}
       </div>
 
-      {/* STATS MODAL */}
       {statsModal.isOpen && statsModal.campaign && (
           <div className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in zoom-in-95">
@@ -260,7 +265,6 @@ export default function AdsPage() {
           </div>
       )}
       
-      {/* CREATION MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
@@ -269,7 +273,6 @@ export default function AdsPage() {
               <button onClick={() => setIsModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
             </div>
 
-            {/* BILLING WARNING */}
             {accountStatus && accountStatus.has_payment_method === false && (
                 <div className="bg-red-50 p-4 rounded-2xl mb-4 border border-red-100 flex flex-col gap-2">
                     <div className="flex items-center gap-2 text-red-600 font-bold text-sm"><CreditCard size={16} /> Payment Method Missing</div>
@@ -303,9 +306,8 @@ export default function AdsPage() {
 
               <h3 className="pt-2 border-t border-slate-100 text-[10px] font-bold text-slate-400 uppercase ml-1">Campaign Settings</h3>
               <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Website URL</label><input type="url" value={adForm.linkUrl} onChange={(e) => setAdForm(prev => ({...prev, linkUrl: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="https://yourwebsite.com" /></div>
-              <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Privacy Policy URL <span className="text-red-400">*</span></label><input type="url" value={adForm.privacyPolicyUrl} onChange={(e) => setAdForm(prev => ({...prev, privacyPolicyUrl: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="https://yourwebsite.com/privacy" /></div>
+              <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Privacy Policy URL <span className="text-red-400">*</span></label><input type="url" value={adForm.privacyPolicyUrl} onChange={(e) => setAdForm(prev => ({...prev, privacyPolicyUrl: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="https://adrolls.in/privacy-policy" /></div>
               
-              {/* META LOCATION SEARCH UI */}
               <div className="relative">
                   <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Target Location</label>
                   {adForm.metaLocation.location ? (
@@ -334,7 +336,6 @@ export default function AdsPage() {
                   )}
               </div>
               
-              {/* RADIUS SLIDER */}
               {adForm.metaLocation.location?.type === 'city' && (
                   <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                       <label className="text-[10px] font-bold text-slate-500 flex justify-between uppercase"><span>Radius</span> <span className="text-primary">{adForm.metaLocation.radius} km</span></label>
@@ -345,6 +346,58 @@ export default function AdsPage() {
               <div className="flex gap-4">
                   <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Gender</label><select value={adForm.gender} onChange={(e) => setAdForm(prev => ({...prev, gender: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none">{GENDERS.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
                   <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Budget (₹)</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span><input type="number" min="100" step="100" value={adForm.dailyBudgetINR} onChange={(e) => setAdForm(prev => ({...prev, dailyBudgetINR: parseInt(e.target.value) || 0}))} className="w-full bg-slate-50 py-3 pl-6 pr-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" /></div></div>
+              </div>
+
+              {/* --- FORM QUESTIONS SECTION --- */}
+              <div className="pt-2 border-t border-slate-100">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1 mb-2"><Settings2 size={12} /> Lead Form Questions</label>
+                  <p className="text-[10px] text-slate-500 mb-3 ml-1">Name, Email, and Phone number are requested by default.</p>
+
+                  {formQuestions.length > 0 && (
+                      <div className="flex flex-col gap-2 mb-3">
+                          {formQuestions.map((q, idx) => (
+                             <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex justify-between items-start group">
+                                 <div>
+                                     <div className="text-sm font-bold text-slate-800 leading-tight mb-1">{q.label}</div>
+                                     <div className="text-[10px] text-slate-400 font-bold uppercase">{q.type === 'MULTIPLE_CHOICE' ? `Multiple Choice (${q.options?.length} Options)` : 'Short Answer'}</div>
+                                 </div>
+                                 <button onClick={() => setFormQuestions(prev => prev.filter((_, i) => i !== idx))} className="text-slate-300 hover:text-red-500 p-1"><X size={14}/></button>
+                             </div>
+                          ))}
+                      </div>
+                  )}
+
+                  {!isAddingQuestion ? (
+                      <div className="flex flex-wrap gap-2">
+                          <button onClick={() => handleAddPresetQuestion('budget')} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full hover:bg-blue-100 transition-colors">+ Add Budget</button>
+                          <button onClick={() => handleAddPresetQuestion('timeline')} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full hover:bg-blue-100 transition-colors">+ Add Timeline</button>
+                          <button onClick={() => setIsAddingQuestion(true)} className="text-[10px] font-bold bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full hover:bg-slate-200 transition-colors">+ Custom</button>
+                      </div>
+                  ) : (
+                      <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 space-y-3 animate-in fade-in zoom-in-95">
+                          <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block ml-1">Question Text</label>
+                              <input type="text" value={newQuestion.label} onChange={e => setNewQuestion({...newQuestion, label: e.target.value})} className="w-full bg-white py-2.5 px-3 rounded-lg text-sm focus:ring-2 outline-none border border-slate-200" placeholder="e.g. Do you need financing?" />
+                          </div>
+                          <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block ml-1">Answer Type</label>
+                              <select value={newQuestion.type} onChange={e => setNewQuestion({...newQuestion, type: e.target.value as any})} className="w-full bg-white py-2.5 px-3 rounded-lg text-sm focus:ring-2 outline-none border border-slate-200">
+                                  <option value="SHORT_ANSWER">Short Answer</option>
+                                  <option value="MULTIPLE_CHOICE">Multiple Choice</option>
+                              </select>
+                          </div>
+                          {newQuestion.type === 'MULTIPLE_CHOICE' && (
+                              <div>
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block ml-1">Options (Comma separated)</label>
+                                  <input type="text" value={newQuestion.options?.join(', ')} onChange={e => setNewQuestion({...newQuestion, options: e.target.value.split(',')})} className="w-full bg-white py-2.5 px-3 rounded-lg text-sm focus:ring-2 outline-none border border-slate-200" placeholder="Yes, No, Maybe" />
+                              </div>
+                          )}
+                          <div className="flex gap-2 pt-2">
+                              <button onClick={() => { if(newQuestion.label){ setFormQuestions(prev => [...prev, newQuestion]); setIsAddingQuestion(false); setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); } }} className="flex-1 bg-slate-900 text-white px-3 py-2 rounded-lg text-xs font-bold active:scale-95 transition-transform">Save Question</button>
+                              <button onClick={() => setIsAddingQuestion(false)} className="bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold">Cancel</button>
+                          </div>
+                      </div>
+                  )}
               </div>
 
               <button onClick={handleLaunchCampaign} disabled={isSubmitting || !adForm.metaLocation.location || !adForm.privacyPolicyUrl} className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70 mt-4">

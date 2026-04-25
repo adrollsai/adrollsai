@@ -1,53 +1,55 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
-import fs from 'fs'
-import path from 'path'
-import { callGemini } from '@/utils/external-apis' 
+import { NextResponse } from 'next/server';
+import { createClient } from '@/utils/supabase/server';
+import fs from 'fs';
+import path from 'path';
+import { callGemini } from '@/utils/external-apis';
 
-const FB_MARKETING_URL = "https://graph.facebook.com/v19.0"
+const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
-// Path to the log file for debugging
 const LOG_FILE_PATH = path.join(process.cwd(), 'meta_ads_debug.txt');
 
-// --- LOGGING HELPER ---
 function logToFile(message: string, data?: any) {
     try {
         const timestamp = new Date().toISOString();
-        const logEntry = `\n[${timestamp}] ${message}\n${data ? JSON.stringify(data, null, 2) : ''}\n------------------------------------------------\n`;
+        const dataStr = data ? JSON.stringify(data, null, 2) : '';
+        const logEntry = `\n[${timestamp}] ${message}\n${dataStr}\n------------------------------------------------\n`;
         fs.appendFileSync(LOG_FILE_PATH, logEntry);
-        console.log(message); 
+        console.log(`[META AI] ${message}`, data ? JSON.stringify(data) : '');
     } catch (e) {
         console.error("Logging failed:", e);
     }
 }
 
 export async function POST(request: Request) {
-    // 1. Reset Log File for new run
-    try { fs.writeFileSync(LOG_FILE_PATH, ''); } catch (e) {}
+    try {
+        fs.writeFileSync(LOG_FILE_PATH, '');
+    } catch (e) {}
 
-    const supabase = await createClient()
+    const supabase = await createClient();
     
-    // 2. Auth Check
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
 
-    // 3. Read Form Data
+    if (!user) {
+        return NextResponse.json(
+            { error: 'Unauthorized' }, 
+            { status: 401 }
+        );
+    }
+
     const formData = await request.formData();
     
     const adAccountId = formData.get('adAccountId')?.toString();
     const facebookToken = formData.get('facebookToken')?.toString();
     const sourceType = formData.get('sourceType')?.toString();
-    
-    // Fallback string for AI prompt
     const targetLocation = formData.get('targetLocation')?.toString() || 'India'; 
-    
-    // NEW: Structured Location Data from Meta
     const metaLocationStr = formData.get('metaLocation')?.toString(); 
-    
     const dailyBudgetINR = parseFloat(formData.get('dailyBudgetINR')?.toString() || '0');
     const pageId = formData.get('pageId')?.toString();
     const linkUrl = formData.get('linkUrl')?.toString();
     const privacyPolicyUrl = formData.get('privacyPolicyUrl')?.toString();
+    const customQuestionsStr = formData.get('customQuestions')?.toString();
 
     const selectedSourceIds = formData.getAll('selectedSourceIds').map(String); 
     
@@ -59,89 +61,128 @@ export async function POST(request: Request) {
     }
 
     if (!facebookToken || !adAccountId || !pageId || !linkUrl || !privacyPolicyUrl) {
-        return NextResponse.json({ error: 'Missing essential data: Token, Account, Page, Link, or Privacy Policy.' }, { status: 400 });
+        return NextResponse.json(
+            { error: 'Missing essential data: Token, Account, Page, Link, or Privacy Policy.' }, 
+            { status: 400 }
+        );
     }
 
     logToFile("=== STARTING AI CAMPAIGN LAUNCH ===");
-    logToFile(`Source Type: ${sourceType} | Account: ${adAccountId}`);
-    logToFile(`Selected IDs:`, selectedSourceIds);
 
     try {
-        // --- Step A: Get Source Data (Title/Description/Images) ---
+        // --- Step A: Get Source Data ---
         let propertyTitle: string = '';
         let propertyDescription: string = '';
         let initialImageUrls: string[] = []; 
 
         if (sourceType === 'inventory' && selectedSourceIds.length > 0) {
             const id = selectedSourceIds[0];
-            
-            const { data: prop, error } = await supabase.from('properties')
+            const { data: prop, error } = await supabase
+                .from('properties')
                 .select('title, description, images, image_url')
                 .eq('id', id)
                 .single();
             
             if (error) {
-                logToFile("❌ Database Error:", error);
                 throw new Error("Failed to fetch property details.");
             }
 
             if (prop) {
                 propertyTitle = prop.title || '';
                 propertyDescription = prop.description || '';
-                
                 if (prop.images && Array.isArray(prop.images) && prop.images.length > 0) {
                     initialImageUrls = prop.images;
-                    logToFile(`✅ Found ${prop.images.length} images in array.`);
-                } 
-                else if (prop.image_url) {
+                } else if (prop.image_url) {
                     initialImageUrls = [prop.image_url];
-                    logToFile(`✅ Found single image URL.`);
                 }
             }
         } else if (sourceType === 'asset' && selectedSourceIds.length > 0) {
              const id = selectedSourceIds[0];
-             const { data: asset } = await supabase.from('assets').select('url').eq('id', id).single();
+             const { data: asset } = await supabase
+                .from('assets')
+                .select('url')
+                .eq('id', id)
+                .single();
+
              if (asset && asset.url) {
                  initialImageUrls = [asset.url];
-                 logToFile(`✅ Found Asset URL.`);
              }
         }
 
         if (creativeFiles.length === 0 && initialImageUrls.length === 0) {
-            const msg = "No images found in the selected property or asset. Please check your inventory.";
-            logToFile(`❌ ${msg}`);
-            throw new Error(msg);
+            throw new Error("No images found in the selected property or asset.");
         }
 
-        // --- Step B: Create Lead Form ---
+        // --- Step B: Create Lead Form with Custom Questions ---
         logToFile("--- 1. CREATING LEAD FORM ---");
         const formName = `AI Form - ${propertyTitle.substring(0, 10)} - ${Date.now().toString().slice(-6)}`;
         
+        let metaCustomQuestions: any[] = [];
+        if (customQuestionsStr && customQuestionsStr !== "[]") {
+            try {
+                const parsedQuestions = JSON.parse(customQuestionsStr);
+                metaCustomQuestions = parsedQuestions.map((q: any) => {
+                    const metaQ: any = { 
+                        type: 'CUSTOM', 
+                        label: q.label.substring(0, 200) 
+                        // Note: Intentionally omitting the top-level 'key' parameter as required by Meta for CUSTOM types
+                    };
+                    
+                    if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
+                        const validOptions = q.options
+                            .filter((o: string) => o.trim() !== '')
+                            .map((opt: string) => ({ 
+                                value: opt.trim(),
+                                // FIX: Meta strictly requires a 'key' inside each option object
+                                key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50)
+                            }));
+                            
+                        if (validOptions.length > 0) {
+                            metaQ.options = validOptions;
+                        }
+                    }
+                    return metaQ;
+                });
+            } catch (e) {
+                logToFile("Failed to parse custom questions", e);
+            }
+        }
+
         const leadFormPayload = {
             name: formName,
             follow_up_action_url: linkUrl, 
             question_page_custom_headline: `Details for ${propertyTitle.substring(0,30) || 'this property'}`,
             question_page_custom_text: "Confirm details to view pricing.",
-            privacy_policy: { url: privacyPolicyUrl, link_text: "Privacy Policy" },
+            privacy_policy: { 
+                url: privacyPolicyUrl, 
+                link_text: "Privacy Policy" 
+            },
             questions: [
                 { type: "FULL_NAME", key: "full_name" },
                 { type: "EMAIL", key: "email" },
-                { type: "PHONE", key: "phone_number" }
+                { type: "PHONE", key: "phone_number" },
+                ...metaCustomQuestions
             ],
             access_token: facebookToken
         };
 
         const formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json; charset=utf-8' 
+            },
             body: JSON.stringify(leadFormPayload)
         });
+        
         const formDataRes = await formCreateRes.json();
 
         if (!formCreateRes.ok) {
-            logToFile("❌ Lead Form Failed:", formDataRes);
-            throw new Error(`Lead Form Error: ${formDataRes.error?.message} (Code: ${formDataRes.error?.code})`);
+            logToFile("❌ Lead Form Failed Payload:", leadFormPayload);
+            logToFile("❌ Lead Form Failed Response:", formDataRes);
+            const metaErrorMsg = formDataRes.error?.error_user_msg || formDataRes.error?.message || "Unknown Error";
+            throw new Error(`Meta Lead Form Error: ${metaErrorMsg}`);
         }
+        
         const leadFormId = formDataRes.id;
         logToFile(`✅ Lead Form Created: ${leadFormId}`);
 
@@ -150,26 +191,23 @@ export async function POST(request: Request) {
         const metaCreativeHashes: string[] = [];
         const creativeUploadPromises = [];
 
-        // 1. Local Files (Direct Upload)
         if (creativeFiles.length > 0) {
-            logToFile(`Uploading ${creativeFiles.length} local file(s)...`);
             for (const file of creativeFiles) {
                 const uploadFormData = new FormData();
                 uploadFormData.append('source', file, file.name); 
                 uploadFormData.append('access_token', facebookToken);
-                creativeUploadPromises.push(fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, { method: 'POST', body: uploadFormData }).then(res => res.json()));
+                
+                creativeUploadPromises.push(
+                    fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, { 
+                        method: 'POST', body: uploadFormData 
+                    }).then(res => res.json())
+                );
             }
-        } 
-        // 2. Database URLs (PROXY DOWNLOAD & UPLOAD)
-        else if (initialImageUrls.length > 0) {
-            logToFile(`Processing ${initialImageUrls.length} URL(s)...`);
+        } else if (initialImageUrls.length > 0) {
             for (const url of initialImageUrls.slice(0, 3)) {
-                logToFile(`Fetching & Uploading: ${url}`);
                 const imageFetch = await fetch(url);
-                if (!imageFetch.ok) {
-                    logToFile(`❌ Failed to download image from source: ${url}`);
-                    continue; 
-                }
+                if (!imageFetch.ok) continue; 
+                
                 const imageBlob = await imageFetch.blob();
                 const uploadFormData = new FormData();
                 uploadFormData.append('source', imageBlob, 'property_image.png');
@@ -177,8 +215,7 @@ export async function POST(request: Request) {
                 
                 creativeUploadPromises.push(
                     fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, {
-                        method: 'POST',
-                        body: uploadFormData
+                        method: 'POST', body: uploadFormData
                     }).then(res => res.json())
                 );
             }
@@ -189,19 +226,18 @@ export async function POST(request: Request) {
             if (data.images) {
                 const hash = data.images[Object.keys(data.images)[0]].hash;
                 metaCreativeHashes.push(hash);
-                logToFile(`✅ Image ${i+1} Uploaded: ${hash}`);
-            } else {
-                logToFile(`❌ Image ${i+1} Failed:`, data);
             }
         });
 
-        if (metaCreativeHashes.length === 0) throw new Error("Creative upload failed. Could not upload any images to Facebook.");
+        if (metaCreativeHashes.length === 0) {
+            throw new Error("Creative upload failed. Could not upload any images to Facebook.");
+        }
         const mainCreativeHash = metaCreativeHashes[0]; 
-
 
         // --- Step D: AI Copy ---
         logToFile("--- 3. AI COPYWRITING ---");
         const llmPrompt = `Write 1 catchy Primary Text (max 125 chars) and 1 Headline (max 25 chars) for a real estate Lead Ad. Property: "${propertyTitle}". Description: "${propertyDescription}". Location: "${targetLocation}". Return JSON: {"primary_text": "...", "headline": "..."}`;
+        
         let primaryText = "Exclusive Property Deal";
         let headline = "View Details";
 
@@ -209,13 +245,11 @@ export async function POST(request: Request) {
             const llmResponse = await callGemini(llmPrompt);
             const cleanedJson = llmResponse.replace(/^```json\s*/, '').replace(/\s*```$/, '');
             const parsed = JSON.parse(cleanedJson);
-            if(parsed.primary_text) primaryText = parsed.primary_text;
-            if(parsed.headline) headline = parsed.headline;
-            logToFile("AI Copy:", parsed);
+            if (parsed.primary_text) primaryText = parsed.primary_text;
+            if (parsed.headline) headline = parsed.headline;
         } catch (e) {
-            logToFile("AI Generation Failed (using defaults).");
+            logToFile("AI Generation Failed.");
         }
-
 
         // --- Step E: Campaign ---
         logToFile("--- 4. CAMPAIGN ---");
@@ -236,45 +270,32 @@ export async function POST(request: Request) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(campaignPayload),
         });
+        
         const campaignData = await campaignRes.json();
         if (!campaignRes.ok) throw new Error(`Campaign Error: ${campaignData.error?.message}`);
         const campaignId = campaignData.id;
-        logToFile(`✅ Campaign ID: ${campaignId}`);
 
-
-        // --- NEW: Parse Location Targeting for Meta ---
+        // --- Parse Location Targeting ---
         logToFile("--- PREPARING LOCATION TARGETING ---");
-        let targetingConfig = { geo_locations: { countries: ['IN'] } }; // Default fallback
+        let targetingConfig = { geo_locations: { countries: ['IN'] } }; 
         
         if (metaLocationStr) {
             try {
                 const locData = JSON.parse(metaLocationStr);
                 const loc = locData.location;
-                
                 if (loc && loc.key) {
                     if (loc.type === 'city') {
-                        targetingConfig = { 
-                            geo_locations: { 
-                                cities: [{ key: loc.key, radius: locData.radius || 20, distance_unit: 'kilometer' }] 
-                            } 
-                        } as any;
-                    } 
-                    else if (loc.type === 'region') {
+                        targetingConfig = { geo_locations: { cities: [{ key: loc.key, radius: locData.radius || 20, distance_unit: 'kilometer' }] } } as any;
+                    } else if (loc.type === 'region') {
                         targetingConfig = { geo_locations: { regions: [{ key: loc.key }] } } as any;
-                    } 
-                    else if (loc.type === 'country') {
+                    } else if (loc.type === 'country') {
                         targetingConfig = { geo_locations: { countries: [loc.country_code || loc.key] } } as any;
-                    } 
-                    else if (loc.type === 'zip') {
+                    } else if (loc.type === 'zip') {
                         targetingConfig = { geo_locations: { zips: [{ key: loc.key }] } } as any;
                     }
                 }
-                logToFile(`✅ Targeting Config Applied:`, targetingConfig);
-            } catch (e) { 
-                logToFile("⚠️ Location parse error, falling back to India", e); 
-            }
+            } catch (e) {}
         }
-
 
         // --- Step F: Ad Set ---
         logToFile("--- 5. AD SET ---");
@@ -286,7 +307,7 @@ export async function POST(request: Request) {
             destination_type: 'ON_AD', 
             optimization_goal: 'LEAD_GENERATION', 
             billing_event: 'IMPRESSIONS', 
-            targeting: targetingConfig,  // <-- INJECTED NEW TARGETING HERE
+            targeting: targetingConfig,
             promoted_object: { page_id: pageId },
             start_time: startTime, 
             status: 'PAUSED',
@@ -298,11 +319,10 @@ export async function POST(request: Request) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(adSetPayload),
         });
+        
         const adSetData = await adSetRes.json();
         if (!adSetRes.ok) throw new Error(`Ad Set Error: ${adSetData.error?.message}`);
         const adSetId = adSetData.id;
-        logToFile(`✅ Ad Set ID: ${adSetId}`);
-
 
         // --- Step G: Creative ---
         logToFile("--- 6. CREATIVE ---");
@@ -326,13 +346,12 @@ export async function POST(request: Request) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(creativePayload),
         });
+        
         const creativeData = await creativeRes.json();
         if (!creativeRes.ok) throw new Error(`Creative Error: ${creativeData.error?.message}`);
         const creativeId = creativeData.id;
-        logToFile(`✅ Creative ID: ${creativeId}`);
 
-
-        // --- Step H: Final Ad (Soft Fail for Billing) ---
+        // --- Step H: Final Ad ---
         logToFile("--- 7. FINAL AD ---");
         const adPayload = {
             name: `Ad - ${headline}`,
@@ -347,12 +366,11 @@ export async function POST(request: Request) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(adPayload),
         });
+        
         const adData = await adRes.json();
 
         if (!adRes.ok) {
             logToFile("❌ Final Ad Failed (Drafted):", adData);
-            
-            // Catch missing payment method error gracefully
             if (adData.error?.error_subcode === 1359188 || adData.error?.code === 100) {
                 return NextResponse.json({ 
                     success: true, 
@@ -362,8 +380,6 @@ export async function POST(request: Request) {
             }
             throw new Error(`Final Ad Error: ${adData.error?.message}`);
         }
-        
-        logToFile(`✅ Ad Created: ${adData.id}`);
 
         return NextResponse.json({ 
             success: true, 
@@ -372,7 +388,10 @@ export async function POST(request: Request) {
         });
 
     } catch (error: any) {
-        logToFile("!!! API CRASH !!!", error);
-        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+        logToFile("!!! API CRASH !!!", error.message);
+        return NextResponse.json(
+            { error: error.message || "Internal Server Error" }, 
+            { status: 500 }
+        );
     }
 }
