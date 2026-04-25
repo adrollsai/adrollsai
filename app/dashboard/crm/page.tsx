@@ -5,14 +5,14 @@ import { useRouter } from 'next/navigation'
 import { 
   Search, Phone, MessageCircle, Filter, RefreshCw, Upload, 
   Plus, CheckCircle2, X, Download, Trash2, UserPlus, 
-  Clock, Bell 
+  Clock, Bell, Users, Shuffle
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import TestNotificationBtn from '@/components/TestNotificationBtn'
 
 const STAGES = ['New', 'Qualified', 'Site Visit Done', 'Closed']
-const CACHE_KEY = 'crm_leads_cache'
-const CACHE_TIME_KEY = 'crm_leads_last_fetch'
+const CACHE_KEY_PREFIX = 'crm_leads_cache_'
+const CACHE_TIME_KEY_PREFIX = 'crm_leads_last_fetch_'
 const CACHE_DURATION = 5 * 60 * 1000 
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -30,11 +30,19 @@ export default function CRMPage() {
   const supabase = createClient()
   const router = useRouter()
   
+  // --- ROLE & HIERARCHY STATE ---
+  const [role, setRole] = useState<'admin' | 'agent'>('admin')
+  const [team, setTeam] = useState<any[]>([])
+  const [parentAdminId, setParentAdminId] = useState<string | null>(null)
+  const [isAssigning, setIsAssigning] = useState(false)
+
+  // --- CRM STATE ---
   const [leads, setLeads] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [activeStage, setActiveStage] = useState('New')
   const [searchQuery, setSearchQuery] = useState('')
 
+  // --- MODAL STATE ---
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
   const [forms, setForms] = useState<any[]>([])
   const [selectedFormId, setSelectedFormId] = useState<string>('')
@@ -60,16 +68,12 @@ export default function CRMPage() {
       
       if (subscription) {
         setIsPushEnabled(true);
-        
-        // AUTO-SYNC: If the browser is subscribed, forcefully send it to the DB
-        // just in case the database table was wiped or out of sync.
         const subData = JSON.parse(JSON.stringify(subscription));
         await fetch('/api/web-push/subscribe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ subscription: subData })
         }).catch(e => console.error("Auto-sync failed", e));
-        
       } else {
         setIsPushEnabled(false);
       }
@@ -83,10 +87,8 @@ export default function CRMPage() {
         alert('Permission denied. Please allow notifications in your browser settings.');
         return;
       }
-
       const registration = await navigator.serviceWorker.ready;
       const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      
       const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey!);
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
@@ -94,7 +96,6 @@ export default function CRMPage() {
       });
 
       const subData = JSON.parse(JSON.stringify(subscription));
-      
       const res = await fetch('/api/web-push/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -115,6 +116,21 @@ export default function CRMPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
+    // 1. Establish Role & Hierarchy
+    const { data: profile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
+    const currentRole = profile?.role || 'admin'
+    setRole(currentRole)
+    if (profile?.parent_id) setParentAdminId(profile.parent_id)
+
+    // 2. Fetch Team if Admin
+    if (currentRole === 'admin') {
+        const { data: teamData } = await supabase.from('profiles').select('id, business_name').eq('parent_id', user.id)
+        setTeam(teamData || [])
+    }
+
+    // 3. Cache Logic (Keyed by User ID for security)
+    const CACHE_KEY = CACHE_KEY_PREFIX + user.id
+    const CACHE_TIME_KEY = CACHE_TIME_KEY_PREFIX + user.id
     const cachedData = localStorage.getItem(CACHE_KEY)
     const lastFetch = localStorage.getItem(CACHE_TIME_KEY)
     const now = Date.now()
@@ -125,11 +141,16 @@ export default function CRMPage() {
         if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) return;
     }
 
-    const { data } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+    // 4. Fetch Leads strictly based on Role
+    let query = supabase.from('leads').select('*').order('created_at', { ascending: false })
+    
+    if (currentRole === 'admin') {
+        query = query.eq('user_id', user.id) // Admin sees their master list
+    } else {
+        query = query.eq('user_id', profile?.parent_id).eq('assigned_to', user.id) // Agent sees assigned
+    }
+
+    const { data } = await query
     
     if (data) {
         setLeads(data)
@@ -140,7 +161,6 @@ export default function CRMPage() {
   }
 
   const handleLeadClick = (lead: any) => {
-      // Navigate to the new detail page instead of opening a modal
       router.push(`/dashboard/crm/${lead.id}`)
   }
 
@@ -150,14 +170,19 @@ export default function CRMPage() {
     const { data: { user } } = await supabase.auth.getUser()
     
     if (user) {
-        const leadPayload = {
-            user_id: user.id,
+        // If agent creates a lead, route to Admin's CRM but assign to the creating agent
+        const leadPayload: any = {
+            user_id: role === 'agent' && parentAdminId ? parentAdminId : user.id,
             name: newLead.name,
             phone: newLead.phone,
             email: newLead.email,
             notes: newLead.notes,
             source: 'Manual',
             pipeline_stage: 'New'
+        }
+
+        if (role === 'agent') {
+            leadPayload.assigned_to = user.id
         }
 
         const optimisticLead = { ...leadPayload, id: 'temp-' + Date.now(), created_at: new Date().toISOString() }
@@ -169,6 +194,7 @@ export default function CRMPage() {
         
         if (data) {
             setLeads(prev => prev.map(l => l.id === optimisticLead.id ? data : l))
+            const CACHE_KEY = CACHE_KEY_PREFIX + user.id
             const currentCache = JSON.parse(localStorage.getItem(CACHE_KEY) || '[]')
             localStorage.setItem(CACHE_KEY, JSON.stringify([data, ...currentCache]))
         } else {
@@ -182,10 +208,58 @@ export default function CRMPage() {
     e.stopPropagation() 
     if (!confirm("Are you sure you want to delete this lead?")) return
 
+    const { data: { user } } = await supabase.auth.getUser()
     const updatedLeads = leads.filter(l => l.id !== id)
     setLeads(updatedLeads)
-    localStorage.setItem(CACHE_KEY, JSON.stringify(updatedLeads)) 
+    if (user) localStorage.setItem(CACHE_KEY_PREFIX + user.id, JSON.stringify(updatedLeads)) 
     await supabase.from('leads').delete().eq('id', id)
+  }
+
+  // --- MANUAL ASSIGNMENT LOGIC ---
+  const assignLead = async (leadId: string, agentId: string, e: React.ChangeEvent<HTMLSelectElement>) => {
+    e.stopPropagation()
+    const targetAgentId = agentId === '' ? null : agentId;
+    
+    // Optimistic UI Update
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, assigned_to: targetAgentId } : l))
+    await supabase.from('leads').update({ assigned_to: targetAgentId }).eq('id', leadId)
+    fetchLeads(true) // Refresh cache quietly in background
+  }
+
+  // --- ROUND ROBIN LOGIC ---
+  const executeRoundRobin = async () => {
+    if (team.length === 0) return alert("You need to add team members in the Team tab first.")
+    
+    const unassignedLeads = leads.filter(l => !l.assigned_to)
+    if (unassignedLeads.length === 0) return alert("All leads are currently assigned.")
+
+    setIsAssigning(true)
+    let currentAgentIndex = 0
+    let updatedLeads = [...leads]
+
+    try {
+        for (const lead of unassignedLeads) {
+            const agent = team[currentAgentIndex]
+            
+            // Update DB
+            await supabase.from('leads').update({ assigned_to: agent.id }).eq('id', lead.id)
+            
+            // Update UI State
+            const leadIndex = updatedLeads.findIndex(l => l.id === lead.id)
+            updatedLeads[leadIndex].assigned_to = agent.id
+
+            currentAgentIndex = (currentAgentIndex + 1) % team.length
+        }
+
+        setLeads(updatedLeads)
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) localStorage.setItem(CACHE_KEY_PREFIX + user.id, JSON.stringify(updatedLeads))
+        alert(`Successfully distributed ${unassignedLeads.length} leads across your team.`)
+    } catch (e: any) {
+        alert("Error distributing leads: " + e.message)
+    } finally {
+        setIsAssigning(false)
+    }
   }
 
   const openSyncModal = async () => {
@@ -270,10 +344,21 @@ export default function CRMPage() {
             <button onClick={() => fetchLeads(true)} className="p-2.5 rounded-full shadow-sm border border-slate-100 bg-white hover:bg-slate-50">
                 <RefreshCw size={18} className={`text-slate-600 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            <button onClick={openSyncModal} className="p-2.5 rounded-full shadow-sm border border-slate-100 bg-white hover:bg-slate-50"><Download size={18} className="text-slate-600" /></button>
-            <button onClick={() => fileInputRef.current?.click()} className="p-2.5 rounded-full shadow-sm border border-slate-100 bg-white hover:bg-slate-50"><Upload size={18} className="text-slate-600" /></button>
+            
+            {/* ADMIN ONLY CONTROLS */}
+            {role === 'admin' && (
+                <>
+                    <button onClick={executeRoundRobin} disabled={isAssigning} className="p-2.5 rounded-full shadow-sm border border-slate-100 bg-purple-50 text-purple-600 hover:bg-purple-100" title="Round-Robin Distribute">
+                        {isAssigning ? <RefreshCw size={18} className="animate-spin" /> : <Shuffle size={18} />}
+                    </button>
+                    <button onClick={openSyncModal} className="p-2.5 rounded-full shadow-sm border border-slate-100 bg-white hover:bg-slate-50"><Download size={18} className="text-slate-600" /></button>
+                    <button onClick={() => fileInputRef.current?.click()} className="p-2.5 rounded-full shadow-sm border border-slate-100 bg-white hover:bg-slate-50"><Upload size={18} className="text-slate-600" /></button>
+                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv" className="hidden" />
+                </>
+            )}
+            
+            {/* BOTH ROLES */}
             <button onClick={() => setIsAddModalOpen(true)} className="bg-slate-900 text-white p-2.5 rounded-full shadow-md"><Plus size={18} /></button>
-            <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv" className="hidden" />
         </div>
       </div>
 
@@ -311,10 +396,31 @@ export default function CRMPage() {
                         <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2 bg-red-50 text-red-400 rounded-full"><Trash2 size={16} /></button>
                     </div>
                 </div>
+                
+                {/* Lower Row: Source Tags & Assignments */}
                 <div className="mt-4 pt-3 border-t border-slate-50 flex flex-col gap-2">
-                    <div className="flex flex-wrap gap-1.5">
-                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-md max-w-[120px] truncate border border-slate-200">{lead.source}</span>
-                        {lead.ad_name && <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded-md max-w-[150px] truncate border border-blue-100">{lead.ad_name}</span>}
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <div className="flex gap-1.5">
+                            <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-md max-w-[120px] truncate border border-slate-200">{lead.source}</span>
+                            {lead.ad_name && <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded-md max-w-[150px] truncate border border-blue-100">{lead.ad_name}</span>}
+                        </div>
+
+                        {/* Admin Manual Agent Assignment Dropdown */}
+                        {role === 'admin' && (
+                            <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
+                                <select 
+                                    value={lead.assigned_to || ''} 
+                                    onChange={(e) => assignLead(lead.id, e.target.value, e)}
+                                    className="appearance-none bg-slate-50 border border-slate-200 text-slate-600 text-[10px] font-bold rounded-md py-1 pl-6 pr-6 outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer"
+                                >
+                                    <option value="">Unassigned</option>
+                                    {team.map(member => (
+                                        <option key={member.id} value={member.id}>{member.business_name}</option>
+                                    ))}
+                                </select>
+                                <Users size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -340,8 +446,8 @@ export default function CRMPage() {
         </div>
       )}
 
-      {/* Sync Modal */}
-      {isSyncModalOpen && (
+      {/* Sync Modal (Admin Only - Render Safety) */}
+      {role === 'admin' && isSyncModalOpen && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl">
                 <div className="flex justify-between items-center mb-5">

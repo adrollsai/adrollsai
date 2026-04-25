@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target, Share2 } from 'lucide-react'
+import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target, Share2, Link as LinkIcon } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -59,9 +59,10 @@ export default function ProfilePage() {
   const [enableDistribution, setEnableDistribution] = useState(false)
   const [isTogglingDist, setIsTogglingDist] = useState(false)
 
-  // Profile Data
+  // Profile Data (ADDED customDomain)
   const [formData, setFormData] = useState({
     businessName: '',
+    customDomain: '', // <-- NEW FIELD
     mission: '',
     color: '#D0E8FF',
     contact: '',
@@ -165,12 +166,10 @@ export default function ProfilePage() {
     if (!userId) return
 
     setSelectedAdAccountId(adAccountId)
-    // Save the selected Ad Account ID
     await supabase.from('profiles').update({
       ad_account_id: adAccountId, 
     }).eq('id', userId)
 
-    // Automatically fetch pixels for this account
     fetchPixels(adAccountId)
   }
 
@@ -204,15 +203,17 @@ export default function ProfilePage() {
         }
         if (isMounted) setUserId(user.id)
 
+        // ADDED custom_domain to the select array
         const { data: profile } = await supabase
           .from('profiles')
-          .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id') 
+          .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id, custom_domain') 
           .eq('id', user.id)
           .single()
 
         if (profile && isMounted) {
           setFormData({
             businessName: profile.business_name || '',
+            customDomain: profile.custom_domain || '', // Load Domain
             mission: profile.mission_statement || '',
             color: profile.brand_color || '#D0E8FF',
             contact: profile.contact_number || '',
@@ -223,7 +224,6 @@ export default function ProfilePage() {
             youtubeUrl: profile.youtube_url || ''
           })
           
-          // Set Distribution Toggle
           setEnableDistribution(profile.enable_distribution || false)
 
           // Facebook Logic
@@ -231,11 +231,9 @@ export default function ProfilePage() {
             setIsFacebookConnected(true)
             setFacebookToken(profile.facebook_token); 
             
-            // Restore IDs
             if (profile.selected_page_id) setSelectedPageId(profile.selected_page_id)
             else fetchPages()
 
-            // Restore Ad Account & Pixels
             if (profile.ad_account_id) {
                 setSelectedAdAccountId(profile.ad_account_id)
                 fetchPixels(profile.ad_account_id)
@@ -244,7 +242,6 @@ export default function ProfilePage() {
                 setSelectedPixelId(profile.pixel_id)
             }
             
-            // Always fetch ad accounts list so dropdown works
             fetchAdAccounts(profile.facebook_token); 
             
           } else {
@@ -414,31 +411,22 @@ export default function ProfilePage() {
     }
   }
 
-  // --- NEW: Toggle Distribution Instantly ---
   const handleToggleDistribution = async () => {
     if (!userId) return
     const newState = !enableDistribution
     
-    // 1. Optimistic Update (Switch UI immediately)
     setEnableDistribution(newState)
     setIsTogglingDist(true)
 
     try {
-        // 2. Save to Database
         const { error } = await supabase
             .from('profiles')
             .update({ enable_distribution: newState })
             .eq('id', userId)
 
-        if (error) {
-            throw error
-        } else {
-            // 3. Success -> Reload to update BottomNav
-            // Small delay to ensure DB write is consistent before reload read
-            setTimeout(() => window.location.reload(), 500)
-        }
+        if (error) throw error
+        else setTimeout(() => window.location.reload(), 500)
     } catch (e: any) {
-        // 4. Revert if failed
         setEnableDistribution(!newState)
         alert("Failed to save setting: " + e.message)
     } finally {
@@ -451,10 +439,14 @@ export default function ProfilePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
+    // Ensure empty domain strings are saved as null to prevent SQL unique constraint errors
+    const cleanedDomain = formData.customDomain.trim() === '' ? null : formData.customDomain.trim().toLowerCase()
+
     const { error } = await supabase.from('profiles').upsert({
         id: user.id,
         email: user.email,
         business_name: formData.businessName,
+        custom_domain: cleanedDomain, // SAVING DOMAIN
         mission_statement: formData.mission,
         brand_color: formData.color,
         contact_number: formData.contact,
@@ -463,11 +455,16 @@ export default function ProfilePage() {
         instagram_url: formData.instagramUrl,
         linkedin_url: formData.linkedinUrl,
         youtube_url: formData.youtubeUrl,
-        // We do NOT save enable_distribution here to avoid overwriting 
-        // if the user toggled it without saving the form.
       })
 
-    if (error) alert(`Error saving: ${error.message}`)
+    if (error) {
+      // Handle the unique constraint error friendly
+      if (error.message.includes('unique constraint') || error.code === '23505') {
+        alert('This custom domain is already registered to another account.')
+      } else {
+        alert(`Error saving: ${error.message}`)
+      }
+    }
     setIsSaving(false)
   }
 
@@ -492,7 +489,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Social Accounts */}
-      <div className="mb-6">
+      <div className="mb-6 mt-6">
         <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Social Accounts</h3>
         <div className="bg-white rounded-[2rem] shadow-sm border border-blue-100 overflow-hidden p-5 space-y-4">
           
@@ -655,6 +652,20 @@ export default function ProfilePage() {
             
             {/* Basic Info */}
             <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Business Name</label><input type="text" value={formData.businessName} onChange={(e) => setFormData({...formData, businessName: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" /></div>
+            
+            {/* NEW: CUSTOM DOMAIN FIELD */}
+            <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+              <label className="text-[10px] font-bold text-blue-800 ml-1 block mb-1 flex items-center gap-1"><Globe size={10} /> Custom Domain (Optional)</label>
+              <input 
+                type="text" 
+                placeholder="www.yourdomain.com" 
+                value={formData.customDomain} 
+                onChange={(e) => setFormData({...formData, customDomain: e.target.value})} 
+                className="w-full bg-white py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none mb-1 border border-blue-100" 
+              />
+              <p className="text-[9px] text-blue-600/70 ml-1 leading-tight">Point your domain's CNAME record to <span className="font-mono font-bold">adrolls.in</span></p>
+            </div>
+
             <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Contact Number</label><input type="tel" value={formData.contact} onChange={(e) => setFormData({...formData, contact: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" /></div>
             
             {/* Social Links Section */}
@@ -686,12 +697,11 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Settings (Updated with Instant Toggle) */}
+      {/* Settings */}
       <div>
         <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Settings</h3>
         <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
           
-          {/* Distribution Mode Toggle */}
           <div className="p-4 flex items-center justify-between border-b border-slate-50">
             <div className="flex items-center gap-3">
                 <div className="bg-purple-50 p-2 rounded-full text-purple-600"><Share2 size={18} /></div>
@@ -701,7 +711,6 @@ export default function ProfilePage() {
                 </div>
             </div>
             
-            {/* INSTANT TOGGLE BUTTON */}
             <button 
                 onClick={handleToggleDistribution}
                 disabled={isTogglingDist}

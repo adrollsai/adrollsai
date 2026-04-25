@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useSearchParams, usePathname } from 'next/navigation'
-import { MapPin, Phone, Loader2, Image as ImageIcon, LayoutGrid, BookOpen, ChevronRight, X, Filter, Check, Facebook, Instagram, Linkedin, Youtube, Share2 } from 'lucide-react'
+import { 
+  MapPin, Phone, Loader2, Image as ImageIcon, LayoutGrid, Rss, 
+  ChevronRight, X, Filter, Check, Facebook, Instagram, Linkedin, Youtube, Share2 
+} from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 // --- TYPES ---
@@ -28,7 +31,7 @@ type Post = {
   tags: string[]
 }
 
-const PROPERTY_TYPES = ['Residential', 'Commercial', 'Plots']
+const PROPERTY_TYPES = ['Residential', 'Commercial', 'Plots', 'Studio', '1 BHK', '2 BHK', '2 RK']
 
 const parsePrice = (priceStr: string | null) => {
   if (!priceStr) return 0
@@ -43,7 +46,7 @@ export default function PublicProfilePage() {
   const supabase = createClient()
 
   // --- STATE ---
-  const [activeTab, setActiveTab] = useState<'inventory' | 'blog'>('inventory')
+  const [activeTab, setActiveTab] = useState<'inventory' | 'feed'>('inventory')
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   
@@ -62,8 +65,9 @@ export default function PublicProfilePage() {
   // Sharing State
   const [sharingId, setSharingId] = useState<string | null>(null)
 
-  // --- 1. ID EXTRACTION ---
-  const getSafeUserId = () => {
+  // --- 1. ID / DOMAIN EXTRACTION ---
+  const getSafeIdentifier = () => {
+    if (params?.user_id) return params.user_id as string
     if (params?.userId) return params.userId as string
     if (params?.id) return params.id as string
     if (params && Object.keys(params).length > 0) return Object.values(params)[0] as string
@@ -72,14 +76,14 @@ export default function PublicProfilePage() {
 
   // --- 2. DATA FETCHING ---
   useEffect(() => {
-    const userId = getSafeUserId()
+    const identifier = getSafeIdentifier()
     
     // Init filters
     const urlMin = searchParams.get('min'); if(urlMin) setMinPrice(urlMin)
     const urlMax = searchParams.get('max'); if(urlMax) setMaxPrice(urlMax)
     const urlTypes = searchParams.get('types'); if(urlTypes) setSelectedTypes(urlTypes.split(','))
 
-    if (!userId) {
+    if (!identifier) {
         setErrorMsg("Invalid Page Link")
         setLoading(false)
         return
@@ -87,20 +91,33 @@ export default function PublicProfilePage() {
 
     const fetchData = async () => {
       try {
-        const { data: profileData } = await supabase.from('profiles').select('*').eq('id', userId).single()
-        if (profileData) setProfile(profileData)
+        // Resolve profile by either Custom Domain OR User ID
+        let profileQuery = supabase.from('profiles').select('*')
+        
+        if (identifier.includes('.')) {
+            profileQuery = profileQuery.eq('custom_domain', identifier)
+        } else {
+            profileQuery = profileQuery.eq('id', identifier)
+        }
+        
+        const { data: profileData, error: profileError } = await profileQuery.single()
+        
+        if (profileError || !profileData) throw new Error("Profile not found")
+        setProfile(profileData)
 
+        // Fetch properties using the resolved profile ID
         const { data: props } = await supabase
             .from('properties')
             .select('*')
-            .eq('user_id', userId)
+            .eq('user_id', profileData.id)
             .order('created_at', { ascending: false })
         if (props) setProperties(props)
 
+        // Fetch posts for the Feed
         const { data: blogPosts } = await supabase
             .from('posts')
             .select('*')
-            .eq('user_id', userId)
+            .eq('user_id', profileData.id)
             .eq('status', 'published')
             .order('created_at', { ascending: false })
         if (blogPosts) setPosts(blogPosts)
@@ -230,8 +247,8 @@ export default function PublicProfilePage() {
                 <button onClick={() => setActiveTab('inventory')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'inventory' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                     <LayoutGrid size={14} /> Inventory
                 </button>
-                <button onClick={() => setActiveTab('blog')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'blog' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                    <BookOpen size={14} /> Blog
+                <button onClick={() => setActiveTab('feed')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'feed' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                    <Rss size={14} /> Feed
                 </button>
             </div>
         </div>
@@ -333,13 +350,13 @@ export default function PublicProfilePage() {
             </div>
         )}
 
-        {/* BLOG TAB */}
-        {activeTab === 'blog' && (
+        {/* FEED TAB */}
+        {activeTab === 'feed' && (
             <div className="space-y-4 animate-in fade-in duration-300">
-                <h2 className="font-bold text-slate-700 mb-2">Latest Insights</h2>
+                <h2 className="font-bold text-slate-700 mb-2">Market Updates</h2>
                 {posts.length === 0 ? (
                     <div className="text-center py-12 text-slate-400 text-sm bg-white rounded-[1.5rem] border border-dashed border-slate-200">
-                        <p>No articles yet.</p>
+                        <p>No updates yet.</p>
                         <p className="text-[10px] mt-1">Check back soon for market updates.</p>
                     </div>
                 ) : (
@@ -347,7 +364,7 @@ export default function PublicProfilePage() {
                         <div key={post.id} onClick={() => setSelectedPost(post)} className="bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-100 cursor-pointer hover:border-blue-100 transition-colors group">
                             {post.image_url && (
                                 <div className="h-32 w-full rounded-xl overflow-hidden mb-3 bg-slate-50">
-                                    <img src={post.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="Blog" />
+                                    <img src={post.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="Feed" />
                                 </div>
                             )}
                             <div className="flex justify-between items-start gap-4">
@@ -372,7 +389,7 @@ export default function PublicProfilePage() {
 
       </div>
 
-      {/* BLOG MODAL */}
+      {/* FEED MODAL */}
       {selectedPost && (
         <div className="fixed inset-0 z-[100] bg-white animate-in slide-in-from-bottom-10 overflow-y-auto">
             <div className="relative">
@@ -391,9 +408,8 @@ export default function PublicProfilePage() {
                         <h1 className="text-2xl font-bold text-slate-900 mb-2 leading-tight">{selectedPost.title}</h1>
                         <p className="text-xs text-slate-400 mb-6">{new Date(selectedPost.created_at).toLocaleDateString()}</p>
                         <div className="prose prose-sm prose-slate max-w-none">
-                            {selectedPost.content.split('\n').map((paragraph, i) => (
-                                <p key={i} className="mb-4 text-slate-600 leading-relaxed">{paragraph}</p>
-                            ))}
+                            {/* We use dangerouslySetInnerHTML here so that the AI's SEO bolding (<b> tags) render correctly */}
+                            <div dangerouslySetInnerHTML={{ __html: selectedPost.content.replace(/\n/g, '<br/>') }} />
                         </div>
                     </div>
                 </div>
