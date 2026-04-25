@@ -34,10 +34,14 @@ export async function sendPushNotification(
   console.log(`[PUSH] Found ${subscriptions.length} token(s). Dispatching to Apple/Google...`);
   const payload = JSON.stringify({ title, body, url, type });
 
+  // THE COLD-STATE FIX:
+  // 'urgency' must be a native root property, not inside a custom headers object.
+  // The web-push library automatically converts this into the strict Apple APNs headers
+  // required to wake a locked iPhone screen when the app is asleep.
   const options = {
     TTL: 86400,
-    headers: { 'Urgency': 'high' }
-  };
+    urgency: 'high' 
+  } as webpush.RequestOptions;
 
   const sendPromises = subscriptions.map(async (sub) => {
     const pushSubscription = {
