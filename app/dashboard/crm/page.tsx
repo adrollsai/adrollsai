@@ -57,7 +57,22 @@ export default function CRMPage() {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
-      setIsPushEnabled(!!subscription);
+      
+      if (subscription) {
+        setIsPushEnabled(true);
+        
+        // AUTO-SYNC: If the browser is subscribed, forcefully send it to the DB
+        // just in case the database table was wiped or out of sync.
+        const subData = JSON.parse(JSON.stringify(subscription));
+        await fetch('/api/web-push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscription: subData })
+        }).catch(e => console.error("Auto-sync failed", e));
+        
+      } else {
+        setIsPushEnabled(false);
+      }
     }
   }
 

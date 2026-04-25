@@ -19,22 +19,26 @@ export async function sendPushNotification(
     url: string = '/dashboard/crm',
     type: string = 'general'
 ) {
+  console.log(`[PUSH] Looking up DB for User: ${userId}`);
+
   const { data: subscriptions } = await supabaseAdmin
     .from('push_subscriptions')
     .select('*')
     .eq('user_id', userId);
 
-  if (!subscriptions || subscriptions.length === 0) return;
+  if (!subscriptions || subscriptions.length === 0) {
+      console.log(`[PUSH] FATAL: 0 devices found in DB for user! Cannot send.`);
+      return;
+  }
+
+  console.log(`[PUSH] Found ${subscriptions.length} device(s). Firing to Apple/Google...`);
 
   const payload = JSON.stringify({ title, body, url, type });
 
-  // Bulletproof options: No 'topic', and urgency applied to both root and headers
   const options = {
     TTL: 86400,
     urgency: 'high',
-    headers: {
-        'Urgency': 'high'
-    }
+    headers: { 'Urgency': 'high' }
   } as webpush.RequestOptions; 
 
   const sendPromises = subscriptions.map(async (sub) => {
@@ -45,7 +49,9 @@ export async function sendPushNotification(
 
     try {
       await webpush.sendNotification(pushSubscription, payload, options);
+      console.log(`[PUSH] Success! Apple/Google accepted payload for device: ${sub.id}`);
     } catch (error: any) {
+      console.error(`[PUSH] Failed. Status code: ${error.statusCode}`);
       if (error.statusCode === 404 || error.statusCode === 410) {
         await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id);
       }
