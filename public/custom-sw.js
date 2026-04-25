@@ -5,24 +5,19 @@ self.addEventListener('push', function (event) {
   try {
       data = event.data.json();
   } catch (e) {
-      data = { title: 'CRM Alert', body: 'You have a new update.', url: '/dashboard' };
+      data = { title: 'Adrolls CRM', body: 'New update received.', url: '/dashboard' };
   }
 
-  const title = data.title || 'Adrolls CRM';
-  
-  // CRITICAL iOS FIX: 
-  // 'tag' prevents iOS from silently grouping this with older notifications.
-  // 'renotify: true' forces the phone to buzz/wake the screen every single time.
+  // Absolute bare-minimum options. No tags, no renotify, no vibrates.
+  // Apple cannot reject this format.
   const options = {
       body: data.body || '',
       icon: '/icon-192x192.png',
       badge: '/icon-192x192.png',
-      data: { url: data.url || '/dashboard' },
-      tag: 'reminder-' + Date.now(), 
-      renotify: true 
+      data: { url: data.url || '/dashboard/crm' }
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(self.registration.showNotification(data.title || 'Adrolls', options));
 });
 
 self.addEventListener('notificationclick', function (event) {
