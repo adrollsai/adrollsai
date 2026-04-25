@@ -13,7 +13,6 @@ export async function GET(request: Request) {
 
     const now = new Date().toISOString()
 
-    // Find all overdue reminders
     const { data: leadsToRemind, error } = await supabaseAdmin
       .from('leads')
       .select('id, user_id, name, phone, next_followup')
@@ -26,11 +25,11 @@ export async function GET(request: Request) {
     }
 
     for (const lead of leadsToRemind) {
-      // 1. Send the push notification
+      // 1. Send the push notification (Simplified Apple-Safe Payload)
       await sendPushNotification(
           lead.user_id,
-          "⏰ Follow-Up Reminder",
-          `It's time to follow up with ${lead.name} (${lead.phone || 'No phone'})`,
+          "Follow-Up Reminder",
+          `Tap to view details for ${lead.name}`,
           `/dashboard/crm/${lead.id}`, 
           "reminder"
       )
@@ -40,11 +39,6 @@ export async function GET(request: Request) {
           .from('leads')
           .update({ next_followup: null })
           .eq('id', lead.id)
-
-      // CRITICAL APPLE FIX: 
-      // Add a 2-second delay before sending the next reminder.
-      // This prevents iOS from triggering its anti-spam filter and dropping the alerts.
-      await new Promise(resolve => setTimeout(resolve, 2000))
     }
 
     return NextResponse.json({ success: true, processed: leadsToRemind.length })

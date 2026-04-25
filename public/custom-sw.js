@@ -9,11 +9,17 @@ self.addEventListener('push', function (event) {
   }
 
   const title = data.title || 'Adrolls CRM';
+  
+  // CRITICAL iOS FIX: 
+  // 'tag' prevents iOS from silently grouping this with older notifications.
+  // 'renotify: true' forces the phone to buzz/wake the screen every single time.
   const options = {
       body: data.body || '',
       icon: '/icon-192x192.png',
       badge: '/icon-192x192.png',
-      data: { url: data.url || '/dashboard' }
+      data: { url: data.url || '/dashboard' },
+      tag: 'reminder-' + Date.now(), 
+      renotify: true 
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
