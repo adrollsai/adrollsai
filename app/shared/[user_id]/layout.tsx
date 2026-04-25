@@ -1,9 +1,17 @@
 import { Metadata } from 'next'
 import { createClient } from '@/utils/supabase/server'
 
-export async function generateMetadata({ params }: { params: { user_id: string } }): Promise<Metadata> {
+// 1. Update the type definition so Next.js knows params is a Promise
+type LayoutProps = {
+    params: Promise<{ user_id: string }>
+}
+
+export async function generateMetadata({ params }: LayoutProps): Promise<Metadata> {
     const supabase = await createClient()
-    const identifier = params.user_id 
+    
+    // 2. Await the params before using them (Next.js 15+ requirement)
+    const resolvedParams = await params
+    const identifier = resolvedParams.user_id 
 
     // Check if the parameter is a domain (contains a dot) or a user ID
     let query = supabase.from('profiles').select('business_name, logo_url, custom_domain')
@@ -35,6 +43,13 @@ export async function generateMetadata({ params }: { params: { user_id: string }
     }
 }
 
-export default function SharedLayout({ children }: { children: React.ReactNode }) {
+// 3. Apply the updated type to the actual layout component as well
+export default async function SharedLayout({ 
+    children, 
+    params 
+}: { 
+    children: React.ReactNode, 
+    params: Promise<{ user_id: string }> 
+}) {
     return <>{children}</>
 }
