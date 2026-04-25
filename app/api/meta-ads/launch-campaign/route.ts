@@ -37,13 +37,18 @@ export async function POST(request: Request) {
     const adAccountId = formData.get('adAccountId')?.toString();
     const facebookToken = formData.get('facebookToken')?.toString();
     const sourceType = formData.get('sourceType')?.toString();
-    const targetLocation = formData.get('targetLocation')?.toString(); 
+    
+    // Fallback string for AI prompt
+    const targetLocation = formData.get('targetLocation')?.toString() || 'India'; 
+    
+    // NEW: Structured Location Data from Meta
+    const metaLocationStr = formData.get('metaLocation')?.toString(); 
+    
     const dailyBudgetINR = parseFloat(formData.get('dailyBudgetINR')?.toString() || '0');
     const pageId = formData.get('pageId')?.toString();
     const linkUrl = formData.get('linkUrl')?.toString();
     const privacyPolicyUrl = formData.get('privacyPolicyUrl')?.toString();
 
-    // FIX: Removed the '[]' to match the Frontend
     const selectedSourceIds = formData.getAll('selectedSourceIds').map(String); 
     
     const creativeFiles = [];
@@ -70,7 +75,6 @@ export async function POST(request: Request) {
         if (sourceType === 'inventory' && selectedSourceIds.length > 0) {
             const id = selectedSourceIds[0];
             
-            // Select BOTH 'images' (array) and 'image_url' (single string)
             const { data: prop, error } = await supabase.from('properties')
                 .select('title, description, images, image_url')
                 .eq('id', id)
@@ -85,7 +89,6 @@ export async function POST(request: Request) {
                 propertyTitle = prop.title || '';
                 propertyDescription = prop.description || '';
                 
-                // ROBUST IMAGE CHECK:
                 if (prop.images && Array.isArray(prop.images) && prop.images.length > 0) {
                     initialImageUrls = prop.images;
                     logToFile(`✅ Found ${prop.images.length} images in array.`);
@@ -104,7 +107,6 @@ export async function POST(request: Request) {
              }
         }
 
-        // Validate we found images before proceeding
         if (creativeFiles.length === 0 && initialImageUrls.length === 0) {
             const msg = "No images found in the selected property or asset. Please check your inventory.";
             logToFile(`❌ ${msg}`);
@@ -143,7 +145,6 @@ export async function POST(request: Request) {
         const leadFormId = formDataRes.id;
         logToFile(`✅ Lead Form Created: ${leadFormId}`);
 
-
         // --- Step C: Upload Creatives (PROXY UPLOAD) ---
         logToFile("--- 2. UPLOADING CREATIVES ---");
         const metaCreativeHashes: string[] = [];
@@ -162,19 +163,14 @@ export async function POST(request: Request) {
         // 2. Database URLs (PROXY DOWNLOAD & UPLOAD)
         else if (initialImageUrls.length > 0) {
             logToFile(`Processing ${initialImageUrls.length} URL(s)...`);
-            
             for (const url of initialImageUrls.slice(0, 3)) {
                 logToFile(`Fetching & Uploading: ${url}`);
-                
-                // A. Download Image to Server Memory
                 const imageFetch = await fetch(url);
                 if (!imageFetch.ok) {
                     logToFile(`❌ Failed to download image from source: ${url}`);
                     continue; 
                 }
                 const imageBlob = await imageFetch.blob();
-
-                // B. Upload Binary to Facebook
                 const uploadFormData = new FormData();
                 uploadFormData.append('source', imageBlob, 'property_image.png');
                 uploadFormData.append('access_token', facebookToken);
@@ -189,7 +185,6 @@ export async function POST(request: Request) {
         }
         
         const uploadResults = await Promise.all(creativeUploadPromises);
-        
         uploadResults.forEach((data, i) => {
             if (data.images) {
                 const hash = data.images[Object.keys(data.images)[0]].hash;
@@ -247,6 +242,40 @@ export async function POST(request: Request) {
         logToFile(`✅ Campaign ID: ${campaignId}`);
 
 
+        // --- NEW: Parse Location Targeting for Meta ---
+        logToFile("--- PREPARING LOCATION TARGETING ---");
+        let targetingConfig = { geo_locations: { countries: ['IN'] } }; // Default fallback
+        
+        if (metaLocationStr) {
+            try {
+                const locData = JSON.parse(metaLocationStr);
+                const loc = locData.location;
+                
+                if (loc && loc.key) {
+                    if (loc.type === 'city') {
+                        targetingConfig = { 
+                            geo_locations: { 
+                                cities: [{ key: loc.key, radius: locData.radius || 20, distance_unit: 'kilometer' }] 
+                            } 
+                        } as any;
+                    } 
+                    else if (loc.type === 'region') {
+                        targetingConfig = { geo_locations: { regions: [{ key: loc.key }] } } as any;
+                    } 
+                    else if (loc.type === 'country') {
+                        targetingConfig = { geo_locations: { countries: [loc.country_code || loc.key] } } as any;
+                    } 
+                    else if (loc.type === 'zip') {
+                        targetingConfig = { geo_locations: { zips: [{ key: loc.key }] } } as any;
+                    }
+                }
+                logToFile(`✅ Targeting Config Applied:`, targetingConfig);
+            } catch (e) { 
+                logToFile("⚠️ Location parse error, falling back to India", e); 
+            }
+        }
+
+
         // --- Step F: Ad Set ---
         logToFile("--- 5. AD SET ---");
         const startTime = new Date(Date.now() + 30 * 60 * 1000).toISOString(); 
@@ -257,7 +286,7 @@ export async function POST(request: Request) {
             destination_type: 'ON_AD', 
             optimization_goal: 'LEAD_GENERATION', 
             billing_event: 'IMPRESSIONS', 
-            targeting: { geo_locations: { countries: ['IN'] } }, 
+            targeting: targetingConfig,  // <-- INJECTED NEW TARGETING HERE
             promoted_object: { page_id: pageId },
             start_time: startTime, 
             status: 'PAUSED',
@@ -303,7 +332,7 @@ export async function POST(request: Request) {
         logToFile(`✅ Creative ID: ${creativeId}`);
 
 
-        // --- Step H: Final Ad (Soft Fail) ---
+        // --- Step H: Final Ad (Soft Fail for Billing) ---
         logToFile("--- 7. FINAL AD ---");
         const adPayload = {
             name: `Ad - ${headline}`,
@@ -323,6 +352,7 @@ export async function POST(request: Request) {
         if (!adRes.ok) {
             logToFile("❌ Final Ad Failed (Drafted):", adData);
             
+            // Catch missing payment method error gracefully
             if (adData.error?.error_subcode === 1359188 || adData.error?.code === 100) {
                 return NextResponse.json({ 
                     success: true, 
