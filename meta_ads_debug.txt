@@ -1,119 +1,40 @@
 
-[2026-04-25T09:25:14.488Z] === STARTING AI CAMPAIGN LAUNCH ===
+[2026-04-25T10:26:07.609Z] === STARTING AI CAMPAIGN LAUNCH ===
 
 ------------------------------------------------
 
-[2026-04-25T09:25:14.496Z] Source Type: inventory | Account: act_293430697011354
+[2026-04-25T10:26:08.110Z] --- 1. CREATING LEAD FORM ---
 
 ------------------------------------------------
 
-[2026-04-25T09:25:14.501Z] Selected IDs:
-[
-  "e02998c9-06e9-4e50-918a-663bd1e33677"
-]
-------------------------------------------------
-
-[2026-04-25T09:25:15.344Z] ✅ Found 4 images in array.
+[2026-04-25T10:26:10.387Z] ✅ Lead Form Created: 858784277245623
 
 ------------------------------------------------
 
-[2026-04-25T09:25:15.345Z] --- 1. CREATING LEAD FORM ---
+[2026-04-25T10:26:10.390Z] --- 2. UPLOADING CREATIVES ---
 
 ------------------------------------------------
 
-[2026-04-25T09:25:15.952Z] ❌ Lead Form Failed Payload:
-{
-  "name": "AI Form - VUE MAGIQU - 115346",
-  "follow_up_action_url": "https://yourbusiness.com",
-  "question_page_custom_headline": "Details for VUE MAGIQUE RESORT",
-  "question_page_custom_text": "Confirm details to view pricing.",
-  "privacy_policy": {
-    "url": "https://yourbusiness.com/privacy",
-    "link_text": "Privacy Policy"
-  },
-  "questions": [
-    {
-      "type": "FULL_NAME",
-      "key": "full_name"
-    },
-    {
-      "type": "EMAIL",
-      "key": "email"
-    },
-    {
-      "type": "PHONE",
-      "key": "phone_number"
-    },
-    {
-      "type": "CUSTOM",
-      "key": "custom_are_you_looking_0",
-      "label": "Are you looking?",
-      "options": [
-        {
-          "value": "yes"
-        },
-        {
-          "value": "no"
-        },
-        {
-          "value": "maybe"
-        }
-      ]
-    },
-    {
-      "type": "CUSTOM",
-      "key": "custom_what_is_your_in_1",
-      "label": "What is your investment budget?",
-      "options": [
-        {
-          "value": "Under ₹25L"
-        },
-        {
-          "value": "₹25L - ₹50L"
-        },
-        {
-          "value": "₹50L - ₹1Cr"
-        },
-        {
-          "value": "₹1Cr+"
-        }
-      ]
-    },
-    {
-      "type": "CUSTOM",
-      "key": "custom_when_are_you_pl_2",
-      "label": "When are you planning to invest?",
-      "options": [
-        {
-          "value": "Immediately"
-        },
-        {
-          "value": "1-3 Months"
-        },
-        {
-          "value": "3-6 Months"
-        },
-        {
-          "value": "Just exploring"
-        }
-      ]
-    }
-  ],
-  "access_token": "EAAMaVhrzxNABRQWW961kVgQhGctZCibjerMH5BS2DIMesvTakefR4XXiOZBJ1NZBTKO94ZA58gONRZAHuZBuZBx6vzWqnbZAegyomHdmNpNyfNgo8Igby3ZAWsgOlsPBnACSSxCiEx8yz3c2NflFS7q4CvalX5VNMxGhLYL352bL2ch6rbJy1rgJM89jCj1MMzManvvpl63iQrLZCdihx0dOwB2qN2zOn7AafCxEiGahgw3SYHL5VfQ8pS51PZA9NkClwjA9vmetA4BQUbtBtGkPHw64m5zVGRgA3ZCmK0M9"
-}
+[2026-04-25T10:26:22.690Z] --- 3. AI COPYWRITING ---
+
 ------------------------------------------------
 
-[2026-04-25T09:25:15.953Z] ❌ Lead Form Failed Response:
-{
-  "error": {
-    "message": "An unknown error has occurred.",
-    "type": "OAuthException",
-    "code": 1,
-    "fbtrace_id": "Aq5JsXGlhohdnfYblL3sF_1"
-  }
-}
+[2026-04-25T10:26:31.167Z] --- 4. CAMPAIGN ---
+
 ------------------------------------------------
 
-[2026-04-25T09:25:15.954Z] !!! API CRASH !!!
-"Meta Lead Form Error: An unknown error has occurred."
+[2026-04-25T10:26:33.022Z] --- PREPARING LOCATION TARGETING ---
+
+------------------------------------------------
+
+[2026-04-25T10:26:33.025Z] --- 5. AD SET ---
+
+------------------------------------------------
+
+[2026-04-25T10:26:36.319Z] --- 6. CREATIVE ---
+
+------------------------------------------------
+
+[2026-04-25T10:26:40.494Z] --- 7. FINAL AD ---
+
 ------------------------------------------------
