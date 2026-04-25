@@ -19,27 +19,25 @@ export async function sendPushNotification(
     url: string = '/dashboard/crm',
     type: string = 'general'
 ) {
-  console.log(`[PUSH] Looking up DB for User: ${userId}`);
-
   const { data: subscriptions } = await supabaseAdmin
     .from('push_subscriptions')
     .select('*')
     .eq('user_id', userId);
 
   if (!subscriptions || subscriptions.length === 0) {
-      console.log(`[PUSH] FATAL: 0 devices found in DB for user! Cannot send.`);
       return;
   }
 
-  console.log(`[PUSH] Found ${subscriptions.length} device(s). Firing to Apple/Google...`);
-
   const payload = JSON.stringify({ title, body, url, type });
 
+  // REVERTED to your original, working format. 
+  // No 'topic', no extra urgency flags. Just the pure header.
   const options = {
     TTL: 86400,
-    urgency: 'high',
-    headers: { 'Urgency': 'high' }
-  } as webpush.RequestOptions; 
+    headers: {
+      'Urgency': 'high'
+    }
+  };
 
   const sendPromises = subscriptions.map(async (sub) => {
     const pushSubscription = {
@@ -49,9 +47,10 @@ export async function sendPushNotification(
 
     try {
       await webpush.sendNotification(pushSubscription, payload, options);
-      console.log(`[PUSH] Success! Apple/Google accepted payload for device: ${sub.id}`);
     } catch (error: any) {
-      console.error(`[PUSH] Failed. Status code: ${error.statusCode}`);
+      console.error(`[PUSH] Failed for ${sub.id}:`, error.statusCode);
+      // NOTE: The 410 error on Android is handled here. It safely deletes 
+      // the dead token from the database and cleans itself up.
       if (error.statusCode === 404 || error.statusCode === 410) {
         await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id);
       }
