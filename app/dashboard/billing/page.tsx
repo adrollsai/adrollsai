@@ -1,132 +1,230 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { Loader2, CheckCircle2, Rocket, LogOut } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/utils/supabase/client'
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Check, Loader2, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 
-export default function BillingPage() {
-    const router = useRouter()
-    const supabase = createClient()
-    const [isProcessing, setIsProcessing] = useState<string | null>(null)
-    const [successMessage, setSuccessMessage] = useState(false)
+const PLANS = [
+    {
+        id: 'starter',
+        name: 'Starter',
+        price: 4999,
+        description: 'Perfect for independent agents starting out.',
+        features: [
+            'Basic CRM Access',
+            'Up to 500 Leads/month',
+            'Standard Email Support',
+            'Basic Analytics'
+        ],
+        isPopular: false
+    },
+    {
+        id: 'professional',
+        name: 'Professional',
+        price: 9999,
+        description: 'Everything you need to scale your real estate business.',
+        features: [
+            'Advanced CRM Features',
+            'Unlimited Leads',
+            'Meta Ads Integration',
+            'Automated Lead Distribution',
+            'Priority WhatsApp Support'
+        ],
+        isPopular: true
+    },
+    {
+        id: 'enterprise',
+        name: 'Enterprise',
+        price: 14999,
+        description: 'Advanced tools for large agencies and teams.',
+        features: [
+            'White-label CRM Options',
+            'Custom API Integrations',
+            'Multi-Agent Management',
+            'Dedicated Account Manager',
+            '24/7 Phone Support'
+        ],
+        isPopular: false
+    }
+];
 
-    // Catch the successful return from PhonePe
+function BillingContent() {
+    const searchParams = useSearchParams();
+    const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+    const [verifying, setVerifying] = useState(false);
+    const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'loading', text: string } | null>(null);
+
     useEffect(() => {
-        const params = new URLSearchParams(window.location.search)
-        if (params.get('payment') === 'success') {
-            setSuccessMessage(true)
-            setTimeout(() => {
-                window.location.href = '/dashboard' // Send to main app after 3 seconds
-            }, 3000)
-        }
-    }, [])
+        const verifyPayment = async () => {
+            const paymentStatus = searchParams.get('payment');
+            const txnId = searchParams.get('txnId');
+            const planId = searchParams.get('planId');
 
-    const handleSubscribe = async (planId: string) => {
-        setIsProcessing(planId)
+            if (paymentStatus === 'success' && txnId) {
+                setVerifying(true);
+                setStatusMessage({ type: 'loading', text: 'Verifying your payment securely with PhonePe...' });
+
+                try {
+                    const response = await fetch('/api/payment/verify', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ transactionId: txnId, planId: planId })
+                    });
+                    
+                    const data = await response.json();
+
+                    if (data.success) {
+                        setStatusMessage({ type: 'success', text: 'Payment successful! Redirecting to your dashboard...' });
+                        
+                        // Clean the URL so a page refresh doesn't re-trigger the check
+                        window.history.replaceState(null, '', '/dashboard/billing');
+                        
+                        // Redirect to dashboard after a brief delay
+                        setTimeout(() => {
+                            window.location.href = '/dashboard';
+                        }, 1500);
+                    } else {
+                        setStatusMessage({ type: 'error', text: 'Payment verification failed or is pending. Please contact support if amount was deducted.' });
+                    }
+                } catch (error) {
+                    setStatusMessage({ type: 'error', text: 'Network error during verification. Please contact support.' });
+                } finally {
+                    setVerifying(false);
+                }
+            }
+        };
+
+        verifyPayment();
+    }, [searchParams]);
+
+    const handleCheckout = async (planId: string) => {
+        setLoadingPlan(planId);
+        setStatusMessage(null);
+        
         try {
-            const res = await fetch('/api/payment/initiate', {
+            const response = await fetch('/api/payment/initiate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ planId })
-            })
-            const data = await res.json()
+            });
+
+            const data = await response.json();
+            
             if (data.url) {
-                window.location.href = data.url // Send to PhonePe
+                // Redirect user to PhonePe's secure payment page
+                window.location.href = data.url; 
             } else {
-                throw new Error(data.error)
+                setStatusMessage({
+                    type: 'error',
+                    text: data.error || 'Payment initiation failed. Please try again.'
+                });
             }
-        } catch (error: any) {
-            alert("Error initiating payment: " + error.message)
-            setIsProcessing(null)
+        } catch (error) {
+            console.error("Checkout error:", error);
+            setStatusMessage({
+                type: 'error',
+                text: 'A network error occurred. Please try again.'
+            });
+        } finally {
+            setLoadingPlan(null);
         }
-    }
-
-    const handleLogout = async () => {
-        await supabase.auth.signOut()
-        router.push('/login')
-    }
-
-    if (successMessage) {
-        return (
-            <div className="h-screen flex flex-col items-center justify-center bg-green-50 p-6 text-center">
-                <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center text-white mb-6 shadow-lg animate-bounce">
-                    <CheckCircle2 size={40} />
-                </div>
-                <h1 className="text-3xl font-black text-green-800 mb-2">Payment Successful!</h1>
-                <p className="text-green-600 font-medium">Your subscription is active. Preparing your dashboard...</p>
-            </div>
-        )
-    }
+    };
 
     return (
-        <div className="min-h-screen bg-slate-50 p-6 pb-24">
-            <div className="max-w-5xl mx-auto mt-10">
-                
-                <div className="flex justify-between items-center mb-10">
-                    <div>
-                        <h1 className="text-3xl font-black text-slate-900">Choose Your Plan</h1>
-                        <p className="text-slate-500 mt-2 font-medium">Subscribe to unlock your AdRolls workspace.</p>
-                    </div>
-                    <button onClick={handleLogout} className="flex items-center gap-2 text-slate-500 font-bold hover:text-red-500 transition-colors">
-                        <LogOut size={18} /> Sign Out
-                    </button>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div className="text-center mb-12">
+                <h1 className="text-3xl font-bold text-gray-900 sm:text-4xl">
+                    Simple, transparent pricing
+                </h1>
+                <p className="mt-4 text-xl text-gray-600">
+                    Choose the perfect plan to accelerate your real estate growth.
+                </p>
+            </div>
+
+            {/* Status Messages */}
+            {statusMessage && (
+                <div className={`mb-8 p-4 rounded-lg flex items-center justify-center max-w-3xl mx-auto ${
+                    statusMessage.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 
+                    statusMessage.type === 'error' ? 'bg-red-50 text-red-800 border border-red-200' :
+                    'bg-blue-50 text-blue-800 border border-blue-200'
+                }`}>
+                    {statusMessage.type === 'success' && <CheckCircle2 className="w-5 h-5 mr-2 text-green-600" />}
+                    {statusMessage.type === 'error' && <AlertCircle className="w-5 h-5 mr-2 text-red-600" />}
+                    {statusMessage.type === 'loading' && <RefreshCw className="w-5 h-5 mr-2 text-blue-600 animate-spin" />}
+                    <span className="font-medium">{statusMessage.text}</span>
                 </div>
+            )}
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* STARTER */}
-                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm flex flex-col">
-                        <h3 className="text-xl font-bold text-slate-800">Starter</h3>
-                        <div className="mt-4 mb-6">
-                            <span className="text-4xl font-black text-slate-900">₹4,999</span>
-                            <span className="text-slate-500 text-sm">/mo + GST</span>
+            {/* Pricing Cards */}
+            <div className={`grid grid-cols-1 md:grid-cols-3 gap-8 max-w-7xl mx-auto transition-opacity duration-300 ${verifying ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                {PLANS.map((plan) => (
+                    <div 
+                        key={plan.id}
+                        className={`relative flex flex-col p-8 bg-white rounded-2xl border ${
+                            plan.isPopular ? 'border-blue-600 shadow-xl scale-105 z-10' : 'border-gray-200 shadow-sm'
+                        }`}
+                    >
+                        {plan.isPopular && (
+                            <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                                <span className="bg-blue-600 text-white px-3 py-1 rounded-full text-sm font-semibold tracking-wide">
+                                    Most Popular
+                                </span>
+                            </div>
+                        )}
+
+                        <div className="mb-8">
+                            <h3 className="text-2xl font-semibold text-gray-900">{plan.name}</h3>
+                            <p className="mt-2 text-gray-500 h-12">{plan.description}</p>
+                            <div className="mt-6 flex items-baseline text-5xl font-extrabold text-gray-900">
+                                ₹{plan.price.toLocaleString('en-IN')}
+                                <span className="ml-1 text-xl font-medium text-gray-500">/mo</span>
+                            </div>
+                            <p className="mt-2 text-sm text-gray-400">+ 18% GST applied at checkout</p>
                         </div>
-                        <ul className="space-y-3 mb-8 flex-1">
-                            <li className="flex items-center gap-2 text-sm text-slate-600 font-medium"><CheckCircle2 size={16} className="text-green-500"/> AI Creation Studio</li>
-                            <li className="flex items-center gap-2 text-sm text-slate-600 font-medium"><CheckCircle2 size={16} className="text-green-500"/> Basic CRM Access</li>
-                            <li className="flex items-center gap-2 text-sm text-slate-600 font-medium"><CheckCircle2 size={16} className="text-green-500"/> 0 Agent Seats</li>
+
+                        <ul className="flex-1 space-y-4 mb-8">
+                            {plan.features.map((feature, index) => (
+                                <li key={index} className="flex items-start">
+                                    <Check className="flex-shrink-0 w-5 h-5 text-green-500 mr-3" />
+                                    <span className="text-gray-600">{feature}</span>
+                                </li>
+                            ))}
                         </ul>
-                        <button onClick={() => handleSubscribe('starter')} disabled={!!isProcessing} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-xl font-bold flex justify-center transition-all">
-                            {isProcessing === 'starter' ? <Loader2 className="animate-spin" /> : 'Setup Auto-Pay'}
+
+                        <button
+                            onClick={() => handleCheckout(plan.id)}
+                            disabled={loadingPlan !== null || verifying}
+                            className={`w-full py-4 px-6 rounded-xl font-semibold text-lg transition-all duration-200 flex items-center justify-center ${
+                                plan.isPopular
+                                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
+                                    : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
+                            } ${loadingPlan !== null ? 'opacity-70 cursor-not-allowed' : ''}`}
+                        >
+                            {loadingPlan === plan.id ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                                    Processing...
+                                </>
+                            ) : (
+                                `Get ${plan.name}`
+                            )}
                         </button>
                     </div>
-
-                    {/* PROFESSIONAL */}
-                    <div className="bg-slate-900 p-8 rounded-3xl border border-slate-800 shadow-xl flex flex-col transform md:-translate-y-4 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 bg-blue-500 text-white text-[10px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-wider">Most Popular</div>
-                        <h3 className="text-xl font-bold text-white">Professional</h3>
-                        <div className="mt-4 mb-6">
-                            <span className="text-4xl font-black text-white">₹9,999</span>
-                            <span className="text-slate-400 text-sm">/mo + GST</span>
-                        </div>
-                        <ul className="space-y-3 mb-8 flex-1">
-                            <li className="flex items-center gap-2 text-sm text-slate-300 font-medium"><CheckCircle2 size={16} className="text-blue-400"/> Everything in Starter</li>
-                            <li className="flex items-center gap-2 text-sm text-slate-300 font-medium"><CheckCircle2 size={16} className="text-blue-400"/> Up to 5 Team Members</li>
-                            <li className="flex items-center gap-2 text-sm text-slate-300 font-medium"><CheckCircle2 size={16} className="text-blue-400"/> Meta Ads AI Integration</li>
-                        </ul>
-                        <button onClick={() => handleSubscribe('professional')} disabled={!!isProcessing} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3.5 rounded-xl font-bold flex justify-center transition-all">
-                            {isProcessing === 'professional' ? <Loader2 className="animate-spin" /> : 'Setup Auto-Pay'}
-                        </button>
-                    </div>
-
-                    {/* ENTERPRISE */}
-                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm flex flex-col">
-                        <h3 className="text-xl font-bold text-slate-800">Enterprise</h3>
-                        <div className="mt-4 mb-6">
-                            <span className="text-4xl font-black text-slate-900">₹14,999</span>
-                            <span className="text-slate-500 text-sm">/mo + GST</span>
-                        </div>
-                        <ul className="space-y-3 mb-8 flex-1">
-                            <li className="flex items-center gap-2 text-sm text-slate-600 font-medium"><CheckCircle2 size={16} className="text-green-500"/> Everything in Pro</li>
-                            <li className="flex items-center gap-2 text-sm text-slate-600 font-medium"><CheckCircle2 size={16} className="text-green-500"/> Unlimited Agents</li>
-                            <li className="flex items-center gap-2 text-sm text-slate-600 font-medium"><CheckCircle2 size={16} className="text-green-500"/> Custom Domain Support</li>
-                        </ul>
-                        <button onClick={() => handleSubscribe('enterprise')} disabled={!!isProcessing} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-xl font-bold flex justify-center transition-all">
-                            {isProcessing === 'enterprise' ? <Loader2 className="animate-spin" /> : 'Setup Auto-Pay'}
-                        </button>
-                    </div>
-                </div>
+                ))}
             </div>
         </div>
-    )
+    );
+}
+
+// Wrapping in Suspense to prevent Next.js build errors related to useSearchParams
+export default function BillingPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+        }>
+            <BillingContent />
+        </Suspense>
+    );
 }

@@ -2,15 +2,12 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@/utils/supabase/server';
 
-// 1. HARDCODED YOUR EXACT CREDENTIALS TO BYPASS ANY CACHE ISSUES
-const MERCHANT_ID = "PGTESTPAYUAT";
-const SALT_KEY = "099eb0cd-02cf-4e2a-8aca-3e6c6aff0399";
-const SALT_INDEX = "1";
+const MERCHANT_ID = (process.env.PHONEPE_MERCHANT_ID || "PGTESTPAYUAT").replace(/['"]/g, '').trim();
+const SALT_KEY = (process.env.PHONEPE_SALT_KEY || "099eb0cd-02cf-4e2a-8aca-3e6c6aff0399").replace(/['"]/g, '').trim();
+const SALT_INDEX = (process.env.PHONEPE_SALT_INDEX || "1").replace(/['"]/g, '').trim();
 
-const BASE_URL = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").trim();
-const CALLBACK_URL = (process.env.PHONEPE_CALLBACK_URL || "").trim();
+const CALLBACK_URL = (process.env.PHONEPE_CALLBACK_URL || "").replace(/['"]/g, '').trim();
 
-// 2. THE ONLY ENDPOINT ALLOWED FOR PGTESTPAYUAT
 const API_PATH = "/pg/v1/pay";
 const PHONEPE_URL = `https://api-preprod.phonepe.com/apis/pg-sandbox${API_PATH}`;
 
@@ -29,25 +26,30 @@ export async function POST(req: Request) {
 
         const { planId } = await req.json();
         const basePrice = PLANS[planId as keyof typeof PLANS];
-        
         if (!basePrice) return NextResponse.json({ error: "Invalid Plan" }, { status: 400 });
 
         const gst = basePrice * 0.18;
         const totalAmount = Math.round((basePrice + gst) * 100); 
         
-        // Strip hyphens for PhonePe safety
         const safeUserId = user.id.replace(/-/g, '');
         const transactionId = `TXN-${safeUserId.substring(0,6)}-${Date.now()}`;
 
-        // STANDARD PAYLOAD (No recurring tags allowed here)
+        // 🚨 NEW LOGIC: Identify if the user is on localhost or ngrok right now
+        const currentOrigin = req.headers.get('origin') || 
+                              req.headers.get('referer')?.split('/').slice(0,3).join('/') || 
+                              (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/['"]/g, '').trim();
+
         const payload = {
             merchantId: MERCHANT_ID,
             merchantTransactionId: transactionId,
             merchantUserId: safeUserId,
             amount: totalAmount,
-            redirectUrl: `${BASE_URL}/dashboard/billing?payment=success`,
-            redirectMode: "REDIRECT",
-            callbackUrl: CALLBACK_URL,
+            
+            // We append '&origin=' so the redirect route remembers where you came from
+            redirectUrl: `${currentOrigin}/api/payment/redirect?planId=${planId}&userId=${user.id}&origin=${encodeURIComponent(currentOrigin)}`,
+            redirectMode: "POST",
+            
+            callbackUrl: CALLBACK_URL, // Webhook MUST stay on Ngrok to work
             mobileNumber: "9999999999", 
             paymentInstrument: {
                 type: "PAY_PAGE"
@@ -55,8 +57,6 @@ export async function POST(req: Request) {
         };
 
         const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64');
-        
-        // CHECKSUM
         const signString = base64Payload + API_PATH + SALT_KEY;
         const checksum = crypto.createHash('sha256').update(signString).digest('hex') + '###' + SALT_INDEX;
 
@@ -75,7 +75,6 @@ export async function POST(req: Request) {
         if (data.success && data.data?.instrumentResponse?.redirectInfo?.url) {
             return NextResponse.json({ url: data.data.instrumentResponse.redirectInfo.url });
         } else {
-            console.error("PhonePe API Error:", data);
             throw new Error(data.message || "Payment initiation failed.");
         }
 
