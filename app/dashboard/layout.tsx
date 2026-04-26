@@ -1,22 +1,55 @@
-import BottomNav from "@/components/BottomNav";
-import FloatingAgent from "@/components/FloatingAgent";
-import PushManager from "@/components/PushManager"; // <--- Import this
+'use client'
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+import { useEffect, useState } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
+import { createClient } from '@/utils/supabase/client'
+import BottomNav from '@/components/BottomNav'
+import { Loader2 } from 'lucide-react'
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const supabase = createClient()
+  const [isAuthorized, setIsAuthorized] = useState(false)
+
+  useEffect(() => {
+    const enforcePaywall = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user) {
+        router.push('/login')
+        return
+      }
+
+      // Check user's subscription status
+      const { data } = await supabase
+        .from('profiles')
+        .select('subscription_status, role')
+        .eq('id', session.user.id)
+        .single()
+
+      const isPaid = data?.subscription_status === 'active'
+      const isBillingPage = pathname === '/dashboard/billing'
+
+      // If they haven't paid, and they aren't already on the billing page, trap them!
+      if (!isPaid && !isBillingPage && data?.role === 'admin') {
+        router.push('/dashboard/billing')
+      } else {
+        setIsAuthorized(true)
+      }
+    }
+
+    enforcePaywall()
+  }, [pathname, router])
+
+  if (!isAuthorized) {
+    return <div className="flex h-screen items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-primary" size={32} /></div>
+  }
+
   return (
-    <div className="min-h-screen bg-surface pb-32 relative"> 
-      
+    <div className="min-h-screen bg-slate-50">
       {children}
-      
-      {/* Global Components */}
-      <FloatingAgent /> 
-      <PushManager /> {/* <--- Mount it here */}
-      
-      <BottomNav />
+      {/* Hide the navigation bar if they are trapped on the billing page */}
+      {pathname !== '/dashboard/billing' && <BottomNav />}
     </div>
-  );
+  )
 }

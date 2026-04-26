@@ -26,7 +26,10 @@ export default function ProductsPage() {
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState(false)
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  
+  // RBAC & Ownership State
+  const [role, setRole] = useState<'admin' | 'agent'>('admin')
+  const [ownerId, setOwnerId] = useState<string | null>(null) // Replaces currentUserId to support Agent viewing Admin's catalog
   
   // Sharing State
   const [isSharingId, setIsSharingId] = useState<string | null>(null)
@@ -50,7 +53,7 @@ export default function ProductsPage() {
   
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 1. SAFE FETCH
+  // 1. SAFE FETCH WITH RBAC
   const fetchProperties = async () => {
     try {
       setLoading(true)
@@ -61,13 +64,27 @@ export default function ProductsPage() {
         setLoading(false)
         return
       }
-      
-      setCurrentUserId(user.id)
 
+      // 1. Get Role & Parent ID
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, parent_id')
+        .eq('id', user.id)
+        .single()
+
+      const currentRole = profile?.role || 'admin'
+      setRole(currentRole)
+
+      // 2. Determine whose catalog to load
+      // If agent, load parent's catalog. If admin, load own catalog.
+      const targetUserId = (currentRole === 'agent' && profile?.parent_id) ? profile.parent_id : user.id
+      setOwnerId(targetUserId)
+
+      // 3. Fetch Catalog
       const { data, error: dbError } = await supabase
         .from('properties')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', targetUserId)
         .order('created_at', { ascending: false })
 
       if (dbError) throw dbError
@@ -98,11 +115,11 @@ export default function ProductsPage() {
   }
 
   const handleAddProperty = async () => {
-    // Simplified Validation
     if (!newProp.title) {
         alert("Please enter a Product/Service Name.")
         return
     }
+    
     setIsSubmitting(true)
 
     try {
@@ -115,6 +132,7 @@ export default function ProductsPage() {
         const uploadPromises = selectedFiles.map(async (file) => {
           const fileExt = file.name.split('.').pop()
           const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+         
           const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, file)
           if (uploadError) throw uploadError
           const { data: { publicUrl } } = supabase.storage.from('properties').getPublicUrl(fileName)
@@ -123,15 +141,13 @@ export default function ProductsPage() {
         const results = await Promise.all(uploadPromises)
         uploadedUrls.push(...results)
       } else {
-          // Placeholder if no image (though typically products have images)
           uploadedUrls.push(`https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newProp.title)}`)
       }
 
       const { error } = await supabase.from('properties').insert({
-          user_id: user.id,
+          user_id: user.id, // Only admins can reach here, so user.id is correct
           title: newProp.title,
           description: newProp.description,
-          // Generic Defaults for DB schema requirements
           address: '', 
           price: '', 
           property_type: 'Generic', 
@@ -156,11 +172,11 @@ export default function ProductsPage() {
   }
 
   const handleCopyFilteredLink = () => {
-    if (!currentUserId) return
+    if (!ownerId) return // Uses ownerId so agents share the Admin's link
     const params = new URLSearchParams()
     if (searchQuery) params.set('q', searchQuery)
     
-    const shareUrl = `${window.location.origin}/shared/${currentUserId}?${params.toString()}`
+    const shareUrl = `${window.location.origin}/shared/${ownerId}?${params.toString()}`
     navigator.clipboard.writeText(shareUrl)
     alert("✅ Link Copied!")
   }
@@ -172,23 +188,20 @@ export default function ProductsPage() {
     setIsSharingId(prop.id)
 
     try {
-      // 1. Prepare Description
       const shareTitle = `${prop.title}`
       const shareText = `${shareTitle}\n\n${prop.description || ''}`
 
-      // 2. Prepare Images
       let imageUrls = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url];
       imageUrls = imageUrls.slice(0, 10);
 
-      // 3. Fetch Blobs
       const filesArray: File[] = [];
-
       if (typeof navigator.canShare === 'function') {
         try {
             await Promise.all(imageUrls.map(async (url, index) => {
                 const response = await fetch(url);
                 const blob = await response.blob();
                 const mimeType = blob.type || 'image/jpeg';
+        
                 const ext = mimeType.split('/')[1] || 'jpg';
                 const file = new File([blob], `product_${prop.id}_${index}.${ext}`, { type: mimeType });
                 filesArray.push(file);
@@ -198,7 +211,6 @@ export default function ProductsPage() {
         }
       }
 
-      // 4. Execute Share
       if (filesArray.length > 0 && typeof navigator.canShare === 'function' && navigator.canShare({ files: filesArray })) {
         await navigator.share({
             files: filesArray,
@@ -224,7 +236,7 @@ export default function ProductsPage() {
     }
   }
 
-  // --- FILTER LOGIC (Simplified) ---
+  // --- FILTER LOGIC ---
   const filteredProperties = properties.filter(p => {
     const matchesSearch = p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           p.description?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -248,9 +260,13 @@ export default function ProductsPage() {
             <button onClick={() => setShowFilters(!showFilters)} className={`p-3 rounded-full shadow-md active:scale-95 transition-transform ${showFilters ? 'bg-slate-800 text-white' : 'bg-white text-slate-700'}`}>
               <MoreHorizontal size={20} />
             </button>
-            <button onClick={() => setShowAddModal(true)} className="bg-primary hover:bg-blue-200 text-primary-text p-3 rounded-full shadow-md active:scale-95 transition-transform">
-              <Plus size={20} strokeWidth={3} />
-            </button>
+            
+            {/* ONLY ADMINS SEE THE ADD BUTTON */}
+            {role === 'admin' && (
+              <button onClick={() => setShowAddModal(true)} className="bg-primary hover:bg-blue-200 text-primary-text p-3 rounded-full shadow-md active:scale-95 transition-transform">
+                <Plus size={20} strokeWidth={3} />
+              </button>
+            )}
         </div>
       </div>
 
@@ -288,7 +304,7 @@ export default function ProductsPage() {
                 <img src={prop.image_url} alt="Product" className="w-full h-full object-cover" />
                 <div className="absolute top-3 left-3 flex gap-1">
                     <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-white/90 text-slate-700 backdrop-blur-sm">
-                      {prop.status}
+                       {prop.status}
                     </span>
                 </div>
               </div>
@@ -312,14 +328,15 @@ export default function ProductsPage() {
         )}
       </div>
 
-      {/* ADD MODAL */}
-      {showAddModal && (
+      {/* ADD MODAL (Only rendered if admin somehow triggers it) */}
+      {role === 'admin' && showAddModal && (
         <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-slate-800">Add Product</h2>
               <button onClick={() => setShowAddModal(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
             </div>
+ 
             <div className="space-y-4">
               {/* Image Picker */}
               <div onClick={() => fileInputRef.current?.click()} className="w-full h-40 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 transition-colors relative overflow-hidden group">
@@ -362,7 +379,7 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* VIEW MODAL */}
+      {/* VIEW MODAL (Visible to both Admin and Agents) */}
       {selectedProperty && (
         <div className="fixed inset-0 z-[90] bg-white flex flex-col animate-in slide-in-from-bottom-10">
            <div className="absolute top-4 left-4 z-10"><button onClick={() => setSelectedProperty(null)} className="bg-white/80 backdrop-blur-md p-3 rounded-full shadow-sm text-slate-900"><X size={24} /></button></div>

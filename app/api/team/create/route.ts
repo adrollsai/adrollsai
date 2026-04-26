@@ -38,14 +38,16 @@ export async function POST(req: Request) {
 
     if (createError) throw createError
 
-    // 3. Create the Agent Profile linked to the Admin
-    const { error: profileError } = await supabaseAdmin.from('profiles').insert({
+    // 3. UPSERT the Agent Profile
+    // Using .upsert() instead of .insert() prevents crashes if a Supabase 
+    // database trigger has already auto-created a blank profile row for this ID.
+    const { error: profileError } = await supabaseAdmin.from('profiles').upsert({
         id: newAuthUser.user.id,
         email: email,
-        business_name: fullName, // Using business_name field for Full Name
+        business_name: fullName, 
         contact_number: contactNumber,
         role: 'agent',
-        parent_id: user.id // Link agent to this admin
+        parent_id: user.id 
     })
 
     if (profileError) {

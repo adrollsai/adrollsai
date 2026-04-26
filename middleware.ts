@@ -6,9 +6,13 @@ export async function middleware(request: NextRequest) {
   const hostname = request.headers.get('host') || '';
 
   // 1. CUSTOM DOMAIN ROUTING
-  // Define your main app domains here (including localhost for testing)
   const mainDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'adrolls.in'; 
-  const isPlatformDomain = hostname.includes(mainDomain) || hostname.includes('localhost') || hostname.includes('vercel.app');
+  
+  // ADDED ngrok-free.dev TO THE SAFE LIST
+  const isPlatformDomain = hostname.includes(mainDomain) || 
+                           hostname.includes('localhost') || 
+                           hostname.includes('vercel.app') || 
+                           hostname.includes('ngrok-free.dev');
 
   // If it's a custom domain, rewrite the URL internally to the shared profile route
   if (!isPlatformDomain) {

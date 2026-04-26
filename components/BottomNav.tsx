@@ -9,21 +9,63 @@ import { createClient } from '@/utils/supabase/client'
 export default function BottomNav() {
   const pathname = usePathname()
   const supabase = createClient()
+  
   const [showDistribute, setShowDistribute] = useState(false)
-  const [role, setRole] = useState<'admin' | 'agent'>('admin')
+  const [role, setRole] = useState<'admin' | 'agent' | null>(null) 
 
   useEffect(() => {
+    let isMounted = true;
+
     const checkProfile = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        const { data } = await supabase.from('profiles').select('enable_distribution, role').eq('id', session.user.id).single()
-        
-        if (data?.role) setRole(data.role as 'admin' | 'agent')
-        if (data?.enable_distribution) setShowDistribute(true)
+      
+      if (!session?.user) return;
+
+      const { data, error } = await supabase
+          .from('profiles')
+          .select('enable_distribution, role')
+          .eq('id', session.user.id)
+          .single()
+
+      if (!isMounted) return;
+
+      if (error) {
+          // Failsafe: If DB errors out, don't lock out the main user
+          setRole('admin') 
+          return;
+      }
+
+      // Convert to lowercase to be completely safe
+      const fetchedRole = data?.role?.toLowerCase()
+
+      if (fetchedRole === 'agent') {
+          setRole('agent') 
+      } else {
+          setRole('admin') 
+      }
+
+      if (data?.enable_distribution) {
+          setShowDistribute(true)
       }
     }
+    
     checkProfile()
-  }, [])
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+            checkProfile()
+        } else if (event === 'SIGNED_OUT') {
+            if (isMounted) setRole(null)
+        }
+    })
+
+    return () => {
+        isMounted = false;
+        authListener.subscription.unsubscribe()
+    }
+  }, [supabase])
+
+  if (!role) return null;
 
   // Define ALL possible navigation items
   const allNavItems = [
@@ -33,17 +75,15 @@ export default function BottomNav() {
     { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
     ...(showDistribute ? [{ name: 'Distribute', icon: Share2, path: '/dashboard/distribute' }] : []),
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
-    { name: 'Team', icon: Shield, path: '/dashboard/team' }, // Admin Team Dashboard
+    { name: 'Team', icon: Shield, path: '/dashboard/team' },
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
   ]
 
   // Filter Nav Items Based on Role
   const navItems = allNavItems.filter(item => {
       if (role === 'agent') {
-          // AGENTS: Only see Inventory, CRM, Assets, Profile
           return ['Inventory', 'CRM', 'Assets', 'Profile'].includes(item.name)
       }
-      // ADMINS: See everything (Team added explicitly above, Distribute handles itself)
       return true
   })
 

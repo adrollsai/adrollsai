@@ -1,7 +1,23 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe, Target, Share2, Link as LinkIcon } from 'lucide-react'
+import { 
+  CreditCard, 
+  LogOut, 
+  ChevronRight, 
+  Save, 
+  Upload, 
+  Loader2, 
+  Facebook, 
+  Linkedin, 
+  CheckCircle, 
+  Youtube, 
+  Instagram, 
+  Globe, 
+  Target, 
+  Share2, 
+  Link as LinkIcon 
+} from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -30,6 +46,9 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
   
+  // ROLE STATE (Added for Team Hierarchy)
+  const [role, setRole] = useState<'admin' | 'agent'>('agent')
+  
   // Actions
   const [isSaving, setIsSaving] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
@@ -55,14 +74,14 @@ export default function ProfilePage() {
   const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false) 
   const [isLoadingPixels, setIsLoadingPixels] = useState(false) 
 
-  // --- NEW: Distribution Toggle States ---
+  // Distribution Toggle States
   const [enableDistribution, setEnableDistribution] = useState(false)
   const [isTogglingDist, setIsTogglingDist] = useState(false)
 
-  // Profile Data (ADDED customDomain)
+  // Profile Data
   const [formData, setFormData] = useState({
     businessName: '',
-    customDomain: '', // <-- NEW FIELD
+    customDomain: '', // Added for Custom Domain feature
     mission: '',
     color: '#D0E8FF',
     contact: '',
@@ -166,10 +185,12 @@ export default function ProfilePage() {
     if (!userId) return
 
     setSelectedAdAccountId(adAccountId)
+    // Save the selected Ad Account ID
     await supabase.from('profiles').update({
       ad_account_id: adAccountId, 
     }).eq('id', userId)
 
+    // Automatically fetch pixels for this account
     fetchPixels(adAccountId)
   }
 
@@ -203,17 +224,19 @@ export default function ProfilePage() {
         }
         if (isMounted) setUserId(user.id)
 
-        // ADDED custom_domain to the select array
+        // Updated to fetch custom_domain and role
         const { data: profile } = await supabase
           .from('profiles')
-          .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id, custom_domain') 
+          .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id, custom_domain, role') 
           .eq('id', user.id)
           .single()
 
         if (profile && isMounted) {
+          setRole(profile.role || 'admin') // Store role
+
           setFormData({
             businessName: profile.business_name || '',
-            customDomain: profile.custom_domain || '', // Load Domain
+            customDomain: profile.custom_domain || '',
             mission: profile.mission_statement || '',
             color: profile.brand_color || '#D0E8FF',
             contact: profile.contact_number || '',
@@ -224,6 +247,7 @@ export default function ProfilePage() {
             youtubeUrl: profile.youtube_url || ''
           })
           
+          // Set Distribution Toggle
           setEnableDistribution(profile.enable_distribution || false)
 
           // Facebook Logic
@@ -231,9 +255,11 @@ export default function ProfilePage() {
             setIsFacebookConnected(true)
             setFacebookToken(profile.facebook_token); 
             
+            // Restore IDs
             if (profile.selected_page_id) setSelectedPageId(profile.selected_page_id)
             else fetchPages()
 
+            // Restore Ad Account & Pixels
             if (profile.ad_account_id) {
                 setSelectedAdAccountId(profile.ad_account_id)
                 fetchPixels(profile.ad_account_id)
@@ -242,6 +268,7 @@ export default function ProfilePage() {
                 setSelectedPixelId(profile.pixel_id)
             }
             
+            // Always fetch ad accounts list so dropdown works
             fetchAdAccounts(profile.facebook_token); 
             
           } else {
@@ -411,22 +438,30 @@ export default function ProfilePage() {
     }
   }
 
+  // --- Toggle Distribution Instantly ---
   const handleToggleDistribution = async () => {
     if (!userId) return
     const newState = !enableDistribution
     
+    // 1. Optimistic Update (Switch UI immediately)
     setEnableDistribution(newState)
     setIsTogglingDist(true)
 
     try {
+        // 2. Save to Database
         const { error } = await supabase
             .from('profiles')
             .update({ enable_distribution: newState })
             .eq('id', userId)
 
-        if (error) throw error
-        else setTimeout(() => window.location.reload(), 500)
+        if (error) {
+            throw error
+        } else {
+            // 3. Success -> Reload to update BottomNav
+            setTimeout(() => window.location.reload(), 500)
+        }
     } catch (e: any) {
+        // 4. Revert if failed
         setEnableDistribution(!newState)
         alert("Failed to save setting: " + e.message)
     } finally {
@@ -446,15 +481,15 @@ export default function ProfilePage() {
         id: user.id,
         email: user.email,
         business_name: formData.businessName,
-        custom_domain: cleanedDomain, // SAVING DOMAIN
+        custom_domain: role === 'admin' ? cleanedDomain : undefined, // Only update domain if Admin
         mission_statement: formData.mission,
         brand_color: formData.color,
         contact_number: formData.contact,
         logo_url: formData.logoUrl,
-        facebook_url: formData.facebookUrl,
-        instagram_url: formData.instagramUrl,
-        linkedin_url: formData.linkedinUrl,
-        youtube_url: formData.youtubeUrl,
+        facebook_url: role === 'admin' ? formData.facebookUrl : undefined,
+        instagram_url: role === 'admin' ? formData.instagramUrl : undefined,
+        linkedin_url: role === 'admin' ? formData.linkedinUrl : undefined,
+        youtube_url: role === 'admin' ? formData.youtubeUrl : undefined,
       })
 
     if (error) {
@@ -480,252 +515,415 @@ export default function ProfilePage() {
       
       {/* Header */}
       <div className="w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-lg border border-blue-50 flex flex-col items-center text-center">
-        <div onClick={() => !uploadingLogo && fileInputRef.current?.click()} className="w-24 h-24 bg-slate-50 rounded-full mb-3 flex items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-200 hover:border-primary transition-all">
-          {uploadingLogo ? <Loader2 className="animate-spin text-slate-400" /> : formData.logoUrl ? <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-1"><Upload size={20} className="text-slate-300" /><span className="text-[8px] text-slate-400 font-bold uppercase">Upload</span></div>}
+        <div 
+          onClick={() => !uploadingLogo && fileInputRef.current?.click()} 
+          className="w-24 h-24 bg-slate-50 rounded-full mb-3 flex items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-200 hover:border-primary transition-all"
+        >
+          {uploadingLogo ? (
+            <Loader2 className="animate-spin text-slate-400" />
+          ) : formData.logoUrl ? (
+            <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+          ) : (
+            <div className="flex flex-col items-center gap-1">
+              <Upload size={20} className="text-slate-300" />
+              <span className="text-[8px] text-slate-400 font-bold uppercase">Upload</span>
+            </div>
+          )}
           <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
         </div>
-        <h2 className="text-xl font-bold text-slate-800">{formData.businessName || 'Your Business'}</h2>
-        <p className="text-slate-400 text-xs">Tap circle to add logo</p>
+        <h2 className="text-xl font-bold text-slate-800">
+          {formData.businessName || (role === 'admin' ? 'Your Business' : 'Your Name')}
+        </h2>
+        <p className="text-slate-400 text-xs">Tap circle to add photo/logo</p>
       </div>
 
-      {/* Social Accounts */}
-      <div className="mb-6 mt-6">
-        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Social Accounts</h3>
-        <div className="bg-white rounded-[2rem] shadow-sm border border-blue-100 overflow-hidden p-5 space-y-4">
-          
-          {/* FACEBOOK */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                <div className="bg-[#1877F2] p-2 rounded-full text-white"><Facebook size={18} fill="white" /></div>
-                <div><h4 className="font-bold text-sm text-slate-800">Facebook & Instagram</h4><p className="text-[10px] text-slate-400">{isFacebookConnected ? 'Account Linked' : 'Connect to automate'}</p></div>
-                </div>
-                {isFacebookConnected ? (
-                <button onClick={handleDisconnectFacebook} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
-                ) : (
-                <button onClick={handleConnectFacebook} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
-                )}
-            </div>
+      {/* Social Accounts (ADMIN ONLY) */}
+      {role === 'admin' && (
+        <div className="mb-6 mt-6">
+          <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Social Accounts</h3>
+          <div className="bg-white rounded-[2rem] shadow-sm border border-blue-100 overflow-hidden p-5 space-y-4">
+            
+            {/* FACEBOOK */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-[#1877F2] p-2 rounded-full text-white">
+                      <Facebook size={18} fill="white" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-800">Facebook & Instagram</h4>
+                      <p className="text-[10px] text-slate-400">
+                        {isFacebookConnected ? 'Account Linked' : 'Connect to automate'}
+                      </p>
+                    </div>
+                  </div>
+                  {isFacebookConnected ? (
+                  <button onClick={handleDisconnectFacebook} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">
+                    {isDisconnecting ? '...' : 'Disconnect'}
+                  </button>
+                  ) : (
+                  <button onClick={handleConnectFacebook} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">
+                    Connect
+                  </button>
+                  )}
+              </div>
 
-            {isFacebookConnected && (
-                <div className="space-y-4 pt-3">
-                    
-                    {/* Page Selector */}
-                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
-                    <div className="flex justify-between items-center mb-2">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Posting Page</label>
-                        <button onClick={fetchPages} className="text-[10px] text-blue-500 font-bold">Refresh</button>
-                    </div>
-                    {isLoadingPages ? (
-                        <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing pages...</div>
-                    ) : fbPages.length > 0 ? (
-                        <div className="space-y-2 max-h-40 overflow-y-auto">
-                        {fbPages.map(page => (
-                            <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                            <span className={`text-xs font-bold truncate ${selectedPageId === page.id ? 'text-slate-800' : 'text-slate-500'}`}>{page.name}</span>
-                            {selectedPageId === page.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-                            </button>
-                        ))}
-                        </div>
-                    ) : (
-                        <div className="py-2"><p className="text-xs text-slate-400 mb-2">No pages found.</p><button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions / Refresh List</button></div>
-                    )}
-                    </div>
-                    
-                    {/* AD ACCOUNT SELECTOR */}
-                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
-                    <div className="flex justify-between items-center mb-2">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Ad Account</label>
-                        <button onClick={() => facebookToken && fetchAdAccounts(facebookToken)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
-                    </div>
-                    {isLoadingAdAccounts ? (
-                        <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Syncing accounts...</div>
-                    ) : adAccounts.length > 0 ? (
-                        <div className="space-y-2 max-h-40 overflow-y-auto">
-                        {adAccounts.map(account => (
-                            <button key={account.id} onClick={() => handleAdAccountSelect(account.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedAdAccountId === account.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                            <span className={`text-xs font-bold truncate ${selectedAdAccountId === account.id ? 'text-slate-800' : 'text-slate-500'}`}>{account.name} ({account.id})</span>
-                            {selectedAdAccountId === account.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-                            </button>
-                        ))}
-                        </div>
-                    ) : (
-                        <div className="py-2"><p className="text-xs text-slate-400 mb-2">No Ad Accounts found.</p><button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions</button></div>
-                    )}
-                    </div>
-
-                    {/* PIXEL SELECTOR */}
-                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
+              {isFacebookConnected && (
+                  <div className="space-y-4 pt-3">
+                      
+                      {/* Page Selector */}
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
                         <div className="flex justify-between items-center mb-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Data Pixel</label>
-                            <button onClick={() => selectedAdAccountId && fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Posting Page</label>
+                            <button onClick={fetchPages} className="text-[10px] text-blue-500 font-bold">Refresh</button>
                         </div>
-                        
-                        {!selectedAdAccountId ? (
-                             <div className="py-2"><p className="text-xs text-slate-400">Select an Ad Account first.</p></div>
-                        ) : isLoadingPixels ? (
-                            <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={14} className="animate-spin"/> Searching pixels...</div>
-                        ) : pixels.length > 0 ? (
+                        {isLoadingPages ? (
+                            <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                              <Loader2 size={14} className="animate-spin"/> Syncing pages...
+                            </div>
+                        ) : fbPages.length > 0 ? (
                             <div className="space-y-2 max-h-40 overflow-y-auto">
-                            {pixels.map(pixel => (
-                                <button key={pixel.id} onClick={() => handlePixelSelect(pixel.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPixelId === pixel.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                                <div className="flex items-center gap-2">
-                                    <Target size={14} className={selectedPixelId === pixel.id ? 'text-green-500' : 'text-slate-400'} />
-                                    <span className={`text-xs font-bold truncate ${selectedPixelId === pixel.id ? 'text-slate-800' : 'text-slate-500'}`}>{pixel.name}</span>
-                                </div>
-                                {selectedPixelId === pixel.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                            {fbPages.map(page => (
+                                <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
+                                <span className={`text-xs font-bold truncate ${selectedPageId === page.id ? 'text-slate-800' : 'text-slate-500'}`}>{page.name}</span>
+                                {selectedPageId === page.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
                                 </button>
                             ))}
                             </div>
                         ) : (
-                            <div className="py-2"><p className="text-xs text-slate-400">No Pixels found for this account.</p></div>
+                            <div className="py-2">
+                              <p className="text-xs text-slate-400 mb-2">No pages found.</p>
+                              <button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions / Refresh List</button>
+                            </div>
                         )}
-                    </div>
+                      </div>
+                      
+                      {/* AD ACCOUNT SELECTOR */}
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Ad Account</label>
+                            <button onClick={() => facebookToken && fetchAdAccounts(facebookToken)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
+                        </div>
+                        {isLoadingAdAccounts ? (
+                            <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                              <Loader2 size={14} className="animate-spin"/> Syncing accounts...
+                            </div>
+                        ) : adAccounts.length > 0 ? (
+                            <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {adAccounts.map(account => (
+                                <button key={account.id} onClick={() => handleAdAccountSelect(account.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedAdAccountId === account.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
+                                <span className={`text-xs font-bold truncate ${selectedAdAccountId === account.id ? 'text-slate-800' : 'text-slate-500'}`}>{account.name} ({account.id})</span>
+                                {selectedAdAccountId === account.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                                </button>
+                            ))}
+                            </div>
+                        ) : (
+                            <div className="py-2">
+                              <p className="text-xs text-slate-400 mb-2">No Ad Accounts found.</p>
+                              <button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions</button>
+                            </div>
+                        )}
+                      </div>
 
-                </div>
-            )}
-          </div>
+                      {/* PIXEL SELECTOR */}
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
+                          <div className="flex justify-between items-center mb-2">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Data Pixel</label>
+                              <button onClick={() => selectedAdAccountId && fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
+                          </div>
+                          
+                          {!selectedAdAccountId ? (
+                              <div className="py-2"><p className="text-xs text-slate-400">Select an Ad Account first.</p></div>
+                          ) : isLoadingPixels ? (
+                              <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                                <Loader2 size={14} className="animate-spin"/> Searching pixels...
+                              </div>
+                          ) : pixels.length > 0 ? (
+                              <div className="space-y-2 max-h-40 overflow-y-auto">
+                              {pixels.map(pixel => (
+                                  <button key={pixel.id} onClick={() => handlePixelSelect(pixel.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPixelId === pixel.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
+                                  <div className="flex items-center gap-2">
+                                      <Target size={14} className={selectedPixelId === pixel.id ? 'text-green-500' : 'text-slate-400'} />
+                                      <span className={`text-xs font-bold truncate ${selectedPixelId === pixel.id ? 'text-slate-800' : 'text-slate-500'}`}>{pixel.name}</span>
+                                  </div>
+                                  {selectedPixelId === pixel.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
+                                  </button>
+                              ))}
+                              </div>
+                          ) : (
+                              <div className="py-2"><p className="text-xs text-slate-400">No Pixels found for this account.</p></div>
+                          )}
+                      </div>
 
-          {/* LINKEDIN */}
-          <div className="border-t border-slate-50 pt-4">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="bg-[#0077b5] p-2 rounded-full text-white"><Linkedin size={18} fill="white" /></div>
-                    <div>
-                        <h4 className="font-bold text-sm text-slate-800">LinkedIn</h4>
-                        <p className="text-[10px] text-slate-400">{isLinkedinConnected ? 'Account Linked' : 'Connect to automate'}</p>
-                    </div>
-                </div>
-                {isLinkedinConnected ? (
-                    <button onClick={handleDisconnectLinkedIn} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
-                ) : (
-                    <button onClick={handleConnectLinkedIn} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
-                )}
+                  </div>
+              )}
             </div>
-          </div>
 
-          {/* YOUTUBE */}
-          <div className="border-t border-slate-50 pt-4">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="bg-[#FF0000] p-2 rounded-full text-white"><Youtube size={18} fill="white" /></div>
-                    <div>
-                        <h4 className="font-bold text-sm text-slate-800">YouTube</h4>
-                        <p className="text-[10px] text-slate-400">{isYoutubeConnected ? 'Shorts & Videos Ready' : 'Connect Channel'}</p>
-                    </div>
-                </div>
-                {isYoutubeConnected ? (
-                    <button onClick={handleDisconnectYouTube} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
-                ) : (
-                    <button onClick={handleConnectYouTube} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
-                )}
+            {/* LINKEDIN */}
+            <div className="border-t border-slate-50 pt-4">
+              <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                      <div className="bg-[#0077b5] p-2 rounded-full text-white">
+                        <Linkedin size={18} fill="white" />
+                      </div>
+                      <div>
+                          <h4 className="font-bold text-sm text-slate-800">LinkedIn</h4>
+                          <p className="text-[10px] text-slate-400">{isLinkedinConnected ? 'Account Linked' : 'Connect to automate'}</p>
+                      </div>
+                  </div>
+                  {isLinkedinConnected ? (
+                      <button onClick={handleDisconnectLinkedIn} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
+                  ) : (
+                      <button onClick={handleConnectLinkedIn} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
+                  )}
+              </div>
             </div>
-          </div>
 
-          {/* GOOGLE BUSINESS */}
-          <div className="border-t border-slate-50 pt-4">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="bg-white border border-slate-200 p-2 rounded-full text-slate-900">
-                        <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-                    </div>
-                    <div>
-                        <h4 className="font-bold text-sm text-slate-800">Google Business</h4>
-                        <p className="text-[10px] text-slate-400">{isGoogleConnected ? 'Account Linked' : 'Connect to automate'}</p>
-                    </div>
-                </div>
-                {isGoogleConnected ? (
-                    <button onClick={handleDisconnectGoogleBusiness} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
-                ) : (
-                    <button onClick={handleConnectGoogleBusiness} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
-                )}
+            {/* YOUTUBE */}
+            <div className="border-t border-slate-50 pt-4">
+              <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                      <div className="bg-[#FF0000] p-2 rounded-full text-white">
+                        <Youtube size={18} fill="white" />
+                      </div>
+                      <div>
+                          <h4 className="font-bold text-sm text-slate-800">YouTube</h4>
+                          <p className="text-[10px] text-slate-400">{isYoutubeConnected ? 'Shorts & Videos Ready' : 'Connect Channel'}</p>
+                      </div>
+                  </div>
+                  {isYoutubeConnected ? (
+                      <button onClick={handleDisconnectYouTube} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
+                  ) : (
+                      <button onClick={handleConnectYouTube} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
+                  )}
+              </div>
             </div>
-          </div>
 
+            {/* GOOGLE BUSINESS */}
+            <div className="border-t border-slate-50 pt-4">
+              <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                      <div className="bg-white border border-slate-200 p-2 rounded-full text-slate-900">
+                          <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                      </div>
+                      <div>
+                          <h4 className="font-bold text-sm text-slate-800">Google Business</h4>
+                          <p className="text-[10px] text-slate-400">{isGoogleConnected ? 'Account Linked' : 'Connect to automate'}</p>
+                      </div>
+                  </div>
+                  {isGoogleConnected ? (
+                      <button onClick={handleDisconnectGoogleBusiness} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
+                  ) : (
+                      <button onClick={handleConnectGoogleBusiness} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
+                  )}
+              </div>
+            </div>
+
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Business Profile Form */}
-      <div className="mb-6">
+      <div className="mb-6 mt-6">
         <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Business Profile</h3>
         <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-blue-100 space-y-4">
             
             {/* Basic Info */}
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Business Name</label><input type="text" value={formData.businessName} onChange={(e) => setFormData({...formData, businessName: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" /></div>
-            
-            {/* NEW: CUSTOM DOMAIN FIELD */}
-            <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
-              <label className="text-[10px] font-bold text-blue-800 ml-1 block mb-1 flex items-center gap-1"><Globe size={10} /> Custom Domain (Optional)</label>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">
+                {role === 'admin' ? 'Business Name' : 'Full Name'}
+              </label>
               <input 
                 type="text" 
-                placeholder="www.yourdomain.com" 
-                value={formData.customDomain} 
-                onChange={(e) => setFormData({...formData, customDomain: e.target.value})} 
-                className="w-full bg-white py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none mb-1 border border-blue-100" 
+                value={formData.businessName} 
+                onChange={(e) => setFormData({...formData, businessName: e.target.value})} 
+                className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" 
               />
-              <p className="text-[9px] text-blue-600/70 ml-1 leading-tight">Point your domain's CNAME record to <span className="font-mono font-bold">adrolls.in</span></p>
             </div>
-
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Contact Number</label><input type="tel" value={formData.contact} onChange={(e) => setFormData({...formData, contact: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" /></div>
             
-            {/* Social Links Section */}
-            <div className="pt-4 border-t border-slate-50 mt-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase mb-3 block">Public Social Links</label>
-                <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                        <div className="bg-blue-50 p-2 rounded-lg text-blue-600 flex-shrink-0"><Facebook size={16} /></div>
-                        <input type="text" placeholder="https://facebook.com/..." value={formData.facebookUrl} onChange={(e) => setFormData({...formData, facebookUrl: e.target.value})} className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="bg-pink-50 p-2 rounded-lg text-pink-600 flex-shrink-0"><Instagram size={16} /></div>
-                        <input type="text" placeholder="https://instagram.com/..." value={formData.instagramUrl} onChange={(e) => setFormData({...formData, instagramUrl: e.target.value})} className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="bg-blue-50 p-2 rounded-lg text-[#0077b5] flex-shrink-0"><Linkedin size={16} /></div>
-                        <input type="text" placeholder="https://linkedin.com/in/..." value={formData.linkedinUrl} onChange={(e) => setFormData({...formData, linkedinUrl: e.target.value})} className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="bg-red-50 p-2 rounded-lg text-red-600 flex-shrink-0"><Youtube size={16} /></div>
-                        <input type="text" placeholder="https://youtube.com/@..." value={formData.youtubeUrl} onChange={(e) => setFormData({...formData, youtubeUrl: e.target.value})} className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                </div>
+            {/* NEW: CUSTOM DOMAIN FIELD (ADMIN ONLY) */}
+            {role === 'admin' && (
+              <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                <label className="text-[10px] font-bold text-blue-800 ml-1 block mb-1 flex items-center gap-1">
+                  <Globe size={10} /> Custom Domain (Optional)
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="www.yourdomain.com" 
+                  value={formData.customDomain} 
+                  onChange={(e) => setFormData({...formData, customDomain: e.target.value})} 
+                  className="w-full bg-white py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none mb-1 border border-blue-100" 
+                />
+                <p className="text-[9px] text-blue-600/70 ml-1 leading-tight">
+                  Point your domain's CNAME record to <span className="font-mono font-bold">adrolls.in</span>
+                </p>
+              </div>
+            )}
+
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Contact Number</label>
+              <input 
+                type="tel" 
+                value={formData.contact} 
+                onChange={(e) => setFormData({...formData, contact: e.target.value})} 
+                className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" 
+              />
+            </div>
+            
+            {/* Social Links Section (ADMIN ONLY) */}
+            {role === 'admin' && (
+              <div className="pt-4 border-t border-slate-50 mt-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-3 block">Public Social Links</label>
+                  <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                          <div className="bg-blue-50 p-2 rounded-lg text-blue-600 flex-shrink-0">
+                            <Facebook size={16} />
+                          </div>
+                          <input 
+                            type="text" 
+                            placeholder="https://facebook.com/..." 
+                            value={formData.facebookUrl} 
+                            onChange={(e) => setFormData({...formData, facebookUrl: e.target.value})} 
+                            className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" 
+                          />
+                      </div>
+                      <div className="flex items-center gap-2">
+                          <div className="bg-pink-50 p-2 rounded-lg text-pink-600 flex-shrink-0">
+                            <Instagram size={16} />
+                          </div>
+                          <input 
+                            type="text" 
+                            placeholder="https://instagram.com/..." 
+                            value={formData.instagramUrl} 
+                            onChange={(e) => setFormData({...formData, instagramUrl: e.target.value})} 
+                            className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" 
+                          />
+                      </div>
+                      <div className="flex items-center gap-2">
+                          <div className="bg-blue-50 p-2 rounded-lg text-[#0077b5] flex-shrink-0">
+                            <Linkedin size={16} />
+                          </div>
+                          <input 
+                            type="text" 
+                            placeholder="https://linkedin.com/in/..." 
+                            value={formData.linkedinUrl} 
+                            onChange={(e) => setFormData({...formData, linkedinUrl: e.target.value})} 
+                            className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" 
+                          />
+                      </div>
+                      <div className="flex items-center gap-2">
+                          <div className="bg-red-50 p-2 rounded-lg text-red-600 flex-shrink-0">
+                            <Youtube size={16} />
+                          </div>
+                          <input 
+                            type="text" 
+                            placeholder="https://youtube.com/@..." 
+                            value={formData.youtubeUrl} 
+                            onChange={(e) => setFormData({...formData, youtubeUrl: e.target.value})} 
+                            className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" 
+                          />
+                      </div>
+                  </div>
+              </div>
+            )}
+
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1 mt-2">Mission / Info</label>
+              <textarea 
+                rows={3} 
+                value={formData.mission} 
+                onChange={(e) => setFormData({...formData, mission: e.target.value})} 
+                className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm resize-none focus:ring-2 focus:ring-primary outline-none" 
+              />
             </div>
 
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1 mt-2">Mission / Info</label><textarea rows={3} value={formData.mission} onChange={(e) => setFormData({...formData, mission: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm resize-none focus:ring-2 focus:ring-primary outline-none" /></div>
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Brand Color</label><div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl"><div className="w-6 h-6 rounded-md shadow-sm border border-slate-200" style={{ backgroundColor: formData.color }} /><input type="text" value={formData.color} onChange={(e) => setFormData({...formData, color: e.target.value})} className="bg-transparent font-mono text-xs w-full outline-none uppercase" /></div></div>
-            <button onClick={handleSave} disabled={isSaving || uploadingLogo} className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70">{isSaving ? 'Saving...' : ( <><Save size={16} /> Save Business Info</> )}</button>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Brand Color</label>
+              <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl">
+                <div 
+                  className="w-6 h-6 rounded-md shadow-sm border border-slate-200" 
+                  style={{ backgroundColor: formData.color }} 
+                />
+                <input 
+                  type="text" 
+                  value={formData.color} 
+                  onChange={(e) => setFormData({...formData, color: e.target.value})} 
+                  className="bg-transparent font-mono text-xs w-full outline-none uppercase" 
+                />
+              </div>
+            </div>
+
+            <button 
+              onClick={handleSave} 
+              disabled={isSaving || uploadingLogo} 
+              className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70"
+            >
+              {isSaving ? 'Saving...' : ( <><Save size={16} /> Save Profile Info</> )}
+            </button>
         </div>
       </div>
 
-      {/* Settings */}
-      <div>
-        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Settings</h3>
-        <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
-          
-          <div className="p-4 flex items-center justify-between border-b border-slate-50">
-            <div className="flex items-center gap-3">
-                <div className="bg-purple-50 p-2 rounded-full text-purple-600"><Share2 size={18} /></div>
-                <div>
-                    <span className="font-bold text-sm text-slate-700 block">Distribution Mode</span>
-                    <span className="text-[10px] text-slate-400">Enable Agent Distribution Tab</span>
-                </div>
-            </div>
+      {/* Settings (ADMIN ONLY) */}
+      {role === 'admin' && (
+        <div className="mb-6">
+          <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Settings</h3>
+          <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
             
-            <button 
-                onClick={handleToggleDistribution}
-                disabled={isTogglingDist}
-                className={`w-10 h-6 rounded-full p-1 transition-colors relative ${enableDistribution ? 'bg-purple-600' : 'bg-slate-200'}`}
-            >
-                {isTogglingDist ? (
-                    <div className="absolute inset-0 flex items-center justify-center"><Loader2 size={12} className="animate-spin text-white" /></div>
-                ) : (
-                    <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${enableDistribution ? 'translate-x-4' : 'translate-x-0'}`} />
-                )}
+            {/* Distribution Mode Toggle */}
+            <div className="p-4 flex items-center justify-between border-b border-slate-50">
+              <div className="flex items-center gap-3">
+                  <div className="bg-purple-50 p-2 rounded-full text-purple-600">
+                    <Share2 size={18} />
+                  </div>
+                  <div>
+                      <span className="font-bold text-sm text-slate-700 block">Distribution Mode</span>
+                      <span className="text-[10px] text-slate-400">Enable Agent Distribution Tab</span>
+                  </div>
+              </div>
+              
+              <button 
+                  onClick={handleToggleDistribution}
+                  disabled={isTogglingDist}
+                  className={`w-10 h-6 rounded-full p-1 transition-colors relative ${enableDistribution ? 'bg-purple-600' : 'bg-slate-200'}`}
+              >
+                  {isTogglingDist ? (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <Loader2 size={12} className="animate-spin text-white" />
+                      </div>
+                  ) : (
+                      <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${enableDistribution ? 'translate-x-4' : 'translate-x-0'}`} />
+                  )}
+              </button>
+            </div>
+
+            <button className="w-full p-4 flex items-center justify-between hover:bg-slate-50 border-b border-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="bg-blue-50 p-2 rounded-full text-blue-600">
+                  <CreditCard size={18} />
+                </div>
+                <span className="font-bold text-sm text-slate-700">Subscription</span>
+              </div>
+              <ChevronRight size={18} className="text-slate-300" />
             </button>
           </div>
-
-          <button className="w-full p-4 flex items-center justify-between hover:bg-slate-50 border-b border-slate-50"><div className="flex items-center gap-3"><div className="bg-blue-50 p-2 rounded-full text-blue-600"><CreditCard size={18} /></div><span className="font-bold text-sm text-slate-700">Subscription</span></div><ChevronRight size={18} className="text-slate-300" /></button>
-          <button onClick={handleSignOut} className="w-full p-4 flex items-center justify-between hover:bg-red-50 group"><div className="flex items-center gap-3"><div className="bg-red-50 p-2 rounded-full text-red-500 group-hover:bg-red-100"><LogOut size={18} /></div><span className="font-bold text-sm text-red-500">Sign Out</span></div></button>
+        </div>
+      )}
+      
+      {/* Sign Out (Everyone) */}
+      <div>
+        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Account Actions</h3>
+        <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
+          <button 
+            onClick={handleSignOut} 
+            className="w-full p-4 flex items-center justify-between hover:bg-red-50 group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="bg-red-50 p-2 rounded-full text-red-500 group-hover:bg-red-100">
+                <LogOut size={18} />
+              </div>
+              <span className="font-bold text-sm text-red-500">Sign Out</span>
+            </div>
+          </button>
         </div>
       </div>
 
