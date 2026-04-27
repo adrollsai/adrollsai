@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Zap, Plus, X, Loader2, Building2, Image as ImageIcon, Upload, RefreshCw, ExternalLink, TrendingUp, CreditCard, Eye, MousePointerClick, Users, Settings2 } from 'lucide-react'
+import { Zap, Plus, X, Loader2, Building2, Image as ImageIcon, Upload, RefreshCw, ExternalLink, TrendingUp, CreditCard, Eye, MousePointerClick, Users, Settings2, Sparkles, Video } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -10,6 +10,15 @@ type Asset = { id: string; type: 'image' | 'video'; url: string }
 type Campaign = { id: string; name: string; status: string; objective: string }
 type LocationOption = { key: string; name: string; type: string; region?: string; country_code?: string; }
 type CustomQuestion = { label: string; type: 'SHORT_ANSWER' | 'MULTIPLE_CHOICE'; options?: string[] }
+
+type SelectedCreative = {
+  uid: string;
+  sourceType: 'inventory' | 'asset' | 'local';
+  id?: string;
+  file?: File;
+  previewUrl: string;
+  name: string;
+}
 
 const GENDERS = ['All', 'Male', 'Female']
 
@@ -35,14 +44,19 @@ export default function AdsPage() {
   const [isSearchingLocation, setIsSearchingLocation] = useState(false)
 
   const [statsModal, setStatsModal] = useState<{ isOpen: boolean, campaign: Campaign | null, insights: any, loading: boolean }>({ isOpen: false, campaign: null, insights: null, loading: false })
+  
+  // Optimizer States
+  const [optimizingCampaignId, setOptimizingCampaignId] = useState<string | null>(null)
+  const [optimizerResult, setOptimizerResult] = useState<any | null>(null)
 
   const [formQuestions, setFormQuestions] = useState<CustomQuestion[]>([])
   const [isAddingQuestion, setIsAddingQuestion] = useState(false)
   const [newQuestion, setNewQuestion] = useState<CustomQuestion>({ label: '', type: 'SHORT_ANSWER', options: [''] })
 
+  // New Unified Creative Pool
+  const [selectedCreatives, setSelectedCreatives] = useState<SelectedCreative[]>([])
+
   const [adForm, setAdForm] = useState({
-    sourceType: 'inventory' as 'inventory' | 'asset' | 'localUpload', 
-    selectedSourceIds: [] as string[], 
     metaLocation: { location: null as LocationOption | null, radius: 20 },
     gender: 'All',
     dailyBudgetINR: 500,
@@ -50,9 +64,6 @@ export default function AdsPage() {
     linkUrl: 'https://adrolls.in', 
     privacyPolicyUrl: 'https://adrolls.in/privacy-policy', 
   })
-  
-  const [localCreatives, setLocalCreatives] = useState<File[]>([]);
-  const [localCreativePreviews, setLocalCreativePreviews] = useState<string[]>([]);
 
   const isVideoFile = (file: File) => file.type.startsWith('video/');
 
@@ -99,7 +110,6 @@ export default function AdsPage() {
       setLoading(false)
     }
     loadData()
-    return () => { localCreativePreviews.forEach(url => URL.revokeObjectURL(url)); };
   }, [])
 
   useEffect(() => {
@@ -142,6 +152,30 @@ export default function AdsPage() {
       }
   }
 
+  const handleOptimizeCampaign = async (campaignId: string) => {
+      setOptimizingCampaignId(campaignId);
+      try {
+          const res = await fetch('/api/meta-ads/optimize-campaign', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ campaignId })
+          });
+          const data = await res.json();
+
+          if (data.status === 'insufficient_data') {
+              alert(data.message);
+          } else if (data.status === 'success') {
+              setOptimizerResult(data);
+          } else {
+              alert(`Error: ${data.error}`);
+          }
+      } catch (e: any) {
+          alert(`Optimization Failed: ${e.message}`);
+      } finally {
+          setOptimizingCampaignId(null);
+      }
+  }
+
   const handleAddPresetQuestion = (type: 'budget' | 'timeline') => {
       if (type === 'budget') {
           setFormQuestions(prev => [...prev, { label: "What is your investment budget?", type: "MULTIPLE_CHOICE", options: ["Under INR 25L", "INR 25L - 50L", "INR 50L - 1Cr", "INR 1Cr+"] }]);
@@ -150,11 +184,32 @@ export default function AdsPage() {
       }
   }
 
+  const handleLocalFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if(e.target.files) {
+      const files = Array.from(e.target.files)
+      const newCreatives = files.map(file => ({
+        uid: Math.random().toString(36).substr(2, 9),
+        sourceType: 'local' as const,
+        file: file,
+        previewUrl: URL.createObjectURL(file),
+        name: file.name
+      }))
+      setSelectedCreatives(prev => [...prev, ...newCreatives])
+    }
+  }
+
+  const removeCreative = (uid: string) => {
+    setSelectedCreatives(prev => {
+        const target = prev.find(p => p.uid === uid);
+        if (target?.sourceType === 'local') URL.revokeObjectURL(target.previewUrl);
+        return prev.filter(p => p.uid !== uid);
+    })
+  }
+
   const handleLaunchCampaign = async () => {
     if (isSubmitting) return
     if (!adForm.pageId || !selectedAdAccountId) { alert("Missing Facebook Page or Ad Account in Profile."); return }
-    if (adForm.sourceType === 'localUpload' && localCreatives.length === 0) { alert("Please select a file."); return; }
-    if (adForm.sourceType !== 'localUpload' && adForm.selectedSourceIds.length === 0) { alert("Please select a Property or Asset."); return; }
+    if (selectedCreatives.length === 0) { alert("Please select at least one creative (Inventory, Asset, or Upload)."); return; }
     if (!adForm.metaLocation.location || adForm.dailyBudgetINR < 100) { alert("Please set a valid target location and budget."); return }
     if (!adForm.privacyPolicyUrl) { alert("Privacy Policy URL required."); return; }
     
@@ -164,7 +219,6 @@ export default function AdsPage() {
     formPayload.append('adAccountId', selectedAdAccountId);
     formPayload.append('facebookToken', facebookToken || '');
     formPayload.append('pageId', adForm.pageId);
-    formPayload.append('sourceType', adForm.sourceType);
     
     const locString = `${adForm.metaLocation.location.name}, ${adForm.metaLocation.location.region || adForm.metaLocation.location.country_code}`;
     formPayload.append('targetLocation', locString);
@@ -174,11 +228,17 @@ export default function AdsPage() {
     formPayload.append('dailyBudgetINR', (adForm.dailyBudgetINR * 100).toString()); 
     formPayload.append('linkUrl', adForm.linkUrl);
     formPayload.append('privacyPolicyUrl', adForm.privacyPolicyUrl);
-
     formPayload.append('customQuestions', JSON.stringify(formQuestions));
 
-    adForm.selectedSourceIds.forEach((id) => formPayload.append('selectedSourceIds', id));
-    localCreatives.forEach((file, index) => formPayload.append(`creativeFiles[${index}]`, file, file.name));
+    let localFileIndex = 0;
+    selectedCreatives.forEach((c) => {
+      if (c.sourceType === 'inventory') formPayload.append('inventoryIds', c.id!);
+      if (c.sourceType === 'asset') formPayload.append('assetIds', c.id!);
+      if (c.sourceType === 'local' && c.file) {
+          formPayload.append(`creativeFiles[${localFileIndex}]`, c.file, c.file.name);
+          localFileIndex++;
+      }
+    });
 
     try {
       const res = await fetch('/api/meta-ads/launch-campaign', { method: 'POST', body: formPayload })
@@ -186,25 +246,20 @@ export default function AdsPage() {
       if (res.ok) {
         alert(`${data.message}`);
         setIsModalOpen(false)
-        setAdForm(prev => ({ ...prev, selectedSourceIds: [], metaLocation: { location: null, radius: 20 }, dailyBudgetINR: 500 })) 
-        setLocalCreatives([]); setLocalCreativePreviews([]); setFormQuestions([]);
+        setAdForm(prev => ({ ...prev, metaLocation: { location: null, radius: 20 }, dailyBudgetINR: 500 })) 
+        setSelectedCreatives([]); setFormQuestions([]);
         fetchCampaigns();
       } else throw new Error(data.error || 'Failed to Start');
     } catch (e: any) { alert('Launch Failed: ' + e.message); } 
     finally { setIsSubmitting(false) }
   }
 
-  const activePreviewUrl = (adForm.sourceType === 'inventory' && adForm.selectedSourceIds.length > 0)
-    ? properties.find(p => p.id === adForm.selectedSourceIds[0])?.image_url
-    : (adForm.sourceType === 'asset' && adForm.selectedSourceIds.length > 0)
-    ? assets.find(a => a.id === adForm.selectedSourceIds[0])?.url : null;
-
   return (
     <div className="p-5 max-w-md mx-auto min-h-screen pb-24">
       <div className="flex justify-between items-end mb-6">
         <div>
-            <h1 className="text-2xl font-bold text-slate-900">Meta Ads AI</h1>
-            <p className="text-slate-500 text-xs mt-1">AI-optimized Lead Gen campaigns</p>
+            <h1 className="text-2xl font-bold text-slate-900">AI Ads Manager</h1>
+            <p className="text-slate-500 text-xs mt-1">Self-Optimizing Campaigns</p>
         </div>
         <div className="flex gap-2">
             <button onClick={fetchCampaigns} className="bg-white text-slate-500 p-3 rounded-full shadow-sm border border-slate-100 active:scale-95 transition-transform"><RefreshCw size={20} /></button>
@@ -214,7 +269,7 @@ export default function AdsPage() {
 
       <div className="flex flex-col gap-4"> 
         {campaigns.length === 0 ? (
-            <div className="text-center py-10 text-slate-400 text-sm bg-white rounded-2xl border border-dashed border-slate-100">No campaigns found. <br/>Tap '+' to launch a new Lead Gen campaign.</div>
+            <div className="text-center py-10 text-slate-400 text-sm bg-white rounded-2xl border border-dashed border-slate-100">No campaigns found. <br/>Tap '+' to launch a new AI Lead campaign.</div>
         ) : (
             campaigns.map(campaign => (
                 <div key={campaign.id} className="bg-white p-5 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200 transition-all hover:border-blue-200">
@@ -232,13 +287,67 @@ export default function AdsPage() {
                     </div>
                     <div className="flex justify-between items-center text-xs text-slate-500 pt-3 border-t border-slate-50">
                         <button onClick={() => handleOpenStats(campaign)} className="flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-blue-600 bg-slate-50 py-1 px-2 rounded-md"><TrendingUp size={12} /> View Stats</button>
-                        <a href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:underline">Ads Manager <ExternalLink size={10} /></a>
+                        <button 
+                            onClick={() => handleOptimizeCampaign(campaign.id)} 
+                            disabled={optimizingCampaignId === campaign.id || campaign.status !== 'ACTIVE'}
+                            className={`flex items-center gap-1 text-[10px] font-bold py-1 px-2 rounded-md transition-colors ${optimizingCampaignId === campaign.id ? 'bg-purple-100 text-purple-400' : campaign.status !== 'ACTIVE' ? 'bg-slate-100 text-slate-400' : 'bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700'}`}
+                        >
+                            {optimizingCampaignId === campaign.id ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Optimize
+                        </button>
+                        <a href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:underline">Manager <ExternalLink size={10} /></a>
                     </div>
                 </div>
             ))
         )}
       </div>
 
+      {/* OPTIMIZATION RESULT MODAL */}
+      {optimizerResult && (
+          <div className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-start mb-4">
+                      <div>
+                          <h2 className="text-xl font-bold text-slate-800 leading-tight pr-4 flex items-center gap-2"><Sparkles className="text-purple-500"/> AI Optimization Complete</h2>
+                      </div>
+                      <button onClick={() => setOptimizerResult(null)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={16} /></button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                      {optimizerResult.pausedAds && optimizerResult.pausedAds.length > 0 && (
+                          <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+                              <h3 className="text-xs font-bold text-red-600 uppercase mb-1">Underperformers Paused</h3>
+                              <p className="text-xs text-red-500">We halted {optimizerResult.pausedAds.length} variations that were wasting spend without generating leads.</p>
+                          </div>
+                      )}
+
+                      {optimizerResult.insight && (
+                          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                              <h3 className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1 mb-2"><Eye size={12}/> Visual Analysis of Winner</h3>
+                              {optimizerResult.winnerImageAnalyzed && (
+                                  <img src={optimizerResult.winnerImageAnalyzed} alt="Analyzed Winner" className="w-full h-24 object-cover rounded-lg mb-3 shadow-sm" />
+                              )}
+                              <p className="text-sm text-slate-700 leading-relaxed">{optimizerResult.insight}</p>
+                          </div>
+                      )}
+
+                      {optimizerResult.videoConcept && (
+                          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                              <h3 className="text-[10px] font-bold text-blue-500 uppercase flex items-center gap-1 mb-2"><Video size={12}/> AI Video Script Concept</h3>
+                              <p className="text-sm text-blue-900 leading-relaxed">{optimizerResult.videoConcept}</p>
+                          </div>
+                      )}
+
+                      {optimizerResult.newImageTask && (
+                          <div className="text-center bg-purple-50 rounded-xl p-3 border border-purple-100">
+                             <p className="text-xs text-purple-700 font-medium">A new static creative variation is being generated in the background to test next!</p>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* STATS MODAL */}
       {statsModal.isOpen && statsModal.campaign && (
           <div className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in zoom-in-95">
@@ -265,43 +374,75 @@ export default function AdsPage() {
           </div>
       )}
       
+      {/* LAUNCH MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">New Campaign</h2>
+              <h2 className="text-xl font-bold text-slate-800">AI Launchpad</h2>
               <button onClick={() => setIsModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
             </div>
-
-            {accountStatus && accountStatus.has_payment_method === false && (
-                <div className="bg-red-50 p-4 rounded-2xl mb-4 border border-red-100 flex flex-col gap-2">
-                    <div className="flex items-center gap-2 text-red-600 font-bold text-sm"><CreditCard size={16} /> Payment Method Missing</div>
-                    <p className="text-xs text-red-500">Your Ad Account lacks a valid payment method. The campaign will only save as a draft.</p>
-                    <a href={`https://adsmanager.facebook.com/ads/manager/billing/`} target="_blank" rel="noreferrer" className="text-xs text-blue-600 font-bold underline w-fit">Add Payment in Meta Ads</a>
-                </div>
-            )}
             
             <div className="space-y-4">
-              <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
-                  <button onClick={() => { setAdForm(prev => ({...prev, sourceType: 'inventory', selectedSourceIds: []})); setLocalCreatives([]); }} className={`flex-1 flex items-center gap-1 px-2 py-2 rounded-lg text-[10px] font-bold transition-all ${adForm.sourceType === 'inventory' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}> <Building2 size={12} /> Inventory </button>
-                  <button onClick={() => { setAdForm(prev => ({...prev, sourceType: 'asset', selectedSourceIds: []})); setLocalCreatives([]); }} className={`flex-1 flex items-center gap-1 px-2 py-2 rounded-lg text-[10px] font-bold transition-all ${adForm.sourceType === 'asset' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}> <ImageIcon size={12} /> Assets </button>
-                  <button onClick={() => { fileInputRef.current?.click(); setAdForm(prev => ({...prev, sourceType: 'localUpload', selectedSourceIds: []}));}} className={`flex-1 flex items-center gap-1 px-2 py-2 rounded-lg text-[10px] font-bold transition-all ${adForm.sourceType === 'localUpload' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}> <Upload size={12} /> Upload </button>
-              </div>
-              <input type="file" ref={fileInputRef} onChange={(e) => { if(e.target.files){ const f=Array.from(e.target.files).slice(0,3); setLocalCreatives(f); setLocalCreativePreviews(f.map(file=>URL.createObjectURL(file))); setAdForm(prev=>({...prev, sourceType:'localUpload', selectedSourceIds:[]}))} }} accept="image/*,video/*" className="hidden" multiple /> 
-
+              
+              {/* CREATIVE POOL SECTION */}
               <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Select Source</label>
-                  {adForm.sourceType !== 'localUpload' && (
-                      <select value={adForm.selectedSourceIds[0] || ''} onChange={(e) => setAdForm(prev => ({...prev, selectedSourceIds: e.target.value ? [e.target.value] : []}))} className="w-full bg-slate-50 border border-slate-100 text-slate-700 text-sm rounded-xl py-2.5 pl-4 pr-4 appearance-none focus:ring-2 focus:ring-primary outline-none">
-                          <option value="">-- Select {adForm.sourceType === 'inventory' ? 'Property' : 'Asset'} --</option>
-                          {adForm.sourceType === 'inventory' ? properties.map(p => <option key={p.id} value={p.id}>{p.title}</option>) : assets.map(a => <option key={a.id} value={a.id}>{a.type.toUpperCase()} Asset {a.id.slice(-4)}</option>)}
-                      </select>
-                  )}
-                  {adForm.sourceType === 'localUpload' && <div className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm">{localCreatives.length > 0 ? `${localCreatives.length} file(s) selected` : "Select files..."}</div>}
-                  <div className='flex gap-2 mt-2'>
-                    {localCreativePreviews.map((url, i) => <div key={i} className='h-16 w-16 rounded-xl overflow-hidden bg-slate-200 border border-slate-300 relative'>{isVideoFile(localCreatives[i]) ? <video src={url} className='w-full h-full object-cover' /> : <img src={url} className='w-full h-full object-cover' />}</div>)}
-                    {!adForm.sourceType.includes('local') && activePreviewUrl && <div className='h-16 w-16 rounded-xl overflow-hidden bg-slate-200 border border-slate-300'><img src={activePreviewUrl} className='w-full h-full object-cover' /></div>}
-                  </div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-2">Creatives (Mix & Match)</label>
+                
+                <div className="flex gap-2 mb-3">
+                  <select 
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      if (!id) return;
+                      const prop = properties.find(p => p.id === id);
+                      if (prop && !selectedCreatives.find(c => c.id === id)) {
+                        setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'inventory', id, previewUrl: prop.image_url, name: prop.title }]);
+                      }
+                      e.target.value = "";
+                    }} 
+                    className="flex-1 bg-slate-50 border border-slate-100 text-slate-700 text-xs rounded-xl py-2 px-3 outline-none"
+                  >
+                    <option value="">+ Add Property</option>
+                    {properties.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+                  </select>
+
+                  <select 
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      if (!id) return;
+                      const asset = assets.find(a => a.id === id);
+                      if (asset && !selectedCreatives.find(c => c.id === id)) {
+                        setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id, previewUrl: asset.url, name: `Library Asset` }]);
+                      }
+                      e.target.value = "";
+                    }} 
+                    className="flex-1 bg-slate-50 border border-slate-100 text-slate-700 text-xs rounded-xl py-2 px-3 outline-none"
+                  >
+                    <option value="">+ Add AI Asset</option>
+                    {assets.map(a => <option key={a.id} value={a.id}>Asset {a.id.slice(-4)}</option>)}
+                  </select>
+                </div>
+
+                <input type="file" ref={fileInputRef} onChange={handleLocalFiles} accept="image/*,video/*" className="hidden" multiple />
+                <button onClick={() => fileInputRef.current?.click()} className="w-full mb-3 py-2 border border-dashed border-slate-300 rounded-xl text-xs font-bold text-slate-500 flex items-center justify-center gap-2 hover:bg-slate-50">
+                   <Upload size={14} /> Upload Custom Files
+                </button>
+
+                {/* Selected Creatives Preview */}
+                {selectedCreatives.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                      {selectedCreatives.map((c) => (
+                         <div key={c.uid} className="relative w-16 h-16 rounded-xl flex-shrink-0 bg-slate-100 border border-slate-200 group">
+                            {c.sourceType === 'local' && c.file && isVideoFile(c.file) ? (
+                                <video src={c.previewUrl} className="w-full h-full object-cover rounded-xl" />
+                            ) : (
+                                <img src={c.previewUrl} className="w-full h-full object-cover rounded-xl" />
+                            )}
+                            <button onClick={() => removeCreative(c.uid)} className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 text-red-500 shadow-sm border border-slate-100"><X size={12}/></button>
+                         </div>
+                      ))}
+                    </div>
+                )}
               </div>
 
               <h3 className="pt-2 border-t border-slate-100 text-[10px] font-bold text-slate-400 uppercase ml-1">Campaign Settings</h3>
@@ -314,7 +455,7 @@ export default function AdsPage() {
                       <div className="w-full bg-slate-50 py-2 px-3 rounded-xl border border-slate-200 flex justify-between items-center">
                           <div>
                               <div className="text-sm font-bold text-slate-800">{adForm.metaLocation.location.name}</div>
-                              <div className="text-[10px] text-slate-500 uppercase">{adForm.metaLocation.location.region}, {adForm.metaLocation.location.country_code} ({adForm.metaLocation.location.type})</div>
+                              <div className="text-[10px] text-slate-500 uppercase">{adForm.metaLocation.location.region}, {adForm.metaLocation.location.country_code}</div>
                           </div>
                           <button onClick={() => setAdForm(prev => ({ ...prev, metaLocation: { location: null, radius: 20 } }))}><X size={16} className="text-slate-400 hover:text-red-500"/></button>
                       </div>
@@ -336,30 +477,22 @@ export default function AdsPage() {
                   )}
               </div>
               
-              {adForm.metaLocation.location?.type === 'city' && (
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                      <label className="text-[10px] font-bold text-slate-500 flex justify-between uppercase"><span>Radius</span> <span className="text-primary">{adForm.metaLocation.radius} km</span></label>
-                      <input type="range" min="17" max="80" value={adForm.metaLocation.radius} onChange={(e) => setAdForm(prev => ({ ...prev, metaLocation: { ...prev.metaLocation, radius: parseInt(e.target.value) } }))} className="w-full mt-2 accent-primary" />
-                  </div>
-              )}
-
               <div className="flex gap-4">
-                  <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Gender</label><select value={adForm.gender} onChange={(e) => setAdForm(prev => ({...prev, gender: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none">{GENDERS.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
-                  <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Budget (₹)</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span><input type="number" min="100" step="100" value={adForm.dailyBudgetINR} onChange={(e) => setAdForm(prev => ({...prev, dailyBudgetINR: parseInt(e.target.value) || 0}))} className="w-full bg-slate-50 py-3 pl-6 pr-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" /></div></div>
+                  <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Gender</label><select value={adForm.gender} onChange={(e) => setAdForm(prev => ({...prev, gender: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm outline-none">{GENDERS.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+                  <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Budget (₹)</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span><input type="number" min="100" step="100" value={adForm.dailyBudgetINR} onChange={(e) => setAdForm(prev => ({...prev, dailyBudgetINR: parseInt(e.target.value) || 0}))} className="w-full bg-slate-50 py-3 pl-6 pr-4 rounded-xl text-slate-800 text-sm outline-none" /></div></div>
               </div>
 
-              {/* --- FORM QUESTIONS SECTION --- */}
+              {/* FORM QUESTIONS SECTION */}
               <div className="pt-2 border-t border-slate-100">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1 mb-2"><Settings2 size={12} /> Lead Form Questions</label>
-                  <p className="text-[10px] text-slate-500 mb-3 ml-1">Name, Email, and Phone number are requested by default.</p>
-
+                  
                   {formQuestions.length > 0 && (
                       <div className="flex flex-col gap-2 mb-3">
                           {formQuestions.map((q, idx) => (
                              <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex justify-between items-start group">
                                  <div>
                                      <div className="text-sm font-bold text-slate-800 leading-tight mb-1">{q.label}</div>
-                                     <div className="text-[10px] text-slate-400 font-bold uppercase">{q.type === 'MULTIPLE_CHOICE' ? `Multiple Choice (${q.options?.length} Options)` : 'Short Answer'}</div>
+                                     <div className="text-[10px] text-slate-400 font-bold uppercase">{q.type === 'MULTIPLE_CHOICE' ? `Multiple Choice` : 'Short Answer'}</div>
                                  </div>
                                  <button onClick={() => setFormQuestions(prev => prev.filter((_, i) => i !== idx))} className="text-slate-300 hover:text-red-500 p-1"><X size={14}/></button>
                              </div>
@@ -369,40 +502,35 @@ export default function AdsPage() {
 
                   {!isAddingQuestion ? (
                       <div className="flex flex-wrap gap-2">
-                          <button onClick={() => handleAddPresetQuestion('budget')} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full hover:bg-blue-100 transition-colors">+ Add Budget</button>
-                          <button onClick={() => handleAddPresetQuestion('timeline')} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full hover:bg-blue-100 transition-colors">+ Add Timeline</button>
-                          <button onClick={() => setIsAddingQuestion(true)} className="text-[10px] font-bold bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full hover:bg-slate-200 transition-colors">+ Custom</button>
+                          <button onClick={() => handleAddPresetQuestion('budget')} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full hover:bg-blue-100">+ Add Budget</button>
+                          <button onClick={() => handleAddPresetQuestion('timeline')} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full hover:bg-blue-100">+ Add Timeline</button>
+                          <button onClick={() => setIsAddingQuestion(true)} className="text-[10px] font-bold bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full hover:bg-slate-200">+ Custom</button>
                       </div>
                   ) : (
-                      <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 space-y-3 animate-in fade-in zoom-in-95">
+                      <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 space-y-3">
                           <div>
-                              <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block ml-1">Question Text</label>
-                              <input type="text" value={newQuestion.label} onChange={e => setNewQuestion({...newQuestion, label: e.target.value})} className="w-full bg-white py-2.5 px-3 rounded-lg text-sm focus:ring-2 outline-none border border-slate-200" placeholder="e.g. Do you need financing?" />
+                              <input type="text" value={newQuestion.label} onChange={e => setNewQuestion({...newQuestion, label: e.target.value})} className="w-full bg-white py-2.5 px-3 rounded-lg text-sm border border-slate-200" placeholder="Question Text" />
                           </div>
                           <div>
-                              <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block ml-1">Answer Type</label>
-                              <select value={newQuestion.type} onChange={e => setNewQuestion({...newQuestion, type: e.target.value as any})} className="w-full bg-white py-2.5 px-3 rounded-lg text-sm focus:ring-2 outline-none border border-slate-200">
+                              <select value={newQuestion.type} onChange={e => setNewQuestion({...newQuestion, type: e.target.value as any})} className="w-full bg-white py-2.5 px-3 rounded-lg text-sm border border-slate-200">
                                   <option value="SHORT_ANSWER">Short Answer</option>
                                   <option value="MULTIPLE_CHOICE">Multiple Choice</option>
                               </select>
                           </div>
                           {newQuestion.type === 'MULTIPLE_CHOICE' && (
-                              <div>
-                                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block ml-1">Options (Comma separated)</label>
-                                  <input type="text" value={newQuestion.options?.join(', ')} onChange={e => setNewQuestion({...newQuestion, options: e.target.value.split(',')})} className="w-full bg-white py-2.5 px-3 rounded-lg text-sm focus:ring-2 outline-none border border-slate-200" placeholder="Yes, No, Maybe" />
-                              </div>
+                              <input type="text" value={newQuestion.options?.join(', ')} onChange={e => setNewQuestion({...newQuestion, options: e.target.value.split(',')})} className="w-full bg-white py-2.5 px-3 rounded-lg text-sm border border-slate-200" placeholder="Options (comma separated)" />
                           )}
-                          <div className="flex gap-2 pt-2">
-                              <button onClick={() => { if(newQuestion.label){ setFormQuestions(prev => [...prev, newQuestion]); setIsAddingQuestion(false); setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); } }} className="flex-1 bg-slate-900 text-white px-3 py-2 rounded-lg text-xs font-bold active:scale-95 transition-transform">Save Question</button>
+                          <div className="flex gap-2">
+                              <button onClick={() => { if(newQuestion.label){ setFormQuestions(prev => [...prev, newQuestion]); setIsAddingQuestion(false); setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); } }} className="flex-1 bg-slate-900 text-white px-3 py-2 rounded-lg text-xs font-bold">Save</button>
                               <button onClick={() => setIsAddingQuestion(false)} className="bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold">Cancel</button>
                           </div>
                       </div>
                   )}
               </div>
 
-              <button onClick={handleLaunchCampaign} disabled={isSubmitting || !adForm.metaLocation.location || !adForm.privacyPolicyUrl} className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70 mt-4">
+              <button onClick={handleLaunchCampaign} disabled={isSubmitting || !adForm.metaLocation.location || !adForm.privacyPolicyUrl || selectedCreatives.length === 0} className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70 mt-4">
                   {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
-                  {isSubmitting ? 'AI Launching...' : 'Launch Lead Campaign'}
+                  {isSubmitting ? 'AI Optimizing & Launching...' : 'Launch Smart Campaign'}
               </button>
             </div>
           </div>

@@ -8,10 +8,10 @@ import crypto from 'crypto';
 const KIE_API_KEY = process.env.KIE_API_KEY;
 const KIE_CREATE_TASK_URL = "https://api.kie.ai/api/v1/jobs/createTask";
 const FACEBOOK_GRAPH_URL = "https://graph.facebook.com/v19.0";
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // Required for Auto-Blogger cron job
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 
 /**
- * 1. Kie.ai Image/Video Generation 
+ * 1. Kie.ai Task Generation (Video/Misc)
  */
 export async function createKieTask(payload: any): Promise<{ taskId: string } | { error: string }> {
     if (!KIE_API_KEY) return { error: "KIE_API_KEY is not configured." }
@@ -38,7 +38,6 @@ export async function createKieTask(payload: any): Promise<{ taskId: string } | 
         return { error: `Network error: ${e.message}` }
     }
 }
-
 
 /**
  * 2. Facebook Posting 
@@ -68,7 +67,6 @@ export async function postToFacebook(accessToken: string, imageUrl: string, capt
  * 3. Instagram Posting 
  */
 export async function postToInstagram(accessToken: string, pageId: string, imageUrl: string, caption: string): Promise<any> {
-    // 3.1 Get IG Business Account ID
     const igAccountRes = await fetch(`${FACEBOOK_GRAPH_URL}/${pageId}?fields=instagram_business_account&access_token=${accessToken}`);
     const igAccountData = await igAccountRes.json();
     if (igAccountData.error || !igAccountData.instagram_business_account?.id) {
@@ -76,7 +74,6 @@ export async function postToInstagram(accessToken: string, pageId: string, image
     }
     const igAccountId = igAccountData.instagram_business_account.id;
 
-    // 3.2 Create Media Container
     const containerRes = await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -92,7 +89,6 @@ export async function postToInstagram(accessToken: string, pageId: string, image
     }
     const creationId = containerData.id;
 
-    // 3.3 Publish Media
     const publishRes = await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -108,16 +104,23 @@ export async function postToInstagram(accessToken: string, pageId: string, image
     return publishData;
 }
 
-
 /**
- * 4. Kie.ai Gemini Chat API 
- * FIXED: Uses dynamic model routing in the URL path to prevent 404 errors.
+ * 4. Kie.ai Gemini Chat API (Upgraded for Multimodal Vision)
  */
-export async function generateKieChat(prompt: string, model: string = "gemini-3-flash"): Promise<string> {
+export async function generateKieChat(prompt: string, model: string = "gemini-3-flash", imageUrl?: string): Promise<string> {
     if (!KIE_API_KEY) throw new Error("KIE_API_KEY is not configured for Chat API.");
     
-    // The endpoint must include the model name in the URL for Kie.ai
     const endpoint = `https://api.kie.ai/${model}/v1/chat/completions`;
+    
+    let messageContent: any = prompt;
+    
+    // If an image URL is provided, format for Multimodal Vision parsing
+    if (imageUrl) {
+        messageContent = [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: imageUrl } }
+        ];
+    }
     
     const response = await fetch(endpoint, {
         method: 'POST',
@@ -127,7 +130,7 @@ export async function generateKieChat(prompt: string, model: string = "gemini-3-
         },
         body: JSON.stringify({
             model: model,
-            messages: [{ role: "user", content: prompt }]
+            messages: [{ role: "user", content: messageContent }]
         })
     });
     
@@ -140,9 +143,8 @@ export async function generateKieChat(prompt: string, model: string = "gemini-3-
     return data.choices[0].message.content;
 }
 
-
 /**
- * 5. Gemini Blog Generation (Conceptual - Required for Auto-Blogger)
+ * 5. Gemini Blog Generation (Native Google Gemini API)
  */
 export async function callGemini(prompt: string): Promise<string> {
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured for Auto-Blogger.");
@@ -169,7 +171,6 @@ export async function callGemini(prompt: string): Promise<string> {
 
 /**
  * 6. Fetch Lead Forms List
- * Returns a list of forms so the user can select one.
  */
 export async function fetchLeadForms(accessToken: string, pageId: string): Promise<any[]> {
     try {
@@ -185,7 +186,7 @@ export async function fetchLeadForms(accessToken: string, pageId: string): Promi
 }
 
 /**
- * 7. Fetch Facebook Leads from Lead Forms (CRM FEATURE)
+ * 7. Fetch Facebook Leads from Lead Forms
  */
 export async function fetchFacebookLeads(accessToken: string, pageId: string, specificFormId?: string): Promise<any[]> {
     try {
@@ -240,7 +241,7 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
 }
 
 /**
- * 8. Send Facebook CAPI Event (CRM FEATURE)
+ * 8. Send Facebook CAPI Event
  */
 export async function sendCAPIEvent(accessToken: string, pixelId: string, eventName: string, userData: { email?: string, phone?: string }, value?: number) {
     if (!pixelId) return;
@@ -276,7 +277,7 @@ export async function sendCAPIEvent(accessToken: string, pixelId: string, eventN
 }
 
 /**
- * 9. Fetch Facebook Pixels for Ad Account (NEW)
+ * 9. Fetch Facebook Pixels for Ad Account
  */
 export async function fetchFacebookPixels(accessToken: string, adAccountId: string): Promise<any[]> {
     try {
@@ -291,4 +292,21 @@ export async function fetchFacebookPixels(accessToken: string, adAccountId: stri
     } catch (e: any) {
         throw new Error(`Failed to fetch Pixels: ${e.message}`);
     }
+}
+
+/**
+ * 10. Kie.ai Image Generator (For Auto-Optimizer)
+ */
+export async function createKieImageTask(prompt: string, model: string = "flux2/flex-text-to-image"): Promise<string> {
+    if (!KIE_API_KEY) throw new Error("KIE_API_KEY is not configured.");
+    
+    const response = await fetch(KIE_CREATE_TASK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${KIE_API_KEY}` },
+        body: JSON.stringify({ model: model, prompt: prompt })
+    });
+    
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.msg || data.error || "Image task failed");
+    return data.data.taskId;
 }

@@ -212,47 +212,62 @@ export default function ProductsPage() {
     alert("✅ Link Copied!")
   }
 
+// --- UPDATED: NATIVE MULTI-IMAGE SHARE VIA PROXY ---
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
   
     if (isSharingId) return 
-
     setIsSharingId(prop.id)
 
+    const shareTitle = prop.title
+    const shareText = `${shareTitle}\n\n${prop.description || ''}`
+    
+    // 1. Get ALL image URLs, but cap it at 4 to prevent browser timeout & memory crashes
+    let imageUrls = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url]
+    imageUrls = imageUrls.slice(0, 4) 
+
+    // 2. Prepare a much better fallback text with ALL links if the device blocks files
+    const textFallback = `${shareText}\n\n*Product Images:*\n${imageUrls.join('\n\n')}`
+
     try {
-      const shareTitle = `${prop.title}`
-      const shareText = `${shareTitle}\n\n${prop.description || ''}`
+      // 3. Fetch ALL images IN PARALLEL (Super fast to prevent timeout blocking)
+      const fetchPromises = imageUrls.map(async (url, index) => {
+        const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(url)}`
+        const response = await fetch(proxyUrl)
+        
+        if (!response.ok) throw new Error(`Network error fetching image ${index}`)
+        
+        const blob = await response.blob()
+        const mimeType = blob.type || 'image/jpeg'
+        const ext = mimeType.split('/')[1] || 'jpg'
+        
+        return new File([blob], `product_${prop.id}_${index + 1}.${ext}`, { type: mimeType })
+      })
 
-      let imageUrls = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url];
-      imageUrls = imageUrls.slice(0, 10);
+      // Wait for all downloads to finish simultaneously
+      const filesArray = await Promise.all(fetchPromises)
 
-      const filesArray: File[] = [];
-      if (typeof navigator.canShare === 'function') {
-        try {
-            await Promise.all(imageUrls.map(async (url, index) => {
-                const response = await fetch(url);
-                const blob = await response.blob();
-                const mimeType = blob.type || 'image/jpeg';
-                const ext = mimeType.split('/')[1] || 'jpg';
-                const file = new File([blob], `product_${prop.id}_${index}.${ext}`, { type: mimeType });
-                filesArray.push(file);
-            }));
-        } catch (fetchErr) {
-            console.error("Failed to fetch images for sharing", fetchErr);
-        }
+      const shareData = {
+          title: shareTitle,
+          text: shareText,
+          files: filesArray
       }
 
-      if (filesArray.length > 0 && typeof navigator.canShare === 'function' && navigator.canShare({ files: filesArray, title: shareTitle, text: shareText })) {
-        await navigator.share({ files: filesArray, title: shareTitle, text: shareText });
+      // 4. Trigger Native Share Sheet with ALL files attached
+      if (navigator.canShare && navigator.canShare({ files: filesArray })) {
+          await navigator.share(shareData)
       } else {
-        if (navigator.share) {
-            await navigator.share({ title: shareTitle, text: shareText, url: prop.image_url });
-        } else {
-            window.open(`https://wa.me/?text=${encodeURIComponent(shareText + "\n\n" + prop.image_url)}`, '_blank');
-        }
+          // Device doesn't support multi-file sharing
+          window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`
       }
-    } catch (error) { 
-      console.log("Share cancelled or failed", error) 
+
+    } catch (error: any) { 
+      console.error("Share failed", error) 
+      
+      // SILENT FALLBACK: If user didn't intentionally cancel, send them to WhatsApp with ALL links
+      if (error.name !== 'AbortError') {
+           window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`
+      }
     } finally {
         setIsSharingId(null)
     }
@@ -302,7 +317,6 @@ export default function ProductsPage() {
                   <MoreHorizontal size={20} />
                 </button>
                 
-                {/* 🚨 FIX: Force High-Contrast Dark Blue for Add Button 🚨 */}
                 {role === 'admin' && (
                   <button 
                     onClick={() => setShowAddModal(true)} 
@@ -351,7 +365,6 @@ export default function ProductsPage() {
                 <div className="flex justify-between items-start mb-2 gap-2">
                   <h3 className="text-lg font-bold text-slate-900 leading-tight line-clamp-1">{prop.title || 'Untitled'}</h3>
                   
-                  {/* 🚨 FIX: New WhatsApp Icon replacing the Share Icon 🚨 */}
                   <button 
                       onClick={(e) => handleNativeShare(e, prop)} 
                       disabled={isSharingId === prop.id}
@@ -438,7 +451,6 @@ export default function ProductsPage() {
                    </button>
                </div>
 
-               {/* 🚨 FIX: Tab System Hardcoded High Contrast Active Colors 🚨 */}
                <div className="flex bg-white border-b border-slate-200 shrink-0 px-2 sm:px-6">
                    <button 
                       onClick={() => setModalTab('details')} 

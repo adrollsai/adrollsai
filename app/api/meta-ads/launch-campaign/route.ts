@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import fs from 'fs';
 import path from 'path';
-import { callGemini } from '@/utils/external-apis';
+import { generateKieChat } from '@/utils/external-apis';
 
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
@@ -42,7 +42,6 @@ export async function POST(request: Request) {
     
     const adAccountId = formData.get('adAccountId')?.toString();
     const facebookToken = formData.get('facebookToken')?.toString();
-    const sourceType = formData.get('sourceType')?.toString();
     const targetLocation = formData.get('targetLocation')?.toString() || 'India'; 
     const metaLocationStr = formData.get('metaLocation')?.toString(); 
     const dailyBudgetINR = parseFloat(formData.get('dailyBudgetINR')?.toString() || '0');
@@ -51,7 +50,9 @@ export async function POST(request: Request) {
     const privacyPolicyUrl = formData.get('privacyPolicyUrl')?.toString();
     const customQuestionsStr = formData.get('customQuestions')?.toString();
 
-    const selectedSourceIds = formData.getAll('selectedSourceIds').map(String); 
+    // NEW: Capture multiple sources from the Creative Cart
+    const inventoryIds = formData.getAll('inventoryIds').map(String);
+    const assetIds = formData.getAll('assetIds').map(String);
     
     const creativeFiles = [];
     for (const [key, value] of formData.entries()) {
@@ -67,55 +68,54 @@ export async function POST(request: Request) {
         );
     }
 
-    logToFile("=== STARTING AI CAMPAIGN LAUNCH ===");
+    logToFile("=== STARTING AI CAMPAIGN LAUNCH (MULTI-CREATIVE) ===");
 
     try {
-        // --- Step A: Get Source Data ---
-        let propertyTitle: string = '';
-        let propertyDescription: string = '';
+        // --- Step A: Get Source Data & Context ---
+        logToFile("--- 1. FETCHING SOURCE DATA ---");
+        let combinedContext = "";
         let initialImageUrls: string[] = []; 
 
-        if (sourceType === 'inventory' && selectedSourceIds.length > 0) {
-            const id = selectedSourceIds[0];
-            const { data: prop, error } = await supabase
+        if (inventoryIds.length > 0) {
+            const { data: props, error } = await supabase
                 .from('properties')
                 .select('title, description, images, image_url')
-                .eq('id', id)
-                .single();
+                .in('id', inventoryIds);
             
-            if (error) {
-                throw new Error("Failed to fetch property details.");
+            if (error) throw new Error("Failed to fetch property details.");
+            
+            if (props) {
+                props.forEach(prop => {
+                    combinedContext += `Property: ${prop.title || 'N/A'}. Description: ${prop.description || 'N/A'}. `;
+                    if (prop.images && Array.isArray(prop.images) && prop.images.length > 0) {
+                        initialImageUrls.push(...prop.images);
+                    } else if (prop.image_url) {
+                        initialImageUrls.push(prop.image_url);
+                    }
+                });
             }
-
-            if (prop) {
-                propertyTitle = prop.title || '';
-                propertyDescription = prop.description || '';
-                if (prop.images && Array.isArray(prop.images) && prop.images.length > 0) {
-                    initialImageUrls = prop.images;
-                } else if (prop.image_url) {
-                    initialImageUrls = [prop.image_url];
-                }
-            }
-        } else if (sourceType === 'asset' && selectedSourceIds.length > 0) {
-             const id = selectedSourceIds[0];
-             const { data: asset } = await supabase
+        } 
+        
+        if (assetIds.length > 0) {
+             const { data: assets } = await supabase
                 .from('assets')
                 .select('url')
-                .eq('id', id)
-                .single();
+                .in('id', assetIds);
 
-             if (asset && asset.url) {
-                 initialImageUrls = [asset.url];
+             if (assets) {
+                 assets.forEach(asset => {
+                     if (asset.url) initialImageUrls.push(asset.url);
+                 });
              }
         }
 
         if (creativeFiles.length === 0 && initialImageUrls.length === 0) {
-            throw new Error("No images found in the selected property or asset.");
+            throw new Error("No images found in the selected properties, assets, or uploads.");
         }
 
         // --- Step B: Create Lead Form with Custom Questions ---
-        logToFile("--- 1. CREATING LEAD FORM ---");
-        const formName = `AI Form - ${propertyTitle.substring(0, 10)} - ${Date.now().toString().slice(-6)}`;
+        logToFile("--- 2. CREATING LEAD FORM ---");
+        const formName = `AI Form - ${Date.now().toString().slice(-6)}`;
         
         let metaCustomQuestions: any[] = [];
         if (customQuestionsStr && customQuestionsStr !== "[]") {
@@ -125,7 +125,6 @@ export async function POST(request: Request) {
                     const metaQ: any = { 
                         type: 'CUSTOM', 
                         label: q.label.substring(0, 200) 
-                        // Note: Intentionally omitting the top-level 'key' parameter as required by Meta for CUSTOM types
                     };
                     
                     if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
@@ -133,7 +132,6 @@ export async function POST(request: Request) {
                             .filter((o: string) => o.trim() !== '')
                             .map((opt: string) => ({ 
                                 value: opt.trim(),
-                                // FIX: Meta strictly requires a 'key' inside each option object
                                 key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50)
                             }));
                             
@@ -151,7 +149,7 @@ export async function POST(request: Request) {
         const leadFormPayload = {
             name: formName,
             follow_up_action_url: linkUrl, 
-            question_page_custom_headline: `Details for ${propertyTitle.substring(0,30) || 'this property'}`,
+            question_page_custom_headline: `Get Pricing & Details`,
             question_page_custom_text: "Confirm details to view pricing.",
             privacy_policy: { 
                 url: privacyPolicyUrl, 
@@ -187,7 +185,7 @@ export async function POST(request: Request) {
         logToFile(`✅ Lead Form Created: ${leadFormId}`);
 
         // --- Step C: Upload Creatives (PROXY UPLOAD) ---
-        logToFile("--- 2. UPLOADING CREATIVES ---");
+        logToFile("--- 3. UPLOADING ALL CREATIVES ---");
         const metaCreativeHashes: string[] = [];
         const creativeUploadPromises = [];
 
@@ -203,14 +201,18 @@ export async function POST(request: Request) {
                     }).then(res => res.json())
                 );
             }
-        } else if (initialImageUrls.length > 0) {
-            for (const url of initialImageUrls.slice(0, 3)) {
+        } 
+        
+        if (initialImageUrls.length > 0) {
+            // Deduplicate URLs and limit to prevent overload
+            const uniqueUrls = Array.from(new Set(initialImageUrls)).slice(0, 5);
+            for (const url of uniqueUrls) {
                 const imageFetch = await fetch(url);
                 if (!imageFetch.ok) continue; 
                 
                 const imageBlob = await imageFetch.blob();
                 const uploadFormData = new FormData();
-                uploadFormData.append('source', imageBlob, 'property_image.png');
+                uploadFormData.append('source', imageBlob, 'marketing_asset.png');
                 uploadFormData.append('access_token', facebookToken);
                 
                 creativeUploadPromises.push(
@@ -232,29 +234,49 @@ export async function POST(request: Request) {
         if (metaCreativeHashes.length === 0) {
             throw new Error("Creative upload failed. Could not upload any images to Facebook.");
         }
-        const mainCreativeHash = metaCreativeHashes[0]; 
+        logToFile(`✅ Uploaded ${metaCreativeHashes.length} creatives to Meta.`);
 
-        // --- Step D: AI Copy ---
-        logToFile("--- 3. AI COPYWRITING ---");
-        const llmPrompt = `Write 1 catchy Primary Text (max 125 chars) and 1 Headline (max 25 chars) for a real estate Lead Ad. Property: "${propertyTitle}". Description: "${propertyDescription}". Location: "${targetLocation}". Return JSON: {"primary_text": "...", "headline": "..."}`;
+        // --- Step D: AI Copywriting (Gemini 3 Flash via Kie.ai) ---
+        logToFile("--- 4. AI COPYWRITING (MULTIPLE VARIATIONS) ---");
+        const numberOfAds = Math.max(metaCreativeHashes.length, 3);
+        const llmPrompt = `
+        Act as an elite direct-response real estate marketer. Craft exactly ${numberOfAds} distinct, highly persuasive ad copy variations.
         
-        let primaryText = "Exclusive Property Deal";
-        let headline = "View Details";
+        Context provided by the user:
+        ${combinedContext || "Luxury properties."}
+        Target Location: "${targetLocation}".
+        
+        CRITICAL RULES:
+        1. Apply Alex Hormozi's marketing frameworks: Emphasize "Value Stacking", create "Grand Slam Offers", use risk reversal, and write strong, emotionally resonant hooks.
+        2. DO NOT use the term "2 BHK". If a unit type is mentioned, always use "2 RK".
+        
+        Output MUST be valid JSON array of objects, exactly like this:
+        [
+          {"primary_text": "Engaging direct response copy highlighting the offer and value (max 125 chars).", "headline": "Short punchy hook (max 25 chars)"},
+          ...
+        ]
+        `;
+        
+        let copyVariations = [
+            { primary_text: "Exclusive Property Deal. View pricing & details now.", headline: "View Details" }
+        ];
 
         try {
-            const llmResponse = await callGemini(llmPrompt);
-            const cleanedJson = llmResponse.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+            const aiRaw = await generateKieChat(llmPrompt, "gemini-3-flash");
+            const cleanedJson = aiRaw.replace(/^```json\s*/, '').replace(/\s*```$/, '');
             const parsed = JSON.parse(cleanedJson);
-            if (parsed.primary_text) primaryText = parsed.primary_text;
-            if (parsed.headline) headline = parsed.headline;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                copyVariations = parsed;
+                logToFile(`✅ Generated ${copyVariations.length} AI Copy Variations.`);
+            }
         } catch (e) {
-            logToFile("AI Generation Failed.");
+            logToFile("AI Generation Failed, using default copy.", e);
         }
 
         // --- Step E: Campaign ---
-        logToFile("--- 4. CAMPAIGN ---");
+        logToFile("--- 5. CAMPAIGN ---");
         const campaignPayload = {
-            name: `AI Leads - ${propertyTitle.substring(0, 15)} - ${new Date().toISOString().slice(0, 10)}`,
+            name: `AI Leads - Multi-Creative - ${new Date().toISOString().slice(0, 10)}`,
             objective: 'OUTCOME_LEADS', 
             status: 'PAUSED', 
             buying_type: 'AUCTION',
@@ -298,11 +320,11 @@ export async function POST(request: Request) {
         }
 
         // --- Step F: Ad Set ---
-        logToFile("--- 5. AD SET ---");
+        logToFile("--- 6. AD SET ---");
         const startTime = new Date(Date.now() + 30 * 60 * 1000).toISOString(); 
 
         const adSetPayload = {
-            name: `AdSet - ${targetLocation}`,
+            name: `Smart AdSet - ${targetLocation}`,
             campaign_id: campaignId,
             destination_type: 'ON_AD', 
             optimization_goal: 'LEAD_GENERATION', 
@@ -324,67 +346,82 @@ export async function POST(request: Request) {
         if (!adSetRes.ok) throw new Error(`Ad Set Error: ${adSetData.error?.message}`);
         const adSetId = adSetData.id;
 
-        // --- Step G: Creative ---
-        logToFile("--- 6. CREATIVE ---");
-        const creativePayload = {
-            name: `Creative - ${Date.now()}`,
-            object_story_spec: {
-                page_id: pageId, 
-                link_data: {
-                    message: primaryText, 
-                    name: headline, 
-                    link: linkUrl, 
-                    image_hash: mainCreativeHash, 
-                    call_to_action: { type: 'SIGN_UP', value: { lead_gen_form_id: leadFormId } }
-                }
-            },
-            access_token: facebookToken,
-        };
-
-        const creativeRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adcreatives`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(creativePayload),
-        });
+        // --- Step G & H: Loop Creatives & Final Ads ---
+        logToFile("--- 7. GENERATING MULTIPLE ADS ---");
         
-        const creativeData = await creativeRes.json();
-        if (!creativeRes.ok) throw new Error(`Creative Error: ${creativeData.error?.message}`);
-        const creativeId = creativeData.id;
+        let successfulAds = 0;
+        let lastDraftError = null;
 
-        // --- Step H: Final Ad ---
-        logToFile("--- 7. FINAL AD ---");
-        const adPayload = {
-            name: `Ad - ${headline}`,
-            adset_id: adSetId,
-            creative: { creative_id: creativeId },
-            status: 'PAUSED', 
-            access_token: facebookToken,
-        };
+        for (let i = 0; i < metaCreativeHashes.length; i++) {
+            const hash = metaCreativeHashes[i];
+            const copy = copyVariations[i % copyVariations.length]; // cycle if fewer copies than images
 
-        const adRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(adPayload),
-        });
-        
-        const adData = await adRes.json();
+            // Create Creative
+            const creativePayload = {
+                name: `Creative ${i + 1} - ${Date.now()}`,
+                object_story_spec: {
+                    page_id: pageId, 
+                    link_data: {
+                        message: copy.primary_text || "View our latest property.", 
+                        name: copy.headline || "View Details", 
+                        link: linkUrl, 
+                        image_hash: hash, 
+                        call_to_action: { type: 'SIGN_UP', value: { lead_gen_form_id: leadFormId } }
+                    }
+                },
+                access_token: facebookToken,
+            };
 
-        if (!adRes.ok) {
-            logToFile("❌ Final Ad Failed (Drafted):", adData);
-            if (adData.error?.error_subcode === 1359188 || adData.error?.code === 100) {
-                return NextResponse.json({ 
-                    success: true, 
-                    campaignId: campaignId, 
-                    message: "Campaign DRAFTED! \n\n⚠️ Payment Method Missing: Saved in Ads Manager." 
-                });
+            const creativeRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adcreatives`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(creativePayload),
+            });
+            const creativeData = await creativeRes.json();
+            
+            if (!creativeRes.ok) {
+                logToFile(`❌ Creative ${i+1} Failed:`, creativeData);
+                continue; // Skip to next if creative fails
             }
-            throw new Error(`Final Ad Error: ${adData.error?.message}`);
+
+            // Create Ad
+            const adPayload = {
+                name: `AI Ad Variation ${i + 1}`,
+                adset_id: adSetId,
+                creative: { creative_id: creativeData.id },
+                status: 'PAUSED', 
+                access_token: facebookToken,
+            };
+
+            const adRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(adPayload),
+            });
+            const adData = await adRes.json();
+
+            if (!adRes.ok) {
+                logToFile(`❌ Final Ad ${i+1} Failed (Drafted):`, adData);
+                if (adData.error?.error_subcode === 1359188 || adData.error?.code === 100) {
+                    lastDraftError = true;
+                }
+            } else {
+                successfulAds++;
+            }
+        }
+
+        if (successfulAds === 0 && lastDraftError) {
+             return NextResponse.json({ 
+                success: true, 
+                campaignId: campaignId, 
+                message: "Campaign DRAFTED! \n\n⚠️ Payment Method Missing: Saved in Ads Manager." 
+            });
         }
 
         return NextResponse.json({ 
             success: true, 
             campaignId: campaignId, 
-            message: "Campaign Successfully Launched!" 
+            message: `Campaign Launched Successfully with ${successfulAds} AI Optimized Ads!` 
         });
 
     } catch (error: any) {

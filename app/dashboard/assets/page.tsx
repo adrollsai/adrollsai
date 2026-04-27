@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Film, Package } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Film, Package, CheckCircle2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 type Asset = {
@@ -35,9 +35,8 @@ export default function AssetsPage() {
   const [isPosting, setIsPosting] = useState(false)
   const [caption, setCaption] = useState('')
 
-  // WhatsApp Loading State
-  const [isWhatsAppSharing, setIsWhatsAppSharing] = useState(false)
-  const [shareProgressText, setShareProgressText] = useState('')
+  // Single Tap Download State
+  const [isDownloading, setIsDownloading] = useState(false)
 
   // 1. Fetch Assets & Properties
   useEffect(() => {
@@ -127,53 +126,57 @@ export default function AssetsPage() {
     }
   }
 
-  // 4. Handle WhatsApp Share (Straightforward Download -> Share)
+ // 4. Handle WhatsApp Share (SINGLE-TAP WITH PROXY & FALLBACK)
   const handleShareWhatsApp = async () => {
     if (!selectedAsset) return;
 
-    // Video Fallback
+    // Define the fallback text (Link + Caption) just in case
+    const textFallback = `${caption ? caption + '\n\n' : ''}${selectedAsset.url}`;
+
+    // Video Fallback: Native WhatsApp link
     if (selectedAsset.type === 'video') {
-         const textToShare = `${caption ? caption + '\n\n' : ''}${selectedAsset.url}`;
-         window.location.href = `whatsapp://send?text=${encodeURIComponent(textToShare)}`;
+         window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`;
          return;
     }
 
     try {
-      setIsWhatsAppSharing(true);
-      setShareProgressText('Downloading image...');
+      setIsDownloading(true);
       
-      // 1. Direct fetch
-      const response = await fetch(selectedAsset.url);
-      if (!response.ok) throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+      // Fetch via our new CORS-bypassing proxy API
+      const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(selectedAsset.url)}`;
+      const response = await fetch(proxyUrl);
+      
+      if (!response.ok) throw new Error("Network error fetching image through proxy.");
       
       const blob = await response.blob();
       
-      // 2. Exact extension matching
       const mimeType = blob.type || 'image/jpeg';
       const ext = mimeType.split('/')[1] || 'jpg';
       const file = new File([blob], `marketing-asset.${ext}`, { type: mimeType });
 
-      // 3. Trigger Native Share Sheet
-      setShareProgressText('Opening WhatsApp...');
+      const shareData = {
+          title: 'Marketing Asset',
+          text: caption || '',
+          files: [file]
+      };
+
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-              title: 'Marketing Asset',
-              text: caption || '',
-              files: [file]
-          });
+          await navigator.share(shareData);
       } else {
-          throw new Error("Device or Browser rejected the file share payload.");
+          // Browser doesn't support file sharing
+          window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`;
       }
 
     } catch (error: any) {
-      if (error.name === 'AbortError') return; // User simply closed the share sheet
+      console.error("Share failed:", error);
       
-      // THIS WILL TELL US EXACTLY WHAT WENT WRONG
-      alert(`Debug Error: ${error.name} - ${error.message}`);
-      
+      // If the user didn't intentionally cancel the share menu
+      if (error.name !== 'AbortError') {
+          // SILENT FALLBACK: Just open WhatsApp with the text link like the old code!
+          window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`;
+      }
     } finally {
-      setIsWhatsAppSharing(false);
-      setShareProgressText('');
+      setIsDownloading(false);
     }
   }
 
@@ -343,30 +346,30 @@ export default function AssetsPage() {
               <div className="flex flex-col gap-3">
                 {/* Socials Grid */}
                 <div className="flex gap-2">
-                  <button onClick={handlePostFacebook} disabled={isPosting || isWhatsAppSharing} className="flex-1 bg-[#1877F2] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#166fe5]">
+                  <button onClick={handlePostFacebook} disabled={isPosting || isDownloading} className="flex-1 bg-[#1877F2] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#166fe5]">
                     <Facebook size={16} fill="white" /> Facebook
                   </button>
-                  <button onClick={handlePostInstagram} disabled={isPosting || isWhatsAppSharing} className="flex-1 bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:opacity-90">
+                  <button onClick={handlePostInstagram} disabled={isPosting || isDownloading} className="flex-1 bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:opacity-90">
                     <Instagram size={16} /> Instagram
                   </button>
                 </div>
 
                 {/* Post Everywhere Toggle */}
-                <button onClick={handleUniversalPost} disabled={isPosting || isWhatsAppSharing} className="w-full bg-slate-800 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-200 hover:bg-slate-900">
+                <button onClick={handleUniversalPost} disabled={isPosting || isDownloading} className="w-full bg-slate-800 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-200 hover:bg-slate-900">
                   {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Globe size={14} />}
                   Post Everywhere (FB & IG)
                 </button>
 
-                {/* WhatsApp Download & Share Button */}
+                {/* WhatsApp Single-Tap Button */}
                 <button 
                   onClick={handleShareWhatsApp} 
-                  disabled={isPosting || isWhatsAppSharing} 
-                  className="w-full bg-[#25D366] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-100 hover:bg-[#1ebe57] transition-all"
+                  disabled={isPosting || isDownloading} 
+                  className="w-full text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition-all bg-[#25D366] hover:bg-[#1ebe57] shadow-green-100"
                 >
-                  {isWhatsAppSharing ? (
+                  {isDownloading ? (
                      <>
                         <Loader2 size={16} className="animate-spin" />
-                        <span>{shareProgressText}</span>
+                        <span>Preparing Image...</span>
                      </>
                   ) : (
                      <>
