@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Film, Package, CheckCircle2 } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Film, Package } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 type Asset = {
@@ -35,9 +35,9 @@ export default function AssetsPage() {
   const [isPosting, setIsPosting] = useState(false)
   const [caption, setCaption] = useState('')
 
-  // WhatsApp Specific State (Two-Tap System)
-  const [isDownloading, setIsDownloading] = useState(false)
-  const [readyFile, setReadyFile] = useState<File | null>(null)
+  // WhatsApp Loading State
+  const [isWhatsAppSharing, setIsWhatsAppSharing] = useState(false)
+  const [shareProgressText, setShareProgressText] = useState('')
 
   // 1. Fetch Assets & Properties
   useEffect(() => {
@@ -72,11 +72,6 @@ export default function AssetsPage() {
     }
     fetchData()
   }, [])
-
-  // Reset the ready file whenever a new asset is clicked
-  useEffect(() => {
-      setReadyFile(null)
-  }, [selectedAsset])
 
   // 2. Handle Post to Facebook
   const handlePostFacebook = async () => {
@@ -132,7 +127,7 @@ export default function AssetsPage() {
     }
   }
 
-  // 4. Handle WhatsApp Share (THE TWO-TAP FIX)
+  // 4. Handle WhatsApp Share (Straightforward Download -> Share)
   const handleShareWhatsApp = async () => {
     if (!selectedAsset) return;
 
@@ -143,50 +138,42 @@ export default function AssetsPage() {
          return;
     }
 
-    // --- TAP 2: SHARE IT INSTANTLY ---
-    if (readyFile) {
-        try {
-            const shareData: any = {
-                title: 'Marketing Asset',
-                text: caption || '',
-                files: [readyFile]
-            };
-
-            if (navigator.canShare && navigator.canShare({ files: [readyFile] })) {
-                await navigator.share(shareData);
-            } else {
-                throw new Error("Device doesn't support file sharing.");
-            }
-        } catch (error: any) {
-            if (error.name !== 'AbortError') {
-                alert("Share failed. Your browser might block sharing images directly.");
-            }
-        }
-        return;
-    }
-
-    // --- TAP 1: DOWNLOAD IT ---
     try {
-      setIsDownloading(true);
+      setIsWhatsAppSharing(true);
+      setShareProgressText('Downloading image...');
       
+      // 1. Direct fetch
       const response = await fetch(selectedAsset.url);
-      if (!response.ok) throw new Error("Network error fetching image.");
+      if (!response.ok) throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
       
       const blob = await response.blob();
       
-      // Get the exact extension
+      // 2. Exact extension matching
       const mimeType = blob.type || 'image/jpeg';
       const ext = mimeType.split('/')[1] || 'jpg';
       const file = new File([blob], `marketing-asset.${ext}`, { type: mimeType });
 
-      // Save it to state so the button changes to "Share Now"
-      setReadyFile(file);
+      // 3. Trigger Native Share Sheet
+      setShareProgressText('Opening WhatsApp...');
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+              title: 'Marketing Asset',
+              text: caption || '',
+              files: [file]
+          });
+      } else {
+          throw new Error("Device or Browser rejected the file share payload.");
+      }
 
     } catch (error: any) {
-      console.error("Download failed:", error);
-      alert("Failed to download image. This is likely a CORS or network issue.");
+      if (error.name === 'AbortError') return; // User simply closed the share sheet
+      
+      // THIS WILL TELL US EXACTLY WHAT WENT WRONG
+      alert(`Debug Error: ${error.name} - ${error.message}`);
+      
     } finally {
-      setIsDownloading(false);
+      setIsWhatsAppSharing(false);
+      setShareProgressText('');
     }
   }
 
@@ -356,46 +343,37 @@ export default function AssetsPage() {
               <div className="flex flex-col gap-3">
                 {/* Socials Grid */}
                 <div className="flex gap-2">
-                  <button onClick={handlePostFacebook} disabled={isPosting || isDownloading} className="flex-1 bg-[#1877F2] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#166fe5]">
+                  <button onClick={handlePostFacebook} disabled={isPosting || isWhatsAppSharing} className="flex-1 bg-[#1877F2] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#166fe5]">
                     <Facebook size={16} fill="white" /> Facebook
                   </button>
-                  <button onClick={handlePostInstagram} disabled={isPosting || isDownloading} className="flex-1 bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:opacity-90">
+                  <button onClick={handlePostInstagram} disabled={isPosting || isWhatsAppSharing} className="flex-1 bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:opacity-90">
                     <Instagram size={16} /> Instagram
                   </button>
                 </div>
 
                 {/* Post Everywhere Toggle */}
-                <button onClick={handleUniversalPost} disabled={isPosting || isDownloading} className="w-full bg-slate-800 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-200 hover:bg-slate-900">
+                <button onClick={handleUniversalPost} disabled={isPosting || isWhatsAppSharing} className="w-full bg-slate-800 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-200 hover:bg-slate-900">
                   {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Globe size={14} />}
                   Post Everywhere (FB & IG)
                 </button>
 
-                {/* WhatsApp TWO-TAP Button */}
+                {/* WhatsApp Download & Share Button */}
                 <button 
                   onClick={handleShareWhatsApp} 
-                  disabled={isPosting || isDownloading} 
-                  className={`w-full text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition-all ${
-                    readyFile 
-                        ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-100' 
-                        : 'bg-[#25D366] hover:bg-[#1ebe57] shadow-green-100'
-                  }`}
+                  disabled={isPosting || isWhatsAppSharing} 
+                  className="w-full bg-[#25D366] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-100 hover:bg-[#1ebe57] transition-all"
                 >
-                  {isDownloading ? (
+                  {isWhatsAppSharing ? (
                      <>
                         <Loader2 size={16} className="animate-spin" />
-                        <span>Downloading Image...</span>
-                     </>
-                  ) : readyFile ? (
-                     <>
-                        <CheckCircle2 size={16} />
-                        <span>Image Ready! Tap to Share</span>
+                        <span>{shareProgressText}</span>
                      </>
                   ) : (
                      <>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
                             <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
                         </svg>
-                        <span>Fetch & Share</span>
+                        <span>Share to WhatsApp</span>
                      </>
                   )}
                 </button>

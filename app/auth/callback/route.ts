@@ -11,8 +11,19 @@ export async function GET(request: Request) {
   
   const errorCode = searchParams.get('error_code')
   const errorDescription = searchParams.get('error_description')
+
+  // --- THE FIX: Capture Ngrok/Vercel Forwarding Headers ---
+  const forwardedHost = request.headers.get('x-forwarded-host')
+  const forwardedProto = request.headers.get('x-forwarded-proto') || 'http'
+
+  // Determine the true base URL (prioritize ngrok/forwarded host over localhost)
+  let baseUrl = origin
+  if (forwardedHost) {
+    baseUrl = `${forwardedProto}://${forwardedHost}`
+  }
+
   if (errorCode) {
-    return NextResponse.redirect(`${origin}${next}?error=${encodeURIComponent(errorDescription || 'Unknown Error')}`)
+    return NextResponse.redirect(`${baseUrl}${next}?error=${encodeURIComponent(errorDescription || 'Unknown Error')}`)
   }
 
   if (code) {
@@ -62,18 +73,10 @@ export async function GET(request: Request) {
         }
       }
       
-      const forwardedHost = request.headers.get('x-forwarded-host') 
-      const isLocalEnv = origin.includes('localhost')
-      
-      if (isLocalEnv) {
-        return NextResponse.redirect(`${origin}${next}`)
-      } else if (forwardedHost) {
-        return NextResponse.redirect(`https://${forwardedHost}${next}`)
-      } else {
-        return NextResponse.redirect(`${origin}${next}`)
-      }
+      // Successfully authenticated! Redirect to the proper URL.
+      return NextResponse.redirect(`${baseUrl}${next}`)
     }
   }
 
-  return NextResponse.redirect(`${origin}${next}?error=Authentication failed`)
+  return NextResponse.redirect(`${baseUrl}${next}?error=Authentication failed`)
 }
