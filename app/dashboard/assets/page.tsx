@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Linkedin, Youtube, Film } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Linkedin, Youtube, Film, Package } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 type Asset = {
@@ -9,6 +9,12 @@ type Asset = {
   type: 'image' | 'video'
   status: string
   url: string
+  property_id?: string
+}
+
+type Property = {
+  id: string
+  title: string
 }
 
 const filters = ['All', 'image', 'video']
@@ -16,8 +22,12 @@ const filters = ['All', 'image', 'video']
 export default function AssetsPage() {
   const supabase = createClient()
   const [assets, setAssets] = useState<Asset[]>([])
+  const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
+  
+  // Filtering State
   const [activeFilter, setActiveFilter] = useState('All')
+  const [selectedPropFilter, setSelectedPropFilter] = useState<string>('all')
 
   // Modal State
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
@@ -25,26 +35,39 @@ export default function AssetsPage() {
   const [caption, setCaption] = useState('')
   const [title, setTitle] = useState('') 
 
-  // 1. Fetch Assets
+  // 1. Fetch Assets & Properties
   useEffect(() => {
-    const fetchAssets = async () => {
+    const fetchData = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data } = await supabase
+      // Fetch Assets
+      const { data: assetData } = await supabase
         .from('assets')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 
-      if (data) {
+      // Fetch Properties for the filter dropdown
+      const { data: propData } = await supabase
+        .from('properties')
+        .select('id, title')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (assetData) {
         // FILTER: Exclude stamped assets created by the distribution tool
-        const cleanAssets = data.filter(asset => asset.status !== 'Distributed')
+        const cleanAssets = assetData.filter(asset => asset.status !== 'Distributed')
         setAssets(cleanAssets)
       }
+      
+      if (propData) {
+        setProperties(propData)
+      }
+      
       setLoading(false)
     }
-    fetchAssets()
+    fetchData()
   }, [])
 
   // 2. Handle Post to Facebook
@@ -61,9 +84,17 @@ export default function AssetsPage() {
         })
       })
       const data = await response.json()
-      if (response.ok) { alert('Successfully posted to Facebook Page!'); setSelectedAsset(null) } 
-      else { alert('Error: ' + (data.error || 'Failed to post')) }
-    } catch (e) { alert('Network error') } finally { setIsPosting(false) }
+      if (response.ok) { 
+          alert('Successfully posted to Facebook Page!')
+          setSelectedAsset(null) 
+      } else { 
+          alert('Error: ' + (data.error || 'Failed to post')) 
+      }
+    } catch (e) { 
+        alert('Network error') 
+    } finally { 
+        setIsPosting(false) 
+    }
   }
 
   // 3. Handle Post to Instagram
@@ -80,9 +111,17 @@ export default function AssetsPage() {
         })
       })
       const data = await response.json()
-      if (response.ok) { alert('Successfully posted to Instagram!'); setSelectedAsset(null) } 
-      else { alert('Error: ' + (data.error || 'Failed to post')) }
-    } catch (e) { alert('Network error') } finally { setIsPosting(false) }
+      if (response.ok) { 
+          alert('Successfully posted to Instagram!')
+          setSelectedAsset(null) 
+      } else { 
+          alert('Error: ' + (data.error || 'Failed to post')) 
+      }
+    } catch (e) { 
+        alert('Network error') 
+    } finally { 
+        setIsPosting(false) 
+    }
   }
 
   // 4. Handle Post to LinkedIn
@@ -99,9 +138,17 @@ export default function AssetsPage() {
         })
       })
       const data = await response.json()
-      if (response.ok) { alert('Successfully posted to LinkedIn!'); setSelectedAsset(null) } 
-      else { alert('Error: ' + (data.error || 'Failed to post')) }
-    } catch (e) { alert('Network error') } finally { setIsPosting(false) }
+      if (response.ok) { 
+          alert('Successfully posted to LinkedIn!')
+          setSelectedAsset(null) 
+      } else { 
+          alert('Error: ' + (data.error || 'Failed to post')) 
+      }
+    } catch (e) { 
+        alert('Network error') 
+    } finally { 
+        setIsPosting(false) 
+    }
   }
 
   // 5. Handle Post to YouTube (Video Only)
@@ -208,21 +255,55 @@ export default function AssetsPage() {
     }
   }
 
-  const filteredAssets = activeFilter === 'All' ? assets : assets.filter(asset => asset.type === activeFilter)
+  // APPLY FILTERS: Combines the active media type filter + the selected product dropdown
+  const filteredAssets = assets.filter(asset => {
+    const matchesType = activeFilter === 'All' || asset.type === activeFilter;
+    const matchesProp = selectedPropFilter === 'all' || 
+                        (selectedPropFilter === 'unassigned' && !asset.property_id) || 
+                        asset.property_id === selectedPropFilter;
+    return matchesType && matchesProp;
+  });
 
   return (
-    <div className="p-5 max-w-md mx-auto min-h-screen relative">
+    <div className="p-5 max-w-md mx-auto min-h-screen relative pb-24">
       <div className="flex justify-between items-end mb-5">
         <div><h1 className="text-2xl font-bold text-slate-900">Library</h1><p className="text-slate-500 text-xs mt-1">Your marketing assets</p></div>
         <div className="p-2.5 bg-white text-slate-700 rounded-full shadow-sm border border-slate-100"><Filter size={18} /></div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-5 -mx-5 px-5 scrollbar-hide">
-        {filters.map((filter) => (
-          <button key={filter} onClick={() => setActiveFilter(filter)} className={`capitalize whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold transition-all border ${activeFilter === filter ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}>{filter === 'image' ? 'Images' : filter === 'video' ? 'Videos' : filter}</button>
-        ))}
+      {/* FILTER CONTROLS */}
+      <div className="flex flex-col gap-3 mb-5">
+          {/* Product Dropdown Filter */}
+          <div className="relative w-full">
+             <Package size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+             <select 
+                value={selectedPropFilter}
+                onChange={(e) => setSelectedPropFilter(e.target.value)}
+                className="w-full bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl py-2.5 pl-9 pr-4 appearance-none focus:ring-2 focus:ring-primary outline-none shadow-sm"
+             >
+                <option value="all">All Products</option>
+                <option value="unassigned">Unassigned / General</option>
+                {properties.map(p => (
+                    <option key={p.id} value={p.id}>{p.title}</option>
+                ))}
+             </select>
+          </div>
+
+          {/* Type Pills */}
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+            {filters.map((filter) => (
+              <button 
+                key={filter} 
+                onClick={() => setActiveFilter(filter)} 
+                className={`capitalize whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold transition-all border ${activeFilter === filter ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+              >
+                {filter === 'image' ? 'Images' : filter === 'video' ? 'Videos' : filter}
+              </button>
+            ))}
+          </div>
       </div>
 
+      {/* ASSETS GRID */}
       {loading ? (
         <div className="flex justify-center py-20 text-slate-400"><Loader2 size={24} className="animate-spin" /></div>
       ) : (
@@ -242,12 +323,13 @@ export default function AssetsPage() {
           ))}
           {filteredAssets.length === 0 && (
               <div className="col-span-3 text-center py-10 text-slate-400 text-sm">
-                  No assets found.
+                  No assets found for this selection.
               </div>
           )}
         </div>
       )}
 
+      {/* SHARE MODAL */}
       {selectedAsset && (
         <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-[2rem] p-5 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
@@ -264,7 +346,7 @@ export default function AssetsPage() {
                )}
             </div>
 
-            {/* Title Input (Only for Videos now) */}
+            {/* Title Input (Only for Videos) */}
             {selectedAsset.type === 'video' && (
                 <div className="mb-3">
                     <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Video Title (YouTube)</label>

@@ -252,6 +252,7 @@ export default function CreationPage() {
             if (userId) {
                 const { error: dbError } = await supabase.from('assets').insert({
                     user_id: userId,
+                    property_id: selectedPropId || null, // 🚨 NEW LINKING LOGIC 🚨
                     url: finalImageUrl,
                     type: 'image',
                     status: 'Draft'

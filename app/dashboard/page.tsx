@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, X, Loader2, Share2, Image as ImageIcon, Link as LinkIcon, Filter, MoreHorizontal } from 'lucide-react'
+import { Plus, Search, X, Loader2, Share2, Image as ImageIcon, Link as LinkIcon, Filter, MoreHorizontal, LayoutGrid, FileText } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -16,6 +16,14 @@ type Property = {
   description?: string
   property_type?: string
   user_id: string 
+}
+
+// NEW TYPE FOR ASSETS TAB
+type Asset = {
+  id: string
+  type: 'image' | 'video'
+  url: string
+  status: string
 }
 
 export default function ProductsPage() {
@@ -42,6 +50,11 @@ export default function ProductsPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  
+  // NEW VIEW MODAL STATE (TABS & ASSETS)
+  const [modalTab, setModalTab] = useState<'details' | 'assets'>('details')
+  const [propertyAssets, setPropertyAssets] = useState<Asset[]>([])
+  const [isLoadingAssets, setIsLoadingAssets] = useState(false)
   
   // Form State - Simplified for Generic Business
   const [newProp, setNewProp] = useState({ 
@@ -98,6 +111,26 @@ export default function ProductsPage() {
   }
 
   useEffect(() => { fetchProperties() }, [])
+
+  // NEW EFFECT: Fetch linked assets when a property is selected
+  useEffect(() => {
+    if (selectedProperty) {
+      const fetchAssets = async () => {
+        setIsLoadingAssets(true)
+        const { data } = await supabase
+            .from('assets')
+            .select('id, type, url, status')
+            .eq('property_id', selectedProperty.id)
+            .order('created_at', { ascending: false })
+        
+        if (data) setPropertyAssets(data)
+        setIsLoadingAssets(false)
+      }
+      fetchAssets()
+      // Always reset to details tab when opening a new property
+      setModalTab('details')
+    }
+  }, [selectedProperty, supabase])
 
   // --- ACTIONS ---
   const handleManualLogout = async () => {
@@ -379,26 +412,66 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* VIEW MODAL (Visible to both Admin and Agents) */}
+      {/* VIEW MODAL WITH NEW TABS (Visible to both Admin and Agents) */}
       {selectedProperty && (
-        <div className="fixed inset-0 z-[90] bg-white flex flex-col animate-in slide-in-from-bottom-10">
-           <div className="absolute top-4 left-4 z-10"><button onClick={() => setSelectedProperty(null)} className="bg-white/80 backdrop-blur-md p-3 rounded-full shadow-sm text-slate-900"><X size={24} /></button></div>
-           
-           <div className="h-[50vh] bg-slate-100 w-full overflow-x-auto flex snap-x snap-mandatory scrollbar-hide">
-             {(selectedProperty.images || [selectedProperty.image_url]).map((img, i) => (
-               <img key={i} src={img} className="w-full h-full object-cover flex-shrink-0 snap-center" />
-             ))}
+        <div className="fixed inset-0 z-[90] bg-slate-50 flex flex-col animate-in slide-in-from-bottom-10">
+           {/* Top Navigation */}
+           <div className="bg-white px-4 py-3 border-b border-slate-200 flex items-center justify-between shadow-sm sticky top-0 z-20">
+               <h2 className="text-lg font-bold text-slate-800 truncate pr-4">{selectedProperty.title}</h2>
+               <button onClick={() => setSelectedProperty(null)} className="bg-slate-100 p-2 rounded-full text-slate-600"><X size={20} /></button>
+           </div>
+
+           {/* Tab System */}
+           <div className="flex bg-white border-b border-slate-200">
+               <button onClick={() => setModalTab('details')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 border-b-2 transition-colors ${modalTab === 'details' ? 'border-primary text-primary' : 'border-transparent text-slate-500'}`}>
+                   <FileText size={16} /> Details
+               </button>
+               <button onClick={() => setModalTab('assets')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 border-b-2 transition-colors ${modalTab === 'assets' ? 'border-primary text-primary' : 'border-transparent text-slate-500'}`}>
+                   <LayoutGrid size={16} /> Creatives
+               </button>
            </div>
            
-           <div className="flex-1 p-8 overflow-y-auto bg-white -mt-8 rounded-t-[2.5rem] relative z-0 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
-              <div className="mb-6">
-                <h2 className="text-3xl font-black text-slate-900 leading-tight mb-2">{selectedProperty.title}</h2>
-                <div className="w-16 h-1 bg-primary rounded-full"></div>
-              </div>
-              
-              <p className="text-slate-600 text-base leading-relaxed whitespace-pre-line">
-                {selectedProperty.description}
-              </p>
+           <div className="flex-1 overflow-y-auto">
+               {modalTab === 'details' ? (
+                   // TAB 1: DETAILS
+                   <div className="p-4 space-y-6">
+                       <div className="flex gap-2 overflow-x-auto snap-x scrollbar-hide pb-2">
+                         {(selectedProperty.images || [selectedProperty.image_url]).map((img, i) => (
+                           <img key={i} src={img} className="w-[80vw] h-64 rounded-2xl object-cover flex-shrink-0 snap-center border border-slate-200" />
+                         ))}
+                       </div>
+                       <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                          <h3 className="font-bold text-slate-800 mb-2">Description</h3>
+                          <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">{selectedProperty.description}</p>
+                       </div>
+                   </div>
+               ) : (
+                   // TAB 2: CREATIVES (ASSETS)
+                   <div className="p-4">
+                       {isLoadingAssets ? (
+                           <div className="flex justify-center py-20"><Loader2 size={24} className="animate-spin text-slate-400" /></div>
+                       ) : propertyAssets.length === 0 ? (
+                           <div className="text-center py-20">
+                               <ImageIcon size={48} className="mx-auto text-slate-300 mb-3" />
+                               <p className="text-slate-500 text-sm font-medium">No creatives generated yet.</p>
+                               <button onClick={() => { setSelectedProperty(null); router.push('/dashboard/creation'); }} className="mt-4 text-primary text-sm font-bold">Go to Creator</button>
+                           </div>
+                       ) : (
+                           <div className="grid grid-cols-2 gap-3">
+                               {propertyAssets.map(asset => (
+                                   <div key={asset.id} className="aspect-square bg-slate-200 rounded-xl overflow-hidden relative shadow-sm border border-slate-200">
+                                       {asset.type === 'video' ? (
+                                           <video src={asset.url} className="w-full h-full object-cover" />
+                                       ) : (
+                                           <img src={asset.url} className="w-full h-full object-cover" />
+                                       )}
+                                       <div className={`absolute top-2 right-2 w-2.5 h-2.5 rounded-full border-2 border-white ${asset.status === 'Published' ? 'bg-green-500' : 'bg-amber-500'}`} />
+                                   </div>
+                               ))}
+                           </div>
+                       )}
+                   </div>
+               )}
            </div>
         </div>
       )}
