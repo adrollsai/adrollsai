@@ -1,8 +1,8 @@
-// adrollsai/adrollsai/adrollsai-adrollsai-version3/app/api/post-universal/route.ts
+// adrollsai/adrollsai/adrollsai-adrollsai-bsi/app/api/post-universal/route.ts
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { postToFacebook, postToInstagram, postToLinkedIn, postToYouTube } from '@/utils/external-apis' // <--- NEW IMPORT
+import { postToFacebook, postToInstagram } from '@/utils/external-apis'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -12,12 +12,12 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { imageUrl, caption, title, type, platforms } = body
+  const { imageUrl, caption, type, platforms } = body
 
   // 2. Get User Credentials
   const { data: profile } = await supabase
     .from('profiles')
-    .select('selected_page_token, selected_page_id, linkedin_token, youtube_token')
+    .select('selected_page_token, selected_page_id')
     .eq('id', user.id)
     .single()
 
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   const results: Record<string, string> = {}
   const promises: Promise<void>[] = []
 
-  // --- HELPER (UPDATED to call direct functions) ---
+  // --- HELPER ---
   const sendToPlatform = async (platform: string, fn: () => Promise<any>) => {
     try {
       await fn()
@@ -34,7 +34,6 @@ export async function POST(request: Request) {
     } catch (error: any) {
       const errorMessage = error.message || 'Unknown Error'
       console.error(`[Universal Post] ${platform} failed:`, errorMessage)
-      // Safely shorten error message for the response
       results[platform] = `Failed: ${errorMessage.substring(0, 100)}...`
     }
   }
@@ -64,37 +63,6 @@ export async function POST(request: Request) {
     } else {
       results.instagram = 'skipped_no_token_or_page_id' 
     }
-  }
-
-  // --- LINKEDIN ---
-  if (platforms.includes('linkedin')) {
-    if (profile.linkedin_token) {
-      promises.push(sendToPlatform('linkedin', () => postToLinkedIn(
-        profile.linkedin_token!, 
-        imageUrl, 
-        caption
-      )))
-    } else {
-      results.linkedin = 'skipped_no_token'
-    }
-  }
-
-  // --- YOUTUBE (Video ONLY) ---
-  if (platforms.includes('youtube') && type === 'video') {
-    if (profile.youtube_token) {
-        promises.push(sendToPlatform('youtube', () => postToYouTube(
-            profile.youtube_token!,
-            imageUrl, 
-            title || 'New Listing',
-            caption,
-            'public'
-        )))
-    } else {
-        results.youtube = 'skipped_no_token'
-    }
-  } else if (platforms.includes('youtube')) {
-    // Explicitly record that we skipped it because it wasn't a video
-    results.youtube = 'skipped_not_video'
   }
 
   await Promise.all(promises)
