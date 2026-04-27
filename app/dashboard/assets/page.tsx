@@ -123,37 +123,59 @@ export default function AssetsPage() {
     }
   }
 
-  // 4. Handle WhatsApp Share (FILE SHARE API)
+  // 4. Handle WhatsApp Share (FILE SHARE API WITH BULLETPROOF FALLBACK)
   const handleShareWhatsApp = async () => {
     if (!selectedAsset) return;
-    // Convert image URL to a File Object to share the actual image payload
-    try {
-      setIsPosting(true);
-      const response = await fetch(selectedAsset.url);
-      const blob = await response.blob();
-      
-      // Create a File object from the blob
-      const ext = selectedAsset.type === 'video' ? 'mp4' : 'jpg'
-      const mimeType = selectedAsset.type === 'video' ? 'video/mp4' : 'image/jpeg'
-      const file = new File([blob], `marketing-asset.${ext}`, { type: mimeType });
-      
-      // Native Web Share API (Passes physical file to OS Share Sheet -> WhatsApp)
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: 'Marketing Asset',
-          text: caption || ''
-        });
-      } else {
-         // Fallback for Desktop/Unsupported browsers: Share link text
-         const textToShare = `${caption ? caption + '\n\n' : ''}${selectedAsset.url}`;
-         window.open(`https://web.whatsapp.com/send?text=${encodeURIComponent(textToShare)}`, '_blank');
+
+    if (selectedAsset.type === 'image') {
+      try {
+        setIsPosting(true);
+        
+        // Fetch the image data
+        const response = await fetch(selectedAsset.url);
+        const blob = await response.blob();
+        
+        // Dynamically get the correct extension to keep iOS Safari happy
+        const mimeType = blob.type || 'image/jpeg';
+        const ext = mimeType.split('/')[1] || 'jpg';
+        const file = new File([blob], `marketing-asset.${ext}`, { type: mimeType });
+
+        const shareData: any = {
+            title: 'Marketing Asset',
+            text: caption || '',
+        };
+
+        // Native Web Share API (Passes physical file to OS Share Sheet -> WhatsApp)
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          shareData.files = [file];
+          await navigator.share(shareData);
+        } else if (navigator.share) {
+           // If it can't share files (or iOS blocks it), fallback to sharing the URL natively
+           shareData.url = selectedAsset.url;
+           await navigator.share(shareData);
+        } else {
+           // Fallback for Desktop/Unsupported browsers
+           const textToShare = `${caption ? caption + '\n\n' : ''}${selectedAsset.url}`;
+           window.open(`https://web.whatsapp.com/send?text=${encodeURIComponent(textToShare)}`, '_blank');
+        }
+      } catch (error) {
+        console.error("Error sharing image:", error);
+        
+        // If the strict file-share crashed (e.g. gesture timeout), do a fallback text share instead of just an alert
+        try {
+            const textToShare = `${caption ? caption + '\n\n' : ''}${selectedAsset.url}`;
+            window.open(`https://wa.me/?text=${encodeURIComponent(textToShare)}`, '_blank');
+        } catch (fallbackErr) {
+            alert("Direct image sharing failed. Try downloading it first.");
+        }
+
+      } finally {
+        setIsPosting(false);
       }
-    } catch (error) {
-      console.error("Error sharing asset:", error);
-      alert("Direct sharing failed. Try downloading it first.");
-    } finally {
-      setIsPosting(false);
+    } else {
+      // For videos (just link/text fallback, since native video sharing via blob is very heavy)
+      const textToShare = `${caption ? caption + '\n\n' : ''}${selectedAsset.url}`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(textToShare)}`, '_blank');
     }
   }
 
