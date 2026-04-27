@@ -35,9 +35,7 @@ type Profile = {
 }
 
 // --- TEMPLATES LIBRARY ---
-const TEMPLATES: { id: string, name: string, url: string }[] = [
-  // { id: 't1', name: 'Minimalist', url: '...' },
-]
+const TEMPLATES: { id: string, name: string, url: string }[] = []
 
 const ASPECT_RATIOS = [
   { label: 'Square (1:1)', value: '1:1', icon: 'square' },
@@ -85,9 +83,6 @@ export default function CreationPage() {
       const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       if (profileData) {
           setProfile(profileData)
-          console.log("[LOG] Profile Loaded. Logo URL:", profileData.logo_url)
-      } else {
-          console.warn("[LOG] Profile Data Missing or Empty")
       }
 
       const { data: props } = await supabase
@@ -106,7 +101,7 @@ export default function CreationPage() {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
         if (isThinking) {
             e.preventDefault();
-            e.returnValue = ''; // Chrome requires returnValue to be set
+            e.returnValue = ''; 
         }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -115,7 +110,7 @@ export default function CreationPage() {
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, isThinking, currentStep])
 
-  // Helper: Handle Reference Upload (R2)
+  // Helper: Handle Reference Upload
   const handleReferenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     
@@ -126,15 +121,11 @@ export default function CreationPage() {
         const newFileName = `reference-${Date.now()}.${fileExt}`;
         const renamedFile = new File([file], newFileName, { type: file.type });
 
-        console.log("[LOG] Uploading Reference:", newFileName);
         const publicUrl = await uploadToR2(renamedFile, 'references');
-        console.log("[LOG] Reference Uploaded:", publicUrl);
-
         setUploadedRefUrl(publicUrl);
         setSelectedTemplate(null); 
     } catch (error: any) {
         alert("Upload failed: " + error.message);
-        console.error(error);
     } finally {
         setIsUploadingRef(false);
     }
@@ -171,14 +162,6 @@ export default function CreationPage() {
       const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
       const activeReferenceUrl = uploadedRefUrl || templateObj?.url || null
 
-      console.log("[LOG] Sending Request:", {
-          instructions: userText,
-          product: prop?.title,
-          hasLogo: !!profile?.logo_url,
-          logoUrl: profile?.logo_url,
-          reference: activeReferenceUrl
-      });
-
       // B. Send to API
       const startResponse = await fetch('/api/chat', {
         method: 'POST',
@@ -190,12 +173,8 @@ export default function CreationPage() {
             contactNumber: profile?.contact_number || "",
             businessName: profile?.business_name || "",
             logoUrl: profile?.logo_url || "", 
-            
-            // Context
             propImages: propImages,
             templateUrl: activeReferenceUrl, 
-            
-            // Config
             aspectRatio: selectedRatio
         })
       })
@@ -203,20 +182,21 @@ export default function CreationPage() {
       const startData = await startResponse.json()
       if (startData.error) throw new Error(startData.error)
 
+      // CATCH THE GENERATED COPY FROM THE API
+      const generatedCaption = startData.caption || ''
+
       setCurrentStep('Generating Visuals (Please wait)...')
       
       // C. Poll for Result
       if (startData.taskId) {
         const taskId = startData.taskId 
         let attempts = 0
-        const maxAttempts = 30 // Approx 2 minutes maximum waiting time
+        const maxAttempts = 30 
         let finalImageUrl = ''
 
         while (attempts < maxAttempts) {
             attempts++
             await new Promise(resolve => setTimeout(resolve, 4000))
-
-            console.log(`[LOG] Polling Attempt ${attempts}/${maxAttempts} for Task: ${taskId}`);
 
             const checkResponse = await fetch('/api/check-status', {
                 method: 'POST',
@@ -227,7 +207,6 @@ export default function CreationPage() {
             const checkData = await checkResponse.json()
             
             if (checkData.data && checkData.data.state === 'success') { 
-                console.log("[LOG] Generation Success:", checkData.data);
                 if (checkData.data.resultJson) {
                     try {
                         const resultObj = JSON.parse(checkData.data.resultJson)
@@ -241,30 +220,30 @@ export default function CreationPage() {
                     break 
                 }
             } else if (checkData.data && checkData.data.state === 'failed') {
-                console.error("[LOG] Generation Failed:", checkData.data.failMsg);
                 throw new Error("Generation failed: " + (checkData.data.failMsg || "Unknown error"))
             }
         }
 
         if (finalImageUrl) {
-            console.log("[LOG] Final Image URL:", finalImageUrl);
-            // Save to DB using verified userId instead of profile to prevent failure
+            // SAVE TO DB INCLUDING THE CAPTION
             if (userId) {
                 const { error: dbError } = await supabase.from('assets').insert({
                     user_id: userId,
-                    property_id: selectedPropId || null, // 🚨 NEW LINKING LOGIC 🚨
+                    property_id: selectedPropId || null, 
                     url: finalImageUrl,
                     type: 'image',
-                    status: 'Draft'
+                    status: 'Draft',
+                    caption: generatedCaption // <--- INJECTING COPY HERE
                 })
-                if (dbError) console.error("[LOG] DB Save Error:", dbError);
-                else console.log("[LOG] Saved to Assets Table");
+                if (dbError) {
+                  console.error("[LOG] DB Save Error:", dbError.message || JSON.stringify(dbError));
+              }
             }
 
             const aiMsg: Message = { 
               id: Date.now() + 1, 
               role: 'ai', 
-              text: `Here is your design!`, 
+              text: generatedCaption ? `Here is your design and suggested copy:\n\n${generatedCaption}` : `Here is your design!`, 
               mediaType: 'image',
               mediaUrl: finalImageUrl
             }
@@ -275,7 +254,6 @@ export default function CreationPage() {
       }
 
     } catch (error: any) {
-      console.error("[LOG] Error in handleSend:", error);
       const errorMsg: Message = { id: Date.now() + 1, role: 'ai', text: "Error: " + error.message }
       setMessages(prev => [...prev, errorMsg])
     } finally {
@@ -298,8 +276,6 @@ export default function CreationPage() {
 
         {/* CONTROLS BAR */}
         <div className="px-4 pb-3 overflow-x-auto scrollbar-hide flex gap-3 items-center">
-            
-            {/* Product Selector */}
             <div className="relative min-w-[200px]">
                 <Package size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <select 
@@ -316,7 +292,6 @@ export default function CreationPage() {
 
             <div className="h-6 w-px bg-slate-200 mx-1 flex-shrink-0" />
 
-            {/* Aspect Ratio */}
             <div className="flex bg-slate-50 rounded-lg p-1 border border-slate-200">
                 {ASPECT_RATIOS.map(ratio => (
                     <button 
@@ -332,7 +307,6 @@ export default function CreationPage() {
         
         {/* TEMPLATES & UPLOAD BAR */}
         <div className="px-4 pb-3 overflow-x-auto scrollbar-hide flex gap-3">
-             {/* Auto Button */}
              <button 
                 onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); }}
                 className={`flex-shrink-0 w-20 h-20 rounded-xl border-2 flex flex-col items-center justify-center gap-2 transition-all ${selectedTemplate === null && uploadedRefUrl === null ? 'border-primary bg-blue-50' : 'border-dashed border-slate-200 text-slate-400'}`}
@@ -341,7 +315,6 @@ export default function CreationPage() {
                 <span className="text-[10px] font-bold">Auto</span>
              </button>
 
-             {/* Upload Reference Button */}
              <div className="relative">
                  <button 
                     onClick={() => refFileInputRef.current?.click()}
@@ -356,10 +329,8 @@ export default function CreationPage() {
                         </>
                     )}
                  </button>
-                 {/* Hidden Input */}
                  <input type="file" ref={refFileInputRef} onChange={handleReferenceUpload} className="hidden" accept="image/*" />
                  
-                 {/* Clear Upload Button */}
                  {uploadedRefUrl && (
                     <button 
                         onClick={(e) => { e.stopPropagation(); setUploadedRefUrl(null); }}
@@ -370,7 +341,6 @@ export default function CreationPage() {
                  )}
              </div>
 
-             {/* Preset Templates */}
              {TEMPLATES.map(t => (
                  <button 
                     key={t.id}
@@ -400,7 +370,7 @@ export default function CreationPage() {
               )}
 
               <div className="flex flex-col gap-2">
-                <div className={`p-4 text-sm leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-slate-800 text-white rounded-2xl rounded-tr-sm' : 'bg-white text-slate-700 border border-slate-100 rounded-2xl rounded-tl-sm'}`}>
+                <div className={`p-4 text-sm leading-relaxed shadow-sm whitespace-pre-wrap ${msg.role === 'user' ? 'bg-slate-800 text-white rounded-2xl rounded-tr-sm' : 'bg-white text-slate-700 border border-slate-100 rounded-2xl rounded-tl-sm'}`}>
                   {msg.text}
                 </div>
                 {msg.mediaUrl && (
@@ -413,7 +383,6 @@ export default function CreationPage() {
           </div>
         ))}
         
-        {/* Progress Indicator */}
         {isThinking && (
              <div className="flex items-start gap-3 w-full animate-in fade-in slide-in-from-bottom-2">
                 <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center flex-shrink-0 mt-1">

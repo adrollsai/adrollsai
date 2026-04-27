@@ -1,4 +1,4 @@
-// adrollsai/adrollsai/adrollsai-adrollsai-version3/utils/external-apis.ts
+// adrollsai/adrollsai/adrollsai-adrollsai-bsi/utils/external-apis.ts
 
 import crypto from 'crypto';
 
@@ -8,12 +8,10 @@ import crypto from 'crypto';
 const KIE_API_KEY = process.env.KIE_API_KEY;
 const KIE_CREATE_TASK_URL = "https://api.kie.ai/api/v1/jobs/createTask";
 const FACEBOOK_GRAPH_URL = "https://graph.facebook.com/v19.0";
-const LINKEDIN_API_URL = "https://api.linkedin.com/v2";
-const YOUTUBE_API_URL = "https://www.googleapis.com/upload/youtube/v3/videos";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // Required for Auto-Blogger cron job
 
 /**
- * 1. Kie.ai Image/Video Generation (Replacing n8n 'Code in JavaScript1' and 'HTTP Request2')
+ * 1. Kie.ai Image/Video Generation 
  */
 export async function createKieTask(payload: any): Promise<{ taskId: string } | { error: string }> {
     if (!KIE_API_KEY) return { error: "KIE_API_KEY is not configured." }
@@ -43,7 +41,7 @@ export async function createKieTask(payload: any): Promise<{ taskId: string } | 
 
 
 /**
- * 2. Facebook Posting (Replacing n8n 'Social to FB' workflow)
+ * 2. Facebook Posting 
  */
 export async function postToFacebook(accessToken: string, imageUrl: string, caption: string): Promise<any> {
     const response = await fetch(`${FACEBOOK_GRAPH_URL}/me/photos`, {
@@ -67,7 +65,7 @@ export async function postToFacebook(accessToken: string, imageUrl: string, capt
 }
 
 /**
- * 3. Instagram Posting (Replacing n8n 'Post to Instagram' workflow)
+ * 3. Instagram Posting 
  */
 export async function postToInstagram(accessToken: string, pageId: string, imageUrl: string, caption: string): Promise<any> {
     // 3.1 Get IG Business Account ID
@@ -112,163 +110,43 @@ export async function postToInstagram(accessToken: string, pageId: string, image
 
 
 /**
- * 4. LinkedIn Posting (Replacing n8n 'Post to LinkedIn' workflow)
+ * 4. Kie.ai Gemini Chat API 
+ * FIXED: Uses dynamic model routing in the URL path to prevent 404 errors.
  */
-export async function postToLinkedIn(accessToken: string, imageUrl: string, caption: string): Promise<any> {
+export async function generateKieChat(prompt: string, model: string = "gemini-3-flash"): Promise<string> {
+    if (!KIE_API_KEY) throw new Error("KIE_API_KEY is not configured for Chat API.");
     
-    // 4.1 Get User URN
-    const userinfoRes = await fetch(`${LINKEDIN_API_URL}/userinfo`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
-    const userinfoData = await userinfoRes.json();
-    if (!userinfoRes.ok || !userinfoData.sub) {
-        throw new Error(`LinkedIn URN Error: ${userinfoData.message || userinfoRes.statusText}`);
-    }
-    const authorUrn = `urn:li:person:${userinfoData.sub}`;
-
-    // 4.2 Register Upload
-    const registerPayload = {
-        registerUploadRequest: {
-            recipes: ["urn:li:digitalmediaRecipe:feedshare-image"],
-            owner: authorUrn,
-            serviceRelationships: [{
-                relationshipType: "OWNER",
-                identifier: "urn:li:userGeneratedContent"
-            }]
-        }
-    };
-    const registerRes = await fetch(`${LINKEDIN_API_URL}/assets?action=registerUpload`, {
-        method: 'POST',
-        headers: { 
-            'Authorization': `Bearer ${accessToken}`, 
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(registerPayload)
-    });
-    const registerData = await registerRes.json();
-    const uploadUrl = registerData.value?.uploadMechanism?.[
-        "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"
-    ]?.uploadUrl;
-    const asset = registerData.value?.asset;
-
-    if (!registerRes.ok || !uploadUrl || !asset) {
-        throw new Error(`LinkedIn Register Error: ${registerData.message || registerRes.statusText}`);
-    }
-
-    // 4.3 Download Image and Upload Binary
-    const imageRes = await fetch(imageUrl);
-    const imageBuffer = await imageRes.arrayBuffer(); // Get as ArrayBuffer for binary upload
-
-    const uploadRes = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': imageRes.headers.get('content-type') || 'application/octet-stream', 
-        },
-        body: imageBuffer 
-    });
-
-    if (!uploadRes.ok) {
-        throw new Error(`LinkedIn Upload Error: ${uploadRes.statusText}`);
-    }
+    // The endpoint must include the model name in the URL for Kie.ai
+    const endpoint = `https://api.kie.ai/${model}/v1/chat/completions`;
     
-    // 4.4 Create Post
-    const postPayload = {
-        author: authorUrn,
-        lifecycleState: "PUBLISHED",
-        specificContent: {
-            "com.linkedin.ugc.ShareContent": {
-                shareCommentary: { text: caption },
-                shareMediaCategory: "IMAGE",
-                media: [{
-                    status: "READY",
-                    description: { text: "Image" },
-                    media: asset,
-                    title: { text: "Shared Image" }
-                }]
-            }
-        },
-        visibility: {
-            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-        }
-    };
-
-    const postRes = await fetch(`${LINKEDIN_API_URL}/ugcPosts`, {
-        method: 'POST',
-        headers: { 
-            'Authorization': `Bearer ${accessToken}`, 
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(postPayload)
-    });
-    const postData = await postRes.json();
-    if (!postRes.ok) {
-        throw new Error(`LinkedIn Post Error: ${postData.message || postRes.statusText}`);
-    }
-
-    return postData;
-}
-
-
-/**
- * 5. YouTube Posting (Replacing n8n 'Post to YouTube' workflow)
- */
-export async function postToYouTube(accessToken: string, videoUrl: string, title: string, description: string, privacy: string = 'public'): Promise<any> {
-    
-    // 5.1 Initiate Resumable Upload
-    const snippet = { title: title, description: description };
-    const status = { privacyStatus: privacy, selfDeclaredMadeForKids: false };
-
-    const initiateRes = await fetch(`${YOUTUBE_API_URL}?uploadType=resumable&part=snippet,status`, {
+    const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'X-Upload-Content-Type': 'video/mp4',
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${KIE_API_KEY}`
         },
-        body: JSON.stringify({ snippet, status })
+        body: JSON.stringify({
+            model: model,
+            messages: [{ role: "user", content: prompt }]
+        })
     });
-
-    if (!initiateRes.ok) {
-        const text = await initiateRes.text();
-        throw new Error(`YouTube Initiate Error: ${text}`);
-    }
-
-    const uploadUrl = initiateRes.headers.get('location');
-    if (!uploadUrl) {
-        throw new Error("YouTube did not return an upload URL.");
-    }
     
-    // 5.2 Download Video and Upload Binary
-    const videoRes = await fetch(videoUrl);
-    const videoBuffer = await videoRes.arrayBuffer(); // Get as ArrayBuffer for binary upload
-
-    const uploadRes = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'video/mp4',
-        },
-        body: videoBuffer
-    });
-
-    // YouTube responds with JSON on success
-    const uploadData = await uploadRes.json();
-
-    if (!uploadRes.ok) {
-        const text = await uploadRes.text();
-        throw new Error(`YouTube Upload Error: ${text}`);
-    }
+    const data = await response.json();
     
-    return uploadData;
+    if (!response.ok || !data.choices?.[0]?.message?.content) {
+        throw new Error(`Kie.ai Chat API Error: ${data.error?.message || response.statusText || 'Unknown Error'}`);
+    }
+
+    return data.choices[0].message.content;
 }
 
+
 /**
- * 6. Gemini Blog Generation (Conceptual - Required for Auto-Blogger)
+ * 5. Gemini Blog Generation (Conceptual - Required for Auto-Blogger)
  */
 export async function callGemini(prompt: string): Promise<string> {
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured for Auto-Blogger.");
     
-    // UPDATED: Using gemini-3-flash-preview as requested
     const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent", {
         method: 'POST',
         headers: {
@@ -290,7 +168,7 @@ export async function callGemini(prompt: string): Promise<string> {
 }
 
 /**
- * 7. Fetch Lead Forms List
+ * 6. Fetch Lead Forms List
  * Returns a list of forms so the user can select one.
  */
 export async function fetchLeadForms(accessToken: string, pageId: string): Promise<any[]> {
@@ -307,13 +185,10 @@ export async function fetchLeadForms(accessToken: string, pageId: string): Promi
 }
 
 /**
- * 8. Fetch Facebook Leads from Lead Forms (CRM FEATURE)
- * Updated with pagination loop and optional formId filtering.
+ * 7. Fetch Facebook Leads from Lead Forms (CRM FEATURE)
  */
 export async function fetchFacebookLeads(accessToken: string, pageId: string, specificFormId?: string): Promise<any[]> {
     try {
-        // 1. Get Lead Forms for the Page
-        // Increased limit to 500 to catch more forms at once
         const formsRes = await fetch(`${FACEBOOK_GRAPH_URL}/${pageId}/leadgen_forms?fields=id,name&limit=500&access_token=${accessToken}`);
         const formsData = await formsRes.json();
         
@@ -321,29 +196,23 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
         
         let formsToProcess = formsData.data || [];
 
-        // FILTER: If user selected a specific form, only process that one
         if (specificFormId) {
             formsToProcess = formsToProcess.filter((f: any) => f.id === specificFormId);
         }
 
         const allLeads = [];
 
-        // 2. Iterate Forms and Get Leads
         for (const form of formsToProcess) {
-            // Initial request for this form's leads
             let nextUrl = `${FACEBOOK_GRAPH_URL}/${form.id}/leads?fields=id,created_time,field_data,ad_id,ad_name&limit=200&access_token=${accessToken}`;
             
-            // PAGINATION LOOP: Keep fetching while there is a 'next' page
             while (nextUrl) {
                 const leadsRes = await fetch(nextUrl);
                 const leadsData = await leadsRes.json();
                 
                 if (leadsData.data && leadsData.data.length > 0) {
                     const formattedLeads = leadsData.data.map((l: any) => {
-                        // Helper to safely extract values from the field_data array
                         const getField = (name: string) => l.field_data?.find((f: any) => f.name === name)?.values[0] || '';
                         
-                        // Combine Ad Name + Form Name for clear source tracking
                         const sourceTag = l.ad_name 
                             ? `${l.ad_name} | ${form.name}` 
                             : form.name;
@@ -354,14 +223,13 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
                             email: getField('email') || '',
                             phone: getField('phone_number') || '',
                             source: 'Facebook',
-                            ad_name: sourceTag, // This now contains the visible Form Name
+                            ad_name: sourceTag, 
                             created_at: l.created_time
                         };
                     });
                     allLeads.push(...formattedLeads);
                 }
 
-                // Update nextUrl for the next loop iteration (or null to stop)
                 nextUrl = leadsData.paging?.next || null;
             }
         }
@@ -372,12 +240,11 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
 }
 
 /**
- * 9. Send Facebook CAPI Event (CRM FEATURE)
+ * 8. Send Facebook CAPI Event (CRM FEATURE)
  */
 export async function sendCAPIEvent(accessToken: string, pixelId: string, eventName: string, userData: { email?: string, phone?: string }, value?: number) {
     if (!pixelId) return;
 
-    // Helper to Hash Data (SHA256) required by Meta
     const hashData = (data: string) => crypto.createHash('sha256').update(data.trim().toLowerCase()).digest('hex');
 
     const payload = {
@@ -409,7 +276,7 @@ export async function sendCAPIEvent(accessToken: string, pixelId: string, eventN
 }
 
 /**
- * 10. Fetch Facebook Pixels for Ad Account (NEW)
+ * 9. Fetch Facebook Pixels for Ad Account (NEW)
  */
 export async function fetchFacebookPixels(accessToken: string, adAccountId: string): Promise<any[]> {
     try {

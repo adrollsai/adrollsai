@@ -9,14 +9,11 @@ import {
   Upload, 
   Loader2, 
   Facebook, 
-  Linkedin, 
   CheckCircle, 
-  Youtube, 
   Instagram, 
   Globe, 
   Target, 
-  Share2, 
-  Link as LinkIcon 
+  Share2 
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -56,10 +53,6 @@ export default function ProfilePage() {
   
   // Connections
   const [isFacebookConnected, setIsFacebookConnected] = useState(false)
-  const [isLinkedinConnected, setIsLinkedinConnected] = useState(false)
-  const [isGoogleConnected, setIsGoogleConnected] = useState(false)
-  const [isYoutubeConnected, setIsYoutubeConnected] = useState(false) 
-  
   const [facebookToken, setFacebookToken] = useState<string | null>(null); 
   
   const [fbPages, setFbPages] = useState<FBPage[]>([])
@@ -81,15 +74,13 @@ export default function ProfilePage() {
   // Profile Data
   const [formData, setFormData] = useState({
     businessName: '',
-    customDomain: '', // Added for Custom Domain feature
+    customDomain: '',
     mission: '',
     color: '#D0E8FF',
     contact: '',
     logoUrl: '',
     facebookUrl: '',
-    instagramUrl: '',
-    linkedinUrl: '',
-    youtubeUrl: ''
+    instagramUrl: ''
   })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -185,12 +176,10 @@ export default function ProfilePage() {
     if (!userId) return
 
     setSelectedAdAccountId(adAccountId)
-    // Save the selected Ad Account ID
     await supabase.from('profiles').update({
       ad_account_id: adAccountId, 
     }).eq('id', userId)
 
-    // Automatically fetch pixels for this account
     fetchPixels(adAccountId)
   }
 
@@ -224,7 +213,6 @@ export default function ProfilePage() {
         }
         if (isMounted) setUserId(user.id)
 
-        // Updated to fetch custom_domain and role
         const { data: profile } = await supabase
           .from('profiles')
           .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id, custom_domain, role') 
@@ -232,7 +220,7 @@ export default function ProfilePage() {
           .single()
 
         if (profile && isMounted) {
-          setRole(profile.role || 'admin') // Store role
+          setRole(profile.role || 'admin') 
 
           setFormData({
             businessName: profile.business_name || '',
@@ -242,24 +230,18 @@ export default function ProfilePage() {
             contact: profile.contact_number || '',
             logoUrl: profile.logo_url || '',
             facebookUrl: profile.facebook_url || '',
-            instagramUrl: profile.instagram_url || '',
-            linkedinUrl: profile.linkedin_url || '',
-            youtubeUrl: profile.youtube_url || ''
+            instagramUrl: profile.instagram_url || ''
           })
           
-          // Set Distribution Toggle
           setEnableDistribution(profile.enable_distribution || false)
 
-          // Facebook Logic
           if (profile.facebook_token && isValidFacebookToken(profile.facebook_token)) {
             setIsFacebookConnected(true)
             setFacebookToken(profile.facebook_token); 
             
-            // Restore IDs
             if (profile.selected_page_id) setSelectedPageId(profile.selected_page_id)
             else fetchPages()
 
-            // Restore Ad Account & Pixels
             if (profile.ad_account_id) {
                 setSelectedAdAccountId(profile.ad_account_id)
                 fetchPixels(profile.ad_account_id)
@@ -268,7 +250,6 @@ export default function ProfilePage() {
                 setSelectedPixelId(profile.pixel_id)
             }
             
-            // Always fetch ad accounts list so dropdown works
             fetchAdAccounts(profile.facebook_token); 
             
           } else {
@@ -277,10 +258,6 @@ export default function ProfilePage() {
              setAdAccounts([]); 
              setPixels([]);
           }
-
-          if (profile.linkedin_token) setIsLinkedinConnected(true)
-          if (profile.google_business_token) setIsGoogleConnected(true)
-          if (profile.youtube_token) setIsYoutubeConnected(true)
         }
 
       } catch (error) {
@@ -317,42 +294,6 @@ export default function ProfilePage() {
     if (error) alert("Connection error: " + error.message)
   }
 
-  const handleConnectLinkedIn = async () => {
-    const { data, error } = await supabase.auth.linkIdentity({
-      provider: 'linkedin_oidc',
-      options: {
-        scopes: 'openid profile email w_member_social',
-        redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=linkedin_oidc',
-      }
-    })
-    if (data?.url) window.location.href = data.url
-    if (error) alert("Connection error: " + error.message)
-  }
-
-  const handleConnectGoogleBusiness = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        scopes: 'https://www.googleapis.com/auth/business.manage',
-        queryParams: { access_type: 'offline', prompt: 'consent' },
-        redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=google_business',
-      }
-    })
-    if (error) alert("Connection error: " + error.message)
-  }
-
-  const handleConnectYouTube = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google', 
-      options: {
-        scopes: 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
-        queryParams: { access_type: 'offline', prompt: 'consent' },
-        redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=youtube',
-      }
-    })
-    if (error) alert("Connection error: " + error.message)
-  }
-
   // --- DISCONNECT HANDLERS ---
 
   const handleDisconnectFacebook = async () => {
@@ -372,42 +313,6 @@ export default function ProfilePage() {
     setSelectedPageId('')
     setSelectedAdAccountId('') 
     setSelectedPixelId('')
-    setIsDisconnecting(false)
-  }
-
-  const handleDisconnectLinkedIn = async () => {
-    if (!confirm("Disconnect LinkedIn?")) return
-    setIsDisconnecting(true)
-    if (userId) {
-      await supabase.from('profiles').update({ 
-        linkedin_token: null, linkedin_urn: null 
-      }).eq('id', userId)
-    }
-    setIsLinkedinConnected(false)
-    setIsDisconnecting(false)
-  }
-
-  const handleDisconnectGoogleBusiness = async () => {
-    if (!confirm("Disconnect Google Business?")) return
-    setIsDisconnecting(true)
-    if (userId) {
-      await supabase.from('profiles').update({ 
-        google_business_token: null, google_business_refresh_token: null, google_business_location_id: null
-      }).eq('id', userId)
-    }
-    setIsGoogleConnected(false)
-    setIsDisconnecting(false)
-  }
-
-  const handleDisconnectYouTube = async () => {
-    if (!confirm("Disconnect YouTube?")) return
-    setIsDisconnecting(true)
-    if (userId) {
-      await supabase.from('profiles').update({ 
-        youtube_token: null, youtube_refresh_token: null
-      }).eq('id', userId)
-    }
-    setIsYoutubeConnected(false)
     setIsDisconnecting(false)
   }
 
@@ -438,17 +343,14 @@ export default function ProfilePage() {
     }
   }
 
-  // --- Toggle Distribution Instantly ---
   const handleToggleDistribution = async () => {
     if (!userId) return
     const newState = !enableDistribution
     
-    // 1. Optimistic Update (Switch UI immediately)
     setEnableDistribution(newState)
     setIsTogglingDist(true)
 
     try {
-        // 2. Save to Database
         const { error } = await supabase
             .from('profiles')
             .update({ enable_distribution: newState })
@@ -457,11 +359,9 @@ export default function ProfilePage() {
         if (error) {
             throw error
         } else {
-            // 3. Success -> Reload to update BottomNav
             setTimeout(() => window.location.reload(), 500)
         }
     } catch (e: any) {
-        // 4. Revert if failed
         setEnableDistribution(!newState)
         alert("Failed to save setting: " + e.message)
     } finally {
@@ -474,26 +374,22 @@ export default function ProfilePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // Ensure empty domain strings are saved as null to prevent SQL unique constraint errors
     const cleanedDomain = formData.customDomain.trim() === '' ? null : formData.customDomain.trim().toLowerCase()
 
     const { error } = await supabase.from('profiles').upsert({
         id: user.id,
         email: user.email,
         business_name: formData.businessName,
-        custom_domain: role === 'admin' ? cleanedDomain : undefined, // Only update domain if Admin
+        custom_domain: role === 'admin' ? cleanedDomain : undefined,
         mission_statement: formData.mission,
         brand_color: formData.color,
         contact_number: formData.contact,
         logo_url: formData.logoUrl,
         facebook_url: role === 'admin' ? formData.facebookUrl : undefined,
         instagram_url: role === 'admin' ? formData.instagramUrl : undefined,
-        linkedin_url: role === 'admin' ? formData.linkedinUrl : undefined,
-        youtube_url: role === 'admin' ? formData.youtubeUrl : undefined,
       })
 
     if (error) {
-      // Handle the unique constraint error friendly
       if (error.message.includes('unique constraint') || error.code === '23505') {
         alert('This custom domain is already registered to another account.')
       } else {
@@ -654,71 +550,9 @@ export default function ProfilePage() {
                               <div className="py-2"><p className="text-xs text-slate-400">No Pixels found for this account.</p></div>
                           )}
                       </div>
-
                   </div>
               )}
             </div>
-
-            {/* LINKEDIN */}
-            <div className="border-t border-slate-50 pt-4">
-              <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                      <div className="bg-[#0077b5] p-2 rounded-full text-white">
-                        <Linkedin size={18} fill="white" />
-                      </div>
-                      <div>
-                          <h4 className="font-bold text-sm text-slate-800">LinkedIn</h4>
-                          <p className="text-[10px] text-slate-400">{isLinkedinConnected ? 'Account Linked' : 'Connect to automate'}</p>
-                      </div>
-                  </div>
-                  {isLinkedinConnected ? (
-                      <button onClick={handleDisconnectLinkedIn} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
-                  ) : (
-                      <button onClick={handleConnectLinkedIn} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
-                  )}
-              </div>
-            </div>
-
-            {/* YOUTUBE */}
-            <div className="border-t border-slate-50 pt-4">
-              <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                      <div className="bg-[#FF0000] p-2 rounded-full text-white">
-                        <Youtube size={18} fill="white" />
-                      </div>
-                      <div>
-                          <h4 className="font-bold text-sm text-slate-800">YouTube</h4>
-                          <p className="text-[10px] text-slate-400">{isYoutubeConnected ? 'Shorts & Videos Ready' : 'Connect Channel'}</p>
-                      </div>
-                  </div>
-                  {isYoutubeConnected ? (
-                      <button onClick={handleDisconnectYouTube} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
-                  ) : (
-                      <button onClick={handleConnectYouTube} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
-                  )}
-              </div>
-            </div>
-
-            {/* GOOGLE BUSINESS */}
-            <div className="border-t border-slate-50 pt-4">
-              <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                      <div className="bg-white border border-slate-200 p-2 rounded-full text-slate-900">
-                          <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-                      </div>
-                      <div>
-                          <h4 className="font-bold text-sm text-slate-800">Google Business</h4>
-                          <p className="text-[10px] text-slate-400">{isGoogleConnected ? 'Account Linked' : 'Connect to automate'}</p>
-                      </div>
-                  </div>
-                  {isGoogleConnected ? (
-                      <button onClick={handleDisconnectGoogleBusiness} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">{isDisconnecting ? '...' : 'Disconnect'}</button>
-                  ) : (
-                      <button onClick={handleConnectGoogleBusiness} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Connect</button>
-                  )}
-              </div>
-            </div>
-
           </div>
         </div>
       )}
@@ -741,7 +575,6 @@ export default function ProfilePage() {
               />
             </div>
             
-            {/* NEW: CUSTOM DOMAIN FIELD (ADMIN ONLY) */}
             {role === 'admin' && (
               <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
                 <label className="text-[10px] font-bold text-blue-800 ml-1 block mb-1 flex items-center gap-1">
@@ -770,7 +603,6 @@ export default function ProfilePage() {
               />
             </div>
             
-            {/* Social Links Section (ADMIN ONLY) */}
             {role === 'admin' && (
               <div className="pt-4 border-t border-slate-50 mt-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase mb-3 block">Public Social Links</label>
@@ -796,30 +628,6 @@ export default function ProfilePage() {
                             placeholder="https://instagram.com/..." 
                             value={formData.instagramUrl} 
                             onChange={(e) => setFormData({...formData, instagramUrl: e.target.value})} 
-                            className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" 
-                          />
-                      </div>
-                      <div className="flex items-center gap-2">
-                          <div className="bg-blue-50 p-2 rounded-lg text-[#0077b5] flex-shrink-0">
-                            <Linkedin size={16} />
-                          </div>
-                          <input 
-                            type="text" 
-                            placeholder="https://linkedin.com/in/..." 
-                            value={formData.linkedinUrl} 
-                            onChange={(e) => setFormData({...formData, linkedinUrl: e.target.value})} 
-                            className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" 
-                          />
-                      </div>
-                      <div className="flex items-center gap-2">
-                          <div className="bg-red-50 p-2 rounded-lg text-red-600 flex-shrink-0">
-                            <Youtube size={16} />
-                          </div>
-                          <input 
-                            type="text" 
-                            placeholder="https://youtube.com/@..." 
-                            value={formData.youtubeUrl} 
-                            onChange={(e) => setFormData({...formData, youtubeUrl: e.target.value})} 
                             className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" 
                           />
                       </div>
@@ -869,7 +677,6 @@ export default function ProfilePage() {
           <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Settings</h3>
           <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
             
-            {/* Distribution Mode Toggle */}
             <div className="p-4 flex items-center justify-between border-b border-slate-50">
               <div className="flex items-center gap-3">
                   <div className="bg-purple-50 p-2 rounded-full text-purple-600">
