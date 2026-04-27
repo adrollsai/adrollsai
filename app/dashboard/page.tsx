@@ -214,6 +214,7 @@ export default function ProductsPage() {
 
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
+  
     if (isSharingId) return 
 
     setIsSharingId(prop.id)
@@ -241,7 +242,7 @@ export default function ProductsPage() {
         }
       }
 
-      if (filesArray.length > 0 && typeof navigator.canShare === 'function' && navigator.canShare({ files: filesArray })) {
+      if (filesArray.length > 0 && typeof navigator.canShare === 'function' && navigator.canShare({ files: filesArray, title: shareTitle, text: shareText })) {
         await navigator.share({ files: filesArray, title: shareTitle, text: shareText });
       } else {
         if (navigator.share) {
@@ -264,6 +265,7 @@ export default function ProductsPage() {
   })
 
   // --- RENDER ---
+ 
   if (authError) return <div className="flex h-screen items-center justify-center"><button onClick={handleManualLogout} className="text-blue-600 font-bold">Session Expired. Login Again</button></div>
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
 
@@ -281,6 +283,7 @@ export default function ProductsPage() {
             {/* Search Bar - Expands gracefully */}
             <div className="relative flex-1 sm:min-w-[300px]">
               <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+             
               <input 
                 type="text" 
                 value={searchQuery}
@@ -355,7 +358,7 @@ export default function ProductsPage() {
                       className="bg-[#25D366]/10 text-[#25D366] p-2.5 rounded-full hover:bg-[#25D366] hover:text-white transition-colors flex-shrink-0"
                       title="Share via WhatsApp"
                   >
-                    {isSharingId === prop.id ? <Loader2 size={18} className="animate-spin"/> : <WhatsAppIcon size={18} />}
+                     {isSharingId === prop.id ? <Loader2 size={18} className="animate-spin"/> : <WhatsAppIcon size={18} />}
                   </button>
 
                 </div>
@@ -391,7 +394,7 @@ export default function ProductsPage() {
                   ))}
                 </div>
               )}
-              
+               
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 ml-1">Title</label>
                 <input 
@@ -450,7 +453,7 @@ export default function ProductsPage() {
                        <LayoutGrid size={16} /> Linked Creatives
                    </button>
                </div>
-               
+              
                {/* Scrollable Content Area */}
                <div className="flex-1 overflow-y-auto">
                    {modalTab === 'details' ? (
@@ -466,10 +469,10 @@ export default function ProductsPage() {
                            {/* Text Info */}
                            <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-slate-100">
                               <h3 className="font-extrabold text-lg text-slate-900 mb-3 flex items-center gap-2">
-                                <FileText size={18} className="text-blue-600"/> About this Product
+                                 <FileText size={18} className="text-blue-600"/> About this Product
                               </h3>
                               <p className="text-slate-600 text-sm sm:text-base leading-relaxed whitespace-pre-line">
-                                {selectedProperty.description || "No specific details provided for this item."}
+                                 {selectedProperty.description || "No specific details provided for this item."}
                               </p>
                            </div>
                        </div>

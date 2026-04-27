@@ -126,40 +126,34 @@ export default function AssetsPage() {
   // 4. Handle WhatsApp Share (FILE SHARE API)
   const handleShareWhatsApp = async () => {
     if (!selectedAsset) return;
-
     // Convert image URL to a File Object to share the actual image payload
-    if (selectedAsset.type === 'image') {
-      try {
-        setIsPosting(true);
-        // Fetch the image data
-        const response = await fetch(selectedAsset.url);
-        const blob = await response.blob();
-        
-        // Create a File object from the blob
-        const file = new File([blob], 'marketing-asset.png', { type: blob.type });
-
-        // Native Web Share API (Passes physical file to OS Share Sheet -> WhatsApp)
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title: 'Marketing Asset',
-            text: caption || ''
-          });
-        } else {
-           // Fallback for Desktop/Unsupported browsers: Share link text
-           const textToShare = `${caption ? caption + '\n\n' : ''}${selectedAsset.url}`;
-           window.open(`https://web.whatsapp.com/send?text=${encodeURIComponent(textToShare)}`, '_blank');
-        }
-      } catch (error) {
-        console.error("Error sharing image:", error);
-        alert("Direct image sharing failed. Try downloading it first.");
-      } finally {
-        setIsPosting(false);
+    try {
+      setIsPosting(true);
+      const response = await fetch(selectedAsset.url);
+      const blob = await response.blob();
+      
+      // Create a File object from the blob
+      const ext = selectedAsset.type === 'video' ? 'mp4' : 'jpg'
+      const mimeType = selectedAsset.type === 'video' ? 'video/mp4' : 'image/jpeg'
+      const file = new File([blob], `marketing-asset.${ext}`, { type: mimeType });
+      
+      // Native Web Share API (Passes physical file to OS Share Sheet -> WhatsApp)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'Marketing Asset',
+          text: caption || ''
+        });
+      } else {
+         // Fallback for Desktop/Unsupported browsers: Share link text
+         const textToShare = `${caption ? caption + '\n\n' : ''}${selectedAsset.url}`;
+         window.open(`https://web.whatsapp.com/send?text=${encodeURIComponent(textToShare)}`, '_blank');
       }
-    } else {
-      // For videos, browser sharing API often fails due to size limits, fallback to link
-      const textToShare = `${caption ? caption + '\n\n' : ''}${selectedAsset.url}`;
-      window.open(`whatsapp://send?text=${encodeURIComponent(textToShare)}`, '_blank');
+    } catch (error) {
+      console.error("Error sharing asset:", error);
+      alert("Direct sharing failed. Try downloading it first.");
+    } finally {
+      setIsPosting(false);
     }
   }
 
@@ -186,7 +180,7 @@ export default function AssetsPage() {
         const isIgSafe = ratio >= 0.8 && ratio <= 1.91
         
         if (!isIgSafe) {
-          const proceed = confirm(`⚠️ DIMENSION WARNING\n\nAspect Ratio: ${ratio.toFixed(2)}.\nInstagram Feed supports 0.8 to 1.91.\n\nSkip Instagram and post to Facebook only?`)
+           const proceed = confirm(`⚠️ DIMENSION WARNING\n\nAspect Ratio: ${ratio.toFixed(2)}.\nInstagram Feed supports 0.8 to 1.91.\n\nSkip Instagram and post to Facebook only?`)
           if (proceed) { targets = targets.filter(t => t !== 'instagram') } 
           else { setIsPosting(false); return }
         }
@@ -222,7 +216,7 @@ export default function AssetsPage() {
 
   const filteredAssets = assets.filter(asset => {
     const matchesType = activeFilter === 'All' || asset.type === activeFilter;
-    const matchesProp = selectedPropFilter === 'all' || 
+    const matchesProp = selectedPropFilter === 'all' ||
                         (selectedPropFilter === 'unassigned' && !asset.property_id) || 
                         asset.property_id === selectedPropFilter;
     return matchesType && matchesProp;
@@ -279,7 +273,7 @@ export default function AssetsPage() {
                 }} 
                 className="relative aspect-square rounded-xl overflow-hidden bg-slate-100 group cursor-pointer active:scale-95 transition-transform"
             >
-              {asset.type === 'video' ? (
+               {asset.type === 'video' ? (
                   <div className="w-full h-full bg-slate-800 flex items-center justify-center relative">
                       <video src={asset.url} className="w-full h-full object-cover opacity-80" />
                       <div className="absolute inset-0 flex items-center justify-center"><Film className="text-white opacity-50" size={24}/></div>
