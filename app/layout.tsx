@@ -7,7 +7,6 @@ import { createClient } from '@/utils/supabase/server';
 const inter = Inter({ subsets: ["latin"] });
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://adrolls.in";
 
-// Helper to check for System Hosts
 function isSystemHost(host: string) {
   const DEFAULT_HOSTS = [
     'adrolls.in', 'www.adrolls.in', 'app.adrolls.in',
@@ -21,66 +20,55 @@ export async function generateMetadata(): Promise<Metadata> {
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
   const host = rawHost.split(':')[0];
 
-  const defaultMetadata: Metadata = {
-    metadataBase: new URL(baseUrl),
-    title: "AdRolls AI",
-    description: "Keep your ads rolling...",
-    manifest: "/api/manifest",
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  let profileData = null;
+
+  if (!isSystemHost(host)) {
+    const { data } = await supabase.from('profiles').select('business_name, logo_url').eq('custom_domain', host).single();
+    profileData = data;
+  } else if (user) {
+    const { data } = await supabase.from('profiles').select('business_name, logo_url').eq('id', user.id).single();
+    profileData = data;
+  }
+
+  const defaultTitle = "AdRolls AI";
+  const title = profileData?.business_name || defaultTitle;
+  const logoVersion = profileData?.logo_url ? encodeURIComponent(profileData.logo_url.split('/').pop() || 'v1') : 'v1';
+  const uidParam = user ? `&uid=${user.id}` : '';
+
+  const iconUrl = profileData?.logo_url 
+     ? `/api/org-icon?type=icon&v=${logoVersion}${uidParam}` 
+     : "/icon-192x192.png";
+     
+  const faviconUrl = profileData?.logo_url 
+     ? `/api/org-icon?type=favicon&v=${logoVersion}${uidParam}` 
+     : "/favicon.ico";
+
+  return {
+    metadataBase: new URL(`https://${host}`),
+    title: title,
+    description: profileData?.business_name ? `Welcome to ${title}` : "Keep your ads rolling...",
+    // Manifest is injected manually into <head> below to allow dynamic params
     icons: {
-      icon: "/favicon.ico",
-      shortcut: "/favicon.ico",
-      apple: "/icon-192x192.png",
+      icon: faviconUrl,
+      shortcut: faviconUrl,
+      apple: iconUrl,
     },
     appleWebApp: {
         capable: true,
         statusBarStyle: "default",
-        title: "AdRolls AI",
-    }
-  };
-
-  if (isSystemHost(host)) return defaultMetadata;
-
-  try {
-    const supabase = await createClient();
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('business_name, logo_url')
-      .eq('custom_domain', host)
-      .single();
-
-    if (profile) {
-      const logoVersion = profile.logo_url ? encodeURIComponent(profile.logo_url.split('/').pop() || 'v1') : 'v1';
-      const title = profile.business_name || "Partner App";
-      
-      return {
-        metadataBase: new URL(`https://${host}`),
         title: title,
-        description: `Welcome to ${title}`,
-        manifest: "/api/manifest",
-        icons: {
-          icon: `/api/org-icon?type=favicon&v=${logoVersion}`,
-          shortcut: `/api/org-icon?type=favicon&v=${logoVersion}`,
-          apple: `/api/org-icon?type=icon&v=${logoVersion}`, 
-        },
-        appleWebApp: {
-            capable: true,
-            statusBarStyle: "default",
-            title: title,
-        },
-        openGraph: {
-          title: title,
-          description: `Welcome to ${title}`,
-          url: `https://${host}`,
-          siteName: title,
-          images: [{ url: `/api/org-icon?type=icon&v=${logoVersion}`, width: 512, height: 512, alt: title }],
-        },
-      };
-    }
-  } catch (error) {
-    console.error("Metadata error:", error);
-  }
-
-  return defaultMetadata;
+    },
+    openGraph: {
+      title: title,
+      description: profileData?.business_name ? `Welcome to ${title}` : "Automate your real estate marketing",
+      url: `https://${host}`,
+      siteName: title,
+      images: [{ url: iconUrl, width: 512, height: 512, alt: title }],
+    },
+  };
 }
 
 export const viewport: Viewport = {
@@ -95,29 +83,44 @@ export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   
-  // Fetch Dynamic Splash Screen URL
   const headersList = await headers();
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
   const host = rawHost.split(':')[0];
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
   
-  let splashUrl = "/icon-512x512.png"; // Default fallback
-  
+  let splashUrl = "/api/org-icon?type=splash"; 
+  let manifestUrl = "/api/manifest";
+
+  let profileData = null;
+
+  // THE FIX: Fetch profile data if custom domain OR if user is logged in!
   if (!isSystemHost(host)) {
-     try {
-        const supabase = await createClient();
-        const { data: profile } = await supabase.from('profiles').select('logo_url').eq('custom_domain', host).single();
-        if (profile?.logo_url) {
-            const v = encodeURIComponent(profile.logo_url.split('/').pop() || 'v1');
-            splashUrl = `/api/org-icon?type=splash&v=${v}`;
-        }
-     } catch (e) {
-         // Fallback applies naturally
-     }
+     const { data } = await supabase.from('profiles').select('logo_url').eq('custom_domain', host).single();
+     profileData = data;
+  } else if (user) {
+     const { data } = await supabase.from('profiles').select('logo_url').eq('id', user.id).single();
+     profileData = data;
+  }
+
+  if (profileData?.logo_url) {
+     const v = encodeURIComponent(profileData.logo_url.split('/').pop() || 'v1');
+     const uidParam = user ? `&uid=${user.id}` : '';
+     splashUrl = `/api/org-icon?type=splash&v=${v}${uidParam}`;
+     manifestUrl = `/api/manifest?v=${v}${uidParam ? `&uid=${user.id}` : ''}`;
+  } else if (user) {
+     // Even if no custom logo is uploaded, pass UID so it processes the default icon perfectly
+     splashUrl = `/api/org-icon?type=splash&uid=${user.id}`;
+     manifestUrl = `/api/manifest?uid=${user.id}`;
   }
 
   return (
     <html lang="en">
       <head>
+        <link rel="manifest" href={manifestUrl} />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         {/* iOS Splash Screen: Dynamically points to the Sharp image processor */}
         <link rel="apple-touch-startup-image" href={splashUrl} />
       </head>

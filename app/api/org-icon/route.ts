@@ -2,55 +2,62 @@ import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 
-// Change runtime to nodejs to support sharp image processing
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const iconType = searchParams.get('type') || 'icon'; 
+  const uid = searchParams.get('uid'); // Grabs the user ID from layout.tsx
 
-  // Reliable Host Detection
   const rawHost = request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
   const host = rawHost.split(':')[0]; 
 
-  // Fallback Assets
   const FALLBACK_ICON = new URL('/icon-512x512.png', request.url).toString();
   const FALLBACK_FAVICON = new URL('/favicon.ico', request.url).toString();
 
-  // System Hosts (Skip DB lookup)
   const SYSTEM_HOSTS = [
     'adrolls.in', 'www.adrolls.in', 'app.adrolls.in',
     process.env.NEXT_PUBLIC_DEFAULT_HOST || 'localhost'
   ];
 
-  if (SYSTEM_HOSTS.includes(host)) {
-    if (iconType === 'splash') return NextResponse.redirect(FALLBACK_ICON);
-    return NextResponse.redirect(iconType === 'favicon' ? FALLBACK_FAVICON : FALLBACK_ICON);
-  }
-
   try {
     const supabase = await createClient();
+    let logoUrl = null;
 
-    // Fetch Profile Logo based on custom domain
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('logo_url')
-      .eq('custom_domain', host)
-      .single();
-
-    if (!profile || !profile.logo_url) {
-      return NextResponse.redirect(iconType === 'favicon' ? FALLBACK_FAVICON : FALLBACK_ICON);
+    // 1. Determine which logo to fetch
+    if (!SYSTEM_HOSTS.includes(host)) {
+        const { data: profile } = await supabase.from('profiles').select('logo_url').eq('custom_domain', host).single();
+        logoUrl = profile?.logo_url;
+    } else if (uid) {
+        // THE FIX: If on AdRolls domain but logged in, get the user's logo!
+        const { data: profile } = await supabase.from('profiles').select('logo_url').eq('id', uid).single();
+        logoUrl = profile?.logo_url;
     }
 
-    const imageResponse = await fetch(profile.logo_url);
-    if (!imageResponse.ok) {
-      return NextResponse.redirect(iconType === 'favicon' ? FALLBACK_FAVICON : FALLBACK_ICON);
+    // 2. Fetch the image
+    let imageResponse;
+    if (logoUrl) {
+        imageResponse = await fetch(logoUrl);
+    }
+
+    // 3. Fallback Splash Screen processing
+    if (!imageResponse || !imageResponse.ok) {
+        if (iconType === 'splash') {
+            // Fetch the default icon to process it into a perfect splash screen
+            imageResponse = await fetch(FALLBACK_ICON);
+        } else {
+            return NextResponse.redirect(iconType === 'favicon' ? FALLBACK_FAVICON : FALLBACK_ICON);
+        }
+    }
+
+    if (!imageResponse || !imageResponse.ok) {
+        return NextResponse.redirect(iconType === 'favicon' ? FALLBACK_FAVICON : FALLBACK_ICON);
     }
 
     const inputBuffer = await imageResponse.arrayBuffer();
 
-    // --- IMAGE PROCESSING WITH SHARP ---
+    // 4. Image Processing with Sharp
     let pipeline = sharp(Buffer.from(inputBuffer));
     
     if (iconType === 'favicon') {
@@ -60,7 +67,6 @@ export async function GET(request: NextRequest) {
         });
     } 
     else if (iconType === 'splash') {
-        // Generates the perfect iOS Splash Screen dimensions
         pipeline = pipeline
             .resize(1170, 2532, { 
                 fit: 'contain', 
@@ -69,7 +75,6 @@ export async function GET(request: NextRequest) {
             .flatten({ background: { r: 255, g: 255, b: 255 } }); 
     }
     else {
-        // App icon (512x512)
         pipeline = pipeline
             .resize(512, 512, { 
                 fit: 'contain', 

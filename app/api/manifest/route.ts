@@ -4,11 +4,13 @@ import { createClient } from '@/utils/supabase/server';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const uid = url.searchParams.get('uid');
+
   const headersList = request.headers;
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
   const host = rawHost.split(',')[0].trim().split(':')[0];
 
-  // Default Manifest (For adrolls.in)
   const defaultManifest = {
     id: '/?source=pwa_default',
     name: 'AdRolls AI',
@@ -32,38 +34,42 @@ export async function GET(request: Request) {
 
   let manifestData: any = defaultManifest;
 
-  // Custom Domain Logic
-  if (!SYSTEM_HOSTS.includes(host)) {
-    try {
-      const supabase = await createClient();
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('business_name, logo_url')
-        .eq('custom_domain', host)
-        .single();
+  try {
+    const supabase = await createClient();
+    let profileData = null;
 
-      if (profile) {
-        const logoVersion = profile.logo_url ? encodeURIComponent(profile.logo_url.split('/').pop() || 'v1') : 'v1';
-
-        manifestData = {
-          id: `/?org=${encodeURIComponent(profile.business_name || 'Partner App')}`,
-          name: profile.business_name || 'Partner App',
-          short_name: profile.business_name ? profile.business_name.substring(0, 12) : 'Partner',
-          description: `Welcome to ${profile.business_name}`,
-          start_url: '/dashboard',
-          scope: '/',
-          display: 'standalone',
-          background_color: '#FFFFFF',
-          theme_color: '#FFFFFF',
-          icons: [
-            { src: `/api/org-icon?type=icon&v=${logoVersion}`, sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
-            { src: `/api/org-icon?type=icon&v=${logoVersion}`, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-          ],
-        };
-      }
-    } catch (error) {
-      console.error('[Manifest API] Error fetching profile:', error);
+    // THE FIX: Check UID first so logged-in users get custom manifests!
+    if (!SYSTEM_HOSTS.includes(host)) {
+      const { data } = await supabase.from('profiles').select('business_name, logo_url').eq('custom_domain', host).single();
+      profileData = data;
+    } else if (uid) {
+      const { data } = await supabase.from('profiles').select('business_name, logo_url').eq('id', uid).single();
+      profileData = data;
     }
+
+    if (profileData) {
+      const logoVersion = profileData.logo_url ? encodeURIComponent(profileData.logo_url.split('/').pop() || 'v1') : 'v1';
+      const businessName = profileData.business_name || 'AdRolls App';
+      const uidParam = uid ? `&uid=${uid}` : '';
+
+      manifestData = {
+        id: `/?org=${encodeURIComponent(businessName)}`,
+        name: businessName,
+        short_name: businessName.substring(0, 12),
+        description: `Welcome to ${businessName}`,
+        start_url: '/dashboard',
+        scope: '/',
+        display: 'standalone',
+        background_color: '#FFFFFF',
+        theme_color: '#FFFFFF',
+        icons: [
+          { src: `/api/org-icon?type=icon&v=${logoVersion}${uidParam}`, sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+          { src: `/api/org-icon?type=icon&v=${logoVersion}${uidParam}`, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+        ],
+      };
+    }
+  } catch (error) {
+    console.error('[Manifest API] Error fetching profile:', error);
   }
 
   return new NextResponse(JSON.stringify(manifestData), {
