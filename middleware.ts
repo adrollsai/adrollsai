@@ -6,9 +6,9 @@ export async function middleware(request: NextRequest) {
   const hostname = request.headers.get('host') || '';
 
   // 1. CUSTOM DOMAIN ROUTING
-  const mainDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'adrolls.in'; 
+  const mainDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'adrolls.in';
   
-  // ADDED ngrok-free.dev TO THE SAFE LIST
+  // Safe list for platform-owned domains
   const isPlatformDomain = hostname.includes(mainDomain) || 
                            hostname.includes('localhost') || 
                            hostname.includes('vercel.app') || 
@@ -19,7 +19,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(new URL(`/shared/${hostname}${url.pathname}`, request.url));
   }
 
-  // 2. EXISTING AUTHENTICATION LOGIC
+  // 2. AUTHENTICATION & REDIRECT LOGIC
   let response = NextResponse.next({
     request: { headers: request.headers },
   })
@@ -29,11 +29,21 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return request.cookies.getAll() },
+        getAll() {
+          return request.cookies.getAll()
+        },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
-          response = NextResponse.next({ request: { headers: request.headers } })
-          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value)
+          })
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          })
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options)
+          })
         },
       },
     }
@@ -41,12 +51,21 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
+  // --- REDIRECT RULES ---
+
+  // Rule A: If user is logged in and hits the landing page (/), send to dashboard
   if (user && request.nextUrl.pathname === '/') {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
+  // Rule B: If user is NOT logged in and hits the root (/), send to login
+  if (!user && request.nextUrl.pathname === '/') {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+
+  // Rule C: If user is NOT logged in and tries to access dashboard, send to login
   if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
-    return NextResponse.redirect(new URL('/', request.url))
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
   return response
@@ -54,6 +73,14 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|auth).*)',
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - auth (auth callback routes)
+     * - shared (custom domain internal routes)
+     */
+    '/((?!_next/static|_next/image|favicon.ico|auth|shared).*)',
   ],
 }

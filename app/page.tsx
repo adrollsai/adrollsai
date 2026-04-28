@@ -21,9 +21,11 @@ import {
 import Link from 'next/link'
 import { motion, useScroll, AnimatePresence } from 'framer-motion'
 
-// --- CHAT MASCOT COMPONENT ---
+/**
+ * --- CHAT MASCOT COMPONENT ---
+ * Handles the floating AI dog mascot and its chat window.
+ */
 const ChatMascot = () => {
-  const { scrollYProgress } = useScroll();
   const [isOpen, setIsOpen] = useState(false);
   
   return (
@@ -89,18 +91,15 @@ const ChatMascot = () => {
           whileTap={{ scale: 0.95 }}
           className="w-24 h-24 md:w-28 md:h-28 relative filter drop-shadow-xl"
         >
-          {/* REPLACED SVG WITH YOUR PNG */}
           <motion.img 
             src="https://i.ibb.co/C50rBTBj/pixar-style.png"
             alt="Rolls the Dog"
             className="w-full h-full object-contain"
-            // Breathing Animation
             animate={{ y: [0, -6, 0] }}
             transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
           />
         </motion.div>
         
-        {/* Helper Badge */}
         <div className="mt-2 bg-[#003D6F] px-3 py-1 rounded-full shadow-lg border border-white/20">
           <p className="text-white font-bold text-[10px] md:text-xs whitespace-nowrap">
             Woof! I'm Rolls! Need help?
@@ -114,27 +113,44 @@ const ChatMascot = () => {
 // --- MAIN PAGE ---
 export default function LandingPage() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-  
-  const PARTNER_LOGIN_URL = process.env.NODE_ENV === 'development' 
-  ? '/login' 
-  : 'https://app.adrolls.in';
+  const [partnerLoginUrl, setPartnerLoginUrl] = useState('https://app.adrolls.in')
+
+  /**
+   * DYNAMIC ENVIRONMENT DETECTION
+   * Ensures that login/signup buttons point to the local instance if testing on 
+   * localhost or ngrok, preventing cross-domain session issues.
+   */
+  useEffect(() => {
+    const hostname = window.location.hostname;
+    const isDevOrTunnel = 
+      hostname === 'localhost' || 
+      hostname === '127.0.0.1' || 
+      hostname.includes('ngrok-free.dev') || 
+      hostname.includes('ngrok.io');
+
+    if (isDevOrTunnel) {
+      setPartnerLoginUrl('/login'); 
+    } else {
+      setPartnerLoginUrl('https://app.adrolls.in');
+    }
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50 text-[#003D6F] font-sans selection:bg-[#F4B429]/30 selection:text-[#003D6F] overflow-x-hidden relative">
       
-      {/* Background Texture */}
+      {/* Background Texture Overlay */}
       <div className="fixed inset-0 z-0 opacity-[0.03] pointer-events-none" 
            style={{ backgroundImage: 'radial-gradient(#003D6F 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
       </div>
 
-      {/* --- CHAT MASCOT --- */}
+      {/* Mascot Integration */}
       <ChatMascot />
 
-      {/* --- NAVIGATION --- */}
+      {/* --- NAVIGATION BAR --- */}
       <nav className="fixed top-0 w-full z-50 border-b border-[#003D6F]/10 bg-white/95 backdrop-blur-xl transition-all duration-300">
         <div className="max-w-[1400px] mx-auto px-6 h-32 md:h-40 flex items-center justify-between">
           
-          {/* LOGO */}
+          {/* Brand Logo */}
           <div className="flex items-center gap-2 shrink-0">
             <img 
               src="https://i.ibb.co/7dDJdPgS/bg-removed.png" 
@@ -143,44 +159,52 @@ export default function LandingPage() {
             />
           </div>
           
-          {/* DESKTOP MENU */}
+          {/* Desktop Navigation Links */}
           <div className="hidden lg:flex items-center gap-12 text-lg font-bold text-[#003D6F]/90">
             <a href="#features" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Features</a>
             <a href="#ads" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Meta Ads</a>
             <a href="#pricing" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Pricing</a>
           </div>
 
-          {/* CTA BUTTONS */}
+          {/* Desktop Call to Action */}
           <div className="hidden lg:flex items-center gap-6">
             <Link 
-              href={PARTNER_LOGIN_URL} 
+              href={partnerLoginUrl} 
               className="text-[#003D6F] hover:text-[#B22B31] font-bold text-lg px-2"
             >
               Signup/Login
             </Link>
             <Link 
-              href={PARTNER_LOGIN_URL} 
+              href={partnerLoginUrl} 
               className="bg-[#B22B31] hover:bg-[#902227] text-white px-10 py-4 rounded-full text-lg font-bold transition-all shadow-[0_10px_30px_-10px_rgba(178,43,49,0.5)] active:scale-95 flex items-center gap-2"
             >
               Get Started <ArrowRight size={20}/>
             </Link>
           </div>
 
-          {/* MOBILE MENU TOGGLE */}
+          {/* Mobile Menu Toggle Button */}
           <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="lg:hidden text-[#003D6F] p-2 bg-slate-100 rounded-lg">
             {isMenuOpen ? <X size={32} /> : <Menu size={32} />}
           </button>
         </div>
 
-        {/* MOBILE MENU */}
-        {isMenuOpen && (
-          <div className="lg:hidden border-t border-slate-200 bg-white p-6 absolute w-full shadow-2xl flex flex-col gap-6 z-50 text-xl">
-             <a href="#features" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F] font-bold">Features</a>
-             <a href="#ads" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F] font-bold">Meta Ads</a>
-             <a href="#pricing" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F] font-bold">Pricing</a>
-             <Link href={PARTNER_LOGIN_URL} className="text-[#B22B31] font-bold">Signup/Login</Link>
-          </div>
-        )}
+        {/* Mobile Sidebar Navigation */}
+        <AnimatePresence>
+          {isMenuOpen && (
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              className="lg:hidden fixed top-32 md:top-40 left-0 w-full h-screen bg-white border-t border-slate-200 p-6 flex flex-col gap-6 z-50 text-xl font-bold"
+            >
+               <a href="#features" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F]">Features</a>
+               <a href="#ads" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F]">Meta Ads</a>
+               <a href="#pricing" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F]">Pricing</a>
+               <div className="h-px w-full bg-slate-100 my-2" />
+               <Link href={partnerLoginUrl} className="text-[#B22B31]">Signup/Login</Link>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </nav>
 
       {/* --- HERO SECTION --- */}
@@ -202,7 +226,7 @@ export default function LandingPage() {
               Grow Your Business <br className="hidden md:block"/>
               <span className="relative inline-block">
                 <span className="relative z-10 text-transparent bg-clip-text bg-gradient-to-r from-[#B22B31] via-[#D35F30] to-[#F4B429]">
-                   On Autopilot.
+                  On Autopilot.
                 </span>
                 <svg className="absolute -bottom-2 md:-bottom-4 left-0 w-full h-4 md:h-6 text-[#F4B429]/40 -z-10" viewBox="0 0 100 10" preserveAspectRatio="none">
                    <path d="M0 5 Q 50 15 100 5" stroke="currentColor" strokeWidth="12" fill="none" />
@@ -215,15 +239,16 @@ export default function LandingPage() {
             </p>
             
             <div className="flex flex-col sm:flex-row items-center gap-6 justify-center">
-              <Link href={PARTNER_LOGIN_URL} className="group w-full sm:w-auto px-12 py-6 bg-[#B22B31] text-white text-xl rounded-2xl font-bold hover:bg-[#902227] transition-all flex items-center justify-center gap-3 shadow-[0_20px_40px_-15px_rgba(178,43,49,0.3)] hover:-translate-y-1">
+              <Link href={partnerLoginUrl} className="group w-full sm:w-auto px-12 py-6 bg-[#B22B31] text-white text-xl rounded-2xl font-bold hover:bg-[#902227] transition-all flex items-center justify-center gap-3 shadow-[0_20px_40px_-15px_rgba(178,43,49,0.3)] hover:-translate-y-1">
                 Start Growing Today 
                 <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform"/>
               </Link>
-              <Link href={PARTNER_LOGIN_URL} className="w-full sm:w-auto px-12 py-6 bg-white border-2 border-[#003D6F]/10 text-[#003D6F] text-xl rounded-2xl font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-3 hover:-translate-y-1 hover:border-[#003D6F]/30 hover:shadow-lg">
+              <Link href={partnerLoginUrl} className="w-full sm:w-auto px-12 py-6 bg-white border-2 border-[#003D6F]/10 text-[#003D6F] text-xl rounded-2xl font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-3 hover:-translate-y-1 hover:border-[#003D6F]/30 hover:shadow-lg">
                 <Play className="w-5 h-5 fill-current"/> Watch Demo
               </Link>
             </div>
 
+            {/* Feature Badges */}
             <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-6 text-base text-slate-500 font-bold">
               <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-sm">
                 <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current" /> No Design Skills Needed
@@ -237,14 +262,13 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* DASHBOARD PREVIEW */}
+          {/* DASHBOARD MOCKUP PREVIEW */}
           <div className="relative mx-auto max-w-[1200px]">
              <div className="absolute -inset-1 bg-gradient-to-r from-[#B22B31] via-[#F4B429] to-[#003D6F] rounded-[2.5rem] blur-xl opacity-20"></div>
              
              <div className="relative rounded-[2.5rem] bg-white border-4 border-slate-100 p-4 shadow-2xl shadow-[#003D6F]/10">
                 <div className="bg-slate-50 rounded-[2rem] overflow-hidden aspect-[16/10] md:aspect-[21/9] relative flex items-center justify-center border border-slate-200">
-                   
-                   {/* Abstract UI Representation */}
+                   {/* Visual UI Grid Components */}
                    <div className="absolute inset-0 grid grid-cols-12 grid-rows-6 gap-6 p-8 md:p-12">
                       <div className="hidden md:block col-span-2 row-span-6 bg-white rounded-2xl border-2 border-slate-100 shadow-sm"></div>
                       <div className="col-span-12 md:col-span-10 row-span-1 bg-white rounded-2xl border-2 border-slate-100 shadow-sm flex items-center px-6 gap-4">
@@ -257,7 +281,7 @@ export default function LandingPage() {
                             <div className="h-4 w-32 bg-slate-100 rounded"></div>
                             <div className="px-3 py-1 bg-green-100 rounded-full flex items-center justify-center text-green-700 text-sm font-bold border border-green-200">+24.5%</div>
                          </div>
-                         <div className="flex items-end gap-3 h-32 w-full">
+                        <div className="flex items-end gap-3 h-32 w-full">
                             {[40, 60, 45, 70, 50, 80, 65, 90].map((h, i) => (
                                <div key={i} className="flex-1 bg-[#003D6F] rounded-t-lg opacity-10" style={{height: `${h}%`}}></div>
                             ))}
@@ -277,7 +301,7 @@ export default function LandingPage() {
                          </div>
                       </div>
                       <div className="col-span-12 md:col-span-10 row-span-2 grid grid-cols-3 gap-6">
-                         {[1,2,3].map(i => (
+                        {[1,2,3].map(i => (
                             <div key={i} className="bg-white rounded-2xl border-2 border-slate-100 shadow-sm p-5 flex gap-4 items-center">
                                <div className="w-14 h-14 bg-slate-100 rounded-xl"></div>
                                <div className="space-y-2 flex-1">
@@ -288,7 +312,6 @@ export default function LandingPage() {
                          ))}
                       </div>
                    </div>
-
                 </div>
              </div>
           </div>
@@ -304,7 +327,7 @@ export default function LandingPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8 auto-rows-[320px]">
-               {/* Card 1 */}
+               {/* Card 1: AI Graphic Studio */}
                <div className="md:col-span-2 lg:col-span-2 row-span-1 bg-white border-2 border-slate-200 p-10 rounded-[2.5rem] shadow-lg shadow-slate-200/50 hover:border-[#F4B429] hover:shadow-2xl hover:shadow-[#003D6F]/10 transition-all group relative overflow-hidden flex flex-col justify-between">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-[#B22B31]/5 to-transparent rounded-full -translate-y-1/2 translate-x-1/2 group-hover:scale-125 transition-transform duration-700"/>
                   <div className="w-16 h-16 bg-[#B22B31]/10 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-[#B22B31] group-hover:text-white transition-colors duration-300">
@@ -318,7 +341,7 @@ export default function LandingPage() {
                   </div>
                </div>
 
-               {/* Card 2 */}
+               {/* Card 2: One-Click Posting */}
                <div className="md:col-span-1 lg:col-span-1 row-span-2 bg-[#003D6F] text-white p-10 rounded-[2.5rem] shadow-xl hover:translate-y-[-5px] transition-all group relative overflow-hidden flex flex-col border-4 border-[#003D6F]">
                   <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#00284d]"/>
                   <div className="relative z-10 flex-1">
@@ -341,7 +364,7 @@ export default function LandingPage() {
                   </div>
                </div>
 
-               {/* Card 3 */}
+               {/* Card 3: Syncing */}
                <div className="md:col-span-1 lg:col-span-1 row-span-1 bg-white border-2 border-slate-200 p-10 rounded-[2.5rem] shadow-lg shadow-slate-200/50 hover:border-[#003D6F] transition-all group flex flex-col justify-between">
                   <div className="w-14 h-14 bg-[#003D6F]/10 rounded-2xl flex items-center justify-center group-hover:bg-[#003D6F] group-hover:text-white transition-colors">
                      <LayoutGrid className="w-7 h-7" />
@@ -352,7 +375,7 @@ export default function LandingPage() {
                   </div>
                </div>
 
-               {/* Card 4 */}
+               {/* Card 4: SEO */}
                <div className="md:col-span-2 lg:col-span-1 row-span-1 bg-white border-2 border-slate-200 p-10 rounded-[2.5rem] shadow-lg shadow-slate-200/50 hover:border-[#003D6F] transition-all group flex flex-col justify-between">
                   <div className="w-14 h-14 bg-[#003D6F]/10 rounded-2xl flex items-center justify-center group-hover:bg-[#003D6F] group-hover:text-white transition-colors">
                      <Globe className="w-7 h-7" />
@@ -363,7 +386,7 @@ export default function LandingPage() {
                   </div>
                </div>
 
-               {/* Card 5 */}
+               {/* Card 5: High-Conversion Pages */}
                <div className="md:col-span-2 lg:col-span-2 row-span-1 bg-gradient-to-br from-[#F4B429] to-[#E5A825] p-10 rounded-[2.5rem] shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between border-4 border-[#F4B429]">
                   <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mb-6 backdrop-blur-sm text-[#003D6F]">
                      <Sparkles className="w-8 h-8" />
@@ -376,7 +399,7 @@ export default function LandingPage() {
                   </div>
                </div>
 
-               {/* Card 6 */}
+               {/* Card 6: CRM */}
                <div className="md:col-span-1 lg:col-span-1 row-span-1 bg-white border-2 border-slate-200 p-10 rounded-[2.5rem] shadow-lg shadow-slate-200/50 hover:border-[#B22B31] transition-all group flex flex-col justify-between">
                   <div className="w-14 h-14 bg-[#B22B31]/10 rounded-2xl flex items-center justify-center group-hover:bg-[#B22B31] group-hover:text-white transition-colors">
                      <Users2 className="w-7 h-7" />
@@ -406,7 +429,7 @@ export default function LandingPage() {
                     Smarter Ads.<br/>Better Leads.
                   </h3>
                   <p className="text-slate-200 mb-10 text-xl leading-relaxed max-w-xl font-medium">
-                    Most small businesses waste money on ads that don't track results. AdRolls uses <b className="text-[#F4B429]">Meta Conversions API (CAPI)</b> to send server-side data directly to Facebook/Instagram. 
+                    Most small businesses waste money on ads that don't track results. AdRolls uses <b className="text-[#F4B429]">Meta Conversions API (CAPI)</b> to send server-side data directly to Facebook/Instagram.
                   </p>
                   <ul className="space-y-6 mb-12">
                      <li className="flex items-center gap-4 text-white text-lg font-medium">
@@ -422,13 +445,13 @@ export default function LandingPage() {
                         <span>Train AI to find high-intent buyers</span>
                      </li>
                   </ul>
-                  <Link href={PARTNER_LOGIN_URL} className="inline-block bg-white text-[#003D6F] px-8 py-4 rounded-xl font-bold text-lg hover:bg-[#F4B429] hover:text-[#003D6F] transition-all shadow-xl hover:scale-105">
+                  <Link href={partnerLoginUrl} className="inline-block bg-white text-[#003D6F] px-8 py-4 rounded-xl font-bold text-lg hover:bg-[#F4B429] hover:text-[#003D6F] transition-all shadow-xl hover:scale-105">
                     Start Running AI Ads
                   </Link>
                 </div>
                 
                 <div className="flex-1 w-full max-w-lg">
-                   <div className="bg-white/10 backdrop-blur-xl rounded-[2.5rem] border border-white/20 p-8 shadow-2xl relative">
+                    <div className="bg-white/10 backdrop-blur-xl rounded-[2.5rem] border border-white/20 p-8 shadow-2xl relative">
                       <div className="absolute -top-10 -right-10 bg-[#B22B31] p-5 rounded-2xl shadow-xl animate-bounce">
                          <Target className="w-8 h-8 text-white"/>
                       </div>
@@ -440,7 +463,7 @@ export default function LandingPage() {
                       <div className="space-y-6">
                          <div className="bg-black/30 p-6 rounded-2xl flex justify-between items-center border border-white/5 backdrop-blur-md">
                             <div className="flex items-center gap-4">
-                                <div className="bg-[#B22B31]/20 p-3 rounded-xl text-[#B22B31]"><Users2 size={24}/></div>
+                               <div className="bg-[#B22B31]/20 p-3 rounded-xl text-[#B22B31]"><Users2 size={24}/></div>
                                 <div>
                                   <div className="text-sm text-slate-300 mb-1">Total Leads</div>
                                   <div className="text-2xl font-black text-white">2,405</div>
@@ -451,7 +474,7 @@ export default function LandingPage() {
                    </div>
                 </div>
               </div>
-           </div>
+          </div>
         </div>
       </section>
 
@@ -495,7 +518,7 @@ export default function LandingPage() {
                  </ul>
                  
                  <Link 
-                    href={PARTNER_LOGIN_URL}
+                    href={partnerLoginUrl}
                     className="block w-full py-6 bg-[#003D6F] hover:bg-[#00284d] text-white text-center rounded-2xl font-bold text-xl transition-all shadow-xl shadow-[#003D6F]/20 hover:scale-[1.02]"
                  >
                     Get Started Now
@@ -506,28 +529,28 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* --- FOOTER / CTA --- */}
+      {/* --- FOOTER / CTA SECTION --- */}
       <section className="py-32 bg-slate-50 border-t border-slate-200 z-10 relative">
         <div className="max-w-4xl mx-auto px-6 text-center">
           <h2 className="text-5xl md:text-7xl font-black text-[#003D6F] mb-10 tracking-tight leading-none">
             Ready to Automate <br/><span className="text-[#B22B31]">Your Marketing?</span>
           </h2>
           <p className="text-slate-600 mb-12 text-xl font-medium">
-            Join hundreds of small businesses growing faster with AdRolls.
+             Join hundreds of small businesses growing faster with AdRolls.
           </p>
           
           <div className="flex justify-center">
              <Link 
-               href={PARTNER_LOGIN_URL}
+               href={partnerLoginUrl}
                className="bg-[#B22B31] hover:bg-[#902227] text-white px-12 py-5 rounded-xl font-bold text-lg transition-all shadow-lg hover:scale-105"
              >
-               Start Free Trial
+                Start Free Trial
              </Link>
           </div>
         </div>
       </section>
       
-      {/* Footer Links */}
+      {/* Dynamic Navigation Footer */}
       <footer className="bg-[#003D6F] py-16 border-t border-[#00284d] text-white relative z-10">
          <div className="max-w-[1400px] mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8">
             <div className="flex items-center gap-3">
@@ -542,24 +565,9 @@ export default function LandingPage() {
             </div>
 
             <div className="flex flex-wrap justify-center gap-8 order-2 md:order-3">
-              <Link
-                href="/privacy-policy"
-                className="text-slate-300 hover:text-[#F4B429] font-bold transition-colors"
-              >
-                Privacy Policy
-              </Link>
-              <Link
-                href="/terms-and-conditions"
-                className="text-slate-300 hover:text-[#F4B429] font-bold transition-colors"
-              >
-                Terms & Conditions
-              </Link>
-              <Link
-                href="/refund-policy"
-                className="text-slate-300 hover:text-[#F4B429] font-bold transition-colors"
-              >
-                Refund Policy
-              </Link>
+              <Link href="/privacy-policy" className="text-slate-300 hover:text-[#F4B429] font-bold transition-colors">Privacy Policy</Link>
+              <Link href="/terms-and-conditions" className="text-slate-300 hover:text-[#F4B429] font-bold transition-colors">Terms & Conditions</Link>
+              <Link href="/refund-policy" className="text-slate-300 hover:text-[#F4B429] font-bold transition-colors">Refund Policy</Link>
             </div>
          </div>
       </footer>

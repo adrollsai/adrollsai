@@ -21,10 +21,10 @@ export async function POST(request: Request) {
         propImages, 
         templateUrl, 
         aspectRatio = "1:1",
-        model // NEW: Model toggle from frontend
+        model // Received from the UI toggle (Banana vs GPT 2.0)
     } = body;
 
-    // Fetch user's business profile for ad copy context
+    // Fetch user profile for business context
     const { data: profile } = await supabase
       .from('profiles')
       .select('business_name')
@@ -33,8 +33,9 @@ export async function POST(request: Request) {
 
     const businessName = profile?.business_name || 'Your Business';
 
-    console.log("--- DIRECT GENERATION START ---")
+    console.log(`--- GENERATION START | MODEL: ${model} ---`)
     
+    // Consolidate images: Property images first, then logo, then template
     const allInputImages = [...(propImages || [])];
     
     if (logoUrl) {
@@ -46,36 +47,35 @@ export async function POST(request: Request) {
     }
 
     // --- ALEX HORMOZI DESIGN FRAMEWORK PROMPT ---
-    let finalImagePrompt = `Create a high-converting, professional Facebook ad design using the ALEX HORMOZI framework for the product: "${propertyTitle}". \n\n`;
+    let finalImagePrompt = `Create a high-converting, professional Meta ad design for the product: "${propertyTitle}". \n\n`;
+    finalImagePrompt += `DESIGN PHILOSOPHY (ALEX HORMOZI FRAMEWORK):\n`;
+    finalImagePrompt += `2. BOLD TYPOGRAPHY: Use large, authoritative, high-contrast text for the main headline.\n`;
+    finalImagePrompt += `4. ZERO CLUTTER: Every element must drive the direct-response goal.\n\n`;
     
-    finalImagePrompt += `DESIGN RULES:\n`;
-    finalImagePrompt += `1. VISUAL HOOK: Ensure a clear 'Dream Outcome' is visualized.\n`;
-    finalImagePrompt += `2. BOLD TYPOGRAPHY: Use strong, authoritative headlines. Make text POP with high contrast.\n`;
-    finalImagePrompt += `3. VALUE STACK: Visually highlight 2-3 key benefits or the 'Grand Slam Offer'.\n`;
-    finalImagePrompt += `4. MINIMAL CLUTTER: Focus on direct response. Only essential and attention-grabbing elements.\n\n`;
-
     finalImagePrompt += `PRODUCT CONTEXT: ${propertyDescription}. \n`;
     if (userInstructions) finalImagePrompt += `USER REQUIREMENTS: ${userInstructions}. \n`;
-    finalImagePrompt += `VISUAL STYLE: High-fidelity, commercial-grade imagery, professional studio lighting. \n`;
+    finalImagePrompt += `VISUAL STYLE: Professional commercial photography, premium lighting, engaging composition. \n`;
 
     if (logoUrl) {
         finalImagePrompt += `\n*** LOGO INSTRUCTIONS ***\n`;
-        finalImagePrompt += `Include the brand logo in the design layout (e.g., top corner or bottom footer) naturally.\n`;
+        finalImagePrompt += `Integrate the brand logo cleanly into the design (e.g., top corner or bottom footer) without distortion.\n`;
     }
 
     if (templateUrl) {
-        finalImagePrompt += `\n*** REFERENCE STYLE ***\n`;
-        finalImagePrompt += `The last image is a REFERENCE DESIGN. Adopt its layout and color palette but apply it to the "${propertyTitle}". --control_image_last_is_reference\n`;
+        finalImagePrompt += `\n*** REFERENCE DESIGN ***\n`;
+        finalImagePrompt += `The LAST image is a reference. Capture its design language, layout, and composition style. --control_image_last_is_reference`;
     }
 
     finalImagePrompt += `\nAspect Ratio: ${aspectRatio}.`;
-    if (contactNumber) finalImagePrompt += ` Display contact info prominently: ${contactNumber}.`;
+    if (contactNumber) finalImagePrompt += ` Display contact info: ${contactNumber}.`;
 
-    console.log("[LOG] Final Image Prompt:", finalImagePrompt);
+    // Map model selection to KIE API identifiers
+    const kieModel = (model === 'gpt/gpt-image-2-text-to-image') 
+        ? 'gpt-image-2-text-to-image' 
+        : 'nano-banana-2';
 
-    // KIE API Payload
     const payload = {
-      "model": model || "google/nano-banana-2", // Uses Banana 2.0 or GPT 2.0 based on UI toggle
+      "model": kieModel,
       "input": {
         "prompt": finalImagePrompt,
         "image_input": allInputImages, 
@@ -88,30 +88,30 @@ export async function POST(request: Request) {
     // --- COPY GENERATION (ALEX HORMOZI FRAMEWORK) ---
     const copyPrompt = `
       You are an elite direct-response copywriter trained in Alex Hormozi's "$100M Offers" framework.
-      Your task is to write a highly converting social media ad caption.
+      Write a high-converting caption for:
       
-      PRODUCT: ${propertyTitle}
+      TITLE: ${propertyTitle}
       DETAILS: ${propertyDescription}
       COMPANY: ${businessName}
-      CONTACT: ${contactNumber || 'DM us!'}
-      EXTRA: ${userInstructions || 'None'}
+      CONTACT: ${contactNumber || 'DM for details!'}
 
       FRAMEWORK:
-      1. HOOK: Immediate attention-grabber.
-      2. OFFER: Irresistible deal.
-      3. VALUE STACK: Bulleted massive benefits.
-      4. SCARCITY: Why act now.
-      5. CTA: Direct instruction with contact info.
+      1. HOOK: Call out the buyer.
+      2. OFFER: The no-brainer deal.
+      3. VALUE STACK: Benefit bullets.
+      4. SCARCITY/URGENCY: Why now.
+      5. CTA: Direct instruction.
     `;
 
-    // Execute concurrently
+    // Execute image task and caption generation concurrently
     const [kieResult, generatedCaption] = await Promise.all([
         createKieTask(payload),
         generateKieChat(copyPrompt, "gemini-3-flash")
     ]);
 
-    if ('error' in kieResult) {
-      throw new Error(`Kie AI Task creation failed: ${kieResult.error}`)
+    // Validation to prevent the 'null taskId' error
+    if (!kieResult || kieResult.error || !kieResult.taskId) {
+      throw new Error(`Kie AI Task creation failed: ${kieResult?.error || "Empty response from API"}`);
     }
     
     return NextResponse.json({ 
@@ -121,7 +121,7 @@ export async function POST(request: Request) {
     })
 
   } catch (error: any) {
-    console.error("API Error:", error)
+    console.error("API Error Trace:", error)
     return NextResponse.json(
       { error: error.message || "Internal Server Error" }, 
       { status: 500 }
