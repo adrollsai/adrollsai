@@ -53,17 +53,20 @@ export async function middleware(request: NextRequest) {
 
   // --- REDIRECT RULES ---
 
-  // Rule A: If user is logged in and hits the landing page (/), send to dashboard
+  // Rule A: If user is logged in and hits root (/), send to dashboard
   if (user && request.nextUrl.pathname === '/') {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
-  // Rule B: If user is NOT logged in and hits the root (/), send to login
-  if (!user && request.nextUrl.pathname === '/') {
+  // Rule B: Redirect to login ONLY if it's the APP subdomain or NGROK
+  // This prevents the main landing page (adrolls.in) from redirecting
+  const isAppSubdomain = hostname.startsWith('app.') || hostname.includes('ngrok-free.dev') || hostname.includes('localhost');
+  
+  if (!user && request.nextUrl.pathname === '/' && isAppSubdomain) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // Rule C: If user is NOT logged in and tries to access dashboard, send to login
+  // Rule C: Standard protection for dashboard routes
   if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
