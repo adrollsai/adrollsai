@@ -1,9 +1,11 @@
+// app/dashboard/layout.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import BottomNav from '@/components/BottomNav'
+import PushManager from '@/components/PushManager'
 import { Loader2 } from 'lucide-react'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -47,6 +49,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {/* PushManager initialized here so it only triggers for logged-in users */}
+      <PushManager />
+      
       {children}
       {/* Hide the navigation bar if they are trapped on the billing page */}
       {pathname !== '/dashboard/billing' && <BottomNav />}
