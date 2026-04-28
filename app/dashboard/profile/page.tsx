@@ -343,8 +343,7 @@ export default function ProfilePage() {
 
           if (profile.facebook_token && isValidFacebookToken(profile.facebook_token)) {
             setIsFacebookConnected(true)
-            setFacebookToken(profile.facebook_token); 
-            
+            setFacebookToken(profile.facebook_token);
             if (profile.selected_page_id) setSelectedPageId(profile.selected_page_id)
             else fetchPages()
 
@@ -356,8 +355,7 @@ export default function ProfilePage() {
                 setSelectedPixelId(profile.pixel_id)
             }
             
-            fetchAdAccounts(profile.facebook_token); 
-            
+            fetchAdAccounts(profile.facebook_token);
           } else {
              setIsFacebookConnected(false)
              setFacebookToken(null);
@@ -377,7 +375,7 @@ export default function ProfilePage() {
     
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event) => {
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-         if (isMounted) init() 
+          if (isMounted) init() 
       }
     })
 
@@ -508,7 +506,7 @@ export default function ProfilePage() {
             alert("Failed to send push: " + data.error);
         }
     } catch(e: any) { 
-        alert("Error testing push: " + e.message); 
+        alert("Error testing push: " + e.message);
     } finally {
         setIsTestingPush(false)
     }
@@ -523,7 +521,6 @@ export default function ProfilePage() {
           name: dummyName,
           phone: "9999999999",
       });
-
       if (!error) {
           alert(`Dummy lead '${dummyName}' added successfully to CRM!`);
       } else {
@@ -533,7 +530,6 @@ export default function ProfilePage() {
 
   const testScheduleReminder = async () => {
       if (!userId) return;
-      
       const oneMinFromNow = new Date(Date.now() + 60000).toISOString();
 
       const { error } = await supabase.from('leads').insert({
@@ -542,7 +538,6 @@ export default function ProfilePage() {
           phone: "8888888888",
           next_followup: oneMinFromNow
       });
-
       if (!error) {
           alert("Reminder successfully scheduled! Please wait 1 to 2 minutes for Cron-job.org to trigger your webhook.");
       } else {
@@ -554,10 +549,11 @@ export default function ProfilePage() {
       if (!userId) return;
       setIsTestingBlog(true);
       try {
-          const res = await fetch(`/api/cron/auto-blog?userId=${userId}`);
+          // CRITICAL FIX: cache: 'no-store' forces Next.js to skip the cache and actually hit the route
+          const res = await fetch(`/api/cron/auto-blog?userId=${userId}`, { cache: 'no-store' });
           const data = await res.json();
           if (data.success) {
-              alert("✅ SEO Article Generated! Check your public shared feed.");
+              alert("✅ SEO Article Generated! Please HARD REFRESH your public shared feed to see it.");
           } else {
               alert("Failed to generate article: " + data.error);
           }
