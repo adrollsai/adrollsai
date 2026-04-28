@@ -58,6 +58,8 @@ export default function CreationPage() {
   // Configuration State
   const [selectedRatio, setSelectedRatio] = useState('1:1')
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
+  // New State for Model Toggle
+  const [selectedModel, setSelectedModel] = useState<'google/nano-banana-2' | 'gpt/gpt-image-2-text-to-image'>('google/nano-banana-2')
   
   // Custom Reference State
   const [uploadedRefUrl, setUploadedRefUrl] = useState<string | null>(null)
@@ -171,11 +173,11 @@ export default function CreationPage() {
             propertyDescription: prop?.description || "",
             propertyTitle: prop?.title || "",
             contactNumber: profile?.contact_number || "",
-            businessName: profile?.business_name || "",
             logoUrl: profile?.logo_url || "", 
             propImages: propImages,
             templateUrl: activeReferenceUrl, 
-            aspectRatio: selectedRatio
+            aspectRatio: selectedRatio,
+            model: selectedModel // Passing the model choice
         })
       })
       
@@ -276,6 +278,25 @@ export default function CreationPage() {
 
         {/* CONTROLS BAR */}
         <div className="px-4 pb-3 overflow-x-auto scrollbar-hide flex gap-3 items-center">
+            
+            {/* MODEL SELECTOR TOGGLE */}
+            <div className="flex bg-slate-100 rounded-lg p-1 border border-slate-200 flex-shrink-0">
+                <button 
+                  onClick={() => setSelectedModel('google/nano-banana-2')}
+                  className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all flex items-center gap-1 ${selectedModel === 'google/nano-banana-2' ? 'bg-white shadow text-primary' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  Banana 2.0
+                </button>
+                <button 
+                  onClick={() => setSelectedModel('gpt/gpt-image-2-text-to-image')}
+                  className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all flex items-center gap-1 ${selectedModel === 'gpt/gpt-image-2-text-to-image' ? 'bg-white shadow text-primary' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  GPT 2.0
+                </button>
+            </div>
+
+            <div className="h-6 w-px bg-slate-200 mx-1 flex-shrink-0" />
+
             <div className="relative min-w-[200px]">
                 <Package size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <select 

@@ -20,10 +20,11 @@ export async function POST(request: Request) {
         logoUrl,
         propImages, 
         templateUrl, 
-        aspectRatio = "1:1"
+        aspectRatio = "1:1",
+        model // NEW: Model toggle from frontend
     } = body;
 
-    // Fetch user's business profile to pass into the ad copy
+    // Fetch user's business profile for ad copy context
     const { data: profile } = await supabase
       .from('profiles')
       .select('business_name')
@@ -44,31 +45,37 @@ export async function POST(request: Request) {
         allInputImages.push(templateUrl);
     }
 
-    let finalImagePrompt = `Create a high-converting, professional Facebook ad design for the product: "${propertyTitle}". \n\n`;
+    // --- ALEX HORMOZI DESIGN FRAMEWORK PROMPT ---
+    let finalImagePrompt = `Create a high-converting, professional Facebook ad design using the ALEX HORMOZI framework for the product: "${propertyTitle}". \n\n`;
+    
+    finalImagePrompt += `DESIGN RULES:\n`;
+    finalImagePrompt += `1. VISUAL HOOK: Ensure a clear 'Dream Outcome' is visualized.\n`;
+    finalImagePrompt += `2. BOLD TYPOGRAPHY: Use strong, authoritative headlines. Make text POP with high contrast.\n`;
+    finalImagePrompt += `3. VALUE STACK: Visually highlight 2-3 key benefits or the 'Grand Slam Offer'.\n`;
+    finalImagePrompt += `4. MINIMAL CLUTTER: Focus on direct response. Only essential and attention-grabbing elements.\n\n`;
+
     finalImagePrompt += `PRODUCT CONTEXT: ${propertyDescription}. \n`;
     if (userInstructions) finalImagePrompt += `USER REQUIREMENTS: ${userInstructions}. \n`;
-    finalImagePrompt += `VISUAL STYLE: High quality, commercial photography, engaging, professional lighting. \n`;
+    finalImagePrompt += `VISUAL STYLE: High-fidelity, commercial-grade imagery, professional studio lighting. \n`;
 
     if (logoUrl) {
         finalImagePrompt += `\n*** LOGO INSTRUCTIONS ***\n`;
-        finalImagePrompt += `One of the input images is a brand logo. You MUST include this logo in the final design. Place it clearly (e.g., top corner or bottom footer) without distorting it.\n`;
+        finalImagePrompt += `Include the brand logo in the design layout (e.g., top corner or bottom footer) naturally.\n`;
     }
 
     if (templateUrl) {
-        finalImagePrompt += `\n*** REFERENCE IMAGE INSTRUCTIONS ***\n`;
-        finalImagePrompt += `The LAST image provided is a REFERENCE DESIGN.\n`;
-        finalImagePrompt += `1. Capture ONLY the design language, layout, and composition from this reference image.\n`;
-        finalImagePrompt += `2. Do NOT copy the specific content or objects from the reference image.\n`;
-        finalImagePrompt += `3. Apply this extracted design style strictly to the "${propertyTitle}".\n --control_image_last_is_reference`;
+        finalImagePrompt += `\n*** REFERENCE STYLE ***\n`;
+        finalImagePrompt += `The last image is a REFERENCE DESIGN. Adopt its layout and color palette but apply it to the "${propertyTitle}". --control_image_last_is_reference\n`;
     }
 
     finalImagePrompt += `\nAspect Ratio: ${aspectRatio}.`;
-    if (contactNumber) finalImagePrompt += ` Display contact info: ${contactNumber}.`;
+    if (contactNumber) finalImagePrompt += ` Display contact info prominently: ${contactNumber}.`;
 
     console.log("[LOG] Final Image Prompt:", finalImagePrompt);
 
+    // KIE API Payload
     const payload = {
-      "model": "nano-banana-2", 
+      "model": model || "google/nano-banana-2", // Uses Banana 2.0 or GPT 2.0 based on UI toggle
       "input": {
         "prompt": finalImagePrompt,
         "image_input": allInputImages, 
@@ -81,25 +88,23 @@ export async function POST(request: Request) {
     // --- COPY GENERATION (ALEX HORMOZI FRAMEWORK) ---
     const copyPrompt = `
       You are an elite direct-response copywriter trained in Alex Hormozi's "$100M Offers" framework.
-      Your task is to write a highly converting, high-energy social media ad caption for the following product or service.
+      Your task is to write a highly converting social media ad caption.
       
-      PRODUCT/SERVICE TITLE: ${propertyTitle}
+      PRODUCT: ${propertyTitle}
       DETAILS: ${propertyDescription}
-      COMPANY NAME: ${businessName}
-      CONTACT NUMBER: ${contactNumber || 'DM us for details!'}
-      EXTRA INSTRUCTIONS: ${userInstructions || 'None'}
+      COMPANY: ${businessName}
+      CONTACT: ${contactNumber || 'DM us!'}
+      EXTRA: ${userInstructions || 'None'}
 
-      COPYWRITING FRAMEWORK:
-      1. HOOK: Grab attention immediately calling out the ideal buyer.
-      2. GRAND SLAM OFFER: Present the offering as an irresistible, no-brainer deal.
-      3. VALUE STACKING: List the massive benefits logically and emotionally (bullet points).
-      4. SCARCITY/URGENCY: Give them a genuine reason to act right now.
-      5. CTA: Strong, clear Call-To-Action instructing them exactly what to do next (including the contact number).
-
-      Keep it structured, punchy, use appropriate emojis, and make it ready to post on Facebook/Instagram. Ensure the tone matches the specific product and respects any extra instructions provided.
+      FRAMEWORK:
+      1. HOOK: Immediate attention-grabber.
+      2. OFFER: Irresistible deal.
+      3. VALUE STACK: Bulleted massive benefits.
+      4. SCARCITY: Why act now.
+      5. CTA: Direct instruction with contact info.
     `;
 
-    // Execute both calls concurrently for better performance
+    // Execute concurrently
     const [kieResult, generatedCaption] = await Promise.all([
         createKieTask(payload),
         generateKieChat(copyPrompt, "gemini-3-flash")
