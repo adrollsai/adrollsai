@@ -1,3 +1,4 @@
+// app/dashboard/profile/page.tsx
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -13,7 +14,10 @@ import {
   Instagram, 
   Globe, 
   Target, 
-  Share2 
+  Share2,
+  BellRing,
+  UserPlus,
+  Clock
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -43,7 +47,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
   
-  // ROLE STATE (Added for Team Hierarchy)
+  // ROLE STATE
   const [role, setRole] = useState<'admin' | 'agent'>('agent')
   
   // Actions
@@ -70,6 +74,9 @@ export default function ProfilePage() {
   // Distribution Toggle States
   const [enableDistribution, setEnableDistribution] = useState(false)
   const [isTogglingDist, setIsTogglingDist] = useState(false)
+  
+  // Testing States
+  const [isTestingPush, setIsTestingPush] = useState(false)
 
   // Profile Data
   const [formData, setFormData] = useState({
@@ -122,7 +129,6 @@ export default function ProfilePage() {
         if (formattedAccounts.length > 0) {
             setAdAccounts(formattedAccounts);
         } else {
-            console.error("Error fetching ad accounts:", data.error?.message || "No ad accounts found.");
             setAdAccounts([]);
         }
     } catch (e) {
@@ -144,7 +150,6 @@ export default function ProfilePage() {
         const data = await res.json()
         if (data.pixels) {
             setPixels(data.pixels)
-            // Auto-select if only one exists and none currently selected
             if (data.pixels.length === 1 && !selectedPixelId) {
                 handlePixelSelect(data.pixels[0].id)
             }
@@ -152,14 +157,12 @@ export default function ProfilePage() {
             setPixels([])
         }
     } catch (e) { 
-        console.error(e) 
         setPixels([])
     } 
     finally { setIsLoadingPixels(false) }
   }
 
   // --- SELECTION HANDLERS ---
-
   const handlePageSelect = async (pageId: string) => {
     const page = fbPages.find(p => p.id === pageId)
     if (!page || !userId) return
@@ -282,7 +285,6 @@ export default function ProfilePage() {
   }, [router, supabase])
 
   // --- ACTIONS ---
-
   const handleConnectFacebook = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'facebook',
@@ -293,8 +295,6 @@ export default function ProfilePage() {
     })
     if (error) alert("Connection error: " + error.message)
   }
-
-  // --- DISCONNECT HANDLERS ---
 
   const handleDisconnectFacebook = async () => {
     if (!confirm("Disconnect Facebook?")) return
@@ -317,7 +317,6 @@ export default function ProfilePage() {
   }
 
   // --- FILE UPLOADS & SAVING ---
-
   const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       if (!event.target.files || !event.target.files.length) return
@@ -356,11 +355,8 @@ export default function ProfilePage() {
             .update({ enable_distribution: newState })
             .eq('id', userId)
 
-        if (error) {
-            throw error
-        } else {
-            setTimeout(() => window.location.reload(), 500)
-        }
+        if (error) throw error
+        setTimeout(() => window.location.reload(), 500)
     } catch (e: any) {
         setEnableDistribution(!newState)
         alert("Failed to save setting: " + e.message)
@@ -402,6 +398,65 @@ export default function ProfilePage() {
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/')
+  }
+
+  // --- TESTING FUNCTIONS ---
+
+  const testInstantPush = async () => {
+    setIsTestingPush(true)
+    try {
+        const res = await fetch('/api/test-notification', { method: 'POST' });
+        if (res.ok) {
+            alert("Push request sent! You should receive it instantly.");
+        } else {
+            const data = await res.json()
+            alert("Failed to send push: " + data.error);
+        }
+    } catch(e: any) { 
+        alert("Error testing push: " + e.message); 
+    } finally {
+        setIsTestingPush(false)
+    }
+  }
+
+  const testSimulateLead = async () => {
+      if (!userId) return;
+      const dummyName = "Tester " + Math.floor(Math.random() * 1000);
+      
+      const { error } = await supabase.from('leads').insert({
+          user_id: userId,
+          name: dummyName,
+          phone: "9999999999",
+      });
+
+      if (!error) {
+          alert(`Dummy lead '${dummyName}' added successfully to CRM!`);
+      } else {
+          alert("Error simulating lead: " + error.message);
+      }
+  }
+
+  const testScheduleReminder = async () => {
+      if (!userId) return;
+      
+      // Calculate exactly 1 minute from now, shifted to IST timezone 
+      // (This perfectly matches your cron job's offset logic)
+      const nowUtc = new Date();
+      const istOffset = 5.5 * 60 * 60 * 1000;
+      const oneMinFromNowIST = new Date(nowUtc.getTime() + istOffset + 60000).toISOString();
+
+      const { error } = await supabase.from('leads').insert({
+          user_id: userId,
+          name: "Reminder Bot",
+          phone: "8888888888",
+          next_followup: oneMinFromNowIST
+      });
+
+      if (!error) {
+          alert("Reminder successfully scheduled! Please wait exactly 1 to 2 minutes for Cron-job.org to trigger your webhook.");
+      } else {
+          alert("Error scheduling reminder: " + error.message);
+      }
   }
 
   if (loading) return <div className="p-10 text-center text-slate-400 text-sm animate-pulse">Loading settings...</div>
@@ -715,6 +770,54 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+
+      {/* Notification & Developer Testing */}
+      <div className="mb-6">
+        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Developer & Testing</h3>
+        <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden p-5 space-y-3">
+           
+           <button 
+              onClick={testInstantPush} 
+              disabled={isTestingPush}
+              className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50"
+           >
+              <div className="bg-blue-100 text-blue-600 p-2 rounded-lg">
+                  {isTestingPush ? <Loader2 size={16} className="animate-spin"/> : <BellRing size={16}/>}
+              </div>
+              <div className="text-left">
+                  <p className="text-sm font-bold text-slate-800">Test Push Notification</p>
+                  <p className="text-[10px] text-slate-500">Fires instantly to verify delivery</p>
+              </div>
+           </button>
+
+           <button 
+              onClick={testSimulateLead} 
+              className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors"
+           >
+              <div className="bg-green-100 text-green-600 p-2 rounded-lg">
+                  <UserPlus size={16}/>
+              </div>
+              <div className="text-left">
+                  <p className="text-sm font-bold text-slate-800">Simulate New Lead</p>
+                  <p className="text-[10px] text-slate-500">Injects a dummy lead into your CRM</p>
+              </div>
+           </button>
+
+           <button 
+              onClick={testScheduleReminder} 
+              className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors"
+           >
+              <div className="bg-orange-100 text-orange-600 p-2 rounded-lg">
+                  <Clock size={16}/>
+              </div>
+              <div className="text-left">
+                  <p className="text-sm font-bold text-slate-800">Test 1-Min Reminder</p>
+                  <p className="text-[10px] text-slate-500">Schedules a dummy lead for exactly 1 min</p>
+              </div>
+           </button>
+
+        </div>
+      </div>
       
       {/* Sign Out (Everyone) */}
       <div>
