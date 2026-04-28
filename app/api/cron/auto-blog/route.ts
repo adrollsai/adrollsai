@@ -66,7 +66,7 @@ async function runSeoCron(request: Request) {
             continue;
         }
 
-        const res = await fetch('https://api.kie.ai/v1/chat/completions', {
+        const res = await fetch('https://api.kie.ai/gemini-3-flash/v1/chat/completions', {
             method: 'POST',
             cache: 'no-store', // Prevents Next.js aggressive caching
             headers: {
