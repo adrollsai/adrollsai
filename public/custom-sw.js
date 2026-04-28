@@ -1,49 +1,60 @@
 // public/custom-sw.js
 
-// 1. FORCIBLY TAKE OVER THE BROWSER INSTANTLY
+// 1. Force Immediate Activation (The "Greedy" Fix)
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
-});
+  // This tells the browser to throw out the old SW and use this one NOW
+  self.skipWaiting() 
+})
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
-});
+  // This tells the SW to control the page immediately, not wait for reload
+  event.waitUntil(clients.claim()) 
+})
 
-// 2. HANDLE INCOMING PUSH
-self.addEventListener('push', function (event) {
+// 2. Handle Push Event
+self.addEventListener('push', function(event) {
   if (event.data) {
-    try {
-      const data = event.data.json();
-      const options = {
-        body: data.body || 'You have a new notification.',
-        icon: '/icon-192x192.png',
-        badge: '/icon-192x192.png',
-        data: { url: data.url || '/dashboard/crm' },
-        vibrate: [200, 100, 200],
-        requireInteraction: true // Keeps the notification on screen until tapped
-      };
-      event.waitUntil(self.registration.showNotification(data.title || 'AdRolls AI', options));
-    } catch (e) {
-      console.error('Push payload was not JSON:', e);
+    const data = event.data.json()
+    const options = {
+      body: data.body,
+      icon: '/icon-192x192.png',
+      badge: '/icon-192x192.png',
+      vibrate: [100, 50, 100],
+      data: {
+        dateOfArrival: Date.now(),
+        primaryKey: '2',
+        url: data.url || '/'
+      },
+      actions: [
+        {
+          action: 'explore', 
+          title: 'View',
+        }
+      ]
     }
+    event.waitUntil(self.registration.showNotification(data.title, options))
   }
-});
+})
 
-// 3. HANDLE CLICKS
-self.addEventListener('notificationclick', function (event) {
-  event.notification.close();
+// 3. Handle Click (iOS Focus Fix)
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close()
+  const targetUrl = event.notification.data.url
+
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
-      for (let i = 0; i < clientList.length; i++) {
-        const client = clientList[i];
-        if (client.url.includes(self.registration.scope) && 'focus' in client) {
-          client.navigate(event.notification.data.url);
-          return client.focus();
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+      // A. Try to find an existing window to focus
+      for (var i = 0; i < windowClients.length; i++) {
+        var client = windowClients[i]
+        // Match origin to ensure we own the window
+        if (client.url && 'focus' in client) {
+           return client.focus().then(c => c.navigate(targetUrl))
         }
       }
+      // B. If no window open, open a new one
       if (clients.openWindow) {
-        return clients.openWindow(event.notification.data.url);
+        return clients.openWindow(targetUrl)
       }
     })
-  );
-});
+  )
+})
