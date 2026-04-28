@@ -6,10 +6,11 @@ export async function POST(request: Request) {
   try {
     // 1. Authenticate normally
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
 
-    if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (authError || !user) {
+        console.error("Push Auth Error:", authError)
+        return NextResponse.json({ error: 'Unauthorized - User session not found' }, { status: 401 })
     }
 
     const body = await request.json()
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
     const auth = subData.keys?.auth;
 
     if (!endpoint || !p256dh || !auth) {
-        return NextResponse.json({ error: 'Malformed payload' }, { status: 400 })
+        return NextResponse.json({ error: 'Malformed push payload missing required keys' }, { status: 400 })
     }
 
     // 2. Use Admin Client to bypass RLS 403 Forbidden error
@@ -29,11 +30,12 @@ export async function POST(request: Request) {
         process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // BULLETPROOF FIX: 
-    // Step A: Delete any existing subscriptions for this user to prevent duplicates
-    await supabaseAdmin.from('push_subscriptions').delete().eq('user_id', user.id)
+    // CRITICAL FIX: Delete by 'endpoint' instead of 'user_id'
+    // If you log into a different test account on the same browser, the browser uses the same endpoint.
+    // Deleting by endpoint prevents Postgres unique constraint crashes!
+    await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', endpoint)
 
-    // Step B: Forcefully insert the new token (bypassing the onConflict crash entirely)
+    // Forcefully insert the new token
     const { error } = await supabaseAdmin.from('push_subscriptions').insert({
         user_id: user.id,
         endpoint: endpoint,
@@ -42,13 +44,13 @@ export async function POST(request: Request) {
     })
 
     if (error) {
-        console.error("DB Insert Error:", error)
-        throw error;
+        console.error("DB Insert Error:", error.message)
+        return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    console.error("Push Subscribe Error:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error("Push Subscribe Exception:", error)
+    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 })
   }
 }

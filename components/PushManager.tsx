@@ -1,4 +1,3 @@
-// components/PushManager.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -23,17 +22,12 @@ export default function PushManager() {
       setIsSupported(true)
       setPermission(Notification.permission)
       
-      // Only prompt if they haven't explicitly denied or granted it yet
       if (Notification.permission === 'default') {
-          setTimeout(() => setShowPrompt(true), 3000) // Delay prompt for better UX
+          setTimeout(() => setShowPrompt(true), 3000) 
       }
 
-      // Register the custom SW
       navigator.serviceWorker.register('/custom-sw.js').then((reg) => {
           console.log('Custom SW registered', reg.scope)
-          
-          // CRITICAL FIX: If they already granted permission (e.g. they just installed the PWA), 
-          // silently fetch their device token and save it to the database so reminders trigger.
           if (Notification.permission === 'granted') {
              subscribeSilent(reg)
           }
@@ -44,7 +38,10 @@ export default function PushManager() {
   const subscribeSilent = async (registration: ServiceWorkerRegistration) => {
     try {
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-        if (!vapidKey) return;
+        if (!vapidKey) {
+            console.error("Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY in environment variables.")
+            return;
+        }
 
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
@@ -52,14 +49,25 @@ export default function PushManager() {
         })
 
         const subData = JSON.parse(JSON.stringify(subscription))
-        await fetch('/api/web-push/subscribe', {
+        
+        const res = await fetch('/api/web-push/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ endpoint: subData.endpoint, keys: subData.keys })
         })
-        console.log("Push token automatically synced with database!")
-    } catch (error) {
+        
+        const result = await res.json()
+
+        if (!res.ok) {
+            console.error("Database Sync Failed:", result.error)
+            alert(`Could not save push token to database: ${result.error}`)
+        } else {
+            console.log("Push token successfully synced with database!")
+        }
+
+    } catch (error: any) {
         console.error('Silent push subscription failed:', error)
+        alert(`Subscription API failed: ${error.message}`)
     }
   }
 
@@ -72,7 +80,6 @@ export default function PushManager() {
       if (perm === 'granted') {
         const registration = await navigator.serviceWorker.ready
         await subscribeSilent(registration)
-        console.log("Subscribed successfully after user prompt!")
       }
     } catch (error) {
       console.error('Push subscription failed:', error)
