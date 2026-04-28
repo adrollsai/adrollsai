@@ -3,9 +3,12 @@ import { createServerClient } from '@supabase/ssr'
 
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl;
-  const hostname = request.headers.get('host') || '';
+  
+  // 1. CLEAN HOSTNAME (Strips port numbers for local testing compatibility)
+  const rawHostname = request.headers.get('host') || '';
+  const hostname = rawHostname.split(':')[0]; 
 
-  // 1. CUSTOM DOMAIN ROUTING
+  // 2. CUSTOM DOMAIN ROUTING
   const mainDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'adrolls.in';
   
   // Safe list for platform-owned domains
@@ -14,12 +17,19 @@ export async function middleware(request: NextRequest) {
                            hostname.includes('vercel.app') || 
                            hostname.includes('ngrok-free.dev');
 
-  // If it's a custom domain, rewrite the URL internally to the shared profile route
+  // If it's a custom domain...
   if (!isPlatformDomain) {
-    return NextResponse.rewrite(new URL(`/shared/${hostname}${url.pathname}`, request.url));
+    // CRITICAL PWA FIX: Let API routes (like /api/manifest and /api/org-icon) pass through normally!
+    // Without this, the PWA installation on custom domains will 404.
+    if (url.pathname.startsWith('/api/')) {
+        // Do nothing, let it fall through to the API route
+    } else {
+        // Rewrite all other frontend paths to the shared profile route
+        return NextResponse.rewrite(new URL(`/shared/${hostname}${url.pathname}`, request.url));
+    }
   }
 
-  // 2. AUTHENTICATION & REDIRECT LOGIC
+  // 3. AUTHENTICATION & REDIRECT LOGIC
   let response = NextResponse.next({
     request: { headers: request.headers },
   })

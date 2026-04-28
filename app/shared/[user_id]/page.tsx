@@ -1,3 +1,4 @@
+// app/shared/[user_id]/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -41,7 +42,6 @@ const parsePrice = (priceStr: string | null) => {
 
 export default function PublicProfilePage() {
   const params = useParams()
-  const pathname = usePathname()
   const searchParams = useSearchParams()
   const supabase = createClient()
 
@@ -92,11 +92,14 @@ export default function PublicProfilePage() {
     const fetchData = async () => {
       try {
         // Resolve profile by either Custom Domain OR User ID
+        // (This perfectly handles the domain passed from your middleware)
         let profileQuery = supabase.from('profiles').select('*')
         
         if (identifier.includes('.')) {
+            // It's a custom domain from the middleware rewrite (e.g., www.client.com)
             profileQuery = profileQuery.eq('custom_domain', identifier)
         } else {
+            // It's a standard user ID link (e.g., /shared/123-abc)
             profileQuery = profileQuery.eq('id', identifier)
         }
         
@@ -151,15 +154,11 @@ export default function PublicProfilePage() {
     try {
       setSharingId(prop.id)
       
-      // Determine what text to share
       const shareText = `Check out this property!\n\n*${prop.title}*\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description ? prop.description : ''}`
 
-      // Check if the browser supports sharing files
       if (navigator.canShare) {
         const filesToShare: File[] = []
         
-        // Grab the main image (or loop through multiple if you want to share up to 3)
-        // Here we just grab the primary image to ensure it loads fast
         const imageUrls = prop.images && prop.images.length > 0 ? prop.images.slice(0, 3) : [prop.image_url]
 
         for (let i = 0; i < imageUrls.length; i++) {
@@ -180,15 +179,12 @@ export default function PublicProfilePage() {
           files: filesToShare
         }
 
-        // Trigger native share sheet
         if (navigator.canShare(shareData)) {
           await navigator.share(shareData)
         } else {
-          // Fallback if the device can share, but specifically rejected the files
           await navigator.share({ title: prop.title, text: `${shareText}\n\n${prop.image_url}` })
         }
       } else {
-        // Fallback for desktop/unsupported browsers: Just copy to clipboard or open normal intent
         alert("Native file sharing is not supported on this device. The link has been copied instead.")
         navigator.clipboard.writeText(`${shareText}\n\nLink: ${prop.image_url}`)
       }
@@ -324,7 +320,6 @@ export default function PublicProfilePage() {
                                     <span className="text-xs font-medium truncate">{prop.address}</span>
                                 </div>
                                 
-                                {/* UPDATED BUTTON ROW */}
                                 <div className="flex gap-2 w-full">
                                     <a href={`https://wa.me/${profile?.contact_number?.replace(/[^0-9]/g,'')}?text=I'm interested in ${prop.title} (${prop.price})`} target="_blank" rel="noopener noreferrer" className="flex-1 text-center bg-slate-900 text-white py-3 rounded-xl text-xs font-bold hover:opacity-90 active:scale-95 transition-all">
                                         Contact Agent
@@ -408,7 +403,6 @@ export default function PublicProfilePage() {
                         <h1 className="text-2xl font-bold text-slate-900 mb-2 leading-tight">{selectedPost.title}</h1>
                         <p className="text-xs text-slate-400 mb-6">{new Date(selectedPost.created_at).toLocaleDateString()}</p>
                         <div className="prose prose-sm prose-slate max-w-none">
-                            {/* We use dangerouslySetInnerHTML here so that the AI's SEO bolding (<b> tags) render correctly */}
                             <div dangerouslySetInnerHTML={{ __html: selectedPost.content.replace(/\n/g, '<br/>') }} />
                         </div>
                     </div>

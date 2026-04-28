@@ -1,4 +1,3 @@
-// app/dashboard/profile/page.tsx
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -12,12 +11,14 @@ import {
   Facebook, 
   CheckCircle, 
   Instagram, 
-  Globe, 
   Target, 
   Share2,
   BellRing,
   UserPlus,
-  Clock
+  Clock,
+  Globe,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -37,6 +38,107 @@ type AdAccount = {
 type Pixel = {
   id: string
   name: string
+}
+
+// --- DOMAIN MANAGER COMPONENT ---
+function DomainManager({ initialDomain, userId }: { initialDomain: string, userId: string | null }) {
+  const [domain, setDomain] = useState(initialDomain || '')
+  const [loading, setLoading] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [errorMessage, setErrorMessage] = useState('')
+
+  useEffect(() => {
+    if (initialDomain) setDomain(initialDomain)
+  }, [initialDomain])
+
+  const handleConnect = async () => {
+    if (!domain) return
+    setLoading(true)
+    setStatus('idle')
+
+    try {
+      // Clean up the input (remove https://, spaces, paths)
+      const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim().toLowerCase()
+      setDomain(cleanDomain)
+
+      const res = await fetch('/api/domains/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: cleanDomain })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) throw new Error(data.error || 'Failed to connect domain')
+      
+      setStatus('success')
+    } catch (err: any) {
+      setStatus('error')
+      setErrorMessage(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Check if it's a subdomain (e.g., has more than one dot, like app.domain.com)
+  const isSubdomain = domain.split('.').length > 2
+
+  return (
+    <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+      <label className="text-[10px] font-bold text-blue-800 ml-1 block mb-1 flex items-center gap-1">
+        <Globe size={10} /> Custom Domain (Optional)
+      </label>
+      
+      <div className="flex gap-2">
+        <input 
+          type="text" 
+          placeholder="www.yourdomain.com" 
+          value={domain} 
+          onChange={(e) => setDomain(e.target.value)} 
+          className="w-full bg-white py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none border border-blue-100" 
+        />
+        <button 
+          onClick={handleConnect}
+          disabled={loading || !domain}
+          className="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2"
+        >
+          {loading ? <Loader2 size={14} className="animate-spin" /> : 'Connect'}
+        </button>
+      </div>
+      
+      <p className="text-[9px] text-blue-600/70 ml-1 mt-1 leading-tight">
+         Point your domain's CNAME record to <span className="font-mono font-bold">adrolls.in</span>
+      </p>
+
+      {status === 'success' && (
+        <div className="mt-3 bg-white p-3 rounded-xl border border-green-200">
+          <p className="text-xs font-bold text-green-700 flex items-center gap-1 mb-2">
+            <CheckCircle2 size={14} /> Domain Linked! Now configure your DNS:
+          </p>
+          <div className="space-y-2 text-[10px] text-slate-600 bg-slate-50 p-2 rounded-lg font-mono">
+            {isSubdomain ? (
+              <>
+                <div className="flex justify-between border-b border-slate-200 pb-1"><span className="font-bold">Type</span><span>CNAME</span></div>
+                <div className="flex justify-between border-b border-slate-200 pb-1"><span className="font-bold">Name</span><span>{domain.split('.')[0]}</span></div>
+                <div className="flex justify-between"><span className="font-bold">Value</span><span>cname.vercel-dns.com</span></div>
+              </>
+            ) : (
+              <>
+                <div className="flex justify-between border-b border-slate-200 pb-1"><span className="font-bold">Type</span><span>A Record</span></div>
+                <div className="flex justify-between border-b border-slate-200 pb-1"><span className="font-bold">Name</span><span>@</span></div>
+                <div className="flex justify-between"><span className="font-bold">Value</span><span>76.76.21.21</span></div>
+              </>
+            )}
+          </div>
+          <p className="text-[9px] text-slate-400 mt-2 leading-tight">Please allow up to 15 mins for your SSL certificate to generate.</p>
+        </div>
+      )}
+
+      {status === 'error' && (
+        <p className="text-[10px] font-bold text-red-500 mt-2 flex items-center gap-1"><AlertCircle size={12} /> {errorMessage}</p>
+      )}
+    </div>
+  )
 }
 
 export default function ProfilePage() {
@@ -79,9 +181,9 @@ export default function ProfilePage() {
   const [isTestingPush, setIsTestingPush] = useState(false)
 
   // Profile Data
+  const [initialCustomDomain, setInitialCustomDomain] = useState<string>('')
   const [formData, setFormData] = useState({
     businessName: '',
-    customDomain: '',
     mission: '',
     color: '#D0E8FF',
     contact: '',
@@ -224,10 +326,10 @@ export default function ProfilePage() {
 
         if (profile && isMounted) {
           setRole(profile.role || 'admin') 
+          setInitialCustomDomain(profile.custom_domain || '')
 
           setFormData({
             businessName: profile.business_name || '',
-            customDomain: profile.custom_domain || '',
             mission: profile.mission_statement || '',
             color: profile.brand_color || '#D0E8FF',
             contact: profile.contact_number || '',
@@ -316,7 +418,6 @@ export default function ProfilePage() {
     setIsDisconnecting(false)
   }
 
-  // --- FILE UPLOADS & SAVING ---
   const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       if (!event.target.files || !event.target.files.length) return
@@ -370,27 +471,20 @@ export default function ProfilePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const cleanedDomain = formData.customDomain.trim() === '' ? null : formData.customDomain.trim().toLowerCase()
-
-    const { error } = await supabase.from('profiles').upsert({
-        id: user.id,
-        email: user.email,
+    const { error } = await supabase.from('profiles').update({
         business_name: formData.businessName,
-        custom_domain: role === 'admin' ? cleanedDomain : undefined,
         mission_statement: formData.mission,
         brand_color: formData.color,
         contact_number: formData.contact,
         logo_url: formData.logoUrl,
         facebook_url: role === 'admin' ? formData.facebookUrl : undefined,
         instagram_url: role === 'admin' ? formData.instagramUrl : undefined,
-      })
+      }).eq('id', user.id)
 
     if (error) {
-      if (error.message.includes('unique constraint') || error.code === '23505') {
-        alert('This custom domain is already registered to another account.')
-      } else {
-        alert(`Error saving: ${error.message}`)
-      }
+      alert(`Error saving: ${error.message}`)
+    } else {
+      alert("Profile Information Saved!")
     }
     setIsSaving(false)
   }
@@ -439,7 +533,6 @@ export default function ProfilePage() {
   const testScheduleReminder = async () => {
       if (!userId) return;
       
-      // Calculate exactly 1 minute from now in strict UTC
       const oneMinFromNow = new Date(Date.now() + 60000).toISOString();
 
       const { error } = await supabase.from('leads').insert({
@@ -614,6 +707,11 @@ export default function ProfilePage() {
         <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Business Profile</h3>
         <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-blue-100 space-y-4">
             
+            {/* INJECTED DOMAIN MANAGER HERE */}
+            {role === 'admin' && (
+               <DomainManager initialDomain={initialCustomDomain} userId={userId} />
+            )}
+
             {/* Basic Info */}
             <div>
               <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">
@@ -626,24 +724,6 @@ export default function ProfilePage() {
                 className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" 
               />
             </div>
-            
-            {role === 'admin' && (
-              <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
-                <label className="text-[10px] font-bold text-blue-800 ml-1 block mb-1 flex items-center gap-1">
-                  <Globe size={10} /> Custom Domain (Optional)
-                </label>
-                <input 
-                  type="text" 
-                  placeholder="www.yourdomain.com" 
-                  value={formData.customDomain} 
-                  onChange={(e) => setFormData({...formData, customDomain: e.target.value})} 
-                  className="w-full bg-white py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none mb-1 border border-blue-100" 
-                />
-                <p className="text-[9px] text-blue-600/70 ml-1 leading-tight">
-                  Point your domain's CNAME record to <span className="font-mono font-bold">adrolls.in</span>
-                </p>
-              </div>
-            )}
 
             <div>
               <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Contact Number</label>

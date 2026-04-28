@@ -1,3 +1,4 @@
+// app/api/manifest/route.ts
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 
@@ -11,12 +12,13 @@ export async function GET(request: Request) {
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
   const host = rawHost.split(',')[0].trim().split(':')[0];
 
+  // Default Manifest (For adrolls.in - The Main SaaS App)
   const defaultManifest = {
     id: '/?source=pwa_default',
     name: 'AdRolls AI',
     short_name: 'AdRolls',
     description: 'Automate your real estate marketing',
-    start_url: '/dashboard',
+    start_url: '/dashboard', // SaaS users start at the dashboard
     scope: '/',
     display: 'standalone',
     background_color: '#F8F9FF',
@@ -38,7 +40,6 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     let profileData = null;
 
-    // THE FIX: Check UID first so logged-in users get custom manifests!
     if (!SYSTEM_HOSTS.includes(host)) {
       const { data } = await supabase.from('profiles').select('business_name, logo_url').eq('custom_domain', host).single();
       profileData = data;
@@ -49,15 +50,19 @@ export async function GET(request: Request) {
 
     if (profileData) {
       const logoVersion = profileData.logo_url ? encodeURIComponent(profileData.logo_url.split('/').pop() || 'v1') : 'v1';
-      const businessName = profileData.business_name || 'AdRolls App';
+      const businessName = profileData.business_name || 'Partner App';
       const uidParam = uid ? `&uid=${uid}` : '';
+      
+      // CRITICAL LOGIC: If on a custom domain, start at the root (Landing Page). If on AdRolls, start at Dashboard.
+      const isCustomDomain = !SYSTEM_HOSTS.includes(host);
+      const startUrl = isCustomDomain ? '/' : '/dashboard';
 
       manifestData = {
         id: `/?org=${encodeURIComponent(businessName)}`,
         name: businessName,
-        short_name: businessName.substring(0, 12),
+        short_name: businessName.substring(0, 12), // Keep it short so it doesn't truncate on iPhone screens
         description: `Welcome to ${businessName}`,
-        start_url: '/dashboard',
+        start_url: startUrl, // Starts on the landing page for clients!
         scope: '/',
         display: 'standalone',
         background_color: '#FFFFFF',
