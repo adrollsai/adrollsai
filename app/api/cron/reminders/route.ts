@@ -1,9 +1,8 @@
-// app/api/cron/reminders/route.ts
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
 
-// 1. ABSOLUTE CACHE BUSTING: Forces Vercel to hit Supabase every single time
+// 1. ABSOLUTE CACHE BUSTING (This fixes the missing notifications)
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
 export const revalidate = 0
@@ -15,24 +14,19 @@ export async function GET(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       {
         auth: { persistSession: false },
-        global: { fetch: fetch } // Bypass internal Supabase caching
+        global: { fetch: fetch } 
       }
     )
 
-    // 2. THE TIMEZONE FIX:
-    // Get real UTC time
-    const nowUtc = new Date()
-    
-    // Add 5.5 hours to align with IST times saved in your database
-    const istOffset = 5.5 * 60 * 60 * 1000 
-    const nowISTAsUtcString = new Date(nowUtc.getTime() + istOffset).toISOString()
+    // NO MORE TIMEZONE HACK. Use strict current UTC time.
+    const nowUtcString = new Date().toISOString()
 
-    // Fetch leads where the followup time is less than or equal to our shifted IST time
+    // Fetch leads where the followup time is less than or equal to RIGHT NOW
     const { data: leadsToRemind, error } = await supabaseAdmin
       .from('leads')
       .select('id, user_id, name, phone, next_followup')
       .not('next_followup', 'is', null)
-      .lte('next_followup', nowISTAsUtcString)
+      .lte('next_followup', nowUtcString)
 
     if (error) throw error;
 
@@ -41,7 +35,7 @@ export async function GET(request: Request) {
             success: true, 
             processed: 0, 
             message: "No reminders due",
-            timeSearched: nowISTAsUtcString // For debugging
+            timeSearched: nowUtcString
         })
     }
 
@@ -57,6 +51,7 @@ export async function GET(request: Request) {
               "reminder"
           )
 
+          // Clear the reminder so it doesn't trigger again
           const { error: updateError } = await supabaseAdmin
               .from('leads')
               .update({ next_followup: null })

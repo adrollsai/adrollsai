@@ -439,21 +439,18 @@ export default function ProfilePage() {
   const testScheduleReminder = async () => {
       if (!userId) return;
       
-      // Calculate exactly 1 minute from now, shifted to IST timezone 
-      // (This perfectly matches your cron job's offset logic)
-      const nowUtc = new Date();
-      const istOffset = 5.5 * 60 * 60 * 1000;
-      const oneMinFromNowIST = new Date(nowUtc.getTime() + istOffset + 60000).toISOString();
+      // Calculate exactly 1 minute from now in strict UTC
+      const oneMinFromNow = new Date(Date.now() + 60000).toISOString();
 
       const { error } = await supabase.from('leads').insert({
           user_id: userId,
           name: "Reminder Bot",
           phone: "8888888888",
-          next_followup: oneMinFromNowIST
+          next_followup: oneMinFromNow
       });
 
       if (!error) {
-          alert("Reminder successfully scheduled! Please wait exactly 1 to 2 minutes for Cron-job.org to trigger your webhook.");
+          alert("Reminder successfully scheduled! Please wait 1 to 2 minutes for Cron-job.org to trigger your webhook.");
       } else {
           alert("Error scheduling reminder: " + error.message);
       }
