@@ -1,110 +1,135 @@
+// app/api/cron/auto-blog/route.ts
 import { NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
-import { callGemini } from '@/utils/external-apis'
+import { createClient } from '@supabase/supabase-js'
 
-export async function GET() {
-    const supabase = await createClient();
+// Absolute cache busting so Vercel doesn't freeze the cron responses
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+export const revalidate = 0
+
+export async function GET(request: Request) {
+    return runSeoCron(request);
+}
+
+export async function POST(request: Request) {
+    return runSeoCron(request);
+}
+
+async function runSeoCron(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const specificUserId = url.searchParams.get('userId'); // Allows testing for a single user from the dashboard
+
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    // 1. Fetch target profiles (with their mission statement for context)
+    let profilesQuery = supabaseAdmin.from('profiles').select('id, business_name, mission_statement');
+    if (specificUserId) {
+        profilesQuery = profilesQuery.eq('id', specificUserId);
+    }
     
-    try {
-        const { data: profiles, error: profilesError } = await supabase
-            .from('profiles')
-            .select('id, business_name, custom_domain'); 
+    const { data: profiles, error } = await profilesQuery;
+    if (error) throw error;
+
+    let successCount = 0;
+
+    for (const profile of profiles || []) {
         
-        if (profilesError) throw new Error(profilesError.message);
-        if (!profiles || profiles.length === 0) return NextResponse.json({ message: "No users found" }, { status: 200 });
+        // 2. Fetch the actual products/inventory for this specific business
+        const { data: products } = await supabaseAdmin
+            .from('properties') // Adjust this table name if your products are stored elsewhere
+            .select('title, price, property_type, description, image_url')
+            .eq('user_id', profile.id)
+            .limit(3); // Grab up to 3 active products to feature in the blog
 
-        const results = [];
-
-        // Loop through all users sequentially
-        for (const profile of profiles) {
+        // 3. Format the inventory into text for the AI
+        let inventoryContext = "General brand awareness and market updates.";
+        let featuredImage = 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=800&q=80'; // Default SaaS fallback image
+        
+        if (products && products.length > 0) {
+            inventoryContext = products.map(p => 
+                `- ${p.title} (${p.property_type || 'Product'}): ${p.price}. ${p.description || ''}`
+            ).join('\n');
             
-            const { data: properties, error: propertiesError } = await supabase
-                .from('properties')
-                .select('title, price, description, address, image_url, property_type')
-                .eq('user_id', profile.id)
-                .order('created_at', { ascending: false })
-                .limit(1);
-
-            if (propertiesError || properties?.length === 0) {
-                results.push({ userId: profile.id, status: 'skipped', reason: 'No properties' });
-                continue;
-            }
-
-            const property = properties[0];
-
-            // AI Prompt engineered for LLM indexing & Direct-Response SEO
-            const prompt = `You are an expert Real Estate Copywriter specializing in direct-response marketing and search engine optimization. 
-            Write an authoritative market update feed post for this property. 
-            
-            Business Name: ${profile.business_name}
-            Property: ${property.title}
-            Type: ${property.property_type || 'Premium Real Estate'}
-            Location: ${property.address}
-            Price: ${property.price}
-            Details: ${property.description}
-
-            RULES:
-            - Write in a highly engaging, high-status, cinematic tone.
-            - Use value stacking to build desire for the location and the asset.
-            - Ensure legal accuracy: If the business model involves shared investment, refer to it strictly as "fractional co-ownership", do not use the word "own" by itself.
-            - Do not invent hypothetical return percentages or unauthorized pricing.
-            - Ensure any location referencing Delhi is written as "New Delhi".
-            
-            STRUCTURE YOUR RESPONSE EXACTLY LIKE THIS:
-            TITLE: [Catchy, SEO-optimized headline]
-            CONTENT: [3-4 paragraphs. Use bolding (e.g., <b>text</b>) for emphasis on key benefits. Include a clear Call to Action to contact ${profile.business_name}].
-            TAGS: [Comma separated list of 3-4 keywords like 'Real Estate, Investment, Market Update']`;
-
-            const rawContent = await callGemini(prompt);
-            
-            let title = `${property.title} - Market Update`;
-            let contentBody = rawContent;
-            let tags = ["Real Estate", "Market Trends"];
-
-            // Extract Title
-            const titleMatch = rawContent.match(/TITLE:\s*(.*)/i);
-            if (titleMatch && titleMatch[1]) {
-                title = titleMatch[1].trim();
-            }
-
-            // Extract Content
-            const contentMatch = rawContent.match(/CONTENT:\s*([\s\S]*?)(?=TAGS:|$)/i);
-            if (contentMatch && contentMatch[1]) {
-                contentBody = contentMatch[1].trim();
-            }
-
-            // Extract Tags
-            const tagsMatch = rawContent.match(/TAGS:\s*(.*)/i);
-            if (tagsMatch && tagsMatch[1]) {
-                tags = tagsMatch[1].replace(/[[\]]/g, '').split(',').map(tag => tag.trim());
-            }
-            
-            // Create a clean meta-excerpt for the UI and search snippets
-            const excerpt = contentBody.replace(/<[^>]*>?/gm, '').substring(0, 130) + '...';
-
-            const { error: saveError } = await supabase.from('posts').insert({
-                user_id: profile.id,
-                title: title,
-                content: contentBody,
-                excerpt: excerpt,
-                image_url: property.image_url,
-                tags: tags,
-                status: 'published'
-            });
-
-            if (saveError) {
-                console.error(`DB save failed for ${profile.id}:`, saveError);
-                results.push({ userId: profile.id, status: 'error', reason: saveError.message });
-                continue;
-            }
-
-            results.push({ userId: profile.id, status: 'success', title: title });
+            // Use the first product's image as the cover image for the blog post
+            if (products[0].image_url) featuredImage = products[0].image_url;
         }
 
-        return NextResponse.json({ success: true, processed: results.length, details: results });
+        // 4. The Dynamic, Alex Hormozi-Inspired SEO Prompt
+        const prompt = `You are an elite SEO copywriter and direct-response marketer trained in the exact principles of Alex Hormozi (Grand Slam Offers, Value Equation, clear CTAs, and building extreme trust). 
+        
+        Write a highly SEO-optimized, engaging blog article to rank the landing page for a business named "${profile.business_name || 'This Company'}".
+        
+        Business Context & Mission:
+        "${profile.mission_statement || 'Providing top-tier services and maximum value to our customers.'}"
+        
+        Here is their current active inventory/products to feature naturally in the article:
+        ${inventoryContext}
+        
+        Instructions:
+        1. Write a compelling, value-driven article that builds trust, highlights the immense value of these specific products/services, and drives the reader to take action.
+        2. Format the body content strictly with HTML tags (<h2>, <p>, <b>, <ul>, <li>). Do NOT use markdown.
+        3. Keep the total length under 400 words. 
+        4. Return ONLY a valid JSON object with the following exact keys: 'title', 'excerpt' (1 compelling sentence), 'content' (the HTML body), and 'tags' (array of 3 to 5 SEO keywords). Do not include markdown formatting blocks (like \`\`\`json) around the output.`;
 
-    } catch (error: any) {
-        console.error("Cron Error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        // 5. Call Kie.ai using OpenAI-compatible formatting with Gemini 1.5 Flash
+        const res = await fetch('https://api.kie.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.KIE_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: 'google/gemini-1.5-flash', 
+                messages: [{ role: 'user', content: prompt }],
+                response_format: { type: "json_object" }
+            })
+        });
+
+        if (!res.ok) {
+            const errText = await res.text();
+            console.error(`Kie.ai failed for ${profile.id}:`, errText);
+            continue;
+        }
+
+        const aiData = await res.json();
+        const responseText = aiData.choices[0].message.content;
+        
+        let article;
+        try {
+            // Some models occasionally still wrap JSON in markdown despite instructions. Clean it just in case.
+            const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            article = JSON.parse(cleanJson);
+        } catch (e) {
+            console.error("Failed to parse JSON from AI:", responseText);
+            continue;
+        }
+
+        // 6. Save to Database for the Feed
+        const { error: insertError } = await supabaseAdmin.from('posts').insert({
+            user_id: profile.id,
+            title: article.title,
+            excerpt: article.excerpt,
+            content: article.content,
+            tags: article.tags,
+            status: 'published',
+            image_url: featuredImage 
+        });
+
+        if (insertError) {
+             console.error(`DB Insert Error for ${profile.id}:`, insertError);
+        } else {
+             successCount++;
+        }
     }
+
+    return NextResponse.json({ success: true, generated: successCount });
+
+  } catch (error: any) {
+    console.error("Auto-Blog Fatal Error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 }

@@ -18,7 +18,8 @@ import {
   Clock,
   Globe,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -179,6 +180,7 @@ export default function ProfilePage() {
   
   // Testing States
   const [isTestingPush, setIsTestingPush] = useState(false)
+  const [isTestingBlog, setIsTestingBlog] = useState(false)
 
   // Profile Data
   const [initialCustomDomain, setInitialCustomDomain] = useState<string>('')
@@ -222,7 +224,6 @@ export default function ProfilePage() {
     try {
         const res = await fetch(`https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name&access_token=${token}`);
         const data = await res.json();
-        
         const formattedAccounts = data.data?.map((acc: any) => ({
             id: acc.id,
             name: acc.name,
@@ -546,6 +547,24 @@ export default function ProfilePage() {
           alert("Reminder successfully scheduled! Please wait 1 to 2 minutes for Cron-job.org to trigger your webhook.");
       } else {
           alert("Error scheduling reminder: " + error.message);
+      }
+  }
+
+  const testAutoBlog = async () => {
+      if (!userId) return;
+      setIsTestingBlog(true);
+      try {
+          const res = await fetch(`/api/cron/auto-blog?userId=${userId}`);
+          const data = await res.json();
+          if (data.success) {
+              alert("✅ SEO Article Generated! Check your public shared feed.");
+          } else {
+              alert("Failed to generate article: " + data.error);
+          }
+      } catch (e: any) {
+          alert("Error: " + e.message);
+      } finally {
+          setIsTestingBlog(false);
       }
   }
 
@@ -890,6 +909,20 @@ export default function ProfilePage() {
               <div className="text-left">
                   <p className="text-sm font-bold text-slate-800">Test 1-Min Reminder</p>
                   <p className="text-[10px] text-slate-500">Schedules a dummy lead for exactly 1 min</p>
+              </div>
+           </button>
+
+           <button 
+              onClick={testAutoBlog} 
+              disabled={isTestingBlog}
+              className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50"
+           >
+              <div className="bg-purple-100 text-purple-600 p-2 rounded-lg">
+                  {isTestingBlog ? <Loader2 size={16} className="animate-spin"/> : <FileText size={16}/>}
+              </div>
+              <div className="text-left">
+                  <p className="text-sm font-bold text-slate-800">Test SEO Auto-Blog</p>
+                  <p className="text-[10px] text-slate-500">Generates an AI article using Kie.ai</p>
               </div>
            </button>
 
