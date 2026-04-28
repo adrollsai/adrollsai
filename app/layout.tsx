@@ -95,7 +95,7 @@ export default async function RootLayout({
 
   let profileData = null;
 
-  // THE FIX: Fetch profile data if custom domain OR if user is logged in!
+ // THE FIX: Fetch profile data if custom domain OR if user is logged in!
   if (!isSystemHost(host)) {
      const { data } = await supabase.from('profiles').select('logo_url').eq('custom_domain', host).single();
      profileData = data;
@@ -107,8 +107,11 @@ export default async function RootLayout({
   if (profileData?.logo_url) {
      const v = encodeURIComponent(profileData.logo_url.split('/').pop() || 'v1');
      const uidParam = user ? `&uid=${user.id}` : '';
+     
      splashUrl = `/api/org-icon?type=splash&v=${v}${uidParam}`;
-     manifestUrl = `/api/manifest?v=${v}${uidParam ? `&uid=${user.id}` : ''}`;
+     // FIXED: Just use the uidParam we already safely created!
+     manifestUrl = `/api/manifest?v=${v}${uidParam}`; 
+     
   } else if (user) {
      // Even if no custom logo is uploaded, pass UID so it processes the default icon perfectly
      splashUrl = `/api/org-icon?type=splash&uid=${user.id}`;
