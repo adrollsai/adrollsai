@@ -14,8 +14,9 @@ function urlBase64ToUint8Array(base64String: string) {
 
 export default function PushManager() {
   const [isSupported, setIsSupported] = useState(false)
-  const [permission, setPermission] = useState<NotificationPermission>('default')
+  const [permission, setPermission] = useState<NotificationPermission | null>(null)
   const [showPrompt, setShowPrompt] = useState(false)
+  const [isSubscribing, setIsSubscribing] = useState(false)
 
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -23,25 +24,27 @@ export default function PushManager() {
       setPermission(Notification.permission)
       
       if (Notification.permission === 'default') {
-          setTimeout(() => setShowPrompt(true), 3000) 
+          setTimeout(() => setShowPrompt(true), 2000) 
       }
 
+      // Register the hardened SW
       navigator.serviceWorker.register('/custom-sw.js').then((reg) => {
-          console.log('Custom SW registered', reg.scope)
+          console.log('SW Registered:', reg.scope)
+          // If already granted in the past, sync the token silently
           if (Notification.permission === 'granted') {
-             subscribeSilent(reg)
+             syncTokenToDatabase(reg)
           }
-      }).catch(err => console.error('SW registration failed', err))
+      }).catch(err => console.error('SW Registration failed:', err))
     }
   }, [])
 
-  const subscribeSilent = async (registration: ServiceWorkerRegistration) => {
+  const syncTokenToDatabase = async (registration: ServiceWorkerRegistration) => {
     try {
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-        if (!vapidKey) {
-            console.error("Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY in environment variables.")
-            return;
-        }
+        if (!vapidKey) throw new Error("Missing VAPID Key")
+
+        // Wait for the SW to be fully active (now instant due to skipWaiting)
+        await navigator.serviceWorker.ready;
 
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
@@ -56,22 +59,19 @@ export default function PushManager() {
           body: JSON.stringify({ endpoint: subData.endpoint, keys: subData.keys })
         })
         
-        const result = await res.json()
-
         if (!res.ok) {
-            console.error("Database Sync Failed:", result.error)
-            alert(`Could not save push token to database: ${result.error}`)
+            const errorData = await res.json()
+            console.error("Supabase Sync Failed:", errorData)
         } else {
-            console.log("Push token successfully synced with database!")
+            console.log("Token secured and saved to DB.")
         }
-
-    } catch (error: any) {
-        console.error('Silent push subscription failed:', error)
-        alert(`Subscription API failed: ${error.message}`)
+    } catch (error) {
+        console.error('Subscription error:', error)
     }
   }
 
-  const subscribe = async () => {
+  const handleAllowClick = async () => {
+    setIsSubscribing(true)
     try {
       const perm = await Notification.requestPermission()
       setPermission(perm)
@@ -79,10 +79,12 @@ export default function PushManager() {
 
       if (perm === 'granted') {
         const registration = await navigator.serviceWorker.ready
-        await subscribeSilent(registration)
+        await syncTokenToDatabase(registration)
       }
     } catch (error) {
-      console.error('Push subscription failed:', error)
+      console.error('User denied or failed:', error)
+    } finally {
+      setIsSubscribing(false)
     }
   }
 
@@ -90,7 +92,7 @@ export default function PushManager() {
 
   return (
     <div className="fixed bottom-24 left-4 right-4 md:left-auto md:right-4 md:w-80 bg-white p-4 rounded-2xl shadow-xl border border-slate-100 z-[100] animate-in slide-in-from-bottom-10">
-      <button onClick={() => setShowPrompt(false)} className="absolute top-2 right-2 p-1 text-slate-400 hover:text-slate-600">
+      <button onClick={() => setShowPrompt(false)} className="absolute top-2 right-2 p-1 text-slate-400 hover:text-slate-600 transition-colors">
         <X size={16}/>
       </button>
       <div className="flex gap-3">
@@ -99,9 +101,13 @@ export default function PushManager() {
           </div>
           <div>
               <h3 className="font-bold text-slate-800 text-sm">Enable Notifications</h3>
-              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Get instant alerts when a new lead comes in from Facebook.</p>
-              <button onClick={subscribe} className="mt-3 bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold active:scale-95 transition-transform w-full">
-                Allow Notifications
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Get instant push alerts for new leads and daily follow-ups.</p>
+              <button 
+                onClick={handleAllowClick} 
+                disabled={isSubscribing}
+                className="mt-3 bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold active:scale-95 transition-transform w-full disabled:opacity-50"
+              >
+                {isSubscribing ? 'Securing...' : 'Allow Notifications'}
               </button>
           </div>
       </div>

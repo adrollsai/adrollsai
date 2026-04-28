@@ -11,19 +11,15 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // 1. Await the 5-second delay so Vercel does NOT freeze the function
-    await new Promise(resolve => setTimeout(resolve, 5000))
-
-    // 2. Await the push notification 
+    // REMOVED the artificial 5-second delay. Dispatch immediately.
     await sendPushNotification(
         user.id,
-        "Test Successful! 🚀",
-        "Your push notifications are working perfectly on this device.",
+        "System Check 🟢",
+        "Your pipeline is active. Notifications are working.",
         "/dashboard/crm"
     )
 
-    // 3. ONLY return the response after the push is actually sent
-    return NextResponse.json({ success: true, message: 'Notification sent successfully' })
+    return NextResponse.json({ success: true, message: 'Notification dispatched instantly' })
     
   } catch (error: any) {
     console.error("Test API Error:", error)
