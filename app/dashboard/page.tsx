@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner' // Ensure sonner is imported
 
 // Custom WhatsApp SVG Icon to replace the generic Share icon
 const WhatsAppIcon = ({ size = 24, className = "" }) => (
@@ -46,9 +47,10 @@ export default function ProductsPage() {
   const [role, setRole] = useState<'admin' | 'agent'>('admin')
   const [ownerId, setOwnerId] = useState<string | null>(null) 
   
-  // Sharing & Toggling State
+  // Sharing, Toggling & Generation State
   const [isSharingId, setIsSharingId] = useState<string | null>(null)
   const [isTogglingId, setIsTogglingId] = useState<string | null>(null) 
+  const [generatingProps, setGeneratingProps] = useState<string[]>([]) // Tracks background generation
 
   // Filter State
   const [searchQuery, setSearchQuery] = useState('')
@@ -106,7 +108,7 @@ export default function ProductsPage() {
 
     } catch (error: any) {
       console.error("Error loading products:", error.message || error)
-      alert("Failed to load products: " + (error.message || "Unknown error"))
+      toast.error("Failed to load products: " + (error.message || "Unknown error"))
     } finally {
       setLoading(false)
     }
@@ -148,6 +150,113 @@ export default function ProductsPage() {
     }
   }
 
+  // --- BACKGROUND AI GENERATION ---
+  const handleBackgroundGeneration = async (e: React.MouseEvent, prop: Property) => {
+    e.stopPropagation()
+    
+    if (generatingProps.includes(prop.id)) {
+      toast.info("Already Generating", { description: "An asset is currently being generated for this product." })
+      return
+    }
+
+    setGeneratingProps(prev => [...prev, prop.id])
+    toast.success("AI Generation Started ✨", { description: `Creating a poster for ${prop.title}. This will take about a minute.` })
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error("Unauthenticated")
+
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+
+      let propImages = (prop.images && prop.images.length > 0) ? prop.images.slice(0, 2) : [prop.image_url]
+
+      // Step 1: Call your Chat API silently
+      const startResponse = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            userInstructions: "Generate a high-quality, luxurious promotional social media poster for this product.",
+            propertyDescription: prop.description || "",
+            propertyTitle: prop.title || "",
+            contactNumber: profile?.contact_number || "",
+            logoUrl: profile?.logo_url || "",
+            propImages: propImages,
+            templateUrl: null,
+            aspectRatio: '1:1',
+            model: 'google/nano-banana-2'
+        })
+      })
+
+      const startData = await startResponse.json()
+      if (startData.error) throw new Error(startData.error)
+      const generatedCaption = startData.caption || ''
+
+      // Step 2: Poll for Results
+      if (startData.taskId) {
+          const taskId = startData.taskId
+          let attempts = 0
+          let finalImageUrl = ''
+
+          while (attempts < 30) {
+              attempts++
+              await new Promise(resolve => setTimeout(resolve, 4000))
+              const checkResponse = await fetch('/api/check-status', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ taskId })
+              })
+              const checkData = await checkResponse.json()
+
+              if (checkData.data?.state === 'success') {
+                  if (checkData.data.resultJson) {
+                      try {
+                          const resultObj = JSON.parse(checkData.data.resultJson)
+                          if (resultObj.resultUrls?.[0]) finalImageUrl = resultObj.resultUrls[0]
+                      } catch(e) {}
+                  } else if (checkData.data.resultUrl) {
+                      finalImageUrl = checkData.data.resultUrl
+                  }
+                  break;
+              } else if (checkData.data?.state === 'failed') {
+                  throw new Error("Generation failed: " + (checkData.data.failMsg || "Unknown error"))
+              }
+          }
+
+          if (!finalImageUrl) throw new Error("Generation timed out.")
+
+          // Step 3: Save to DB
+          const { error: dbError } = await supabase.from('assets').insert({
+              user_id: user.id,
+              property_id: prop.id,
+              url: finalImageUrl,
+              type: 'image',
+              status: 'Draft',
+              caption: generatedCaption
+          })
+
+          if (dbError) throw dbError
+
+          // Step 4: Notify User on Client
+          toast.success(`Creative Ready! 🎉`, { description: `Your AI asset for ${prop.title} is waiting in the linked creatives tab.` })
+
+          // Step 5: Trigger Push Notification Background Sync
+          await fetch('/api/notify-user', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                  userId: user.id, 
+                  title: "✨ Asset Generation Complete", 
+                  body: `Your AI poster for ${prop.title} is ready to publish!` 
+              })
+          }).catch(e => console.log("Push failed silently", e))
+      }
+    } catch (error: any) {
+      toast.error(`Generation failed for ${prop.title}`, { description: error.message })
+    } finally {
+      setGeneratingProps(prev => prev.filter(id => id !== prop.id))
+    }
+  }
+
   // --- TOGGLE AUTO-GENERATE ---
   const handleToggleAutoGenerate = async (e: React.MouseEvent, propId: string, currentStatus: boolean) => {
     e.stopPropagation()
@@ -161,11 +270,9 @@ export default function ProductsPage() {
         .eq('id', propId)
 
       if (error) throw error
-
-      // Optimistically update local state
       setProperties(prev => prev.map(p => p.id === propId ? { ...p, auto_generate: newStatus } : p))
     } catch (error: any) {
-      alert("Failed to update auto-generation status: " + error.message)
+      toast.error("Failed to update auto-generation status: " + error.message)
     } finally {
       setIsTogglingId(null)
     }
@@ -173,7 +280,7 @@ export default function ProductsPage() {
 
   const handleAddProperty = async () => {
     if (!newProp.title) {
-        alert("Please enter a Product/Service Name.")
+        toast.error("Please enter a Product/Service Name.")
         return
     }
     
@@ -223,7 +330,7 @@ export default function ProductsPage() {
       setPreviews([])
 
     } catch (error: any) {
-      alert('Error adding product: ' + error.message)
+      toast.error('Error adding product', { description: error.message })
     } finally {
       setIsSubmitting(false)
     }
@@ -236,10 +343,10 @@ export default function ProductsPage() {
     
     const shareUrl = `${window.location.origin}/shared/${ownerId}?${params.toString()}`
     navigator.clipboard.writeText(shareUrl)
-    alert("✅ Link Copied!")
+    toast.success("✅ Link Copied!")
   }
 
-// --- UPDATED: NATIVE MULTI-IMAGE SHARE VIA PROXY ---
+  // --- NATIVE MULTI-IMAGE SHARE ---
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
   
@@ -300,7 +407,7 @@ export default function ProductsPage() {
 
   // --- RENDER ---
  
-  if (authError) return <div className="flex h-screen items-center justify-center"><button onClick={handleManualLogout} className="text-blue-600 font-bold">Session Expired. Login Again</button></div>
+  if (authError) return <div className="flex h-screen items-center justify-center"><button onClick={handleManualLogout} className="text-blue-600 font-bold bg-blue-50 px-6 py-3 rounded-full">Session Expired. Login Again</button></div>
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
 
   return (
@@ -310,27 +417,27 @@ export default function ProductsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
         <div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Products & Services</h1>
-          <p className="text-slate-500 mt-1 sm:text-lg">Manage your catalog and assets.</p>
+          <p className="text-slate-500 mt-1 sm:text-lg font-medium">Manage your catalog and assets.</p>
         </div>
         
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
             {/* Search Bar - Expands gracefully */}
             <div className="relative flex-1 sm:min-w-[300px]">
-              <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
              
               <input 
                 type="text" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search products..." 
-                className="w-full bg-white border border-slate-200 py-3 pl-11 pr-4 rounded-xl shadow-sm text-sm text-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" 
+                className="w-full bg-white border border-slate-200 py-3.5 pl-12 pr-4 rounded-[1.25rem] shadow-sm text-sm text-slate-700 font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all" 
               />
             </div>
             
             <div className="flex items-center gap-2">
                 <button 
                   onClick={() => setShowFilters(!showFilters)} 
-                  className={`flex items-center justify-center p-3 rounded-xl shadow-sm border transition-all active:scale-95 ${showFilters ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                  className={`flex items-center justify-center p-3.5 rounded-[1.25rem] shadow-sm border transition-all active:scale-95 ${showFilters ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
                   title="More Options"
                 >
                   <MoreHorizontal size={20} />
@@ -339,9 +446,9 @@ export default function ProductsPage() {
                 {role === 'admin' && (
                   <button 
                     onClick={() => setShowAddModal(true)} 
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 px-5 rounded-xl shadow-md transition-all active:scale-95 font-semibold text-sm"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3.5 px-6 rounded-[1.25rem] shadow-md transition-all active:scale-95 font-bold text-sm"
                   >
-                    <Plus size={18} strokeWidth={2.5} />
+                    <Plus size={18} strokeWidth={3} />
                     <span className="sm:hidden lg:inline">Add Product</span>
                   </button>
                 )}
@@ -351,8 +458,8 @@ export default function ProductsPage() {
 
       {/* OPTIONS BAR (Collapsible) */}
       {showFilters && (
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 mb-8 animate-in slide-in-from-top-2 flex flex-wrap gap-4">
-            <button onClick={handleCopyFilteredLink} className="bg-blue-50 text-blue-700 hover:bg-blue-100 py-2.5 px-6 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all">
+        <div className="bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200 mb-8 animate-in slide-in-from-top-2 flex flex-wrap gap-4">
+            <button onClick={handleCopyFilteredLink} className="bg-blue-50 text-blue-700 hover:bg-blue-100 py-3 px-6 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all">
                 <LinkIcon size={16} /> Copy Public Catalog Link
             </button>
         </div>
@@ -361,45 +468,61 @@ export default function ProductsPage() {
       {/* Responsive Grid List */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {filteredProperties.length === 0 ? (
-          <div className="col-span-full text-center py-20 bg-white rounded-3xl border border-slate-100 border-dashed">
+          <div className="col-span-full text-center py-24 bg-white rounded-[2rem] border border-slate-200/60 border-dashed">
             <ImageIcon className="mx-auto h-12 w-12 text-slate-300 mb-3" />
-            <p className="text-slate-500 font-medium">No products found matching your search.</p>
+            <p className="text-slate-500 font-bold">No products found matching your search.</p>
           </div>
         ) : (
           filteredProperties.map((prop) => (
             <div 
               key={prop.id} 
               onClick={() => setSelectedProperty(prop)}
-              className="bg-white rounded-[1.5rem] shadow-sm hover:shadow-xl border border-slate-100 transition-all cursor-pointer group hover:-translate-y-1.5 flex flex-col overflow-hidden"
+              className="bg-white rounded-[1.5rem] shadow-sm hover:shadow-xl border border-slate-200/60 transition-all cursor-pointer group hover:-translate-y-1 flex flex-col overflow-hidden"
             >
               <div className="relative h-56 w-full bg-slate-100 overflow-hidden">
                 <img src={prop.image_url} alt="Product" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                <div className="absolute top-3 left-3">
+                <div className="absolute top-3 left-3 flex gap-2">
                     <span className="px-3 py-1.5 rounded-full text-xs font-bold shadow-sm bg-white/95 text-slate-800 backdrop-blur-md border border-white/20">
                        {prop.status}
                     </span>
+                    {generatingProps.includes(prop.id) && (
+                        <span className="px-3 py-1.5 rounded-full text-xs font-bold shadow-sm bg-purple-600/95 text-white backdrop-blur-md border border-white/20 flex items-center gap-1.5 animate-in fade-in zoom-in duration-300">
+                           <Loader2 size={12} className="animate-spin" /> Generating...
+                        </span>
+                    )}
                 </div>
               </div>
-              <div className="p-4 flex flex-col flex-1">
+              <div className="p-5 flex flex-col flex-1">
                 <div className="flex justify-between items-start mb-2 gap-2">
                   <h3 className="text-lg font-bold text-slate-900 leading-tight line-clamp-1">{prop.title || 'Untitled'}</h3>
                   
-                  <button 
-                      onClick={(e) => handleNativeShare(e, prop)} 
-                      disabled={isSharingId === prop.id}
-                      className="bg-[#25D366]/10 text-[#25D366] p-2.5 rounded-full hover:bg-[#25D366] hover:text-white transition-colors flex-shrink-0"
-                      title="Share via WhatsApp"
-                  >
-                     {isSharingId === prop.id ? <Loader2 size={18} className="animate-spin"/> : <WhatsAppIcon size={18} />}
-                  </button>
+                  {/* Action Buttons Row */}
+                  <div className="flex items-center gap-2 shrink-0">
+                      <button 
+                          onClick={(e) => handleBackgroundGeneration(e, prop)} 
+                          disabled={generatingProps.includes(prop.id)}
+                          className="bg-purple-50 text-purple-600 p-2.5 rounded-full hover:bg-purple-600 hover:text-white transition-colors flex-shrink-0 disabled:opacity-50 disabled:hover:bg-purple-50 disabled:hover:text-purple-600"
+                          title="Generate AI Poster"
+                      >
+                         {generatingProps.includes(prop.id) ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                      </button>
+                      <button 
+                          onClick={(e) => handleNativeShare(e, prop)} 
+                          disabled={isSharingId === prop.id}
+                          className="bg-[#25D366]/10 text-[#25D366] p-2.5 rounded-full hover:bg-[#25D366] hover:text-white transition-colors flex-shrink-0"
+                          title="Share via WhatsApp"
+                      >
+                         {isSharingId === prop.id ? <Loader2 size={18} className="animate-spin"/> : <WhatsAppIcon size={18} />}
+                      </button>
+                  </div>
                 </div>
                 
-                <p className="text-sm text-slate-500 line-clamp-2 leading-relaxed flex-1">
+                <p className="text-sm text-slate-500 font-medium line-clamp-2 leading-relaxed flex-1">
                   {prop.description || 'No description provided.'}
                 </p>
 
                 {/* Auto Generate Toggle - FIXED SLIDING UI */}
-                <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center">
+                <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
                   <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
                     <Sparkles size={14} className={prop.auto_generate ? "text-amber-500" : "text-slate-400"} />
                     Auto-Gen Daily
@@ -407,9 +530,9 @@ export default function ProductsPage() {
                   <button
                     onClick={(e) => handleToggleAutoGenerate(e, prop.id, !!prop.auto_generate)}
                     disabled={isTogglingId === prop.id}
-                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${prop.auto_generate ? 'bg-blue-600' : 'bg-slate-300'} ${isTogglingId === prop.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-500/20 ${prop.auto_generate ? 'bg-blue-600' : 'bg-slate-300'} ${isTogglingId === prop.id ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${prop.auto_generate ? 'translate-x-5' : 'translate-x-0'}`} />
+                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-300 ease-out ${prop.auto_generate ? 'translate-x-5' : 'translate-x-0'}`} />
                   </button>
                 </div>
 
@@ -421,15 +544,15 @@ export default function ProductsPage() {
 
       {/* ADD MODAL (Centered Responsive Dialog) */}
       {role === 'admin' && showAddModal && (
-        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-md rounded-[2rem] sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-extrabold text-slate-900">Add Product</h2>
               <button onClick={() => setShowAddModal(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button>
             </div>
  
             <div className="space-y-5">
-              <div onClick={() => fileInputRef.current?.click()} className="w-full h-44 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-colors relative overflow-hidden group">
+              <div onClick={() => fileInputRef.current?.click()} className="w-full h-44 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50/50 hover:border-blue-400 transition-colors relative overflow-hidden group">
                   <ImageIcon size={36} className="text-slate-400 mb-3 group-hover:scale-110 group-hover:text-blue-500 transition-transform"/>
                   <span className="text-sm font-bold text-slate-500 group-hover:text-blue-600">Upload Product Photos</span>
                   <input type="file" multiple ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
@@ -444,28 +567,28 @@ export default function ProductsPage() {
               )}
                
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 ml-1">Title</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Title</label>
                 <input 
                   type="text" 
                   value={newProp.title} 
                   onChange={(e) => setNewProp({...newProp, title: e.target.value})} 
-                  className="w-full bg-slate-50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-900 transition-all" 
+                  className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-bold text-slate-900 transition-all" 
                   placeholder="e.g. Luxury Villa Setup" 
                 />
               </div>
               
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 ml-1">Details</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Details</label>
                 <textarea 
                   value={newProp.description} 
                   onChange={(e) => setNewProp({...newProp, description: e.target.value})} 
-                  className="w-full bg-slate-50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none" 
+                  className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all resize-none" 
                   placeholder="Features, pricing, or specifications..." 
                   rows={4} 
                 />
               </div>
               
-              <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center">
+              <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center mt-4">
                 {isSubmitting ? <><Loader2 size={18} className="animate-spin mr-2" /> Saving...</> : 'Save Product'}
               </button>
             </div>
@@ -475,11 +598,11 @@ export default function ProductsPage() {
 
       {/* VIEW MODAL WITH NEW TABS (Responsive Desktop Dialog) */}
       {selectedProperty && (
-        <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm sm:p-6 animate-in fade-in duration-200">
-           <div className="bg-slate-50 w-full sm:max-w-5xl h-[95vh] sm:h-[85vh] rounded-t-[2rem] sm:rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95">
+        <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm sm:p-6 animate-in fade-in duration-200">
+           <div className="bg-slate-50 w-full sm:max-w-5xl h-[95vh] sm:h-[85vh] rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 border border-slate-100">
                
                {/* Top Navigation */}
-               <div className="bg-white px-6 py-4 border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
+               <div className="bg-white px-6 py-5 border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
                    <h2 className="text-xl font-extrabold text-slate-900 truncate pr-4">{selectedProperty.title}</h2>
                    <button onClick={() => setSelectedProperty(null)} className="bg-slate-100 p-2.5 rounded-full text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition-colors shrink-0">
                      <X size={20} />
@@ -507,18 +630,18 @@ export default function ProductsPage() {
                        // TAB 1: DETAILS
                        <div className="p-4 sm:p-8 space-y-8 max-w-4xl mx-auto">
                            {/* Images */}
-                           <div className="flex gap-4 overflow-x-auto snap-x scrollbar-hide pb-2">
+                           <div className="flex gap-4 overflow-x-auto snap-x scrollbar-hide pb-2 pt-2">
                              {(selectedProperty.images || [selectedProperty.image_url]).map((img, i) => (
-                               <img key={i} src={img} className="w-[85vw] sm:w-[600px] h-64 sm:h-[400px] rounded-2xl sm:rounded-3xl object-cover flex-shrink-0 snap-center border border-slate-200 shadow-sm" />
+                               <img key={i} src={img} className="w-[85vw] sm:w-[600px] h-64 sm:h-[400px] rounded-[1.5rem] sm:rounded-[2rem] object-cover flex-shrink-0 snap-center border border-slate-200 shadow-sm" />
                              ))}
                            </div>
                            
                            {/* Text Info */}
-                           <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-slate-100">
+                           <div className="bg-white p-6 sm:p-8 rounded-[2rem] shadow-sm border border-slate-100">
                               <h3 className="font-extrabold text-lg text-slate-900 mb-3 flex items-center gap-2">
                                  <FileText size={18} className="text-blue-600"/> About this Product
                               </h3>
-                              <p className="text-slate-600 text-sm sm:text-base leading-relaxed whitespace-pre-line">
+                              <p className="text-slate-600 text-sm sm:text-base leading-relaxed whitespace-pre-line font-medium">
                                  {selectedProperty.description || "No specific details provided for this item."}
                               </p>
                            </div>
@@ -529,20 +652,20 @@ export default function ProductsPage() {
                            {isLoadingAssets ? (
                                <div className="flex justify-center py-20"><Loader2 size={32} className="animate-spin text-slate-400" /></div>
                            ) : propertyAssets.length === 0 ? (
-                               <div className="text-center py-20 max-w-sm mx-auto bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
+                               <div className="text-center py-20 max-w-sm mx-auto bg-white rounded-[2rem] border border-slate-100 shadow-sm p-8">
                                    <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
                                      <ImageIcon size={28} className="text-blue-500" />
                                    </div>
                                    <h4 className="text-lg font-bold text-slate-900 mb-2">No creatives yet</h4>
-                                   <p className="text-slate-500 text-sm mb-6">Use the AI Creator to generate posters or videos linked directly to this product.</p>
-                                   <button onClick={() => { setSelectedProperty(null); router.push('/dashboard/creation'); }} className="w-full bg-blue-600 text-white py-3 rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition-colors">
+                                   <p className="text-slate-500 text-sm font-medium mb-6">Use the AI Creator to generate posters or videos linked directly to this product.</p>
+                                   <button onClick={() => { setSelectedProperty(null); router.push('/dashboard/creation'); }} className="w-full bg-blue-600 text-white py-3.5 rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition-colors">
                                      Open AI Creator
                                    </button>
                                </div>
                            ) : (
                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                                    {propertyAssets.map(asset => (
-                                       <div key={asset.id} className="aspect-square bg-slate-200 rounded-2xl overflow-hidden relative shadow-sm border border-slate-200 group">
+                                       <div key={asset.id} className="aspect-square bg-slate-200 rounded-[1.5rem] overflow-hidden relative shadow-sm border border-slate-200 group">
                                            {asset.type === 'video' ? (
                                                <video src={asset.url} className="w-full h-full object-cover" />
                                            ) : (
