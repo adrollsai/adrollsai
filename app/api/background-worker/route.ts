@@ -1,13 +1,10 @@
-// app/api/background-worker/route.ts
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendPushNotification } from '@/utils/notification-helper';
 
 // IMPORTANT: Prevents Vercel from timing out the request before generation finishes
-// (Note: Requires Vercel Pro. If on Hobby, it will timeout at 10s. If you are on a VPS/Custom Server, this is ignored and runs indefinitely.)
 export const maxDuration = 300; 
 
-// We use the Service Role key to bypass Row Level Security since this runs in the background
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -18,19 +15,30 @@ export async function POST(req: Request) {
         const body = await req.json();
         const { userId, propId, propertyTitle, payload } = body;
 
-        // Base URL for internal routing
-        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || req.headers.get('origin') || 'https://adrolls.in';
+        // FIX 1: Dynamically get the exact base URL to avoid subdomain routing errors
+        const requestUrl = new URL(req.url);
+        const baseUrl = requestUrl.origin; 
         
+        // FIX 2: Capture the user's cookies to authenticate the internal API calls
+        const cookieHeader = req.headers.get('cookie') || '';
+
+        console.log(`[Worker] Starting generation for ${propertyTitle} at ${baseUrl}/api/chat`);
+
         // 1. Start the Chat Generation
         const startResponse = await fetch(`${baseUrl}/api/chat`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Cookie': cookieHeader // <-- Forwards your login session!
+            },
             body: JSON.stringify(payload)
         });
+        
         const startData = await startResponse.json();
         
         if (startData.error || !startData.taskId) {
-             return NextResponse.json({ error: 'Failed to start AI task' }, { status: 400 });
+             console.error("[Worker] Chat API Error:", startData);
+             return NextResponse.json({ error: startData.error || 'Failed to start AI task' }, { status: 400 });
         }
 
         const taskId = startData.taskId;
@@ -38,15 +46,17 @@ export async function POST(req: Request) {
         let attempts = 0;
         let finalImageUrl = '';
 
-        // 2. Poll for Status ON THE SERVER (Unaffected by phone locks)
+        // 2. Poll for Status ON THE SERVER
         while (attempts < 30) {
             attempts++;
-            // Wait 4 seconds between checks
             await new Promise(resolve => setTimeout(resolve, 4000));
             
             const checkResponse = await fetch(`${baseUrl}/api/check-status`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Cookie': cookieHeader // Keep passing auth
+                },
                 body: JSON.stringify({ taskId })
             });
             const checkData = await checkResponse.json();
@@ -60,9 +70,9 @@ export async function POST(req: Request) {
                 } else if (checkData.data.resultUrl) {
                     finalImageUrl = checkData.data.resultUrl;
                 }
-                break; // Exit loop on success
+                break;
             } else if (checkData.data?.state === 'failed') {
-                console.error("Worker Generation Failed", checkData.data.failMsg);
+                console.error("[Worker] Generation Failed via API:", checkData.data.failMsg);
                 break;
             }
         }
@@ -81,7 +91,7 @@ export async function POST(req: Request) {
             caption: generatedCaption
         });
 
-        // 4. Send the Native Web Push Notification to wake the locked phone
+        // 4. Send the Native Web Push Notification
         await sendPushNotification(
             userId, 
             "✨ Asset Generation Complete", 
