@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText } from 'lucide-react'
+import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -23,6 +23,7 @@ type Property = {
   description?: string
   property_type?: string
   user_id: string 
+  auto_generate?: boolean 
 }
 
 type Asset = {
@@ -45,8 +46,9 @@ export default function ProductsPage() {
   const [role, setRole] = useState<'admin' | 'agent'>('admin')
   const [ownerId, setOwnerId] = useState<string | null>(null) 
   
-  // Sharing State
+  // Sharing & Toggling State
   const [isSharingId, setIsSharingId] = useState<string | null>(null)
+  const [isTogglingId, setIsTogglingId] = useState<string | null>(null) 
 
   // Filter State
   const [searchQuery, setSearchQuery] = useState('')
@@ -99,11 +101,12 @@ export default function ProductsPage() {
         .eq('user_id', targetUserId)
         .order('created_at', { ascending: false })
 
-      if (dbError) throw dbError
+      if (dbError) throw new Error(dbError.message || JSON.stringify(dbError))
       if (data) setProperties(data)
 
-    } catch (error) {
-      console.error("Error loading products:", error)
+    } catch (error: any) {
+      console.error("Error loading products:", error.message || error)
+      alert("Failed to load products: " + (error.message || "Unknown error"))
     } finally {
       setLoading(false)
     }
@@ -142,6 +145,29 @@ export default function ProductsPage() {
       setSelectedFiles(prev => [...prev, ...newFiles])
       const newPreviews = newFiles.map(file => URL.createObjectURL(file))
       setPreviews(prev => [...prev, ...newPreviews])
+    }
+  }
+
+  // --- TOGGLE AUTO-GENERATE ---
+  const handleToggleAutoGenerate = async (e: React.MouseEvent, propId: string, currentStatus: boolean) => {
+    e.stopPropagation()
+    setIsTogglingId(propId)
+    const newStatus = !currentStatus
+
+    try {
+      const { error } = await supabase
+        .from('properties')
+        .update({ auto_generate: newStatus })
+        .eq('id', propId)
+
+      if (error) throw error
+
+      // Optimistically update local state
+      setProperties(prev => prev.map(p => p.id === propId ? { ...p, auto_generate: newStatus } : p))
+    } catch (error: any) {
+      alert("Failed to update auto-generation status: " + error.message)
+    } finally {
+      setIsTogglingId(null)
     }
   }
 
@@ -184,7 +210,8 @@ export default function ProductsPage() {
           property_type: 'Generic', 
           status: 'Active',
           image_url: uploadedUrls[0],
-          images: uploadedUrls
+          images: uploadedUrls,
+          auto_generate: false 
         })
 
       if (error) throw error
@@ -222,15 +249,12 @@ export default function ProductsPage() {
     const shareTitle = prop.title
     const shareText = `${shareTitle}\n\n${prop.description || ''}`
     
-    // 1. Get ALL image URLs, but cap it at 4 to prevent browser timeout & memory crashes
     let imageUrls = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url]
     imageUrls = imageUrls.slice(0, 4) 
 
-    // 2. Prepare a much better fallback text with ALL links if the device blocks files
     const textFallback = `${shareText}\n\n*Product Images:*\n${imageUrls.join('\n\n')}`
 
     try {
-      // 3. Fetch ALL images IN PARALLEL (Super fast to prevent timeout blocking)
       const fetchPromises = imageUrls.map(async (url, index) => {
         const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(url)}`
         const response = await fetch(proxyUrl)
@@ -244,7 +268,6 @@ export default function ProductsPage() {
         return new File([blob], `product_${prop.id}_${index + 1}.${ext}`, { type: mimeType })
       })
 
-      // Wait for all downloads to finish simultaneously
       const filesArray = await Promise.all(fetchPromises)
 
       const shareData = {
@@ -253,18 +276,14 @@ export default function ProductsPage() {
           files: filesArray
       }
 
-      // 4. Trigger Native Share Sheet with ALL files attached
       if (navigator.canShare && navigator.canShare({ files: filesArray })) {
           await navigator.share(shareData)
       } else {
-          // Device doesn't support multi-file sharing
           window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`
       }
 
     } catch (error: any) { 
       console.error("Share failed", error) 
-      
-      // SILENT FALLBACK: If user didn't intentionally cancel, send them to WhatsApp with ALL links
       if (error.name !== 'AbortError') {
            window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`
       }
@@ -373,11 +392,27 @@ export default function ProductsPage() {
                   >
                      {isSharingId === prop.id ? <Loader2 size={18} className="animate-spin"/> : <WhatsAppIcon size={18} />}
                   </button>
-
                 </div>
+                
                 <p className="text-sm text-slate-500 line-clamp-2 leading-relaxed flex-1">
                   {prop.description || 'No description provided.'}
                 </p>
+
+                {/* Auto Generate Toggle - FIXED SLIDING UI */}
+                <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center">
+                  <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Sparkles size={14} className={prop.auto_generate ? "text-amber-500" : "text-slate-400"} />
+                    Auto-Gen Daily
+                  </span>
+                  <button
+                    onClick={(e) => handleToggleAutoGenerate(e, prop.id, !!prop.auto_generate)}
+                    disabled={isTogglingId === prop.id}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${prop.auto_generate ? 'bg-blue-600' : 'bg-slate-300'} ${isTogglingId === prop.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${prop.auto_generate ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+
               </div>
             </div>
           ))
