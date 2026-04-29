@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import BottomNav from '@/components/BottomNav'
 import PushManager from '@/components/PushManager'
+import FloatingAgent from '@/components/FloatingAgent' // <--- IMPORT THE AGENT HERE
 import { Loader2 } from 'lucide-react'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -44,7 +45,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [pathname, router])
 
   if (!isAuthorized) {
-    return <div className="flex h-screen items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-primary" size={32} /></div>
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-[#003D6F]" size={32} />
+      </div>
+    )
   }
 
   return (
@@ -53,8 +58,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <PushManager />
       
       {children}
-      {/* Hide the navigation bar if they are trapped on the billing page */}
-      {pathname !== '/dashboard/billing' && <BottomNav />}
+      
+      {/* Show Bottom Nav and Floating Agent ONLY if not trapped on the billing page */}
+      {pathname !== '/dashboard/billing' && (
+        <>
+          <FloatingAgent />
+          <BottomNav />
+        </>
+      )}
     </div>
   )
 }
