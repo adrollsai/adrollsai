@@ -7,132 +7,104 @@ export async function POST(req: Request) {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
-    const messages = body.messages || [];
+    const rawMessages = body.messages || [];
 
-    // 1. GATHER BUSINESS CONTEXT TO FEED THE AI
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-    const { count: productCount } = await supabase.from('properties').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
-    
-    // 2. THE HORMOZI SYSTEM PROMPT (Using 'developer' role as per Kie.ai Gemini 3 Flash docs)
-    const systemMessage = {
-      role: 'developer', 
-      content: `
-        You are an elite, direct-response business mentor and AI operator built into AdRolls.
-        Your operating framework is based heavily on Alex Hormozi's "$100M Offers" and "$100M Leads".
-        
-        CONTEXT:
-        User's Business: ${profile?.business_name || 'A growing business'}
-        Current Products/Services Active: ${productCount || 0}
-        
-        YOUR ROLE:
-        1. ADVISE: Give highly practical, no-fluff, high-impact advice. Focus on value stacking, risk reversal, reducing friction, and clear CTAs.
-        2. OPERATE: You have tools to take action. If the user asks to post to social media, launch an ad, or set a cron job, USE YOUR TOOLS.
-        3. CLARIFY FIRST: If a user asks you to launch an ad but doesn't specify the budget, offer, or target audience, ask them clarifying questions BEFORE calling the tool.
-        4. PERMISSIONS: You cannot post automatically. Explain that you will draft it and give them a button to confirm.
-        
-        TONE: Direct, confident, analytical, and encouraging. Talk like a seasoned operator who cares about LTV to CAC ratios.
-      `
-    };
+    // 1. GATHER DYNAMIC CONTEXT
+    const { data: profile } = await supabase.from('profiles').select('business_name').eq('id', user.id).single();
+    const { data: properties } = await supabase.from('properties').select('title').eq('user_id', user.id);
+    const availableTitles = properties?.map(p => p.title).join(', ') || 'None';
 
-    // 3. DEFINE NATIVE TOOLS (No Zod required, just OpenAPI JSON Schema)
+    const systemMessage = `
+      You are the AdRolls AI Operator. You act as an MCP (Model Context Protocol) engine.
+      USER BUSINESS: ${profile?.business_name}
+      AVAILABLE PRODUCTS: ${availableTitles}
+
+      OPERATING PROTOCOL:
+      - If user asks for an image/creative but you don't have the assets (URLs/Description), call 'get_product_details' first.
+      - Once you have the assets, call 'generate_image_creative'.
+      - For CRM or Campaigns, call the respective tools.
+      - FORMATTING: Never use Markdown. Keep text extremely concise.
+    `;
+
+    // 2. CONFORM TO KIE.AI SSE/OPENAPI SPEC (Fixed role consecutive & content structure)
+    const apiMessages: any[] = [{ role: "developer", content: [{ type: "text", text: systemMessage }] }];
+    let lastRole = "developer";
+
+    for (const m of rawMessages) {
+       let role = m.role === 'assistant' ? 'assistant' : 'user';
+       let text = m.content || "[Task Progressing...]";
+       if (role === lastRole) {
+          apiMessages[apiMessages.length - 1].content[0].text += `\n\n${text}`;
+       } else {
+          apiMessages.push({ role, content: [{ type: "text", text }] });
+          lastRole = role;
+       }
+    }
+
+    // 3. MCP TOOL DEFINITIONS (Ensuring every property has a description to avoid proxy crashes)
     const agentTools = [
       {
         type: "function",
         function: {
-          name: "draft_social_post",
-          description: "Drafts a social media post. Always use this when a user wants to post to Facebook or Instagram.",
+          name: "get_product_details",
+          description: "Fetches full assets (images, description) for a product title. Call this if you need images to generate a creative.",
           parameters: {
             type: "object",
             properties: {
-              platform: { 
-                type: "string", 
-                enum: ["facebook", "instagram", "universal"] 
-              },
-              caption: { 
-                type: "string", 
-                description: "The Hormozi-style direct response copy for the post" 
-              }
+              titleQuery: { type: "string", description: "The product title to search for (even if vague)." }
             },
-            required: ["platform", "caption"]
+            required: ["titleQuery"]
           }
         }
       },
       {
         type: "function",
         function: {
-          name: "draft_ad_campaign",
-          description: "Drafts a Meta/Facebook Ad Campaign. Requires budget, audience, and copy.",
+          name: "generate_image_creative",
+          description: "Triggers the visual image generation pipeline.",
           parameters: {
             type: "object",
             properties: {
-              campaignName: { type: "string", description: "A catchy internal name for the campaign" },
-              dailyBudget: { type: "number", description: "Daily budget in INR" },
-              targetAudience: { type: "string", description: "Who we are targeting" },
-              adCopy: { type: "string", description: "The primary text for the ad" }
+              propertyTitle: { type: "string", description: "Title of product" },
+              propertyDescription: { type: "string", description: "Description for the prompt" },
+              imageUrls: { type: "array", items: { type: "string" }, description: "List of image URLs to feed the AI" },
+              instructions: { type: "string", description: "User's design style preferences" }
             },
-            required: ["campaignName", "dailyBudget", "targetAudience", "adCopy"]
+            required: ["propertyTitle", "propertyDescription", "imageUrls"]
           }
         }
       },
       {
         type: "function",
         function: {
-          name: "schedule_cron_task",
-          description: "Drafts a scheduled task/cron job (e.g., auto-blogging, lead reminders).",
+          name: "check_crm_leads",
+          description: "Show CRM lead pipeline.",
           parameters: {
             type: "object",
-            properties: {
-              taskType: { type: "string", enum: ["auto-blog", "optimize-ads", "reminders"] },
-              frequency: { type: "string", description: "e.g., 'daily', 'weekly'" }
-            },
-            required: ["taskType", "frequency"]
+            properties: { status: { type: "string", description: "Filter by status" } }
           }
         }
       }
     ];
 
-    // Combine system instructions with the chat history
-    const apiMessages = [systemMessage, ...messages];
-
-    // 4. MAKE THE NATIVE FETCH REQUEST TO KIE.AI
-    const payload = {
-      model: 'gemini-3-flash',
-      messages: apiMessages,
-      tools: agentTools,
-      stream: true, // Native Server-Sent Events (SSE)
-      include_thoughts: true, 
-      reasoning_effort: "high"
-    };
-
     const response = await fetch('https://api.kie.ai/gemini-3-flash/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.KIE_API_KEY}`
-      },
-      body: JSON.stringify(payload)
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.KIE_API_KEY}` },
+      body: JSON.stringify({
+        model: 'gemini-3-flash',
+        messages: apiMessages,
+        tools: agentTools,
+        stream: true
+      })
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Kie AI API Error: ${errorText}`);
-    }
-
-    // 5. PIPE THE STREAM DIRECTLY TO THE FRONTEND
     return new Response(response.body, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
+      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' },
     });
-
   } catch (error: any) {
-    console.error("Agent Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

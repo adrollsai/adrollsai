@@ -19,10 +19,12 @@ import {
   Globe,
   CheckCircle2,
   AlertCircle,
-  FileText
+  FileText,
+  Settings
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
+import PushManager from '@/components/PushManager'
 
 type FBPage = {
   id: string
@@ -58,7 +60,6 @@ function DomainManager({ initialDomain, userId }: { initialDomain: string, userI
     setStatus('idle')
 
     try {
-      // Clean up the input (remove https://, spaces, paths)
       const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim().toLowerCase()
       setDomain(cleanDomain)
 
@@ -81,62 +82,63 @@ function DomainManager({ initialDomain, userId }: { initialDomain: string, userI
     }
   }
 
-  // Check if it's a subdomain (e.g., has more than one dot, like app.domain.com)
   const isSubdomain = domain.split('.').length > 2
 
   return (
-    <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
-      <label className="text-[10px] font-bold text-blue-800 ml-1 block mb-1 flex items-center gap-1">
-        <Globe size={10} /> Custom Domain (Optional)
+    <div className="bg-blue-50/60 p-5 rounded-3xl border border-blue-100/50 mt-4 transition-all">
+      <label className="text-xs font-bold text-blue-800 ml-1 mb-2 flex items-center gap-1.5 uppercase tracking-wider">
+        <Globe size={14} /> Custom Domain (Optional)
       </label>
       
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-3">
         <input 
           type="text" 
           placeholder="www.yourdomain.com" 
           value={domain} 
           onChange={(e) => setDomain(e.target.value)} 
-          className="w-full bg-white py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none border border-blue-100" 
+          className="w-full bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-blue-100 shadow-sm transition-all" 
         />
         <button 
           onClick={handleConnect}
           disabled={loading || !domain}
-          className="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3.5 rounded-2xl sm:rounded-full text-sm font-bold whitespace-nowrap active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
         >
-          {loading ? <Loader2 size={14} className="animate-spin" /> : 'Connect'}
+          {loading ? <Loader2 size={18} className="animate-spin" /> : 'Connect'}
         </button>
       </div>
       
-      <p className="text-[9px] text-blue-600/70 ml-1 mt-1 leading-tight">
-         Point your domain's CNAME record to <span className="font-mono font-bold">adrolls.in</span>
+      <p className="text-xs text-blue-600/80 ml-2 mt-3 leading-tight font-medium">
+         Point your domain's CNAME record to <span className="font-mono font-bold bg-blue-100/50 px-1.5 py-0.5 rounded-md text-blue-800">adrolls.in</span>
       </p>
 
       {status === 'success' && (
-        <div className="mt-3 bg-white p-3 rounded-xl border border-green-200">
-          <p className="text-xs font-bold text-green-700 flex items-center gap-1 mb-2">
-            <CheckCircle2 size={14} /> Domain Linked! Now configure your DNS:
+        <div className="mt-4 bg-white p-5 rounded-3xl border border-green-200 shadow-sm animate-in fade-in slide-in-from-top-2">
+          <p className="text-sm font-bold text-green-700 flex items-center gap-2 mb-3">
+            <CheckCircle2 size={18} /> Domain Linked! Configure DNS:
           </p>
-          <div className="space-y-2 text-[10px] text-slate-600 bg-slate-50 p-2 rounded-lg font-mono">
+          <div className="space-y-2.5 text-xs text-slate-600 bg-slate-50/80 p-4 rounded-2xl font-mono border border-slate-100">
             {isSubdomain ? (
               <>
-                <div className="flex justify-between border-b border-slate-200 pb-1"><span className="font-bold">Type</span><span>CNAME</span></div>
-                <div className="flex justify-between border-b border-slate-200 pb-1"><span className="font-bold">Name</span><span>{domain.split('.')[0]}</span></div>
-                <div className="flex justify-between"><span className="font-bold">Value</span><span>cname.vercel-dns.com</span></div>
+                <div className="flex justify-between border-b border-slate-200/60 pb-2"><span className="font-bold">Type</span><span>CNAME</span></div>
+                <div className="flex justify-between border-b border-slate-200/60 pb-2"><span className="font-bold">Name</span><span>{domain.split('.')[0]}</span></div>
+                <div className="flex justify-between pt-1"><span className="font-bold">Value</span><span className="text-right break-all">cname.vercel-dns.com</span></div>
               </>
             ) : (
               <>
-                <div className="flex justify-between border-b border-slate-200 pb-1"><span className="font-bold">Type</span><span>A Record</span></div>
-                <div className="flex justify-between border-b border-slate-200 pb-1"><span className="font-bold">Name</span><span>@</span></div>
-                <div className="flex justify-between"><span className="font-bold">Value</span><span>76.76.21.21</span></div>
+                <div className="flex justify-between border-b border-slate-200/60 pb-2"><span className="font-bold">Type</span><span>A Record</span></div>
+                <div className="flex justify-between border-b border-slate-200/60 pb-2"><span className="font-bold">Name</span><span>@</span></div>
+                <div className="flex justify-between pt-1"><span className="font-bold">Value</span><span>76.76.21.21</span></div>
               </>
             )}
           </div>
-          <p className="text-[9px] text-slate-400 mt-2 leading-tight">Please allow up to 15 mins for your SSL certificate to generate.</p>
+          <p className="text-xs text-slate-500 mt-3 ml-1 leading-tight">Please allow up to 15 mins for your SSL certificate to generate.</p>
         </div>
       )}
 
       {status === 'error' && (
-        <p className="text-[10px] font-bold text-red-500 mt-2 flex items-center gap-1"><AlertCircle size={12} /> {errorMessage}</p>
+        <div className="mt-3 bg-red-50 p-3 rounded-2xl border border-red-100">
+           <p className="text-xs font-bold text-red-600 flex items-center gap-1.5"><AlertCircle size={14} /> {errorMessage}</p>
+        </div>
       )}
     </div>
   )
@@ -549,7 +551,6 @@ export default function ProfilePage() {
       if (!userId) return;
       setIsTestingBlog(true);
       try {
-          // CRITICAL FIX: cache: 'no-store' forces Next.js to skip the cache and actually hit the route
           const res = await fetch(`/api/cron/auto-blog?userId=${userId}`, { cache: 'no-store' });
           const data = await res.json();
           if (data.success) {
@@ -564,385 +565,421 @@ export default function ProfilePage() {
       }
   }
 
-  if (loading) return <div className="p-10 text-center text-slate-400 text-sm animate-pulse">Loading settings...</div>
+  if (loading) return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-400 gap-4">
+          <Loader2 className="animate-spin text-slate-300" size={32} />
+          <p className="text-sm font-medium animate-pulse">Loading workspace...</p>
+      </div>
+  )
 
   return (
-    <div className="p-5 max-w-md mx-auto min-h-screen pb-32">
-      
-      {/* Header */}
-      <div className="w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-lg border border-blue-50 flex flex-col items-center text-center">
-        <div 
-          onClick={() => !uploadingLogo && fileInputRef.current?.click()} 
-          className="w-24 h-24 bg-slate-50 rounded-full mb-3 flex items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-200 hover:border-primary transition-all"
-        >
-          {uploadingLogo ? (
-            <Loader2 className="animate-spin text-slate-400" />
-          ) : formData.logoUrl ? (
-            <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover" />
-          ) : (
-            <div className="flex flex-col items-center gap-1">
-              <Upload size={20} className="text-slate-300" />
-              <span className="text-[8px] text-slate-400 font-bold uppercase">Upload</span>
-            </div>
-          )}
-          <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
-        </div>
-        <h2 className="text-xl font-bold text-slate-800">
-          {formData.businessName || (role === 'admin' ? 'Your Business' : 'Your Name')}
-        </h2>
-        <p className="text-slate-400 text-xs">Tap circle to add photo/logo</p>
-      </div>
+    <div className="min-h-screen bg-[#F8FAFC] pb-32">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+        
+        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-8 ml-1">Workspace Settings</h1>
 
-      {/* Social Accounts (ADMIN ONLY) */}
-      {role === 'admin' && (
-        <div className="mb-6 mt-6">
-          <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Social Accounts</h3>
-          <div className="bg-white rounded-[2rem] shadow-sm border border-blue-100 overflow-hidden p-5 space-y-4">
+        {/* CSS GRID RESPONSIVE LAYOUT */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
+          
+          {/* ========================================= */}
+          {/* LEFT COLUMN (Profile, Business, Domain) */}
+          {/* ========================================= */}
+          <div className="lg:col-span-7 space-y-6">
             
-            {/* FACEBOOK */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-[#1877F2] p-2 rounded-full text-white">
-                      <Facebook size={18} fill="white" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-sm text-slate-800">Facebook & Instagram</h4>
-                      <p className="text-[10px] text-slate-400">
-                        {isFacebookConnected ? 'Account Linked' : 'Connect to automate'}
-                      </p>
-                    </div>
-                  </div>
-                  {isFacebookConnected ? (
-                  <button onClick={handleDisconnectFacebook} disabled={isDisconnecting} className="text-[10px] text-red-400 font-bold hover:underline">
-                    {isDisconnecting ? '...' : 'Disconnect'}
-                  </button>
-                  ) : (
-                  <button onClick={handleConnectFacebook} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-bold">
-                    Connect
-                  </button>
-                  )}
-              </div>
-
-              {isFacebookConnected && (
-                  <div className="space-y-4 pt-3">
-                      
-                      {/* Page Selector */}
-                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
-                        <div className="flex justify-between items-center mb-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Posting Page</label>
-                            <button onClick={fetchPages} className="text-[10px] text-blue-500 font-bold">Refresh</button>
-                        </div>
-                        {isLoadingPages ? (
-                            <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
-                              <Loader2 size={14} className="animate-spin"/> Syncing pages...
-                            </div>
-                        ) : fbPages.length > 0 ? (
-                            <div className="space-y-2 max-h-40 overflow-y-auto">
-                            {fbPages.map(page => (
-                                <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                                <span className={`text-xs font-bold truncate ${selectedPageId === page.id ? 'text-slate-800' : 'text-slate-500'}`}>{page.name}</span>
-                                {selectedPageId === page.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-                                </button>
-                            ))}
-                            </div>
-                        ) : (
-                            <div className="py-2">
-                              <p className="text-xs text-slate-400 mb-2">No pages found.</p>
-                              <button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions / Refresh List</button>
-                            </div>
-                        )}
-                      </div>
-                      
-                      {/* AD ACCOUNT SELECTOR */}
-                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
-                        <div className="flex justify-between items-center mb-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Ad Account</label>
-                            <button onClick={() => facebookToken && fetchAdAccounts(facebookToken)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
-                        </div>
-                        {isLoadingAdAccounts ? (
-                            <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
-                              <Loader2 size={14} className="animate-spin"/> Syncing accounts...
-                            </div>
-                        ) : adAccounts.length > 0 ? (
-                            <div className="space-y-2 max-h-40 overflow-y-auto">
-                            {adAccounts.map(account => (
-                                <button key={account.id} onClick={() => handleAdAccountSelect(account.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedAdAccountId === account.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                                <span className={`text-xs font-bold truncate ${selectedAdAccountId === account.id ? 'text-slate-800' : 'text-slate-500'}`}>{account.name} ({account.id})</span>
-                                {selectedAdAccountId === account.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-                                </button>
-                            ))}
-                            </div>
-                        ) : (
-                            <div className="py-2">
-                              <p className="text-xs text-slate-400 mb-2">No Ad Accounts found.</p>
-                              <button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions</button>
-                            </div>
-                        )}
-                      </div>
-
-                      {/* PIXEL SELECTOR */}
-                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 ml-11">
-                          <div className="flex justify-between items-center mb-2">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Data Pixel</label>
-                              <button onClick={() => selectedAdAccountId && fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-500 font-bold">Refresh</button>
-                          </div>
-                          
-                          {!selectedAdAccountId ? (
-                              <div className="py-2"><p className="text-xs text-slate-400">Select an Ad Account first.</p></div>
-                          ) : isLoadingPixels ? (
-                              <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
-                                <Loader2 size={14} className="animate-spin"/> Searching pixels...
-                              </div>
-                          ) : pixels.length > 0 ? (
-                              <div className="space-y-2 max-h-40 overflow-y-auto">
-                              {pixels.map(pixel => (
-                                  <button key={pixel.id} onClick={() => handlePixelSelect(pixel.id)} className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${selectedPixelId === pixel.id ? 'bg-white shadow-sm border border-green-200 ring-1 ring-green-100' : 'hover:bg-slate-200/50'}`}>
-                                  <div className="flex items-center gap-2">
-                                      <Target size={14} className={selectedPixelId === pixel.id ? 'text-green-500' : 'text-slate-400'} />
-                                      <span className={`text-xs font-bold truncate ${selectedPixelId === pixel.id ? 'text-slate-800' : 'text-slate-500'}`}>{pixel.name}</span>
-                                  </div>
-                                  {selectedPixelId === pixel.id && <CheckCircle size={16} className="text-green-500 flex-shrink-0" />}
-                                  </button>
-                              ))}
-                              </div>
-                          ) : (
-                              <div className="py-2"><p className="text-xs text-slate-400">No Pixels found for this account.</p></div>
-                          )}
-                      </div>
-                  </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Business Profile Form */}
-      <div className="mb-6 mt-6">
-        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Business Profile</h3>
-        <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-blue-100 space-y-4">
-            
-            {/* INJECTED DOMAIN MANAGER HERE */}
-            {role === 'admin' && (
-               <DomainManager initialDomain={initialCustomDomain} userId={userId} />
-            )}
-
-            {/* Basic Info */}
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">
-                {role === 'admin' ? 'Business Name' : 'Full Name'}
-              </label>
-              <input 
-                type="text" 
-                value={formData.businessName} 
-                onChange={(e) => setFormData({...formData, businessName: e.target.value})} 
-                className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" 
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Contact Number</label>
-              <input 
-                type="tel" 
-                value={formData.contact} 
-                onChange={(e) => setFormData({...formData, contact: e.target.value})} 
-                className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" 
-              />
-            </div>
-            
-            {role === 'admin' && (
-              <div className="pt-4 border-t border-slate-50 mt-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-3 block">Public Social Links</label>
-                  <div className="space-y-3">
-                      <div className="flex items-center gap-2">
-                          <div className="bg-blue-50 p-2 rounded-lg text-blue-600 flex-shrink-0">
-                            <Facebook size={16} />
-                          </div>
-                          <input 
-                            type="text" 
-                            placeholder="https://facebook.com/..." 
-                            value={formData.facebookUrl} 
-                            onChange={(e) => setFormData({...formData, facebookUrl: e.target.value})} 
-                            className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" 
-                          />
-                      </div>
-                      <div className="flex items-center gap-2">
-                          <div className="bg-pink-50 p-2 rounded-lg text-pink-600 flex-shrink-0">
-                            <Instagram size={16} />
-                          </div>
-                          <input 
-                            type="text" 
-                            placeholder="https://instagram.com/..." 
-                            value={formData.instagramUrl} 
-                            onChange={(e) => setFormData({...formData, instagramUrl: e.target.value})} 
-                            className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" 
-                          />
-                      </div>
-                  </div>
-              </div>
-            )}
-
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1 mt-2">Mission / Info</label>
-              <textarea 
-                rows={3} 
-                value={formData.mission} 
-                onChange={(e) => setFormData({...formData, mission: e.target.value})} 
-                className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm resize-none focus:ring-2 focus:ring-primary outline-none" 
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Brand Color</label>
-              <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl">
-                <div 
-                  className="w-6 h-6 rounded-md shadow-sm border border-slate-200" 
-                  style={{ backgroundColor: formData.color }} 
-                />
-                <input 
-                  type="text" 
-                  value={formData.color} 
-                  onChange={(e) => setFormData({...formData, color: e.target.value})} 
-                  className="bg-transparent font-mono text-xs w-full outline-none uppercase" 
-                />
-              </div>
-            </div>
-
-            <button 
-              onClick={handleSave} 
-              disabled={isSaving || uploadingLogo} 
-              className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70"
-            >
-              {isSaving ? 'Saving...' : ( <><Save size={16} /> Save Profile Info</> )}
-            </button>
-        </div>
-      </div>
-
-      {/* Settings (ADMIN ONLY) */}
-      {role === 'admin' && (
-        <div className="mb-6">
-          <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Settings</h3>
-          <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
-            
-            <div className="p-4 flex items-center justify-between border-b border-slate-50">
-              <div className="flex items-center gap-3">
-                  <div className="bg-purple-50 p-2 rounded-full text-purple-600">
-                    <Share2 size={18} />
-                  </div>
-                  <div>
-                      <span className="font-bold text-sm text-slate-700 block">Distribution Mode</span>
-                      <span className="text-[10px] text-slate-400">Enable Agent Distribution Tab</span>
-                  </div>
-              </div>
-              
-              <button 
-                  onClick={handleToggleDistribution}
-                  disabled={isTogglingDist}
-                  className={`w-10 h-6 rounded-full p-1 transition-colors relative ${enableDistribution ? 'bg-purple-600' : 'bg-slate-200'}`}
+            {/* Header Identity Card */}
+            <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-200/60 flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left transition-all hover:shadow-md">
+              <div 
+                onClick={() => !uploadingLogo && fileInputRef.current?.click()} 
+                className="w-28 h-28 bg-slate-50/80 rounded-full flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 transition-all shadow-sm"
               >
-                  {isTogglingDist ? (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <Loader2 size={12} className="animate-spin text-white" />
-                      </div>
-                  ) : (
-                      <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${enableDistribution ? 'translate-x-4' : 'translate-x-0'}`} />
-                  )}
-              </button>
+                {uploadingLogo ? (
+                  <Loader2 className="animate-spin text-slate-400" size={28}/>
+                ) : formData.logoUrl ? (
+                  <>
+                    <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                       <Upload size={24} className="text-slate-800 drop-shadow-md" />
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center gap-1.5 text-slate-400 group-hover:text-blue-500 transition-colors">
+                    <Upload size={24} />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Logo</span>
+                  </div>
+                )}
+                <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
+              </div>
+              <div className="flex-1 mt-2">
+                <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                  {formData.businessName || (role === 'admin' ? 'Your Business' : 'Your Name')}
+                </h2>
+                <p className="text-slate-500 text-sm leading-relaxed max-w-md">
+                  Personalize your workspace. The logo and name you set here will be reflected across your client-facing tools.
+                </p>
+              </div>
             </div>
 
-            <button className="w-full p-4 flex items-center justify-between hover:bg-slate-50 border-b border-slate-50">
-              <div className="flex items-center gap-3">
-                <div className="bg-blue-50 p-2 rounded-full text-blue-600">
-                  <CreditCard size={18} />
+            {/* Business Profile Form Card */}
+            <div className="bg-white p-6 sm:p-8 rounded-[2rem] shadow-sm border border-slate-200/60 space-y-6 transition-all hover:shadow-md">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4 mb-2">
+                    <div className="bg-blue-100 text-blue-600 p-2.5 rounded-full">
+                        <FileText size={20} />
+                    </div>
+                    <h3 className="font-bold text-lg text-slate-800">Profile Details</h3>
                 </div>
-                <span className="font-bold text-sm text-slate-700">Subscription</span>
-              </div>
-              <ChevronRight size={18} className="text-slate-300" />
-            </button>
+
+                <div className="space-y-5">
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">
+                            {role === 'admin' ? 'Business Name' : 'Full Name'}
+                        </label>
+                        <input 
+                            type="text" 
+                            value={formData.businessName} 
+                            onChange={(e) => setFormData({...formData, businessName: e.target.value})} 
+                            className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" 
+                        />
+                    </div>
+
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">Contact Number</label>
+                        <input 
+                            type="tel" 
+                            value={formData.contact} 
+                            onChange={(e) => setFormData({...formData, contact: e.target.value})} 
+                            className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" 
+                        />
+                    </div>
+                    
+                    {role === 'admin' && (
+                        <div className="pt-4 mt-2">
+                            <label className="text-xs font-bold text-slate-500 ml-2 block mb-3 uppercase tracking-wider">Public Social Links</label>
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-[#1877F2]/10 text-[#1877F2] p-3 rounded-2xl shrink-0">
+                                        <Facebook size={20} />
+                                    </div>
+                                    <input 
+                                        type="text" 
+                                        placeholder="https://facebook.com/..." 
+                                        value={formData.facebookUrl} 
+                                        onChange={(e) => setFormData({...formData, facebookUrl: e.target.value})} 
+                                        className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" 
+                                    />
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-[#E1306C]/10 text-[#E1306C] p-3 rounded-2xl shrink-0">
+                                        <Instagram size={20} />
+                                    </div>
+                                    <input 
+                                        type="text" 
+                                        placeholder="https://instagram.com/..." 
+                                        value={formData.instagramUrl} 
+                                        onChange={(e) => setFormData({...formData, instagramUrl: e.target.value})} 
+                                        className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" 
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 mt-2 uppercase tracking-wider">Mission Statement</label>
+                        <textarea 
+                            rows={3} 
+                            value={formData.mission} 
+                            onChange={(e) => setFormData({...formData, mission: e.target.value})} 
+                            className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-4 px-5 rounded-3xl text-slate-800 text-sm font-medium resize-none focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" 
+                        />
+                    </div>
+
+                    <div className="pb-2">
+                        <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">Brand Color</label>
+                        <div className="flex items-center gap-3 bg-slate-50 hover:bg-slate-100/50 focus-within:bg-white p-2.5 rounded-2xl border border-slate-200/60 focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-500/20 transition-all">
+                            <div 
+                                className="w-8 h-8 rounded-xl shadow-inner border-2 border-white" 
+                                style={{ backgroundColor: formData.color }} 
+                            />
+                            <input 
+                                type="text" 
+                                value={formData.color} 
+                                onChange={(e) => setFormData({...formData, color: e.target.value})} 
+                                className="bg-transparent font-mono text-sm w-full outline-none uppercase text-slate-700 font-medium px-2" 
+                            />
+                        </div>
+                    </div>
+
+                    {/* INJECTED DOMAIN MANAGER HERE */}
+                    {role === 'admin' && (
+                        <div className="pt-2 border-t border-slate-100">
+                            <DomainManager initialDomain={initialCustomDomain} userId={userId} />
+                        </div>
+                    )}
+                </div>
+
+                <button 
+                    onClick={handleSave} 
+                    disabled={isSaving || uploadingLogo} 
+                    className="w-full mt-6 bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] sm:rounded-full text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 active:scale-95 transition-all disabled:opacity-70 disabled:scale-100"
+                >
+                    {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} 
+                    {isSaving ? 'Saving Changes...' : 'Save Profile Details'}
+                </button>
+            </div>
+          </div>
+
+          {/* ========================================= */}
+          {/* RIGHT COLUMN (Social, Notification, Setting)*/}
+          {/* ========================================= */}
+          <div className="lg:col-span-5 space-y-6">
+            
+            {/* Inline Push Manager */}
+            <div className="rounded-[2rem] overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                <PushManager variant="inline" />
+            </div>
+
+            {/* Social Accounts (ADMIN ONLY) */}
+            {role === 'admin' && (
+                <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
+                    <div className="p-6 sm:p-7">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-3.5">
+                                <div className="bg-[#1877F2] p-3 rounded-full text-white shadow-md shadow-[#1877F2]/20">
+                                    <Facebook size={20} fill="white" />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-base text-slate-900">Meta Integrations</h4>
+                                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                                        {isFacebookConnected ? 'Connected & Active' : 'Link ad accounts & pages'}
+                                    </p>
+                                </div>
+                            </div>
+                            {isFacebookConnected ? (
+                                <button onClick={handleDisconnectFacebook} disabled={isDisconnecting} className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-full font-bold transition-colors">
+                                    {isDisconnecting ? '...' : 'Unlink'}
+                                </button>
+                            ) : (
+                                <button onClick={handleConnectFacebook} className="bg-[#1877F2] hover:bg-[#166FE5] text-white px-5 py-2 rounded-full text-xs font-bold shadow-sm transition-colors">
+                                    Connect
+                                </button>
+                            )}
+                        </div>
+
+                        {isFacebookConnected && (
+                            <div className="space-y-4 pt-4 border-t border-slate-100 mt-2">
+                                {/* Page Selector */}
+                                <div className="bg-slate-50/80 rounded-3xl p-4 border border-slate-100">
+                                    <div className="flex justify-between items-center mb-3 px-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Linked Page</label>
+                                        <button onClick={fetchPages} className="text-[10px] text-blue-600 hover:text-blue-800 font-bold uppercase tracking-wider transition-colors">Refresh List</button>
+                                    </div>
+                                    {isLoadingPages ? (
+                                        <div className="flex items-center gap-2 text-xs text-slate-500 py-3 px-2 font-medium">
+                                            <Loader2 size={16} className="animate-spin text-blue-500"/> Syncing pages...
+                                        </div>
+                                    ) : fbPages.length > 0 ? (
+                                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                                        {fbPages.map(page => (
+                                            <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3.5 rounded-2xl text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-blue-200 ring-2 ring-blue-500/20' : 'hover:bg-slate-200/50 bg-slate-100/50'}`}>
+                                            <span className={`text-sm font-bold truncate pr-3 ${selectedPageId === page.id ? 'text-blue-900' : 'text-slate-600'}`}>{page.name}</span>
+                                            {selectedPageId === page.id && <CheckCircle size={18} className="text-blue-600 shrink-0" />}
+                                            </button>
+                                        ))}
+                                        </div>
+                                    ) : (
+                                        <div className="py-3 px-2">
+                                            <p className="text-sm text-slate-500 mb-2 font-medium">No pages found.</p>
+                                            <button onClick={handleConnectFacebook} className="text-xs text-blue-600 font-bold hover:underline">Update Permissions</button>
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                {/* AD ACCOUNT SELECTOR */}
+                                <div className="bg-slate-50/80 rounded-3xl p-4 border border-slate-100">
+                                    <div className="flex justify-between items-center mb-3 px-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ad Account</label>
+                                        <button onClick={() => facebookToken && fetchAdAccounts(facebookToken)} className="text-[10px] text-blue-600 hover:text-blue-800 font-bold uppercase tracking-wider transition-colors">Refresh List</button>
+                                    </div>
+                                    {isLoadingAdAccounts ? (
+                                        <div className="flex items-center gap-2 text-xs text-slate-500 py-3 px-2 font-medium">
+                                            <Loader2 size={16} className="animate-spin text-blue-500"/> Syncing accounts...
+                                        </div>
+                                    ) : adAccounts.length > 0 ? (
+                                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                                        {adAccounts.map(account => (
+                                            <button key={account.id} onClick={() => handleAdAccountSelect(account.id)} className={`w-full flex items-center justify-between p-3.5 rounded-2xl text-left transition-all ${selectedAdAccountId === account.id ? 'bg-white shadow-sm border border-emerald-200 ring-2 ring-emerald-500/20' : 'hover:bg-slate-200/50 bg-slate-100/50'}`}>
+                                            <span className={`text-sm font-bold truncate pr-3 ${selectedAdAccountId === account.id ? 'text-emerald-900' : 'text-slate-600'}`}>{account.name}</span>
+                                            {selectedAdAccountId === account.id && <CheckCircle size={18} className="text-emerald-600 shrink-0" />}
+                                            </button>
+                                        ))}
+                                        </div>
+                                    ) : (
+                                        <div className="py-3 px-2">
+                                            <p className="text-sm text-slate-500 mb-2 font-medium">No Ad Accounts found.</p>
+                                            <button onClick={handleConnectFacebook} className="text-xs text-blue-600 font-bold hover:underline">Update Permissions</button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* PIXEL SELECTOR */}
+                                <div className="bg-slate-50/80 rounded-3xl p-4 border border-slate-100">
+                                    <div className="flex justify-between items-center mb-3 px-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Pixel</label>
+                                        <button onClick={() => selectedAdAccountId && fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-600 hover:text-blue-800 font-bold uppercase tracking-wider transition-colors">Refresh List</button>
+                                    </div>
+                                    
+                                    {!selectedAdAccountId ? (
+                                        <div className="py-3 px-2"><p className="text-sm text-slate-500 font-medium">Select an Ad Account first.</p></div>
+                                    ) : isLoadingPixels ? (
+                                        <div className="flex items-center gap-2 text-xs text-slate-500 py-3 px-2 font-medium">
+                                            <Loader2 size={16} className="animate-spin text-blue-500"/> Searching pixels...
+                                        </div>
+                                    ) : pixels.length > 0 ? (
+                                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                                        {pixels.map(pixel => (
+                                            <button key={pixel.id} onClick={() => handlePixelSelect(pixel.id)} className={`w-full flex items-center justify-between p-3.5 rounded-2xl text-left transition-all ${selectedPixelId === pixel.id ? 'bg-white shadow-sm border border-purple-200 ring-2 ring-purple-500/20' : 'hover:bg-slate-200/50 bg-slate-100/50'}`}>
+                                            <div className="flex items-center gap-3 truncate pr-3">
+                                                <Target size={16} className={selectedPixelId === pixel.id ? 'text-purple-600 shrink-0' : 'text-slate-400 shrink-0'} />
+                                                <span className={`text-sm font-bold truncate ${selectedPixelId === pixel.id ? 'text-purple-900' : 'text-slate-600'}`}>{pixel.name}</span>
+                                            </div>
+                                            {selectedPixelId === pixel.id && <CheckCircle size={18} className="text-purple-600 shrink-0" />}
+                                            </button>
+                                        ))}
+                                        </div>
+                                    ) : (
+                                        <div className="py-3 px-2"><p className="text-sm text-slate-500 font-medium">No Pixels found for this account.</p></div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Settings (ADMIN ONLY) */}
+            {role === 'admin' && (
+                <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
+                    <div className="p-4 sm:p-5 flex items-center justify-between border-b border-slate-100">
+                        <div className="flex items-center gap-4">
+                            <div className="bg-violet-100 text-violet-600 p-3 rounded-2xl">
+                                <Share2 size={20} />
+                            </div>
+                            <div>
+                                <span className="font-bold text-sm text-slate-900 block">Agent Distribution</span>
+                                <span className="text-xs text-slate-500 font-medium">Enable Team CRM Tab</span>
+                            </div>
+                        </div>
+                        
+                        {/* Bubbly Material Toggle */}
+                        <button 
+                            onClick={handleToggleDistribution}
+                            disabled={isTogglingDist}
+                            className={`w-14 h-8 rounded-full p-1 transition-all relative outline-none focus:ring-4 focus:ring-violet-500/20 ${enableDistribution ? 'bg-violet-600' : 'bg-slate-200'}`}
+                        >
+                            {isTogglingDist ? (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <Loader2 size={14} className="animate-spin text-white" />
+                                </div>
+                            ) : (
+                                <div className={`w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ease-out ${enableDistribution ? 'translate-x-6' : 'translate-x-0'}`} />
+                            )}
+                        </button>
+                    </div>
+
+                    <button onClick={() => router.push('/dashboard/billing')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center gap-4">
+                            <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl">
+                                <CreditCard size={20} />
+                            </div>
+                            <span className="font-bold text-sm text-slate-900">Subscription & Billing</span>
+                        </div>
+                        <ChevronRight size={20} className="text-slate-400" />
+                    </button>
+                </div>
+            )}
+
+            {/* Developer Testing Tools */}
+            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden p-6 sm:p-7 transition-all hover:shadow-md">
+                <div className="flex items-center gap-3 mb-5 px-1">
+                    <Settings size={18} className="text-slate-400" />
+                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Developer Sandbox</h3>
+                </div>
+                
+                <div className="space-y-3">
+                    <button 
+                        onClick={testInstantPush} 
+                        disabled={isTestingPush}
+                        className="w-full flex items-center gap-4 p-3.5 bg-slate-50 hover:bg-blue-50/50 border border-slate-100 hover:border-blue-100 rounded-[1.5rem] transition-all disabled:opacity-50 group"
+                    >
+                        <div className="bg-blue-100 text-blue-600 p-2.5 rounded-xl group-hover:scale-105 transition-transform">
+                            {isTestingPush ? <Loader2 size={18} className="animate-spin"/> : <BellRing size={18}/>}
+                        </div>
+                        <div className="text-left">
+                            <p className="text-sm font-bold text-slate-800">Test Push Delivery</p>
+                            <p className="text-xs text-slate-500 font-medium">Fires an immediate test alert</p>
+                        </div>
+                    </button>
+
+                    <button 
+                        onClick={testSimulateLead} 
+                        className="w-full flex items-center gap-4 p-3.5 bg-slate-50 hover:bg-green-50/50 border border-slate-100 hover:border-green-100 rounded-[1.5rem] transition-all group"
+                    >
+                        <div className="bg-emerald-100 text-emerald-600 p-2.5 rounded-xl group-hover:scale-105 transition-transform">
+                            <UserPlus size={18}/>
+                        </div>
+                        <div className="text-left">
+                            <p className="text-sm font-bold text-slate-800">Simulate Lead Entry</p>
+                            <p className="text-xs text-slate-500 font-medium">Injects a dummy CRM record</p>
+                        </div>
+                    </button>
+
+                    <button 
+                        onClick={testScheduleReminder} 
+                        className="w-full flex items-center gap-4 p-3.5 bg-slate-50 hover:bg-orange-50/50 border border-slate-100 hover:border-orange-100 rounded-[1.5rem] transition-all group"
+                    >
+                        <div className="bg-amber-100 text-amber-600 p-2.5 rounded-xl group-hover:scale-105 transition-transform">
+                            <Clock size={18}/>
+                        </div>
+                        <div className="text-left">
+                            <p className="text-sm font-bold text-slate-800">Trigger 1-Min Cron</p>
+                            <p className="text-xs text-slate-500 font-medium">Schedules a delayed webhook</p>
+                        </div>
+                    </button>
+
+                    <button 
+                        onClick={testAutoBlog} 
+                        disabled={isTestingBlog}
+                        className="w-full flex items-center gap-4 p-3.5 bg-slate-50 hover:bg-fuchsia-50/50 border border-slate-100 hover:border-fuchsia-100 rounded-[1.5rem] transition-all disabled:opacity-50 group"
+                    >
+                        <div className="bg-fuchsia-100 text-fuchsia-600 p-2.5 rounded-xl group-hover:scale-105 transition-transform">
+                            {isTestingBlog ? <Loader2 size={18} className="animate-spin"/> : <FileText size={18}/>}
+                        </div>
+                        <div className="text-left">
+                            <p className="text-sm font-bold text-slate-800">Force SEO Generation</p>
+                            <p className="text-xs text-slate-500 font-medium">Generates an AI article via Kie</p>
+                        </div>
+                    </button>
+                </div>
+            </div>
+            
+            {/* Sign Out */}
+            <div className="bg-white rounded-[2rem] shadow-sm border border-red-100 overflow-hidden transition-all hover:border-red-200 hover:shadow-md">
+                <button 
+                    onClick={handleSignOut} 
+                    className="w-full p-5 flex items-center justify-between bg-red-50/30 hover:bg-red-50 group transition-colors"
+                >
+                    <div className="flex items-center gap-4">
+                        <div className="bg-red-100 text-red-500 p-3 rounded-2xl group-hover:scale-110 group-hover:bg-red-500 group-hover:text-white transition-all duration-300">
+                            <LogOut size={20} />
+                        </div>
+                        <span className="font-bold text-sm text-red-600 group-hover:text-red-700 transition-colors">Sign Out Securely</span>
+                    </div>
+                </button>
+            </div>
+
           </div>
         </div>
-      )}
-
-      {/* Notification & Developer Testing */}
-      <div className="mb-6">
-        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Developer & Testing</h3>
-        <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden p-5 space-y-3">
-           
-           <button 
-              onClick={testInstantPush} 
-              disabled={isTestingPush}
-              className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50"
-           >
-              <div className="bg-blue-100 text-blue-600 p-2 rounded-lg">
-                  {isTestingPush ? <Loader2 size={16} className="animate-spin"/> : <BellRing size={16}/>}
-              </div>
-              <div className="text-left">
-                  <p className="text-sm font-bold text-slate-800">Test Push Notification</p>
-                  <p className="text-[10px] text-slate-500">Fires instantly to verify delivery</p>
-              </div>
-           </button>
-
-           <button 
-              onClick={testSimulateLead} 
-              className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors"
-           >
-              <div className="bg-green-100 text-green-600 p-2 rounded-lg">
-                  <UserPlus size={16}/>
-              </div>
-              <div className="text-left">
-                  <p className="text-sm font-bold text-slate-800">Simulate New Lead</p>
-                  <p className="text-[10px] text-slate-500">Injects a dummy lead into your CRM</p>
-              </div>
-           </button>
-
-           <button 
-              onClick={testScheduleReminder} 
-              className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors"
-           >
-              <div className="bg-orange-100 text-orange-600 p-2 rounded-lg">
-                  <Clock size={16}/>
-              </div>
-              <div className="text-left">
-                  <p className="text-sm font-bold text-slate-800">Test 1-Min Reminder</p>
-                  <p className="text-[10px] text-slate-500">Schedules a dummy lead for exactly 1 min</p>
-              </div>
-           </button>
-
-           <button 
-              onClick={testAutoBlog} 
-              disabled={isTestingBlog}
-              className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50"
-           >
-              <div className="bg-purple-100 text-purple-600 p-2 rounded-lg">
-                  {isTestingBlog ? <Loader2 size={16} className="animate-spin"/> : <FileText size={16}/>}
-              </div>
-              <div className="text-left">
-                  <p className="text-sm font-bold text-slate-800">Test SEO Auto-Blog</p>
-                  <p className="text-[10px] text-slate-500">Generates an AI article using Kie.ai</p>
-              </div>
-           </button>
-
-        </div>
       </div>
-      
-      {/* Sign Out (Everyone) */}
-      <div>
-        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Account Actions</h3>
-        <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
-          <button 
-            onClick={handleSignOut} 
-            className="w-full p-4 flex items-center justify-between hover:bg-red-50 group"
-          >
-            <div className="flex items-center gap-3">
-              <div className="bg-red-50 p-2 rounded-full text-red-500 group-hover:bg-red-100">
-                <LogOut size={18} />
-              </div>
-              <span className="font-bold text-sm text-red-500">Sign Out</span>
-            </div>
-          </button>
-        </div>
-      </div>
-
     </div>
   )
 }

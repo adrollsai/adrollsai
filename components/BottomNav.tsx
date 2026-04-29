@@ -88,30 +88,51 @@ export default function BottomNav() {
   })
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-2 py-3 pb-8 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] z-50">
-      <div className="flex justify-between items-center max-w-md mx-auto overflow-x-auto scrollbar-hide gap-1">
-        {navItems.map((item) => {
-          const isActive = pathname === item.path || pathname.startsWith(`${item.path}/`)
-          return (
-            <Link 
-              key={item.name} 
-              href={item.path}
-              className="flex flex-col items-center gap-0.5 min-w-[50px] sm:min-w-[60px]"
-            >
-              <div className={`
-                p-2 rounded-xl transition-all duration-200
-                ${isActive ? 'bg-primary text-primary-text scale-105 shadow-sm' : 'text-slate-400 hover:bg-slate-50'}
-              `}>
-                <item.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
-              </div>
-              {isActive && (
-                <span className="text-[9px] sm:text-[10px] font-bold text-primary-text">
+    <div className="fixed bottom-0 sm:bottom-6 left-0 right-0 z-50 flex justify-center pointer-events-none">
+      
+      {/* Container: 
+        Mobile -> Full width bottom bar with top border.
+        Tablet/Desktop -> Floating pill with heavy shadow.
+      */}
+      <div className="bg-white/90 backdrop-blur-xl border-t sm:border border-slate-200/60 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] sm:shadow-2xl w-full sm:w-auto sm:rounded-[2.5rem] px-2 sm:px-6 py-2 sm:py-3 pointer-events-auto transition-all">
+        
+        {/* Scrollable track for mobile, centered flex for desktop */}
+        <div className="flex items-center sm:justify-center gap-1 sm:gap-2 overflow-x-auto scrollbar-hide pb-4 sm:pb-0 px-2 sm:px-0">
+          
+          {navItems.map((item) => {
+            // BUG FIX: Inventory should ONLY highlight on exact '/dashboard' match.
+            // Other tabs highlight if the path starts with their route (e.g. /dashboard/crm/123).
+            const isActive = item.path === '/dashboard' 
+                ? pathname === '/dashboard' 
+                : pathname === item.path || pathname.startsWith(`${item.path}/`)
+
+            return (
+              <Link 
+                key={item.name} 
+                href={item.path}
+                className="flex flex-col items-center gap-1.5 min-w-[72px] sm:min-w-[84px] group pt-2 pb-1 shrink-0"
+              >
+                {/* Material You Bubbly Indicator */}
+                <div className={`
+                  px-5 py-1.5 rounded-full transition-all duration-300 ease-out flex items-center justify-center
+                  ${isActive ? 'bg-blue-100 shadow-inner scale-105' : 'bg-transparent group-hover:bg-slate-100'}
+                `}>
+                  <item.icon 
+                    size={22} 
+                    strokeWidth={isActive ? 2.5 : 2} 
+                    className={`transition-colors duration-300 ${isActive ? 'text-blue-700 animate-in zoom-in' : 'text-slate-500 group-hover:text-slate-700'}`} 
+                  />
+                </div>
+                
+                {/* Text Label */}
+                <span className={`text-[10px] sm:text-xs font-bold transition-all duration-300 ${isActive ? 'text-blue-700' : 'text-slate-500 group-hover:text-slate-700'}`}>
                   {item.name}
                 </span>
-              )}
-            </Link>
-          )
-        })}
+              </Link>
+            )
+          })}
+
+        </div>
       </div>
     </div>
   )

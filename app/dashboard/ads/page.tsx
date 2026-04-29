@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Zap, Plus, X, Loader2, Building2, Image as ImageIcon, Upload, RefreshCw, ExternalLink, TrendingUp, CreditCard, Eye, MousePointerClick, Users, Settings2, Sparkles, Video } from 'lucide-react'
+import { Zap, Plus, X, Loader2, Image as ImageIcon, Upload, RefreshCw, ExternalLink, TrendingUp, CreditCard, Eye, MousePointerClick, Users, Settings2, Sparkles, Video, MapPin, LayoutGrid, PauseCircle, PlayCircle, PlusCircle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -86,6 +86,7 @@ export default function AdsPage() {
   useEffect(() => {
     const loadData = async () => {
       const { data: { user } } = await supabase.auth.getUser()
+  
       if (!user) { router.push('/'); return }
 
       const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id').eq('id', user.id).single()
@@ -223,7 +224,6 @@ export default function AdsPage() {
     const locString = `${adForm.metaLocation.location.name}, ${adForm.metaLocation.location.region || adForm.metaLocation.location.country_code}`;
     formPayload.append('targetLocation', locString);
     formPayload.append('metaLocation', JSON.stringify(adForm.metaLocation));
-    
     formPayload.append('gender', adForm.gender);
     formPayload.append('dailyBudgetINR', (adForm.dailyBudgetINR * 100).toString()); 
     formPayload.append('linkUrl', adForm.linkUrl);
@@ -239,7 +239,7 @@ export default function AdsPage() {
           localFileIndex++;
       }
     });
-
+    
     try {
       const res = await fetch('/api/meta-ads/launch-campaign', { method: 'POST', body: formPayload })
       const data = await res.json()
@@ -247,7 +247,8 @@ export default function AdsPage() {
         alert(`${data.message}`);
         setIsModalOpen(false)
         setAdForm(prev => ({ ...prev, metaLocation: { location: null, radius: 20 }, dailyBudgetINR: 500 })) 
-        setSelectedCreatives([]); setFormQuestions([]);
+        setSelectedCreatives([]);
+        setFormQuestions([]);
         fetchCampaigns();
       } else throw new Error(data.error || 'Failed to Start');
     } catch (e: any) { alert('Launch Failed: ' + e.message); } 
@@ -255,91 +256,154 @@ export default function AdsPage() {
   }
 
   return (
-    <div className="p-5 max-w-md mx-auto min-h-screen pb-24">
-      <div className="flex justify-between items-end mb-6">
-        <div>
-            <h1 className="text-2xl font-bold text-slate-900">AI Ads Manager</h1>
-            <p className="text-slate-500 text-xs mt-1">Self-Optimizing Campaigns</p>
+    <div className="min-h-screen bg-[#F8FAFC] pb-32">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+        
+        {/* HEADER */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6 mb-8">
+            <div>
+                <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight ml-1">AI Ads Manager</h1>
+                <p className="text-slate-500 text-sm mt-1 font-medium ml-1">Self-Optimizing Smart Campaigns</p>
+            </div>
+            <div className="flex gap-3 w-full sm:w-auto">
+                <button 
+                    onClick={fetchCampaigns} 
+                    className="flex-1 sm:flex-none bg-white hover:bg-slate-50 text-slate-600 p-3.5 rounded-full shadow-sm border border-slate-200/60 active:scale-95 transition-all flex justify-center items-center gap-2"
+                >
+                    <RefreshCw size={20} />
+                </button>
+                <button 
+                    onClick={() => setIsModalOpen(true)} 
+                    className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white px-6 py-3.5 rounded-full shadow-md shadow-blue-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 font-bold"
+                >
+                    <Plus size={20} strokeWidth={3} /> <span className="hidden sm:inline">New Campaign</span>
+                </button>
+            </div>
         </div>
-        <div className="flex gap-2">
-            <button onClick={fetchCampaigns} className="bg-white text-slate-500 p-3 rounded-full shadow-sm border border-slate-100 active:scale-95 transition-transform"><RefreshCw size={20} /></button>
-            <button onClick={() => setIsModalOpen(true)} className="bg-primary hover:bg-blue-200 text-primary-text p-3 rounded-full shadow-md active:scale-95 transition-transform"><Plus size={20} strokeWidth={3} /></button>
-        </div>
-      </div>
 
-      <div className="flex flex-col gap-4"> 
-        {campaigns.length === 0 ? (
-            <div className="text-center py-10 text-slate-400 text-sm bg-white rounded-2xl border border-dashed border-slate-100">No campaigns found. <br/>Tap '+' to launch a new AI Lead campaign.</div>
+        {/* CAMPAIGN GRID (Responsive) */}
+        {loading ? (
+            <div className="flex flex-col items-center justify-center min-h-[40vh] text-slate-400 gap-4">
+                <Loader2 size={32} className="animate-spin text-slate-300" />
+                <p className="text-sm font-medium animate-pulse">Syncing with Meta...</p>
+            </div>
         ) : (
-            campaigns.map(campaign => (
-                <div key={campaign.id} className="bg-white p-5 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200 transition-all hover:border-blue-200">
-                    <div className="flex justify-between items-start mb-3">
-                        <div className="max-w-[65%]">
-                            <h3 className="text-sm font-bold text-slate-800 truncate leading-tight">{campaign.name}</h3>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">{campaign.objective.replace('OUTCOME_', '')}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            {togglingId === campaign.id && <Loader2 size={12} className="animate-spin text-slate-400" />}
-                            <button onClick={() => handleToggleStatus(campaign.id, campaign.status)} className={`w-11 h-6 rounded-full p-1 transition-colors duration-300 ease-in-out ${campaign.status === 'ACTIVE' ? 'bg-green-500' : 'bg-slate-200'}`}>
-                                <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-300 ${campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'}`} />
-                            </button>
-                        </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6"> 
+                {campaigns.length === 0 ? (
+                    <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400 bg-white rounded-[2.5rem] border border-slate-200/60 border-dashed">
+                        <LayoutGrid size={48} className="text-slate-200 mb-4" />
+                        <p className="text-base font-bold text-slate-600">No active campaigns</p>
+                        <p className="text-sm mt-1">Tap '+' to launch your first AI-optimized ad.</p>
                     </div>
-                    <div className="flex justify-between items-center text-xs text-slate-500 pt-3 border-t border-slate-50">
-                        <button onClick={() => handleOpenStats(campaign)} className="flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-blue-600 bg-slate-50 py-1 px-2 rounded-md"><TrendingUp size={12} /> View Stats</button>
-                        <button 
-                            onClick={() => handleOptimizeCampaign(campaign.id)} 
-                            disabled={optimizingCampaignId === campaign.id || campaign.status !== 'ACTIVE'}
-                            className={`flex items-center gap-1 text-[10px] font-bold py-1 px-2 rounded-md transition-colors ${optimizingCampaignId === campaign.id ? 'bg-purple-100 text-purple-400' : campaign.status !== 'ACTIVE' ? 'bg-slate-100 text-slate-400' : 'bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700'}`}
-                        >
-                            {optimizingCampaignId === campaign.id ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Optimize
-                        </button>
-                        <a href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:underline">Manager <ExternalLink size={10} /></a>
-                    </div>
-                </div>
-            ))
+                ) : (
+                    campaigns.map(campaign => (
+                        <div key={campaign.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200/60 transition-all hover:shadow-lg hover:border-blue-200 flex flex-col h-full group">
+                            
+                            {/* Card Header */}
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="max-w-[70%]">
+                                    <h3 className="text-base font-bold text-slate-800 truncate leading-tight group-hover:text-blue-600 transition-colors">{campaign.name}</h3>
+                                    <div className="flex items-center gap-1.5 mt-2">
+                                        <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${campaign.status === 'ACTIVE' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
+                                            {campaign.status === 'ACTIVE' ? <PlayCircle size={10}/> : <PauseCircle size={10}/>} {campaign.status}
+                                        </span>
+                                    </div>
+                                </div>
+        
+                                <div className="flex items-center gap-2">
+                                    {togglingId === campaign.id && <Loader2 size={14} className="animate-spin text-slate-400" />}
+                                    <button 
+                                        onClick={() => handleToggleStatus(campaign.id, campaign.status)} 
+                                        className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${campaign.status === 'ACTIVE' ? 'bg-green-500 focus:ring-green-500' : 'bg-slate-200 focus:ring-slate-400'}`}
+                                    >
+                                        <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'}`} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="flex-grow"></div>
+                            
+                            {/* Card Actions */}
+                            <div className="flex justify-between items-center text-xs text-slate-500 pt-4 border-t border-slate-100">
+                                <button 
+                                    onClick={() => handleOpenStats(campaign)} 
+                                    className="flex items-center justify-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 py-2 px-3 rounded-xl transition-colors"
+                                >
+                                    <TrendingUp size={14} /> Stats
+                                </button>
+                                
+                                <button 
+                                    onClick={() => handleOptimizeCampaign(campaign.id)} 
+                                    disabled={optimizingCampaignId === campaign.id || campaign.status !== 'ACTIVE'}
+                                    className={`flex items-center justify-center gap-1.5 text-xs font-bold py-2 px-3 rounded-xl transition-all ${
+                                        optimizingCampaignId === campaign.id ? 'bg-purple-100 text-purple-400' 
+                                        : campaign.status !== 'ACTIVE' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' 
+                                        : 'bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700 shadow-sm'
+                                    }`}
+                                >
+                                    {optimizingCampaignId === campaign.id ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Optimize
+                                </button>
+                                
+                                <a 
+                                    href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-xl transition-colors"
+                                >
+                                    <ExternalLink size={16} />
+                                </a>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
         )}
-      </div>
 
       {/* OPTIMIZATION RESULT MODAL */}
       {optimizerResult && (
-          <div className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-                  <div className="flex justify-between items-start mb-4">
+          <div className="fixed inset-0 z-[90] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+              <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
                       <div>
-                          <h2 className="text-xl font-bold text-slate-800 leading-tight pr-4 flex items-center gap-2"><Sparkles className="text-purple-500"/> AI Optimization Complete</h2>
+                          <h2 className="text-xl font-bold text-slate-900 leading-tight flex items-center gap-2">
+                              <Sparkles className="text-purple-500"/> AI Optimization Done
+                          </h2>
                       </div>
-                      <button onClick={() => setOptimizerResult(null)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={16} /></button>
+                      <button onClick={() => setOptimizerResult(null)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={18} /></button>
                   </div>
                   
-                  <div className="space-y-4">
+                  <div className="space-y-5">
                       {optimizerResult.pausedAds && optimizerResult.pausedAds.length > 0 && (
-                          <div className="bg-red-50 border border-red-100 rounded-xl p-3">
-                              <h3 className="text-xs font-bold text-red-600 uppercase mb-1">Underperformers Paused</h3>
-                              <p className="text-xs text-red-500">We halted {optimizerResult.pausedAds.length} variations that were wasting spend without generating leads.</p>
+                          <div className="bg-red-50/80 border border-red-100 rounded-2xl p-4">
+                              <h3 className="text-xs font-bold text-red-600 uppercase mb-1.5 tracking-wider">Underperformers Paused</h3>
+                              <p className="text-sm text-red-600 font-medium">We halted {optimizerResult.pausedAds.length} variations that were wasting spend without generating leads.</p>
                           </div>
                       )}
 
                       {optimizerResult.insight && (
-                          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
-                              <h3 className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1 mb-2"><Eye size={12}/> Visual Analysis of Winner</h3>
+                          <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5">
+                              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5 mb-3">
+                                  <Eye size={14}/> Visual Analysis of Winner
+                              </h3>
                               {optimizerResult.winnerImageAnalyzed && (
-                                  <img src={optimizerResult.winnerImageAnalyzed} alt="Analyzed Winner" className="w-full h-24 object-cover rounded-lg mb-3 shadow-sm" />
+                                  <img src={optimizerResult.winnerImageAnalyzed} alt="Analyzed Winner" className="w-full h-32 object-cover rounded-xl mb-4 shadow-inner" />
                               )}
-                              <p className="text-sm text-slate-700 leading-relaxed">{optimizerResult.insight}</p>
+                              <p className="text-sm text-slate-700 leading-relaxed font-medium">{optimizerResult.insight}</p>
                           </div>
                       )}
 
                       {optimizerResult.videoConcept && (
-                          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                              <h3 className="text-[10px] font-bold text-blue-500 uppercase flex items-center gap-1 mb-2"><Video size={12}/> AI Video Script Concept</h3>
-                              <p className="text-sm text-blue-900 leading-relaxed">{optimizerResult.videoConcept}</p>
+                          <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-5">
+                              <h3 className="text-[10px] font-bold text-blue-600 uppercase tracking-widest flex items-center gap-1.5 mb-3">
+                                  <Video size={14}/> AI Video Script Concept
+                              </h3>
+                              <p className="text-sm text-blue-900 leading-relaxed font-medium">{optimizerResult.videoConcept}</p>
                           </div>
                       )}
 
                       {optimizerResult.newImageTask && (
-                          <div className="text-center bg-purple-50 rounded-xl p-3 border border-purple-100">
-                             <p className="text-xs text-purple-700 font-medium">A new static creative variation is being generated in the background to test next!</p>
+                          <div className="text-center bg-purple-50 rounded-2xl p-4 border border-purple-100 shadow-inner">
+                              <p className="text-sm text-purple-700 font-bold">A new static creative variation is being generated in the background to test next!</p>
                           </div>
                       )}
                   </div>
@@ -349,47 +413,72 @@ export default function AdsPage() {
 
       {/* STATS MODAL */}
       {statsModal.isOpen && statsModal.campaign && (
-          <div className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in zoom-in-95">
-                  <div className="flex justify-between items-start mb-4">
+          <div className="fixed inset-0 z-[90] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+              <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95">
+                  <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
                       <div>
-                          <h2 className="text-lg font-bold text-slate-800 leading-tight pr-4">{statsModal.campaign.name}</h2>
-                          <p className="text-xs text-slate-500 mt-1 uppercase font-bold tracking-wider">{statsModal.campaign.status}</p>
+                          <h2 className="text-xl font-bold text-slate-900 leading-tight pr-4 truncate max-w-[250px]">{statsModal.campaign.name}</h2>
+                          <span className={`inline-block text-[10px] mt-2 font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${statsModal.campaign.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                              {statsModal.campaign.status}
+                          </span>
                       </div>
-                      <button onClick={() => setStatsModal({ isOpen: false, campaign: null, insights: null, loading: false })} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={16} /></button>
+                      <button onClick={() => setStatsModal({ isOpen: false, campaign: null, insights: null, loading: false })} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={18} /></button>
                   </div>
+
                   {statsModal.loading ? (
-                      <div className="flex flex-col items-center justify-center py-10"><Loader2 className="animate-spin text-primary mb-2" /><p className="text-xs text-slate-500">Fetching Meta Insights...</p></div>
+                      <div className="flex flex-col items-center justify-center py-12">
+                          <Loader2 className="animate-spin text-blue-500 mb-3" size={32} />
+                          <p className="text-sm text-slate-500 font-medium">Fetching Meta Insights...</p>
+                      </div>
                   ) : statsModal.insights ? (
-                      <div className="grid grid-cols-2 gap-3 mt-4">
-                          <div className="bg-slate-50 p-4 rounded-2xl"><div className="text-[10px] text-slate-500 font-bold uppercase mb-1 flex items-center gap-1"><CreditCard size={12}/> Spend</div><div className="text-lg font-bold text-slate-800">₹{statsModal.insights.spend || '0'}</div></div>
-                          <div className="bg-slate-50 p-4 rounded-2xl"><div className="text-[10px] text-slate-500 font-bold uppercase mb-1 flex items-center gap-1"><Eye size={12}/> Impressions</div><div className="text-lg font-bold text-slate-800">{statsModal.insights.impressions || '0'}</div></div>
-                          <div className="bg-slate-50 p-4 rounded-2xl"><div className="text-[10px] text-slate-500 font-bold uppercase mb-1 flex items-center gap-1"><MousePointerClick size={12}/> Clicks</div><div className="text-lg font-bold text-slate-800">{statsModal.insights.clicks || '0'}</div></div>
-                          <div className="bg-blue-50 p-4 rounded-2xl"><div className="text-[10px] text-blue-500 font-bold uppercase mb-1 flex items-center gap-1"><Users size={12}/> Leads</div><div className="text-lg font-bold text-blue-700">{statsModal.insights.actions?.find((a:any) => a.action_type === 'lead')?.value || '0'}</div></div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors">
+                              <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><CreditCard size={14}/> Spend</div>
+                              <div className="text-2xl font-black text-slate-800">₹{statsModal.insights.spend || '0'}</div>
+                          </div>
+                          <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors">
+                              <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Eye size={14}/> Views</div>
+                              <div className="text-2xl font-black text-slate-800">{statsModal.insights.impressions || '0'}</div>
+                          </div>
+                          <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors">
+                              <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><MousePointerClick size={14}/> Clicks</div>
+                              <div className="text-2xl font-black text-slate-800">{statsModal.insights.clicks || '0'}</div>
+                          </div>
+                          <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100 shadow-sm">
+                              <div className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14}/> Leads</div>
+                              <div className="text-3xl font-black text-blue-700">{statsModal.insights.actions?.find((a:any) => a.action_type === 'lead')?.value || '0'}</div>
+                          </div>
                       </div>
                   ) : (
-                      <div className="py-6 text-center text-sm text-slate-500">No performance data available yet.</div>
+                      <div className="py-10 text-center text-sm font-medium text-slate-500 bg-slate-50 rounded-[1.5rem] border border-dashed border-slate-200">
+                          No performance data available yet. <br/>Check back after 24 hours.
+                      </div>
                   )}
               </div>
           </div>
       )}
       
-      {/* LAUNCH MODAL */}
+      {/* LAUNCH MODAL (Responsive Bottom Sheet / Centered Card) */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">AI Launchpad</h2>
-              <button onClick={() => setIsModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-500"><X size={20} /></button>
+        <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-2xl rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 max-h-[90vh] flex flex-col overflow-hidden">
+            
+            {/* Launchpad Header */}
+            <div className="flex justify-between items-center p-6 bg-white border-b border-slate-100 flex-shrink-0">
+              <h2 className="text-xl font-bold text-slate-900">AI Launchpad</h2>
+              <button onClick={() => setIsModalOpen(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button>
             </div>
             
-            <div className="space-y-4">
+            {/* Launchpad Body (Scrollable) */}
+            <div className="p-6 overflow-y-auto custom-scrollbar space-y-8">
               
               {/* CREATIVE POOL SECTION */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-2">Creatives (Mix & Match)</label>
+              <div className="bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-4">
+                   <ImageIcon size={16} /> Mix & Match Creatives
+                </label>
                 
-                <div className="flex gap-2 mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                   <select 
                     onChange={(e) => {
                       const id = e.target.value;
@@ -400,9 +489,9 @@ export default function AdsPage() {
                       }
                       e.target.value = "";
                     }} 
-                    className="flex-1 bg-slate-50 border border-slate-100 text-slate-700 text-xs rounded-xl py-2 px-3 outline-none"
+                    className="w-full bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-2xl py-3 px-4 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer"
                   >
-                    <option value="">+ Add Property</option>
+                    <option value="">+ Add From Inventory</option>
                     {properties.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
                   </select>
 
@@ -416,7 +505,7 @@ export default function AdsPage() {
                       }
                       e.target.value = "";
                     }} 
-                    className="flex-1 bg-slate-50 border border-slate-100 text-slate-700 text-xs rounded-xl py-2 px-3 outline-none"
+                    className="w-full bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-2xl py-3 px-4 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer"
                   >
                     <option value="">+ Add AI Asset</option>
                     {assets.map(a => <option key={a.id} value={a.id}>Asset {a.id.slice(-4)}</option>)}
@@ -424,118 +513,168 @@ export default function AdsPage() {
                 </div>
 
                 <input type="file" ref={fileInputRef} onChange={handleLocalFiles} accept="image/*,video/*" className="hidden" multiple />
-                <button onClick={() => fileInputRef.current?.click()} className="w-full mb-3 py-2 border border-dashed border-slate-300 rounded-xl text-xs font-bold text-slate-500 flex items-center justify-center gap-2 hover:bg-slate-50">
-                   <Upload size={14} /> Upload Custom Files
+                <button 
+                    onClick={() => fileInputRef.current?.click()} 
+                    className="w-full mb-4 py-3.5 border-2 border-dashed border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50 rounded-2xl text-sm font-bold text-slate-500 hover:text-blue-600 flex items-center justify-center gap-2 transition-all"
+                >
+                    <Upload size={18} /> Upload Custom Files
                 </button>
 
                 {/* Selected Creatives Preview */}
                 {selectedCreatives.length > 0 && (
-                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                    <div className="flex gap-3 overflow-x-auto pb-2 pt-2 custom-scrollbar">
                       {selectedCreatives.map((c) => (
-                         <div key={c.uid} className="relative w-16 h-16 rounded-xl flex-shrink-0 bg-slate-100 border border-slate-200 group">
+                         <div key={c.uid} className="relative w-20 h-20 rounded-[1.25rem] flex-shrink-0 bg-white shadow-sm border border-slate-200 group">
                             {c.sourceType === 'local' && c.file && isVideoFile(c.file) ? (
-                                <video src={c.previewUrl} className="w-full h-full object-cover rounded-xl" />
+                                <video src={c.previewUrl} className="w-full h-full object-cover rounded-[1.25rem]" />
                             ) : (
-                                <img src={c.previewUrl} className="w-full h-full object-cover rounded-xl" />
+                                <img src={c.previewUrl} className="w-full h-full object-cover rounded-[1.25rem]" />
                             )}
-                            <button onClick={() => removeCreative(c.uid)} className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 text-red-500 shadow-sm border border-slate-100"><X size={12}/></button>
-                         </div>
+                            <button 
+                                onClick={() => removeCreative(c.uid)} 
+                                className="absolute -top-2 -right-2 bg-white rounded-full p-1 text-red-500 shadow-md border border-slate-100 hover:bg-red-50 transition-colors"
+                            >
+                                <X size={14}/>
+                            </button>
+                          </div>
                       ))}
                     </div>
                 )}
               </div>
 
-              <h3 className="pt-2 border-t border-slate-100 text-[10px] font-bold text-slate-400 uppercase ml-1">Campaign Settings</h3>
-              <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Website URL</label><input type="url" value={adForm.linkUrl} onChange={(e) => setAdForm(prev => ({...prev, linkUrl: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="https://yourwebsite.com" /></div>
-              <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Privacy Policy URL <span className="text-red-400">*</span></label><input type="url" value={adForm.privacyPolicyUrl} onChange={(e) => setAdForm(prev => ({...prev, privacyPolicyUrl: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="https://adrolls.in/privacy-policy" /></div>
-              
-              <div className="relative">
-                  <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Target Location</label>
-                  {adForm.metaLocation.location ? (
-                      <div className="w-full bg-slate-50 py-2 px-3 rounded-xl border border-slate-200 flex justify-between items-center">
-                          <div>
-                              <div className="text-sm font-bold text-slate-800">{adForm.metaLocation.location.name}</div>
-                              <div className="text-[10px] text-slate-500 uppercase">{adForm.metaLocation.location.region}, {adForm.metaLocation.location.country_code}</div>
-                          </div>
-                          <button onClick={() => setAdForm(prev => ({ ...prev, metaLocation: { location: null, radius: 20 } }))}><X size={16} className="text-slate-400 hover:text-red-500"/></button>
+              {/* CAMPAIGN SETTINGS */}
+              <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-4 border-b border-slate-100 pb-2">
+                     Campaign Settings
+                  </label>
+                  
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Website URL</label>
+                          <input type="url" value={adForm.linkUrl} onChange={(e) => setAdForm(prev => ({...prev, linkUrl: e.target.value}))} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" placeholder="https://yourwebsite.com" />
                       </div>
-                  ) : (
-                      <>
-                          <input type="text" value={locationSearchText} onChange={(e) => setLocationSearchText(e.target.value)} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" placeholder="Search city, state, or country..." />
-                          {isSearchingLocation && <Loader2 size={16} className="absolute right-4 top-9 animate-spin text-slate-400" />}
-                          {locationResults.length > 0 && (
-                              <div className="absolute z-10 w-full bg-white mt-1 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-100 max-h-48 overflow-y-auto">
-                                  {locationResults.map(loc => (
-                                      <div key={loc.key} onClick={() => { setAdForm(prev => ({ ...prev, metaLocation: { location: loc, radius: 20 } })); setLocationSearchText(''); setLocationResults([]); }} className="p-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0">
-                                          <div className="text-sm font-semibold text-slate-800">{loc.name}</div>
-                                          <div className="text-[10px] uppercase font-bold text-slate-400">{loc.region ? `${loc.region}, ` : ''}{loc.country_code} ({loc.type})</div>
-                                      </div>
-                                  ))}
+                      
+                      <div>
+                          <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Privacy Policy URL <span className="text-red-400">*</span></label>
+                          <input type="url" value={adForm.privacyPolicyUrl} onChange={(e) => setAdForm(prev => ({...prev, privacyPolicyUrl: e.target.value}))} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" placeholder="https://adrolls.in/privacy-policy" />
+                      </div>
+                      
+                      <div className="relative">
+                          <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Target Location</label>
+                          {adForm.metaLocation.location ? (
+                              <div className="w-full bg-blue-50/50 py-3 px-5 rounded-2xl border border-blue-200 flex justify-between items-center">
+                                  <div>
+                                      <div className="text-sm font-bold text-blue-900 flex items-center gap-1.5"><MapPin size={14}/> {adForm.metaLocation.location.name}</div>
+                                      <div className="text-[10px] text-blue-600 font-medium uppercase tracking-wider mt-0.5 ml-5">{adForm.metaLocation.location.region}, {adForm.metaLocation.location.country_code}</div>
+                                  </div>
+                                  <button onClick={() => setAdForm(prev => ({ ...prev, metaLocation: { location: null, radius: 20 } }))} className="bg-white p-1.5 rounded-full shadow-sm text-slate-400 hover:text-red-500 transition-colors"><X size={16} /></button>
                               </div>
+                          ) : (
+                              <>
+                                  <div className="relative">
+                                    <input type="text" value={locationSearchText} onChange={(e) => setLocationSearchText(e.target.value)} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 pl-11 pr-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" placeholder="Search city, state, or country..." />
+                                    <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    {isSearchingLocation && <Loader2 size={16} className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-blue-500" />}
+                                  </div>
+                                  {locationResults.length > 0 && (
+                                      <div className="absolute z-20 w-full bg-white mt-2 rounded-2xl shadow-xl border border-slate-100 max-h-56 overflow-y-auto custom-scrollbar">
+                                          {locationResults.map(loc => (
+                                              <div key={loc.key} onClick={() => { setAdForm(prev => ({ ...prev, metaLocation: { location: loc, radius: 20 } })); setLocationSearchText(''); setLocationResults([]); }} className="p-4 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors">
+                                                  <div className="text-sm font-bold text-slate-800">{loc.name}</div>
+                                                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mt-1">{loc.region ? `${loc.region}, ` : ''}{loc.country_code} ({loc.type})</div>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  )}
+                              </>
                           )}
-                      </>
-                  )}
-              </div>
-              
-              <div className="flex gap-4">
-                  <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Gender</label><select value={adForm.gender} onChange={(e) => setAdForm(prev => ({...prev, gender: e.target.value}))} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-sm outline-none">{GENDERS.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
-                  <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Budget (₹)</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span><input type="number" min="100" step="100" value={adForm.dailyBudgetINR} onChange={(e) => setAdForm(prev => ({...prev, dailyBudgetINR: parseInt(e.target.value) || 0}))} className="w-full bg-slate-50 py-3 pl-6 pr-4 rounded-xl text-slate-800 text-sm outline-none" /></div></div>
+                      </div>
+                    
+                      <div className="flex flex-col sm:flex-row gap-4">
+                          <div className="flex-1">
+                              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Gender</label>
+                              <select value={adForm.gender} onChange={(e) => setAdForm(prev => ({...prev, gender: e.target.value}))} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 px-4 rounded-2xl text-slate-800 text-sm font-medium outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer">
+                                  {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
+                              </select>
+                          </div>
+                          <div className="flex-1">
+                              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Daily Budget (₹)</label>
+                              <div className="relative">
+                                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                                  <input type="number" min="100" step="100" value={adForm.dailyBudgetINR} onChange={(e) => setAdForm(prev => ({...prev, dailyBudgetINR: parseInt(e.target.value) || 0}))} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 pl-9 pr-4 rounded-2xl text-slate-800 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all" />
+                              </div>
+                          </div>
+                      </div>
+                  </div>
               </div>
 
               {/* FORM QUESTIONS SECTION */}
-              <div className="pt-2 border-t border-slate-100">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1 mb-2"><Settings2 size={12} /> Lead Form Questions</label>
-                  
+              <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-4 border-b border-slate-100 pb-2">
+                      <Settings2 size={16} /> Lead Form Questions
+                  </label>
+                 
                   {formQuestions.length > 0 && (
-                      <div className="flex flex-col gap-2 mb-3">
+                      <div className="flex flex-col gap-3 mb-4">
                           {formQuestions.map((q, idx) => (
-                             <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex justify-between items-start group">
+                              <div key={idx} className="bg-slate-50 border border-slate-200/60 rounded-[1.25rem] p-4 flex justify-between items-center group shadow-sm">
                                  <div>
                                      <div className="text-sm font-bold text-slate-800 leading-tight mb-1">{q.label}</div>
-                                     <div className="text-[10px] text-slate-400 font-bold uppercase">{q.type === 'MULTIPLE_CHOICE' ? `Multiple Choice` : 'Short Answer'}</div>
+                                     <div className="text-[10px] text-blue-600 font-bold uppercase tracking-wider">{q.type === 'MULTIPLE_CHOICE' ? `Multiple Choice` : 'Short Answer'}</div>
                                  </div>
-                                 <button onClick={() => setFormQuestions(prev => prev.filter((_, i) => i !== idx))} className="text-slate-300 hover:text-red-500 p-1"><X size={14}/></button>
-                             </div>
+                                 <button onClick={() => setFormQuestions(prev => prev.filter((_, i) => i !== idx))} className="bg-white p-2 rounded-full text-slate-400 hover:text-red-500 shadow-sm border border-slate-100 transition-colors"><X size={14}/></button>
+                              </div>
                           ))}
                       </div>
                   )}
 
                   {!isAddingQuestion ? (
                       <div className="flex flex-wrap gap-2">
-                          <button onClick={() => handleAddPresetQuestion('budget')} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full hover:bg-blue-100">+ Add Budget</button>
-                          <button onClick={() => handleAddPresetQuestion('timeline')} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full hover:bg-blue-100">+ Add Timeline</button>
-                          <button onClick={() => setIsAddingQuestion(true)} className="text-[10px] font-bold bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full hover:bg-slate-200">+ Custom</button>
+                          <button onClick={() => handleAddPresetQuestion('budget')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Budget</button>
+                          <button onClick={() => handleAddPresetQuestion('timeline')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Timeline</button>
+                          <button onClick={() => setIsAddingQuestion(true)} className="text-xs font-bold bg-slate-100 text-slate-600 px-4 py-2.5 rounded-full hover:bg-slate-200 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Custom</button>
                       </div>
                   ) : (
-                      <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 space-y-3">
+                      <div className="bg-slate-50/80 p-5 rounded-[1.5rem] border border-slate-200 space-y-4 shadow-inner">
                           <div>
-                              <input type="text" value={newQuestion.label} onChange={e => setNewQuestion({...newQuestion, label: e.target.value})} className="w-full bg-white py-2.5 px-3 rounded-lg text-sm border border-slate-200" placeholder="Question Text" />
+                              <input type="text" value={newQuestion.label} onChange={e => setNewQuestion({...newQuestion, label: e.target.value})} className="w-full bg-white py-3.5 px-4 rounded-2xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all" placeholder="Question Text (e.g. When do you want to move?)" />
                           </div>
                           <div>
-                              <select value={newQuestion.type} onChange={e => setNewQuestion({...newQuestion, type: e.target.value as any})} className="w-full bg-white py-2.5 px-3 rounded-lg text-sm border border-slate-200">
-                                  <option value="SHORT_ANSWER">Short Answer</option>
+                              <select value={newQuestion.type} onChange={e => setNewQuestion({...newQuestion, type: e.target.value as any})} className="w-full bg-white py-3.5 px-4 rounded-2xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all cursor-pointer">
+                                  <option value="SHORT_ANSWER">Short Answer (Text)</option>
                                   <option value="MULTIPLE_CHOICE">Multiple Choice</option>
                               </select>
                           </div>
                           {newQuestion.type === 'MULTIPLE_CHOICE' && (
-                              <input type="text" value={newQuestion.options?.join(', ')} onChange={e => setNewQuestion({...newQuestion, options: e.target.value.split(',')})} className="w-full bg-white py-2.5 px-3 rounded-lg text-sm border border-slate-200" placeholder="Options (comma separated)" />
+                              <input type="text" value={newQuestion.options?.join(', ')} onChange={e => setNewQuestion({...newQuestion, options: e.target.value.split(',')})} className="w-full bg-white py-3.5 px-4 rounded-2xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all" placeholder="Options (comma separated, e.g. 1 Month, 3 Months)" />
                           )}
-                          <div className="flex gap-2">
-                              <button onClick={() => { if(newQuestion.label){ setFormQuestions(prev => [...prev, newQuestion]); setIsAddingQuestion(false); setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); } }} className="flex-1 bg-slate-900 text-white px-3 py-2 rounded-lg text-xs font-bold">Save</button>
-                              <button onClick={() => setIsAddingQuestion(false)} className="bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold">Cancel</button>
+                          <div className="flex gap-3 pt-2">
+                              <button onClick={() => setIsAddingQuestion(false)} className="bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors">Cancel</button>
+                              <button onClick={() => { if(newQuestion.label){ setFormQuestions(prev => [...prev, newQuestion]); setIsAddingQuestion(false); setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); } }} className="flex-1 bg-slate-900 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors shadow-sm">Save Question</button>
                           </div>
                       </div>
                   )}
               </div>
 
-              <button onClick={handleLaunchCampaign} disabled={isSubmitting || !adForm.metaLocation.location || !adForm.privacyPolicyUrl || selectedCreatives.length === 0} className="w-full bg-slate-900 text-white py-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70 mt-4">
-                  {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
-                  {isSubmitting ? 'AI Optimizing & Launching...' : 'Launch Smart Campaign'}
-              </button>
             </div>
+
+            {/* Sticky Launch Button Footer */}
+            <div className="p-6 bg-white border-t border-slate-100 flex-shrink-0">
+                <button 
+                    onClick={handleLaunchCampaign} 
+                    disabled={isSubmitting || !adForm.metaLocation.location || !adForm.privacyPolicyUrl || selectedCreatives.length === 0} 
+                    className="w-full bg-slate-900 text-white py-4 sm:py-5 rounded-[1.5rem] text-sm sm:text-base font-bold flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 shadow-lg shadow-slate-900/20 hover:bg-slate-800"
+                >
+                    {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Zap size={20} className="text-yellow-400" />} 
+                    {isSubmitting ? 'AI Optimizing & Launching...' : 'Launch Smart Campaign'}
+                </button>
+            </div>
+            
           </div>
         </div>
       )}
+      
+      </div> 
     </div>
   )
 }

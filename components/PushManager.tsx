@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BellRing, Check, Loader2, Send, AlertCircle, Share, Bell } from 'lucide-react'
+import { BellRing, Check, Loader2, Send, AlertCircle, Share, Bell, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -19,13 +19,18 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray
 }
 
-export default function PushManager() {
+interface PushManagerProps {
+  variant?: 'banner' | 'inline';
+}
+
+export default function PushManager({ variant = 'inline' }: PushManagerProps) {
   const [isSupported, setIsSupported] = useState(false)
   const [subscription, setSubscription] = useState<PushSubscription | null>(null)
   const [loading, setLoading] = useState(false)
   const [permissionState, setPermissionState] = useState<NotificationPermission>('default')
   const [isIOS, setIsIOS] = useState(false)
   const [isStandalone, setIsStandalone] = useState(false)
+  const [isDismissed, setIsDismissed] = useState(false)
 
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -44,7 +49,12 @@ export default function PushManager() {
     const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
                              (window.navigator as any).standalone === true
     setIsStandalone(isStandaloneMode)
-  }, [])
+
+    if (variant === 'banner') {
+      const dismissed = localStorage.getItem('pushBannerDismissed') === 'true'
+      setIsDismissed(dismissed)
+    }
+  }, [variant])
 
   // This function manually registers custom-sw.js
   async function registerServiceWorker() {
@@ -66,6 +76,20 @@ export default function PushManager() {
   async function subscribeToPush() {
     setLoading(true)
     try {
+      // THE iOS SAFARI FIX:
+      // Request permission explicitly FIRST before doing any async service worker tasks.
+      // This ensures the native OS prompt appears instantly linked to the tap event.
+      if (window.Notification && Notification.permission !== 'granted') {
+          const permission = await window.Notification.requestPermission()
+          setPermissionState(permission)
+          
+          if (permission !== 'granted') {
+              toast.error("Permission Denied")
+              setLoading(false)
+              return
+          }
+      }
+
       const registration = await navigator.serviceWorker.ready
       
       const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
@@ -126,8 +150,55 @@ export default function PushManager() {
       }
   }
 
+  const handleDismiss = () => {
+    localStorage.setItem('pushBannerDismissed', 'true')
+    setIsDismissed(true)
+  }
+
   if (!isSupported) return null
 
+  // -------------------------------------------------------------
+  // BANNER VARIANT (Bottom floating, dismissible, auto-hides if enabled)
+  // -------------------------------------------------------------
+  if (variant === 'banner') {
+    if (isDismissed || subscription || permissionState === 'denied') return null
+
+    return (
+      <div className="fixed bottom-[85px] left-4 right-4 z-[60] bg-white p-4 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-100 animate-in slide-in-from-bottom-5 fade-in duration-300">
+        <button onClick={handleDismiss} className="absolute top-2 right-2 text-slate-400 p-2 hover:text-slate-600 transition-colors rounded-full">
+            <X size={16} />
+        </button>
+        
+        <div className="flex items-center gap-3 pr-6 mb-1">
+           <div className="bg-blue-100 text-blue-600 p-2.5 rounded-full shrink-0">
+             <BellRing size={20} />
+           </div>
+           <div>
+              <p className="text-sm font-bold text-slate-900">Enable Notifications</p>
+              <p className="text-xs text-slate-500 leading-tight">Never miss a new lead.</p>
+           </div>
+        </div>
+
+        {isIOS && !isStandalone ? (
+           <div className="mt-3 bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs text-slate-600 leading-relaxed">
+              Tap <Share size={12} className="inline text-blue-500 mb-0.5"/> then <b>Add to Home Screen</b> to enable alerts.
+           </div>
+        ) : (
+           <button 
+              onClick={subscribeToPush} 
+              disabled={loading} 
+              className="w-full mt-3 bg-slate-900 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors"
+           >
+              {loading ? <Loader2 size={14} className="animate-spin"/> : "Enable Now"}
+           </button>
+        )}
+      </div>
+    )
+  }
+
+  // -------------------------------------------------------------
+  // INLINE VARIANT (Used on the Profile Page permanently)
+  // -------------------------------------------------------------
   return (
     <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6">
       <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
