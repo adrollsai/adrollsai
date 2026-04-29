@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
-import { toast } from 'sonner' // Ensure sonner is imported
+import { toast } from 'sonner' 
 
 // Custom WhatsApp SVG Icon to replace the generic Share icon
 const WhatsAppIcon = ({ size = 24, className = "" }) => (
@@ -50,7 +50,7 @@ export default function ProductsPage() {
   // Sharing, Toggling & Generation State
   const [isSharingId, setIsSharingId] = useState<string | null>(null)
   const [isTogglingId, setIsTogglingId] = useState<string | null>(null) 
-  const [generatingProps, setGeneratingProps] = useState<string[]>([]) // Tracks background generation
+  const [generatingProps, setGeneratingProps] = useState<string[]>([]) 
 
   // Filter State
   const [searchQuery, setSearchQuery] = useState('')
@@ -150,7 +150,7 @@ export default function ProductsPage() {
     }
   }
 
-  // --- BACKGROUND AI GENERATION ---
+  // --- 🔥 UPDATED FIRE & FORGET SERVER BACKGROUND GENERATION ---
   const handleBackgroundGeneration = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
     
@@ -160,7 +160,7 @@ export default function ProductsPage() {
     }
 
     setGeneratingProps(prev => [...prev, prop.id])
-    toast.success("AI Generation Started ✨", { description: `Creating a poster for ${prop.title}. This will take about a minute.` })
+    toast.success("AI Generation Started ✨", { description: `Creating a poster for ${prop.title}. You can safely lock your phone or close the app.` })
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -170,89 +170,42 @@ export default function ProductsPage() {
 
       let propImages = (prop.images && prop.images.length > 0) ? prop.images.slice(0, 2) : [prop.image_url]
 
-      // Step 1: Call your Chat API silently
-      const startResponse = await fetch('/api/chat', {
+      const payload = {
+          userInstructions: "Generate a high-quality, luxurious promotional social media poster for this product.",
+          propertyDescription: prop.description || "",
+          propertyTitle: prop.title || "",
+          contactNumber: profile?.contact_number || "",
+          logoUrl: profile?.logo_url || "",
+          propImages: propImages,
+          templateUrl: null,
+          aspectRatio: '1:1',
+          model: 'google/nano-banana-2'
+      }
+
+      // Fire Request to Server Worker and don't block the UI thread waiting for the 60s generation
+      fetch('/api/background-worker', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            userInstructions: "Generate a high-quality, luxurious promotional social media poster for this product.",
-            propertyDescription: prop.description || "",
-            propertyTitle: prop.title || "",
-            contactNumber: profile?.contact_number || "",
-            logoUrl: profile?.logo_url || "",
-            propImages: propImages,
-            templateUrl: null,
-            aspectRatio: '1:1',
-            model: 'google/nano-banana-2'
+           userId: user.id,
+           propId: prop.id,
+           propertyTitle: prop.title,
+           payload
         })
-      })
+      }).then(async (res) => {
+           // If the app stays open long enough to see the response, we trigger the success toast
+           const data = await res.json();
+           if (!res.ok) throw new Error(data.error);
+           toast.success(`Creative Ready! 🎉`, { description: `Your AI asset for ${prop.title} is waiting in the linked creatives tab.` })
+      }).catch(err => {
+           console.error("Worker error:", err);
+           // Silent catch: if OS suspends the network request, the server is still processing it regardless.
+      }).finally(() => {
+           setGeneratingProps(prev => prev.filter(id => id !== prop.id))
+      });
 
-      const startData = await startResponse.json()
-      if (startData.error) throw new Error(startData.error)
-      const generatedCaption = startData.caption || ''
-
-      // Step 2: Poll for Results
-      if (startData.taskId) {
-          const taskId = startData.taskId
-          let attempts = 0
-          let finalImageUrl = ''
-
-          while (attempts < 30) {
-              attempts++
-              await new Promise(resolve => setTimeout(resolve, 4000))
-              const checkResponse = await fetch('/api/check-status', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ taskId })
-              })
-              const checkData = await checkResponse.json()
-
-              if (checkData.data?.state === 'success') {
-                  if (checkData.data.resultJson) {
-                      try {
-                          const resultObj = JSON.parse(checkData.data.resultJson)
-                          if (resultObj.resultUrls?.[0]) finalImageUrl = resultObj.resultUrls[0]
-                      } catch(e) {}
-                  } else if (checkData.data.resultUrl) {
-                      finalImageUrl = checkData.data.resultUrl
-                  }
-                  break;
-              } else if (checkData.data?.state === 'failed') {
-                  throw new Error("Generation failed: " + (checkData.data.failMsg || "Unknown error"))
-              }
-          }
-
-          if (!finalImageUrl) throw new Error("Generation timed out.")
-
-          // Step 3: Save to DB
-          const { error: dbError } = await supabase.from('assets').insert({
-              user_id: user.id,
-              property_id: prop.id,
-              url: finalImageUrl,
-              type: 'image',
-              status: 'Draft',
-              caption: generatedCaption
-          })
-
-          if (dbError) throw dbError
-
-          // Step 4: Notify User on Client
-          toast.success(`Creative Ready! 🎉`, { description: `Your AI asset for ${prop.title} is waiting in the linked creatives tab.` })
-
-          // Step 5: Trigger Push Notification Background Sync
-          await fetch('/api/notify-user', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                  userId: user.id, 
-                  title: "✨ Asset Generation Complete", 
-                  body: `Your AI poster for ${prop.title} is ready to publish!` 
-              })
-          }).catch(e => console.log("Push failed silently", e))
-      }
     } catch (error: any) {
-      toast.error(`Generation failed for ${prop.title}`, { description: error.message })
-    } finally {
+      toast.error(`Failed to start generation for ${prop.title}`, { description: error.message })
       setGeneratingProps(prev => prev.filter(id => id !== prop.id))
     }
   }
