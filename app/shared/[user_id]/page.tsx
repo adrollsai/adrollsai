@@ -123,9 +123,21 @@ export default function SharedCataloguePage() {
             profileQuery = profileQuery.eq('id', identifier)
         }
         
-        const { data: profileData, error: profileError } = await profileQuery.single()
+        // THE FIX: Use maybeSingle() instead of single() to prevent 406 crashes
+        const { data: profileData, error: profileError } = await profileQuery.maybeSingle()
         
-        if (profileError || !profileData) throw new Error("Profile not found")
+        if (profileError) {
+            console.error("Database error fetching profile:", profileError)
+            throw new Error("Failed to load catalog database.")
+        }
+
+        if (!profileData) {
+            // Gracefully handle 0 rows returned (e.g., domain typo or RLS block)
+            setErrorMsg("This catalog is unavailable or the link is incorrect.")
+            setLoading(false)
+            return
+        }
+
         setProfile(profileData)
 
         const { data: props } = await supabase
