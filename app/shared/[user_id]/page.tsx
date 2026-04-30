@@ -123,7 +123,6 @@ export default function SharedCataloguePage() {
             profileQuery = profileQuery.eq('id', identifier)
         }
         
-        // THE FIX: Use maybeSingle() instead of single() to prevent 406 crashes
         const { data: profileData, error: profileError } = await profileQuery.maybeSingle()
         
         if (profileError) {
@@ -132,7 +131,6 @@ export default function SharedCataloguePage() {
         }
 
         if (!profileData) {
-            // Gracefully handle 0 rows returned (e.g., domain typo or RLS block)
             setErrorMsg("This catalog is unavailable or the link is incorrect.")
             setLoading(false)
             return
@@ -147,7 +145,6 @@ export default function SharedCataloguePage() {
             .order('created_at', { ascending: false })
         
         if (props) {
-            // Filter out non-active properties
             const activeProps = props.filter(p => p.status !== 'Archived' && p.status !== 'Sold')
             setProperties(activeProps)
         }
@@ -270,39 +267,39 @@ export default function SharedCataloguePage() {
   }
 
   if (loading) return <div className="flex h-screen items-center justify-center text-slate-400 bg-[#F8FAFC]"><Loader2 className="animate-spin w-10 h-10 text-blue-500" /></div>
-  if (errorMsg) return <div className="flex h-screen items-center justify-center text-slate-400 bg-[#F8FAFC]"><p className="bg-white px-8 py-5 rounded-[2rem] shadow-sm font-bold border border-slate-200">{errorMsg}</p></div>
+  if (errorMsg) return <div className="flex h-screen w-full items-center justify-center p-6 text-slate-400 bg-[#F8FAFC]"><p className="bg-white px-8 py-5 rounded-3xl shadow-sm font-bold border border-slate-200 text-center w-full max-w-md">{errorMsg}</p></div>
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24 font-sans selection:bg-blue-200">
       
       {/* 1. PUBLIC HEADER */}
-      <div className="bg-white/90 sticky top-0 z-40 border-b border-slate-200/60 shadow-sm backdrop-blur-xl transition-all">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div className="bg-white/90 sticky top-0 z-40 border-b border-slate-200/60 shadow-sm backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
           <div className="flex items-center justify-between gap-4">
             
             {/* Branding */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               {profile?.logo_url ? (
-                <img src={profile.logo_url} alt="Logo" className="w-12 h-12 rounded-[1rem] object-cover shadow-sm border border-slate-100" />
+                <img src={profile.logo_url} alt="Logo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-[1rem] object-cover shadow-sm border border-slate-100 shrink-0" />
               ) : (
-                <div className="w-12 h-12 rounded-[1rem] bg-blue-50 flex items-center justify-center text-blue-500 font-black text-xl shadow-sm">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-[1rem] bg-blue-50 flex items-center justify-center text-blue-500 font-black text-lg sm:text-xl shadow-sm shrink-0">
                   {profile?.business_name?.charAt(0)?.toUpperCase() || 'B'}
                 </div>
               )}
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 truncate tracking-tight">{profile?.business_name || 'Business Catalog'}</h1>
-                <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-widest truncate">{profile?.mission_statement || 'Digital Catalog'}</p>
+              <div className="min-w-0 flex-1">
+                <h1 className="text-base sm:text-lg lg:text-xl font-extrabold text-slate-900 truncate tracking-tight">{profile?.business_name || 'Business Catalog'}</h1>
+                <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">{profile?.mission_statement || 'Digital Catalog'}</p>
               </div>
             </div>
 
-            {/* BIG CALL BUTTON WITH NUMBER */}
+            {/* CALL BUTTON */}
             {profile?.contact_number && (
               <button 
                 onClick={handleCall}
-                className="bg-slate-900 hover:bg-slate-800 text-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-full shadow-md shadow-slate-900/20 transition-all flex items-center gap-2.5 active:scale-95 shrink-0 group"
+                className="bg-slate-900 hover:bg-slate-800 text-white px-4 sm:px-6 py-2 sm:py-2.5 rounded-full shadow-md shadow-slate-900/20 transition-all flex items-center gap-2 active:scale-95 shrink-0 group"
               >
                 <Phone size={16} className="text-white group-hover:rotate-12 transition-transform" /> 
-                <span className="text-sm font-extrabold tracking-wide hidden sm:inline">{profile.contact_number}</span>
+                <span className="text-sm font-extrabold tracking-wide hidden sm:block">{profile.contact_number}</span>
                 <span className="text-sm font-extrabold tracking-wide sm:hidden">Call</span>
               </button>
             )}
@@ -311,111 +308,111 @@ export default function SharedCataloguePage() {
       </div>
 
       {/* 2. HERO SECTION */}
-      <div className="bg-white md:mt-8 md:mx-8 rounded-b-[2.5rem] md:rounded-[3rem] p-8 md:p-14 shadow-sm border border-slate-100 mb-8 max-w-7xl mx-auto transition-all relative overflow-hidden">
-        {/* Subtle decorative background blob */}
-        <div className="absolute -top-24 -right-24 w-64 h-64 bg-blue-50 rounded-full mix-blend-multiply filter blur-3xl opacity-70"></div>
-        <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-purple-50 rounded-full mix-blend-multiply filter blur-3xl opacity-70"></div>
+      <div className="bg-white md:mt-8 md:mx-4 lg:mx-auto lg:max-w-7xl rounded-b-[2rem] md:rounded-[2.5rem] p-6 sm:p-8 md:p-14 shadow-sm border border-slate-100 mb-8 relative overflow-hidden">
+        {/* Decorative background blobs */}
+        <div className="absolute top-0 right-0 w-48 h-48 sm:w-64 sm:h-64 bg-blue-50/80 rounded-full mix-blend-multiply filter blur-3xl translate-x-1/3 -translate-y-1/3"></div>
+        <div className="absolute bottom-0 left-0 w-48 h-48 sm:w-64 sm:h-64 bg-purple-50/80 rounded-full mix-blend-multiply filter blur-3xl -translate-x-1/3 translate-y-1/3"></div>
         
-        <div className="flex flex-col md:flex-row items-center gap-6 md:gap-10 relative z-10">
-            <div className="relative group">
+        <div className="flex flex-col md:flex-row items-center md:items-start text-center md:text-left gap-6 md:gap-10 relative z-10">
+            <div className="relative shrink-0">
                 {profile?.logo_url ? (
-                    <img src={profile.logo_url} className="w-28 h-28 md:w-40 md:h-40 rounded-[2rem] object-cover shadow-lg border-4 border-white" alt="Logo" />
+                    <img src={profile.logo_url} className="w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40 rounded-[1.5rem] md:rounded-[2rem] object-cover shadow-lg border-4 border-white" alt="Logo" />
                 ) : (
-                    <div className="w-28 h-28 md:w-40 md:h-40 rounded-[2rem] bg-blue-100 flex items-center justify-center text-blue-500 font-black text-5xl shadow-lg border-4 border-white">
+                    <div className="w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40 rounded-[1.5rem] md:rounded-[2rem] bg-blue-50 flex items-center justify-center text-blue-500 font-black text-4xl md:text-5xl shadow-lg border-4 border-white">
                     {profile?.business_name?.[0] || 'A'}
                     </div>
                 )}
             </div>
 
-            <div className="flex-1 text-center md:text-left">
-                <h1 className="text-3xl md:text-5xl font-black text-slate-900 tracking-tight mb-3 leading-tight">{profile?.business_name || 'Portfolio'}</h1>
-                <p className="text-slate-500 font-medium max-w-xl mx-auto md:mx-0 text-sm md:text-base leading-relaxed mb-6">
+            <div className="flex-1 w-full max-w-2xl mx-auto md:mx-0">
+                <h1 className="text-2xl sm:text-3xl md:text-5xl font-black text-slate-900 tracking-tight mb-3 sm:mb-4 leading-tight">{profile?.business_name || 'Portfolio'}</h1>
+                <p className="text-slate-500 font-medium text-sm sm:text-base leading-relaxed mb-6">
                     {profile?.mission_statement || "Discover premium real estate opportunities tailored for you."}
                 </p>
                 
                 {/* Social Icons Row */}
-                <div className="flex justify-center md:justify-start gap-3">
+                <div className="flex justify-center md:justify-start gap-3 flex-wrap">
                     {profile?.facebook_url && (
-                        <a href={profile.facebook_url} target="_blank" rel="noopener noreferrer" className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white border border-slate-100 text-[#1877F2] hover:bg-[#1877F2] hover:text-white transition-all shadow-sm"><Facebook size={20} /></a>
+                        <a href={profile.facebook_url} target="_blank" rel="noopener noreferrer" className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl sm:rounded-2xl bg-white border border-slate-100 text-[#1877F2] hover:bg-[#1877F2] hover:text-white transition-all shadow-sm"><Facebook size={18} /></a>
                     )}
                     {profile?.instagram_url && (
-                        <a href={profile.instagram_url} target="_blank" rel="noopener noreferrer" className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white border border-slate-100 text-[#E4405F] hover:bg-gradient-to-tr hover:from-[#f09433] hover:via-[#dc2743] hover:to-[#bc1888] hover:text-white transition-all shadow-sm"><Instagram size={20} /></a>
+                        <a href={profile.instagram_url} target="_blank" rel="noopener noreferrer" className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl sm:rounded-2xl bg-white border border-slate-100 text-[#E4405F] hover:bg-gradient-to-tr hover:from-[#f09433] hover:via-[#dc2743] hover:to-[#bc1888] hover:text-white transition-all shadow-sm"><Instagram size={18} /></a>
                     )}
                     {profile?.linkedin_url && (
-                        <a href={profile.linkedin_url} target="_blank" rel="noopener noreferrer" className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white border border-slate-100 text-[#0077b5] hover:bg-[#0077b5] hover:text-white transition-all shadow-sm"><Linkedin size={20} /></a>
+                        <a href={profile.linkedin_url} target="_blank" rel="noopener noreferrer" className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl sm:rounded-2xl bg-white border border-slate-100 text-[#0077b5] hover:bg-[#0077b5] hover:text-white transition-all shadow-sm"><Linkedin size={18} /></a>
                     )}
                     {profile?.youtube_url && (
-                        <a href={profile.youtube_url} target="_blank" rel="noopener noreferrer" className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white border border-slate-100 text-[#FF0000] hover:bg-[#FF0000] hover:text-white transition-all shadow-sm"><Youtube size={20} /></a>
+                        <a href={profile.youtube_url} target="_blank" rel="noopener noreferrer" className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl sm:rounded-2xl bg-white border border-slate-100 text-[#FF0000] hover:bg-[#FF0000] hover:text-white transition-all shadow-sm"><Youtube size={18} /></a>
                     )}
                 </div>
             </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 md:px-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* PILL TABS */}
-        <div className="flex justify-center mb-8">
-            <div className="bg-white p-2 rounded-[1.5rem] shadow-sm inline-flex gap-2 border border-slate-200/60">
-                <button onClick={() => setActiveTab('inventory')} className={`flex items-center gap-2 px-6 py-3.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'inventory' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                    <LayoutGrid size={18} /> Inventory
+        <div className="flex justify-center mb-8 w-full overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide">
+            <div className="bg-white p-1.5 sm:p-2 rounded-full sm:rounded-[1.5rem] shadow-sm flex gap-1 sm:gap-2 border border-slate-200/60 min-w-max">
+                <button onClick={() => setActiveTab('inventory')} className={`flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3.5 rounded-full sm:rounded-xl text-xs sm:text-sm font-bold transition-all ${activeTab === 'inventory' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                    <LayoutGrid size={16} /> Inventory
                 </button>
-                <button onClick={() => setActiveTab('feed')} className={`flex items-center gap-2 px-6 py-3.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'feed' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                    <Rss size={18} /> Updates Feed
+                <button onClick={() => setActiveTab('feed')} className={`flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3.5 rounded-full sm:rounded-xl text-xs sm:text-sm font-bold transition-all ${activeTab === 'feed' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                    <Rss size={16} /> Updates Feed
                 </button>
             </div>
         </div>
 
         {/* CONTENT AREA */}
         {activeTab === 'inventory' && (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="animate-in fade-in duration-500">
                 
                 {/* Search & Filter Controls */}
-                <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center mb-6 gap-4">
-                    <h2 className="text-2xl font-black text-slate-800 tracking-tight px-1 hidden md:block">Featured Catalog</h2>
+                <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center mb-6 gap-3 sm:gap-4">
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight px-1 hidden lg:block">Featured Catalog</h2>
                     
-                    <div className="flex items-center gap-2 flex-1 md:flex-none">
-                        <div className="relative flex-1 md:w-72">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 lg:flex-none">
+                        <div className="relative flex-1 md:w-80">
                             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                             <input 
                                 type="text" 
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 placeholder="Search products..." 
-                                className="w-full bg-white border border-slate-200/60 py-3.5 pl-11 pr-4 rounded-2xl shadow-sm text-sm text-slate-700 font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all" 
+                                className="w-full bg-white border border-slate-200/60 py-3 sm:py-3.5 pl-11 pr-4 rounded-xl sm:rounded-2xl shadow-sm text-sm text-slate-700 font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all" 
                             />
                         </div>
 
                         <button 
                             onClick={() => setShowFilters(!showFilters)} 
-                            className={`px-5 py-3.5 rounded-2xl flex items-center gap-2 text-sm font-bold transition-all shadow-sm ${showFilters ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/60'}`}
+                            className={`px-4 sm:px-5 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl flex justify-center items-center gap-2 text-sm font-bold transition-all shadow-sm ${showFilters ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/60'}`}
                         >
-                            <Filter size={18} /> <span className="hidden sm:inline">Filters</span> {(selectedTypes.length > 0 || minPrice || maxPrice) && <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>}
+                            <Filter size={16} /> <span>Filters</span> {(selectedTypes.length > 0 || minPrice || maxPrice) && <span className="w-2 h-2 rounded-full bg-blue-500 ml-1"></span>}
                         </button>
                     </div>
                 </div>
 
-                {/* Filter Panel (Material You) */}
+                {/* Filter Panel */}
                 {showFilters && (
-                    <div className="bg-white p-6 sm:p-8 rounded-[2rem] shadow-sm border border-slate-200/60 mb-8 animate-in slide-in-from-top-4 duration-300">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="bg-white p-5 sm:p-8 rounded-2xl sm:rounded-[2rem] shadow-sm border border-slate-200/60 mb-8 animate-in slide-in-from-top-2 duration-200">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
                             <div className="flex flex-col sm:flex-row gap-4">
                                 <div className="flex-1">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2 mb-2 block">Min Price (₹)</label>
-                                    <input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="0" className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all" />
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Min Price (₹)</label>
+                                    <input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="0" className="w-full bg-slate-50 hover:bg-slate-100/50 p-3 sm:p-4 rounded-xl sm:rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all" />
                                 </div>
                                 <div className="flex-1">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2 mb-2 block">Max Price (₹)</label>
-                                    <input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="Any" className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all" />
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Max Price (₹)</label>
+                                    <input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="Any" className="w-full bg-slate-50 hover:bg-slate-100/50 p-3 sm:p-4 rounded-xl sm:rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all" />
                                 </div>
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2 mb-2 block">Property Type</label>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Property Type</label>
                                 <div className="flex gap-2 flex-wrap">
                                     {PROPERTY_TYPES.map(type => {
                                         const isSelected = selectedTypes.includes(type)
                                         return (
-                                            <button key={type} onClick={() => toggleType(type)} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${isSelected ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/60'}`}>
+                                            <button key={type} onClick={() => toggleType(type)} className={`px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 sm:gap-2 ${isSelected ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/60'}`}>
                                                 {type} {isSelected && <Check size={14} />}
                                             </button>
                                         )
@@ -425,7 +422,7 @@ export default function SharedCataloguePage() {
                         </div>
                         {(minPrice || maxPrice || selectedTypes.length > 0) && (
                             <div className="mt-6 flex justify-end pt-4 border-t border-slate-100">
-                                <button onClick={() => { setMinPrice(''); setMaxPrice(''); setSelectedTypes([]) }} className="text-sm font-bold text-red-500 hover:bg-red-50 px-5 py-2.5 rounded-xl transition-colors">Clear All Filters</button>
+                                <button onClick={() => { setMinPrice(''); setMaxPrice(''); setSelectedTypes([]) }} className="text-xs sm:text-sm font-bold text-red-500 hover:bg-red-50 px-4 py-2 rounded-xl transition-colors">Clear Filters</button>
                             </div>
                         )}
                     </div>
@@ -433,73 +430,72 @@ export default function SharedCataloguePage() {
                 
                 {/* Properties Grid */}
                 {filteredProperties.length === 0 ? (
-                    <div className="text-center py-20 bg-white rounded-[3rem] shadow-sm border border-slate-200/60 border-dashed">
-                        <div className="w-20 h-20 bg-slate-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4">
-                            <LayoutGrid size={32} className="text-slate-300" />
+                    <div className="text-center py-16 sm:py-20 bg-white rounded-2xl sm:rounded-[3rem] shadow-sm border border-slate-200/60 border-dashed mx-4 sm:mx-0">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4">
+                            <LayoutGrid size={28} className="text-slate-300" />
                         </div>
-                        <h3 className="text-xl font-bold text-slate-700">No properties found</h3>
-                        <p className="text-slate-400 mt-2 font-medium">Try adjusting your filters to see more results.</p>
+                        <h3 className="text-lg sm:text-xl font-bold text-slate-700">No properties found</h3>
+                        <p className="text-slate-400 mt-2 text-sm sm:text-base font-medium px-4">Try adjusting your filters to see more results.</p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
                         {filteredProperties.map((prop) => {
                             const renderType = prop.property_type === '2 BHK' ? '2 RK' : prop.property_type;
                             return (
                                 <div 
                                     key={prop.id} 
                                     onClick={() => openModal(prop)}
-                                    className="bg-white rounded-[2rem] p-3 shadow-sm hover:shadow-xl transition-all duration-300 group border border-slate-200/60 cursor-pointer flex flex-col h-full hover:-translate-y-1"
+                                    className="bg-white rounded-[1.5rem] sm:rounded-[2rem] p-2 sm:p-3 shadow-sm hover:shadow-xl transition-all duration-300 group border border-slate-200/60 cursor-pointer flex flex-col h-full sm:hover:-translate-y-1"
                                 >
-                                    <div className="relative h-64 w-full rounded-[1.5rem] overflow-hidden bg-slate-100 mb-4 shrink-0">
+                                    {/* Enforcing standard aspect ratio prevents layout breaking */}
+                                    <div className="relative aspect-[4/3] w-full rounded-[1rem] sm:rounded-[1.5rem] overflow-hidden bg-slate-100 mb-3 sm:mb-4 shrink-0">
                                         <img src={prop.image_url} alt="Property" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                                         
-                                        {/* Floating Price */}
                                         {prop.price && (
-                                            <div className="absolute top-4 left-4">
-                                                <span className="px-4 py-2 rounded-xl text-sm font-black shadow-lg bg-white/95 text-slate-900 backdrop-blur-md">
+                                            <div className="absolute top-3 left-3 sm:top-4 sm:left-4">
+                                                <span className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm font-black shadow-lg bg-white/95 text-slate-900 backdrop-blur-md">
                                                     {prop.price}
                                                 </span>
                                             </div>
                                         )}
                                         
-                                        {/* Floating Type */}
                                         {renderType && (
-                                            <div className="absolute top-4 right-4">
-                                                <span className="px-4 py-2 rounded-xl text-xs font-bold shadow-lg bg-black/70 text-white backdrop-blur-md">
+                                            <div className="absolute top-3 right-3 sm:top-4 sm:right-4">
+                                                <span className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold shadow-lg bg-black/70 text-white backdrop-blur-md">
                                                     {renderType}
                                                 </span>
                                             </div>
                                         )}
 
                                         {prop.images && prop.images.length > 1 && (
-                                            <div className="absolute bottom-4 right-4 bg-white/90 text-slate-900 px-3 py-1.5 rounded-xl text-xs font-bold shadow-md flex items-center gap-1.5 backdrop-blur-md">
-                                                <ImageIcon size={14} /> +{prop.images.length - 1}
+                                            <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 bg-white/90 text-slate-900 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold shadow-md flex items-center gap-1.5 backdrop-blur-md">
+                                                <ImageIcon size={12} className="sm:w-[14px] sm:h-[14px]" /> +{prop.images.length - 1}
                                             </div>
                                         )}
                                     </div>
                                     
-                                    <div className="px-3 pb-3 flex-1 flex flex-col">
-                                        <h3 className="text-xl font-black text-slate-900 tracking-tight leading-tight mb-2 line-clamp-1 group-hover:text-blue-600 transition-colors">{prop.title}</h3>
-                                        <div className="flex items-start gap-2 text-slate-500 mb-6 flex-1">
-                                            <MapPin size={16} className="mt-0.5 flex-shrink-0 text-blue-500" />
-                                            <span className="text-sm font-medium line-clamp-2 leading-snug">{prop.address}</span>
+                                    <div className="px-2 sm:px-3 pb-2 sm:pb-3 flex-1 flex flex-col">
+                                        <h3 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-tight mb-2 line-clamp-1 group-hover:text-blue-600 transition-colors">{prop.title}</h3>
+                                        <div className="flex items-start gap-1.5 sm:gap-2 text-slate-500 mb-4 sm:mb-6 flex-1">
+                                            <MapPin size={14} className="mt-0.5 sm:mt-1 flex-shrink-0 text-blue-500 sm:w-4 sm:h-4" />
+                                            <span className="text-xs sm:text-sm font-medium line-clamp-2 leading-snug">{prop.address}</span>
                                         </div>
                                         
-                                        <div className="flex gap-2 w-full pt-4 border-t border-slate-100 shrink-0">
+                                        <div className="flex gap-2 w-full pt-3 sm:pt-4 border-t border-slate-100 shrink-0">
                                             <button 
                                                 onClick={(e) => handleWhatsApp(e, prop.title)} 
-                                                className="flex-1 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white py-3.5 rounded-[1.25rem] text-sm font-bold active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                                                className="flex-1 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white py-2.5 sm:py-3.5 rounded-xl sm:rounded-[1.25rem] text-xs sm:text-sm font-bold active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 sm:gap-2"
                                             >
-                                                <WhatsAppIcon size={18} /> Inquire
+                                                <WhatsAppIcon size={16} className="sm:w-[18px] sm:h-[18px]" /> Inquire
                                             </button>
                                             
                                             <button 
                                                 onClick={(e) => handleShare(e, prop)}
                                                 disabled={sharingId === prop.id}
-                                                className="w-14 flex items-center justify-center bg-slate-50 text-slate-600 rounded-[1.25rem] hover:bg-slate-200 active:scale-[0.98] transition-all disabled:opacity-50 border border-slate-200/60"
+                                                className="w-10 sm:w-14 flex items-center justify-center bg-slate-50 text-slate-600 rounded-xl sm:rounded-[1.25rem] hover:bg-slate-200 active:scale-[0.98] transition-all disabled:opacity-50 border border-slate-200/60"
                                                 title="Share Details"
                                             >
-                                                {sharingId === prop.id ? <Loader2 size={18} className="animate-spin text-blue-500" /> : <Share2 size={18} />}
+                                                {sharingId === prop.id ? <Loader2 size={16} className="animate-spin text-blue-500 sm:w-[18px] sm:h-[18px]" /> : <Share2 size={16} className="sm:w-[18px] sm:h-[18px]" />}
                                             </button>
                                         </div>
                                     </div>
@@ -513,40 +509,40 @@ export default function SharedCataloguePage() {
 
         {/* FEED TAB */}
         {activeTab === 'feed' && (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <h2 className="text-2xl font-black text-slate-800 tracking-tight px-2 mb-6 text-center md:text-left">Market Updates & Insights</h2>
+            <div className="animate-in fade-in duration-500">
+                <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight px-2 mb-6 text-center sm:text-left">Market Updates & Insights</h2>
                 
                 {posts.length === 0 ? (
-                    <div className="text-center py-20 bg-white rounded-[3rem] shadow-sm border border-slate-200/60 border-dashed">
-                        <div className="w-20 h-20 bg-slate-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4">
-                            <Rss size={32} className="text-slate-300" />
+                    <div className="text-center py-16 sm:py-20 bg-white rounded-2xl sm:rounded-[3rem] shadow-sm border border-slate-200/60 border-dashed mx-4 sm:mx-0">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4">
+                            <Rss size={28} className="text-slate-300" />
                         </div>
-                        <h3 className="text-xl font-bold text-slate-700">No updates yet</h3>
-                        <p className="text-slate-400 mt-2 font-medium">Check back soon for the latest market insights.</p>
+                        <h3 className="text-lg sm:text-xl font-bold text-slate-700">No updates yet</h3>
+                        <p className="text-slate-400 mt-2 text-sm sm:text-base font-medium">Check back soon for the latest market insights.</p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
                         {posts.map((post) => (
-                            <div key={post.id} onClick={() => setSelectedPost(post)} className="bg-white p-4 rounded-[2rem] shadow-sm hover:shadow-xl cursor-pointer transition-all duration-300 group flex flex-col h-full border border-slate-200/60 hover:-translate-y-1">
+                            <div key={post.id} onClick={() => setSelectedPost(post)} className="bg-white p-3 sm:p-4 rounded-2xl sm:rounded-[2rem] shadow-sm hover:shadow-xl cursor-pointer transition-all duration-300 group flex flex-col h-full border border-slate-200/60 sm:hover:-translate-y-1">
                                 {post.image_url && (
-                                    <div className="h-56 w-full rounded-[1.5rem] overflow-hidden mb-5 bg-slate-100 relative shrink-0">
+                                    <div className="aspect-video sm:h-56 w-full rounded-xl sm:rounded-[1.5rem] overflow-hidden mb-4 sm:mb-5 bg-slate-100 relative shrink-0">
                                         <img src={post.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Feed cover" />
                                         <div className="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors"></div>
                                     </div>
                                 )}
-                                <div className="px-2 pb-2 flex-1 flex flex-col">
-                                    <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-2.5">{new Date(post.created_at).toLocaleDateString()}</p>
-                                    <h3 className="text-xl font-black text-slate-900 leading-snug mb-3 line-clamp-2 group-hover:text-blue-600 transition-colors">{post.title}</h3>
-                                    <p className="text-sm text-slate-500 font-medium line-clamp-3 leading-relaxed flex-1">{post.excerpt}</p>
+                                <div className="px-2 pb-1 sm:pb-2 flex-1 flex flex-col">
+                                    <p className="text-[9px] sm:text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-2 sm:mb-2.5">{new Date(post.created_at).toLocaleDateString()}</p>
+                                    <h3 className="text-lg sm:text-xl font-black text-slate-900 leading-snug mb-2 sm:mb-3 line-clamp-2 group-hover:text-blue-600 transition-colors">{post.title}</h3>
+                                    <p className="text-xs sm:text-sm text-slate-500 font-medium line-clamp-3 leading-relaxed flex-1">{post.excerpt}</p>
                                     
-                                    <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-100 shrink-0">
-                                        <div className="flex gap-2 overflow-hidden">
+                                    <div className="flex items-center justify-between mt-4 sm:mt-6 pt-3 sm:pt-4 border-t border-slate-100 shrink-0">
+                                        <div className="flex gap-1.5 sm:gap-2 overflow-hidden flex-wrap">
                                             {post.tags?.slice(0,2).map(tag => (
-                                                <span key={tag} className="text-[10px] font-bold bg-slate-50 border border-slate-200 text-slate-500 px-3 py-1.5 rounded-lg whitespace-nowrap">#{tag}</span>
+                                                <span key={tag} className="text-[9px] sm:text-[10px] font-bold bg-slate-50 border border-slate-200 text-slate-500 px-2 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg whitespace-nowrap">#{tag}</span>
                                             ))}
                                         </div>
-                                        <div className="w-10 h-10 rounded-[1rem] bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:border-blue-600 group-hover:text-white transition-all flex-shrink-0 shadow-sm">
-                                            <ArrowUpRight size={18} />
+                                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-[1rem] bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:border-blue-600 group-hover:text-white transition-all flex-shrink-0 shadow-sm">
+                                            <ArrowUpRight size={16} className="sm:w-[18px] sm:h-[18px]" />
                                         </div>
                                     </div>
                                 </div>
@@ -559,25 +555,25 @@ export default function SharedCataloguePage() {
 
       </div>
 
-      {/* 4. PRODUCT DETAILS MODAL (Responsive Bottom Sheet / Centered Card) */}
+      {/* 4. PRODUCT DETAILS MODAL (Strictly contained flex layout for mobile perfection) */}
       {selectedProperty && (
-          <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-300">
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
               <div 
-                  className="bg-white w-full max-w-3xl rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 max-h-[95vh] sm:max-h-[90vh] flex flex-col overflow-hidden"
+                  className="bg-white w-full max-w-3xl rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl flex flex-col h-[90vh] sm:h-auto sm:max-h-[90vh] overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300"
               >
-                  {/* Modal Header */}
-                  <div className="flex justify-between items-center p-5 sm:p-6 border-b border-slate-100 bg-white/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
-                      <h2 className="text-lg font-bold text-slate-900 line-clamp-1 pr-4">{selectedProperty.title}</h2>
-                      <button onClick={() => setSelectedProperty(null)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors shrink-0">
+                  {/* Modal Header (Fixed at top) */}
+                  <div className="flex justify-between items-center p-4 sm:p-6 border-b border-slate-100 bg-white z-10 shrink-0">
+                      <h2 className="text-base sm:text-lg font-bold text-slate-900 truncate pr-4">{selectedProperty.title}</h2>
+                      <button onClick={() => setSelectedProperty(null)} className="bg-slate-100 p-2 sm:p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors shrink-0">
                           <X size={18} />
                       </button>
                   </div>
 
                   {/* Modal Scrollable Body */}
-                  <div className="overflow-y-auto custom-scrollbar flex-1 pb-6">
+                  <div className="flex-1 overflow-y-auto w-full custom-scrollbar">
                       
-                      {/* Image Carousel */}
-                      <div className="relative w-full aspect-square sm:aspect-video bg-slate-100 group">
+                      {/* Image Carousel (Square on mobile, 4:3 on desktop to prevent huge scrolling) */}
+                      <div className="relative w-full aspect-square sm:aspect-[4/3] bg-slate-100 group shrink-0">
                           {(() => {
                               const images = selectedProperty.images?.length > 0 ? selectedProperty.images : [selectedProperty.image_url];
                               return (
@@ -587,15 +583,15 @@ export default function SharedCataloguePage() {
                                       {images.length > 1 && (
                                           <>
                                               {/* Image Counter */}
-                                              <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-md text-white px-4 py-1.5 rounded-full text-xs font-bold tracking-widest shadow-sm border border-white/20">
+                                              <div className="absolute top-3 right-3 sm:top-4 sm:right-4 bg-black/50 backdrop-blur-md text-white px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-bold tracking-widest shadow-sm border border-white/20">
                                                   {currentImageIndex + 1} / {images.length}
                                               </div>
                                               {/* Navigation Arrows */}
-                                              <button onClick={handlePrevImage} className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur-md p-3 rounded-full shadow-lg text-slate-800 hover:bg-white transition-all opacity-0 sm:opacity-100 sm:group-hover:opacity-100 active:scale-95 border border-white/40">
-                                                  <ChevronLeft size={24} />
+                                              <button onClick={handlePrevImage} className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur-md p-2 sm:p-3 rounded-full shadow-lg text-slate-800 hover:bg-white transition-all sm:opacity-0 sm:group-hover:opacity-100 active:scale-95 border border-white/40">
+                                                  <ChevronLeft size={20} className="sm:w-6 sm:h-6" />
                                               </button>
-                                              <button onClick={handleNextImage} className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur-md p-3 rounded-full shadow-lg text-slate-800 hover:bg-white transition-all opacity-0 sm:opacity-100 sm:group-hover:opacity-100 active:scale-95 border border-white/40">
-                                                  <ChevronRight size={24} />
+                                              <button onClick={handleNextImage} className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur-md p-2 sm:p-3 rounded-full shadow-lg text-slate-800 hover:bg-white transition-all sm:opacity-0 sm:group-hover:opacity-100 active:scale-95 border border-white/40">
+                                                  <ChevronRight size={20} className="sm:w-6 sm:h-6" />
                                               </button>
                                           </>
                                       )}
@@ -605,46 +601,46 @@ export default function SharedCataloguePage() {
                       </div>
 
                       {/* Details Area */}
-                      <div className="p-6 sm:p-10 space-y-6 max-w-2xl mx-auto w-full">
+                      <div className="p-5 sm:p-10 space-y-5 sm:space-y-6 max-w-2xl mx-auto w-full pb-8">
                           <div>
                               {selectedProperty.price && (
-                                  <div className="inline-block bg-green-50 text-green-700 px-4 py-2 rounded-xl font-black text-xl mb-4 border border-green-200/60 shadow-sm">
+                                  <div className="inline-block bg-green-50 text-green-700 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl font-black text-lg sm:text-xl mb-3 sm:mb-4 border border-green-200/60 shadow-sm">
                                       {selectedProperty.price}
                                   </div>
                               )}
-                              <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 leading-tight mb-6 tracking-tight">
+                              <h1 className="text-2xl sm:text-4xl font-extrabold text-slate-900 leading-tight mb-4 sm:mb-6 tracking-tight">
                                   {selectedProperty.title}
                               </h1>
                               
-                              <p className="text-slate-600 text-base leading-relaxed whitespace-pre-line font-medium bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
+                              <p className="text-slate-600 text-sm sm:text-base leading-relaxed whitespace-pre-line font-medium bg-slate-50 p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] border border-slate-100">
                                   {selectedProperty.description || "Contact us for more details about this product."}
                               </p>
                           </div>
 
                           {selectedProperty.address && (
-                              <div className="flex items-center gap-4 bg-blue-50/50 p-5 rounded-[1.5rem] border border-blue-100">
-                                  <div className="bg-white p-3 rounded-full shadow-sm">
-                                      <MapPin className="text-blue-500 shrink-0" size={24} />
+                              <div className="flex items-center gap-3 sm:gap-4 bg-blue-50/50 p-4 sm:p-5 rounded-2xl sm:rounded-[1.5rem] border border-blue-100">
+                                  <div className="bg-white p-2 sm:p-3 rounded-full shadow-sm shrink-0">
+                                      <MapPin className="text-blue-500 w-5 h-5 sm:w-6 sm:h-6" />
                                   </div>
-                                  <span className="text-base font-bold text-slate-800">{selectedProperty.address}</span>
+                                  <span className="text-sm sm:text-base font-bold text-slate-800 leading-snug">{selectedProperty.address}</span>
                               </div>
                           )}
                       </div>
                   </div>
 
-                  {/* Sticky Footer CTA */}
-                  <div className="p-5 sm:p-6 bg-white border-t border-slate-100 shrink-0 flex gap-3 sm:gap-4 shadow-[0_-8px_30px_rgba(0,0,0,0.04)]">
+                  {/* Sticky Footer CTA (Fixed at bottom so it's always accessible on mobile) */}
+                  <div className="p-4 sm:p-6 bg-white border-t border-slate-100 shrink-0 flex gap-3 sm:gap-4 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] pb-safe">
                       <button 
                           onClick={handleCall}
-                          className="flex-1 bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm sm:text-base font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 transition-all active:scale-[0.98]"
+                          className="flex-1 bg-slate-900 hover:bg-slate-800 text-white py-3 sm:py-4 rounded-xl sm:rounded-[1.5rem] text-sm sm:text-base font-bold flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-slate-900/20 transition-all active:scale-[0.98]"
                       >
-                          <Phone size={20} fill="white" /> Call Now
+                          <Phone size={18} fill="white" className="sm:w-5 sm:h-5" /> <span className="hidden xs:inline">Call Now</span><span className="xs:hidden">Call</span>
                       </button>
                       <button 
                           onClick={(e) => handleWhatsApp(e, selectedProperty.title)}
-                          className="flex-1 bg-[#25D366] hover:bg-[#1EBE57] text-white py-4 rounded-[1.5rem] text-sm sm:text-base font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#25D366]/20 transition-all active:scale-[0.98]"
+                          className="flex-1 bg-[#25D366] hover:bg-[#1EBE57] text-white py-3 sm:py-4 rounded-xl sm:rounded-[1.5rem] text-sm sm:text-base font-bold flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-[#25D366]/20 transition-all active:scale-[0.98]"
                       >
-                          <WhatsAppIcon size={20} /> WhatsApp
+                          <WhatsAppIcon size={18} className="sm:w-5 sm:h-5" /> WhatsApp
                       </button>
                   </div>
 
@@ -657,39 +653,39 @@ export default function SharedCataloguePage() {
         <div className="fixed inset-0 z-[100] bg-[#F4F7FC] animate-in slide-in-from-bottom-full duration-300 overflow-y-auto">
             <div className="relative min-h-screen pb-20">
                 {selectedPost.image_url && (
-                    <div className="h-72 md:h-96 w-full relative">
+                    <div className="h-64 sm:h-72 md:h-96 w-full relative shrink-0">
                         <img src={selectedPost.image_url} className="w-full h-full object-cover" alt="Cover" />
                         <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/20 to-[#F4F7FC]" />
                     </div>
                 )}
                 
-                <button onClick={() => setSelectedPost(null)} className="fixed top-6 right-6 md:top-10 md:right-10 bg-white/90 backdrop-blur-md text-slate-900 p-3.5 rounded-full hover:bg-white transition-all z-20 shadow-xl hover:scale-110">
-                    <X size={24} />
+                <button onClick={() => setSelectedPost(null)} className="fixed top-4 right-4 sm:top-6 sm:right-6 md:top-10 md:right-10 bg-white/90 backdrop-blur-md text-slate-900 p-2.5 sm:p-3.5 rounded-full hover:bg-white transition-all z-20 shadow-xl hover:scale-110 active:scale-95">
+                    <X size={20} className="sm:w-6 sm:h-6" />
                 </button>
                 
-                <div className="max-w-4xl mx-auto px-4 sm:px-6 relative z-10 -mt-20 md:-mt-32">
-                    <div className="bg-white rounded-[2.5rem] md:rounded-[3rem] p-8 md:p-16 shadow-xl border border-slate-100">
-                        <div className="flex gap-2 mb-6 flex-wrap">
+                <div className="max-w-4xl mx-auto px-4 sm:px-6 relative z-10 -mt-16 sm:-mt-20 md:-mt-32">
+                    <div className="bg-white rounded-2xl sm:rounded-[2.5rem] md:rounded-[3rem] p-6 sm:p-8 md:p-16 shadow-xl border border-slate-100">
+                        <div className="flex gap-2 mb-4 sm:mb-6 flex-wrap">
                             {selectedPost.tags?.map(tag => (
-                                <span key={tag} className="text-xs font-bold bg-blue-50 border border-blue-100 text-blue-600 px-4 py-1.5 rounded-lg uppercase tracking-wider">#{tag}</span>
+                                <span key={tag} className="text-[10px] sm:text-xs font-bold bg-blue-50 border border-blue-100 text-blue-600 px-3 sm:px-4 py-1 sm:py-1.5 rounded-md sm:rounded-lg uppercase tracking-wider">#{tag}</span>
                             ))}
                         </div>
                         
-                        <h1 className="text-3xl md:text-5xl font-black text-slate-900 mb-8 leading-tight tracking-tight">{selectedPost.title}</h1>
+                        <h1 className="text-2xl sm:text-3xl md:text-5xl font-black text-slate-900 mb-6 sm:mb-8 leading-tight tracking-tight">{selectedPost.title}</h1>
                         
-                        <div className="flex items-center gap-4 mb-10 pb-10 border-b border-slate-100">
+                        <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-10 pb-6 sm:pb-10 border-b border-slate-100">
                             {profile?.logo_url ? (
-                                <img src={profile.logo_url} className="w-14 h-14 rounded-[1.25rem] object-cover shadow-sm border border-slate-100" alt="Author" />
+                                <img src={profile.logo_url} className="w-10 h-10 sm:w-14 sm:h-14 rounded-lg sm:rounded-[1.25rem] object-cover shadow-sm border border-slate-100 shrink-0" alt="Author" />
                             ) : (
-                                <div className="w-14 h-14 rounded-[1.25rem] bg-blue-50 border border-blue-100 flex items-center justify-center font-black text-xl text-blue-500">{profile?.business_name?.[0] || 'A'}</div>
+                                <div className="w-10 h-10 sm:w-14 sm:h-14 rounded-lg sm:rounded-[1.25rem] bg-blue-50 border border-blue-100 flex items-center justify-center font-black text-lg sm:text-xl text-blue-500 shrink-0">{profile?.business_name?.[0] || 'A'}</div>
                             )}
-                            <div>
-                                <p className="text-base font-extrabold text-slate-900">{profile?.business_name || 'Market Update'}</p>
-                                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-0.5">{new Date(selectedPost.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                            <div className="min-w-0">
+                                <p className="text-sm sm:text-base font-extrabold text-slate-900 truncate">{profile?.business_name || 'Market Update'}</p>
+                                <p className="text-[10px] sm:text-xs text-slate-400 font-bold uppercase tracking-widest mt-0.5">{new Date(selectedPost.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
                             </div>
                         </div>
 
-                        <div className="prose prose-lg prose-slate max-w-none prose-headings:font-black prose-headings:tracking-tight prose-p:leading-relaxed prose-p:font-medium prose-a:text-blue-600 prose-img:rounded-[2rem] prose-img:shadow-sm">
+                        <div className="prose prose-sm sm:prose-base lg:prose-lg prose-slate max-w-none prose-headings:font-black prose-headings:tracking-tight prose-p:leading-relaxed prose-p:font-medium prose-a:text-blue-600 prose-img:rounded-xl sm:prose-img:rounded-[2rem] prose-img:shadow-sm">
                             <div dangerouslySetInnerHTML={{ __html: selectedPost.content.replace(/\n/g, '<br/>') }} />
                         </div>
                     </div>

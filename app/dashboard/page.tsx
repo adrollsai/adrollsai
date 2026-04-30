@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle } from 'lucide-react'
+import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner' 
@@ -65,6 +65,7 @@ export default function ProductsPage() {
   
   // UI State
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   
@@ -73,12 +74,19 @@ export default function ProductsPage() {
   const [propertyAssets, setPropertyAssets] = useState<Asset[]>([])
   const [isLoadingAssets, setIsLoadingAssets] = useState(false)
   
-  // Form State
+  // Add Form State
   const [newProp, setNewProp] = useState({ title: '', description: '' })
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
+
+  // Edit Form State
+  const [editProp, setEditProp] = useState<Property | null>(null)
+  const [editFiles, setEditFiles] = useState<File[]>([])
+  const [editPreviews, setEditPreviews] = useState<string[]>([])
+  const [existingImages, setExistingImages] = useState<string[]>([])
   
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const editFileInputRef = useRef<HTMLInputElement>(null)
 
   // 1. SAFE FETCH WITH LOCAL CACHING
   const fetchProperties = async (force = false) => {
@@ -178,6 +186,88 @@ export default function ProductsPage() {
       setSelectedFiles(prev => [...prev, ...newFiles])
       const newPreviews = newFiles.map(file => URL.createObjectURL(file))
       setPreviews(prev => [...prev, ...newPreviews])
+    }
+  }
+
+  const handleEditFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const newFiles = Array.from(e.target.files)
+      setEditFiles(prev => [...prev, ...newFiles])
+      const newPreviews = newFiles.map(file => URL.createObjectURL(file))
+      setEditPreviews(prev => [...prev, ...newPreviews])
+    }
+  }
+
+  const openEditModal = (prop: Property) => {
+    setEditProp({ ...prop }) // clone object
+    // Initialize existing images
+    setExistingImages(prop.images && prop.images.length > 0 ? prop.images : (prop.image_url ? [prop.image_url] : []))
+    setEditFiles([])
+    setEditPreviews([])
+    setShowEditModal(true)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editProp || !editProp.title) {
+        toast.error("Please enter a Product/Service Name.")
+        return
+    }
+    setIsSubmitting(true)
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error("Not authenticated")
+
+      const uploadedUrls: string[] = []
+
+      // Upload any *new* files selected
+      if (editFiles.length > 0) {
+        const uploadPromises = editFiles.map(async (file) => {
+          const fileExt = file.name.split('.').pop()
+          const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+         
+          const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, file)
+          if (uploadError) throw uploadError
+          const { data: { publicUrl } } = supabase.storage.from('properties').getPublicUrl(fileName)
+          return publicUrl
+        })
+        const results = await Promise.all(uploadPromises)
+        uploadedUrls.push(...results)
+      }
+
+      // Combine existing un-deleted images with newly uploaded images
+      const finalImages = [...existingImages, ...uploadedUrls]
+      const finalMainImage = finalImages.length > 0 ? finalImages[0] : `https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(editProp.title)}`
+
+      const { error } = await supabase.from('properties').update({
+          title: editProp.title, 
+          description: editProp.description, 
+          image_url: finalMainImage, 
+          images: finalImages
+      }).eq('id', editProp.id)
+
+      if (error) throw error
+
+      // Update Local State Optimistically
+      const updatedProps = properties.map(p => p.id === editProp.id ? {
+          ...p,
+          title: editProp.title,
+          description: editProp.description,
+          image_url: finalMainImage,
+          images: finalImages
+      } : p)
+      
+      setProperties(updatedProps)
+      localStorage.setItem(`inventory_cache_${user.id}`, JSON.stringify(updatedProps))
+      
+      toast.success('Product updated successfully!')
+      setShowEditModal(false)
+      setEditProp(null)
+
+    } catch (error: any) {
+      toast.error('Error updating product', { description: error.message })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -467,15 +557,24 @@ export default function ProductsPage() {
               className="bg-white rounded-[1.5rem] shadow-sm hover:shadow-xl border border-slate-200/60 transition-all cursor-pointer group hover:-translate-y-1 flex flex-col overflow-hidden relative"
             >
               
-              {/* DELETE BUTTON (Admin Only, visible on hover or always on mobile) */}
+              {/* ADMIN CONTROLS (Edit & Delete) */}
               {role === 'admin' && (
-                  <button 
-                      onClick={(e) => { e.stopPropagation(); setPropertyToDelete(prop); }}
-                      className="absolute top-3 right-3 z-10 p-2 bg-white/80 hover:bg-red-50 text-slate-400 hover:text-red-500 backdrop-blur-md rounded-full opacity-100 sm:opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-sm border border-slate-200/50"
-                      title="Delete Product"
-                  >
-                      <Trash2 size={16} />
-                  </button>
+                  <div className="absolute top-3 right-3 z-10 flex gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-all duration-300">
+                      <button 
+                          onClick={(e) => { e.stopPropagation(); openEditModal(prop); }}
+                          className="p-2 bg-white/80 hover:bg-blue-50 text-slate-400 hover:text-blue-600 backdrop-blur-md rounded-full shadow-sm border border-slate-200/50"
+                          title="Edit Product"
+                      >
+                          <Pencil size={16} />
+                      </button>
+                      <button 
+                          onClick={(e) => { e.stopPropagation(); setPropertyToDelete(prop); }}
+                          className="p-2 bg-white/80 hover:bg-red-50 text-slate-400 hover:text-red-500 backdrop-blur-md rounded-full shadow-sm border border-slate-200/50"
+                          title="Delete Product"
+                      >
+                          <Trash2 size={16} />
+                      </button>
+                  </div>
               )}
 
               <div className="relative h-56 w-full bg-slate-100 overflow-hidden">
@@ -591,7 +690,18 @@ export default function ProductsPage() {
               {previews.length > 0 && (
                 <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                   {previews.map((src, i) => (
-                    <img key={i} src={src} className="w-20 h-20 rounded-xl object-cover border border-slate-200 flex-shrink-0 shadow-sm" alt="Preview" />
+                    <div key={i} className="relative flex-shrink-0 group">
+                       <img src={src} className="w-20 h-20 rounded-xl object-cover border border-slate-200 shadow-sm" alt="Preview" />
+                       <button 
+                           onClick={() => {
+                               setPreviews(prev => prev.filter((_, idx) => idx !== i));
+                               setSelectedFiles(prev => prev.filter((_, idx) => idx !== i));
+                           }} 
+                           className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                       >
+                           <X size={12}/>
+                       </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -626,8 +736,86 @@ export default function ProductsPage() {
         </div>
       )}
 
+      {/* EDIT MODAL */}
+      {role === 'admin' && showEditModal && editProp && (
+        <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-extrabold text-slate-900">Edit Product</h2>
+              <button onClick={() => setShowEditModal(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button>
+            </div>
+ 
+            <div className="space-y-5">
+              <div onClick={() => editFileInputRef.current?.click()} className="w-full h-44 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50/50 hover:border-blue-400 transition-colors relative overflow-hidden group">
+                  <ImageIcon size={36} className="text-slate-400 mb-3 group-hover:scale-110 group-hover:text-blue-500 transition-transform"/>
+                  <span className="text-sm font-bold text-slate-500 group-hover:text-blue-600">Add More Photos</span>
+                  <input type="file" multiple ref={editFileInputRef} onChange={handleEditFileSelect} accept="image/*" className="hidden" />
+              </div>
+              
+              {/* Display both existing and new preview images */}
+              {(existingImages.length > 0 || editPreviews.length > 0) && (
+                <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                  {/* Existing Saved Images */}
+                  {existingImages.map((src, i) => (
+                    <div key={`exist-${i}`} className="relative flex-shrink-0 group">
+                       <img src={src} className="w-20 h-20 rounded-xl object-cover border border-slate-200 shadow-sm" alt="Saved" />
+                       <button 
+                           onClick={() => setExistingImages(prev => prev.filter((_, idx) => idx !== i))} 
+                           className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                           title="Remove Saved Image"
+                       >
+                           <X size={12}/>
+                       </button>
+                    </div>
+                  ))}
+                  {/* Newly Added Images */}
+                  {editPreviews.map((src, i) => (
+                    <div key={`new-${i}`} className="relative flex-shrink-0 group">
+                       <img src={src} className="w-20 h-20 rounded-xl object-cover border-blue-400 border-2 shadow-sm" alt="New Preview" />
+                       <button 
+                           onClick={() => {
+                               setEditPreviews(prev => prev.filter((_, idx) => idx !== i));
+                               setEditFiles(prev => prev.filter((_, idx) => idx !== i));
+                           }} 
+                           className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                       >
+                           <X size={12}/>
+                       </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+               
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Title</label>
+                <input 
+                  type="text" 
+                  value={editProp.title} 
+                  onChange={(e) => setEditProp({...editProp, title: e.target.value})} 
+                  className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-bold text-slate-900 transition-all" 
+                />
+              </div>
+              
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Details</label>
+                <textarea 
+                  value={editProp.description || ''} 
+                  onChange={(e) => setEditProp({...editProp, description: e.target.value})} 
+                  className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all resize-none" 
+                  rows={4} 
+                />
+              </div>
+              
+              <button onClick={handleSaveEdit} disabled={isSubmitting} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-lg shadow-blue-600/20 active:scale-[0.98] transition-all flex items-center justify-center mt-4 disabled:opacity-50 disabled:scale-100">
+                {isSubmitting ? <><Loader2 size={18} className="animate-spin mr-2" /> Saving Changes...</> : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* VIEW MODAL WITH NEW TABS */}
-      {selectedProperty && !propertyToDelete && (
+      {selectedProperty && !propertyToDelete && !showEditModal && (
         <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm sm:p-6 animate-in fade-in duration-200">
            <div className="bg-slate-50 w-full sm:max-w-5xl h-[95vh] sm:h-[85vh] rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 border border-slate-100">
                
@@ -636,13 +824,22 @@ export default function ProductsPage() {
                    <h2 className="text-xl font-extrabold text-slate-900 truncate pr-4">{selectedProperty.title}</h2>
                    <div className="flex items-center gap-2">
                        {role === 'admin' && (
-                           <button 
-                               onClick={() => setPropertyToDelete(selectedProperty)}
-                               className="p-2.5 rounded-full text-red-500 bg-red-50 hover:bg-red-100 transition-colors shrink-0"
-                               title="Delete Product"
-                           >
-                               <Trash2 size={20} />
-                           </button>
+                           <>
+                               <button 
+                                   onClick={() => { openEditModal(selectedProperty); setSelectedProperty(null); }}
+                                   className="p-2.5 rounded-full text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors shrink-0"
+                                   title="Edit Product"
+                               >
+                                   <Pencil size={20} />
+                               </button>
+                               <button 
+                                   onClick={() => setPropertyToDelete(selectedProperty)}
+                                   className="p-2.5 rounded-full text-red-500 bg-red-50 hover:bg-red-100 transition-colors shrink-0"
+                                   title="Delete Product"
+                               >
+                                   <Trash2 size={20} />
+                               </button>
+                           </>
                        )}
                        <button onClick={() => setSelectedProperty(null)} className="bg-slate-100 p-2.5 rounded-full text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition-colors shrink-0">
                          <X size={20} />
