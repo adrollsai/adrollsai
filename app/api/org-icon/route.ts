@@ -12,31 +12,29 @@ export async function GET(request: NextRequest) {
 
   const rawHost = request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
   const host = rawHost.split(':')[0].toLowerCase(); 
-  const isLocal = host === 'localhost';
 
   const ADROLLS_LOGO_URL = "https://i.ibb.co/jvxK1B96/logo.png";
   const FALLBACK_FAVICON = new URL('/favicon.ico', request.url).toString();
 
-  const SYSTEM_HOSTS = ['adrolls.in', 'www.adrolls.in', 'app.adrolls.in', 'localhost'];
+  const SYSTEM_HOSTS = [
+    'adrolls.in', 'www.adrolls.in', 'app.adrolls.in',
+    'localhost'
+  ];
 
   try {
     const supabase = await createClient();
     let logoUrl = null;
 
-    if (SYSTEM_HOSTS.includes(host)) {
+    const isSystemHost = SYSTEM_HOSTS.includes(host);
+
+    if (isSystemHost) {
         logoUrl = ADROLLS_LOGO_URL;
     } else {
         const { data: profile } = await supabase.from('profiles').select('logo_url').eq('custom_domain', host).single();
         logoUrl = profile?.logo_url || ADROLLS_LOGO_URL;
     }
 
-    // Added a User-Agent header so external image hosts don't block the request
-    const imageResponse = await fetch(logoUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-    
+    const imageResponse = await fetch(logoUrl);
     if (!imageResponse.ok) {
         return NextResponse.redirect(ADROLLS_LOGO_URL);
     }
@@ -44,6 +42,7 @@ export async function GET(request: NextRequest) {
     const inputBuffer = await imageResponse.arrayBuffer();
     const buffer = Buffer.from(inputBuffer);
 
+    // Create a Rounded Mask (r=80 for a smooth premium look)
     const roundedCornersMask = Buffer.from(
         `<svg><rect x="0" y="0" width="512" height="512" rx="80" ry="80" /></svg>`
     );
@@ -57,22 +56,39 @@ export async function GET(request: NextRequest) {
         });
     } 
     else if (iconType === 'splash') {
+        // 1. First, resize the logo to 512x512 and apply rounded corners
         pipeline = pipeline
-            .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
-            .composite([{ input: roundedCornersMask, blend: 'dest-in' }])
-            .extend({
-                top: 1010, bottom: 1010, left: 329, right: 329,
-                background: { r: 255, g: 255, b: 255, alpha: 1 } 
+            .resize(512, 512, { 
+                fit: 'contain', 
+                background: { r: 255, g: 255, b: 255, alpha: 0 } 
             })
+            .composite([{
+                input: roundedCornersMask,
+                blend: 'dest-in'
+            }])
+            // 2. Add white padding to center it and make it look "small"
+            // Total height becomes 2532 (iOS standard), logo stays 512 in middle
+            .extend({
+                top: 1010,
+                bottom: 1010,
+                left: 329,
+                right: 329,
+                background: { r: 255, g: 255, b: 255, alpha: 1 } // FORCE WHITE BACKGROUND
+            })
+            // 3. Flatten ensures no transparency remains for the splash image
             .flatten({ background: { r: 255, g: 255, b: 255 } }); 
     }
     else {
+        // Standard PWA Icon (Rounded)
         pipeline = pipeline
-            .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
-            .composite([{ input: roundedCornersMask, blend: 'dest-in' }])
-            // Flattening the standard PWA icon onto a white background is crucial. 
-            // Transparent PNGs break Android's "maskable" splash screen requirements.
-            .flatten({ background: { r: 255, g: 255, b: 255 } });
+            .resize(512, 512, { 
+                fit: 'contain', 
+                background: { r: 255, g: 255, b: 255, alpha: 0 } 
+            })
+            .composite([{
+                input: roundedCornersMask,
+                blend: 'dest-in'
+            }]);
     }
 
     const processedBuffer = await pipeline.png().toBuffer();
@@ -80,8 +96,7 @@ export async function GET(request: NextRequest) {
     return new NextResponse(new Uint8Array(processedBuffer), {
       headers: {
         'Content-Type': 'image/png',
-        // Never cache on localhost so you can see your live changes
-        'Cache-Control': isLocal ? 'no-store' : 'public, max-age=31536000, immutable',
+        'Cache-Control': 'public, max-age=31536000, immutable',
       },
     });
 
