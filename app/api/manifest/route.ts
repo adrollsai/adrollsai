@@ -9,11 +9,11 @@ export async function GET(request: Request) {
   const uid = url.searchParams.get('uid');
 
   const headersList = request.headers;
-  // Get the host accurately, handling proxies and local development
   const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || '';
   const host = rawHost.split(',')[0].trim().split(':')[0].toLowerCase();
+  
+  const isLocal = host === 'localhost';
 
-  // 1. Define Primary AdRolls Hosts
   const SYSTEM_HOSTS = [
     'adrolls.in', 
     'www.adrolls.in', 
@@ -21,26 +21,25 @@ export async function GET(request: Request) {
     'localhost'
   ];
 
-  // 2. Official AdRolls Branding Configuration
-  // We point to the org-icon API which now uses the https://i.ibb.co/jvxK1B96/logo.png link
-  const ADROLLS_LOGO_VERSION = 'v2_centered'; 
+  // Updated version string to bust your browser's stubborn cache
+  const ADROLLS_LOGO_VERSION = 'v3_cachebuster'; 
   
   const defaultManifest = {
     id: '/?source=adrolls_pwa',
     name: 'AdRolls AI',
     short_name: 'AdRolls',
     description: 'AI-Powered Real Estate Marketing',
-    start_url: '/dashboard', // SaaS users start at the dashboard
+    start_url: '/dashboard', 
     scope: '/',
     display: 'standalone',
-    background_color: '#F8FAFC',
+    background_color: '#FFFFFF', // Changed to white to match your splash background
     theme_color: '#2563EB',
     icons: [
       { 
         src: `/api/org-icon?type=icon&v=${ADROLLS_LOGO_VERSION}`, 
         sizes: '512x512', 
         type: 'image/png',
-        purpose: 'any maskable' // Fixes splash screen centering on mobile
+        purpose: 'any maskable' 
       },
       { 
         src: `/api/org-icon?type=icon&v=${ADROLLS_LOGO_VERSION}`, 
@@ -53,23 +52,21 @@ export async function GET(request: Request) {
 
   const isPrimaryDomain = SYSTEM_HOSTS.includes(host);
 
-  // 3. LOGIC: If on primary AdRolls domains, return the official manifest immediately
   if (isPrimaryDomain) {
     return new NextResponse(JSON.stringify(defaultManifest), {
       headers: {
         'Content-Type': 'application/manifest+json',
-        'Cache-Control': 'public, max-age=3600', 
+        // If on localhost, never cache. If in production, cache for 1 hour.
+        'Cache-Control': isLocal ? 'no-store' : 'public, max-age=3600', 
       },
     });
   }
 
-  // 4. Custom Domain Logic (Only reached for external domains)
   let manifestData = defaultManifest;
 
   try {
     const supabase = await createClient();
     
-    // Fetch user-specific branding based on the custom domain
     const { data: profile } = await supabase
       .from('profiles')
       .select('business_name, logo_url')
@@ -87,7 +84,7 @@ export async function GET(request: Request) {
         name: businessName,
         short_name: businessName.substring(0, 12), 
         description: `Official portal for ${businessName}`,
-        start_url: '/', // Custom domains start at the root landing page
+        start_url: '/', 
         scope: '/',
         display: 'standalone',
         background_color: '#FFFFFF',
