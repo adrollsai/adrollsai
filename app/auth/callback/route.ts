@@ -24,6 +24,10 @@ export async function GET(request: Request) {
   }
 
   // Handle OAuth Errors immediately
+  if (errorCode === 'identity_already_exists') {
+  return NextResponse.redirect(`${baseUrl}${next}?error=This Facebook account is already linked to another user.`);
+}
+
   if (errorCode || errorDescription) {
     console.error(`[AUTH CALLBACK] OAuth Error: ${errorCode} - ${errorDescription}`)
     return NextResponse.redirect(`${baseUrl}${next}?error=${encodeURIComponent(errorDescription || 'Authentication failed')}`)
