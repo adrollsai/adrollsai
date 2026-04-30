@@ -254,6 +254,7 @@ export default function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
+  const [isConnectingFb, setIsConnectingFb] = useState(false) // Added connection loading state
   
   // Connections
   const [isFacebookConnected, setIsFacebookConnected] = useState(false)
@@ -508,15 +509,40 @@ export default function ProfilePage() {
   }, [router, supabase])
 
   // --- ACTIONS ---
+  
+  // THE FIX: Using linkIdentity instead of signInWithOAuth to handle email mismatches
   const handleConnectFacebook = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'facebook',
-      options: {
-        scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management, pages_manage_ads, leads_retrieval',
-        redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=facebook',
+    setIsConnectingFb(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        toast.error("You must be logged in to connect an account.")
+        return
       }
-    })
-    if (error) alert("Connection error: " + error.message)
+
+      const { data, error } = await supabase.auth.linkIdentity({
+        provider: 'facebook',
+        options: {
+          scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management, pages_manage_ads, leads_retrieval',
+          redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=facebook',
+        }
+      })
+
+      if (error) throw error
+
+      // Note: linkIdentity will redirect away from the page to authenticate with Facebook
+      
+    } catch (error: any) {
+      console.error("Linking error:", error)
+      if (error.message.includes('already linked')) {
+          toast.error("This Facebook account is already connected to another user. Please remove it from the other account first or contact support.")
+      } else {
+          toast.error("Failed to connect Facebook: " + error.message)
+      }
+    } finally {
+      setIsConnectingFb(false)
+    }
   }
 
   const handleDisconnectFacebook = async () => {
@@ -801,8 +827,13 @@ export default function ProfilePage() {
                                     {isDisconnecting ? '...' : 'Unlink'}
                                 </button>
                             ) : (
-                                <button onClick={handleConnectFacebook} className="bg-[#1877F2] hover:bg-[#166FE5] text-white px-5 py-2 rounded-full text-xs font-bold shadow-sm transition-colors">
-                                    Connect
+                                <button 
+                                    onClick={handleConnectFacebook} 
+                                    disabled={isConnectingFb}
+                                    className="bg-[#1877F2] hover:bg-[#166FE5] text-white px-5 py-2 rounded-full text-xs font-bold shadow-sm transition-colors disabled:opacity-50 flex items-center gap-2"
+                                >
+                                    {isConnectingFb ? <Loader2 size={14} className="animate-spin"/> : null}
+                                    {isConnectingFb ? 'Connecting...' : 'Connect'}
                                 </button>
                             )}
                         </div>

@@ -21,8 +21,8 @@ export async function GET(request: Request) {
     'localhost'
   ];
 
-  // Updated version string to bust your browser's stubborn cache
-  const ADROLLS_LOGO_VERSION = 'v3_cachebuster'; 
+  // Bumped version to force mobile devices to drop the black-background cache
+  const ADROLLS_LOGO_VERSION = 'v4_white_fix'; 
   
   const defaultManifest = {
     id: '/?source=adrolls_pwa',
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
     start_url: '/dashboard', 
     scope: '/',
     display: 'standalone',
-    background_color: '#FFFFFF', // Changed to white to match your splash background
+    background_color: '#FFFFFF', 
     theme_color: '#2563EB',
     icons: [
       { 
@@ -56,7 +56,6 @@ export async function GET(request: Request) {
     return new NextResponse(JSON.stringify(defaultManifest), {
       headers: {
         'Content-Type': 'application/manifest+json',
-        // If on localhost, never cache. If in production, cache for 1 hour.
         'Cache-Control': isLocal ? 'no-store' : 'public, max-age=3600', 
       },
     });
@@ -88,7 +87,8 @@ export async function GET(request: Request) {
         scope: '/',
         display: 'standalone',
         background_color: '#FFFFFF',
-        theme_color: '#000000',
+        // THE FIX: Changed from #000000 to #FFFFFF so Android won't force a black UI
+        theme_color: '#FFFFFF', 
         icons: [
           { 
             src: `/api/org-icon?type=icon&v=${logoVersion}`, 

@@ -21,7 +21,7 @@ export async function POST(request: Request) {
         propImages, 
         templateUrl, 
         aspectRatio = "1:1",
-        model // Received from the UI toggle (Banana vs GPT 2.0)
+        model 
     } = body;
 
     // Fetch user profile for business context
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
         allInputImages.push(templateUrl);
     }
 
-    // --- ALEX HORMOZI DESIGN FRAMEWORK PROMPT ---
+    // --- DIRECT RESPONSE DESIGN FRAMEWORK PROMPT ---
     let finalImagePrompt = `Create a high-converting, professional Meta ad design for the product: "${propertyTitle}". \n\n`;
     finalImagePrompt += `DESIGN PHILOSOPHY (ALEX HORMOZI FRAMEWORK):\n`;
     finalImagePrompt += `2. BOLD TYPOGRAPHY: Use large, authoritative, high-contrast text for the main headline.\n`;
@@ -69,11 +69,11 @@ export async function POST(request: Request) {
     finalImagePrompt += `\nAspect Ratio: ${aspectRatio}.`;
     if (contactNumber) finalImagePrompt += ` Display contact info: ${contactNumber}.`;
 
-    // Map model selection to KIE API identifiers
     const kieModel = (model === 'gpt/gpt-image-2-text-to-image') 
         ? 'gpt-image-2-text-to-image' 
         : 'nano-banana-2';
 
+    // Payload matches the Kie.ai spec exactly
     const payload = {
       "model": kieModel,
       "input": {
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
       }
     };
     
-    // --- COPY GENERATION (ALEX HORMOZI FRAMEWORK) ---
+    // --- COPY GENERATION FRAMEWORK ---
     const copyPrompt = `
       You are an elite direct-response copywriter trained in Alex Hormozi's "$100M Offers" framework.
       Write a high-converting caption for:
@@ -103,17 +103,25 @@ export async function POST(request: Request) {
       5. CTA: Direct instruction.
     `;
 
-    // Execute image task and caption generation concurrently
-    const [kieResult, generatedCaption] = await Promise.all([
-        createKieTask(payload),
-        generateKieChat(copyPrompt, "gemini-3-flash")
-    ]);
+    // --- THE FIX: Sequential Execution & Error Isolation ---
+    
+    // 1. Guarantee the Image Generation Task is requested first
+    const kieResult = await createKieTask(payload);
 
-    // Validation to prevent the 'null taskId' error
     if (!kieResult || kieResult.error || !kieResult.taskId) {
       throw new Error(`Kie AI Task creation failed: ${kieResult?.error || "Empty response from API"}`);
     }
     
+    // 2. Try the Caption Generation Safely
+    let generatedCaption = "Here is your newly generated asset! DM us for more details.";
+    try {
+        // If the 'Chat API Error: OK' occurs here, it is caught and won't crash the image generation!
+        generatedCaption = await generateKieChat(copyPrompt, "gemini-3-flash");
+    } catch (chatError: any) {
+        console.error("Caption generation failed, but image task succeeded. Using fallback caption. Error:", chatError.message);
+    }
+
+    // 3. Return the Task ID successfully to the UI
     return NextResponse.json({ 
         taskId: kieResult.taskId,
         caption: generatedCaption,

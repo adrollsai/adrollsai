@@ -30,7 +30,6 @@ export async function GET(request: NextRequest) {
         logoUrl = profile?.logo_url || ADROLLS_LOGO_URL;
     }
 
-    // Added a User-Agent header so external image hosts don't block the request
     const imageResponse = await fetch(logoUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -51,6 +50,7 @@ export async function GET(request: NextRequest) {
     let pipeline = sharp(buffer);
     
     if (iconType === 'favicon') {
+        // Favicons still need transparency, so we don't remove the alpha here
         pipeline = pipeline.resize(32, 32, { 
             fit: 'contain', 
             background: { r: 255, g: 255, b: 255, alpha: 0 } 
@@ -64,15 +64,15 @@ export async function GET(request: NextRequest) {
                 top: 1010, bottom: 1010, left: 329, right: 329,
                 background: { r: 255, g: 255, b: 255, alpha: 1 } 
             })
-            .flatten({ background: { r: 255, g: 255, b: 255 } }); 
+            .flatten({ background: { r: 255, g: 255, b: 255 } })
+            .removeAlpha(); // THE FIX: Explicitly strip alpha channel so iOS/Android won't render it black
     }
     else {
         pipeline = pipeline
             .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
             .composite([{ input: roundedCornersMask, blend: 'dest-in' }])
-            // Flattening the standard PWA icon onto a white background is crucial. 
-            // Transparent PNGs break Android's "maskable" splash screen requirements.
-            .flatten({ background: { r: 255, g: 255, b: 255 } });
+            .flatten({ background: { r: 255, g: 255, b: 255 } })
+            .removeAlpha(); // THE FIX: Explicitly strip alpha channel so iOS/Android won't render it black
     }
 
     const processedBuffer = await pipeline.png().toBuffer();
@@ -80,7 +80,6 @@ export async function GET(request: NextRequest) {
     return new NextResponse(new Uint8Array(processedBuffer), {
       headers: {
         'Content-Type': 'image/png',
-        // Never cache on localhost so you can see your live changes
         'Cache-Control': isLocal ? 'no-store' : 'public, max-age=31536000, immutable',
       },
     });
