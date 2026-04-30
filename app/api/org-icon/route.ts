@@ -13,7 +13,6 @@ export async function GET(request: NextRequest) {
   const rawHost = request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
   const host = rawHost.split(':')[0].toLowerCase(); 
 
-  // Fixed AdRolls Logo Link
   const ADROLLS_LOGO_URL = "https://i.ibb.co/jvxK1B96/logo.png";
   const FALLBACK_FAVICON = new URL('/favicon.ico', request.url).toString();
 
@@ -26,34 +25,28 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     let logoUrl = null;
 
-    // 1. Determine source URL
     const isSystemHost = SYSTEM_HOSTS.includes(host);
 
     if (isSystemHost) {
-        // Always use the primary logo for AdRolls domains
         logoUrl = ADROLLS_LOGO_URL;
     } else {
-        // Fetch custom user logo for external domains
         const { data: profile } = await supabase.from('profiles').select('logo_url').eq('custom_domain', host).single();
         logoUrl = profile?.logo_url || ADROLLS_LOGO_URL;
     }
 
-    // 2. Fetch the image
     const imageResponse = await fetch(logoUrl);
     if (!imageResponse.ok) {
-        return NextResponse.redirect(iconType === 'favicon' ? FALLBACK_FAVICON : ADROLLS_LOGO_URL);
+        return NextResponse.redirect(ADROLLS_LOGO_URL);
     }
 
     const inputBuffer = await imageResponse.arrayBuffer();
     const buffer = Buffer.from(inputBuffer);
 
-    // 3. Define Shapes (Rounded Corners)
-    // We create a mask to apply rounded corners to the square logo
+    // Create a Rounded Mask (r=80 for a smooth premium look)
     const roundedCornersMask = Buffer.from(
-        `<svg><rect x="0" y="0" width="512" height="512" rx="100" ry="100" /></svg>`
+        `<svg><rect x="0" y="0" width="512" height="512" rx="80" ry="80" /></svg>`
     );
 
-    // 4. Image Processing with Sharp
     let pipeline = sharp(buffer);
     
     if (iconType === 'favicon') {
@@ -63,11 +56,9 @@ export async function GET(request: NextRequest) {
         });
     } 
     else if (iconType === 'splash') {
-        // TO FIX THE SPLASH SCREEN FILLING THE SPACE:
-        // We resize the logo to be small (e.g., 400px) and then extend it 
-        // with a massive transparent border to fill the mobile screen size.
+        // 1. First, resize the logo to 512x512 and apply rounded corners
         pipeline = pipeline
-            .resize(400, 400, { 
+            .resize(512, 512, { 
                 fit: 'contain', 
                 background: { r: 255, g: 255, b: 255, alpha: 0 } 
             })
@@ -75,23 +66,25 @@ export async function GET(request: NextRequest) {
                 input: roundedCornersMask,
                 blend: 'dest-in'
             }])
-            // This adds padding to center the icon and prevent it from filling the screen
+            // 2. Add white padding to center it and make it look "small"
+            // Total height becomes 2532 (iOS standard), logo stays 512 in middle
             .extend({
-                top: 1066,
-                bottom: 1066,
-                left: 385,
-                right: 385,
-                background: { r: 255, g: 255, b: 255, alpha: 0 }
-            });
+                top: 1010,
+                bottom: 1010,
+                left: 329,
+                right: 329,
+                background: { r: 255, g: 255, b: 255, alpha: 1 } // FORCE WHITE BACKGROUND
+            })
+            // 3. Flatten ensures no transparency remains for the splash image
+            .flatten({ background: { r: 255, g: 255, b: 255 } }); 
     }
     else {
-        // Standard PWA Icon (512x512)
+        // Standard PWA Icon (Rounded)
         pipeline = pipeline
             .resize(512, 512, { 
                 fit: 'contain', 
                 background: { r: 255, g: 255, b: 255, alpha: 0 } 
             })
-            // Apply Rounded Corners
             .composite([{
                 input: roundedCornersMask,
                 blend: 'dest-in'
@@ -103,7 +96,7 @@ export async function GET(request: NextRequest) {
     return new NextResponse(new Uint8Array(processedBuffer), {
       headers: {
         'Content-Type': 'image/png',
-        'Cache-Control': 'public, max-age=31536000, immutable', // Cache for performance
+        'Cache-Control': 'public, max-age=31536000, immutable',
       },
     });
 
