@@ -512,36 +512,32 @@ export default function ProfilePage() {
   
   // THE FIX: Using linkIdentity instead of signInWithOAuth to handle email mismatches
   const handleConnectFacebook = async () => {
+    // 1. Immediate UI Feedback
     setIsConnectingFb(true)
+    
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      
-      if (!session) {
-        toast.error("You must be logged in to connect an account.")
-        return
-      }
-
+      // 2. Use linkIdentity directly
       const { data, error } = await supabase.auth.linkIdentity({
         provider: 'facebook',
         options: {
-          scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management, pages_manage_ads, leads_retrieval',
-          redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile&provider=facebook',
+          // IMPORTANT: Ensure this URL is whitelisted in Supabase Dashboard -> Auth -> URL Configuration
+          redirectTo: `${window.location.origin}/auth/callback?next=/dashboard/profile&provider=facebook`,
+          scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management,pages_manage_ads,leads_retrieval'
         }
       })
 
       if (error) throw error
 
-      // Note: linkIdentity will redirect away from the page to authenticate with Facebook
-      
+      // If successful, the browser WILL redirect here, and this line below will never be reached 
+      // in the current window session.
     } catch (error: any) {
       console.error("Linking error:", error)
+      setIsConnectingFb(false) // Reset loader only on error
       if (error.message.includes('already linked')) {
-          toast.error("This Facebook account is already connected to another user. Please remove it from the other account first or contact support.")
+          toast.error("This Facebook account is already connected to another user.")
       } else {
           toast.error("Failed to connect Facebook: " + error.message)
       }
-    } finally {
-      setIsConnectingFb(false)
     }
   }
 
