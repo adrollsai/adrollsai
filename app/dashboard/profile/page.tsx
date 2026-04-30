@@ -17,10 +17,12 @@ import {
   AlertCircle,
   FileText,
   Shield,
-  RefreshCw
+  RefreshCw,
+  Copy
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import PushManager from '@/components/PushManager'
 
 type FBPage = {
@@ -43,29 +45,36 @@ type Pixel = {
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in ms
 
 // --- DOMAIN MANAGER COMPONENT ---
-function DomainManager({ initialDomain, userId, onDomainUpdate }: { initialDomain: string, userId: string | null, onDomainUpdate: (domain: string) => void }) {
+function DomainManager({ 
+  initialDomain, 
+  verifyToken, 
+  verifyStatus, 
+  userId, 
+  onDomainUpdate 
+}: { 
+  initialDomain: string, 
+  verifyToken: string | null, 
+  verifyStatus: string | null, 
+  userId: string | null, 
+  onDomainUpdate: () => void 
+}) {
   const [domain, setDomain] = useState(initialDomain || '')
   const [loading, setLoading] = useState(false)
-  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
-    if (initialDomain) {
-        setDomain(initialDomain)
-        setStatus('success')
-    }
+    if (initialDomain) setDomain(initialDomain)
   }, [initialDomain])
 
   const handleConnect = async () => {
-    if (!domain) return
+    if (!domain || !userId) return
     setLoading(true)
-    setStatus('idle')
+    setErrorMessage('')
 
     try {
       const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim().toLowerCase()
       setDomain(cleanDomain)
 
-      // Assuming your API route is updated to handle both POST and DELETE at /api/domains
       const res = await fetch('/api/domains', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -73,24 +82,35 @@ function DomainManager({ initialDomain, userId, onDomainUpdate }: { initialDomai
       })
 
       const data = await res.json()
-
-      if (!res.ok) throw new Error(data.error || 'Failed to connect domain')
+      if (!res.ok) throw new Error(data.error || 'Failed to initialize domain')
       
-      setStatus('success')
-      onDomainUpdate(cleanDomain)
-      
-      // Update local cache quietly
-      if (userId) {
-          const cacheKey = `profile_cache_${userId}`
-          const cached = localStorage.getItem(cacheKey)
-          if (cached) {
-              const parsed = JSON.parse(cached)
-              localStorage.setItem(cacheKey, JSON.stringify({ ...parsed, custom_domain: cleanDomain }))
-          }
-      }
-
+      onDomainUpdate() // Refresh parent to show verification box
+      toast.success("Domain initialized. Please follow verification steps.")
     } catch (err: any) {
-      setStatus('error')
+      setErrorMessage(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleVerify = async () => {
+    if (!userId) return
+    setLoading(true)
+    setErrorMessage('')
+
+    try {
+      const res = await fetch('/api/domains/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain, userId })
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      
+      onDomainUpdate()
+      toast.success("Domain Verified & Connected! ✨")
+    } catch (err: any) {
       setErrorMessage(err.message)
     } finally {
       setLoading(false)
@@ -101,8 +121,6 @@ function DomainManager({ initialDomain, userId, onDomainUpdate }: { initialDomai
     if (!confirm(`Are you sure you want to unlink ${domain}? Your custom landing page will stop working immediately.`)) return;
     
     setLoading(true)
-    setStatus('idle')
-
     try {
       const res = await fetch('/api/domains', {
         method: 'DELETE',
@@ -110,33 +128,22 @@ function DomainManager({ initialDomain, userId, onDomainUpdate }: { initialDomai
         body: JSON.stringify({ domain, userId })
       })
 
-      const data = await res.json()
-
-      if (!res.ok) throw new Error(data.error || 'Failed to unlink domain')
+      if (!res.ok) throw new Error('Failed to unlink domain')
       
       setDomain('')
-      setStatus('idle')
-      onDomainUpdate('')
-      
-      // Update local cache quietly
-      if (userId) {
-          const cacheKey = `profile_cache_${userId}`
-          const cached = localStorage.getItem(cacheKey)
-          if (cached) {
-              const parsed = JSON.parse(cached)
-              localStorage.setItem(cacheKey, JSON.stringify({ ...parsed, custom_domain: null }))
-          }
-      }
-
+      onDomainUpdate()
+      toast.success("Domain Unlinked Successfully.")
     } catch (err: any) {
-      setStatus('error')
       setErrorMessage(err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  const isSubdomain = domain.split('.').length > 2
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    toast.success("Copied to clipboard")
+  }
 
   return (
     <div className="bg-blue-50/60 p-5 rounded-3xl border border-blue-100/50 mt-4 transition-all">
@@ -150,17 +157,17 @@ function DomainManager({ initialDomain, userId, onDomainUpdate }: { initialDomai
           placeholder="www.yourdomain.com" 
           value={domain} 
           onChange={(e) => setDomain(e.target.value)} 
-          disabled={status === 'success'}
-          className="w-full bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-blue-100 shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed" 
+          disabled={verifyStatus === 'verified' || loading}
+          className="w-full bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-blue-100 shadow-sm transition-all disabled:opacity-60" 
         />
         
-        {status === 'success' ? (
+        {verifyStatus === 'verified' ? (
              <button 
                 onClick={handleUnlink}
                 disabled={loading}
-                className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-6 py-3.5 rounded-2xl sm:rounded-full text-sm font-bold whitespace-nowrap active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
+                className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-6 py-3.5 rounded-2xl sm:rounded-full text-sm font-bold active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
               >
-                {loading ? <Loader2 size={18} className="animate-spin" /> : 'Unlink Domain'}
+                {loading ? <Loader2 size={18} className="animate-spin" /> : 'Unlink'}
               </button>
         ) : (
             <button 
@@ -168,42 +175,63 @@ function DomainManager({ initialDomain, userId, onDomainUpdate }: { initialDomai
               disabled={loading || !domain}
               className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3.5 rounded-2xl sm:rounded-full text-sm font-bold whitespace-nowrap active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
             >
-              {loading ? <Loader2 size={18} className="animate-spin" /> : 'Connect'}
+              {loading ? <Loader2 size={18} className="animate-spin" /> : verifyStatus === 'pending' ? 'Update Domain' : 'Connect'}
             </button>
         )}
       </div>
       
-      {status !== 'success' && (
-          <p className="text-xs text-blue-600/80 ml-2 mt-3 leading-tight font-medium">
-             Point your domain's CNAME record to <span className="font-mono font-bold bg-blue-100/50 px-1.5 py-0.5 rounded-md text-blue-800">adrolls.in</span>
-          </p>
-      )}
-
-      {status === 'success' && (
-        <div className="mt-4 bg-white p-5 rounded-3xl border border-green-200 shadow-sm animate-in fade-in slide-in-from-top-2">
-          <p className="text-sm font-bold text-green-700 flex items-center gap-2 mb-3">
-            <CheckCircle2 size={18} /> Domain Linked! Configure DNS:
-          </p>
-          <div className="space-y-2.5 text-xs text-slate-600 bg-slate-50/80 p-4 rounded-2xl font-mono border border-slate-100">
-            {isSubdomain ? (
-              <>
-                <div className="flex justify-between border-b border-slate-200/60 pb-2"><span className="font-bold">Type</span><span>CNAME</span></div>
-                <div className="flex justify-between border-b border-slate-200/60 pb-2"><span className="font-bold">Name</span><span>{domain.split('.')[0]}</span></div>
-                <div className="flex justify-between pt-1"><span className="font-bold">Value</span><span className="text-right break-all">cname.vercel-dns.com</span></div>
-              </>
-            ) : (
-              <>
-                <div className="flex justify-between border-b border-slate-200/60 pb-2"><span className="font-bold">Type</span><span>A Record</span></div>
-                <div className="flex justify-between border-b border-slate-200/60 pb-2"><span className="font-bold">Name</span><span>@</span></div>
-                <div className="flex justify-between pt-1"><span className="font-bold">Value</span><span>76.76.21.21</span></div>
-              </>
-            )}
+      {/* PENDING VERIFICATION STATE */}
+      {verifyStatus === 'pending' && verifyToken && (
+        <div className="mt-5 bg-white p-5 rounded-3xl border border-amber-200 shadow-sm animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2 text-amber-700 font-bold text-sm mb-4">
+            <AlertCircle size={18} /> Domain Verification Required
           </div>
-          <p className="text-xs text-slate-500 mt-3 ml-1 leading-tight">Please allow up to 15 mins for your SSL certificate to generate.</p>
+          <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+            To prevent hijacking, please add this <strong>TXT Record</strong> to your DNS settings at your domain registrar:
+          </p>
+
+          <div className="space-y-3 mb-5">
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 relative group">
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Host / Name</label>
+              <div className="flex justify-between items-center">
+                <code className="text-xs font-mono text-slate-700">@</code>
+                <button onClick={() => copyToClipboard('@')} className="text-blue-500 hover:text-blue-700"><Copy size={14}/></button>
+              </div>
+            </div>
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 relative group">
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Value / TXT Content</label>
+              <div className="flex justify-between items-center gap-2">
+                <code className="text-[10px] font-mono text-slate-700 break-all">{verifyToken}</code>
+                <button onClick={() => copyToClipboard(verifyToken)} className="text-blue-500 hover:text-blue-700 shrink-0"><Copy size={14}/></button>
+              </div>
+            </div>
+          </div>
+
+          <button 
+            onClick={handleVerify} 
+            disabled={loading}
+            className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md shadow-amber-500/20"
+          >
+            {loading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />} Verify TXT Record
+          </button>
+          <p className="text-[10px] text-slate-400 mt-3 text-center">DNS propagation can take a few minutes to reflect.</p>
         </div>
       )}
 
-      {status === 'error' && (
+      {/* VERIFIED STATE */}
+      {status === 'success' && verifyStatus === 'verified' && (
+        <div className="mt-4 bg-white p-5 rounded-3xl border border-green-200 shadow-sm animate-in fade-in slide-in-from-top-2">
+          <p className="text-sm font-bold text-green-700 flex items-center gap-2 mb-3">
+            <CheckCircle2 size={18} /> Domain Verified & Linked!
+          </p>
+          <div className="space-y-1 text-xs text-slate-600 font-medium ml-1">
+            <p>• Point your A Record to <span className="font-mono font-bold">76.76.21.21</span></p>
+            <p>• SSL Status: <span className="text-green-600 font-bold">Active</span></p>
+          </div>
+        </div>
+      )}
+
+      {errorMessage && (
         <div className="mt-3 bg-red-50 p-3 rounded-2xl border border-red-100">
            <p className="text-xs font-bold text-red-600 flex items-center gap-1.5"><AlertCircle size={14} /> {errorMessage}</p>
         </div>
@@ -220,8 +248,6 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
-  
-  // ROLE STATE
   const [role, setRole] = useState<'admin' | 'agent'>('agent')
   
   // Actions
@@ -246,7 +272,12 @@ export default function ProfilePage() {
   const [isLoadingPixels, setIsLoadingPixels] = useState(false) 
 
   // Profile Data
-  const [initialCustomDomain, setInitialCustomDomain] = useState<string>('')
+  const [domainData, setDomainData] = useState({
+    domain: '',
+    token: null as string | null,
+    status: null as string | null
+  })
+
   const [formData, setFormData] = useState({
     businessName: '',
     mission: '',
@@ -378,15 +409,6 @@ export default function ProfilePage() {
       if (!force && !userId) setLoading(true)
       if (force) setIsRefreshing(true)
 
-      const params = new URLSearchParams(window.location.search)
-      const errorMsg = params.get('error')
-
-      if (errorMsg) {
-        alert(`⚠️ Connection Failed: ${errorMsg}`)
-        router.replace('/dashboard/profile')
-        return 
-      }
-
       const { data: { session } } = await supabase.auth.getSession()
       const user = session?.user
 
@@ -420,7 +442,7 @@ export default function ProfilePage() {
       if (!profileData) {
         const { data } = await supabase
           .from('profiles')
-          .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id, custom_domain, role') 
+          .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id, custom_domain, domain_verify_token, domain_verify_status, role') 
           .eq('id', user.id)
           .single()
 
@@ -433,7 +455,12 @@ export default function ProfilePage() {
 
       if (profileData) {
         setRole(profileData.role || 'admin') 
-        setInitialCustomDomain(profileData.custom_domain || '')
+        
+        setDomainData({
+          domain: profileData.custom_domain || '',
+          token: profileData.domain_verify_token,
+          status: profileData.domain_verify_status
+        })
 
         setFormData({
           businessName: profileData.business_name || '',
@@ -478,16 +505,6 @@ export default function ProfilePage() {
 
   useEffect(() => {
     fetchProfile(false)
-    
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event) => {
-      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-          fetchProfile(true) 
-      }
-    })
-
-    return () => {
-      authListener.subscription.unsubscribe()
-    }
   }, [router, supabase])
 
   // --- ACTIONS ---
@@ -573,7 +590,7 @@ export default function ProfilePage() {
     if (error) {
       alert(`Error saving: ${error.message}`)
     } else {
-      alert("Profile Information Saved!")
+      toast.success("Profile Information Saved!")
       updateLocalCache(updates)
     }
     setIsSaving(false)
@@ -609,9 +626,6 @@ export default function ProfilePage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
           
-          {/* ========================================= */}
-          {/* LEFT COLUMN (Profile, Business, Domain) */}
-          {/* ========================================= */}
           <div className="lg:col-span-7 space-y-6">
             
             {/* Header Identity Card */}
@@ -642,7 +656,7 @@ export default function ProfilePage() {
                   {formData.businessName || (role === 'admin' ? 'Your Business' : 'Your Name')}
                 </h2>
                 <p className="text-slate-500 text-sm leading-relaxed max-w-md">
-                  Personalize your workspace. The logo and name you set here will be reflected across your client-facing tools.
+                  Personalize your workspace. Branding set here reflects on your landing pages.
                 </p>
               </div>
             </div>
@@ -737,13 +751,15 @@ export default function ProfilePage() {
                         </div>
                     </div>
 
-                    {/* DOMAIN MANAGER HERE */}
+                    {/* DOMAIN MANAGER SECTION */}
                     {role === 'admin' && (
                         <div className="pt-2 border-t border-slate-100">
                             <DomainManager 
-                                initialDomain={initialCustomDomain} 
+                                initialDomain={domainData.domain} 
+                                verifyToken={domainData.token}
+                                verifyStatus={domainData.status}
                                 userId={userId} 
-                                onDomainUpdate={(newDomain) => setInitialCustomDomain(newDomain)} 
+                                onDomainUpdate={fetchProfile} 
                             />
                         </div>
                     )}
@@ -760,17 +776,11 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* ========================================= */}
-          {/* RIGHT COLUMN (Social, Notification, Setting)*/}
-          {/* ========================================= */}
           <div className="lg:col-span-5 space-y-6">
-            
-            {/* Inline Push Manager */}
             <div className="rounded-[2rem] overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                 <PushManager variant="inline" />
             </div>
 
-            {/* Social Accounts (ADMIN ONLY) */}
             {role === 'admin' && (
                 <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
                     <div className="p-6 sm:p-7">
@@ -799,7 +809,6 @@ export default function ProfilePage() {
 
                         {isFacebookConnected && (
                             <div className="space-y-4 pt-4 border-t border-slate-100 mt-2">
-                                {/* Page Selector */}
                                 <div className="bg-slate-50/80 rounded-3xl p-4 border border-slate-100">
                                     <div className="flex justify-between items-center mb-3 px-1">
                                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Linked Page</label>
@@ -826,7 +835,6 @@ export default function ProfilePage() {
                                     )}
                                 </div>
                                 
-                                {/* AD ACCOUNT SELECTOR */}
                                 <div className="bg-slate-50/80 rounded-3xl p-4 border border-slate-100">
                                     <div className="flex justify-between items-center mb-3 px-1">
                                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ad Account</label>
@@ -853,11 +861,10 @@ export default function ProfilePage() {
                                     )}
                                 </div>
 
-                                {/* PIXEL SELECTOR */}
                                 <div className="bg-slate-50/80 rounded-3xl p-4 border border-slate-100">
                                     <div className="flex justify-between items-center mb-3 px-1">
                                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Pixel</label>
-                                        <button onClick={() => selectedAdAccountId && fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-600 hover:text-blue-800 font-bold uppercase tracking-wider transition-colors">Refresh List</button>
+                                        <button onClick={() => selectedAdAccountId && fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-600 font-bold uppercase tracking-wider transition-colors">Refresh List</button>
                                     </div>
                                     
                                     {!selectedAdAccountId ? (
@@ -888,7 +895,6 @@ export default function ProfilePage() {
                 </div>
             )}
 
-            {/* Settings (ADMIN ONLY) */}
             {role === 'admin' && (
                 <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
                     <button onClick={() => router.push('/dashboard/billing')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100">
@@ -913,7 +919,6 @@ export default function ProfilePage() {
                 </div>
             )}
             
-            {/* Sign Out */}
             <div className="bg-white rounded-[2rem] shadow-sm border border-red-100 overflow-hidden transition-all hover:border-red-200 hover:shadow-md">
                 <button 
                     onClick={handleSignOut} 

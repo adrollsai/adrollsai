@@ -10,7 +10,8 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// --- CONNECT DOMAIN (POST) ---
+// --- INITIALIZE DOMAIN LINKING (POST) ---
+// This now generates a token for the user to add to their DNS
 export async function POST(req: Request) {
   try {
     const { domain, userId } = await req.json();
@@ -19,37 +20,42 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing domain or userId' }, { status: 400 });
     }
 
-    // 1. Add domain to Vercel Project
-    const vercelResponse = await fetch(
-      `https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/domains`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${VERCEL_API_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name: domain }),
-      }
-    );
+    // 1. Clean the domain string
+    const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim().toLowerCase();
 
-    const vercelData = await vercelResponse.json();
+    // 2. Check if domain is already claimed by someone else in YOUR database
+    const { data: existingOwner } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('custom_domain', cleanDomain)
+      .single();
 
-    if (!vercelResponse.ok) {
-      return NextResponse.json(
-        { error: vercelData.error?.message || 'Vercel connection failed' },
-        { status: vercelResponse.status }
-      );
+    if (existingOwner && existingOwner.id !== userId) {
+      return NextResponse.json({ error: 'This domain is already registered to another account.' }, { status: 403 });
     }
 
-    // 2. Update the user profile in Supabase
+    // 3. Generate a unique verification token
+    const verifyToken = `adrolls-verify=${Math.random().toString(36).substring(2, 15)}`;
+
+    // 4. Update the user profile in Supabase with 'pending' status[cite: 10]
+    // We save the token so the user can see it in their dashboard
     const { error: dbError } = await supabaseAdmin
       .from('profiles')
-      .update({ custom_domain: domain })
+      .update({ 
+        custom_domain: cleanDomain,
+        domain_verify_token: verifyToken,
+        domain_verify_status: 'pending' 
+      })
       .eq('id', userId);
 
     if (dbError) throw dbError;
 
-    return NextResponse.json({ success: true, message: 'Domain connected successfully' });
+    // We return the token immediately so the UI can prompt the user to add it to DNS
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Domain initialization successful. Please add the TXT record.',
+      verifyToken 
+    });
   } catch (error: any) {
     console.error('Domain POST Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -57,6 +63,7 @@ export async function POST(req: Request) {
 }
 
 // --- UNLINK DOMAIN (DELETE) ---
+// Removes the domain from both Vercel and your database[cite: 10]
 export async function DELETE(req: Request) {
   try {
     const { domain, userId } = await req.json();
@@ -65,7 +72,7 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: 'Missing domain or userId' }, { status: 400 });
     }
 
-    // 1. Remove domain from Vercel Project
+    // 1. Remove domain from Vercel Project[cite: 10]
     const vercelResponse = await fetch(
       `https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/domains/${domain}`,
       {
@@ -76,13 +83,14 @@ export async function DELETE(req: Request) {
       }
     );
 
-    // We do not throw an error if Vercel fails (e.g., domain already deleted manually)
-    // to ensure the local database can still be cleaned up.
-
-    // 2. Remove domain from Supabase profile
+    // 2. Remove domain and verification data from Supabase profile[cite: 10]
     const { error: dbError } = await supabaseAdmin
       .from('profiles')
-      .update({ custom_domain: null })
+      .update({ 
+        custom_domain: null,
+        domain_verify_token: null,
+        domain_verify_status: null
+      })
       .eq('id', userId);
 
     if (dbError) throw dbError;
