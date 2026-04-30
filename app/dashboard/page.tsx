@@ -1,17 +1,19 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles } from 'lucide-react'
+import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner' 
 
-// Custom WhatsApp SVG Icon to replace the generic Share icon
+// Custom WhatsApp SVG Icon
 const WhatsAppIcon = ({ size = 24, className = "" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
   </svg>
 )
+
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 type Property = {
   id: string
@@ -41,16 +43,21 @@ export default function ProductsPage() {
   // --- STATE ---
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [authError, setAuthError] = useState(false)
   
   // RBAC & Ownership State
   const [role, setRole] = useState<'admin' | 'agent'>('admin')
   const [ownerId, setOwnerId] = useState<string | null>(null) 
   
-  // Sharing, Toggling & Generation State
+  // Interaction State
   const [isSharingId, setIsSharingId] = useState<string | null>(null)
   const [isTogglingId, setIsTogglingId] = useState<string | null>(null) 
   const [generatingProps, setGeneratingProps] = useState<string[]>([]) 
+
+  // Deletion State
+  const [propertyToDelete, setPropertyToDelete] = useState<Property | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Filter State
   const [searchQuery, setSearchQuery] = useState('')
@@ -73,10 +80,12 @@ export default function ProductsPage() {
   
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 1. SAFE FETCH WITH RBAC
-  const fetchProperties = async () => {
+  // 1. SAFE FETCH WITH LOCAL CACHING
+  const fetchProperties = async (force = false) => {
     try {
-      setLoading(true)
+      if (!force && properties.length === 0) setLoading(true)
+      if (force) setIsRefreshing(true)
+
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (userError || !user) {
@@ -85,12 +94,28 @@ export default function ProductsPage() {
         return
       }
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, parent_id')
-        .eq('id', user.id)
-        .single()
+      const cacheKey = `inventory_cache_${user.id}`
+      const timeKey = `inventory_time_${user.id}`
 
+      if (!force) {
+          const cachedData = localStorage.getItem(cacheKey)
+          const lastFetch = localStorage.getItem(timeKey)
+          const now = Date.now()
+
+          if (cachedData) {
+              setProperties(JSON.parse(cachedData))
+              setLoading(false)
+              if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) {
+                  const { data: profile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
+                  const currentRole = profile?.role || 'admin'
+                  setRole(currentRole)
+                  setOwnerId((currentRole === 'agent' && profile?.parent_id) ? profile.parent_id : user.id)
+                  return; 
+              }
+          }
+      }
+
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
       const currentRole = profile?.role || 'admin'
       setRole(currentRole)
 
@@ -104,13 +129,19 @@ export default function ProductsPage() {
         .order('created_at', { ascending: false })
 
       if (dbError) throw new Error(dbError.message || JSON.stringify(dbError))
-      if (data) setProperties(data)
+      
+      if (data) {
+          setProperties(data)
+          localStorage.setItem(cacheKey, JSON.stringify(data))
+          localStorage.setItem(timeKey, Date.now().toString())
+      }
 
     } catch (error: any) {
       console.error("Error loading products:", error.message || error)
       toast.error("Failed to load products: " + (error.message || "Unknown error"))
     } finally {
       setLoading(false)
+      setIsRefreshing(false)
     }
   }
 
@@ -150,10 +181,39 @@ export default function ProductsPage() {
     }
   }
 
-  // --- 🔥 UPDATED FIRE & FORGET SERVER BACKGROUND GENERATION ---
+  const handleDeleteProperty = async () => {
+      if (!propertyToDelete) return;
+      setIsDeleting(true);
+
+      try {
+          const { error } = await supabase
+              .from('properties')
+              .delete()
+              .eq('id', propertyToDelete.id);
+
+          if (error) throw error;
+
+          // Optimistic UI Update & Cache Update
+          const updatedProps = properties.filter(p => p.id !== propertyToDelete.id);
+          setProperties(updatedProps);
+          
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+              localStorage.setItem(`inventory_cache_${user.id}`, JSON.stringify(updatedProps));
+          }
+
+          toast.success("Product deleted successfully.");
+          setPropertyToDelete(null);
+          setSelectedProperty(null); // Close view modal if it was open
+      } catch (error: any) {
+          toast.error("Failed to delete product.", { description: error.message });
+      } finally {
+          setIsDeleting(false);
+      }
+  }
+
   const handleBackgroundGeneration = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
-    
     if (generatingProps.includes(prop.id)) {
       toast.info("Already Generating", { description: "An asset is currently being generated for this product." })
       return
@@ -167,7 +227,6 @@ export default function ProductsPage() {
       if (!user) throw new Error("Unauthenticated")
 
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-
       let propImages = (prop.images && prop.images.length > 0) ? prop.images.slice(0, 2) : [prop.image_url]
 
       const payload = {
@@ -182,24 +241,16 @@ export default function ProductsPage() {
           model: 'google/nano-banana-2'
       }
 
-      // Fire Request to Server Worker and don't block the UI thread waiting for the 60s generation
       fetch('/api/background-worker', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-           userId: user.id,
-           propId: prop.id,
-           propertyTitle: prop.title,
-           payload
-        })
+        body: JSON.stringify({ userId: user.id, propId: prop.id, propertyTitle: prop.title, payload })
       }).then(async (res) => {
-           // If the app stays open long enough to see the response, we trigger the success toast
            const data = await res.json();
            if (!res.ok) throw new Error(data.error);
            toast.success(`Creative Ready! 🎉`, { description: `Your AI asset for ${prop.title} is waiting in the linked creatives tab.` })
       }).catch(err => {
            console.error("Worker error:", err);
-           // Silent catch: if OS suspends the network request, the server is still processing it regardless.
       }).finally(() => {
            setGeneratingProps(prev => prev.filter(id => id !== prop.id))
       });
@@ -210,20 +261,22 @@ export default function ProductsPage() {
     }
   }
 
-  // --- TOGGLE AUTO-GENERATE ---
   const handleToggleAutoGenerate = async (e: React.MouseEvent, propId: string, currentStatus: boolean) => {
     e.stopPropagation()
     setIsTogglingId(propId)
     const newStatus = !currentStatus
 
     try {
-      const { error } = await supabase
-        .from('properties')
-        .update({ auto_generate: newStatus })
-        .eq('id', propId)
-
+      const { error } = await supabase.from('properties').update({ auto_generate: newStatus }).eq('id', propId)
       if (error) throw error
-      setProperties(prev => prev.map(p => p.id === propId ? { ...p, auto_generate: newStatus } : p))
+      
+      const updated = properties.map(p => p.id === propId ? { ...p, auto_generate: newStatus } : p)
+      setProperties(updated)
+      
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+          localStorage.setItem(`inventory_cache_${user.id}`, JSON.stringify(updated))
+      }
     } catch (error: any) {
       toast.error("Failed to update auto-generation status: " + error.message)
     } finally {
@@ -236,7 +289,6 @@ export default function ProductsPage() {
         toast.error("Please enter a Product/Service Name.")
         return
     }
-    
     setIsSubmitting(true)
 
     try {
@@ -262,21 +314,13 @@ export default function ProductsPage() {
       }
 
       const { error } = await supabase.from('properties').insert({
-          user_id: user.id, 
-          title: newProp.title,
-          description: newProp.description,
-          address: '', 
-          price: '', 
-          property_type: 'Generic', 
-          status: 'Active',
-          image_url: uploadedUrls[0],
-          images: uploadedUrls,
-          auto_generate: false 
+          user_id: user.id, title: newProp.title, description: newProp.description, address: '', price: '', 
+          property_type: 'Generic', status: 'Active', image_url: uploadedUrls[0], images: uploadedUrls, auto_generate: false 
         })
 
       if (error) throw error
 
-      await fetchProperties()
+      await fetchProperties(true)
       setShowAddModal(false)
       setNewProp({ title: '', description: '' })
       setSelectedFiles([])
@@ -293,13 +337,11 @@ export default function ProductsPage() {
     if (!ownerId) return 
     const params = new URLSearchParams()
     if (searchQuery) params.set('q', searchQuery)
-    
     const shareUrl = `${window.location.origin}/shared/${ownerId}?${params.toString()}`
     navigator.clipboard.writeText(shareUrl)
     toast.success("✅ Link Copied!")
   }
 
-  // --- NATIVE MULTI-IMAGE SHARE ---
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
   
@@ -308,7 +350,6 @@ export default function ProductsPage() {
 
     const shareTitle = prop.title
     const shareText = `${shareTitle}\n\n${prop.description || ''}`
-    
     let imageUrls = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url]
     imageUrls = imageUrls.slice(0, 4) 
 
@@ -318,66 +359,59 @@ export default function ProductsPage() {
       const fetchPromises = imageUrls.map(async (url, index) => {
         const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(url)}`
         const response = await fetch(proxyUrl)
-        
         if (!response.ok) throw new Error(`Network error fetching image ${index}`)
-        
         const blob = await response.blob()
         const mimeType = blob.type || 'image/jpeg'
         const ext = mimeType.split('/')[1] || 'jpg'
-        
         return new File([blob], `product_${prop.id}_${index + 1}.${ext}`, { type: mimeType })
       })
 
       const filesArray = await Promise.all(fetchPromises)
 
-      const shareData = {
-          title: shareTitle,
-          text: shareText,
-          files: filesArray
-      }
-
       if (navigator.canShare && navigator.canShare({ files: filesArray })) {
-          await navigator.share(shareData)
+          await navigator.share({ title: shareTitle, text: shareText, files: filesArray })
       } else {
           window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`
       }
-
     } catch (error: any) { 
       console.error("Share failed", error) 
-      if (error.name !== 'AbortError') {
-           window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`
-      }
+      if (error.name !== 'AbortError') { window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}` }
     } finally {
         setIsSharingId(null)
     }
   }
 
   const filteredProperties = properties.filter(p => {
-    const matchesSearch = p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          p.description?.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesSearch
+    return p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || p.description?.toLowerCase().includes(searchQuery.toLowerCase())
   })
 
   // --- RENDER ---
- 
   if (authError) return <div className="flex h-screen items-center justify-center"><button onClick={handleManualLogout} className="text-blue-600 font-bold bg-blue-50 px-6 py-3 rounded-full">Session Expired. Login Again</button></div>
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 min-h-screen pb-24">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 min-h-screen pb-24 pt-16 relative">
       
+      {/* FIXED REFRESH BUTTON */}
+      <button 
+          onClick={() => fetchProperties(true)}
+          className="fixed top-4 right-4 z-[60] bg-white/90 backdrop-blur-md p-2.5 rounded-full shadow-md border border-slate-200 text-slate-500 hover:text-blue-600 transition-all active:scale-95"
+          title="Refresh Catalog"
+      >
+          <RefreshCw size={18} className={isRefreshing ? "animate-spin text-blue-600" : ""} />
+      </button>
+
       {/* Desktop/Tablet Responsive Header Row */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 mt-4">
         <div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Products & Services</h1>
           <p className="text-slate-500 mt-1 sm:text-lg font-medium">Manage your catalog and assets.</p>
         </div>
         
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-            {/* Search Bar - Expands gracefully */}
+            {/* Search Bar */}
             <div className="relative flex-1 sm:min-w-[300px]">
               <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-             
               <input 
                 type="text" 
                 value={searchQuery}
@@ -409,7 +443,7 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* OPTIONS BAR (Collapsible) */}
+      {/* OPTIONS BAR */}
       {showFilters && (
         <div className="bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200 mb-8 animate-in slide-in-from-top-2 flex flex-wrap gap-4">
             <button onClick={handleCopyFilteredLink} className="bg-blue-50 text-blue-700 hover:bg-blue-100 py-3 px-6 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all">
@@ -430,8 +464,20 @@ export default function ProductsPage() {
             <div 
               key={prop.id} 
               onClick={() => setSelectedProperty(prop)}
-              className="bg-white rounded-[1.5rem] shadow-sm hover:shadow-xl border border-slate-200/60 transition-all cursor-pointer group hover:-translate-y-1 flex flex-col overflow-hidden"
+              className="bg-white rounded-[1.5rem] shadow-sm hover:shadow-xl border border-slate-200/60 transition-all cursor-pointer group hover:-translate-y-1 flex flex-col overflow-hidden relative"
             >
+              
+              {/* DELETE BUTTON (Admin Only, visible on hover or always on mobile) */}
+              {role === 'admin' && (
+                  <button 
+                      onClick={(e) => { e.stopPropagation(); setPropertyToDelete(prop); }}
+                      className="absolute top-3 right-3 z-10 p-2 bg-white/80 hover:bg-red-50 text-slate-400 hover:text-red-500 backdrop-blur-md rounded-full opacity-100 sm:opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-sm border border-slate-200/50"
+                      title="Delete Product"
+                  >
+                      <Trash2 size={16} />
+                  </button>
+              )}
+
               <div className="relative h-56 w-full bg-slate-100 overflow-hidden">
                 <img src={prop.image_url} alt="Product" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                 <div className="absolute top-3 left-3 flex gap-2">
@@ -474,7 +520,7 @@ export default function ProductsPage() {
                   {prop.description || 'No description provided.'}
                 </p>
 
-                {/* Auto Generate Toggle - FIXED SLIDING UI */}
+                {/* Auto Generate Toggle */}
                 <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
                   <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
                     <Sparkles size={14} className={prop.auto_generate ? "text-amber-500" : "text-slate-400"} />
@@ -495,7 +541,38 @@ export default function ProductsPage() {
         )}
       </div>
 
-      {/* ADD MODAL (Centered Responsive Dialog) */}
+      {/* CONFIRMATION MODAL FOR DELETION */}
+      {propertyToDelete && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 sm:p-8 shadow-2xl animate-in zoom-in-95 duration-200 text-center">
+                <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-red-50">
+                    <AlertTriangle size={28} strokeWidth={2.5} />
+                </div>
+                <h3 className="text-xl font-black text-slate-900 mb-2">Delete Product?</h3>
+                <p className="text-sm text-slate-500 font-medium mb-8 leading-relaxed">
+                    Are you sure you want to permanently delete <strong className="text-slate-800">"{propertyToDelete.title}"</strong>? This action cannot be undone and will remove it from your public catalog.
+                </p>
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => setPropertyToDelete(null)}
+                        disabled={isDeleting}
+                        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3.5 rounded-2xl text-sm font-bold transition-all disabled:opacity-50"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={handleDeleteProperty}
+                        disabled={isDeleting}
+                        className="flex-1 bg-red-500 hover:bg-red-600 text-white py-3.5 rounded-2xl text-sm font-bold shadow-lg shadow-red-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                        {isDeleting ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />} Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* ADD MODAL */}
       {role === 'admin' && showAddModal && (
         <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 max-h-[90vh] overflow-y-auto">
@@ -514,7 +591,7 @@ export default function ProductsPage() {
               {previews.length > 0 && (
                 <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                   {previews.map((src, i) => (
-                    <img key={i} src={src} className="w-20 h-20 rounded-xl object-cover border border-slate-200 flex-shrink-0 shadow-sm" />
+                    <img key={i} src={src} className="w-20 h-20 rounded-xl object-cover border border-slate-200 flex-shrink-0 shadow-sm" alt="Preview" />
                   ))}
                 </div>
               )}
@@ -541,7 +618,7 @@ export default function ProductsPage() {
                 />
               </div>
               
-              <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center mt-4">
+              <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center mt-4 disabled:opacity-50 disabled:scale-100">
                 {isSubmitting ? <><Loader2 size={18} className="animate-spin mr-2" /> Saving...</> : 'Save Product'}
               </button>
             </div>
@@ -549,17 +626,28 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* VIEW MODAL WITH NEW TABS (Responsive Desktop Dialog) */}
-      {selectedProperty && (
+      {/* VIEW MODAL WITH NEW TABS */}
+      {selectedProperty && !propertyToDelete && (
         <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm sm:p-6 animate-in fade-in duration-200">
            <div className="bg-slate-50 w-full sm:max-w-5xl h-[95vh] sm:h-[85vh] rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 border border-slate-100">
                
                {/* Top Navigation */}
                <div className="bg-white px-6 py-5 border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
                    <h2 className="text-xl font-extrabold text-slate-900 truncate pr-4">{selectedProperty.title}</h2>
-                   <button onClick={() => setSelectedProperty(null)} className="bg-slate-100 p-2.5 rounded-full text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition-colors shrink-0">
-                     <X size={20} />
-                   </button>
+                   <div className="flex items-center gap-2">
+                       {role === 'admin' && (
+                           <button 
+                               onClick={() => setPropertyToDelete(selectedProperty)}
+                               className="p-2.5 rounded-full text-red-500 bg-red-50 hover:bg-red-100 transition-colors shrink-0"
+                               title="Delete Product"
+                           >
+                               <Trash2 size={20} />
+                           </button>
+                       )}
+                       <button onClick={() => setSelectedProperty(null)} className="bg-slate-100 p-2.5 rounded-full text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition-colors shrink-0">
+                         <X size={20} />
+                       </button>
+                   </div>
                </div>
 
                <div className="flex bg-white border-b border-slate-200 shrink-0 px-2 sm:px-6">
@@ -580,16 +668,13 @@ export default function ProductsPage() {
                {/* Scrollable Content Area */}
                <div className="flex-1 overflow-y-auto">
                    {modalTab === 'details' ? (
-                       // TAB 1: DETAILS
                        <div className="p-4 sm:p-8 space-y-8 max-w-4xl mx-auto">
-                           {/* Images */}
                            <div className="flex gap-4 overflow-x-auto snap-x scrollbar-hide pb-2 pt-2">
                              {(selectedProperty.images || [selectedProperty.image_url]).map((img, i) => (
-                               <img key={i} src={img} className="w-[85vw] sm:w-[600px] h-64 sm:h-[400px] rounded-[1.5rem] sm:rounded-[2rem] object-cover flex-shrink-0 snap-center border border-slate-200 shadow-sm" />
+                               <img key={i} src={img} className="w-[85vw] sm:w-[600px] h-64 sm:h-[400px] rounded-[1.5rem] sm:rounded-[2rem] object-cover flex-shrink-0 snap-center border border-slate-200 shadow-sm" alt="Gallery item" />
                              ))}
                            </div>
                            
-                           {/* Text Info */}
                            <div className="bg-white p-6 sm:p-8 rounded-[2rem] shadow-sm border border-slate-100">
                               <h3 className="font-extrabold text-lg text-slate-900 mb-3 flex items-center gap-2">
                                  <FileText size={18} className="text-blue-600"/> About this Product
@@ -600,7 +685,6 @@ export default function ProductsPage() {
                            </div>
                        </div>
                    ) : (
-                       // TAB 2: CREATIVES (ASSETS)
                        <div className="p-4 sm:p-8">
                            {isLoadingAssets ? (
                                <div className="flex justify-center py-20"><Loader2 size={32} className="animate-spin text-slate-400" /></div>
@@ -622,7 +706,7 @@ export default function ProductsPage() {
                                            {asset.type === 'video' ? (
                                                <video src={asset.url} className="w-full h-full object-cover" />
                                            ) : (
-                                               <img src={asset.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                               <img src={asset.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="Creative" />
                                            )}
                                            <div className={`absolute top-2.5 right-2.5 w-3 h-3 rounded-full border-2 border-white shadow-sm ${asset.status === 'Published' ? 'bg-green-500' : 'bg-amber-400'}`} title={`Status: ${asset.status}`} />
                                        </div>

@@ -1,4 +1,3 @@
-// app/dashboard/layout.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -29,7 +28,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         .eq('id', session.user.id)
         .single()
 
-      const isPaid = data?.subscription_status === 'active'
+      const currentStatus = data?.subscription_status?.toLowerCase() || ''
+      const isPaid = currentStatus === 'active' || currentStatus === 'trialing' || currentStatus === 'pro'
       const isBillingPage = pathname === '/dashboard/billing'
 
       // If they haven't paid, and they aren't already on the billing page, trap them!
@@ -41,18 +41,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
 
     enforcePaywall()
-  }, [pathname, router])
+  }, [pathname, router, supabase])
 
   if (!isAuthorized) {
-    return <div className="flex h-screen items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-primary" size={32} /></div>
+    return <div className="flex h-screen items-center justify-center bg-[#F8FAFC]"><Loader2 className="animate-spin text-blue-600" size={32} /></div>
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-[#F8FAFC]">
       {/* PushManager deployed as a banner. It auto-hides if enabled or dismissed */}
       <PushManager variant="banner" />
       
       {children}
+      
       {/* Hide the navigation bar if they are trapped on the billing page */}
       {pathname !== '/dashboard/billing' && <BottomNav />}
     </div>

@@ -12,12 +12,12 @@ import {
   CheckCircle, 
   Instagram, 
   Target, 
-  Share2,
   Globe,
   CheckCircle2,
   AlertCircle,
   FileText,
-  Shield
+  Shield,
+  RefreshCw
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -39,6 +39,8 @@ type Pixel = {
   id: string
   name: string
 }
+
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in ms
 
 // --- DOMAIN MANAGER COMPONENT ---
 function DomainManager({ initialDomain, userId }: { initialDomain: string, userId: string | null }) {
@@ -71,6 +73,17 @@ function DomainManager({ initialDomain, userId }: { initialDomain: string, userI
       if (!res.ok) throw new Error(data.error || 'Failed to connect domain')
       
       setStatus('success')
+      
+      // Update local cache quietly
+      if (userId) {
+          const cacheKey = `profile_cache_${userId}`
+          const cached = localStorage.getItem(cacheKey)
+          if (cached) {
+              const parsed = JSON.parse(cached)
+              localStorage.setItem(cacheKey, JSON.stringify({ ...parsed, custom_domain: cleanDomain }))
+          }
+      }
+
     } catch (err: any) {
       setStatus('error')
       setErrorMessage(err.message)
@@ -147,6 +160,7 @@ export default function ProfilePage() {
   
   // --- STATE ---
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   
   // ROLE STATE
@@ -173,10 +187,6 @@ export default function ProfilePage() {
   const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false) 
   const [isLoadingPixels, setIsLoadingPixels] = useState(false) 
 
-  // Distribution Toggle States
-  const [enableDistribution, setEnableDistribution] = useState(false)
-  const [isTogglingDist, setIsTogglingDist] = useState(false)
-
   // Profile Data
   const [initialCustomDomain, setInitialCustomDomain] = useState<string>('')
   const [formData, setFormData] = useState({
@@ -193,6 +203,16 @@ export default function ProfilePage() {
 
   // --- HELPERS ---
   const isValidFacebookToken = (token: string) => token && token.startsWith('EAA')
+
+  const updateLocalCache = (updates: any) => {
+      if (!userId) return;
+      const cacheKey = `profile_cache_${userId}`;
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+          const parsed = JSON.parse(cached);
+          localStorage.setItem(cacheKey, JSON.stringify({ ...parsed, ...updates }));
+      }
+  }
 
   // 1. Fetch Pages
   const fetchPages = async () => {
@@ -271,6 +291,8 @@ export default function ProfilePage() {
       selected_page_name: page.name,
       selected_page_token: page.access_token
     }).eq('id', userId)
+    
+    updateLocalCache({ selected_page_id: page.id, selected_page_name: page.name, selected_page_token: page.access_token })
   }
 
   const handleAdAccountSelect = async (adAccountId: string) => {
@@ -281,6 +303,7 @@ export default function ProfilePage() {
       ad_account_id: adAccountId, 
     }).eq('id', userId)
 
+    updateLocalCache({ ad_account_id: adAccountId })
     fetchPixels(adAccountId)
   }
 
@@ -288,94 +311,123 @@ export default function ProfilePage() {
     if (!userId) return
     setSelectedPixelId(pixelId)
     await supabase.from('profiles').update({ pixel_id: pixelId }).eq('id', userId)
+    updateLocalCache({ pixel_id: pixelId })
   }
 
-  // --- CORE: Load Data ---
-  useEffect(() => {
-    let isMounted = true
+  // --- CORE: Fetch Profile ---
+  const fetchProfile = async (force = false) => {
+    try {
+      if (!force && !userId) setLoading(true)
+      if (force) setIsRefreshing(true)
 
-    const init = async () => {
-      try {
-        const params = new URLSearchParams(window.location.search)
-        const errorMsg = params.get('error')
+      const params = new URLSearchParams(window.location.search)
+      const errorMsg = params.get('error')
 
-        if (errorMsg) {
-          alert(`⚠️ Connection Failed: ${errorMsg}`)
-          router.replace('/dashboard/profile')
-          return 
+      if (errorMsg) {
+        alert(`⚠️ Connection Failed: ${errorMsg}`)
+        router.replace('/dashboard/profile')
+        return 
+      }
+
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user
+
+      if (!user) {
+        router.push('/')
+        return
+      }
+      setUserId(user.id)
+
+      const cacheKey = `profile_cache_${user.id}`
+      const timeKey = `profile_time_${user.id}`
+
+      let profileData = null
+
+      if (!force) {
+        const cachedData = localStorage.getItem(cacheKey)
+        const lastFetch = localStorage.getItem(timeKey)
+        const now = Date.now()
+
+        if (cachedData) {
+          profileData = JSON.parse(cachedData)
+          setLoading(false)
+          if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) {
+            // Cache is fresh
+          } else {
+            profileData = null // Expired, fetch fresh
+          }
         }
+      }
 
-        const { data: { session } } = await supabase.auth.getSession()
-        const user = session?.user
-
-        if (!user) {
-          if (isMounted) router.push('/')
-          return
-        }
-        if (isMounted) setUserId(user.id)
-
-        const { data: profile } = await supabase
+      if (!profileData) {
+        const { data } = await supabase
           .from('profiles')
           .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id, custom_domain, role') 
           .eq('id', user.id)
           .single()
 
-        if (profile && isMounted) {
-          setRole(profile.role || 'admin') 
-          setInitialCustomDomain(profile.custom_domain || '')
-
-          setFormData({
-            businessName: profile.business_name || '',
-            mission: profile.mission_statement || '',
-            color: profile.brand_color || '#D0E8FF',
-            contact: profile.contact_number || '',
-            logoUrl: profile.logo_url || '',
-            facebookUrl: profile.facebook_url || '',
-            instagramUrl: profile.instagram_url || ''
-          })
-          
-          setEnableDistribution(profile.enable_distribution || false)
-
-          if (profile.facebook_token && isValidFacebookToken(profile.facebook_token)) {
-            setIsFacebookConnected(true)
-            setFacebookToken(profile.facebook_token);
-            if (profile.selected_page_id) setSelectedPageId(profile.selected_page_id)
-            else fetchPages()
-
-            if (profile.ad_account_id) {
-                setSelectedAdAccountId(profile.ad_account_id)
-                fetchPixels(profile.ad_account_id)
-            }
-            if (profile.pixel_id) {
-                setSelectedPixelId(profile.pixel_id)
-            }
-            
-            fetchAdAccounts(profile.facebook_token);
-          } else {
-             setIsFacebookConnected(false)
-             setFacebookToken(null);
-             setAdAccounts([]); 
-             setPixels([]);
-          }
+        profileData = data
+        if (data) {
+           localStorage.setItem(cacheKey, JSON.stringify(data))
+           localStorage.setItem(timeKey, Date.now().toString())
         }
-
-      } catch (error) {
-        console.error("Load error:", error)
-      } finally {
-        if (isMounted) setLoading(false)
       }
-    }
 
-    init()
+      if (profileData) {
+        setRole(profileData.role || 'admin') 
+        setInitialCustomDomain(profileData.custom_domain || '')
+
+        setFormData({
+          businessName: profileData.business_name || '',
+          mission: profileData.mission_statement || '',
+          color: profileData.brand_color || '#D0E8FF',
+          contact: profileData.contact_number || '',
+          logoUrl: profileData.logo_url || '',
+          facebookUrl: profileData.facebook_url || '',
+          instagramUrl: profileData.instagram_url || ''
+        })
+        
+        if (profileData.facebook_token && isValidFacebookToken(profileData.facebook_token)) {
+          setIsFacebookConnected(true)
+          setFacebookToken(profileData.facebook_token);
+          if (profileData.selected_page_id) setSelectedPageId(profileData.selected_page_id)
+          else fetchPages()
+
+          if (profileData.ad_account_id) {
+              setSelectedAdAccountId(profileData.ad_account_id)
+              fetchPixels(profileData.ad_account_id)
+          }
+          if (profileData.pixel_id) {
+              setSelectedPixelId(profileData.pixel_id)
+          }
+          
+          fetchAdAccounts(profileData.facebook_token);
+        } else {
+           setIsFacebookConnected(false)
+           setFacebookToken(null);
+           setAdAccounts([]); 
+           setPixels([]);
+        }
+      }
+
+    } catch (error) {
+      console.error("Load error:", error)
+    } finally {
+      setLoading(false)
+      setIsRefreshing(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchProfile(false)
     
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event) => {
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-          if (isMounted) init() 
+          fetchProfile(true) 
       }
     })
 
     return () => {
-      isMounted = false
       authListener.subscription.unsubscribe()
     }
   }, [router, supabase])
@@ -400,6 +452,11 @@ export default function ProfilePage() {
         facebook_token: null, selected_page_id: null, selected_page_name: null, selected_page_token: null,
         ad_account_id: null, pixel_id: null
       }).eq('id', userId)
+      
+      updateLocalCache({ 
+          facebook_token: null, selected_page_id: null, selected_page_name: null, selected_page_token: null,
+          ad_account_id: null, pixel_id: null
+      })
     }
     setIsFacebookConnected(false)
     setFacebookToken(null)
@@ -429,6 +486,7 @@ export default function ProfilePage() {
 
       setFormData(prev => ({ ...prev, logoUrl: publicUrl }))
       await supabase.from('profiles').update({ logo_url: publicUrl }).eq('id', userId)
+      updateLocalCache({ logo_url: publicUrl })
 
     } catch (error) {
       alert('Error uploading logo')
@@ -437,35 +495,12 @@ export default function ProfilePage() {
     }
   }
 
-  const handleToggleDistribution = async () => {
-    if (!userId) return
-    const newState = !enableDistribution
-    
-    setEnableDistribution(newState)
-    setIsTogglingDist(true)
-
-    try {
-        const { error } = await supabase
-            .from('profiles')
-            .update({ enable_distribution: newState })
-            .eq('id', userId)
-
-        if (error) throw error
-        setTimeout(() => window.location.reload(), 500)
-    } catch (e: any) {
-        setEnableDistribution(!newState)
-        alert("Failed to save setting: " + e.message)
-    } finally {
-        setIsTogglingDist(false)
-    }
-  }
-
   const handleSave = async () => {
     setIsSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const { error } = await supabase.from('profiles').update({
+    const updates = {
         business_name: formData.businessName,
         mission_statement: formData.mission,
         brand_color: formData.color,
@@ -473,12 +508,15 @@ export default function ProfilePage() {
         logo_url: formData.logoUrl,
         facebook_url: role === 'admin' ? formData.facebookUrl : undefined,
         instagram_url: role === 'admin' ? formData.instagramUrl : undefined,
-      }).eq('id', user.id)
+    }
+
+    const { error } = await supabase.from('profiles').update(updates).eq('id', user.id)
 
     if (error) {
       alert(`Error saving: ${error.message}`)
     } else {
       alert("Profile Information Saved!")
+      updateLocalCache(updates)
     }
     setIsSaving(false)
   }
@@ -496,7 +534,17 @@ export default function ProfilePage() {
   )
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-32">
+    <div className="min-h-screen bg-[#F8FAFC] pb-32 pt-16 relative">
+      
+      {/* FIXED REFRESH BUTTON */}
+      <button 
+          onClick={() => fetchProfile(true)}
+          className="fixed top-4 right-4 z-[60] bg-white/90 backdrop-blur-md p-2.5 rounded-full shadow-md border border-slate-200 text-slate-500 hover:text-blue-600 transition-all active:scale-95"
+          title="Refresh Profile"
+      >
+          <RefreshCw size={18} className={isRefreshing ? "animate-spin text-blue-600" : ""} />
+      </button>
+
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
         
         <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-8 ml-1">Workspace Settings</h1>
@@ -781,32 +829,6 @@ export default function ProfilePage() {
             {/* Settings (ADMIN ONLY) */}
             {role === 'admin' && (
                 <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
-                    <div className="p-4 sm:p-5 flex items-center justify-between border-b border-slate-100">
-                        <div className="flex items-center gap-4">
-                            <div className="bg-violet-100 text-violet-600 p-3 rounded-2xl">
-                                <Share2 size={20} />
-                            </div>
-                            <div>
-                                <span className="font-bold text-sm text-slate-900 block">Agent Distribution</span>
-                                <span className="text-xs text-slate-500 font-medium">Enable Team CRM Tab</span>
-                            </div>
-                        </div>
-                        
-                        <button 
-                            onClick={handleToggleDistribution}
-                            disabled={isTogglingDist}
-                            className={`w-14 h-8 rounded-full p-1 transition-all relative outline-none focus:ring-4 focus:ring-violet-500/20 ${enableDistribution ? 'bg-violet-600' : 'bg-slate-200'}`}
-                        >
-                            {isTogglingDist ? (
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                    <Loader2 size={14} className="animate-spin text-white" />
-                                </div>
-                            ) : (
-                                <div className={`w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ease-out ${enableDistribution ? 'translate-x-6' : 'translate-x-0'}`} />
-                            )}
-                        </button>
-                    </div>
-
                     <button onClick={() => router.push('/dashboard/billing')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100">
                         <div className="flex items-center gap-4">
                             <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl">
@@ -817,7 +839,6 @@ export default function ProfilePage() {
                         <ChevronRight size={20} className="text-slate-400" />
                     </button>
 
-                    {/* NEW TEAM MANAGEMENT BUTTON */}
                     <button onClick={() => router.push('/dashboard/team')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
                         <div className="flex items-center gap-4">
                             <div className="bg-emerald-100 text-emerald-600 p-3 rounded-2xl">

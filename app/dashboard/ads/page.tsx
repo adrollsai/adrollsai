@@ -21,13 +21,16 @@ type SelectedCreative = {
 }
 
 const GENDERS = ['All', 'Male', 'Female']
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in ms
 
 export default function AdsPage() {
   const router = useRouter()
   const supabase = createClient()
   const fileInputRef = useRef<HTMLInputElement>(null) 
   
+  // Data States
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
@@ -35,25 +38,26 @@ export default function AdsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]) 
   const [properties, setProperties] = useState<Property[]>([])
   const [assets, setAssets] = useState<Asset[]>([]) 
+  
+  // Profile / Config States
   const [selectedAdAccountId, setSelectedAdAccountId] = useState<string | null>(null)
   const [facebookToken, setFacebookToken] = useState<string | null>(null)
   const [accountStatus, setAccountStatus] = useState<any>(null)
 
+  // Location Search
   const [locationSearchText, setLocationSearchText] = useState('')
   const [locationResults, setLocationResults] = useState<LocationOption[]>([])
   const [isSearchingLocation, setIsSearchingLocation] = useState(false)
 
+  // Modals
   const [statsModal, setStatsModal] = useState<{ isOpen: boolean, campaign: Campaign | null, insights: any, loading: boolean }>({ isOpen: false, campaign: null, insights: null, loading: false })
-  
-  // Optimizer States
   const [optimizingCampaignId, setOptimizingCampaignId] = useState<string | null>(null)
   const [optimizerResult, setOptimizerResult] = useState<any | null>(null)
 
+  // Form States
   const [formQuestions, setFormQuestions] = useState<CustomQuestion[]>([])
   const [isAddingQuestion, setIsAddingQuestion] = useState(false)
   const [newQuestion, setNewQuestion] = useState<CustomQuestion>({ label: '', type: 'SHORT_ANSWER', options: [''] })
-
-  // New Unified Creative Pool
   const [selectedCreatives, setSelectedCreatives] = useState<SelectedCreative[]>([])
 
   const [adForm, setAdForm] = useState({
@@ -67,14 +71,6 @@ export default function AdsPage() {
 
   const isVideoFile = (file: File) => file.type.startsWith('video/');
 
-  const fetchCampaigns = async () => {
-      try {
-          const res = await fetch('/api/meta-ads/campaigns');
-          const data = await res.json();
-          if (data.campaigns) setCampaigns(data.campaigns);
-      } catch (e) { console.error("Failed to load campaigns", e); }
-  }
-
   const checkAccountStatus = async (accountId: string) => {
       try {
           const res = await fetch(`/api/meta-ads/check-account?adAccountId=${accountId}`)
@@ -83,22 +79,61 @@ export default function AdsPage() {
       } catch (e) { console.error(e) }
   }
 
-  useEffect(() => {
-    const loadData = async () => {
+  // 1. SAFE FETCH WITH LOCAL CACHING
+  const fetchAdsData = async (force = false) => {
+    try {
+      if (!force && campaigns.length === 0) setLoading(true)
+      if (force) setIsRefreshing(true)
+
       const { data: { user } } = await supabase.auth.getUser()
-  
       if (!user) { router.push('/'); return }
 
+      const cacheKeyCamp = `ads_campaigns_${user.id}`
+      const cacheKeyProps = `ads_props_${user.id}`
+      const cacheKeyAssets = `ads_assets_${user.id}`
+      const timeKey = `ads_time_${user.id}`
+
+      // Always fetch profile directly to ensure we have the latest tokens for launching ads
       const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id').eq('id', user.id).single()
       
       if (profile) {
         setFacebookToken(profile.facebook_token)
         setSelectedAdAccountId(profile.ad_account_id)
-        setAdForm(prev => ({...prev, pageId: profile.selected_page_id || ''})) 
-        if (profile.ad_account_id) {
-            await fetchCampaigns()
-            await checkAccountStatus(profile.ad_account_id)
+        setAdForm(prev => ({...prev, pageId: profile.selected_page_id || ''}))
+        if (profile.ad_account_id && !force) {
+            checkAccountStatus(profile.ad_account_id) // Do this quietly in background
         }
+      }
+
+      // Check Local Cache
+      if (!force) {
+          const lastFetch = localStorage.getItem(timeKey)
+          const now = Date.now()
+
+          if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) {
+              const cCamp = localStorage.getItem(cacheKeyCamp)
+              const cProps = localStorage.getItem(cacheKeyProps)
+              const cAssets = localStorage.getItem(cacheKeyAssets)
+
+              if (cCamp && cProps && cAssets) {
+                  setCampaigns(JSON.parse(cCamp))
+                  setProperties(JSON.parse(cProps))
+                  setAssets(JSON.parse(cAssets))
+                  setLoading(false)
+                  return; // Cache is valid and fresh, exit early
+              }
+          }
+      }
+
+      // Fetch Fresh Data
+      let newCampaigns: Campaign[] = []
+      if (profile?.ad_account_id) {
+          if (force) checkAccountStatus(profile.ad_account_id)
+          try {
+              const res = await fetch('/api/meta-ads/campaigns')
+              const data = await res.json()
+              if (data.campaigns) newCampaigns = data.campaigns
+          } catch (e) { console.error("Failed to load campaigns", e) }
       }
 
       const [propsRes, assetsRes] = await Promise.all([
@@ -106,13 +141,31 @@ export default function AdsPage() {
           supabase.from('assets').select('id, type, url').eq('user_id', user.id).order('created_at', { ascending: false })
       ])
 
-      if (propsRes.data) setProperties(propsRes.data)
-      if (assetsRes.data) setAssets(assetsRes.data as Asset[])
-      setLoading(false)
-    }
-    loadData()
-  }, [])
+      const newProps = propsRes.data || []
+      const newAssets = (assetsRes.data as Asset[]) || []
 
+      setCampaigns(newCampaigns)
+      setProperties(newProps)
+      setAssets(newAssets)
+
+      // Save to Cache
+      localStorage.setItem(cacheKeyCamp, JSON.stringify(newCampaigns))
+      localStorage.setItem(cacheKeyProps, JSON.stringify(newProps))
+      localStorage.setItem(cacheKeyAssets, JSON.stringify(newAssets))
+      localStorage.setItem(timeKey, Date.now().toString())
+
+    } catch (error) {
+      console.error("Fetch Error:", error)
+    } finally {
+      setLoading(false)
+      setIsRefreshing(false)
+    }
+  }
+
+  // Trigger initial fetch
+  useEffect(() => { fetchAdsData() }, [])
+
+  // Location Search Debounce
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
         if (locationSearchText.length > 2 && facebookToken) {
@@ -131,14 +184,24 @@ export default function AdsPage() {
   const handleToggleStatus = async (id: string, currentStatus: string) => {
       const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
       setTogglingId(id);
-      setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c));
+      
+      const updatedCampaigns = campaigns.map(c => c.id === id ? { ...c, status: newStatus } : c);
+      setCampaigns(updatedCampaigns);
+
+      // Update local cache quietly
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) localStorage.setItem(`ads_campaigns_${user.id}`, JSON.stringify(updatedCampaigns));
+
       try {
           const res = await fetch('/api/meta-ads/update-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId: id, newStatus }) });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
       } catch (error: any) {
           alert(`Failed to update status: ${error.message}`);
-          setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: currentStatus } : c));
+          // Revert on fail
+          const reverted = campaigns.map(c => c.id === id ? { ...c, status: currentStatus } : c);
+          setCampaigns(reverted);
+          if (user) localStorage.setItem(`ads_campaigns_${user.id}`, JSON.stringify(reverted));
       } finally { setTogglingId(null); }
   }
 
@@ -249,14 +312,24 @@ export default function AdsPage() {
         setAdForm(prev => ({ ...prev, metaLocation: { location: null, radius: 20 }, dailyBudgetINR: 500 })) 
         setSelectedCreatives([]);
         setFormQuestions([]);
-        fetchCampaigns();
+        fetchAdsData(true); // Force fetch to update list with new campaign
       } else throw new Error(data.error || 'Failed to Start');
     } catch (e: any) { alert('Launch Failed: ' + e.message); } 
     finally { setIsSubmitting(false) }
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-32">
+    <div className="min-h-screen bg-[#F8FAFC] pb-32 pt-16 relative">
+        
+      {/* FIXED REFRESH BUTTON */}
+      <button 
+          onClick={() => fetchAdsData(true)}
+          className="fixed top-4 right-4 z-[60] bg-white/90 backdrop-blur-md p-2.5 rounded-full shadow-md border border-slate-200 text-slate-500 hover:text-blue-600 transition-all active:scale-95"
+          title="Refresh Ads Data"
+      >
+          <RefreshCw size={18} className={isRefreshing ? "animate-spin text-blue-600" : ""} />
+      </button>
+
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
         
         {/* HEADER */}
@@ -267,14 +340,8 @@ export default function AdsPage() {
             </div>
             <div className="flex gap-3 w-full sm:w-auto">
                 <button 
-                    onClick={fetchCampaigns} 
-                    className="flex-1 sm:flex-none bg-white hover:bg-slate-50 text-slate-600 p-3.5 rounded-full shadow-sm border border-slate-200/60 active:scale-95 transition-all flex justify-center items-center gap-2"
-                >
-                    <RefreshCw size={20} />
-                </button>
-                <button 
                     onClick={() => setIsModalOpen(true)} 
-                    className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white px-6 py-3.5 rounded-full shadow-md shadow-blue-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 font-bold"
+                    className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-8 py-3.5 rounded-full shadow-md shadow-blue-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 font-bold"
                 >
                     <Plus size={20} strokeWidth={3} /> <span className="hidden sm:inline">New Campaign</span>
                 </button>
@@ -293,7 +360,7 @@ export default function AdsPage() {
                     <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400 bg-white rounded-[2.5rem] border border-slate-200/60 border-dashed">
                         <LayoutGrid size={48} className="text-slate-200 mb-4" />
                         <p className="text-base font-bold text-slate-600">No active campaigns</p>
-                        <p className="text-sm mt-1">Tap '+' to launch your first AI-optimized ad.</p>
+                        <p className="text-sm mt-1">Tap 'New Campaign' to launch your first AI-optimized ad.</p>
                     </div>
                 ) : (
                     campaigns.map(campaign => (

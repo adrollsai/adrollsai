@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User } from 'lucide-react'
+import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { toast } from 'sonner'
@@ -35,6 +35,8 @@ type Profile = {
   mission_statement: string
 }
 
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 // --- TEMPLATES LIBRARY ---
 const TEMPLATES: { id: string, name: string, url: string }[] = []
 
@@ -47,7 +49,15 @@ const ASPECT_RATIOS = [
 export default function CreationPage() {
   const supabase = createClient()
   
-  // State
+  // Data State
+  const [properties, setProperties] = useState<Property[]>([])
+  const [isLoadingProperties, setIsLoadingProperties] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [selectedPropId, setSelectedPropId] = useState<string>('')
+  
+  // Chat State
   const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
   const [currentStep, setCurrentStep] = useState<string>('') 
@@ -66,37 +76,74 @@ export default function CreationPage() {
   const [isUploadingRef, setIsUploadingRef] = useState(false)
   const refFileInputRef = useRef<HTMLInputElement>(null)
   
-  // Data State
-  const [userId, setUserId] = useState<string | null>(null)
-  const [properties, setProperties] = useState<Property[]>([]) 
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [selectedPropId, setSelectedPropId] = useState<string>('')
-  
   const chatEndRef = useRef<HTMLDivElement>(null)
 
-  // 1. Fetch Data
-  useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      
+  // 1. SAFE FETCH WITH LOCAL CACHING
+  const fetchProperties = async (force = false) => {
+    try {
+      if (!force && properties.length === 0) setIsLoadingProperties(true)
+      if (force) setIsRefreshing(true)
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) return
+
       setUserId(user.id)
 
+      // We still fetch the profile locally because we need the logo & contact number for AI prompts
       const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       if (profileData) {
           setProfile(profileData)
       }
 
-      const { data: props } = await supabase
+      const cacheKey = `inventory_cache_${user.id}`
+      const timeKey = `inventory_time_${user.id}`
+
+      // Check Local Cache
+      if (!force) {
+          const cachedData = localStorage.getItem(cacheKey)
+          const lastFetch = localStorage.getItem(timeKey)
+          const now = Date.now()
+
+          if (cachedData) {
+              setProperties(JSON.parse(cachedData))
+              setIsLoadingProperties(false)
+              if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) {
+                  return; // Cache is fresh, stop here.
+              }
+          }
+      }
+
+      // Fetch Fresh Data
+      const currentRole = profileData?.role || 'admin'
+      const targetUserId = (currentRole === 'agent' && profileData?.parent_id) ? profileData.parent_id : user.id
+
+      const { data, error: dbError } = await supabase
         .from('properties')
         .select('id, title, address, price, images, image_url, description, created_at')
-        .eq('user_id', user.id)
+        .eq('user_id', targetUserId)
         .order('created_at', { ascending: false })
+
+      if (dbError) throw new Error(dbError.message)
       
-      if (props) setProperties(props)
+      if (data) {
+          setProperties(data)
+          localStorage.setItem(cacheKey, JSON.stringify(data))
+          localStorage.setItem(timeKey, Date.now().toString())
+      }
+
+    } catch (error: any) {
+      console.error("Fetch Error:", error.message)
+      toast.error("Failed to load catalog.")
+    } finally {
+      setIsLoadingProperties(false)
+      setIsRefreshing(false)
     }
-    init()
-  }, [])
+  }
+
+  // Trigger fetch on mount
+  useEffect(() => {
+    fetchProperties()
+  }, [supabase])
 
   // 2. Prevent Accidental Navigation
   useEffect(() => {
@@ -270,8 +317,17 @@ export default function CreationPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-70px)] sm:h-screen bg-[#F8FAFC]">
+    <div className="flex flex-col h-[calc(100dvh-70px)] sm:h-screen bg-[#F8FAFC] relative">
       
+      {/* FIXED REFRESH BUTTON */}
+      <button 
+          onClick={() => fetchProperties(true)}
+          className="fixed top-4 right-4 z-[60] bg-white/90 backdrop-blur-md p-2.5 rounded-full shadow-md border border-slate-200 text-slate-500 hover:text-blue-600 transition-all active:scale-95"
+          title="Refresh Catalog"
+      >
+          <RefreshCw size={18} className={isRefreshing ? "animate-spin text-blue-600" : ""} />
+      </button>
+
       {/* --- HEADER & CONFIG BAR (Grid Layout for Mobile Robustness) --- */}
       <div className="bg-white/95 backdrop-blur-xl border-b border-slate-200/60 z-20 flex-shrink-0 rounded-b-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] pb-4 pt-3">
         
@@ -322,18 +378,23 @@ export default function CreationPage() {
 
             {/* Product Selector Pill (Full width on mobile, 1/3 on desktop) */}
             <div className="relative w-full col-span-2 md:col-span-1">
-                <Package size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-blue-500" />
+                <Package size={14} className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${isLoadingProperties ? 'text-slate-400' : 'text-blue-500'}`} />
                 <select 
                     value={selectedPropId}
                     onChange={(e) => setSelectedPropId(e.target.value)}
-                    className="w-full bg-blue-50/50 hover:bg-blue-100/50 border border-blue-100 text-blue-900 text-[11px] font-bold rounded-[1rem] py-2.5 pl-9 pr-8 appearance-none outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer h-full"
+                    disabled={isLoadingProperties}
+                    className="w-full bg-blue-50/50 hover:bg-blue-100/50 border border-blue-100 text-blue-900 text-[11px] font-bold rounded-[1rem] py-2.5 pl-9 pr-8 appearance-none outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer h-full disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                    <option value="">-- Attach Product --</option>
+                    <option value="">{isLoadingProperties ? 'Loading catalog...' : '-- Attach Product --'}</option>
                     {properties.map(p => (
                          <option key={p.id} value={p.id}>{p.title}</option>
                     ))}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
+                {isLoadingProperties ? (
+                    <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 animate-spin" />
+                ) : (
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
+                )}
             </div>
         </div>
         
@@ -442,7 +503,8 @@ export default function CreationPage() {
       </div>
 
       {/* --- FLOATING INPUT AREA --- */}
-      <div className="bg-gradient-to-t from-[#F8FAFC] via-[#F8FAFC] to-transparent p-4 pb-6 border-t-0 flex-shrink-0 z-20">
+      {/* ADDED PADDING (pb-24 sm:pb-32) SO IT FLOATS ABOVE THE NAVIGATION BAR */}
+      <div className="bg-gradient-to-t from-[#F8FAFC] via-[#F8FAFC] to-transparent p-4 pb-24 sm:pb-32 border-t-0 flex-shrink-0 z-20">
         <form 
             onSubmit={(e) => { e.preventDefault(); handleSend(); }}
             className="flex items-center gap-2 max-w-4xl mx-auto relative shadow-lg shadow-slate-200/50 rounded-full bg-white border border-slate-200/60 transition-all focus-within:ring-4 focus-within:ring-blue-500/10 focus-within:border-blue-300"

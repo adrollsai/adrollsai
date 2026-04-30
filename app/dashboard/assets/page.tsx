@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 type Asset = {
@@ -19,12 +19,16 @@ type Property = {
 }
 
 const filters = ['All', 'image', 'video']
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in ms
 
 export default function AssetsPage() {
   const supabase = createClient()
+  
+  // --- STATE ---
   const [assets, setAssets] = useState<Asset[]>([])
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   
   // Filtering State
   const [activeFilter, setActiveFilter] = useState('All')
@@ -38,39 +42,84 @@ export default function AssetsPage() {
   // Single Tap Download State
   const [isDownloading, setIsDownloading] = useState(false)
 
-  // 1. Fetch Assets & Properties
-  useEffect(() => {
-    const fetchData = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+  // 1. SAFE FETCH WITH LOCAL CACHING
+  const fetchAssets = async (force = false) => {
+    try {
+      if (!force && assets.length === 0) setLoading(true)
+      if (force) setIsRefreshing(true)
 
-      // Fetch Assets
-      const { data: assetData } = await supabase
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) return
+
+      const cacheKey = `assets_cache_${user.id}`
+      const timeKey = `assets_time_${user.id}`
+      const propCacheKey = `inventory_cache_${user.id}`
+
+      // Check Local Cache
+      if (!force) {
+          const cachedData = localStorage.getItem(cacheKey)
+          const lastFetch = localStorage.getItem(timeKey)
+          const now = Date.now()
+
+          if (cachedData) {
+              setAssets(JSON.parse(cachedData))
+              setLoading(false)
+              
+              // Load properties from cache so dropdown works instantly
+              const cachedProps = localStorage.getItem(propCacheKey)
+              if (cachedProps) setProperties(JSON.parse(cachedProps))
+
+              if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) {
+                  // If properties aren't cached locally yet, quietly fetch them
+                  if (!cachedProps) {
+                      const { data: propData } = await supabase.from('properties').select('id, title').eq('user_id', user.id).order('created_at', { ascending: false })
+                      if (propData) setProperties(propData)
+                  }
+                  return; // Cache is fresh, stop here.
+              }
+          }
+      }
+
+      // Fetch Fresh Data
+      const { data: assetData, error: assetError } = await supabase
         .from('assets')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 
-      // Fetch Properties for the filter dropdown
       const { data: propData } = await supabase
         .from('properties')
         .select('id, title')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 
+      if (assetError) throw assetError
+
       if (assetData) {
+        // Filter out distributed assets to keep the library clean
         const cleanAssets = assetData.filter(asset => asset.status !== 'Distributed')
         setAssets(cleanAssets)
+        localStorage.setItem(cacheKey, JSON.stringify(cleanAssets))
+        localStorage.setItem(timeKey, Date.now().toString())
       }
       
       if (propData) {
         setProperties(propData)
+        localStorage.setItem(propCacheKey, JSON.stringify(propData))
       }
-      
+
+    } catch (error) {
+      console.error("Fetch Error:", error)
+    } finally {
       setLoading(false)
+      setIsRefreshing(false)
     }
-    fetchData()
-  }, [])
+  }
+
+  // Trigger fetch on mount
+  useEffect(() => {
+    fetchAssets()
+  }, [supabase])
 
   // 2. Handle Post to Facebook
   const handlePostFacebook = async () => {
@@ -89,6 +138,7 @@ export default function AssetsPage() {
       if (response.ok) { 
           alert('Successfully posted to Facebook Page!')
           setSelectedAsset(null) 
+          fetchAssets(true) // Update status locally
       } else { 
           alert('Error: ' + (data.error || 'Failed to post')) 
       }
@@ -116,6 +166,7 @@ export default function AssetsPage() {
       if (response.ok) { 
           alert('Successfully posted to Instagram!')
           setSelectedAsset(null) 
+          fetchAssets(true) // Update status locally
       } else { 
           alert('Error: ' + (data.error || 'Failed to post')) 
       }
@@ -129,10 +180,8 @@ export default function AssetsPage() {
  // 4. Handle WhatsApp Share (SINGLE-TAP WITH PROXY & FALLBACK)
   const handleShareWhatsApp = async () => {
     if (!selectedAsset) return;
-    // Define the fallback text (Link + Caption) just in case
     const textFallback = `${caption ? caption + '\n\n' : ''}${selectedAsset.url}`;
 
-    // Video Fallback: Native WhatsApp link
     if (selectedAsset.type === 'video') {
          window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`;
          return;
@@ -140,7 +189,6 @@ export default function AssetsPage() {
 
     try {
       setIsDownloading(true);
-      // Fetch via our new CORS-bypassing proxy API
       const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(selectedAsset.url)}`;
       const response = await fetch(proxyUrl);
       
@@ -158,15 +206,12 @@ export default function AssetsPage() {
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share(shareData);
       } else {
-          // Browser doesn't support file sharing
           window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`;
       }
 
     } catch (error: any) {
       console.error("Share failed:", error);
-      // If the user didn't intentionally cancel the share menu
       if (error.name !== 'AbortError') {
-          // SILENT FALLBACK: Just open WhatsApp with the text link like the old code!
           window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`;
       }
     } finally {
@@ -219,6 +264,7 @@ export default function AssetsPage() {
       if (response.ok) {
         alert(`Broadcast Complete! \n\n${JSON.stringify(data.results, null, 2)}`)
         setSelectedAsset(null)
+        fetchAssets(true) // Update status locally
       } else {
         alert('Partial Error: ' + JSON.stringify(data))
       }
@@ -231,6 +277,7 @@ export default function AssetsPage() {
     }
   }
 
+  // Apply active filters
   const filteredAssets = assets.filter(asset => {
     const matchesType = activeFilter === 'All' || asset.type === activeFilter;
     const matchesProp = selectedPropFilter === 'all' ||
@@ -240,17 +287,26 @@ export default function AssetsPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-32">
+    <div className="min-h-screen bg-[#F8FAFC] pb-32 pt-16 relative">
+      
+      {/* FIXED REFRESH BUTTON */}
+      <button 
+          onClick={() => fetchAssets(true)}
+          className="fixed top-4 right-4 z-[60] bg-white/90 backdrop-blur-md p-2.5 rounded-full shadow-md border border-slate-200 text-slate-500 hover:text-blue-600 transition-all active:scale-95"
+          title="Refresh Assets"
+      >
+          <RefreshCw size={18} className={isRefreshing ? "animate-spin text-blue-600" : ""} />
+      </button>
+
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
         
         {/* HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-8">
             <div>
-                <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight ml-1">Asset Library</h1>
-                <p className="text-slate-500 text-sm mt-1 font-medium ml-1">Manage and distribute your marketing creatives</p>
+                <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight ml-1">Asset Library</h1>
+                <p className="text-slate-500 text-sm sm:text-base mt-1 font-medium ml-1">Manage and distribute your marketing creatives</p>
             </div>
             
-            {/* Desktop Quick Stats / Decorative could go here */}
             <div className="hidden md:flex items-center gap-3 bg-white px-4 py-2 rounded-2xl shadow-sm border border-slate-200/60 text-sm font-medium text-slate-600">
                 <ImageIcon size={18} className="text-blue-500" /> {assets.length} Total Assets
             </div>
@@ -265,15 +321,14 @@ export default function AssetsPage() {
                 <select 
                     value={selectedPropFilter}
                     onChange={(e) => setSelectedPropFilter(e.target.value)}
-                    className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200/60 text-slate-700 text-sm font-medium rounded-2xl py-3.5 pl-11 pr-4 appearance-none focus:ring-4 focus:ring-blue-500/20 outline-none transition-all cursor-pointer"
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200/60 text-slate-700 text-sm font-bold rounded-2xl py-3.5 pl-11 pr-4 appearance-none focus:ring-4 focus:ring-blue-500/20 outline-none transition-all cursor-pointer"
                 >
-                    <option value="all">All Properties</option>
+                    <option value="all">All Products</option>
                     <option value="unassigned">Unassigned / General</option>
                     {properties.map(p => (
                         <option key={p.id} value={p.id}>{p.title}</option>
                     ))}
                 </select>
-                {/* Custom Chevron for select */}
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
                 </div>
@@ -318,7 +373,7 @@ export default function AssetsPage() {
                             <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
                                 <video src={asset.url} className="w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity" />
                                 <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-transparent transition-colors">
-                                    <div className="bg-white/20 backdrop-blur-md p-3 rounded-full">
+                                    <div className="bg-white/20 backdrop-blur-md p-3 rounded-full shadow-sm">
                                         <Film className="text-white" size={24}/>
                                     </div>
                                 </div>
@@ -343,7 +398,7 @@ export default function AssetsPage() {
                     <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400 bg-white rounded-[2rem] border border-slate-200/60 border-dashed">
                         <ImageIcon size={48} className="text-slate-200 mb-4" />
                         <p className="text-base font-bold text-slate-600">No assets found</p>
-                        <p className="text-sm">Try adjusting your filters or upload new media.</p>
+                        <p className="text-sm font-medium mt-1">Try adjusting your filters or use the AI Creator.</p>
                     </div>
                 )}
             </div>
