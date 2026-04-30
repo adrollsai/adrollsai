@@ -43,14 +43,17 @@ type Pixel = {
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in ms
 
 // --- DOMAIN MANAGER COMPONENT ---
-function DomainManager({ initialDomain, userId }: { initialDomain: string, userId: string | null }) {
+function DomainManager({ initialDomain, userId, onDomainUpdate }: { initialDomain: string, userId: string | null, onDomainUpdate: (domain: string) => void }) {
   const [domain, setDomain] = useState(initialDomain || '')
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
-    if (initialDomain) setDomain(initialDomain)
+    if (initialDomain) {
+        setDomain(initialDomain)
+        setStatus('success')
+    }
   }, [initialDomain])
 
   const handleConnect = async () => {
@@ -62,10 +65,11 @@ function DomainManager({ initialDomain, userId }: { initialDomain: string, userI
       const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim().toLowerCase()
       setDomain(cleanDomain)
 
-      const res = await fetch('/api/domains/add', {
+      // Assuming your API route is updated to handle both POST and DELETE at /api/domains
+      const res = await fetch('/api/domains', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain: cleanDomain })
+        body: JSON.stringify({ domain: cleanDomain, userId })
       })
 
       const data = await res.json()
@@ -73,6 +77,7 @@ function DomainManager({ initialDomain, userId }: { initialDomain: string, userI
       if (!res.ok) throw new Error(data.error || 'Failed to connect domain')
       
       setStatus('success')
+      onDomainUpdate(cleanDomain)
       
       // Update local cache quietly
       if (userId) {
@@ -81,6 +86,45 @@ function DomainManager({ initialDomain, userId }: { initialDomain: string, userI
           if (cached) {
               const parsed = JSON.parse(cached)
               localStorage.setItem(cacheKey, JSON.stringify({ ...parsed, custom_domain: cleanDomain }))
+          }
+      }
+
+    } catch (err: any) {
+      setStatus('error')
+      setErrorMessage(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleUnlink = async () => {
+    if (!confirm(`Are you sure you want to unlink ${domain}? Your custom landing page will stop working immediately.`)) return;
+    
+    setLoading(true)
+    setStatus('idle')
+
+    try {
+      const res = await fetch('/api/domains', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain, userId })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) throw new Error(data.error || 'Failed to unlink domain')
+      
+      setDomain('')
+      setStatus('idle')
+      onDomainUpdate('')
+      
+      // Update local cache quietly
+      if (userId) {
+          const cacheKey = `profile_cache_${userId}`
+          const cached = localStorage.getItem(cacheKey)
+          if (cached) {
+              const parsed = JSON.parse(cached)
+              localStorage.setItem(cacheKey, JSON.stringify({ ...parsed, custom_domain: null }))
           }
       }
 
@@ -106,20 +150,34 @@ function DomainManager({ initialDomain, userId }: { initialDomain: string, userI
           placeholder="www.yourdomain.com" 
           value={domain} 
           onChange={(e) => setDomain(e.target.value)} 
-          className="w-full bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-blue-100 shadow-sm transition-all" 
+          disabled={status === 'success'}
+          className="w-full bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-blue-100 shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed" 
         />
-        <button 
-          onClick={handleConnect}
-          disabled={loading || !domain}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3.5 rounded-2xl sm:rounded-full text-sm font-bold whitespace-nowrap active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
-        >
-          {loading ? <Loader2 size={18} className="animate-spin" /> : 'Connect'}
-        </button>
+        
+        {status === 'success' ? (
+             <button 
+                onClick={handleUnlink}
+                disabled={loading}
+                className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-6 py-3.5 rounded-2xl sm:rounded-full text-sm font-bold whitespace-nowrap active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
+              >
+                {loading ? <Loader2 size={18} className="animate-spin" /> : 'Unlink Domain'}
+              </button>
+        ) : (
+            <button 
+              onClick={handleConnect}
+              disabled={loading || !domain}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3.5 rounded-2xl sm:rounded-full text-sm font-bold whitespace-nowrap active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
+            >
+              {loading ? <Loader2 size={18} className="animate-spin" /> : 'Connect'}
+            </button>
+        )}
       </div>
       
-      <p className="text-xs text-blue-600/80 ml-2 mt-3 leading-tight font-medium">
-         Point your domain's CNAME record to <span className="font-mono font-bold bg-blue-100/50 px-1.5 py-0.5 rounded-md text-blue-800">adrolls.in</span>
-      </p>
+      {status !== 'success' && (
+          <p className="text-xs text-blue-600/80 ml-2 mt-3 leading-tight font-medium">
+             Point your domain's CNAME record to <span className="font-mono font-bold bg-blue-100/50 px-1.5 py-0.5 rounded-md text-blue-800">adrolls.in</span>
+          </p>
+      )}
 
       {status === 'success' && (
         <div className="mt-4 bg-white p-5 rounded-3xl border border-green-200 shadow-sm animate-in fade-in slide-in-from-top-2">
@@ -679,10 +737,14 @@ export default function ProfilePage() {
                         </div>
                     </div>
 
-                    {/* INJECTED DOMAIN MANAGER HERE */}
+                    {/* DOMAIN MANAGER HERE */}
                     {role === 'admin' && (
                         <div className="pt-2 border-t border-slate-100">
-                            <DomainManager initialDomain={initialCustomDomain} userId={userId} />
+                            <DomainManager 
+                                initialDomain={initialCustomDomain} 
+                                userId={userId} 
+                                onDomainUpdate={(newDomain) => setInitialCustomDomain(newDomain)} 
+                            />
                         </div>
                     )}
                 </div>
