@@ -200,35 +200,38 @@ export default function CreationPage() {
     setCurrentStep('Initializing Design Engine...')
 
     try {
-      // A. Prepare Data
-      const prop = properties.find(p => p.id === selectedPropId)
-      
-      let propImages: string[] = []
-      
-      if (prop) {
-        if (prop.images && prop.images.length > 0) propImages = prop.images.slice(0, 2)
-        else if (prop.image_url) propImages = [prop.image_url]
-      }
+  // A. Prepare Data
+  const prop = properties.find(p => p.id === selectedPropId)
+  
+  // LOGO CHECK: Explicitly ensure we have the logo from the profile state
+  // If the profile state is empty, the AI won't know where to place the logo.
+  const accountLogo = profile?.logo_url || "";
+  const contactInfo = profile?.contact_number || "";
 
-      const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
-      const activeReferenceUrl = uploadedRefUrl || templateObj?.url || null
+  let propImages: string[] = []
+  if (prop) {
+    if (prop.images && prop.images.length > 0) propImages = prop.images.slice(0, 2)
+    else if (prop.image_url) propImages = [prop.image_url]
+  }
 
-      // B. Send to API to start the task
-      const startResponse = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            userInstructions: userText,
-            propertyDescription: prop?.description || "",
-            propertyTitle: prop?.title || "",
-            contactNumber: profile?.contact_number || "",
-            logoUrl: profile?.logo_url || "", 
-            propImages: propImages,
-            templateUrl: activeReferenceUrl, 
-            aspectRatio: selectedRatio,
-            model: selectedModel 
-        })
-      })
+  const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
+  const activeReferenceUrl = uploadedRefUrl || templateObj?.url || null
+
+  const startResponse = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+        userInstructions: userText,
+        propertyDescription: prop?.description || "",
+        propertyTitle: prop?.title || "",
+        contactNumber: contactInfo, // Corrected reference
+        logoUrl: accountLogo,       // Corrected reference
+        propImages: propImages,
+        templateUrl: activeReferenceUrl, 
+        aspectRatio: selectedRatio,
+        model: selectedModel 
+    })
+  })
       
       const startData = await startResponse.json()
       if (startData.error) throw new Error(startData.error)

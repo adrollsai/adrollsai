@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { Mail, Lock, Loader2, ArrowRight, CheckCircle2, ChevronLeft } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight, CheckCircle2, ChevronLeft } from 'lucide-react'
 import { toast } from 'sonner'
 
 type AuthMode = 'login' | 'signup' | 'forgot_password'
@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
+  const [showPassword, setShowPassword] = useState(false) // Toggle visibility state[cite: 1]
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -135,7 +136,7 @@ export default function LoginPage() {
                         </div>
                     </div>
 
-                    {/* Password Field (Hidden in Forgot Password Mode) */}
+                    {/* Password Field with Toggle[cite: 1, 2, 4] */}
                     {mode !== 'forgot_password' && (
                         <div>
                             <div className="flex justify-between items-center mb-2">
@@ -150,16 +151,25 @@ export default function LoginPage() {
                                     </button>
                                 )}
                             </div>
-                            <div className="relative">
+                            <div className="relative group">
                                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input 
-                                    type="password" 
+                                    type={showPassword ? "text" : "password"} // Dynamic type switching[cite: 1]
                                     required
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-4 pl-12 pr-4 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none border border-slate-200/60 transition-all" 
+                                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-4 pl-12 pr-12 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none border border-slate-200/60 transition-all" 
                                     placeholder="••••••••" 
                                 />
+                                {/* Visibility Toggle Button[cite: 1, 2] */}
+                                <button
+                                  type="button" // Critical: prevents form submission on click[cite: 1]
+                                  onClick={() => setShowPassword(!showPassword)}
+                                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 active:scale-90 transition-all p-1"
+                                  aria-label={showPassword ? "Hide password" : "Show password"}
+                                >
+                                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
                             </div>
                         </div>
                     )}

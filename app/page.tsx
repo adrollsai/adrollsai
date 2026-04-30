@@ -493,7 +493,7 @@ export default function LandingPage() {
                  <h3 className="text-xl font-extrabold text-[#003D6F] uppercase tracking-widest mb-4">Starter Plan</h3>
                  <div className="flex items-baseline justify-center gap-2 mb-6">
                     <span className="text-lg text-slate-500 font-medium">Starting at</span>
-                    <span className="text-7xl font-black text-[#B22B31]">₹999</span>
+                    <span className="text-7xl font-black text-[#B22B31]">₹9,999</span>
                     <span className="text-slate-500 font-medium">/mo</span>
                  </div>
                  <p className="text-slate-500 text-lg font-medium">Perfect for small businesses and solo entrepreneurs.</p>
