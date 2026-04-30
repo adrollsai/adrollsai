@@ -13,14 +13,11 @@ import {
   Instagram, 
   Target, 
   Share2,
-  BellRing,
-  UserPlus,
-  Clock,
   Globe,
   CheckCircle2,
   AlertCircle,
   FileText,
-  Settings
+  Shield
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -179,10 +176,6 @@ export default function ProfilePage() {
   // Distribution Toggle States
   const [enableDistribution, setEnableDistribution] = useState(false)
   const [isTogglingDist, setIsTogglingDist] = useState(false)
-  
-  // Testing States
-  const [isTestingPush, setIsTestingPush] = useState(false)
-  const [isTestingBlog, setIsTestingBlog] = useState(false)
 
   // Profile Data
   const [initialCustomDomain, setInitialCustomDomain] = useState<string>('')
@@ -495,76 +488,6 @@ export default function ProfilePage() {
     router.push('/')
   }
 
-  // --- TESTING FUNCTIONS ---
-
-  const testInstantPush = async () => {
-    setIsTestingPush(true)
-    try {
-        const res = await fetch('/api/test-notification', { method: 'POST' });
-        if (res.ok) {
-            alert("Push request sent! You should receive it instantly.");
-        } else {
-            const data = await res.json()
-            alert("Failed to send push: " + data.error);
-        }
-    } catch(e: any) { 
-        alert("Error testing push: " + e.message);
-    } finally {
-        setIsTestingPush(false)
-    }
-  }
-
-  const testSimulateLead = async () => {
-      if (!userId) return;
-      const dummyName = "Tester " + Math.floor(Math.random() * 1000);
-      
-      const { error } = await supabase.from('leads').insert({
-          user_id: userId,
-          name: dummyName,
-          phone: "9999999999",
-      });
-      if (!error) {
-          alert(`Dummy lead '${dummyName}' added successfully to CRM!`);
-      } else {
-          alert("Error simulating lead: " + error.message);
-      }
-  }
-
-  const testScheduleReminder = async () => {
-      if (!userId) return;
-      const oneMinFromNow = new Date(Date.now() + 60000).toISOString();
-
-      const { error } = await supabase.from('leads').insert({
-          user_id: userId,
-          name: "Reminder Bot",
-          phone: "8888888888",
-          next_followup: oneMinFromNow
-      });
-      if (!error) {
-          alert("Reminder successfully scheduled! Please wait 1 to 2 minutes for Cron-job.org to trigger your webhook.");
-      } else {
-          alert("Error scheduling reminder: " + error.message);
-      }
-  }
-
-  const testAutoBlog = async () => {
-      if (!userId) return;
-      setIsTestingBlog(true);
-      try {
-          const res = await fetch(`/api/cron/auto-blog?userId=${userId}`, { cache: 'no-store' });
-          const data = await res.json();
-          if (data.success) {
-              alert("✅ SEO Article Generated! Please HARD REFRESH your public shared feed to see it.");
-          } else {
-              alert("Failed to generate article: " + data.error);
-          }
-      } catch (e: any) {
-          alert("Error: " + e.message);
-      } finally {
-          setIsTestingBlog(false);
-      }
-  }
-
   if (loading) return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-400 gap-4">
           <Loader2 className="animate-spin text-slate-300" size={32} />
@@ -578,7 +501,6 @@ export default function ProfilePage() {
         
         <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-8 ml-1">Workspace Settings</h1>
 
-        {/* CSS GRID RESPONSIVE LAYOUT */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
           
           {/* ========================================= */}
@@ -870,7 +792,6 @@ export default function ProfilePage() {
                             </div>
                         </div>
                         
-                        {/* Bubbly Material Toggle */}
                         <button 
                             onClick={handleToggleDistribution}
                             disabled={isTogglingDist}
@@ -886,7 +807,7 @@ export default function ProfilePage() {
                         </button>
                     </div>
 
-                    <button onClick={() => router.push('/dashboard/billing')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                    <button onClick={() => router.push('/dashboard/billing')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100">
                         <div className="flex items-center gap-4">
                             <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl">
                                 <CreditCard size={20} />
@@ -895,72 +816,19 @@ export default function ProfilePage() {
                         </div>
                         <ChevronRight size={20} className="text-slate-400" />
                     </button>
+
+                    {/* NEW TEAM MANAGEMENT BUTTON */}
+                    <button onClick={() => router.push('/dashboard/team')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center gap-4">
+                            <div className="bg-emerald-100 text-emerald-600 p-3 rounded-2xl">
+                                <Shield size={20} />
+                            </div>
+                            <span className="font-bold text-sm text-slate-900">Team Management</span>
+                        </div>
+                        <ChevronRight size={20} className="text-slate-400" />
+                    </button>
                 </div>
             )}
-
-            {/* Developer Testing Tools */}
-            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden p-6 sm:p-7 transition-all hover:shadow-md">
-                <div className="flex items-center gap-3 mb-5 px-1">
-                    <Settings size={18} className="text-slate-400" />
-                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Developer Sandbox</h3>
-                </div>
-                
-                <div className="space-y-3">
-                    <button 
-                        onClick={testInstantPush} 
-                        disabled={isTestingPush}
-                        className="w-full flex items-center gap-4 p-3.5 bg-slate-50 hover:bg-blue-50/50 border border-slate-100 hover:border-blue-100 rounded-[1.5rem] transition-all disabled:opacity-50 group"
-                    >
-                        <div className="bg-blue-100 text-blue-600 p-2.5 rounded-xl group-hover:scale-105 transition-transform">
-                            {isTestingPush ? <Loader2 size={18} className="animate-spin"/> : <BellRing size={18}/>}
-                        </div>
-                        <div className="text-left">
-                            <p className="text-sm font-bold text-slate-800">Test Push Delivery</p>
-                            <p className="text-xs text-slate-500 font-medium">Fires an immediate test alert</p>
-                        </div>
-                    </button>
-
-                    <button 
-                        onClick={testSimulateLead} 
-                        className="w-full flex items-center gap-4 p-3.5 bg-slate-50 hover:bg-green-50/50 border border-slate-100 hover:border-green-100 rounded-[1.5rem] transition-all group"
-                    >
-                        <div className="bg-emerald-100 text-emerald-600 p-2.5 rounded-xl group-hover:scale-105 transition-transform">
-                            <UserPlus size={18}/>
-                        </div>
-                        <div className="text-left">
-                            <p className="text-sm font-bold text-slate-800">Simulate Lead Entry</p>
-                            <p className="text-xs text-slate-500 font-medium">Injects a dummy CRM record</p>
-                        </div>
-                    </button>
-
-                    <button 
-                        onClick={testScheduleReminder} 
-                        className="w-full flex items-center gap-4 p-3.5 bg-slate-50 hover:bg-orange-50/50 border border-slate-100 hover:border-orange-100 rounded-[1.5rem] transition-all group"
-                    >
-                        <div className="bg-amber-100 text-amber-600 p-2.5 rounded-xl group-hover:scale-105 transition-transform">
-                            <Clock size={18}/>
-                        </div>
-                        <div className="text-left">
-                            <p className="text-sm font-bold text-slate-800">Trigger 1-Min Cron</p>
-                            <p className="text-xs text-slate-500 font-medium">Schedules a delayed webhook</p>
-                        </div>
-                    </button>
-
-                    <button 
-                        onClick={testAutoBlog} 
-                        disabled={isTestingBlog}
-                        className="w-full flex items-center gap-4 p-3.5 bg-slate-50 hover:bg-fuchsia-50/50 border border-slate-100 hover:border-fuchsia-100 rounded-[1.5rem] transition-all disabled:opacity-50 group"
-                    >
-                        <div className="bg-fuchsia-100 text-fuchsia-600 p-2.5 rounded-xl group-hover:scale-105 transition-transform">
-                            {isTestingBlog ? <Loader2 size={18} className="animate-spin"/> : <FileText size={18}/>}
-                        </div>
-                        <div className="text-left">
-                            <p className="text-sm font-bold text-slate-800">Force SEO Generation</p>
-                            <p className="text-xs text-slate-500 font-medium">Generates an AI article via Kie</p>
-                        </div>
-                    </button>
-                </div>
-            </div>
             
             {/* Sign Out */}
             <div className="bg-white rounded-[2rem] shadow-sm border border-red-100 overflow-hidden transition-all hover:border-red-200 hover:shadow-md">

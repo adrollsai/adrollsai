@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
+import { toast } from 'sonner'
 
 // --- TYPES ---
 type Message = {
@@ -37,7 +38,6 @@ type Profile = {
 // --- TEMPLATES LIBRARY ---
 const TEMPLATES: { id: string, name: string, url: string }[] = []
 
-// FIXED: Using RectangleVertical instead of Portrait
 const ASPECT_RATIOS = [
   { label: '1:1', value: '1:1', icon: Square },
   { label: '4:5', value: '4:5', icon: RectangleVertical },
@@ -166,7 +166,7 @@ export default function CreationPage() {
       const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
       const activeReferenceUrl = uploadedRefUrl || templateObj?.url || null
 
-      // B. Send to API
+      // B. Send to API to start the task
       const startResponse = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -186,14 +186,32 @@ export default function CreationPage() {
       const startData = await startResponse.json()
       if (startData.error) throw new Error(startData.error)
 
-      // CATCH THE GENERATED COPY FROM THE API
       const generatedCaption = startData.caption || ''
+      setCurrentStep('Generating Visuals (Safe to background or lock phone)...')
 
-      setCurrentStep('Generating Visuals (Please wait)...')
-      
-      // C. Poll for Result
+      // C. Fire Server Worker & Client Polling
       if (startData.taskId) {
         const taskId = startData.taskId 
+        
+        toast.success("AI Generation Started ✨", { 
+            description: "You can lock your phone. We'll notify you when it's done." 
+        })
+
+        // FIRE AND FORGET THE SERVER WORKER
+        fetch('/api/background-worker', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: userId,
+                propId: selectedPropId || null,
+                propertyTitle: prop?.title || '',
+                existingTaskId: taskId,
+                existingCaption: generatedCaption
+            })
+        }).catch(err => console.error("Worker trigger failed:", err));
+
+
+        // CLIENT POLLING (Updates Chat UI if user stays on the screen)
         let attempts = 0
         const maxAttempts = 30 
         let finalImageUrl = ''
@@ -229,21 +247,6 @@ export default function CreationPage() {
         }
 
         if (finalImageUrl) {
-            // SAVE TO DB INCLUDING THE CAPTION
-            if (userId) {
-                const { error: dbError } = await supabase.from('assets').insert({
-                    user_id: userId,
-                    property_id: selectedPropId || null, 
-                    url: finalImageUrl,
-                    type: 'image',
-                    status: 'Draft',
-                    caption: generatedCaption 
-                })
-                if (dbError) {
-                  console.error("[LOG] DB Save Error:", dbError.message || JSON.stringify(dbError));
-                }
-            }
-
             const aiMsg: Message = { 
               id: Date.now() + 1, 
               role: 'ai', 
@@ -254,7 +257,7 @@ export default function CreationPage() {
             setMessages(prev => [...prev, aiMsg])
         } else {
             throw new Error("Generation timed out.")
-         }
+        }
       }
 
     } catch (error: any) {
@@ -269,8 +272,8 @@ export default function CreationPage() {
   return (
     <div className="flex flex-col h-[calc(100dvh-70px)] sm:h-screen bg-[#F8FAFC]">
       
-      {/* --- HEADER & CONFIG BAR --- */}
-      <div className="bg-white/80 backdrop-blur-xl border-b border-slate-100/60 z-20 flex-shrink-0 rounded-b-[2rem] shadow-sm pb-2 pt-4">
+      {/* --- HEADER & CONFIG BAR (Grid Layout for Mobile Robustness) --- */}
+      <div className="bg-white/95 backdrop-blur-xl border-b border-slate-200/60 z-20 flex-shrink-0 rounded-b-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] pb-4 pt-3">
         
         <div className="px-5 flex justify-between items-center mb-3">
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
@@ -278,48 +281,52 @@ export default function CreationPage() {
             </h1>
         </div>
 
-        {/* ROW 1: Settings Pills (Scrollable horizontally to save vertical space) */}
-        <div className="px-4 pb-2 flex gap-2 overflow-x-auto scrollbar-hide items-center">
+        {/* 
+            ROW 1: Settings Controls
+            Mobile: 2 cols for Model & Ratio, full width for Product
+            Desktop: 3 cols inline
+        */}
+        <div className="px-4 mb-3 grid grid-cols-2 md:grid-cols-3 gap-2">
             
             {/* Model Selector Pill */}
-            <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/50 flex-shrink-0">
+            <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full">
                 <button 
                   onClick={() => setSelectedModel('google/nano-banana-2')}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all duration-300 flex items-center gap-1 ${selectedModel === 'google/nano-banana-2' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                  className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-1 ${selectedModel === 'google/nano-banana-2' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                  Banana 2.0
+                  Banana
                 </button>
                 <button 
                   onClick={() => setSelectedModel('gpt/gpt-image-2-text-to-image')}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all duration-300 flex items-center gap-1 ${selectedModel === 'gpt/gpt-image-2-text-to-image' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                  className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-1 ${selectedModel === 'gpt/gpt-image-2-text-to-image' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                  GPT 2.0
+                  GPT
                 </button>
             </div>
 
             {/* Ratio Selector Pill */}
-            <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/50 flex-shrink-0">
+            <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full">
                 {ASPECT_RATIOS.map(ratio => {
                     const Icon = ratio.icon
                     return (
                         <button 
                             key={ratio.value}
                             onClick={() => setSelectedRatio(ratio.value)}
-                            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all duration-300 flex items-center gap-1.5 ${selectedRatio === ratio.value ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                            className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-1 ${selectedRatio === ratio.value ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
                         >
-                            <Icon size={12} /> {ratio.label}
+                            <Icon size={12} className="hidden sm:block" /> {ratio.label}
                         </button>
                     )
                 })}
             </div>
 
-            {/* Product Selector Pill */}
-            <div className="relative flex-shrink-0 min-w-[160px]">
+            {/* Product Selector Pill (Full width on mobile, 1/3 on desktop) */}
+            <div className="relative w-full col-span-2 md:col-span-1">
                 <Package size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-blue-500" />
                 <select 
                     value={selectedPropId}
                     onChange={(e) => setSelectedPropId(e.target.value)}
-                    className="w-full bg-blue-50/50 hover:bg-blue-100/50 border border-blue-100 text-blue-900 text-[11px] font-bold rounded-[1rem] py-2.5 pl-9 pr-8 appearance-none outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer"
+                    className="w-full bg-blue-50/50 hover:bg-blue-100/50 border border-blue-100 text-blue-900 text-[11px] font-bold rounded-[1rem] py-2.5 pl-9 pr-8 appearance-none outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer h-full"
                 >
                     <option value="">-- Attach Product --</option>
                     {properties.map(p => (
@@ -330,20 +337,20 @@ export default function CreationPage() {
             </div>
         </div>
         
-        {/* ROW 2: Templates & Reference Upload */}
-        <div className="px-4 pb-1 pt-1 flex gap-3 overflow-x-auto scrollbar-hide items-center">
+        {/* ROW 2: Templates & Reference Upload (Grid Layout) */}
+        <div className="px-4 flex gap-2 w-full overflow-x-auto scrollbar-hide">
              <button 
                 onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); }}
-                className={`flex-shrink-0 w-14 h-14 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate === null && uploadedRefUrl === null ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate === null && uploadedRefUrl === null ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
              >
                 <Layout size={16} />
                 <span className="text-[9px] font-bold uppercase tracking-wider">Auto</span>
              </button>
 
-             <div className="relative">
+             <div className="relative flex-shrink-0">
                  <button 
                     onClick={() => refFileInputRef.current?.click()}
-                    className={`flex-shrink-0 w-14 h-14 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${uploadedRefUrl ? 'border-blue-500 ring-2 ring-blue-100 overflow-hidden p-0' : 'border-dashed border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/30'}`}
+                    className={`w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${uploadedRefUrl ? 'border-blue-500 ring-2 ring-blue-100 overflow-hidden p-0' : 'border-dashed border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/30'}`}
                  >
                     {uploadedRefUrl ? (
                         <img src={uploadedRefUrl} className="w-full h-full object-cover" alt="ref" />
@@ -366,11 +373,12 @@ export default function CreationPage() {
                  )}
              </div>
 
-             {TEMPLATES.map(t => (
+             {/* Map visible templates (Limit to 3 or 4 to fit on screen without scrolling if possible) */}
+             {TEMPLATES.slice(0, 4).map(t => (
                  <button 
                     key={t.id}
                     onClick={() => { setSelectedTemplate(t.id); setUploadedRefUrl(null); }}
-                    className={`flex-shrink-0 w-14 h-14 rounded-[1.25rem] border-2 relative overflow-hidden transition-all group ${selectedTemplate === t.id ? 'border-blue-500 ring-2 ring-blue-100 shadow-sm' : 'border-transparent opacity-80 hover:opacity-100'}`}
+                    className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 relative overflow-hidden transition-all group ${selectedTemplate === t.id ? 'border-blue-500 ring-2 ring-blue-100 shadow-sm' : 'border-transparent opacity-80 hover:opacity-100'}`}
                  >
                     <img src={t.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="template" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-center pb-1">
@@ -426,7 +434,7 @@ export default function CreationPage() {
                         <Sparkles size={14} className="text-blue-500" /> AI is crafting...
                     </p>
                     <p className="text-xs text-blue-600 font-medium animate-pulse">{currentStep}</p>
-                    <p className="text-[10px] text-slate-400 mt-2 font-medium leading-tight">Do not close this tab or navigate away during generation.</p>
+                    <p className="text-[10px] text-slate-400 mt-2 font-medium leading-tight">You can lock your phone. We'll notify you when it's done.</p>
                 </div>
              </div>
         )}
@@ -443,7 +451,7 @@ export default function CreationPage() {
               type="text" 
               value={input} 
               onChange={(e) => setInput(e.target.value)} 
-              placeholder={selectedPropId ? "Add a prompt (e.g. 'Make it look luxurious')..." : "Describe what to generate..."} 
+              placeholder={selectedPropId ? "Add a prompt (e.g. 'Make it luxurious')..." : "Describe what to generate..."} 
               disabled={isThinking} 
               className="w-full bg-transparent py-4 pl-6 pr-16 text-sm text-slate-800 font-medium outline-none transition-all disabled:opacity-50 placeholder-slate-400" 
             />

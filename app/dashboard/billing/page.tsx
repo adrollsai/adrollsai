@@ -1,230 +1,236 @@
-'use client';
+'use client'
 
-import { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { Check, Loader2, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/utils/supabase/client'
+import { X, Check, Zap, ShieldCheck, Loader2, ArrowRight, CalendarDays, Lock } from 'lucide-react'
+import { toast } from 'sonner'
 
-const PLANS = [
-    {
-        id: 'starter',
-        name: 'Starter',
-        price: 4999,
-        description: 'Perfect for independent agents starting out.',
-        features: [
-            'Basic CRM Access',
-            'Up to 500 Leads/month',
-            'Standard Email Support',
-            'Basic Analytics'
-        ],
-        isPopular: false
-    },
-    {
-        id: 'professional',
-        name: 'Professional',
-        price: 9999,
-        description: 'Everything you need to scale your real estate business.',
-        features: [
-            'Advanced CRM Features',
-            'Unlimited Leads',
-            'Meta Ads Integration',
-            'Automated Lead Distribution',
-            'Priority WhatsApp Support'
-        ],
-        isPopular: true
-    },
-    {
-        id: 'enterprise',
-        name: 'Enterprise',
-        price: 14999,
-        description: 'Advanced tools for large agencies and teams.',
-        features: [
-            'White-label CRM Options',
-            'Custom API Integrations',
-            'Multi-Agent Management',
-            'Dedicated Account Manager',
-            '24/7 Phone Support'
-        ],
-        isPopular: false
-    }
-];
-
-function BillingContent() {
-    const searchParams = useSearchParams();
-    const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
-    const [verifying, setVerifying] = useState(false);
-    const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'loading', text: string } | null>(null);
-
-    useEffect(() => {
-        const verifyPayment = async () => {
-            const paymentStatus = searchParams.get('payment');
-            const txnId = searchParams.get('txnId');
-            const planId = searchParams.get('planId');
-
-            if (paymentStatus === 'success' && txnId) {
-                setVerifying(true);
-                setStatusMessage({ type: 'loading', text: 'Verifying your payment securely with PhonePe...' });
-
-                try {
-                    const response = await fetch('/api/payment/verify', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ transactionId: txnId, planId: planId })
-                    });
-                    
-                    const data = await response.json();
-
-                    if (data.success) {
-                        setStatusMessage({ type: 'success', text: 'Payment successful! Redirecting to your dashboard...' });
-                        
-                        // Clean the URL so a page refresh doesn't re-trigger the check
-                        window.history.replaceState(null, '', '/dashboard/billing');
-                        
-                        // Redirect to dashboard after a brief delay
-                        setTimeout(() => {
-                            window.location.href = '/dashboard';
-                        }, 1500);
-                    } else {
-                        setStatusMessage({ type: 'error', text: 'Payment verification failed or is pending. Please contact support if amount was deducted.' });
-                    }
-                } catch (error) {
-                    setStatusMessage({ type: 'error', text: 'Network error during verification. Please contact support.' });
-                } finally {
-                    setVerifying(false);
-                }
-            }
-        };
-
-        verifyPayment();
-    }, [searchParams]);
-
-    const handleCheckout = async (planId: string) => {
-        setLoadingPlan(planId);
-        setStatusMessage(null);
-        
-        try {
-            const response = await fetch('/api/payment/initiate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ planId })
-            });
-
-            const data = await response.json();
-            
-            if (data.url) {
-                // Redirect user to PhonePe's secure payment page
-                window.location.href = data.url; 
-            } else {
-                setStatusMessage({
-                    type: 'error',
-                    text: data.error || 'Payment initiation failed. Please try again.'
-                });
-            }
-        } catch (error) {
-            console.error("Checkout error:", error);
-            setStatusMessage({
-                type: 'error',
-                text: 'A network error occurred. Please try again.'
-            });
-        } finally {
-            setLoadingPlan(null);
-        }
-    };
-
-    return (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-            <div className="text-center mb-12">
-                <h1 className="text-3xl font-bold text-gray-900 sm:text-4xl">
-                    Simple, transparent pricing
-                </h1>
-                <p className="mt-4 text-xl text-gray-600">
-                    Choose the perfect plan to accelerate your real estate growth.
-                </p>
-            </div>
-
-            {/* Status Messages */}
-            {statusMessage && (
-                <div className={`mb-8 p-4 rounded-lg flex items-center justify-center max-w-3xl mx-auto ${
-                    statusMessage.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 
-                    statusMessage.type === 'error' ? 'bg-red-50 text-red-800 border border-red-200' :
-                    'bg-blue-50 text-blue-800 border border-blue-200'
-                }`}>
-                    {statusMessage.type === 'success' && <CheckCircle2 className="w-5 h-5 mr-2 text-green-600" />}
-                    {statusMessage.type === 'error' && <AlertCircle className="w-5 h-5 mr-2 text-red-600" />}
-                    {statusMessage.type === 'loading' && <RefreshCw className="w-5 h-5 mr-2 text-blue-600 animate-spin" />}
-                    <span className="font-medium">{statusMessage.text}</span>
-                </div>
-            )}
-
-            {/* Pricing Cards */}
-            <div className={`grid grid-cols-1 md:grid-cols-3 gap-8 max-w-7xl mx-auto transition-opacity duration-300 ${verifying ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-                {PLANS.map((plan) => (
-                    <div 
-                        key={plan.id}
-                        className={`relative flex flex-col p-8 bg-white rounded-2xl border ${
-                            plan.isPopular ? 'border-blue-600 shadow-xl scale-105 z-10' : 'border-gray-200 shadow-sm'
-                        }`}
-                    >
-                        {plan.isPopular && (
-                            <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                                <span className="bg-blue-600 text-white px-3 py-1 rounded-full text-sm font-semibold tracking-wide">
-                                    Most Popular
-                                </span>
-                            </div>
-                        )}
-
-                        <div className="mb-8">
-                            <h3 className="text-2xl font-semibold text-gray-900">{plan.name}</h3>
-                            <p className="mt-2 text-gray-500 h-12">{plan.description}</p>
-                            <div className="mt-6 flex items-baseline text-5xl font-extrabold text-gray-900">
-                                ₹{plan.price.toLocaleString('en-IN')}
-                                <span className="ml-1 text-xl font-medium text-gray-500">/mo</span>
-                            </div>
-                            <p className="mt-2 text-sm text-gray-400">+ 18% GST applied at checkout</p>
-                        </div>
-
-                        <ul className="flex-1 space-y-4 mb-8">
-                            {plan.features.map((feature, index) => (
-                                <li key={index} className="flex items-start">
-                                    <Check className="flex-shrink-0 w-5 h-5 text-green-500 mr-3" />
-                                    <span className="text-gray-600">{feature}</span>
-                                </li>
-                            ))}
-                        </ul>
-
-                        <button
-                            onClick={() => handleCheckout(plan.id)}
-                            disabled={loadingPlan !== null || verifying}
-                            className={`w-full py-4 px-6 rounded-xl font-semibold text-lg transition-all duration-200 flex items-center justify-center ${
-                                plan.isPopular
-                                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
-                                    : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
-                            } ${loadingPlan !== null ? 'opacity-70 cursor-not-allowed' : ''}`}
-                        >
-                            {loadingPlan === plan.id ? (
-                                <>
-                                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                                    Processing...
-                                </>
-                            ) : (
-                                `Get ${plan.name}`
-                            )}
-                        </button>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}
-
-// Wrapping in Suspense to prevent Next.js build errors related to useSearchParams
 export default function BillingPage() {
-    return (
-        <Suspense fallback={
-            <div className="min-h-screen flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-            </div>
-        }>
-            <BillingContent />
-        </Suspense>
-    );
+  const router = useRouter()
+  const supabase = createClient()
+  
+  const [loading, setLoading] = useState(true)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [isActive, setIsActive] = useState(false)
+  const [userEmail, setUserEmail] = useState('')
+  const [renewalDate, setRenewalDate] = useState<string | null>(null)
+
+  // Check Subscription Status on Load
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+            router.push('/')
+            return
+        }
+        setUserEmail(user.email || '')
+
+        // FIXED: Using the exact column names from your database screenshot
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('subscription_status, subscription_valid_until, subscription_plan')
+          .eq('id', user.id)
+          .single()
+
+        if (error) {
+            console.error("Supabase error fetching profile:", error)
+            throw error
+        }
+
+        const currentStatus = profile?.subscription_status?.toLowerCase() || ''
+        
+        if (currentStatus === 'active' || currentStatus === 'trialing' || currentStatus === 'pro') {
+          setIsActive(true)
+          
+          // Use your exact column name for the date
+          if (profile?.subscription_valid_until) {
+              setRenewalDate(new Date(profile.subscription_valid_until).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }))
+          } else {
+              const nextMonth = new Date()
+              nextMonth.setMonth(nextMonth.getMonth() + 1)
+              setRenewalDate(nextMonth.toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }))
+          }
+        }
+      } catch (error) {
+        console.error("Error checking subscription:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    checkStatus()
+  }, [router, supabase])
+
+  // Handle Payment Initiation
+  const handleSubscribe = async () => {
+    setIsProcessing(true)
+    try {
+      const res = await fetch('/api/payment/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            amount: 9999,
+            plan: 'Pro All-Access Monthly'
+        })
+      })
+      
+      const data = await res.json()
+      
+      if (!res.ok) throw new Error(data.error || 'Failed to initiate payment')
+      
+      if (data.redirectUrl) {
+          window.location.href = data.redirectUrl
+      } else {
+          toast.error("Payment gateway configuration error.")
+      }
+
+    } catch (error: any) {
+      toast.error('Payment Error', { description: error.message })
+      setIsProcessing(false)
+    }
+  }
+
+  const features = [
+    "Unlimited AI Asset Generation",
+    "Smart Meta Ads Automation",
+    "Lead CRM & Team Distribution",
+    "Custom Domain Integration",
+    "Automated SEO Blog Generation",
+    "Priority WhatsApp Support"
+  ]
+
+  if (loading) {
+      return (
+          <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
+              <Loader2 className="animate-spin text-blue-600" size={28} />
+              <p className="text-sm text-slate-500 font-medium">Loading billing details...</p>
+          </div>
+      )
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-24 font-sans">
+      
+      {/* Sleek Top Navigation */}
+      <div className="bg-white sticky top-0 z-40 border-b border-slate-200 shadow-sm">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+              <ShieldCheck size={20} className="text-blue-600" />
+              <h1 className="text-base font-semibold text-slate-900">Subscription & Billing</h1>
+          </div>
+          
+          <button 
+              onClick={() => router.push('/dashboard/profile')}
+              className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors"
+              title="Close"
+          >
+              <X size={20} />
+          </button>
+        </div>
+      </div>
+
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-10 sm:pt-16">
+          
+          <div className="text-center mb-10">
+              <h2 className="text-3xl font-bold text-slate-900 tracking-tight mb-3">
+                  One plan. Full access.
+              </h2>
+              <p className="text-slate-500 text-sm sm:text-base max-w-lg mx-auto">
+                  Unlock the complete suite of AI creation tools, CRM pipelines, and Meta ad automation features.
+              </p>
+          </div>
+
+          {/* Premium Pricing Card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative">
+              
+              {isActive && (
+                  <div className="bg-green-50 border-b border-green-100 px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-2.5 text-green-700">
+                          <Check className="w-5 h-5" />
+                          <div>
+                              <p className="text-sm font-semibold">Your subscription is active</p>
+                              <p className="text-xs text-green-600/80">You have access to all Pro features.</p>
+                          </div>
+                      </div>
+                      {renewalDate && (
+                          <div className="flex items-center gap-2 text-sm text-slate-600 bg-white px-3 py-1.5 rounded-md border border-green-100 shadow-sm">
+                              <CalendarDays size={14} className="text-slate-400" />
+                              <span>Valid Until <span className="font-semibold text-slate-800">{renewalDate}</span></span>
+                          </div>
+                      )}
+                  </div>
+              )}
+
+              <div className="p-6 sm:p-10 flex flex-col md:flex-row gap-10">
+                  
+                  {/* Left Column: Pricing & CTA */}
+                  <div className="flex-1 flex flex-col">
+                      <div className="mb-2">
+                          <h3 className="text-lg font-semibold text-slate-900">Pro All-Access</h3>
+                          <p className="text-sm text-slate-500 mt-1">Billed monthly. Cancel anytime.</p>
+                      </div>
+
+                      <div className="my-6">
+                          <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-semibold text-slate-400">₹</span>
+                              <span className="text-5xl font-bold text-slate-900 tracking-tight">9,999</span>
+                              <span className="text-base text-slate-500 font-medium ml-1">/ mo</span>
+                          </div>
+                      </div>
+
+                      <div className="mt-auto pt-4">
+                          {isActive ? (
+                              <button 
+                                  disabled
+                                  className="w-full bg-slate-100 text-slate-400 py-3 rounded-lg text-sm font-semibold flex items-center justify-center cursor-not-allowed border border-slate-200 gap-2"
+                              >
+                                  <ShieldCheck size={18} className="text-slate-400" /> Current Plan
+                              </button>
+                          ) : (
+                              <button 
+                                  onClick={handleSubscribe} 
+                                  disabled={isProcessing}
+                                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-all disabled:opacity-70 group"
+                              >
+                                  {isProcessing ? (
+                                      <Loader2 size={18} className="animate-spin" />
+                                  ) : (
+                                      <>
+                                          <Zap size={16} className="text-blue-200" /> 
+                                          Subscribe Now
+                                      </>
+                                  )}
+                              </button>
+                          )}
+                          
+                          {!isActive && (
+                              <p className="text-center text-xs text-slate-400 mt-4 flex items-center justify-center gap-1.5">
+                                  <Lock size={12} /> Secure Checkout
+                              </p>
+                          )}
+                      </div>
+                  </div>
+
+                  {/* Right Column: Features List */}
+                  <div className="flex-1 md:pl-10 md:border-l border-slate-100">
+                      <h4 className="text-sm font-semibold text-slate-900 mb-6 uppercase tracking-wider">What's included</h4>
+                      <ul className="space-y-4">
+                          {features.map((feature, idx) => (
+                              <li key={idx} className="flex items-start gap-3">
+                                  <div className="shrink-0 mt-0.5 w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100">
+                                      <Check size={12} className="text-blue-600" strokeWidth={3} />
+                                  </div>
+                                  <span className="text-sm text-slate-600 font-medium">{feature}</span>
+                              </li>
+                          ))}
+                      </ul>
+                  </div>
+
+              </div>
+          </div>
+          
+      </div>
+    </div>
+  )
 }

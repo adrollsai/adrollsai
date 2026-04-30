@@ -13,40 +13,46 @@ const supabaseAdmin = createClient(
 export async function POST(req: Request) {
     try {
         const body = await req.json();
-        const { userId, propId, propertyTitle, payload } = body;
+        // Accept either payload (from Products) OR existingTaskId (from Creation Chat)
+        const { userId, propId, propertyTitle, payload, existingTaskId, existingCaption } = body;
 
-        // FIX 1: Dynamically get the exact base URL to avoid subdomain routing errors
         const requestUrl = new URL(req.url);
         const baseUrl = requestUrl.origin; 
-        
-        // FIX 2: Capture the user's cookies to authenticate the internal API calls
         const cookieHeader = req.headers.get('cookie') || '';
 
-        console.log(`[Worker] Starting generation for ${propertyTitle} at ${baseUrl}/api/chat`);
+        let taskId = existingTaskId;
+        let generatedCaption = existingCaption || '';
 
-        // 1. Start the Chat Generation
-        const startResponse = await fetch(`${baseUrl}/api/chat`, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Cookie': cookieHeader // <-- Forwards your login session!
-            },
-            body: JSON.stringify(payload)
-        });
-        
-        const startData = await startResponse.json();
-        
-        if (startData.error || !startData.taskId) {
-             console.error("[Worker] Chat API Error:", startData);
-             return NextResponse.json({ error: startData.error || 'Failed to start AI task' }, { status: 400 });
+        // 1. Start the Chat Generation IF coming from the Products Tab (no taskId passed)
+        if (!taskId && payload) {
+            console.log(`[Worker] Starting generation for ${propertyTitle} at ${baseUrl}/api/chat`);
+            const startResponse = await fetch(`${baseUrl}/api/chat`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Cookie': cookieHeader 
+                },
+                body: JSON.stringify(payload)
+            });
+            
+            const startData = await startResponse.json();
+            
+            if (startData.error || !startData.taskId) {
+                 return NextResponse.json({ error: startData.error || 'Failed to start AI task' }, { status: 400 });
+            }
+
+            taskId = startData.taskId;
+            generatedCaption = startData.caption || '';
         }
 
-        const taskId = startData.taskId;
-        const generatedCaption = startData.caption || '';
+        if (!taskId) {
+            return NextResponse.json({ error: 'No Task ID provided or generated.' }, { status: 400 });
+        }
+
         let attempts = 0;
         let finalImageUrl = '';
 
-        // 2. Poll for Status ON THE SERVER
+        // 2. Poll for Status ON THE SERVER (Unhindered by locked phones)
         while (attempts < 30) {
             attempts++;
             await new Promise(resolve => setTimeout(resolve, 4000));
@@ -55,7 +61,7 @@ export async function POST(req: Request) {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Cookie': cookieHeader // Keep passing auth
+                    'Cookie': cookieHeader 
                 },
                 body: JSON.stringify({ taskId })
             });
@@ -84,7 +90,7 @@ export async function POST(req: Request) {
         // 3. Save directly to DB via Server Admin
         await supabaseAdmin.from('assets').insert({
             user_id: userId,
-            property_id: propId,
+            property_id: propId || null,
             url: finalImageUrl,
             type: 'image',
             status: 'Draft',
@@ -92,10 +98,13 @@ export async function POST(req: Request) {
         });
 
         // 4. Send the Native Web Push Notification
+        const notifTitle = propertyTitle ? `✨ Asset Ready: ${propertyTitle}` : `✨ AI Creative Ready!`;
+        const notifBody = propertyTitle ? `Your AI poster for ${propertyTitle} is ready to publish!` : `Your requested AI design has finished generating in the background.`;
+
         await sendPushNotification(
             userId, 
-            "✨ Asset Generation Complete", 
-            `Your AI poster for ${propertyTitle} is ready to publish!`,
+            notifTitle, 
+            notifBody,
             '/dashboard/assets',
             'asset_ready'
         );
