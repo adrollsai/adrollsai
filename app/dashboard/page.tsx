@@ -13,7 +13,6 @@ const WhatsAppIcon = ({ size = 24, className = "" }) => (
   </svg>
 )
 
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 type Property = {
   id: string
@@ -102,26 +101,7 @@ export default function ProductsPage() {
         return
       }
 
-      const cacheKey = `inventory_cache_${user.id}`
-      const timeKey = `inventory_time_${user.id}`
 
-      if (!force) {
-          const cachedData = localStorage.getItem(cacheKey)
-          const lastFetch = localStorage.getItem(timeKey)
-          const now = Date.now()
-
-          if (cachedData) {
-              setProperties(JSON.parse(cachedData))
-              setLoading(false)
-              if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) {
-                  const { data: profile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
-                  const currentRole = profile?.role || 'admin'
-                  setRole(currentRole)
-                  setOwnerId((currentRole === 'agent' && profile?.parent_id) ? profile.parent_id : user.id)
-                  return; 
-              }
-          }
-      }
 
       const { data: profile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
       const currentRole = profile?.role || 'admin'
@@ -140,8 +120,6 @@ export default function ProductsPage() {
       
       if (data) {
           setProperties(data)
-          localStorage.setItem(cacheKey, JSON.stringify(data))
-          localStorage.setItem(timeKey, Date.now().toString())
       }
 
     } catch (error: any) {

@@ -10,9 +10,9 @@ const supabaseAdmin = createClient(
 // --- INVITE / ADD AGENT ---
 export async function POST(req: Request) {
   try {
-    const { adminId, email, businessName } = await req.json();
+    const { adminId, email, password, businessName } = await req.json();
 
-    if (!adminId || !email) {
+    if (!adminId || !email || !password) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -40,23 +40,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, message: 'Existing user successfully added to your team.' });
     } else {
       // 2B. User DOES NOT EXIST
-      // Send them an official Supabase invite link. 
-      // (This automatically creates their auth account and fires your profile trigger)
-      const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-          data: { role: 'agent', parent_id: adminId } // Passes metadata to your DB triggers if you have them
+      // Create user directly with email and password
+      const { data: createData, error: createError } = await supabaseAdmin.auth.admin.createUser({
+          email: email,
+          password: password,
+          email_confirm: true,
+          user_metadata: { role: 'agent', parent_id: adminId } 
       });
 
-      if (inviteError) throw inviteError;
+      if (createError) throw createError;
 
       // Ensure their profile is correctly linked immediately
-      if (inviteData?.user?.id) {
+      if (createData?.user?.id) {
           await supabaseAdmin.from('profiles').update({
               parent_id: adminId,
               role: 'agent'
-          }).eq('id', inviteData.user.id);
+          }).eq('id', createData.user.id);
       }
 
-      return NextResponse.json({ success: true, message: 'Invitation email sent to new user.' });
+      return NextResponse.json({ success: true, message: 'Agent account created successfully.' });
     }
 
   } catch (error: any) {
@@ -74,18 +76,23 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 1. Securely unlink the agent. We verify the adminId matches to prevent unauthorized removals.
-    const { error } = await supabaseAdmin
+    // 1. First, fetch to ensure safety
+    const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .update({
-        parent_id: null,
-        role: 'unassigned' // They can still log in, but will have a blank/empty dashboard
-      })
-      .match({ id: agentId, parent_id: adminId }); // match() ensures safety
+      .select('parent_id')
+      .eq('id', agentId)
+      .single();
+      
+    if (profile?.parent_id !== adminId) {
+      return NextResponse.json({ error: 'Unauthorized to remove this agent' }, { status: 403 });
+    }
+
+    // 2. Completely delete the user from Auth (This will cascade delete their profile)
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(agentId);
 
     if (error) throw error;
 
-    return NextResponse.json({ success: true, message: 'Agent removed and access revoked.' });
+    return NextResponse.json({ success: true, message: 'Agent account successfully removed.' });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

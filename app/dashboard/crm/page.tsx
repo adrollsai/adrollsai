@@ -11,7 +11,7 @@ import { createClient } from '@/utils/supabase/client'
 import TestNotificationBtn from '@/components/TestNotificationBtn'
 
 const STAGES = ['New', 'Qualified', 'Site Visit Done', 'Closed']
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in ms
+
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -71,33 +71,6 @@ export default function CRMPage() {
       if (!user) return
       setUserId(user.id)
 
-      const cacheKey = `crm_cache_${user.id}`
-      const timeKey = `crm_time_${user.id}`
-
-      // Check Local Cache
-      if (!force) {
-          const cachedData = localStorage.getItem(cacheKey)
-          const lastFetch = localStorage.getItem(timeKey)
-          const now = Date.now()
-
-          if (cachedData) {
-              setLeads(JSON.parse(cachedData))
-              setLoading(false)
-              if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) {
-                  // Cache is fresh. Still grab profile quietly for role mapping.
-                  const { data: profile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
-                  const currentRole = profile?.role || 'admin'
-                  setRole(currentRole)
-                  if (profile?.parent_id) setParentAdminId(profile.parent_id)
-                  if (currentRole === 'admin') {
-                      const { data: teamData } = await supabase.from('profiles').select('id, business_name').eq('parent_id', user.id)
-                      if (teamData) setTeam(teamData)
-                  }
-                  return; // Stop here, use cached leads
-              }
-          }
-      }
-
       // Fetch Fresh Data
       const { data: profile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
       const currentRole = profile?.role || 'admin'
@@ -122,8 +95,6 @@ export default function CRMPage() {
       
       if (data) {
           setLeads(data)
-          localStorage.setItem(cacheKey, JSON.stringify(data))
-          localStorage.setItem(timeKey, Date.now().toString())
       }
     } catch (e) {
       console.error(e)

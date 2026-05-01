@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Zap, Plus, X, Loader2, Image as ImageIcon, Upload, RefreshCw, ExternalLink, TrendingUp, CreditCard, Eye, MousePointerClick, Users, Settings2, Sparkles, Video, MapPin, LayoutGrid, PauseCircle, PlayCircle, PlusCircle } from 'lucide-react'
+import { Zap, Plus, X, Loader2, Image as ImageIcon, Upload, RefreshCw, ExternalLink, TrendingUp, CreditCard, Eye, MousePointerClick, Users, Settings2, Sparkles, Video, MapPin, LayoutGrid, PauseCircle, PlayCircle, PlusCircle, CheckCircle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -21,7 +21,6 @@ type SelectedCreative = {
 }
 
 const GENDERS = ['All', 'Male', 'Female']
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in ms
 
 export default function AdsPage() {
   const router = useRouter()
@@ -34,6 +33,8 @@ export default function AdsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [selectedCreatives, setSelectedCreatives] = useState<SelectedCreative[]>([])
+  const [showAssetSelector, setShowAssetSelector] = useState<{isOpen: boolean, type: 'inventory' | 'ai'}>({isOpen: false, type: 'inventory'})
   
   const [campaigns, setCampaigns] = useState<Campaign[]>([]) 
   const [properties, setProperties] = useState<Property[]>([])
@@ -58,7 +59,6 @@ export default function AdsPage() {
   const [formQuestions, setFormQuestions] = useState<CustomQuestion[]>([])
   const [isAddingQuestion, setIsAddingQuestion] = useState(false)
   const [newQuestion, setNewQuestion] = useState<CustomQuestion>({ label: '', type: 'SHORT_ANSWER', options: [''] })
-  const [selectedCreatives, setSelectedCreatives] = useState<SelectedCreative[]>([])
 
   const [adForm, setAdForm] = useState({
     metaLocation: { location: null as LocationOption | null, radius: 20 },
@@ -105,26 +105,6 @@ export default function AdsPage() {
         }
       }
 
-      // Check Local Cache
-      if (!force) {
-          const lastFetch = localStorage.getItem(timeKey)
-          const now = Date.now()
-
-          if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) {
-              const cCamp = localStorage.getItem(cacheKeyCamp)
-              const cProps = localStorage.getItem(cacheKeyProps)
-              const cAssets = localStorage.getItem(cacheKeyAssets)
-
-              if (cCamp && cProps && cAssets) {
-                  setCampaigns(JSON.parse(cCamp))
-                  setProperties(JSON.parse(cProps))
-                  setAssets(JSON.parse(cAssets))
-                  setLoading(false)
-                  return; // Cache is valid and fresh, exit early
-              }
-          }
-      }
-
       // Fetch Fresh Data
       let newCampaigns: Campaign[] = []
       if (profile?.ad_account_id) {
@@ -147,12 +127,6 @@ export default function AdsPage() {
       setCampaigns(newCampaigns)
       setProperties(newProps)
       setAssets(newAssets)
-
-      // Save to Cache
-      localStorage.setItem(cacheKeyCamp, JSON.stringify(newCampaigns))
-      localStorage.setItem(cacheKeyProps, JSON.stringify(newProps))
-      localStorage.setItem(cacheKeyAssets, JSON.stringify(newAssets))
-      localStorage.setItem(timeKey, Date.now().toString())
 
     } catch (error) {
       console.error("Fetch Error:", error)
@@ -546,37 +520,18 @@ export default function AdsPage() {
                 </label>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                  <select 
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      if (!id) return;
-                      const prop = properties.find(p => p.id === id);
-                      if (prop && !selectedCreatives.find(c => c.id === id)) {
-                        setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'inventory', id, previewUrl: prop.image_url, name: prop.title }]);
-                      }
-                      e.target.value = "";
-                    }} 
-                    className="w-full bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-2xl py-3 px-4 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer"
+                  <button 
+                    onClick={() => setShowAssetSelector({isOpen: true, type: 'inventory'})}
+                    className="w-full bg-white border border-slate-200 text-slate-700 hover:border-blue-400 hover:bg-blue-50 text-sm font-medium rounded-2xl py-3 px-4 transition-all flex items-center justify-center gap-2"
                   >
-                    <option value="">+ Add From Inventory</option>
-                    {properties.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
-                  </select>
-
-                  <select 
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      if (!id) return;
-                      const asset = assets.find(a => a.id === id);
-                      if (asset && !selectedCreatives.find(c => c.id === id)) {
-                        setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id, previewUrl: asset.url, name: `Library Asset` }]);
-                      }
-                      e.target.value = "";
-                    }} 
-                    className="w-full bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-2xl py-3 px-4 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer"
+                    + Add From Inventory
+                  </button>
+                  <button 
+                    onClick={() => setShowAssetSelector({isOpen: true, type: 'ai'})}
+                    className="w-full bg-white border border-slate-200 text-slate-700 hover:border-blue-400 hover:bg-blue-50 text-sm font-medium rounded-2xl py-3 px-4 transition-all flex items-center justify-center gap-2"
                   >
-                    <option value="">+ Add AI Asset</option>
-                    {assets.map(a => <option key={a.id} value={a.id}>Asset {a.id.slice(-4)}</option>)}
-                  </select>
+                    + Add AI Asset
+                  </button>
                 </div>
 
                 <input type="file" ref={fileInputRef} onChange={handleLocalFiles} accept="image/*,video/*" className="hidden" multiple />
@@ -742,6 +697,85 @@ export default function AdsPage() {
       )}
       
       </div> 
+      {/* ASSET SELECTOR MODAL */}
+      {showAssetSelector.isOpen && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-4xl rounded-[2rem] shadow-2xl flex flex-col h-[80vh] overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white">
+              <h2 className="text-xl font-bold text-slate-900">
+                  Select {showAssetSelector.type === 'inventory' ? 'Inventory Creative' : 'AI Asset'}
+              </h2>
+              <button onClick={() => setShowAssetSelector({isOpen: false, type: 'inventory'})} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={20} /></button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/50">
+                {showAssetSelector.type === 'inventory' ? (
+                    properties.length === 0 ? (
+                        <div className="text-center text-slate-500 py-10 font-medium bg-white rounded-2xl border border-slate-100 shadow-sm">No inventory items found.</div>
+                    ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                            {properties.map(p => {
+                                const isSelected = selectedCreatives.some(c => c.id === p.id);
+                                return (
+                                    <div 
+                                        key={p.id} 
+                                        onClick={() => {
+                                            if (!isSelected) {
+                                                setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'inventory', id: p.id, previewUrl: p.image_url, name: p.title }]);
+                                                setShowAssetSelector({isOpen: false, type: 'inventory'});
+                                            }
+                                        }}
+                                        className={`relative aspect-square rounded-[1.5rem] overflow-hidden border-[3px] cursor-pointer transition-all group shadow-sm ${isSelected ? 'border-blue-500 opacity-50 cursor-not-allowed bg-blue-50' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-white'}`}
+                                    >
+                                        <img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4 pt-8">
+                                            <p className="text-white text-sm font-bold truncate drop-shadow-md">{p.title}</p>
+                                        </div>
+                                        {isSelected && (
+                                            <div className="absolute top-3 right-3 bg-blue-500 text-white p-1 rounded-full shadow-md">
+                                                <CheckCircle size={16} />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )
+                ) : (
+                    assets.length === 0 ? (
+                        <div className="text-center text-slate-500 py-10 font-medium bg-white rounded-2xl border border-slate-100 shadow-sm">No AI assets found.</div>
+                    ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                            {assets.map(a => {
+                                const isSelected = selectedCreatives.some(c => c.id === a.id);
+                                return (
+                                    <div 
+                                        key={a.id} 
+                                        onClick={() => {
+                                            if (!isSelected) {
+                                                setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: `Library Asset` }]);
+                                                setShowAssetSelector({isOpen: false, type: 'inventory'});
+                                            }
+                                        }}
+                                        className={`relative aspect-square rounded-[1.5rem] overflow-hidden border-[3px] cursor-pointer transition-all shadow-sm ${isSelected ? 'border-blue-500 opacity-50 cursor-not-allowed bg-blue-50' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}
+                                    >
+                                        <img src={a.url} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+                                        {isSelected && (
+                                            <div className="absolute top-3 right-3 bg-blue-500 text-white p-1 rounded-full shadow-md">
+                                                <CheckCircle size={16} />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )
+                )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

@@ -35,7 +35,6 @@ type Profile = {
   mission_statement: string
 }
 
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 // --- TEMPLATES LIBRARY ---
 const TEMPLATES: { id: string, name: string, url: string }[] = []
@@ -95,24 +94,6 @@ export default function CreationPage() {
           setProfile(profileData)
       }
 
-      const cacheKey = `inventory_cache_${user.id}`
-      const timeKey = `inventory_time_${user.id}`
-
-      // Check Local Cache
-      if (!force) {
-          const cachedData = localStorage.getItem(cacheKey)
-          const lastFetch = localStorage.getItem(timeKey)
-          const now = Date.now()
-
-          if (cachedData) {
-              setProperties(JSON.parse(cachedData))
-              setIsLoadingProperties(false)
-              if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) {
-                  return; // Cache is fresh, stop here.
-              }
-          }
-      }
-
       // Fetch Fresh Data
       const currentRole = profileData?.role || 'admin'
       const targetUserId = (currentRole === 'agent' && profileData?.parent_id) ? profileData.parent_id : user.id
@@ -127,8 +108,6 @@ export default function CreationPage() {
       
       if (data) {
           setProperties(data)
-          localStorage.setItem(cacheKey, JSON.stringify(data))
-          localStorage.setItem(timeKey, Date.now().toString())
       }
 
     } catch (error: any) {

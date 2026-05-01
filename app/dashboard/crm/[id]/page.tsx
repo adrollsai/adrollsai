@@ -102,11 +102,16 @@ export default function LeadProfilePage() {
     await supabase.from('leads').update({ notes: newNotes }).eq('id', id)
   }
 
+  const handleFieldUpdate = async (field: string, value: string) => {
+    setLead({ ...lead, [field]: value })
+    await supabase.from('leads').update({ [field]: value }).eq('id', id)
+  }
+
   if (loading) return <div className="p-10 flex justify-center"><RefreshCw className="animate-spin text-slate-400" /></div>
   if (!lead) return <div className="p-10 text-center text-slate-500">Lead not found.</div>
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col pb-safe">
+    <div className="max-w-7xl mx-auto min-h-screen bg-[#F8FAFC] flex flex-col pb-safe">
         {/* Header */}
         <div className="p-5 bg-white border-b border-slate-200 flex items-center gap-3 sticky top-0 z-10">
             <button onClick={() => router.push('/dashboard/crm')} className="p-2 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
@@ -116,11 +121,17 @@ export default function LeadProfilePage() {
                 <h2 className="text-xl font-bold text-slate-900 truncate">{lead.name}</h2>
                 <p className="text-xs font-medium text-slate-500 mt-0.5 truncate">{lead.phone} {lead.email ? `• ${lead.email}` : ''}</p>
             </div>
-            <a href={`tel:${lead.phone}`} className="p-3 bg-blue-50 text-blue-600 rounded-full shadow-sm"><Phone size={18}/></a>
+            {lead.phone && (
+                <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-3 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors"><MessageCircle size={18}/></a>
+            )}
+            <a href={`tel:${lead.phone}`} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full shadow-sm transition-colors"><Phone size={18}/></a>
         </div>
 
         {/* Content Body */}
-        <div className="p-5 flex-1 overflow-y-auto space-y-6">
+        <div className="p-4 sm:p-6 lg:p-8 flex-1 w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
+            
+            {/* Left Column: Details */}
+            <div className="lg:col-span-7 xl:col-span-8 space-y-6">
             
             {/* Meta Card */}
             <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100">
@@ -142,6 +153,47 @@ export default function LeadProfilePage() {
                         defaultValue={lead.notes || ''}
                         onBlur={(e) => handleNotesChange(e.target.value)}
                     />
+                </div>
+            </div>
+
+            {/* Context & Tags */}
+            <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-2">Priority Status</label>
+                    <div className="flex flex-wrap gap-2">
+                        {['Hot', 'Warm', 'Cold'].map(status => (
+                            <button 
+                                key={status} 
+                                onClick={() => handleFieldUpdate('priority_status', status)} 
+                                className={`py-1.5 px-3 rounded-xl text-xs font-bold border transition-all ${lead.priority_status === status ? (status === 'Hot' ? 'bg-red-500 text-white border-red-500' : status === 'Warm' ? 'bg-amber-500 text-white border-amber-500' : 'bg-blue-500 text-white border-blue-500') : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                            >
+                                {status}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1.5">Budget</label>
+                        <input 
+                            type="text" 
+                            defaultValue={lead.budget || ''}
+                            onBlur={(e) => handleFieldUpdate('budget', e.target.value)}
+                            className="w-full bg-slate-50 p-2.5 rounded-xl text-sm border border-slate-100 outline-none focus:border-blue-300"
+                            placeholder="e.g. 50L - 1Cr"
+                        />
+                    </div>
+                    <div className="flex-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1.5">Timeline</label>
+                        <input 
+                            type="text" 
+                            defaultValue={lead.timeline || ''}
+                            onBlur={(e) => handleFieldUpdate('timeline', e.target.value)}
+                            className="w-full bg-slate-50 p-2.5 rounded-xl text-sm border border-slate-100 outline-none focus:border-blue-300"
+                            placeholder="e.g. 1 Month"
+                        />
+                    </div>
                 </div>
             </div>
 
@@ -169,39 +221,51 @@ export default function LeadProfilePage() {
                 </div>
             </div>
 
-            {/* Timeline Log */}
-            <div className="pt-2">
-                <h3 className="text-sm font-bold text-slate-900 mb-5 ml-1">Activity Log</h3>
-                <div className="space-y-5 relative before:absolute before:inset-0 before:ml-[22px] before:-translate-x-px before:h-full before:w-[2px] before:bg-slate-200 before:rounded-full">
-                    {leadHistory.map((item, index) => {
-                        const isRemark = item.action_type === 'REMARK'
-                        const isReminder = item.action_type === 'REMINDER_SET'
-                        return (
-                            <div key={item.id} className="relative flex items-start gap-4">
-                                <div className={`flex items-center justify-center w-11 h-11 rounded-full border-[3px] border-slate-50 shrink-0 z-10 ${isRemark ? 'bg-blue-100 text-blue-600' : isReminder ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>
-                                    {isRemark ? <MessageCircle size={16}/> : isReminder ? <Clock size={16} /> : <CheckCircle2 size={16} />}
-                                </div>
-                                <div className="flex-1 min-w-0 bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mt-0.5">
-                                    <div className="flex items-center justify-between mb-1.5">
-                                        <div className="font-bold text-xs text-slate-900 capitalize">{item.action_type.replace('_', ' ')}</div>
-                                        <time className="text-[10px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded-md border">{new Date(item.created_at).toLocaleString([], {hour: '2-digit', minute:'2-digit', month: 'short', day: 'numeric'})}</time>
+            </div>
+            
+            {/* Right Column: Activity Log & Notes */}
+            <div className="lg:col-span-5 xl:col-span-4 flex flex-col">
+                <div className="bg-white rounded-2xl sm:rounded-[2rem] shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden sticky top-24">
+                    {/* Activity Log Header */}
+                    <div className="p-5 border-b border-slate-100 bg-white">
+                        <h3 className="text-base font-bold text-slate-900">Activity Log</h3>
+                    </div>
+                    
+                    {/* Timeline Log */}
+                    <div className="p-5 flex-1 overflow-y-auto max-h-[50vh] lg:max-h-[calc(100vh-350px)] custom-scrollbar">
+                        <div className="space-y-5 relative before:absolute before:inset-0 before:ml-[22px] before:-translate-x-px before:h-full before:w-[2px] before:bg-slate-200 before:rounded-full">
+                            {leadHistory.map((item, index) => {
+                                const isRemark = item.action_type === 'REMARK'
+                                const isReminder = item.action_type === 'REMINDER_SET'
+                                return (
+                                    <div key={item.id} className="relative flex items-start gap-4">
+                                        <div className={`flex items-center justify-center w-11 h-11 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm ${isRemark ? 'bg-blue-100 text-blue-600' : isReminder ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>
+                                            {isRemark ? <MessageCircle size={16}/> : isReminder ? <Clock size={16} /> : <CheckCircle2 size={16} />}
+                                        </div>
+                                        <div className="flex-1 min-w-0 bg-slate-50 p-4 rounded-2xl border border-slate-100 mt-0.5">
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <div className="font-bold text-xs text-slate-900 capitalize truncate pr-2">{item.action_type.replace('_', ' ')}</div>
+                                                <time className="text-[10px] font-bold text-slate-400 bg-white px-1.5 py-0.5 rounded-md border border-slate-100 shrink-0">{new Date(item.created_at).toLocaleString([], {hour: '2-digit', minute:'2-digit', month: 'short', day: 'numeric'})}</time>
+                                            </div>
+                                            <div className="text-xs text-slate-600 leading-relaxed break-words font-medium">{item.description}</div>
+                                        </div>
                                     </div>
-                                    <div className="text-xs text-slate-600 leading-relaxed break-words font-medium">{item.description}</div>
-                                </div>
-                            </div>
-                        )
-                    })}
+                                )
+                            })}
+                        </div>
+                    </div>
+                    
+                    {/* Note Footer */}
+                    <div className="p-4 bg-white border-t border-slate-100 shrink-0 sticky bottom-0 z-10 pb-28 lg:pb-4">
+                        <div className="flex gap-2">
+                            <input type="text" value={remarkInput} onChange={e => setRemarkInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddRemark()} placeholder="Type a note or remark..." className="flex-1 bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 rounded-full px-5 text-sm outline-none transition-all" />
+                            <button onClick={handleAddRemark} disabled={!remarkInput.trim()} className="w-12 h-12 rounded-full bg-slate-900 text-white flex items-center justify-center disabled:opacity-50 hover:bg-slate-800 active:scale-95 transition-all shadow-md shrink-0"><Send size={18} className="ml-1 -mt-0.5" /></button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        {/* Note Footer */}
-        <div className="p-4 bg-white border-t border-slate-200 shrink-0 sticky bottom-0">
-            <div className="flex gap-2">
-                <input type="text" value={remarkInput} onChange={e => setRemarkInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddRemark()} placeholder="Type a note or remark..." className="flex-1 bg-slate-50 border border-slate-200 rounded-full px-5 text-sm outline-none" />
-                <button onClick={handleAddRemark} disabled={!remarkInput.trim()} className="w-12 h-12 rounded-full bg-slate-900 text-white flex items-center justify-center disabled:opacity-50"><Send size={18} className="ml-1" /></button>
-            </div>
-        </div>
     </div>
   )
 }

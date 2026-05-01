@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { 
   MapPin, Phone, Loader2, Image as ImageIcon, LayoutGrid, Rss, 
-  ChevronRight, X, Filter, Check, Facebook, Instagram, Linkedin, Youtube, Share2, ArrowUpRight, ChevronLeft, Search
+  ChevronRight, X, Filter, Check, Facebook, Instagram, Linkedin, Youtube, Share2, ArrowUpRight, ChevronLeft, Search, MessageCircle
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
@@ -19,6 +19,7 @@ type Profile = {
   instagram_url?: string
   linkedin_url?: string
   youtube_url?: string
+  address?: string
 }
 
 type Property = {
@@ -294,14 +295,24 @@ export default function SharedCataloguePage() {
 
             {/* CALL BUTTON */}
             {profile?.contact_number && (
-              <button 
-                onClick={handleCall}
-                className="bg-slate-900 hover:bg-slate-800 text-white px-4 sm:px-6 py-2 sm:py-2.5 rounded-full shadow-md shadow-slate-900/20 transition-all flex items-center gap-2 active:scale-95 shrink-0 group"
-              >
-                <Phone size={16} className="text-white group-hover:rotate-12 transition-transform" /> 
-                <span className="text-sm font-extrabold tracking-wide hidden sm:block">{profile.contact_number}</span>
-                <span className="text-sm font-extrabold tracking-wide sm:hidden">Call</span>
-              </button>
+              <div className="flex items-center gap-2">
+                  <a 
+                    href={`https://wa.me/${profile.contact_number.replace(/[^0-9]/g, '')}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="bg-[#25D366]/10 hover:bg-[#25D366] text-[#25D366] hover:text-white p-2.5 sm:p-3 rounded-full shadow-sm transition-all flex items-center justify-center active:scale-95 shrink-0"
+                  >
+                    <MessageCircle size={20} />
+                  </a>
+                  <button 
+                    onClick={() => window.location.href = `tel:${profile.contact_number}`}
+                    className="bg-slate-900 hover:bg-slate-800 text-white px-4 sm:px-6 py-2 sm:py-2.5 rounded-full shadow-md shadow-slate-900/20 transition-all flex items-center gap-2 active:scale-95 shrink-0 group"
+                  >
+                    <Phone size={16} className="text-white group-hover:rotate-12 transition-transform" /> 
+                    <span className="text-sm font-extrabold tracking-wide hidden sm:block">{profile.contact_number}</span>
+                    <span className="text-sm font-extrabold tracking-wide sm:hidden">Call</span>
+                  </button>
+              </div>
             )}
           </div>
         </div>
@@ -329,6 +340,13 @@ export default function SharedCataloguePage() {
                 <p className="text-slate-500 font-medium text-sm sm:text-base leading-relaxed mb-6">
                     {profile?.mission_statement || "Discover premium real estate opportunities tailored for you."}
                 </p>
+                
+                {profile?.address && (
+                    <div className="flex items-center justify-center md:justify-start gap-2 text-slate-600 mb-6 bg-slate-50/80 px-4 py-2.5 rounded-xl border border-slate-100 inline-flex">
+                        <MapPin size={18} className="text-blue-500 shrink-0" />
+                        <span className="text-sm font-medium">{profile.address}</span>
+                    </div>
+                )}
                 
                 {/* Social Icons Row */}
                 <div className="flex justify-center md:justify-start gap-3 flex-wrap">

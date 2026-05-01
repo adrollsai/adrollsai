@@ -19,7 +19,6 @@ type Property = {
 }
 
 const filters = ['All', 'image', 'video']
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in ms
 
 export default function AssetsPage() {
   const supabase = createClient()
@@ -51,35 +50,6 @@ export default function AssetsPage() {
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       if (userError || !user) return
 
-      const cacheKey = `assets_cache_${user.id}`
-      const timeKey = `assets_time_${user.id}`
-      const propCacheKey = `inventory_cache_${user.id}`
-
-      // Check Local Cache
-      if (!force) {
-          const cachedData = localStorage.getItem(cacheKey)
-          const lastFetch = localStorage.getItem(timeKey)
-          const now = Date.now()
-
-          if (cachedData) {
-              setAssets(JSON.parse(cachedData))
-              setLoading(false)
-              
-              // Load properties from cache so dropdown works instantly
-              const cachedProps = localStorage.getItem(propCacheKey)
-              if (cachedProps) setProperties(JSON.parse(cachedProps))
-
-              if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) {
-                  // If properties aren't cached locally yet, quietly fetch them
-                  if (!cachedProps) {
-                      const { data: propData } = await supabase.from('properties').select('id, title').eq('user_id', user.id).order('created_at', { ascending: false })
-                      if (propData) setProperties(propData)
-                  }
-                  return; // Cache is fresh, stop here.
-              }
-          }
-      }
-
       // Fetch Fresh Data
       const { data: assetData, error: assetError } = await supabase
         .from('assets')
@@ -99,13 +69,10 @@ export default function AssetsPage() {
         // Filter out distributed assets to keep the library clean
         const cleanAssets = assetData.filter(asset => asset.status !== 'Distributed')
         setAssets(cleanAssets)
-        localStorage.setItem(cacheKey, JSON.stringify(cleanAssets))
-        localStorage.setItem(timeKey, Date.now().toString())
       }
       
       if (propData) {
         setProperties(propData)
-        localStorage.setItem(propCacheKey, JSON.stringify(propData))
       }
 
     } catch (error) {

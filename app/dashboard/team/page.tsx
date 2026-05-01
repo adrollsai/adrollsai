@@ -27,6 +27,7 @@ export default function TeamManagementPage() {
   // Modal State
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
+  const [invitePassword, setInvitePassword] = useState('')
   const [isInviting, setIsInviting] = useState(false)
   const [isRemoving, setIsRemoving] = useState<string | null>(null)
 
@@ -75,7 +76,7 @@ export default function TeamManagementPage() {
       const res = await fetch('/api/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId, email: inviteEmail.trim(), businessName })
+        body: JSON.stringify({ adminId, email: inviteEmail.trim(), password: invitePassword, businessName })
       })
 
       const data = await res.json()
@@ -83,6 +84,7 @@ export default function TeamManagementPage() {
 
       toast.success(data.message)
       setInviteEmail('')
+      setInvitePassword('')
       setShowInviteModal(false)
       
       // Refresh list
@@ -141,7 +143,7 @@ export default function TeamManagementPage() {
                 onClick={() => setShowInviteModal(true)}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3.5 rounded-full text-sm font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 active:scale-95 transition-all w-full sm:w-auto"
             >
-                <UserPlus size={18} /> Invite Agent
+                <UserPlus size={18} /> Add Agent
             </button>
         </div>
 
@@ -218,18 +220,18 @@ export default function TeamManagementPage() {
 
       {/* Invite Modal */}
       {showInviteModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 max-h-[90vh]">
+        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-extrabold text-slate-900">Invite Agent</h2>
+              <h2 className="text-2xl font-extrabold text-slate-900">Add Agent</h2>
               <button onClick={() => setShowInviteModal(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button>
             </div>
             
             <p className="text-sm text-slate-500 mb-6 font-medium leading-relaxed">
-                Enter the agent's email address. If they already have an account, they will instantly be linked to your workspace. Otherwise, they will receive an invite to sign up.
+                Enter the agent's email address and assign a password. They will be able to log in immediately and access your workspace.
             </p>
 
-            <form onSubmit={handleInvite} className="space-y-6">
+            <form onSubmit={handleInvite} className="space-y-4">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 mb-2 block">Agent's Email Address</label>
                 <div className="relative">
@@ -244,19 +246,34 @@ export default function TeamManagementPage() {
                     />
                 </div>
               </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 mb-2 block">Assign Password</label>
+                <div className="relative">
+                    <Shield className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                        type="text" 
+                        required
+                        value={invitePassword}
+                        onChange={(e) => setInvitePassword(e.target.value)}
+                        className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-4 pl-12 pr-4 rounded-[1.25rem] text-slate-800 text-sm font-medium focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-400 outline-none border border-slate-200/60 transition-all" 
+                        placeholder="Assign a secure password" 
+                    />
+                </div>
+              </div>
               
-              <div className="bg-blue-50 p-4 rounded-2xl flex items-start gap-3 border border-blue-100">
+              <div className="bg-blue-50 p-4 rounded-2xl flex items-start gap-3 border border-blue-100 mt-6">
                   <AlertCircle size={18} className="text-blue-500 shrink-0 mt-0.5" />
                   <p className="text-xs text-blue-800 font-medium leading-relaxed">Agents can view your inventory and manage CRM leads assigned to them. They cannot access your billing or team settings.</p>
               </div>
 
               <button 
                   type="submit" 
-                  disabled={isInviting || !inviteEmail} 
-                  className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-xl shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:scale-100"
+                  disabled={isInviting || !inviteEmail || !invitePassword} 
+                  className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-xl shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:scale-100 mt-2"
               >
                 {isInviting ? <Loader2 size={18} className="animate-spin" /> : <UserPlus size={18} />} 
-                {isInviting ? 'Sending Invite...' : 'Send Invitation'}
+                {isInviting ? 'Adding Agent...' : 'Add Agent'}
               </button>
             </form>
           </div>

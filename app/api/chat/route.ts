@@ -85,22 +85,19 @@ export async function POST(request: Request) {
       }
     };
     
-    // --- COPY GENERATION FRAMEWORK ---
     const copyPrompt = `
-      You are an elite direct-response copywriter trained in Alex Hormozi's "$100M Offers" framework.
-      Write a high-converting caption for:
+      You are an elite direct-response copywriter.
+      Write a high-converting social media caption for:
       
       TITLE: ${propertyTitle}
       DETAILS: ${propertyDescription}
       COMPANY: ${businessName}
       CONTACT: ${contactNumber || 'DM for details!'}
 
-      FRAMEWORK:
-      1. HOOK: Call out the buyer.
-      2. OFFER: The no-brainer deal.
-      3. VALUE STACK: Benefit bullets.
-      4. SCARCITY/URGENCY: Why now.
-      5. CTA: Direct instruction.
+      CRITICAL RULES - READ CAREFULLY OR YOU WILL FAIL:
+      1. OUTPUT ONLY THE RAW CAPTION TEXT. Do not say "Here is your caption", "Option 1", or explain the copy. The very first character you output must be the start of the caption.
+      2. ABSOLUTELY NO MARKDOWN. Do not use asterisks (* or **), bolding, or italics. Use capital letters for emphasis if needed.
+      3. Keep it engaging, direct, and ready to post on Facebook/Instagram immediately. Use emojis naturally.
     `;
 
     // --- THE FIX: Sequential Execution & Error Isolation ---

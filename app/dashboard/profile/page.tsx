@@ -42,7 +42,6 @@ type Pixel = {
   name: string
 }
 
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in ms
 
 // --- DOMAIN MANAGER COMPONENT ---
 function DomainManager({ 
@@ -284,6 +283,7 @@ export default function ProfilePage() {
     mission: '',
     color: '#D0E8FF',
     contact: '',
+    address: '',
     logoUrl: '',
     facebookUrl: '',
     instagramUrl: ''
@@ -419,40 +419,15 @@ export default function ProfilePage() {
       }
       setUserId(user.id)
 
-      const cacheKey = `profile_cache_${user.id}`
-      const timeKey = `profile_time_${user.id}`
-
       let profileData = null
 
-      if (!force) {
-        const cachedData = localStorage.getItem(cacheKey)
-        const lastFetch = localStorage.getItem(timeKey)
-        const now = Date.now()
-
-        if (cachedData) {
-          profileData = JSON.parse(cachedData)
-          setLoading(false)
-          if (lastFetch && (now - parseInt(lastFetch) < CACHE_DURATION)) {
-            // Cache is fresh
-          } else {
-            profileData = null // Expired, fetch fresh
-          }
-        }
-      }
-
-      if (!profileData) {
-        const { data } = await supabase
+      const { data } = await supabase
           .from('profiles')
           .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id, custom_domain, domain_verify_token, domain_verify_status, role') 
           .eq('id', user.id)
           .single()
 
         profileData = data
-        if (data) {
-           localStorage.setItem(cacheKey, JSON.stringify(data))
-           localStorage.setItem(timeKey, Date.now().toString())
-        }
-      }
 
       if (profileData) {
         setRole(profileData.role || 'admin') 
@@ -468,6 +443,7 @@ export default function ProfilePage() {
           mission: profileData.mission_statement || '',
           color: profileData.brand_color || '#D0E8FF',
           contact: profileData.contact_number || '',
+          address: profileData.address || '',
           logoUrl: profileData.logo_url || '',
           facebookUrl: profileData.facebook_url || '',
           instagramUrl: profileData.instagram_url || ''
@@ -602,6 +578,7 @@ export default function ProfilePage() {
         mission_statement: formData.mission,
         brand_color: formData.color,
         contact_number: formData.contact,
+        address: formData.address,
         logo_url: formData.logoUrl,
         facebook_url: role === 'admin' ? formData.facebookUrl : undefined,
         instagram_url: role === 'admin' ? formData.instagramUrl : undefined,
@@ -712,6 +689,17 @@ export default function ProfilePage() {
                             value={formData.contact} 
                             onChange={(e) => setFormData({...formData, contact: e.target.value})} 
                             className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" 
+                        />
+                    </div>
+                    
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">Address</label>
+                        <input 
+                            type="text" 
+                            value={formData.address} 
+                            onChange={(e) => setFormData({...formData, address: e.target.value})} 
+                            className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" 
+                            placeholder="Enter business address to show on your public catalog"
                         />
                     </div>
                     
