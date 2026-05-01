@@ -38,32 +38,68 @@ export async function POST(request: Request) {
         );
     }
 
-    const formData = await request.formData();
+    let data: any = {};
+    const contentType = request.headers.get('content-type') || '';
     
-    const adAccountId = formData.get('adAccountId')?.toString();
-    const facebookToken = formData.get('facebookToken')?.toString();
-    const targetLocation = formData.get('targetLocation')?.toString() || 'India'; 
-    const metaLocationStr = formData.get('metaLocation')?.toString(); 
-    const dailyBudgetINR = parseFloat(formData.get('dailyBudgetINR')?.toString() || '0');
-    const pageId = formData.get('pageId')?.toString();
-    const linkUrl = formData.get('linkUrl')?.toString();
-    const privacyPolicyUrl = formData.get('privacyPolicyUrl')?.toString();
-    const customQuestionsStr = formData.get('customQuestions')?.toString();
-
-    // NEW: Capture multiple sources from the Creative Cart
-    const inventoryIds = formData.getAll('inventoryIds').map(String);
-    const assetIds = formData.getAll('assetIds').map(String);
-    
-    const creativeFiles = [];
-    for (const [key, value] of formData.entries()) {
-        if (key.startsWith('creativeFiles[') && value instanceof Blob) {
-            creativeFiles.push(value);
+    if (contentType.includes('application/json')) {
+        data = await request.json();
+    } else {
+        const formData = await request.formData();
+        data.adAccountId = formData.get('adAccountId')?.toString();
+        data.facebookToken = formData.get('facebookToken')?.toString();
+        data.metaLocations = formData.get('metaLocations')?.toString();
+        data.dailyBudgetINR = parseFloat(formData.get('dailyBudgetINR')?.toString() || '500');
+        data.pageId = formData.get('pageId')?.toString();
+        data.linkUrl = formData.get('linkUrl')?.toString();
+        data.privacyPolicyUrl = formData.get('privacyPolicyUrl')?.toString();
+        data.optimizeForConversions = formData.get('optimizeForConversions') === 'true';
+        data.customQuestions = formData.get('customQuestions')?.toString();
+        data.inventoryIds = formData.getAll('inventoryIds').map(String);
+        data.assetIds = formData.getAll('assetIds').map(String);
+        
+        data.creativeFiles = [];
+        for (const [key, value] of formData.entries()) {
+            if (key.startsWith('creativeFiles[') && value instanceof Blob) {
+                data.creativeFiles.push(value);
+            }
         }
     }
 
-    if (!facebookToken || !adAccountId || !pageId || !linkUrl || !privacyPolicyUrl) {
+    // Auto-fill missing credentials from DB if not provided
+    if (!data.facebookToken || !data.adAccountId || !data.pageId) {
+        const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, fb_page_id, business_url').eq('id', user.id).single();
+        if (profile) {
+            data.facebookToken = data.facebookToken || profile.facebook_token;
+            data.adAccountId = data.adAccountId || profile.ad_account_id;
+            data.pageId = data.pageId || profile.fb_page_id;
+            data.linkUrl = data.linkUrl || profile.business_url;
+            data.privacyPolicyUrl = data.privacyPolicyUrl || (profile.business_url ? `${profile.business_url}/privacy` : '');
+        }
+    }
+
+    const {
+        facebookToken,
+        adAccountId,
+        pageId,
+        linkUrl,
+        privacyPolicyUrl,
+        dailyBudgetINR = 500,
+        metaLocations: metaLocationsStr,
+        optimizeForConversions,
+        customQuestions: customQuestionsStr,
+        inventoryIds = [],
+        assetIds = [],
+        creativeFiles = []
+    } = data;
+
+    if (!facebookToken || !adAccountId || !pageId) {
+        const missing = [];
+        if (!facebookToken) missing.push("Facebook Access Token");
+        if (!adAccountId) missing.push("Ad Account ID");
+        if (!pageId) missing.push("Facebook Page ID");
+        
         return NextResponse.json(
-            { error: 'Missing essential data: Token, Account, Page, Link, or Privacy Policy.' }, 
+            { error: `Meta Ads account not fully connected. Missing: ${missing.join(', ')}. Please update your Profile settings.` }, 
             { status: 400 }
         );
     }
@@ -72,9 +108,12 @@ export async function POST(request: Request) {
 
     try {
         // --- Step A: Get Source Data & Context ---
-        logToFile("--- 1. FETCHING SOURCE DATA ---");
         let combinedContext = "";
         let initialImageUrls: string[] = []; 
+
+        if (data.imageUrl) {
+            initialImageUrls.push(data.imageUrl);
+        }
 
         if (inventoryIds.length > 0) {
             const { data: props, error } = await supabase
@@ -244,7 +283,7 @@ export async function POST(request: Request) {
         
         Context provided by the user:
         ${combinedContext || "Luxury properties."}
-        Target Location: "${targetLocation}".
+        Target Location: "Multiple Selected Locations".
         
         CRITICAL RULES:
         1. Apply Alex Hormozi's marketing frameworks: Emphasize "Value Stacking", create "Grand Slam Offers", use risk reversal, and write strong, emotionally resonant hooks.
@@ -275,8 +314,9 @@ export async function POST(request: Request) {
 
         // --- Step E: Campaign ---
         logToFile("--- 5. CAMPAIGN ---");
+        const campaignNameSuffix = optimizeForConversions ? 'Conversion Optimized' : 'Lead Gen';
         const campaignPayload = {
-            name: `AI Leads - Multi-Creative - ${new Date().toISOString().slice(0, 10)}`,
+            name: `AI Leads - Multi-Creative - ${new Date().toISOString().slice(0, 10)} - ${campaignNameSuffix}`,
             objective: 'OUTCOME_LEADS', 
             status: 'PAUSED', 
             buying_type: 'AUCTION',
@@ -299,35 +339,48 @@ export async function POST(request: Request) {
 
         // --- Parse Location Targeting ---
         logToFile("--- PREPARING LOCATION TARGETING ---");
-        let targetingConfig = { geo_locations: { countries: ['IN'] } }; 
+        let targetingConfig: any = { geo_locations: { countries: ['IN'] } }; 
         
-        if (metaLocationStr) {
+        if (metaLocationsStr) {
             try {
-                const locData = JSON.parse(metaLocationStr);
-                const loc = locData.location;
-                if (loc && loc.key) {
-                    if (loc.type === 'city') {
-                        targetingConfig = { geo_locations: { cities: [{ key: loc.key, radius: locData.radius || 20, distance_unit: 'kilometer' }] } } as any;
-                    } else if (loc.type === 'region') {
-                        targetingConfig = { geo_locations: { regions: [{ key: loc.key }] } } as any;
-                    } else if (loc.type === 'country') {
-                        targetingConfig = { geo_locations: { countries: [loc.country_code || loc.key] } } as any;
-                    } else if (loc.type === 'zip') {
-                        targetingConfig = { geo_locations: { zips: [{ key: loc.key }] } } as any;
-                    }
+                const locationsArray = JSON.parse(metaLocationsStr);
+                if (Array.isArray(locationsArray) && locationsArray.length > 0) {
+                    targetingConfig = { geo_locations: { cities: [], regions: [], countries: [], zips: [] } };
+                    
+                    locationsArray.forEach((locData: any) => {
+                        const loc = locData.location;
+                        if (loc && loc.key) {
+                            if (loc.type === 'city') {
+                                targetingConfig.geo_locations.cities.push({ key: loc.key, radius: locData.radius || 20, distance_unit: 'kilometer' });
+                            } else if (loc.type === 'region') {
+                                targetingConfig.geo_locations.regions.push({ key: loc.key });
+                            } else if (loc.type === 'country') {
+                                targetingConfig.geo_locations.countries.push(loc.country_code || loc.key);
+                            } else if (loc.type === 'zip') {
+                                targetingConfig.geo_locations.zips.push({ key: loc.key });
+                            }
+                        }
+                    });
+
+                    if (targetingConfig.geo_locations.cities.length === 0) delete targetingConfig.geo_locations.cities;
+                    if (targetingConfig.geo_locations.regions.length === 0) delete targetingConfig.geo_locations.regions;
+                    if (targetingConfig.geo_locations.countries.length === 0) delete targetingConfig.geo_locations.countries;
+                    if (targetingConfig.geo_locations.zips.length === 0) delete targetingConfig.geo_locations.zips;
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.error("Failed to parse locations array", e);
+            }
         }
 
         // --- Step F: Ad Set ---
         logToFile("--- 6. AD SET ---");
         const startTime = new Date(Date.now() + 30 * 60 * 1000).toISOString(); 
 
-        const adSetPayload = {
-            name: `Smart AdSet - ${targetLocation}`,
+        const adSetPayload: any = {
+            name: `Smart AdSet - AI Audiences`,
             campaign_id: campaignId,
             destination_type: 'ON_AD', 
-            optimization_goal: 'LEAD_GENERATION', 
+            optimization_goal: optimizeForConversions ? 'QUALITY_LEAD' : 'LEAD_GENERATION', 
             billing_event: 'IMPRESSIONS', 
             targeting: targetingConfig,
             promoted_object: { page_id: pageId },

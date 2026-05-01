@@ -111,7 +111,7 @@ export default function LeadProfilePage() {
   if (!lead) return <div className="p-10 text-center text-slate-500">Lead not found.</div>
 
   return (
-    <div className="max-w-7xl mx-auto min-h-screen bg-[#F8FAFC] flex flex-col pb-safe">
+    <div className="max-w-7xl mx-auto min-h-screen bg-[#F8FAFC] flex flex-col pb-safe pb-32">
         {/* Header */}
         <div className="p-5 bg-white border-b border-slate-200 flex items-center gap-3 sticky top-0 z-10">
             <button onClick={() => router.push('/dashboard/crm')} className="p-2 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">

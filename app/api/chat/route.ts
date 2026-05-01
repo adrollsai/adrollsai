@@ -1,17 +1,45 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { createKieTask, generateKieChat } from '@/utils/external-apis'; 
+import { createKieTask } from '@/utils/external-apis';
+import { generateText } from 'ai';
+import { google } from '@ai-sdk/google'; 
+import fs from 'fs';
+import path from 'path';
+
+const DEBUG_LOG = path.join(process.cwd(), 'image_gen_debug.log');
+
+function logToFile(msg: string) {
+  const timestamp = new Date().toISOString();
+  const entry = `[${timestamp}] ${msg}\n`;
+  console.log(`[ImageGen] ${msg}`); // Also log to console for dev server
+  try {
+    fs.appendFileSync(DEBUG_LOG, entry, { encoding: 'utf8' });
+  } catch (e: any) {
+    console.error("CRITICAL: Failed to write to log file:", e.message);
+  }
+}
 
 export async function POST(request: Request) {
   try {
+    logToFile("--- NEW IMAGE GEN REQUEST RECEIVED ---");
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
+      logToFile("ERROR: Unauthorized request");
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
+    let body;
+    try {
+      body = await request.json();
+    } catch (e) {
+      logToFile("ERROR: Failed to parse request JSON");
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    }
+    
+    logToFile(`PAYLOAD RECEIVED: ${JSON.stringify(body, null, 2)}`);
+    
     const { 
         userInstructions, 
         propertyDescription, 
@@ -33,47 +61,24 @@ export async function POST(request: Request) {
 
     const businessName = profile?.business_name || 'Your Business';
 
-    console.log(`--- GENERATION START | MODEL: ${model} ---`)
+    logToFile(`STARTING GENERATION | MODEL: ${model}`);
     
-    // Consolidate images: Property images first, then logo, then template
+    // Consolidate images
     const allInputImages = [...(propImages || [])];
-    
-    if (logoUrl) {
-        allInputImages.push(logoUrl);
-    }
-
-    if (templateUrl) {
-        allInputImages.push(templateUrl);
-    }
+    if (logoUrl) allInputImages.push(logoUrl);
+    if (templateUrl) allInputImages.push(templateUrl);
 
     // --- DIRECT RESPONSE DESIGN FRAMEWORK PROMPT ---
-    let finalImagePrompt = `Create a high-converting, professional Meta ad design for the product: "${propertyTitle}". \n\n`;
-    finalImagePrompt += `DESIGN PHILOSOPHY (ALEX HORMOZI FRAMEWORK):\n`;
-    finalImagePrompt += `2. BOLD TYPOGRAPHY: Use large, authoritative, high-contrast text for the main headline.\n`;
-    finalImagePrompt += `4. ZERO CLUTTER: Every element must drive the direct-response goal.\n\n`;
-    
-    finalImagePrompt += `PRODUCT CONTEXT: ${propertyDescription}. \n`;
-    if (userInstructions) finalImagePrompt += `USER REQUIREMENTS: ${userInstructions}. \n`;
-    finalImagePrompt += `VISUAL STYLE: Professional commercial photography, premium lighting, engaging composition. \n`;
-
-    if (logoUrl) {
-        finalImagePrompt += `\n*** LOGO INSTRUCTIONS ***\n`;
-        finalImagePrompt += `Integrate the brand logo cleanly into the design (e.g., top corner or bottom footer) without distortion.\n`;
-    }
-
-    if (templateUrl) {
-        finalImagePrompt += `\n*** REFERENCE DESIGN ***\n`;
-        finalImagePrompt += `The LAST image is a reference. Capture its design language, layout, and composition style. --control_image_last_is_reference`;
-    }
-
-    finalImagePrompt += `\nAspect Ratio: ${aspectRatio}.`;
-    if (contactNumber) finalImagePrompt += ` Display contact info: ${contactNumber}.`;
+    let finalImagePrompt = `Create a high-converting, professional Meta ad design for: "${propertyTitle}". \n\n`;
+    finalImagePrompt += `CONTEXT: ${propertyDescription}. \n`;
+    if (userInstructions) finalImagePrompt += `REQUIREMENTS: ${userInstructions}. \n`;
+    finalImagePrompt += `STYLE: Premium real estate photography, clean lighting, bold typography. \n`;
+    finalImagePrompt += `Aspect Ratio: ${aspectRatio}.`;
 
     const kieModel = (model === 'gpt/gpt-image-2-text-to-image') 
         ? 'gpt-image-2-text-to-image' 
         : 'nano-banana-2';
 
-    // Payload matches the Kie.ai spec exactly
     const payload = {
       "model": kieModel,
       "input": {
@@ -85,48 +90,38 @@ export async function POST(request: Request) {
       }
     };
     
-    const copyPrompt = `
-      You are an elite direct-response copywriter.
-      Write a high-converting social media caption for:
-      
-      TITLE: ${propertyTitle}
-      DETAILS: ${propertyDescription}
-      COMPANY: ${businessName}
-      CONTACT: ${contactNumber || 'DM for details!'}
+    logToFile(`KIE PAYLOAD: ${JSON.stringify(payload, null, 2)}`);
 
-      CRITICAL RULES - READ CAREFULLY OR YOU WILL FAIL:
-      1. OUTPUT ONLY THE RAW CAPTION TEXT. Do not say "Here is your caption", "Option 1", or explain the copy. The very first character you output must be the start of the caption.
-      2. ABSOLUTELY NO MARKDOWN. Do not use asterisks (* or **), bolding, or italics. Use capital letters for emphasis if needed.
-      3. Keep it engaging, direct, and ready to post on Facebook/Instagram immediately. Use emojis naturally.
-    `;
-
-    // --- THE FIX: Sequential Execution & Error Isolation ---
-    
     // 1. Guarantee the Image Generation Task is requested first
     const kieResult = await createKieTask(payload);
 
     if (!kieResult || kieResult.error || !kieResult.taskId) {
-      throw new Error(`Kie AI Task creation failed: ${kieResult?.error || "Empty response from API"}`);
+      logToFile(`Kie AI Task failed: ${kieResult?.error}`);
+      throw new Error(`Design server error: ${kieResult?.error || "Empty response"}`);
     }
     
+    logToFile(`KIE TASK CREATED: ${kieResult.taskId}`);
+
     // 2. Try the Caption Generation Safely
-    let generatedCaption = "Here is your newly generated asset! DM us for more details.";
+    let generatedCaption = "Check out this premium property! DM for more details.";
     try {
-        // If the 'Chat API Error: OK' occurs here, it is caught and won't crash the image generation!
-        generatedCaption = await generateKieChat(copyPrompt, "gemini-3-flash");
+        const { text } = await generateText({
+          model: google('gemini-3-flash-preview'),
+          prompt: `Write a high-converting real estate ad caption for: ${propertyTitle}. Context: ${propertyDescription}. Business: ${businessName}. Contact: ${contactNumber || 'DM for details!'}. Output ONLY the caption, NO markdown.`,
+        });
+        generatedCaption = text;
+        logToFile("Caption generated successfully.");
     } catch (chatError: any) {
-        console.error("Caption generation failed, but image task succeeded. Using fallback caption. Error:", chatError.message);
+        logToFile(`Caption generation failed: ${chatError.message}`);
     }
 
-    // 3. Return the Task ID successfully to the UI
     return NextResponse.json({ 
         taskId: kieResult.taskId,
         caption: generatedCaption,
-        marketingAngle: "Alex Hormozi Framework Applied" 
     })
 
   } catch (error: any) {
-    console.error("API Error Trace:", error)
+    logToFile(`FATAL ERROR: ${error.message}`);
     return NextResponse.json(
       { error: error.message || "Internal Server Error" }, 
       { status: 500 }

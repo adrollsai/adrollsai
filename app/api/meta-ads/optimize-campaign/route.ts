@@ -103,40 +103,38 @@ export async function POST(request: Request) {
         Leads Generated: ${topWinner.leads}
         Spend: ₹${topWinner.spend}
 
-        Task 1: Look at the image provided. Based on the visual elements (lighting, angles, text on image, setting) and the performance, write a 2-sentence highly specific insight on WHY this visual is converting well.
-        Task 2: Suggest a 1-paragraph actionable concept for a new VIDEO ad that the user can shoot on their phone. Describe the hook, setting, and script based on what worked in the image.
-        Task 3: Generate a 50-word prompt to create a brand new, highly realistic static image variation testing a slightly different visual angle (do not include text in the image prompt).
+        Task 1: Write a 1-sentence highly specific insight on WHY this visual is converting well.
+        Task 2: To feed the Meta Andromeda algorithm, we need high volume and diversification. Generate 3 distinct, highly realistic static image prompts (50 words each) based on the winning angle but varying the visual hook (e.g., one aesthetic, one showing people, one abstract). Do not include text in the image prompts.
         
         Output strictly as JSON:
         {
             "visual_insight": "...",
-            "video_concept_suggestion": "...",
-            "new_image_prompt": "..."
+            "variations": [
+                { "title": "Aesthetic Focus", "prompt": "..." },
+                { "title": "Human Element", "prompt": "..." },
+                { "title": "Abstract/Detail", "prompt": "..." }
+            ]
         }
         `;
 
         // Pass the image URL to generateKieChat for true multimodal analysis
         const aiRaw = await generateKieChat(llmPrompt, "gemini-3-flash", topCreativeUrl || undefined);
-        const parsed = JSON.parse(aiRaw.replace(/^```json\s*/, '').replace(/\s*```$/, ''));
-
-        // 6. Trigger Kie.ai Image Generation for the new variation
-        let taskId = null;
+        let parsed;
         try {
-            if (parsed.new_image_prompt) {
-                taskId = await createKieImageTask(parsed.new_image_prompt);
-            }
+            parsed = JSON.parse(aiRaw.replace(/^```json\s*/, '').replace(/\s*```$/, ''));
         } catch (e) {
-            console.error("Failed to trigger image task:", e);
+            console.error("Failed to parse Gemini output:", aiRaw);
+            parsed = { visual_insight: "High engagement detected.", variations: [] };
         }
 
-        // Return everything to the frontend to display to the user
+        // Return everything to the frontend to display to the user in the Agent Orchestrator
         return NextResponse.json({ 
             status: 'success', 
             insight: parsed.visual_insight,
-            videoConcept: parsed.video_concept_suggestion,
+            variations: parsed.variations,
             pausedAds: pausedAds,
-            newImageTask: taskId,
-            winnerImageAnalyzed: topCreativeUrl
+            winnerImageAnalyzed: topCreativeUrl,
+            topWinner: topWinner
         });
 
     } catch (error: any) {

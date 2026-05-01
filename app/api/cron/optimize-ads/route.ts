@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { generateKieChat, createKieImageTask } from '@/utils/external-apis';
+import { createKieImageTask } from '@/utils/external-apis';
+import { generateObject } from 'ai';
+import { google } from '@ai-sdk/google';
+import { z } from 'zod';
 
 const FB_GRAPH = "https://graph.facebook.com/v19.0";
 
@@ -88,8 +91,14 @@ export async function GET(request: Request) {
                     `;
                     
                     try {
-                        const aiRaw = await generateKieChat(llmPrompt, "gemini-3-flash");
-                        const parsed = JSON.parse(aiRaw.replace(/^```json\s*/, '').replace(/\s*```$/, ''));
+                        const { object: parsed } = await generateObject({
+                            model: google('gemini-3-flash-preview'),
+                            prompt: llmPrompt,
+                            schema: z.object({
+                                insight: z.string(),
+                                new_image_prompt: z.string()
+                            })
+                        });
 
                         // 6. Trigger Image Generation via Kie.ai
                         // This starts an async task on Kie.ai. You save the taskId to check/retrieve later.

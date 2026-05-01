@@ -6,7 +6,7 @@ import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
 type Property = { id: string; title: string; price: string; image_url: string; description?: string }
-type Asset = { id: string; type: 'image' | 'video'; url: string }
+type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string }
 type Campaign = { id: string; name: string; status: string; objective: string }
 type LocationOption = { key: string; name: string; type: string; region?: string; country_code?: string; }
 type CustomQuestion = { label: string; type: 'SHORT_ANSWER' | 'MULTIPLE_CHOICE'; options?: string[] }
@@ -35,6 +35,7 @@ export default function AdsPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [selectedCreatives, setSelectedCreatives] = useState<SelectedCreative[]>([])
   const [showAssetSelector, setShowAssetSelector] = useState<{isOpen: boolean, type: 'inventory' | 'ai'}>({isOpen: false, type: 'inventory'})
+  const [assetFilter, setAssetFilter] = useState<string>('All')
   
   const [campaigns, setCampaigns] = useState<Campaign[]>([]) 
   const [properties, setProperties] = useState<Property[]>([])
@@ -52,8 +53,17 @@ export default function AdsPage() {
 
   // Modals
   const [statsModal, setStatsModal] = useState<{ isOpen: boolean, campaign: Campaign | null, insights: any, loading: boolean }>({ isOpen: false, campaign: null, insights: null, loading: false })
-  const [optimizingCampaignId, setOptimizingCampaignId] = useState<string | null>(null)
-  const [optimizerResult, setOptimizerResult] = useState<any | null>(null)
+  
+  const [campaignLeadCounts, setCampaignLeadCounts] = useState<Record<string, number>>({})
+  const [orchestrator, setOrchestrator] = useState<{
+    isOpen: boolean,
+    mode: 'optimize' | 'remarketing' | null,
+    campaign: Campaign | null,
+    status: 'analyzing' | 'presenting' | 'generating' | 'success' | 'error',
+    logs: { id: number, text: string, type: 'system' | 'ai' | 'user' }[],
+    variations: any[],
+    insight: string
+  }>({ isOpen: false, mode: null, campaign: null, status: 'analyzing', logs: [], variations: [], insight: '' })
 
   // Form States
   const [formQuestions, setFormQuestions] = useState<CustomQuestion[]>([])
@@ -61,12 +71,12 @@ export default function AdsPage() {
   const [newQuestion, setNewQuestion] = useState<CustomQuestion>({ label: '', type: 'SHORT_ANSWER', options: [''] })
 
   const [adForm, setAdForm] = useState({
-    metaLocation: { location: null as LocationOption | null, radius: 20 },
+    metaLocations: [] as { location: LocationOption, radius: number }[],
     gender: 'All',
     dailyBudgetINR: 500,
     pageId: '', 
     linkUrl: 'https://adrolls.in', 
-    privacyPolicyUrl: 'https://adrolls.in/privacy-policy', 
+    optimizeForConversions: false,
   })
 
   const isVideoFile = (file: File) => file.type.startsWith('video/');
@@ -116,13 +126,21 @@ export default function AdsPage() {
           } catch (e) { console.error("Failed to load campaigns", e) }
       }
 
-      const [propsRes, assetsRes] = await Promise.all([
+      const [propsRes, assetsRes, leadsRes] = await Promise.all([
           supabase.from('properties').select('id, title, price, image_url, description').eq('user_id', user.id).order('created_at', { ascending: false }),
-          supabase.from('assets').select('id, type, url').eq('user_id', user.id).order('created_at', { ascending: false })
+          supabase.from('assets').select('id, type, url, property_id').eq('user_id', user.id).order('created_at', { ascending: false }),
+          supabase.from('leads').select('campaign_id').eq('user_id', user.id)
       ])
 
       const newProps = propsRes.data || []
       const newAssets = (assetsRes.data as Asset[]) || []
+      
+      const leads = leadsRes.data || [];
+      const leadCounts: Record<string, number> = {};
+      leads.forEach(l => {
+          if (l.campaign_id) leadCounts[l.campaign_id] = (leadCounts[l.campaign_id] || 0) + 1;
+      });
+      setCampaignLeadCounts(leadCounts);
 
       setCampaigns(newCampaigns)
       setProperties(newProps)
@@ -190,27 +208,123 @@ export default function AdsPage() {
       }
   }
 
-  const handleOptimizeCampaign = async (campaignId: string) => {
-      setOptimizingCampaignId(campaignId);
+  const handleOptimize = async (campaign: Campaign) => {
+      setOrchestrator({
+          isOpen: true,
+          mode: 'optimize',
+          campaign,
+          status: 'analyzing',
+          logs: [{ id: Date.now(), text: `Analyzing performance metrics for ${campaign.name}...`, type: 'system' }],
+          variations: [],
+          insight: ''
+      });
+  
       try {
           const res = await fetch('/api/meta-ads/optimize-campaign', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ campaignId })
+              body: JSON.stringify({ campaignId: campaign.id })
           });
           const data = await res.json();
-
-          if (data.status === 'insufficient_data') {
-              alert(data.message);
-          } else if (data.status === 'success') {
-              setOptimizerResult(data);
+          
+          if (data.status === 'success') {
+              setOrchestrator(prev => ({
+                  ...prev,
+                  status: 'presenting',
+                  insight: data.insight,
+                  variations: data.variations || [],
+                  logs: [
+                      ...prev.logs, 
+                      { id: Date.now(), text: data.insight, type: 'ai' },
+                      { id: Date.now()+1, text: "I've drafted 3 diverse visual concepts to feed the Andromeda algorithm for testing volume. Ready to generate?", type: 'system' }
+                  ]
+              }));
           } else {
-              alert(`Error: ${data.error}`);
+               setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: data.message || "Failed to analyze.", type: 'system' }]}));
           }
-      } catch (e: any) {
-          alert(`Optimization Failed: ${e.message}`);
-      } finally {
-          setOptimizingCampaignId(null);
+      } catch (e) {
+          setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: "Network error occurred.", type: 'system' }]}));
+      }
+  }
+
+  const handleRemarketing = async (campaign: Campaign) => {
+      setOrchestrator({
+          isOpen: true,
+          mode: 'remarketing',
+          campaign,
+          status: 'analyzing',
+          logs: [{ id: Date.now(), text: `Analyzing 100+ leads for ${campaign.name}...`, type: 'system' }],
+          variations: [],
+          insight: ''
+      });
+  
+      try {
+          const res = await fetch('/api/meta-ads/remarketing-strategy', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ campaignId: campaign.id, campaignName: campaign.name })
+          });
+          const data = await res.json();
+          
+          if (data.status === 'success') {
+              setOrchestrator(prev => ({
+                  ...prev,
+                  status: 'presenting',
+                  insight: data.insight,
+                  variations: data.variations || [],
+                  logs: [
+                      ...prev.logs, 
+                      { id: Date.now(), text: data.insight, type: 'ai' },
+                      { id: Date.now()+1, text: "I've prepared 3 retargeting strategies (Social Proof, Urgency, Rapport) to warm up these leads. Ready to generate assets?", type: 'system' }
+                  ]
+              }));
+          } else {
+               setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: data.message || "Failed to analyze.", type: 'system' }]}));
+          }
+      } catch (e) {
+          setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: "Network error occurred.", type: 'system' }]}));
+      }
+  }
+
+  const handleApproveVariations = async () => {
+      if (!orchestrator.variations.length) return;
+      
+      setOrchestrator(prev => ({
+          ...prev,
+          status: 'generating',
+          logs: [...prev.logs, { id: Date.now(), text: "Approving strategies... Generating assets via background worker.", type: 'user' }]
+      }));
+  
+      try {
+          const prompts = orchestrator.variations.map((v: any) => v.prompt);
+          const res = await fetch('/api/meta-ads/generate-variations', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ prompts })
+          });
+          const data = await res.json();
+          
+          if (data.success) {
+              const { data: { user } } = await supabase.auth.getUser();
+              // Trigger background polling for each task ID
+              data.taskIds.forEach((taskId: string) => {
+                  fetch('/api/background-worker', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ userId: user?.id, existingTaskId: taskId })
+                  });
+              });
+  
+              setOrchestrator(prev => ({
+                  ...prev,
+                  status: 'success',
+                  logs: [...prev.logs, { id: Date.now(), text: "Generation tasks queued! You will receive a push notification when they are ready in your Assets library.", type: 'system' }]
+              }));
+          } else {
+              setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: "Failed to queue generation tasks.", type: 'system' }]}));
+          }
+      } catch (e) {
+          setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: "Network error during generation.", type: 'system' }]}));
       }
   }
 
@@ -248,23 +362,24 @@ export default function AdsPage() {
     if (isSubmitting) return
     if (!adForm.pageId || !selectedAdAccountId) { alert("Missing Facebook Page or Ad Account in Profile."); return }
     if (selectedCreatives.length === 0) { alert("Please select at least one creative (Inventory, Asset, or Upload)."); return; }
-    if (!adForm.metaLocation.location || adForm.dailyBudgetINR < 100) { alert("Please set a valid target location and budget."); return }
-    if (!adForm.privacyPolicyUrl) { alert("Privacy Policy URL required."); return; }
+    if (adForm.metaLocations.length === 0 || adForm.dailyBudgetINR < 100) { alert("Please set a valid target location and budget."); return }
     
     setIsSubmitting(true)
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    const autoPrivacyUrl = `https://${window.location.host}/privacy/${user?.id}`;
     
     const formPayload = new FormData();
     formPayload.append('adAccountId', selectedAdAccountId);
     formPayload.append('facebookToken', facebookToken || '');
     formPayload.append('pageId', adForm.pageId);
     
-    const locString = `${adForm.metaLocation.location.name}, ${adForm.metaLocation.location.region || adForm.metaLocation.location.country_code}`;
-    formPayload.append('targetLocation', locString);
-    formPayload.append('metaLocation', JSON.stringify(adForm.metaLocation));
+    formPayload.append('metaLocations', JSON.stringify(adForm.metaLocations));
     formPayload.append('gender', adForm.gender);
     formPayload.append('dailyBudgetINR', (adForm.dailyBudgetINR * 100).toString()); 
     formPayload.append('linkUrl', adForm.linkUrl);
-    formPayload.append('privacyPolicyUrl', adForm.privacyPolicyUrl);
+    formPayload.append('privacyPolicyUrl', autoPrivacyUrl);
+    formPayload.append('optimizeForConversions', adForm.optimizeForConversions.toString());
     formPayload.append('customQuestions', JSON.stringify(formQuestions));
 
     let localFileIndex = 0;
@@ -283,7 +398,7 @@ export default function AdsPage() {
       if (res.ok) {
         alert(`${data.message}`);
         setIsModalOpen(false)
-        setAdForm(prev => ({ ...prev, metaLocation: { location: null, radius: 20 }, dailyBudgetINR: 500 })) 
+        setAdForm(prev => ({ ...prev, metaLocations: [], dailyBudgetINR: 500 })) 
         setSelectedCreatives([]);
         setFormQuestions([]);
         fetchAdsData(true); // Force fetch to update list with new campaign
@@ -374,16 +489,29 @@ export default function AdsPage() {
                                 </button>
                                 
                                 <button 
-                                    onClick={() => handleOptimizeCampaign(campaign.id)} 
-                                    disabled={optimizingCampaignId === campaign.id || campaign.status !== 'ACTIVE'}
+                                    onClick={() => handleOptimize(campaign)} 
+                                    disabled={orchestrator.isOpen && orchestrator.mode === 'optimize'}
                                     className={`flex items-center justify-center gap-1.5 text-xs font-bold py-2 px-3 rounded-xl transition-all ${
-                                        optimizingCampaignId === campaign.id ? 'bg-purple-100 text-purple-400' 
+                                        orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'optimize' ? 'bg-purple-100 text-purple-400' 
                                         : campaign.status !== 'ACTIVE' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' 
                                         : 'bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700 shadow-sm'
                                     }`}
                                 >
-                                    {optimizingCampaignId === campaign.id ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Optimize
+                                    <Sparkles size={14} /> Optimize
                                 </button>
+
+                                {campaignLeadCounts[campaign.id] >= 100 && (
+                                    <button 
+                                        onClick={() => handleRemarketing(campaign)} 
+                                        disabled={orchestrator.isOpen && orchestrator.mode === 'remarketing'}
+                                        className={`flex items-center justify-center gap-1.5 text-xs font-bold py-2 px-3 rounded-xl transition-all ${
+                                            orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'remarketing' ? 'bg-blue-100 text-blue-400' 
+                                            : 'bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 shadow-sm'
+                                        }`}
+                                    >
+                                        <Users size={14} /> Remarket
+                                    </button>
+                                )}
                                 
                                 <a 
                                     href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} 
@@ -400,54 +528,87 @@ export default function AdsPage() {
             </div>
         )}
 
-      {/* OPTIMIZATION RESULT MODAL */}
-      {optimizerResult && (
-          <div className="fixed inset-0 z-[90] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-              <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-                  <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
+      {/* AGENT ORCHESTRATOR MODAL */}
+      {orchestrator.isOpen && (
+          <div className="fixed inset-0 z-[90] bg-slate-900/40 backdrop-blur-sm flex items-center justify-end p-0 sm:p-4 animate-in fade-in duration-200">
+              <div className="bg-white w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-lg sm:rounded-[2.5rem] p-6 sm:p-8 shadow-2xl animate-in slide-in-from-right-8 overflow-hidden flex flex-col relative">
+                  
+                  {/* Decorative Background */}
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-purple-100 to-transparent rounded-bl-full opacity-50 pointer-events-none" />
+
+                  {/* Header */}
+                  <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100 relative z-10">
                       <div>
                           <h2 className="text-xl font-bold text-slate-900 leading-tight flex items-center gap-2">
-                              <Sparkles className="text-purple-500"/> AI Optimization Done
+                              <Sparkles className="text-purple-500"/> AdRolls Strategist
                           </h2>
+                          <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-widest">{orchestrator.mode === 'optimize' ? 'Andromeda Optimization' : 'Remarketing Engine'}</p>
                       </div>
-                      <button onClick={() => setOptimizerResult(null)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={18} /></button>
+                      <button onClick={() => setOrchestrator(prev => ({...prev, isOpen: false}))} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors shrink-0"><X size={18} /></button>
                   </div>
                   
-                  <div className="space-y-5">
-                      {optimizerResult.pausedAds && optimizerResult.pausedAds.length > 0 && (
-                          <div className="bg-red-50/80 border border-red-100 rounded-2xl p-4">
-                              <h3 className="text-xs font-bold text-red-600 uppercase mb-1.5 tracking-wider">Underperformers Paused</h3>
-                              <p className="text-sm text-red-600 font-medium">We halted {optimizerResult.pausedAds.length} variations that were wasting spend without generating leads.</p>
+                  {/* Chat / Action Area */}
+                  <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-2 mb-6 relative z-10">
+                      {orchestrator.logs.map((log) => (
+                          <div key={log.id} className={`flex ${log.type === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2`}>
+                              <div className={`max-w-[85%] p-4 rounded-2xl text-sm font-medium leading-relaxed ${
+                                  log.type === 'user' ? 'bg-purple-600 text-white rounded-br-sm' 
+                                  : log.type === 'system' ? 'bg-slate-50 text-slate-600 border border-slate-100 rounded-bl-sm'
+                                  : 'bg-purple-50 text-purple-900 border border-purple-100 rounded-bl-sm shadow-sm'
+                              }`}>
+                                  {log.type === 'ai' && <div className="flex items-center gap-1.5 mb-2 text-purple-600"><Sparkles size={14} className="animate-pulse"/> <span className="text-[10px] uppercase tracking-widest font-bold">Analysis</span></div>}
+                                  {log.text}
+                              </div>
                           </div>
-                      )}
+                      ))}
 
-                      {optimizerResult.insight && (
-                          <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5">
-                              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5 mb-3">
-                                  <Eye size={14}/> Visual Analysis of Winner
-                              </h3>
-                              {optimizerResult.winnerImageAnalyzed && (
-                                  <img src={optimizerResult.winnerImageAnalyzed} alt="Analyzed Winner" className="w-full h-32 object-cover rounded-xl mb-4 shadow-inner" />
-                              )}
-                              <p className="text-sm text-slate-700 leading-relaxed font-medium">{optimizerResult.insight}</p>
+                      {orchestrator.status === 'analyzing' || orchestrator.status === 'generating' ? (
+                          <div className="flex justify-start animate-in fade-in">
+                              <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl rounded-bl-sm flex items-center gap-3">
+                                  <div className="flex gap-1.5">
+                                      <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{animationDelay: '0ms'}}/>
+                                      <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{animationDelay: '150ms'}}/>
+                                      <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{animationDelay: '300ms'}}/>
+                                  </div>
+                                  <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Processing</span>
+                              </div>
                           </div>
-                      )}
+                      ) : null}
 
-                      {optimizerResult.videoConcept && (
-                          <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-5">
-                              <h3 className="text-[10px] font-bold text-blue-600 uppercase tracking-widest flex items-center gap-1.5 mb-3">
-                                  <Video size={14}/> AI Video Script Concept
-                              </h3>
-                              <p className="text-sm text-blue-900 leading-relaxed font-medium">{optimizerResult.videoConcept}</p>
-                          </div>
-                      )}
-
-                      {optimizerResult.newImageTask && (
-                          <div className="text-center bg-purple-50 rounded-2xl p-4 border border-purple-100 shadow-inner">
-                              <p className="text-sm text-purple-700 font-bold">A new static creative variation is being generated in the background to test next!</p>
+                      {/* Display Variations if Present */}
+                      {orchestrator.variations.length > 0 && orchestrator.status === 'presenting' && (
+                          <div className="space-y-3 mt-4 animate-in fade-in">
+                              {orchestrator.variations.map((v, i) => (
+                                  <div key={i} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-purple-200 transition-colors">
+                                      <h4 className="text-xs font-bold text-slate-800 uppercase mb-2">{v.title}</h4>
+                                      <p className="text-xs text-slate-600 font-medium leading-relaxed">{v.prompt}</p>
+                                  </div>
+                              ))}
                           </div>
                       )}
                   </div>
+
+                  {/* Footer Action */}
+                  {orchestrator.status === 'presenting' && (
+                      <div className="pt-4 border-t border-slate-100 relative z-10 animate-in fade-in">
+                          <button 
+                              onClick={handleApproveVariations}
+                              className="w-full bg-purple-600 text-white font-bold py-4 rounded-2xl hover:bg-purple-700 shadow-md transition-all flex items-center justify-center gap-2"
+                          >
+                              <CheckCircle size={18} /> Approve & Generate Tasks
+                          </button>
+                      </div>
+                  )}
+                  {orchestrator.status === 'success' && (
+                      <div className="pt-4 border-t border-slate-100 relative z-10 animate-in fade-in">
+                          <button 
+                              onClick={() => setOrchestrator(prev => ({...prev, isOpen: false}))}
+                              className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-slate-800 shadow-md transition-all flex items-center justify-center gap-2"
+                          >
+                              Done
+                          </button>
+                      </div>
+                  )}
               </div>
           </div>
       )}
@@ -576,40 +737,57 @@ export default function AdsPage() {
                           <input type="url" value={adForm.linkUrl} onChange={(e) => setAdForm(prev => ({...prev, linkUrl: e.target.value}))} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" placeholder="https://yourwebsite.com" />
                       </div>
                       
-                      <div>
-                          <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Privacy Policy URL <span className="text-red-400">*</span></label>
-                          <input type="url" value={adForm.privacyPolicyUrl} onChange={(e) => setAdForm(prev => ({...prev, privacyPolicyUrl: e.target.value}))} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" placeholder="https://adrolls.in/privacy-policy" />
-                      </div>
-                      
                       <div className="relative">
-                          <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Target Location</label>
-                          {adForm.metaLocation.location ? (
-                              <div className="w-full bg-blue-50/50 py-3 px-5 rounded-2xl border border-blue-200 flex justify-between items-center">
-                                  <div>
-                                      <div className="text-sm font-bold text-blue-900 flex items-center gap-1.5"><MapPin size={14}/> {adForm.metaLocation.location.name}</div>
-                                      <div className="text-[10px] text-blue-600 font-medium uppercase tracking-wider mt-0.5 ml-5">{adForm.metaLocation.location.region}, {adForm.metaLocation.location.country_code}</div>
-                                  </div>
-                                  <button onClick={() => setAdForm(prev => ({ ...prev, metaLocation: { location: null, radius: 20 } }))} className="bg-white p-1.5 rounded-full shadow-sm text-slate-400 hover:text-red-500 transition-colors"><X size={16} /></button>
-                              </div>
-                          ) : (
-                              <>
-                                  <div className="relative">
-                                    <input type="text" value={locationSearchText} onChange={(e) => setLocationSearchText(e.target.value)} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 pl-11 pr-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" placeholder="Search city, state, or country..." />
-                                    <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                                    {isSearchingLocation && <Loader2 size={16} className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-blue-500" />}
-                                  </div>
-                                  {locationResults.length > 0 && (
-                                      <div className="absolute z-20 w-full bg-white mt-2 rounded-2xl shadow-xl border border-slate-100 max-h-56 overflow-y-auto custom-scrollbar">
-                                          {locationResults.map(loc => (
-                                              <div key={loc.key} onClick={() => { setAdForm(prev => ({ ...prev, metaLocation: { location: loc, radius: 20 } })); setLocationSearchText(''); setLocationResults([]); }} className="p-4 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors">
-                                                  <div className="text-sm font-bold text-slate-800">{loc.name}</div>
-                                                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mt-1">{loc.region ? `${loc.region}, ` : ''}{loc.country_code} ({loc.type})</div>
-                                              </div>
-                                          ))}
+                          <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Target Locations</label>
+                          
+                          {/* Selected Locations Chips */}
+                          {adForm.metaLocations.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                  {adForm.metaLocations.map((loc, idx) => (
+                                      <div key={idx} className="bg-blue-50/50 py-2 px-3 rounded-xl border border-blue-200 flex items-center gap-2">
+                                          <div className="text-xs font-bold text-blue-900 flex items-center gap-1"><MapPin size={12}/> {loc.location.name}</div>
+                                          <button onClick={() => setAdForm(prev => ({ ...prev, metaLocations: prev.metaLocations.filter((_, i) => i !== idx) }))} className="bg-white p-1 rounded-full shadow-sm text-slate-400 hover:text-red-500 transition-colors"><X size={12} /></button>
                                       </div>
-                                  )}
-                              </>
+                                  ))}
+                              </div>
                           )}
+
+                          <div className="relative">
+                            <input type="text" value={locationSearchText} onChange={(e) => setLocationSearchText(e.target.value)} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 pl-11 pr-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" placeholder="Search and add multiple cities or states..." />
+                            <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                            {isSearchingLocation && <Loader2 size={16} className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-blue-500" />}
+                          </div>
+                          
+                          {locationResults.length > 0 && (
+                              <div className="absolute z-20 w-full bg-white mt-2 rounded-2xl shadow-xl border border-slate-100 max-h-56 overflow-y-auto custom-scrollbar">
+                                  {locationResults.map(loc => (
+                                      <div key={loc.key} onClick={() => { 
+                                          if (!adForm.metaLocations.find(l => l.location.key === loc.key)) {
+                                              setAdForm(prev => ({ ...prev, metaLocations: [...prev.metaLocations, { location: loc, radius: 20 }] })); 
+                                          }
+                                          setLocationSearchText(''); 
+                                          setLocationResults([]); 
+                                      }} className="p-4 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors">
+                                          <div className="text-sm font-bold text-slate-800">{loc.name}</div>
+                                          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mt-1">{loc.region ? `${loc.region}, ` : ''}{loc.country_code} ({loc.type})</div>
+                                      </div>
+                                  ))}
+                              </div>
+                          )}
+                      </div>
+
+                      {/* Pixel Optimization Toggle */}
+                      <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-2xl border border-purple-100 flex items-center justify-between mt-4">
+                          <div>
+                              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5"><Sparkles size={16} className="text-purple-500"/> Optimize for High-Quality Leads</h3>
+                              <p className="text-xs text-slate-600 mt-1 font-medium">Use AI to automatically find users who are more likely to convert (requires Pixel).</p>
+                          </div>
+                          <button 
+                              onClick={() => setAdForm(prev => ({ ...prev, optimizeForConversions: !prev.optimizeForConversions }))}
+                              className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 shrink-0 ${adForm.optimizeForConversions ? 'bg-purple-500 focus:ring-purple-500' : 'bg-slate-300 focus:ring-slate-400'}`}
+                          >
+                              <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${adForm.optimizeForConversions ? 'translate-x-5' : 'translate-x-0'}`} />
+                          </button>
                       </div>
                     
                       <div className="flex flex-col sm:flex-row gap-4">
@@ -684,7 +862,7 @@ export default function AdsPage() {
             <div className="p-6 bg-white border-t border-slate-100 flex-shrink-0">
                 <button 
                     onClick={handleLaunchCampaign} 
-                    disabled={isSubmitting || !adForm.metaLocation.location || !adForm.privacyPolicyUrl || selectedCreatives.length === 0} 
+                    disabled={isSubmitting || adForm.metaLocations.length === 0 || selectedCreatives.length === 0} 
                     className="w-full bg-slate-900 text-white py-4 sm:py-5 rounded-[1.5rem] text-sm sm:text-base font-bold flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 shadow-lg shadow-slate-900/20 hover:bg-slate-800"
                 >
                     {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Zap size={20} className="text-yellow-400" />} 
@@ -720,9 +898,10 @@ export default function AdsPage() {
                                     <div 
                                         key={p.id} 
                                         onClick={() => {
-                                            if (!isSelected) {
+                                            if (isSelected) {
+                                                removeCreative(selectedCreatives.find(c => c.id === p.id)!.uid);
+                                            } else {
                                                 setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'inventory', id: p.id, previewUrl: p.image_url, name: p.title }]);
-                                                setShowAssetSelector({isOpen: false, type: 'inventory'});
                                             }
                                         }}
                                         className={`relative aspect-square rounded-[1.5rem] overflow-hidden border-[3px] cursor-pointer transition-all group shadow-sm ${isSelected ? 'border-blue-500 opacity-50 cursor-not-allowed bg-blue-50' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-white'}`}
@@ -742,35 +921,60 @@ export default function AdsPage() {
                         </div>
                     )
                 ) : (
-                    assets.length === 0 ? (
-                        <div className="text-center text-slate-500 py-10 font-medium bg-white rounded-2xl border border-slate-100 shadow-sm">No AI assets found.</div>
-                    ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                            {assets.map(a => {
-                                const isSelected = selectedCreatives.some(c => c.id === a.id);
-                                return (
-                                    <div 
-                                        key={a.id} 
-                                        onClick={() => {
-                                            if (!isSelected) {
-                                                setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: `Library Asset` }]);
-                                                setShowAssetSelector({isOpen: false, type: 'inventory'});
-                                            }
-                                        }}
-                                        className={`relative aspect-square rounded-[1.5rem] overflow-hidden border-[3px] cursor-pointer transition-all shadow-sm ${isSelected ? 'border-blue-500 opacity-50 cursor-not-allowed bg-blue-50' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}
-                                    >
-                                        <img src={a.url} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
-                                        {isSelected && (
-                                            <div className="absolute top-3 right-3 bg-blue-500 text-white p-1 rounded-full shadow-md">
-                                                <CheckCircle size={16} />
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                    <div className="space-y-4">
+                        {/* Filter Dropdown */}
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Filter by Product</label>
+                            <select 
+                                value={assetFilter} 
+                                onChange={(e) => setAssetFilter(e.target.value)} 
+                                className="bg-white border border-slate-200 text-sm font-medium text-slate-700 py-2 px-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer shadow-sm min-w-[200px]"
+                            >
+                                <option value="All">All Assets</option>
+                                {properties.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+                            </select>
                         </div>
-                    )
+                        
+                        {assets.length === 0 ? (
+                            <div className="text-center text-slate-500 py-10 font-medium bg-white rounded-2xl border border-slate-100 shadow-sm">No AI assets found.</div>
+                        ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                                {assets.filter(a => assetFilter === 'All' || a.property_id === assetFilter).map(a => {
+                                    const isSelected = selectedCreatives.some(c => c.id === a.id);
+                                    return (
+                                        <div 
+                                            key={a.id} 
+                                            onClick={() => {
+                                                if (isSelected) {
+                                                    removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid);
+                                                } else {
+                                                    setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: `Library Asset` }]);
+                                                }
+                                            }}
+                                            className={`relative aspect-square rounded-[1.5rem] overflow-hidden border-[3px] cursor-pointer transition-all shadow-sm ${isSelected ? 'border-blue-500 opacity-50 cursor-not-allowed bg-blue-50' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}
+                                        >
+                                            <img src={a.url} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+                                            {isSelected && (
+                                                <div className="absolute top-3 right-3 bg-blue-500 text-white p-1 rounded-full shadow-md">
+                                                    <CheckCircle size={16} />
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                 )}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-white flex justify-end">
+                <button 
+                    onClick={() => setShowAssetSelector({isOpen: false, type: 'inventory'})}
+                    className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-bold hover:bg-slate-800 transition-colors shadow-md"
+                >
+                    Done
+                </button>
             </div>
           </div>
         </div>

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { 
   Search, Phone, MessageCircle, RefreshCw, Upload, 
   Plus, CheckCircle2, X, Download, Trash2, UserPlus, 
-  Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown
+  Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, FileText
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import TestNotificationBtn from '@/components/TestNotificationBtn'
@@ -82,7 +82,7 @@ export default function CRMPage() {
           setTeam(teamData || [])
       }
 
-      let query = supabase.from('leads').select('*').order('created_at', { ascending: false })
+      let query = supabase.from('leads').select('*, lead_history(action_type, description, created_at)').order('created_at', { ascending: false })
       if (currentRole === 'admin') {
           query = query.eq('user_id', user.id) 
       } else {
@@ -410,48 +410,111 @@ export default function CRMPage() {
         ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
                 {filteredLeads.map(lead => (
-                    <div key={lead.id} onClick={() => handleLeadClick(lead)} className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200/60 cursor-pointer hover:border-blue-300 hover:shadow-lg active:scale-[0.98] transition-all duration-300 flex flex-col h-full group">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="flex-1 min-w-0 pr-4">
+                    <div key={lead.id} onClick={() => handleLeadClick(lead)} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-200/60 cursor-pointer hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-300 flex flex-col h-full group">
+                        
+                        {/* ROW 1: Name and Actions */}
+                        <div className="flex justify-between items-start mb-3">
+                            <div className="flex-1 min-w-0 pr-4 mt-1">
                                 <h3 className="font-extrabold text-slate-900 text-lg truncate group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
-                                <div className="flex flex-col gap-1 mt-1.5">
-                                    <p className="text-sm text-slate-500 font-medium flex items-center gap-1.5 truncate"><Phone size={14} className="text-slate-400"/> {lead.phone}</p>
-                                    {lead.email && <p className="text-xs text-slate-400 font-medium flex items-center gap-1.5 truncate"><Mail size={12} className="text-slate-300"/> {lead.email}</p>}
-                                </div>
                             </div>
                             <div className="flex gap-2 shrink-0">
                                 {lead.phone && (
                                     <>
-                                        <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} onClick={e => e.stopPropagation()} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-xl transition-colors shadow-sm"><MessageCircle size={18} /></a>
-                                        <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-colors shadow-sm"><Phone size={18} /></a>
+                                        <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} onClick={e => e.stopPropagation()} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-slate-50 text-slate-600 hover:bg-[#25D366] hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><MessageCircle size={16} /></a>
+                                        <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Phone size={16} /></a>
                                     </>
                                 )}
-                                <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2.5 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-colors shadow-sm"><Trash2 size={18} /></button>
+                                <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Trash2 size={16} /></button>
                             </div>
                         </div>
 
-                        {lead.next_followup && new Date(lead.next_followup) > new Date() && (
-                            <div className="mb-4">
-                                <span className="inline-flex items-center gap-1.5 text-xs text-amber-700 font-bold bg-amber-50 border border-amber-200/60 px-3 py-1.5 rounded-xl shadow-sm">
-                                    <Clock size={12} /> Reminder: {new Date(lead.next_followup).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'})}
-                                </span>
+                        {/* ROW 2: Status & Date */}
+                        <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-100 border-dashed">
+                            <span className="text-sm font-bold text-blue-600">{lead.pipeline_stage || 'New Lead'}</span>
+                            <span className="text-[11px] font-bold text-slate-400">
+                                {new Date(lead.created_at).toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}
+                            </span>
+                        </div>
+
+                        {/* ROW 3: Data Grid */}
+                        <div className="grid grid-cols-2 gap-y-4 gap-x-2 mb-4">
+                            {/* Left Column */}
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lead Manager</span>
+                                {role === 'admin' ? (
+                                    <div onClick={e => e.stopPropagation()} className="relative mt-0.5">
+                                        <select value={lead.assigned_to || ''} onChange={(e) => assignLead(lead.id, e.target.value, e)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 text-slate-700 text-xs font-bold rounded-lg py-1.5 pl-2 pr-6 outline-none transition-all cursor-pointer truncate border border-slate-200/60">
+                                            <option value="">Unassigned</option>
+                                            {team.map(member => <option key={member.id} value={member.id}>{member.business_name || 'Agent'}</option>)}
+                                        </select>
+                                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                    </div>
+                                ) : (
+                                    <span className="text-xs font-bold text-slate-700 truncate mt-0.5">{team.find(t => t.id === lead.assigned_to)?.business_name || 'Unassigned'}</span>
+                                )}
                             </div>
-                        )}
+                            
+                            {/* Right Column */}
+                            <div className="flex flex-col gap-1 justify-center">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lead Source</span>
+                                <span className="text-xs font-bold text-slate-700 truncate">{lead.source || '--'}</span>
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Source Detail</span>
+                                <span className="text-xs font-bold text-slate-700 truncate">{lead.form_name || lead.campaign_name || lead.ad_name || '--'}</span>
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Budget</span>
+                                <span className="text-xs font-bold text-slate-700 truncate">{lead.budget || '--'}</span>
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Requirement</span>
+                                <span className="text-xs font-bold text-slate-700 truncate">{lead.priority_status || '--'}</span>
+                            </div>
+                            
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Timeline</span>
+                                <span className="text-xs font-bold text-slate-700 truncate">{lead.timeline || '--'}</span>
+                            </div>
+                        </div>
+
                         <div className="flex-grow"></div>
 
-                        <div className="mt-2 pt-4 border-t border-slate-100 flex flex-col gap-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-600 px-2.5 py-1 rounded-lg border border-slate-200 max-w-full truncate uppercase tracking-wider"><Tag size={10}/> {lead.form_name || lead.source}</span>
-                                {(lead.ad_name || lead.campaign_name) && <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-50 text-blue-600 px-2.5 py-1 rounded-lg border border-blue-100 max-w-[150px] truncate uppercase tracking-wider">{lead.ad_name || lead.campaign_name}</span>}
-                            </div>
-                            {role === 'admin' && (
-                                <div className="relative w-full" onClick={e => e.stopPropagation()}>
-                                    <Users size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                                    <select value={lead.assigned_to || ''} onChange={(e) => assignLead(lead.id, e.target.value, e)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-xs font-bold rounded-xl py-2.5 pl-9 pr-8 outline-none transition-all cursor-pointer truncate">
-                                        <option value="">Unassigned (Team)</option>
-                                        {team.map(member => <option key={member.id} value={member.id}>{member.business_name || 'Agent'}</option>)}
-                                    </select>
-                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400"><ChevronDown size={14} /></div>
+                        {/* ROW 4: Footer Sections (Followup, Opening Comments) */}
+                        <div className="mt-auto flex flex-col gap-3">
+                            {lead.next_followup && new Date(lead.next_followup) > new Date() && (
+                                <div className="pt-3 border-t border-slate-100 flex items-start gap-3">
+                                    <div className="mt-0.5 w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                                        <Clock size={12} className="text-blue-500" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-bold text-slate-800">
+                                            Next Action :- Reminder on <span className="text-blue-600">{new Date(lead.next_followup).toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}</span>
+                                        </span>
+                                        <span className="text-xs text-slate-500 mt-0.5 font-medium">Automated reminder set.</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {(lead.lead_history?.filter((h: any) => h.action_type === 'REMARK')?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || lead.notes || lead.email) && (
+                                <div className="pt-3 border-t border-slate-100 flex items-start gap-3">
+                                    <div className="mt-0.5 w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                                        <FileText size={12} className="text-blue-500" />
+                                    </div>
+                                    <div className="flex flex-col flex-1 min-w-0">
+                                        <span className="text-xs font-bold text-slate-800">Last Remark :-</span>
+                                        <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed font-medium">
+                                            {(() => {
+                                                const lastRemark = lead.lead_history?.filter((h: any) => h.action_type === 'REMARK')?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]?.description;
+                                                if (lastRemark) return lastRemark;
+                                                return lead.notes ? lead.notes : `Email: ${lead.email}`;
+                                            })()}
+                                        </p>
+                                        <span className="text-[10px] font-bold text-blue-500 mt-1 uppercase tracking-wider hover:underline">Read More</span>
+                                    </div>
                                 </div>
                             )}
                         </div>

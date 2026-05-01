@@ -1,17 +1,13 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
-import { X, Send, Loader2, CheckCircle2, AlertCircle, Sparkles, Activity, UserPlus, Users, Power, Image as ImageIcon } from 'lucide-react'
+import * as React from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { X, Send, Loader2, CheckCircle2, Eye, Rocket, AlertCircle, Sparkles, Activity, UserPlus, Users, Power, Image as ImageIcon } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-
-type Message = {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  tool_calls?: { name: string; arguments: string }[];
-}
+import { useChat } from '@ai-sdk/react'
+import { DefaultChatTransport } from 'ai'
 
 const TOOL_PROGRESS_MESSAGES: Record<string, string> = {
   'draft_ad_campaign': 'Drafting Meta Ad...',
@@ -26,12 +22,12 @@ const TOOL_PROGRESS_MESSAGES: Record<string, string> = {
 };
 
 // --- WIDGET: IMAGE GENERATOR ---
-function ImageGenerationCard({ propertyTitle, instructions }: { propertyTitle: string, instructions: string }) {
+function ImageGenerationCard({ propertyTitle, instructions, propertyDescription, imageUrls }: { propertyTitle: string, instructions: string, propertyDescription?: string, imageUrls?: string[] }) {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [caption, setCaption] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('Gathering product assets...');
-  const hasStarted = useRef(false); 
+  const hasStarted = useRef(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -42,12 +38,25 @@ function ImageGenerationCard({ propertyTitle, instructions }: { propertyTitle: s
     const startGeneration = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        const { data: property } = await supabase
-          .from('properties')
-          .select('*')
-          .ilike('title', `%${propertyTitle.trim()}%`)
-          .eq('user_id', user?.id)
-          .maybeSingle();
+
+        let finalDescription = propertyDescription;
+        let finalImages = imageUrls || [];
+
+        if (!finalDescription || finalImages.length === 0) {
+          const { data: property } = await supabase
+            .from('properties')
+            .select('*')
+            .ilike('title', `%${propertyTitle.trim()}%`)
+            .eq('user_id', user?.id)
+            .maybeSingle();
+
+          if (property) {
+            finalDescription = finalDescription || property.description;
+            if (finalImages.length === 0) {
+              finalImages = property.prop_images || property.images || [];
+            }
+          }
+        }
 
         const { data: profile } = await supabase
           .from('profiles')
@@ -60,31 +69,33 @@ function ImageGenerationCard({ propertyTitle, instructions }: { propertyTitle: s
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-             propertyTitle: property?.title || propertyTitle, 
-             propertyDescription: property?.description || '',
-             propImages: property?.prop_images || property?.images || [], 
-             logoUrl: profile?.logo_url,
-             contactNumber: profile?.phone,
-             userInstructions: instructions,
-             model: 'nano-banana-2',
-             aspectRatio: '1:1'
+          body: JSON.stringify({
+            propertyTitle,
+            propertyDescription: finalDescription || '',
+            propImages: finalImages,
+            logoUrl: profile?.logo_url,
+            contactNumber: profile?.phone,
+            userInstructions: instructions,
+            model: 'nano-banana-2',
+            aspectRatio: '1:1'
           })
         });
-        
+
         const data = await res.json();
         if (data.taskId) {
-           setTaskId(data.taskId);
-           setCaption(data.caption);
-           setStatus('Generating pixels (this takes ~10s)...');
+          setTaskId(data.taskId);
+          setCaption(data.caption);
+          setStatus('Generating pixels (this takes ~10s)...');
         } else {
-           setStatus('Failed to start generation.');
+          console.error("[UI] Design Studio Failed:", data);
+          setStatus(`Failed: ${data.error || 'Unknown error'}`);
         }
-      } catch (e) {
+      } catch (e: any) {
+        console.error("[UI] Design Studio Connection Error:", e);
         setStatus('Error connecting to image server.');
       }
     };
-    
+
     startGeneration();
   }, [propertyTitle, instructions, taskId]);
 
@@ -94,20 +105,20 @@ function ImageGenerationCard({ propertyTitle, instructions }: { propertyTitle: s
     const poll = setInterval(async () => {
       try {
         const res = await fetch('/api/check-status', {
-           method: 'POST', 
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ taskId }) 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId })
         });
         const data = await res.json();
         const generatedImg = data.imageUrl || data.images?.[0] || data.result?.images?.[0];
-        
+
         if (generatedImg) {
-           clearInterval(poll);
-           setImageUrl(generatedImg);
-           setStatus('Complete');
+          clearInterval(poll);
+          setImageUrl(generatedImg);
+          setStatus('Complete');
         } else if (data.status === 'failed' || data.status === 'error') {
-           clearInterval(poll);
-           setStatus('Generation failed. Please try again.');
+          clearInterval(poll);
+          setStatus('Generation failed. Please try again.');
         }
       } catch (e) {
         console.error(e);
@@ -120,24 +131,24 @@ function ImageGenerationCard({ propertyTitle, instructions }: { propertyTitle: s
   return (
     <div className="bg-white border border-[#e2e8f0] shadow-sm rounded-[24px] p-5 my-2 w-full max-w-[95%]">
       <h5 className="font-bold text-[#003D6F] mb-3 flex items-center gap-2 text-[15px]">
-        <ImageIcon size={18}/> Design Studio
+        <ImageIcon size={18} /> Design Studio
       </h5>
       {!imageUrl ? (
         <div className="bg-[#f8fafc] border border-slate-100 rounded-2xl p-6 flex flex-col items-center justify-center text-center">
-           <Loader2 className="animate-spin text-pink-500 mb-3" size={28} />
-           <p className="text-sm font-medium text-slate-700 animate-pulse">{status}</p>
+          <Loader2 className="animate-spin text-pink-500 mb-3" size={28} />
+          <p className="text-sm font-medium text-slate-700 animate-pulse">{status}</p>
         </div>
       ) : (
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col gap-3">
-           <img src={imageUrl} alt="Generated Ad" className="w-full h-auto aspect-square rounded-2xl object-cover border border-slate-200 shadow-sm" />
-           {caption && (
-             <div className="bg-[#f0f9ff] border border-blue-100 p-3 rounded-2xl text-[12px] text-slate-700 whitespace-pre-wrap leading-relaxed">
-               {caption}
-             </div>
-           )}
-           <button onClick={() => router.push('/dashboard/assets')} className="bg-[#003D6F] text-white w-full py-3 mt-1 rounded-full font-medium transition-colors hover:bg-[#002a4d]">
-              Save & Manage Asset
-           </button>
+          <img src={imageUrl} alt="Generated Ad" className="w-full h-auto aspect-square rounded-2xl object-cover border border-slate-200 shadow-sm" />
+          {caption && (
+            <div className="bg-[#f0f9ff] border border-blue-100 p-3 rounded-2xl text-[12px] text-slate-700 whitespace-pre-wrap leading-relaxed">
+              {caption}
+            </div>
+          )}
+          <button onClick={() => router.push('/dashboard/assets')} className="bg-[#003D6F] text-white w-full py-3 mt-1 rounded-full font-medium transition-colors hover:bg-[#002a4d]">
+            Save & Manage Asset
+          </button>
         </motion.div>
       )}
     </div>
@@ -161,7 +172,7 @@ function LiveCampaignsCard() {
 
   return (
     <div className="bg-white border border-[#e2e8f0] shadow-sm rounded-[24px] p-5 my-2 w-full max-w-[95%]">
-      <h5 className="font-bold text-[#003D6F] mb-1 flex items-center gap-2 text-[15px]"><Activity size={18}/> {activeCount} Active Campaigns</h5>
+      <h5 className="font-bold text-[#003D6F] mb-1 flex items-center gap-2 text-[15px]"><Activity size={18} /> {activeCount} Active Campaigns</h5>
       {campaigns && campaigns.length > 0 ? (
         <div className="flex flex-col gap-3 max-h-[200px] overflow-y-auto pr-1">
           {campaigns.map((c: any) => (
@@ -180,142 +191,87 @@ function LiveCampaignsCard() {
 
 export default function FloatingAgent() {
   const [isOpen, setIsOpen] = useState(false)
-  const [input, setInput] = useState('')
-  const [messages, setMessages] = useState<Message[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [streamingToolName, setStreamingToolName] = useState<string | null>(null)
   const [executingTool, setExecutingTool] = useState<string | null>(null)
   const [toolStatus, setToolStatus] = useState<Record<string, 'success' | 'error'>>({})
+  const [session, setSession] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
   const router = useRouter()
   const supabase = createClient()
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session: currentSession } } = await supabase.auth.getSession()
+      setSession(currentSession)
+      setLoading(false)
+    }
+    checkSession()
+  }, [supabase])
+
+  const [input, setInput] = useState('')
+  const { messages, sendMessage, status, addToolOutput } = useChat({
+    transport: new DefaultChatTransport({ api: '/api/agent' }),
+  }) as any
+
+  useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [messages, streamingToolName])
+  }, [messages])
 
-  // --- MCP: AUTOMATIC DATA RESOLUTION ---
-  const handleMcpDetailsFetch = async (args: any) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data } = await supabase
-        .from('properties')
-        .select('title, description, prop_images, images')
-        .ilike('title', `%${args.titleQuery}%`)
-        .eq('user_id', user?.id)
-        .maybeSingle();
+  if (loading || !session) return null
 
-      if (data) {
-        return `Found product. Title: ${data.title}. Description: ${data.description}. Assets: ${JSON.stringify(data.prop_images || data.images)}`;
-      }
-      return "Product details not found in inventory. Please ask the user to clarify.";
-    } catch (e) { return "Error accessing database."; }
+  const isLoading = status === 'submitted' || status === 'streaming'
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInput(e.target.value)
   }
 
-  const sendMessage = async (e?: React.FormEvent, presetInput?: string) => {
-    e?.preventDefault()
-    const textToSend = presetInput || input
-    if (!textToSend.trim() || isLoading) return
-
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend }
-    const currentMessages = [...messages, userMsg];
-    setMessages(currentMessages)
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!input.trim() || isLoading) return
+    const text = input
     setInput('')
-    setIsLoading(true)
+    await sendMessage({ text })
+  }
 
+
+  const executeTool = async (tool: any, toolKey: string) => {
     try {
-      const formattedHistory = currentMessages.map(m => {
-        let content = m.content;
-        if (!content && m.tool_calls && m.tool_calls.length > 0) {
-           content = `[Action executed: ${m.tool_calls[0].name}]`;
-        }
-        return { role: m.role, content: content || " " };
-      });
+      setExecutingTool(toolKey)
+      const toolName = tool.toolName || (tool.type?.startsWith('tool-') ? tool.type.slice(5) : 'unknown')
+      const args = tool.input || tool.args || {}
+      console.log(`[UI] Executing tool: ${toolName}`, args);
 
-      const response = await fetch('/api/agent', {
+      let endpoint = ''
+      if (toolName === 'draft_ad_campaign') endpoint = '/api/meta-ads/launch-campaign';
+      else if (toolName === 'draft_social_post') endpoint = '/api/social/post';
+      else if (toolName === 'update_lead_stage') endpoint = '/api/crm/update-stage';
+      else if (toolName === 'toggle_campaign_status') endpoint = '/api/meta-ads/update-status';
+      else if (toolName === 'invite_team_member') endpoint = '/api/team/create';
+
+      if (!endpoint) throw new Error(`No endpoint defined for tool: ${toolName}`)
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: formattedHistory })
+        body: JSON.stringify(args)
       })
 
-      if (!response.ok) throw new Error('API Error')
-      
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      let assistantMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: '', tool_calls: [] }
-      setMessages(prev => [...prev, assistantMsg])
+      const result = await response.json()
+      console.log(`[UI] Tool response:`, result);
 
-      let done = false
-      let toolCallAccumulator: Record<number, { name: string, arguments: string }> = {}
-      let buffer = ''
+      if (!response.ok) throw new Error(result.error || 'Failed')
 
-      while (!done) {
-        const { value, done: readerDone } = await reader!.read()
-        done = readerDone
-        if (value) {
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || '' 
-
-          for (const line of lines) {
-            const trimmedLine = line.trim()
-            if (trimmedLine.startsWith('data: ')) {
-              const payload = trimmedLine.slice(6).trim()
-              if (payload === '[DONE]') continue
-              try {
-                const data = JSON.parse(payload)
-                const delta = data.choices?.[0]?.delta
-                if (delta?.content) assistantMsg.content += delta.content
-                if (delta?.tool_calls) {
-                  for (const tool of delta.tool_calls) {
-                    if (!toolCallAccumulator[tool.index]) {
-                        toolCallAccumulator[tool.index] = { name: tool.function.name || '', arguments: '' }
-                        if (tool.function.name) setStreamingToolName(tool.function.name)
-                    }
-                    if (tool.function?.arguments) toolCallAccumulator[tool.index].arguments += tool.function.arguments
-                  }
-                  assistantMsg.tool_calls = Object.values(toolCallAccumulator).map(t => ({...t}))
-                }
-                setMessages(prev => prev.map(m => m.id === assistantMsg.id ? { ...assistantMsg } : m))
-              } catch (err) { }
-            }
-          }
-        }
-      }
-
-      // --- CRITICAL MCP LOGIC: Auto-reply if AI calls get_product_details ---
-      const detailsTool = assistantMsg.tool_calls?.find(t => t.name === 'get_product_details');
-      if (detailsTool) {
-        const args = JSON.parse(detailsTool.arguments);
-        const resolvedData = await handleMcpDetailsFetch(args);
-        // Automatically send the data back to the AI to trigger generation
-        sendMessage(undefined, resolvedData); 
-      }
-
-    } catch (error) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: "Error connecting to server." }])
-    } finally {
-      setIsLoading(false)
-      setStreamingToolName(null)
-    }
-  }
-
-  const executeTool = async (tool: { name: string, arguments: string }, toolKey: string) => {
-    setExecutingTool(toolKey)
-    try {
-      const args = JSON.parse(tool.arguments)
-      let endpoint = '';
-      if (tool.name === 'draft_ad_campaign') endpoint = '/api/meta-ads/launch-campaign';
-      else if (tool.name === 'draft_social_post') endpoint = '/api/post-universal';
-      else if (tool.name === 'update_lead_stage') endpoint = '/api/crm/update-stage';
-      else if (tool.name === 'toggle_campaign_status') endpoint = '/api/meta-ads/update-status';
-      else if (tool.name === 'invite_team_member') endpoint = '/api/team/create';
-
-      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) })
-      if (!response.ok) throw new Error('Failed')
       setToolStatus(prev => ({ ...prev, [toolKey]: 'success' }))
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'system', content: `Success.` }])
-    } catch (error) {
+
+      addToolOutput({
+        tool: toolName,
+        toolCallId: tool.toolCallId,
+        state: 'output-available',
+        output: { success: true, result }
+      })
+    } catch (error: any) {
+      console.error(`[UI] Tool execution error:`, error);
       setToolStatus(prev => ({ ...prev, [toolKey]: 'error' }))
     } finally {
       setExecutingTool(null)
@@ -324,53 +280,119 @@ export default function FloatingAgent() {
 
   const renderText = (text: string) => text.split('\n').map((line, i) => <React.Fragment key={i}>{line}{i !== text.split('\n').length - 1 && <br />}</React.Fragment>)
 
-  const renderToolCard = (tool: { name: string, arguments: string }, msgId: string, index: number) => {
+  const renderToolCard = (tool: any, msgId: string, index: number) => {
     const toolKey = `${msgId}-${index}`
     const isExecuting = executingTool === toolKey
     const status = toolStatus[toolKey]
+    const toolName = tool.toolName || (tool.type?.startsWith('tool-') ? tool.type.slice(5) : 'unknown')
+    const args = tool.input || tool.args || {}
 
-    if (tool.name === 'check_live_campaigns') return <LiveCampaignsCard key={toolKey} />
-    if (tool.name === 'get_product_details') return (
-       <div key={toolKey} className="bg-blue-50 border border-blue-100 rounded-2xl p-4 my-2 flex items-center gap-3 text-blue-700 text-sm">
-          <Loader2 className="animate-spin" size={16} /> Grounding product context...
-       </div>
+    const isFinished = tool.state === 'output-available' || tool.state === 'output-error' || status === 'success'
+
+    if (toolName === 'check_live_campaigns') return (
+      <div key={toolKey} className={`border rounded-2xl p-4 my-2 flex items-center gap-3 text-sm ${isFinished ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
+        {isFinished ? <CheckCircle2 size={16} /> : <Loader2 className="animate-spin" size={16} />}
+        {isFinished ? 'Analyzed live campaigns' : 'Analyzing live campaigns...'}
+      </div>
     )
 
-    let args: any = {}
-    try { args = JSON.parse(tool.arguments) } catch(e) { return null }
+    if (toolName === 'get_product_details') return (
+      <div key={toolKey} className={`border rounded-2xl p-4 my-2 flex items-center gap-3 text-sm ${isFinished ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
+        {isFinished ? <CheckCircle2 size={16} /> : <Loader2 className="animate-spin" size={16} />}
+        {isFinished ? `Gathered assets for: ${args.titleQuery || 'Product'}` : 'Grounding product context...'}
+      </div>
+    )
 
-    if (tool.name === 'generate_ad_creative') return <ImageGenerationCard key={toolKey} propertyTitle={args.propertyTitle} instructions={args.instructions} />
+    if (toolName === 'get_campaign_details') return (
+      <div key={toolKey} className={`border rounded-2xl p-4 my-2 flex items-center gap-3 text-sm ${isFinished ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
+        {isFinished ? <CheckCircle2 size={16} /> : <Loader2 className="animate-spin" size={16} />}
+        {isFinished ? `Analyzed existing ad creatives.` : 'Analyzing current ad performance...'}
+      </div>
+    )
 
-    if (tool.name === 'check_crm_leads') {
+    if (toolName === 'inspect_ad_creative') return (
+      <div key={toolKey} className={`border rounded-2xl p-4 my-2 flex items-center gap-3 text-sm ${isFinished ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
+        {isFinished ? <Eye size={16} /> : <Loader2 className="animate-spin" size={16} />}
+        {isFinished ? `Completed visual inspection.` : 'Performing multimodal visual analysis...'}
+      </div>
+    )
+
+    if (toolName === 'generate_ad_creative') return (
+      <ImageGenerationCard
+        key={toolKey}
+        propertyTitle={args.propertyTitle}
+        instructions={args.instructions}
+        propertyDescription={args.propertyDescription}
+        imageUrls={args.imageUrls}
+      />
+    )
+
+    if (toolName === 'check_crm_leads') {
+      if (!isFinished) return (
+        <div key={toolKey} className="bg-blue-50 border border-blue-100 rounded-2xl p-4 my-2 flex items-center gap-3 text-blue-700 text-sm">
+          <Loader2 className="animate-spin" size={16} /> Scanning CRM pipeline...
+        </div>
+      )
       return (
         <div key={toolKey} className="bg-white border border-[#e2e8f0] shadow-sm rounded-[24px] p-5 my-2 w-full max-w-[95%]">
-          <h5 className="font-bold text-[#003D6F] mb-3 flex items-center gap-2 text-[15px]"><Users size={18}/> CRM Summary</h5>
+          <h5 className="font-bold text-[#003D6F] mb-3 flex items-center gap-2 text-[15px]"><Users size={18} /> CRM Summary</h5>
           <div className="grid grid-cols-2 gap-3 text-center">
-            <div className="bg-[#f0f9ff] p-4 rounded-2xl"><span className="text-xl font-bold">{args.totalLeads}</span><br/><span className="text-[10px] text-slate-500 uppercase">Leads</span></div>
-            <div className="bg-[#fff1f2] p-4 rounded-2xl"><span className="text-xl font-bold text-rose-600">{args.newLeads}</span><br/><span className="text-[10px] text-slate-500 uppercase">New</span></div>
+            <div className="bg-[#f0f9ff] p-4 rounded-2xl"><span className="text-xl font-bold">{args.totalLeads || 0}</span><br /><span className="text-[10px] text-slate-500 uppercase">Leads</span></div>
+            <div className="bg-[#fff1f2] p-4 rounded-2xl"><span className="text-xl font-bold text-rose-600">{args.newLeads || 0}</span><br /><span className="text-[10px] text-slate-500 uppercase">New</span></div>
           </div>
         </div>
       )
     }
-
-    const renderActionBtn = (defaultText: string, confirmColor: string = "bg-[#003D6F] hover:bg-[#002a4d]") => {
-      if (status === 'success') return <button disabled className="w-full mt-3 bg-[#dcfce7] text-[#166534] py-3 rounded-full font-medium flex items-center justify-center gap-2"><CheckCircle2 size={18} /> Done</button>
-      if (status === 'error') return <button onClick={() => executeTool(tool, toolKey)} className="w-full mt-3 bg-[#fee2e2] text-[#991b1b] py-3 rounded-full font-medium flex items-center justify-center gap-2"><AlertCircle size={18} /> Error</button>
-      return <button onClick={() => executeTool(tool, toolKey)} disabled={isExecuting} className={`w-full mt-3 text-white py-3 rounded-full font-medium transition-colors flex justify-center items-center gap-2 ${confirmColor}`}>{isExecuting ? "Processing..." : defaultText}</button>
-    }
-
-    if (tool.name === 'draft_ad_campaign') return (
-      <div key={toolKey} className="bg-white border border-[#e2e8f0] shadow-sm rounded-[24px] p-5 my-2 text-sm text-left w-full max-w-[95%]">
-        <h5 className="font-bold text-[#003D6F] mb-3 flex items-center gap-2"><Sparkles size={18}/> Draft Meta Ad</h5>
-        <div className="space-y-2 text-slate-600 mb-4">
-          <p><strong>Target:</strong> {args.targetAudience}</p>
-          <div className="bg-[#f8fafc] p-3 rounded-2xl italic">{args.adCopy}</div>
+    if (toolName === 'draft_ad_campaign') return (
+      <div key={toolKey} className="bg-white border border-[#e2e8f0] shadow-sm rounded-[24px] p-5 my-2 w-full max-w-[95%]">
+        <div className="flex items-center gap-2 text-[#003D6F] mb-4">
+          <Rocket size={18} />
+          <h5 className="font-bold text-[15px]">Draft Meta Ad</h5>
         </div>
-        {renderActionBtn("Confirm & Launch")}
+
+        <div className="bg-[#f8fafc] border border-slate-100 p-4 rounded-2xl mb-4 text-left">
+          <h6 className="text-[14px] font-bold text-slate-800 mb-2">{args.campaignName || 'New Campaign'}</h6>
+          <p className="text-[13px] text-slate-700 leading-relaxed font-medium mb-2">Headline: <span className="font-normal text-slate-600">{args.headline}</span></p>
+          <div className="bg-white border border-slate-100 p-3 rounded-xl text-[13px] text-slate-600 italic mb-3">"{args.adCopy}"</div>
+
+          {args.imageUrl && (
+            <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 shadow-inner">
+              <img src={args.imageUrl} alt="Ad Preview" className="w-full h-full object-cover" />
+            </div>
+          )}
+        </div>
+
+        {status === 'success' ? (
+          <div className="bg-green-50 text-green-700 p-3 rounded-full text-center text-sm font-medium flex items-center justify-center gap-2">
+            <CheckCircle2 size={16} /> Campaign Launched
+          </div>
+        ) : status === 'error' ? (
+          <div className="bg-red-50 text-red-700 p-3 rounded-full text-center text-sm font-medium">
+            Error launching campaign
+          </div>
+        ) : (
+          <button
+            onClick={() => executeTool(tool, toolKey)}
+            disabled={executingTool === toolKey}
+            className="bg-[#003D6F] text-white w-full py-3 rounded-full font-bold shadow-md hover:bg-[#002a4d] transition-all flex items-center justify-center gap-2"
+          >
+            {executingTool === toolKey ? <Loader2 className="animate-spin" size={18} /> : <Rocket size={18} />}
+            Confirm & Launch
+          </button>
+        )}
       </div>
     )
 
-    return null
+    // Default fallback for other tools
+    return (
+      <div key={toolKey} className="bg-white border border-slate-200 rounded-[24px] p-4 shadow-sm max-w-[90%]">
+        <div className="flex items-center gap-2 text-[#003D6F] font-bold mb-2">
+          <Loader2 className="animate-spin" size={14} />
+          <span className="text-xs uppercase tracking-wider">Processing: {toolName.replace(/_/g, ' ')}</span>
+        </div>
+        <p className="text-xs text-slate-500">The agent is gathering information to assist you better...</p>
+      </div>
+    )
   }
 
   return (
@@ -379,22 +401,31 @@ export default function FloatingAgent() {
         {isOpen && (
           <motion.div initial={{ opacity: 0, y: 20, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.95 }} className="fixed bottom-32 right-4 md:right-6 z-[70] w-[340px] md:w-[400px] bg-[#f8fafc] rounded-[32px] shadow-2xl border border-slate-200/60 flex flex-col h-[550px] max-h-[75vh]">
             <div className="bg-white px-5 py-4 flex justify-between items-center border-b border-slate-100">
-              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-[#e0f2fe] rounded-full flex items-center justify-center text-[#003D6F] font-bold"><Sparkles size={18}/></div><h4 className="text-slate-800 font-bold text-base">AdRolls AI</h4></div>
+              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-[#e0f2fe] rounded-full flex items-center justify-center text-[#003D6F] font-bold"><Sparkles size={18} /></div><h4 className="text-slate-800 font-bold text-base">AdRolls AI</h4></div>
               <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-700 bg-slate-50 p-2 rounded-full"><X size={20} /></button>
             </div>
             <div ref={scrollRef} className="p-5 flex-1 overflow-y-auto flex flex-col gap-4">
-              {messages.filter(m => m.role !== 'system').map((msg) => (
+              {messages.filter((m: any) => m.role !== 'system').map((msg: any) => (
                 <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} w-full`}>
-                  {msg.content && msg.content !== " " && (
-                    <div className={`px-4 py-3 text-[15px] leading-relaxed max-w-[85%] shadow-sm ${msg.role === 'user' ? 'bg-[#003D6F] text-white rounded-[24px] rounded-br-sm' : 'bg-white border border-slate-100 text-slate-700 rounded-[24px] rounded-tl-sm'}`}>{renderText(msg.content)}</div>
-                  )}
-                  {msg.tool_calls?.map((tool, index) => renderToolCard(tool, msg.id, index))}
+                  {msg.parts.map((part: any, partIndex: number) => {
+                    if (part.type === 'text' && part.text.trim()) {
+                      return (
+                        <div key={partIndex} className={`px-4 py-3 text-[15px] leading-relaxed max-w-[85%] shadow-sm my-1 ${msg.role === 'user' ? 'bg-[#003D6F] text-white rounded-[24px] rounded-br-sm' : 'bg-white border border-slate-100 text-slate-700 rounded-[24px] rounded-tl-sm'}`}>
+                          {renderText(part.text)}
+                        </div>
+                      )
+                    }
+                    if (part.type.startsWith('tool-')) {
+                      return renderToolCard(part, msg.id, partIndex)
+                    }
+                    return null
+                  })}
                 </div>
               ))}
-              {isLoading && <div className="self-start bg-white border border-slate-100 px-4 py-3 rounded-[24px] shadow-sm text-slate-600 text-[14px] flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> {streamingToolName ? TOOL_PROGRESS_MESSAGES[streamingToolName] || 'Working...' : 'Thinking...'}</div>}
+              {isLoading && <div className="self-start bg-white border border-slate-100 px-4 py-3 rounded-[24px] shadow-sm text-slate-600 text-[14px] flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Working...</div>}
             </div>
-            <form onSubmit={sendMessage} className="p-4 bg-white border-t border-slate-100 flex gap-2 shrink-0 rounded-b-[32px]">
-              <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Message AI..." className="flex-1 bg-[#f1f5f9] rounded-full px-5 py-3 text-[15px] focus:outline-none" disabled={isLoading} />
+            <form onSubmit={handleSubmit} className="p-4 bg-white border-t border-slate-100 flex gap-2 shrink-0 rounded-b-[32px]">
+              <input type="text" value={input} onChange={handleInputChange} placeholder="Message AI..." className="flex-1 bg-[#f1f5f9] rounded-full px-5 py-3 text-[15px] focus:outline-none" disabled={isLoading} />
               <button disabled={!input.trim() || isLoading} type="submit" className="bg-[#003D6F] text-white w-12 h-12 rounded-full flex items-center justify-center disabled:opacity-50"><Send size={18} /></button>
             </form>
           </motion.div>

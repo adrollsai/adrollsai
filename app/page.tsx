@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { motion, useScroll, AnimatePresence } from 'framer-motion'
+import { createClient } from '@/utils/supabase/client'
 
 /**
  * --- CHAT MASCOT COMPONENT ---
@@ -135,6 +136,17 @@ export default function LandingPage() {
     }
   }, []);
 
+  const [hasSession, setHasSession] = useState(false)
+  const supabase = createClient()
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) setHasSession(true)
+    }
+    checkSession()
+  }, [supabase])
+
   return (
     <div className="min-h-screen bg-slate-50 text-[#003D6F] font-sans selection:bg-[#F4B429]/30 selection:text-[#003D6F] overflow-x-hidden relative">
       
@@ -143,8 +155,8 @@ export default function LandingPage() {
            style={{ backgroundImage: 'radial-gradient(#003D6F 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
       </div>
 
-      {/* Mascot Integration */}
-      <ChatMascot />
+      {/* Mascot Integration - Only show static version if NOT logged in */}
+      {!hasSession && <ChatMascot />}
 
       {/* --- NAVIGATION BAR --- */}
       <nav className="fixed top-0 w-full z-50 border-b border-[#003D6F]/10 bg-white/95 backdrop-blur-xl transition-all duration-300">

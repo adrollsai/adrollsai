@@ -1,6 +1,9 @@
 // app/api/cron/auto-blog/route.ts
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { generateObject } from 'ai'
+import { google } from '@ai-sdk/google'
+import { z } from 'zod'
 
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
@@ -40,6 +43,7 @@ async function runSeoCron(request: Request) {
     let lastError = null;
 
     for (const profile of profiles) {
+        let article;
         const { data: products } = await supabaseAdmin
             .from('properties')
             .select('title, price, property_type, description, image_url')
@@ -58,52 +62,21 @@ async function runSeoCron(request: Request) {
 
         const prompt = `You are an elite SEO copywriter and direct-response marketer trained in the exact principles of Alex Hormozi (Grand Slam Offers, Value Equation, clear CTAs, and building extreme trust). \n\nWrite a highly SEO-optimized, engaging blog article to rank the landing page for a business named "${profile.business_name || 'This Company'}".\n\nBusiness Context & Mission:\n"${profile.mission_statement || 'Providing top-tier services and maximum value to our customers.'}"\n\nHere is their current active inventory/products to feature naturally in the article:\n${inventoryContext}\n\nInstructions:\n1. Write a compelling, value-driven article that builds trust, highlights the immense value of these specific products/services, and drives the reader to take action.\n2. Format the body content strictly with HTML tags (<h2>, <p>, <b>, <ul>, <li>). Do NOT use markdown.\n3. Keep the total length under 400 words. \n4. Return ONLY a valid JSON object with the following exact keys: 'title', 'excerpt' (1 compelling sentence), 'content' (the HTML body), and 'tags' (array of 3 to 5 SEO keywords). Do not include markdown formatting blocks (like \`\`\`json) around the output.`;
 
-        const apiKey = process.env.KIE_API_KEY;
-        
-        if (!apiKey) {
-            lastError = "KIE_API_KEY is missing in Vercel Environment Variables.";
-            console.error(lastError);
-            continue;
-        }
-
-        const res = await fetch('https://api.kie.ai/gemini-3-flash/v1/chat/completions', {
-            method: 'POST',
-            cache: 'no-store', // Prevents Next.js aggressive caching
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                // THE FIX: Exact model slug from Kie.ai documentation
-                model: 'gemini-3-flash', 
-                messages: [
-                    { 
-                        role: 'user', 
-                        // Appending timestamp to guarantee a unique generation every time
-                        content: prompt + `\n\nGenerate this uniquely for today's timestamp: ${new Date().toISOString()}` 
-                    }
-                ],
-                response_format: { type: "json_object" }
-            })
-        });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            lastError = `Kie.ai API Error: ${res.status} - ${errText}`;
-            console.error(lastError);
-            continue;
-        }
-
-        const aiData = await res.json();
-        const responseText = aiData.choices[0].message.content;
-        
-        let article;
         try {
-            const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            article = JSON.parse(cleanJson);
-        } catch (e) {
-            lastError = "Kie.ai returned invalid JSON format.";
-            console.error(lastError, responseText);
+            const result = await generateObject({
+              model: google('gemini-3-flash-preview'),
+              prompt: prompt + `\n\nGenerate this uniquely for today's timestamp: ${new Date().toISOString()}`,
+              schema: z.object({
+                title: z.string(),
+                excerpt: z.string(),
+                content: z.string(),
+                tags: z.array(z.string())
+              })
+            });
+            article = result.object;
+        } catch (e: any) {
+            lastError = `Gemini API Error: ${e.message}`;
+            console.error(lastError);
             continue;
         }
 
