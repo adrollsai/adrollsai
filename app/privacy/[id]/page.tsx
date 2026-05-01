@@ -1,9 +1,10 @@
 import { createClient } from '@/utils/supabase/server';
 import { notFound } from 'next/navigation';
 
-export default async function PrivacyPolicyPage({ params }: { params: { id: string } }) {
+export default async function PrivacyPolicyPage({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = await params;
     const supabase = await createClient();
-    const { data: profile } = await supabase.from('profiles').select('business_name, custom_domain').eq('id', params.id).single();
+    const { data: profile } = await supabase.from('profiles').select('business_name, custom_domain').eq('id', id).single();
 
     if (!profile) {
         return notFound();
