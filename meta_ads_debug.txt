@@ -1,0 +1,155 @@
+
+[2026-05-02T08:40:37.054Z] === STARTING AI CAMPAIGN LAUNCH (MULTI-CREATIVE) ===
+
+------------------------------------------------
+
+[2026-05-02T08:40:37.292Z] --- 2. CREATING LEAD FORM ---
+
+------------------------------------------------
+
+[2026-05-02T08:40:37.295Z] --- 2b. LEAD FORM PAYLOAD ---
+{
+  "name": "AI Form - 237295",
+  "follow_up_action_url": "https://adrolls.in",
+  "question_page_custom_headline": "Get Pricing & Details",
+  "question_page_custom_text": "Confirm details to view pricing.",
+  "privacy_policy": {
+    "url": "https://localhost:3000/privacy/bc63c065-9bcc-4793-bedc-f0960406425b",
+    "link_text": "Privacy Policy"
+  },
+  "questions": [
+    {
+      "type": "FULL_NAME",
+      "key": "full_name"
+    },
+    {
+      "type": "EMAIL",
+      "key": "email"
+    },
+    {
+      "type": "PHONE",
+      "key": "phone_number"
+    },
+    {
+      "type": "CUSTOM",
+      "label": "What is your budget?",
+      "key": "what_is_your_budget_",
+      "options": [
+        {
+          "value": "Less than 50L",
+          "key": "less_than_50l"
+        },
+        {
+          "value": "50L - 70L",
+          "key": "50l___70l"
+        },
+        {
+          "value": "70L - 1 Cr",
+          "key": "70l___1_cr"
+        },
+        {
+          "value": "1 Cr - 1.5 Cr",
+          "key": "1_cr___1_5_cr"
+        },
+        {
+          "value": "1.5Cr - 2 Cr",
+          "key": "1_5cr___2_cr"
+        },
+        {
+          "value": "Above 2 Cr",
+          "key": "above_2_cr"
+        }
+      ]
+    }
+  ],
+  "form_type": "HIGHER_INTENT",
+  "is_optimized_for_quality": true,
+  "access_token": "EAAMaVhrzxNABRQWW961kVgQhGctZCibjerMH5BS2DIMesvTakefR4XXiOZBJ1NZBTKO94ZA58gONRZAHuZBuZBx6vzWqnbZAegyomHdmNpNyfNgo8Igby3ZAWsgOlsPBnACSSxCiEx8yz3c2NflFS7q4CvalX5VNMxGhLYL352bL2ch6rbJy1rgJM89jCj1MMzManvvpl63iQrLZCdihx0dOwB2qN2zOn7AafCxEiGahgw3SYHL5VfQ8pS51PZA9NkClwjA9vmetA4BQUbtBtGkPHw64m5zVGRgA3ZCmK0M9",
+  "logic_config": "{\"logic_rules\":[{\"action\":\"CLOSE\",\"conditions\":[{\"field_key\":\"what_is_your_budget_\",\"operator\":\"EQUALS\",\"value\":\"Less than 50L\"}]}]}"
+}
+------------------------------------------------
+
+[2026-05-02T08:40:37.651Z] ❌ Lead Form Failed Payload:
+{
+  "name": "AI Form - 237295",
+  "follow_up_action_url": "https://adrolls.in",
+  "question_page_custom_headline": "Get Pricing & Details",
+  "question_page_custom_text": "Confirm details to view pricing.",
+  "privacy_policy": {
+    "url": "https://localhost:3000/privacy/bc63c065-9bcc-4793-bedc-f0960406425b",
+    "link_text": "Privacy Policy"
+  },
+  "questions": [
+    {
+      "type": "FULL_NAME",
+      "key": "full_name"
+    },
+    {
+      "type": "EMAIL",
+      "key": "email"
+    },
+    {
+      "type": "PHONE",
+      "key": "phone_number"
+    },
+    {
+      "type": "CUSTOM",
+      "label": "What is your budget?",
+      "key": "what_is_your_budget_",
+      "options": [
+        {
+          "value": "Less than 50L",
+          "key": "less_than_50l"
+        },
+        {
+          "value": "50L - 70L",
+          "key": "50l___70l"
+        },
+        {
+          "value": "70L - 1 Cr",
+          "key": "70l___1_cr"
+        },
+        {
+          "value": "1 Cr - 1.5 Cr",
+          "key": "1_cr___1_5_cr"
+        },
+        {
+          "value": "1.5Cr - 2 Cr",
+          "key": "1_5cr___2_cr"
+        },
+        {
+          "value": "Above 2 Cr",
+          "key": "above_2_cr"
+        }
+      ]
+    }
+  ],
+  "form_type": "HIGHER_INTENT",
+  "is_optimized_for_quality": true,
+  "access_token": "EAAMaVhrzxNABRQWW961kVgQhGctZCibjerMH5BS2DIMesvTakefR4XXiOZBJ1NZBTKO94ZA58gONRZAHuZBuZBx6vzWqnbZAegyomHdmNpNyfNgo8Igby3ZAWsgOlsPBnACSSxCiEx8yz3c2NflFS7q4CvalX5VNMxGhLYL352bL2ch6rbJy1rgJM89jCj1MMzManvvpl63iQrLZCdihx0dOwB2qN2zOn7AafCxEiGahgw3SYHL5VfQ8pS51PZA9NkClwjA9vmetA4BQUbtBtGkPHw64m5zVGRgA3ZCmK0M9",
+  "logic_config": "{\"logic_rules\":[{\"action\":\"CLOSE\",\"conditions\":[{\"field_key\":\"what_is_your_budget_\",\"operator\":\"EQUALS\",\"value\":\"Less than 50L\"}]}]}"
+}
+------------------------------------------------
+
+[2026-05-02T08:40:37.652Z] ❌ Lead Form Failed Response:
+{
+  "error": {
+    "message": "(#3) Application does not have the capability to make this API call.",
+    "type": "OAuthException",
+    "code": 3,
+    "fbtrace_id": "ACI7G4njay2f6rkQgZ7a7zZ"
+  }
+}
+------------------------------------------------
+
+[2026-05-02T08:40:37.652Z] !!! API CRASH !!!
+"Meta Lead Form Error: (#3) Application does not have the capability to make this API call."
+------------------------------------------------
+
+[2026-05-02T09:39:27.043Z] --- CRM SYNC START ---
+
+------------------------------------------------
+
+[2026-05-02T09:46:20.601Z] ❌ Fetch Lead Forms Failed:
+"Failed to fetch forms: (#200) Requires pages_manage_ads permission to manage the object"
+------------------------------------------------

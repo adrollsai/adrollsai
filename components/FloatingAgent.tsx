@@ -43,10 +43,11 @@ function ImageGenerationCard({ propertyTitle, instructions, propertyDescription,
         let finalImages = imageUrls || [];
 
         if (!finalDescription || finalImages.length === 0) {
+          const queryTitle = propertyTitle?.trim() || '';
           const { data: property } = await supabase
             .from('properties')
             .select('*')
-            .ilike('title', `%${propertyTitle.trim()}%`)
+            .ilike('title', `%${queryTitle}%`)
             .eq('user_id', user?.id)
             .maybeSingle();
 

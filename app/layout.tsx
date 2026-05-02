@@ -79,7 +79,6 @@ export const viewport: Viewport = {
   userScalable: false,
 };
 
-import FloatingAgent from "@/components/FloatingAgent";
 
 export default async function RootLayout({
   children,
@@ -131,7 +130,6 @@ export default async function RootLayout({
       </head>
       <body className={inter.className}>
         {children}
-        <FloatingAgent />
       </body>
     </html>
   );

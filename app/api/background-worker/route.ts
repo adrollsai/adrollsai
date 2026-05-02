@@ -97,19 +97,91 @@ export async function POST(req: Request) {
             caption: generatedCaption
         });
 
-        // 4. Send the Native Web Push Notification
-        const notifTitle = propertyTitle ? `✨ Asset Ready: ${propertyTitle}` : `✨ AI Creative Ready!`;
-        const notifBody = propertyTitle ? `Your AI poster for ${propertyTitle} is ready to publish!` : `Your requested AI design has finished generating in the background.`;
+        // 4. OPTIONAL: Push to Meta Ads Campaign
+        const { metaCampaignId, metaLeadFormId } = body;
+        let pushSuccess = false;
 
-        await sendPushNotification(
-            userId, 
-            notifTitle, 
-            notifBody,
-            '/dashboard/assets',
-            'asset_ready'
-        );
+        if (metaCampaignId) {
+            try {
+                // Fetch Meta Credentials
+                const { data: profile } = await supabaseAdmin.from('profiles').select('facebook_token, ad_account_id, fb_page_id, business_url').eq('id', userId).single();
+                
+                if (profile?.facebook_token && profile?.ad_account_id) {
+                    const FB_URL = "https://graph.facebook.com/v19.0";
+                    
+                    // A. Upload Image to Meta
+                    const imgFetch = await fetch(finalImageUrl);
+                    const imgBlob = await imgFetch.blob();
+                    const uploadData = new FormData();
+                    uploadData.append('source', imgBlob, `ai_opt_${Date.now()}.png`);
+                    uploadData.append('access_token', profile.facebook_token);
+                    
+                    const uploadRes = await fetch(`${FB_URL}/${profile.ad_account_id}/adimages`, { method: 'POST', body: uploadData });
+                    const uploadResult = await uploadRes.json();
+                    const imgHash = uploadResult.images?.[Object.keys(uploadResult.images)[0]]?.hash;
 
-        return NextResponse.json({ success: true, url: finalImageUrl });
+                    if (imgHash) {
+                        // B. Get First Ad Set
+                        const adSetsRes = await fetch(`${FB_URL}/${metaCampaignId}/adsets?fields=id&access_token=${profile.facebook_token}`);
+                        const adSetsData = await adSetsRes.json();
+                        const adSetId = adSetsData.data?.[0]?.id;
+
+                        if (adSetId) {
+                            const [headline, ...rest] = generatedCaption.split('\n\n');
+                            const primaryText = rest.join('\n\n') || headline;
+
+                            const creativePayload = {
+                                name: `AI Opt - ${propertyTitle || 'Variation'}`,
+                                object_story_spec: {
+                                    page_id: profile.fb_page_id,
+                                    link_data: {
+                                        message: primaryText,
+                                        name: headline,
+                                        link: profile.business_url || 'https://adrolls.in',
+                                        image_hash: imgHash,
+                                        call_to_action: { type: 'SIGN_UP', value: { lead_gen_form_id: metaLeadFormId } }
+                                    }
+                                },
+                                access_token: profile.facebook_token
+                            };
+
+                            const creativeRes = await fetch(`${FB_URL}/${profile.ad_account_id}/adcreatives`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(creativePayload)
+                            });
+                            const creativeData = await creativeRes.json();
+
+                            if (creativeData.id) {
+                                const adPayload = {
+                                    name: `AI Optimized Variation - ${Date.now()}`,
+                                    adset_id: adSetId,
+                                    creative: { creative_id: creativeData.id },
+                                    status: 'PAUSED',
+                                    access_token: profile.facebook_token
+                                };
+                                const adRes = await fetch(`${FB_URL}/${profile.ad_account_id}/ads`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(adPayload)
+                                });
+                                if (adRes.ok) pushSuccess = true;
+                            }
+                        }
+                    }
+                }
+            } catch (err) { console.error("[Worker] Meta Push Failed:", err); }
+        }
+
+        // 5. Send Notification
+        const notifTitle = pushSuccess ? `🚀 Ad Optimized: ${propertyTitle}` : `✨ Creative Ready: ${propertyTitle}`;
+        const notifBody = pushSuccess 
+            ? `Your new AI-optimized ad for ${propertyTitle} has been pushed to Meta (Paused).`
+            : `Your requested AI design for ${propertyTitle} is ready.`;
+
+        await sendPushNotification(userId, notifTitle, notifBody, pushSuccess ? '/dashboard/ads' : '/dashboard/assets', 'asset_ready');
+
+        return NextResponse.json({ success: true, url: finalImageUrl, pushed: pushSuccess });
 
     } catch (error: any) {
         console.error("Background Worker Fatal Error:", error);

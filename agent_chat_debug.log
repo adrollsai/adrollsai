@@ -1,4 +1,4 @@
-=== AGENT CHAT DEBUG [2026-05-01T13:45:31.673Z] ===
+=== AGENT CHAT DEBUG [2026-05-01T13:54:17.831Z] ===
 
 --- INPUT MESSAGES ---
 [
@@ -6,10 +6,10 @@
     "parts": [
       {
         "type": "text",
-        "text": "analyze the lead form 4 in 1 image campaign and optimize it"
+        "text": "Analyze my lead form 4 in 1 campaign and improve its performance."
       }
     ],
-    "id": "KWZeazxIm8sOGL2v",
+    "id": "Th3h7g4wGoeuRNtO",
     "role": "user"
   }
 ]
@@ -20,12 +20,12 @@ REASONING:
 TOOLS: [
   {
     "type": "tool-call",
-    "toolCallId": "2OwfRYD2NTW8Lr2W",
+    "toolCallId": "MbQxZfjyFSlpRw1V",
     "toolName": "check_live_campaigns",
     "input": {},
     "providerMetadata": {
       "google": {
-        "thoughtSignature": "ErgGCrUGAQw51sfCkaIWlMnxaoYywEc6DG2cvl95VLAXh86CcoGh7SQoPLKA5PYYhdXrrPS56fUKrmSJBOqVwjjB1FbPiY76Wyia82xvQ+YmJASOYrM3R27JZ6UxWyd24MKqUwdPXwGqRiqbrWnDGNwyb8UR34SwRS6ZZJx8YPs9F5lOeHrw+2CCM5PS8Z8ZeWju67727jy6H4/NX5jENBpo+5nEcG77voKFE5UDEZteumGsxEg0F3tpCqH1ntbgi5xF29dlgRgjA2E6FYiiDaXNj6lYtR1UKo1JpWOLjeav2pRxkQWdfMXD2cgWdCd37ng5MfxANCjWJ1Lx96ky4VR6K5O/5yxIv1QdWC0ncbGycl096eWThGKmDcnGGuTTmgOKe1T5NnaVP5eO7+40bvl0mPOWnGN52YNvprsBFEBfHlaqR2Y1rG3n9T8iok8GhIcpa7oGOigucSMsOsJYjMUBeN0TOcQBN4jN53nps1FKFHTN6Nz7p5pS4IAHlxKz96B8ooiVm2TzuvSM8oiYq0KVqlJ1iUhZRcoLwqKl78W0jLdW6x5Rm6EF+ns6q08P4Aa3zV2HU+FFL/4Fd6nU59fW5hqm69ujotV8A9mcftRaLrvPrLiz9PmeGTEnlbR74ZFyKIdWm9giRTTZnYdnpNahmikHSGHZN9T6s9PUta38l/D5i+Xi5O78B/xbm6+/Oq1uQyT6WxY6LbJxYF75sVdo2atASpaOSPGOOwz79+9Y9W+FIaAupUCF1fktOdgLlCf71E+ex26AwjGT2MeLlZ5aIRsoTLlyb7cm/AGGlUjUwu2v6YyK/D1bRUuQoC3zVTERi0PgySCiD6ARtvEmd9O96597VNS+BagNIsUF++xPHl1Wbha017jmGh2TwmdklcA1MtX9QgRlQD+U65DFrYob3xRVjyML9/fWRtGwO8il+F2aKPrxw5ZL9Yr0LJvUYikCri3HoF/8VLrcpXJuX/QDiplNqlUkOcMIWXcLnyRV7xrocEhl2YlVSHgc+eohhzRXFXrrkA/LjMETV9RldU/Ao36mA2oGv7TcLMRGVqtSDrKRqunxeijzSwDlzsy4dzrUt/ynSkzIZ5o="
+        "thoughtSignature": "EuoCCucCAQw51sf1usbn+Q/7WhrImFqNerWHovuJyEZjf7B9/k8+H5r8d4Zu7pCzHxo73yhhLsFgyVEFJc/+gLus+VrB1esjXArF+lHgmKzPockVByrOwBUSCsxuqM2By0hm7oy4QjlQWjUWbU8QghJOZOd69nQ4lqkbm6ePky6CKTM/KcCrtkl7PadiQQNsKA929LcQnlCLnmGyjFbMDB/N16HdXVLQjnumuq+yWuVzXuYi9DPFMShbO/bcKoyye1pA4AS2sdqGCZ1Kh014v77zUtI65QV6yzxDMqHzMnAfaBTJAP/b+AIb+tkX0w5BgLGq7NQSmliaACAf5K6WxT5WYTwx6pUau3aGNbiMj39CCaElBw4yhMd5XfZpnzAUA0W/3doz8tdcVimlfcM6Q8hLtoQ/ti/rRCATPpzbzL52Zhr4t72Zq1YCRq5EU2GZWwn+SQx3L//yqHelFWcNwLHUEPJWqnMEurrqJNQ="
       }
     }
   }
@@ -33,7 +33,7 @@ TOOLS: [
 RESULTS: [
   {
     "type": "tool-result",
-    "toolCallId": "2OwfRYD2NTW8Lr2W",
+    "toolCallId": "MbQxZfjyFSlpRw1V",
     "toolName": "check_live_campaigns",
     "input": {},
     "output": {
@@ -125,7 +125,7 @@ RESULTS: [
     "dynamic": false,
     "providerMetadata": {
       "google": {
-        "thoughtSignature": "ErgGCrUGAQw51sfCkaIWlMnxaoYywEc6DG2cvl95VLAXh86CcoGh7SQoPLKA5PYYhdXrrPS56fUKrmSJBOqVwjjB1FbPiY76Wyia82xvQ+YmJASOYrM3R27JZ6UxWyd24MKqUwdPXwGqRiqbrWnDGNwyb8UR34SwRS6ZZJx8YPs9F5lOeHrw+2CCM5PS8Z8ZeWju67727jy6H4/NX5jENBpo+5nEcG77voKFE5UDEZteumGsxEg0F3tpCqH1ntbgi5xF29dlgRgjA2E6FYiiDaXNj6lYtR1UKo1JpWOLjeav2pRxkQWdfMXD2cgWdCd37ng5MfxANCjWJ1Lx96ky4VR6K5O/5yxIv1QdWC0ncbGycl096eWThGKmDcnGGuTTmgOKe1T5NnaVP5eO7+40bvl0mPOWnGN52YNvprsBFEBfHlaqR2Y1rG3n9T8iok8GhIcpa7oGOigucSMsOsJYjMUBeN0TOcQBN4jN53nps1FKFHTN6Nz7p5pS4IAHlxKz96B8ooiVm2TzuvSM8oiYq0KVqlJ1iUhZRcoLwqKl78W0jLdW6x5Rm6EF+ns6q08P4Aa3zV2HU+FFL/4Fd6nU59fW5hqm69ujotV8A9mcftRaLrvPrLiz9PmeGTEnlbR74ZFyKIdWm9giRTTZnYdnpNahmikHSGHZN9T6s9PUta38l/D5i+Xi5O78B/xbm6+/Oq1uQyT6WxY6LbJxYF75sVdo2atASpaOSPGOOwz79+9Y9W+FIaAupUCF1fktOdgLlCf71E+ex26AwjGT2MeLlZ5aIRsoTLlyb7cm/AGGlUjUwu2v6YyK/D1bRUuQoC3zVTERi0PgySCiD6ARtvEmd9O96597VNS+BagNIsUF++xPHl1Wbha017jmGh2TwmdklcA1MtX9QgRlQD+U65DFrYob3xRVjyML9/fWRtGwO8il+F2aKPrxw5ZL9Yr0LJvUYikCri3HoF/8VLrcpXJuX/QDiplNqlUkOcMIWXcLnyRV7xrocEhl2YlVSHgc+eohhzRXFXrrkA/LjMETV9RldU/Ao36mA2oGv7TcLMRGVqtSDrKRqunxeijzSwDlzsy4dzrUt/ynSkzIZ5o="
+        "thoughtSignature": "EuoCCucCAQw51sf1usbn+Q/7WhrImFqNerWHovuJyEZjf7B9/k8+H5r8d4Zu7pCzHxo73yhhLsFgyVEFJc/+gLus+VrB1esjXArF+lHgmKzPockVByrOwBUSCsxuqM2By0hm7oy4QjlQWjUWbU8QghJOZOd69nQ4lqkbm6ePky6CKTM/KcCrtkl7PadiQQNsKA929LcQnlCLnmGyjFbMDB/N16HdXVLQjnumuq+yWuVzXuYi9DPFMShbO/bcKoyye1pA4AS2sdqGCZ1Kh014v77zUtI65QV6yzxDMqHzMnAfaBTJAP/b+AIb+tkX0w5BgLGq7NQSmliaACAf5K6WxT5WYTwx6pUau3aGNbiMj39CCaElBw4yhMd5XfZpnzAUA0W/3doz8tdcVimlfcM6Q8hLtoQ/ti/rRCATPpzbzL52Zhr4t72Zq1YCRq5EU2GZWwn+SQx3L//yqHelFWcNwLHUEPJWqnMEurrqJNQ="
       }
     }
   }
@@ -137,14 +137,14 @@ REASONING:
 TOOLS: [
   {
     "type": "tool-call",
-    "toolCallId": "Dn2SgxbjHVxoWhS7",
+    "toolCallId": "sE3B76HioFrMo2GO",
     "toolName": "get_campaign_details",
     "input": {
       "campaignId": "120214387901990736"
     },
     "providerMetadata": {
       "google": {
-        "thoughtSignature": "EvkBCvYBAQw51sdTiy8+k6vHJ/D7lvcH5yFBpzm1wLtSxwf16GexEGXJ+b1gQSpR5XG0hP2mJhFYsP/Z2NmxwK29eXPA2Yev1D1Hf2HqSDHrxslym1j1Q+PZ3RJat0jJMPqgKUgX1wIafoA3rXCSypXdDxaPaOGAd5eZl/taNEzsDc+jxVaj/tNqij8IYw25tuFqxZm9Sr0OQbXHrG59ykaZfhtA/05AzL08XSJQeCR0Oo+K3DAk593KiY8GFaODUZAdV69Bzed+Hv3CSE8Q+e+FhVBeqVd6YOWnu4ENmMt4ZzE8QDVJLZMo7WsgKNSMPjHi9FonAVDdkiOR"
+        "thoughtSignature": "EuwCCukCAQw51sdABt5h1iR/Pxu084rw6PdiRMq7s17Si1+QabKqcqfPDqpEWFYp0yDeF9UE9xa8cyUtDUZMadcHBWkXo5o+CZx3JfCXyudQs075y5QEasXw8vZm47IkMGqyUfYlTE3kpbxHPLVWhOWu3RfLKanudydxlgICg4p1DuP4W8kQEEBo4pgAR6SgrqrX/PNT0sbET14WdzI8Dfjd+hs+80KEZtUDDnJPfS+CYzHznuLaZ6DR0f5sNcRyj7pWYCldNaYUorhF3/tPHKzEPO/w2feeieT0pR+xaY84g5HGYaLt+VKhcL1h+fHRm9cPqMc/lp9Yp+0gH19O7kRq0FD44FBWGu4QW8o4eqnkL86k/reSemvKRt9XEp64GVdvVeJDITfv+KxeUrBw5fx1MgSTd0U2UoTbRiUK6Q51deuyOAwwR9EmbseCUAi0Nh/s1pG7dqbIW2QwY03c67KJ509tNEPF/gCJ+LCNAQ=="
       }
     }
   }
@@ -152,7 +152,7 @@ TOOLS: [
 RESULTS: [
   {
     "type": "tool-result",
-    "toolCallId": "Dn2SgxbjHVxoWhS7",
+    "toolCallId": "sE3B76HioFrMo2GO",
     "toolName": "get_campaign_details",
     "input": {
       "campaignId": "120214387901990736"
@@ -167,8 +167,8 @@ RESULTS: [
             "name": "📍 Zirakpur : Starting @ Rs.1.75 Cr. 2024-12-09-902051308a7c4bd59677e0c2811a9b56",
             "title": "📍 Zirakpur : Starting @ Rs.1.75 Cr.",
             "body": "Click on Learn More for more details.\n\n3, 3+S, 4, 5+S, 5 BHK Duplex & 6 BHK Duplex Green Apartments, Penthouses & Shops.",
-            "image_url": "https://scontent.fixc1-11.fna.fbcdn.net/v/t45.1600-4/567750097_24878421438463315_3942397142196987937_n.png?stp=dst-jpg_tt6&_nc_cat=107&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=QeaP69Or2GcQ7kNvwE3mSkb&_nc_oc=AdpjVhoRtFuf9fja9ZD8MibuJuSyLY7QxW8JXH4yMdhy3MshEiaAC9BmxkP2qM2vzjnCMKrInTid3eTSJugTOBDp&_nc_zt=1&_nc_ht=scontent.fixc1-11.fna&edm=ANIILHsEAAAA&_nc_gid=DgMi1l3yzW2C489RStpMhg&_nc_tpa=Q5bMBQGuCO_CbbOwm4J4izbtLrilzOggoXmiQKxHdsPHOheKX30AXBBvm9ct2EgahmMLVKCKf5PJ335U&oh=00_Af61IbByJHrtqBCQ-ZYDlkkZgkhiWpDdxjnzTV0UP0OD6g&oe=69FA6CEA",
-            "thumbnail_url": "https://external.fixc1-9.fna.fbcdn.net/emg1/v/t13/16828940867348005167?url=https%3A%2F%2Fwww.facebook.com%2Fads%2Fimage%2F%3Fd%3DAQJQiHc94TFdrgP5EVtdAIPaaBZ7VgR6zJkaPDNvkGR_5wPQ4e6shQIZVgX1hG22c5FYFVT848BMK7HenWNruW531n9lT_bQ2LuhXiTvfpE9qMRXFfu34_0wQSWs398KHeVcJlSBNnnbn22EHB1kJ9yp&fb_obo=1&utld=facebook.com&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&edm=ANIILHsEAAAA&_nc_gid=DgMi1l3yzW2C489RStpMhg&_nc_oc=Adrbu9d6RXPbzNI1MVomB7U554yjDghPHPaK06syFXiSf1xOG9rE8vaBoG7dU9m-3SkNaom3a9ckwcTfln7yKDX9&ccb=13-1&oh=06_Q3--AW0-jQ4Rr4QXEK-6r1dTC2ZzoYaWQitK9kqQL1VPS5Uw&oe=69F6749E&_nc_sid=58080a",
+            "image_url": "https://scontent.fixc1-11.fna.fbcdn.net/v/t45.1600-4/567750097_24878421438463315_3942397142196987937_n.png?stp=dst-jpg_tt6&_nc_cat=107&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=QeaP69Or2GcQ7kNvwE3mSkb&_nc_oc=AdpjVhoRtFuf9fja9ZD8MibuJuSyLY7QxW8JXH4yMdhy3MshEiaAC9BmxkP2qM2vzjnCMKrInTid3eTSJugTOBDp&_nc_zt=1&_nc_ht=scontent.fixc1-11.fna&edm=ANIILHsEAAAA&_nc_gid=UN05HPhYUD--FvnSqTf3Yg&_nc_tpa=Q5bMBQG73UlFvKYBs7zp4Esavzi8F-P-sKeYm5FL1sC2o9zhXnzQqELOLFGWeEktAHuK_JMYRi6Yzg2i&oh=00_Af4elV50-CAqjYa6iMtiguKdjA9Bag3KSbY083WEV21QrQ&oe=69FA6CEA",
+            "thumbnail_url": "https://external.fixc1-9.fna.fbcdn.net/emg1/v/t13/16828940867348005167?url=https%3A%2F%2Fwww.facebook.com%2Fads%2Fimage%2F%3Fd%3DAQJQiHc94TFdrgP5EVtdAIPaaBZ7VgR6zJkaPDNvkGR_5wPQ4e6shQIZVgX1hG22c5FYFVT848BMK7HenWNruW531n9lT_bQ2LuhXiTvfpE9qMRXFfu34_0wQSWs398KHeVcJlSBNnnbn22EHB1kJ9yp&fb_obo=1&utld=facebook.com&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&edm=ANIILHsEAAAA&_nc_gid=UN05HPhYUD--FvnSqTf3Yg&_nc_oc=Adrbu9d6RXPbzNI1MVomB7U554yjDghPHPaK06syFXiSf1xOG9rE8vaBoG7dU9m-3SkNaom3a9ckwcTfln7yKDX9&ccb=13-1&oh=06_Q3--AQzQV6hQKbFg5lzQem0oRwxVvgNkMYJWUr6PY9CZJDox&oe=69F6749E&_nc_sid=58080a",
             "id": "120214453170510736"
           },
           "id": "120214387901980736"
@@ -178,7 +178,7 @@ RESULTS: [
     "dynamic": false,
     "providerMetadata": {
       "google": {
-        "thoughtSignature": "EvkBCvYBAQw51sdTiy8+k6vHJ/D7lvcH5yFBpzm1wLtSxwf16GexEGXJ+b1gQSpR5XG0hP2mJhFYsP/Z2NmxwK29eXPA2Yev1D1Hf2HqSDHrxslym1j1Q+PZ3RJat0jJMPqgKUgX1wIafoA3rXCSypXdDxaPaOGAd5eZl/taNEzsDc+jxVaj/tNqij8IYw25tuFqxZm9Sr0OQbXHrG59ykaZfhtA/05AzL08XSJQeCR0Oo+K3DAk593KiY8GFaODUZAdV69Bzed+Hv3CSE8Q+e+FhVBeqVd6YOWnu4ENmMt4ZzE8QDVJLZMo7WsgKNSMPjHi9FonAVDdkiOR"
+        "thoughtSignature": "EuwCCukCAQw51sdABt5h1iR/Pxu084rw6PdiRMq7s17Si1+QabKqcqfPDqpEWFYp0yDeF9UE9xa8cyUtDUZMadcHBWkXo5o+CZx3JfCXyudQs075y5QEasXw8vZm47IkMGqyUfYlTE3kpbxHPLVWhOWu3RfLKanudydxlgICg4p1DuP4W8kQEEBo4pgAR6SgrqrX/PNT0sbET14WdzI8Dfjd+hs+80KEZtUDDnJPfS+CYzHznuLaZ6DR0f5sNcRyj7pWYCldNaYUorhF3/tPHKzEPO/w2feeieT0pR+xaY84g5HGYaLt+VKhcL1h+fHRm9cPqMc/lp9Yp+0gH19O7kRq0FD44FBWGu4QW8o4eqnkL86k/reSemvKRt9XEp64GVdvVeJDITfv+KxeUrBw5fx1MgSTd0U2UoTbRiUK6Q51deuyOAwwR9EmbseCUAi0Nh/s1pG7dqbIW2QwY03c67KJ509tNEPF/gCJ+LCNAQ=="
       }
     }
   }
@@ -190,14 +190,14 @@ REASONING:
 TOOLS: [
   {
     "type": "tool-call",
-    "toolCallId": "eqGWMGiH0OVlHIcI",
+    "toolCallId": "r2VtrSIjbAbFBeDQ",
     "toolName": "inspect_ad_creative",
     "input": {
-      "imageUrl": "https://scontent.fixc1-11.fna.fbcdn.net/v/t45.1600-4/567750097_24878421438463315_3942397142196987937_n.png?stp=dst-jpg_tt6&_nc_cat=107&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=QeaP69Or2GcQ7kNvwE3mSkb&_nc_oc=AdpjVhoRtFuf9fja9ZD8MibuJuSyLY7QxW8JXH4yMdhy3MshEiaAC9BmxkP2qM2vzjnCMKrInTid3eTSJugTOBDp&_nc_zt=1&_nc_ht=scontent.fixc1-11.fna&edm=ANIILHsEAAAA&_nc_gid=DgMi1l3yzW2C489RStpMhg&_nc_tpa=Q5bMBQGuCO_CbbOwm4J4izbtLrilzOggoXmiQKxHdsPHOheKX30AXBBvm9ct2EgahmMLVKCKf5PJ335U&oh=00_Af61IbByJHrtqBCQ-ZYDlkkZgkhiWpDdxjnzTV0UP0OD6g&oe=69FA6CEA"
+      "imageUrl": "https://scontent.fixc1-11.fna.fbcdn.net/v/t45.1600-4/567750097_24878421438463315_3942397142196987937_n.png?stp=dst-jpg_tt6&_nc_cat=107&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=QeaP69Or2GcQ7kNvwE3mSkb&_nc_oc=AdpjVhoRtFuf9fja9ZD8MibuJuSyLY7QxW8JXH4yMdhy3MshEiaAC9BmxkP2qM2vzjnCMKrInTid3eTSJugTOBDp&_nc_zt=1&_nc_ht=scontent.fixc1-11.fna&edm=ANIILHsEAAAA&_nc_gid=UN05HPhYUD--FvnSqTf3Yg&_nc_tpa=Q5bMBQG73UlFvKYBs7zp4Esavzi8F-P-sKeYm5FL1sC2o9zhXnzQqELOLFGWeEktAHuK_JMYRi6Yzg2i&oh=00_Af4elV50-CAqjYa6iMtiguKdjA9Bag3KSbY083WEV21QrQ&oe=69FA6CEA"
     },
     "providerMetadata": {
       "google": {
-        "thoughtSignature": "EpcICpQIAQw51seaJSZMgvcCZirHLbp5Ebj8akzKkVRFYgFEQaGrH4TeGy5Rpqe3hnBgJPc27njWe/tnb5snz+99s7o55ytXlfr+VKRDprQcVRyXXVtwcyGKPgAEfxcvOnf/MW7RDuAs2zJ3YoFDTgJqvnE1HOCX4dl+kIwKA74oGWf1UDg7rRxXKUsvxEuIve1xNSaBblhDr12YN1aSubnqHLGTcfInVHjSAkdnwvhkg9lUx9mimnSQzsTd4tket6+/e0wgK+wgcY+6o/QdkFTg546oXKBkZXn+qaTLzIaInh64fCBj/vK7GFzYM8wN0uJ4ScSwXgSpY7tgDv6riLO9obl+aoI8ItHkotfmLkL5mYpcxnFCowkZ+qk779AfGrIGA5UKirrHwq+m/plVdt0Cg4amjyvQFvy3wX8khYQ13jl4nmudJ19EYc+4zt0PdnKqNxtk37QzctDfyL0uiSJgECSua3m2htJMo8hG2f4vdM+MSG7/3cYu95tfxH7pX1g2WN5EXAYeCfkkATQlp5d6SmZmY/LaSmImyvQbyxV66URNxOf5yFyYUbfy0X2ECE2wNgq+s5+Ja19RLSF+mELJZY5A+F9v2k8BGWtJh0H0UncOUFD+QnOnRIfWax9mUaTXj50idn82IaUS/8zrsCBEbFq3l93jxTUERqxXJAel/J5X5FnBDM7LGCb1JYTn9v1zktP7nDqiklN60ona6rvnVPKTdP8x8bCoQ1t7OvgT53GMEWNuYgKLLdIP1jBs8KP94VvCuABF7CRvPOnPrtNJvqPsMc0FjhS4/ch0oDhjvmIh0opD4ANQZ5/pZO6y9DnoXhN7ERJh/W6hutTsHhoJcWjowyJdo6xbHHvMpBKMl1FpKRPRrJeBNDH3KzCjVn8Z5bPjdLYx2oy3653Dq9WhX2ta2Ejd9RBphs1r2ujRkMX86xG8IS95IbPRQVKaC/1P6TuBeq/Wd0WnP0TBJqjjz8m1wlYyqgAFneqkjCy+ZnVUSMx8zpFZW+XtZvEtl8+G0Tir6js/DG/ODFj9DoSI2YSaicclUZk/gqI1SDwh0PaiupaMQ29LM7ux6yo6NgG/BOFs5W4GpTcjYClQ/UjunzmLa8ia5CirkWqQYnLMM054kWhntEqHq0S7l7yeqtWQLxPbetfNK14It7Ki001z9yRkDcNDnUyIbglizVe+eeHO8N0cOsm10O7Oh/AP36eflKMadUpDWg93c6ZbSmA6eEfBbZkWKD7sIGOEnnFw8vQ4SwMbBLz6AlpwjPcW8UHdpwqbEJKx352yeK4j3z4KUbwV15c2TQC18kx2rt8SHgQ3+4T5lKbADQ7EswaM0ZOzFTL34Lxltm7dnFzjhXyRpQTmrGED0lr5M/nA8MRKmIPI8qN17smQ"
+        "thoughtSignature": "EoYJCoMJAQw51sffFJ+FwHkmCO/JUVAMMXognRF5SRgMTuhXA7DQvvK2q0wLF0CLTfHrBKcEulETDvdf23hRmMu9/xC5F4qhnZDD0qcw8we0K4Sq2lc5N8m22d52ZbEpIa+UOvAKal3w1hobTC/A8euYooK9Ac4adKz/BzZfmQGVhsFhpZaktJaYOebPEhPSpLVgeHEgeLJdc/1w/vRHzhyWaIpgaMw1g7DbS8fZxGG37Kt3bbUQQdJ/DgLyW/7KQnz5DSKCIwzxKqbHZfq7kHw30M53HLO6yVwqjUaDFGzgVEeDw7Y3vAAQnOF0i9jI0e8gnSiLL3FeZkqnvLoI8s1LaFyeMbed0mBpyrPBcoMH5L2wmxzqgNXHVxOt2gDxtmlH5PxCoe8ZKEVkL5lfMfI50NjYRa8kDrXGH9AVtBL0eQCcMNIXxuhtVdutcpQz5fdIiuriLTKxePsnuEV4fXzqGhFnCvnoNVxpGrNOtPQcecD/smYefPTPA2vUlao2kC8L2sYzyobf3NXxThHZClCflrzlnAVluq0z9Sdf2QJqSm9b//IFzdNrw7bqXrxWqtRDd/Jspl6p0HonLVtTAFAI/T0gxsMlkkZHOrP5yRuPEZ//6erHyzLpSVyZCd/8SCj+Xhw3J24kK0MUAwBrYY+LkRgsgw2QhhfrLtNoIxuHmvtmUkw3PW9h3RVBi2Th3Hz6LKNxFIYIJO+PDQncADVKf7MzRj9hL67iK90/u9/rDvmNYLYLXoZOecD4iwWVf3bFbkWWA8CDlSG7m/HGEYrT6WC4uR+BNMa8dYDEkvzgIq5ZS4Vts1bz36dOxt/1Rk7UxxZBrOPdiVYzOa2r2rMARE/AowddWWaWnKhKPqe6j80i5qAjjLnEcA2pbnDNkQpebONMSb9X0SaO3ysnC6dcJZFTM51TAPPCgHvC90KpAXok6ERneFxa6nOGyd5/9N61XuVAeIPkIYBeGU/tWWmV7iwGnxf2L8BOM3ZiGyrTnRM4EVRm6vKUeoL8jL5rvfw7Sb4p9eZq27Sbpi/PJiNEyiuluGsfdQ/pA8I7MnrKTK11PG0XiZxIImW3tbFPUuNmkW2GS2UC3WSLZAc0Nz2AOsaR/pjUxtETAYduLruv1SbIImgXVJ20rBvctbkmu23tyMJmZdKlQwvVaH6UtyT9jSaIt+b/xMfRSQi53Yuzto86mYLRS05zFJ6bdXKzjpbiC33hIKR3VsBh5UzW0pzZuyb6+oGqJasFv4SUbNY/+4+FziuS9+fCvWulID9y4zkknwu/h751fZInaMMXfecNrt+zbWGdsdWYo6Pz8+wWjrnSvOD8mpAtvjsKR8SnuBKUiyKuEi7EcZ6/Vs1ffbymWIhwPlKmZOlTWpcljS8ez7RFnY3/Zttn/1gOuPPCLimLQj7zwdlQz1GBwgbz3bZZHiSd7+vxKbnLRMqeBTB0nDYK+JoTMJFr+V0M3Tr8Wu+UoGT9jneIpYgEclyXB5iZ7d/3w1cxyVs98jKoZAjuLc1voiBkk1gVC/ewk93/oyPFFy/11GHR"
       }
     }
   }
@@ -205,18 +205,18 @@ TOOLS: [
 RESULTS: [
   {
     "type": "tool-result",
-    "toolCallId": "eqGWMGiH0OVlHIcI",
+    "toolCallId": "r2VtrSIjbAbFBeDQ",
     "toolName": "inspect_ad_creative",
     "input": {
-      "imageUrl": "https://scontent.fixc1-11.fna.fbcdn.net/v/t45.1600-4/567750097_24878421438463315_3942397142196987937_n.png?stp=dst-jpg_tt6&_nc_cat=107&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=QeaP69Or2GcQ7kNvwE3mSkb&_nc_oc=AdpjVhoRtFuf9fja9ZD8MibuJuSyLY7QxW8JXH4yMdhy3MshEiaAC9BmxkP2qM2vzjnCMKrInTid3eTSJugTOBDp&_nc_zt=1&_nc_ht=scontent.fixc1-11.fna&edm=ANIILHsEAAAA&_nc_gid=DgMi1l3yzW2C489RStpMhg&_nc_tpa=Q5bMBQGuCO_CbbOwm4J4izbtLrilzOggoXmiQKxHdsPHOheKX30AXBBvm9ct2EgahmMLVKCKf5PJ335U&oh=00_Af61IbByJHrtqBCQ-ZYDlkkZgkhiWpDdxjnzTV0UP0OD6g&oe=69FA6CEA"
+      "imageUrl": "https://scontent.fixc1-11.fna.fbcdn.net/v/t45.1600-4/567750097_24878421438463315_3942397142196987937_n.png?stp=dst-jpg_tt6&_nc_cat=107&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=QeaP69Or2GcQ7kNvwE3mSkb&_nc_oc=AdpjVhoRtFuf9fja9ZD8MibuJuSyLY7QxW8JXH4yMdhy3MshEiaAC9BmxkP2qM2vzjnCMKrInTid3eTSJugTOBDp&_nc_zt=1&_nc_ht=scontent.fixc1-11.fna&edm=ANIILHsEAAAA&_nc_gid=UN05HPhYUD--FvnSqTf3Yg&_nc_tpa=Q5bMBQG73UlFvKYBs7zp4Esavzi8F-P-sKeYm5FL1sC2o9zhXnzQqELOLFGWeEktAHuK_JMYRi6Yzg2i&oh=00_Af4elV50-CAqjYa6iMtiguKdjA9Bag3KSbY083WEV21QrQ&oe=69FA6CEA"
     },
     "output": {
-      "analysis": "This is an analysis of the real estate ad creative based on your four criteria:\n\n### 1. The Visual Hook\nThe visual hook is split between the **aspiration of luxury** and **the price point.**\n*   **The Imagery:** The warm, \"golden hour\" lighting, sparkling chandeliers, and modern furniture in the six surrounding photos create an immediate sense of luxury and comfort.\n*   **The Price:** In the central box, the **\"₹ 1.75 Cr.\"** in bold, large green font is designed to stop a \"scroller\" who is specifically looking for property in that price bracket. It serves as a functional hook for serious buyers.\n\n### 2. The Hierarchy\nThe information is organized into three distinct levels:\n*   **Primary Level (The \"What\" and \"Where\"):** The central white box. The price and the location (\"Zirakpur\") are the largest elements, intended to be read first.\n*   **Secondary Level (The \"Details\"):** The configurations (3, 4, 5+S BHK) and the specific location detail (On PR-7, Near Airport Rd). These qualify the lead.\n*   **Tertiary Level (The \"Vibe\"):** The surrounding collage of six photos. These provide the emotional context and \"proof\" of the luxury mentioned in the price.\n\n### 3. Is it Professional?\n**Rating: Semi-Professional / \"Template-Style\"**\n*   **The Positives:** The photography is high quality, well-lit, and professionally staged. The font is clean, modern, and legible. The layout is symmetrical and balanced.\n*   **The Negatives:**\n    *   **Branding Absence:** There is no developer logo, project name, or brand identity. This makes it look like a generic ad from a property aggregator rather than a premium real estate brand.\n    *   **Visual Clutter:** Six photos in one tile is a lot for a mobile screen. It feels \"busy,\" and the individual details of the rooms get lost.\n    *   **Lack of CTA:** There is no \"Call Now,\" \"Link in Bio,\" or phone number. A professional ad should always tell the user what to do next.\n\n### 4. Success vs. Failure in a Real Estate Context\n\n**Why it might Succeed:**\n*   **Price Transparency:** In many real estate markets, prices are hidden. Putting the price front and center builds immediate trust and filters out unqualified leads.\n*   **Location Specificity:** Mentioning \"PR-7\" and \"Airport Rd\" is excellent for local targeting. People familiar with Zirakpur will immediately know the value of that specific stretch of road.\n*   **The \"Dream\" Factor:** The interior design shown is very trendy (beige tones, gold accents), which appeals to the current aesthetic desires of the target demographic in India.\n\n**Why it might Fail:**\n*   **No Call to Action (CTA):** This is the biggest potential point of failure. Without a \"Learn More\" or \"Contact Us\" button/info, the ad relies entirely on the user clicking the profile, which adds friction to the sales funnel.\n*   **Lack of Credibility:** Because there is no project name (e.g., \"The Grandview Residences\") or developer name, a high-intent buyer might view this as \"clickbait\" or a generic post by a low-level broker rather than an official luxury offering.\n*   **Over-reliance on Interiors:** Real estate buyers also care about the building's exterior, amenities, and \"green space.\" By showing only interiors, the ad fails to communicate the \"community\" or the \"status\" of the building itself.\n\n### Summary Recommendation:\nTo improve this ad, the creator should **reduce the number of photos to one or two high-impact shots**, **add the project/developer logo**, and include a **clear Call to Action**."
+      "analysis": "This is an analysis of the real estate ad creative provided:\n\n### 1. What is the visual hook?\nThe primary visual hook is the **bold, high-contrast price point (₹ 1.75 Cr.)** and the **location name (Zirakpur)**. In real estate, these are the two most critical filters for a buyer. \n\nSecondary to the text, the **collage of bright, well-lit interior photos** acts as an aspirational hook. Specifically, the top-right image featuring a large, unique horse head sculpture serves as a \"thumb-stopping\" detail that differentiates these interiors from more generic real estate photos.\n\n### 2. What is the hierarchy?\nThe hierarchy is well-organized and follows a logical flow for a real estate lead:\n1.  **The \"Deal Breakers\" (Top Level):** Price and Location. These are the largest elements, allowing a viewer to immediately know if this property is relevant to them.\n2.  **The \"Social Proof/Aspiration\" (Second Level):** The surrounding photos. They validate the price by showing high-end finishes, lighting, and spaciousness.\n3.  **The Specifications (Third Level):** The configuration list (3, 4, 5 BHK, etc.) and the more specific address (PR-7, Near Airport Rd). This provides the technical details for an interested lead.\n\n### 3. Is it professional?\nIt is **semi-professional**. \n\n*   **Pros:** The layout is clean, the typography is modern and legible, and the color palette (using greens and whites) is consistent. The images are high-quality, likely professionally staged and photographed.\n*   **Cons:** It lacks **Brand Identity**. There is no developer logo, no project name (other than the location), and no company branding. Furthermore, there is no **Call to Action (CTA)** or contact information visible on the creative itself. In a professional real estate context, the absence of a brand makes the ad look like a generic lead-generation template used by a third-party broker rather than a premium developer.\n\n### 4. Why might it be failing or succeeding?\n\n**Why it might be SUCCEEDING:**\n*   **Directness:** It doesn't hide the price. This qualifies leads immediately, ensuring that anyone who clicks or inquires is already comfortable with a 1.75 Cr. starting point.\n*   **Visual Variety:** By showing six different rooms (dining, kitchen, multiple bedrooms, living), it communicates the \"scale\" and \"luxury\" of a large duplex or 6 BHK unit effectively.\n*   **Location Specificity:** Zirakpur is a high-growth area; placing that name in a large font captures local search intent perfectly.\n\n**Why it might be FAILING:**\n*   **Lack of Trust:** High-ticket real estate purchases (₹ 1.75 Cr.+) require immense trust. The lack of a project name or a reputable developer logo might make potential buyers hesitant to engage, fearing a \"bait and switch\" or an unprofessional broker.\n*   **Clutter on Mobile:** While it looks fine on a desktop, six images plus a text box can feel very \"busy\" and cluttered on a small smartphone screen. The details in the photos might get lost.\n*   **No Frictionless Next Step:** Because there is no \"Call Now\" button or website URL on the image, the user is entirely dependent on the caption of the post to know how to move forward. If the caption is weak, the ad fails.\n*   **Missing \"Hero\" Shot:** Collage styles are informative, but they often lack the emotional impact of one single, stunning \"Hero\" shot of a grand living room or the building’s exterior."
     },
     "dynamic": false,
     "providerMetadata": {
       "google": {
-        "thoughtSignature": "EpcICpQIAQw51seaJSZMgvcCZirHLbp5Ebj8akzKkVRFYgFEQaGrH4TeGy5Rpqe3hnBgJPc27njWe/tnb5snz+99s7o55ytXlfr+VKRDprQcVRyXXVtwcyGKPgAEfxcvOnf/MW7RDuAs2zJ3YoFDTgJqvnE1HOCX4dl+kIwKA74oGWf1UDg7rRxXKUsvxEuIve1xNSaBblhDr12YN1aSubnqHLGTcfInVHjSAkdnwvhkg9lUx9mimnSQzsTd4tket6+/e0wgK+wgcY+6o/QdkFTg546oXKBkZXn+qaTLzIaInh64fCBj/vK7GFzYM8wN0uJ4ScSwXgSpY7tgDv6riLO9obl+aoI8ItHkotfmLkL5mYpcxnFCowkZ+qk779AfGrIGA5UKirrHwq+m/plVdt0Cg4amjyvQFvy3wX8khYQ13jl4nmudJ19EYc+4zt0PdnKqNxtk37QzctDfyL0uiSJgECSua3m2htJMo8hG2f4vdM+MSG7/3cYu95tfxH7pX1g2WN5EXAYeCfkkATQlp5d6SmZmY/LaSmImyvQbyxV66URNxOf5yFyYUbfy0X2ECE2wNgq+s5+Ja19RLSF+mELJZY5A+F9v2k8BGWtJh0H0UncOUFD+QnOnRIfWax9mUaTXj50idn82IaUS/8zrsCBEbFq3l93jxTUERqxXJAel/J5X5FnBDM7LGCb1JYTn9v1zktP7nDqiklN60ona6rvnVPKTdP8x8bCoQ1t7OvgT53GMEWNuYgKLLdIP1jBs8KP94VvCuABF7CRvPOnPrtNJvqPsMc0FjhS4/ch0oDhjvmIh0opD4ANQZ5/pZO6y9DnoXhN7ERJh/W6hutTsHhoJcWjowyJdo6xbHHvMpBKMl1FpKRPRrJeBNDH3KzCjVn8Z5bPjdLYx2oy3653Dq9WhX2ta2Ejd9RBphs1r2ujRkMX86xG8IS95IbPRQVKaC/1P6TuBeq/Wd0WnP0TBJqjjz8m1wlYyqgAFneqkjCy+ZnVUSMx8zpFZW+XtZvEtl8+G0Tir6js/DG/ODFj9DoSI2YSaicclUZk/gqI1SDwh0PaiupaMQ29LM7ux6yo6NgG/BOFs5W4GpTcjYClQ/UjunzmLa8ia5CirkWqQYnLMM054kWhntEqHq0S7l7yeqtWQLxPbetfNK14It7Ki001z9yRkDcNDnUyIbglizVe+eeHO8N0cOsm10O7Oh/AP36eflKMadUpDWg93c6ZbSmA6eEfBbZkWKD7sIGOEnnFw8vQ4SwMbBLz6AlpwjPcW8UHdpwqbEJKx352yeK4j3z4KUbwV15c2TQC18kx2rt8SHgQ3+4T5lKbADQ7EswaM0ZOzFTL34Lxltm7dnFzjhXyRpQTmrGED0lr5M/nA8MRKmIPI8qN17smQ"
+        "thoughtSignature": "EoYJCoMJAQw51sffFJ+FwHkmCO/JUVAMMXognRF5SRgMTuhXA7DQvvK2q0wLF0CLTfHrBKcEulETDvdf23hRmMu9/xC5F4qhnZDD0qcw8we0K4Sq2lc5N8m22d52ZbEpIa+UOvAKal3w1hobTC/A8euYooK9Ac4adKz/BzZfmQGVhsFhpZaktJaYOebPEhPSpLVgeHEgeLJdc/1w/vRHzhyWaIpgaMw1g7DbS8fZxGG37Kt3bbUQQdJ/DgLyW/7KQnz5DSKCIwzxKqbHZfq7kHw30M53HLO6yVwqjUaDFGzgVEeDw7Y3vAAQnOF0i9jI0e8gnSiLL3FeZkqnvLoI8s1LaFyeMbed0mBpyrPBcoMH5L2wmxzqgNXHVxOt2gDxtmlH5PxCoe8ZKEVkL5lfMfI50NjYRa8kDrXGH9AVtBL0eQCcMNIXxuhtVdutcpQz5fdIiuriLTKxePsnuEV4fXzqGhFnCvnoNVxpGrNOtPQcecD/smYefPTPA2vUlao2kC8L2sYzyobf3NXxThHZClCflrzlnAVluq0z9Sdf2QJqSm9b//IFzdNrw7bqXrxWqtRDd/Jspl6p0HonLVtTAFAI/T0gxsMlkkZHOrP5yRuPEZ//6erHyzLpSVyZCd/8SCj+Xhw3J24kK0MUAwBrYY+LkRgsgw2QhhfrLtNoIxuHmvtmUkw3PW9h3RVBi2Th3Hz6LKNxFIYIJO+PDQncADVKf7MzRj9hL67iK90/u9/rDvmNYLYLXoZOecD4iwWVf3bFbkWWA8CDlSG7m/HGEYrT6WC4uR+BNMa8dYDEkvzgIq5ZS4Vts1bz36dOxt/1Rk7UxxZBrOPdiVYzOa2r2rMARE/AowddWWaWnKhKPqe6j80i5qAjjLnEcA2pbnDNkQpebONMSb9X0SaO3ysnC6dcJZFTM51TAPPCgHvC90KpAXok6ERneFxa6nOGyd5/9N61XuVAeIPkIYBeGU/tWWmV7iwGnxf2L8BOM3ZiGyrTnRM4EVRm6vKUeoL8jL5rvfw7Sb4p9eZq27Sbpi/PJiNEyiuluGsfdQ/pA8I7MnrKTK11PG0XiZxIImW3tbFPUuNmkW2GS2UC3WSLZAc0Nz2AOsaR/pjUxtETAYduLruv1SbIImgXVJ20rBvctbkmu23tyMJmZdKlQwvVaH6UtyT9jSaIt+b/xMfRSQi53Yuzto86mYLRS05zFJ6bdXKzjpbiC33hIKR3VsBh5UzW0pzZuyb6+oGqJasFv4SUbNY/+4+FziuS9+fCvWulID9y4zkknwu/h751fZInaMMXfecNrt+zbWGdsdWYo6Pz8+wWjrnSvOD8mpAtvjsKR8SnuBKUiyKuEi7EcZ6/Vs1ffbymWIhwPlKmZOlTWpcljS8ez7RFnY3/Zttn/1gOuPPCLimLQj7zwdlQz1GBwgbz3bZZHiSd7+vxKbnLRMqeBTB0nDYK+JoTMJFr+V0M3Tr8Wu+UoGT9jneIpYgEclyXB5iZ7d/3w1cxyVs98jKoZAjuLc1voiBkk1gVC/ewk93/oyPFFy/11GHR"
       }
     }
   }
@@ -228,14 +228,14 @@ REASONING:
 TOOLS: [
   {
     "type": "tool-call",
-    "toolCallId": "SnpDLz853mPvzRas",
+    "toolCallId": "CGeEL7vPvMZP7K2r",
     "toolName": "get_product_details",
     "input": {
-      "titleQuery": "Green Lotus"
+      "titleQuery": "Green Lotus Zirakpur"
     },
     "providerMetadata": {
       "google": {
-        "thoughtSignature": "ErMICrAIAQw51sf9/d1GITb1PojICrAT+LWXJw2AN9xaSBKd7bk3VDYC9Y/s9auImHRXfEq9Nwr/G4Ij5sW5wAMtt3aqrUi7XtzCESw2fmtIicspWkChoVxpDkZJqDjeixeZHv8iY0vpdNrNS+Vi4uqOT3oEgIYqu9QiWuvO3pryLMVZyDR0cgqeIXSetkJb/DFdWcAZqY7zCroLVm3pvBopLEtauZyTvcVFsblfx2wvUwYXfCdNpvYCM9Tqj0QavqYASFkogl3Y2l9LnYUoBPvvXTwM/4NrSrT07f06rrcLM6YKh4EP7VJoONmiE/54g5PgpChUw6OeYcSXNTDi0UksjmIz+9IjCFW6FmeqsOmFIA+pnD+pDRHvKPZbOqosQNkOUOIslDUdsLMfQT6EeMxqnjT0GFQ2B57dtV61Cff8CKvbDS9Bzs/sJoZ8BASIOHFVUmUupHXIcp2iKrNnxTiOHouO9u6glB73xL3SeWLbJ2DUO5yucDBlgqHmZTCSq/j3AwiHFw8FjiuEq2albx0AwhYa0aMbU7/IS3nGI8nGqSFyWCrEi9WuikKM2BJVkp2VEpvyI7KV5CNEyxlfi9bLh6+WyAO0ZObb0loCVvakTVAHBu5VWzf5cP6yJV7Ah9Mf/EU3pR64kOm6zgsv9/jT/wWyZoMlI6dj333b+ZCnJzO4/EnkI5grfIBnUFau6GZMtVcaUEiDu95C31zwV1mxvriCuEkN73EZJh/4oYpdbvM3RBw8wHbIVFvgOLFbHQYO1RTOY2kYk50ALDRr98fZttgPbEhPBmazkeHBo7DnfNhl307Xv+TI8TdyLKjhncW7ZyHG48FMVhElItJNgzMECNZ//p4dCDub6+s7LJEA5h8G1pHPRzGyKiLA3HoIeXKYsN6phGX1zvBRJKo5QRv3vSDjUxKBYyA3t6wlsc3xaw7L+VNbODkHHCgxxtDGIZHTB0Y+yL+swgBog6h84PM1Em+Ct2BY6NHUfksvtYCViS9OS8j0ko1WCBPC5WTIGEO3gUUzrFNVHghmU+X6rSNdtkykE5TX4SEX6+AFBCK7qGavYLMbe84XkAhAThI0GGumpQj7KdOxCA/VJjbwF6nK0Q7zcG9rCGUheshUtugW23XW9GyWq8wDrBv6x78Da+W6F4FS8VVpmdJLkfllovTj+cuUaIUf4N775KUmZmkT8mNLDa/As2YYcBKUPZ8WmxI9Kta4II67k4uesejZpfL4ShFtmBiNEVGkDE7so6z5KesmohWlbc08TmIHr3hIhsxVOzatLdcH/MUjK1hCqwzrbVERKwTUKIsd+uMyVF82/JB038Pl0k5mYTwjX7sxJ2kImOonz3LSCGi5JeJepxNQVJ39fDilbxDvGzoBVC7l7Rw2eUPY6hHQ5MloQHIfCy4LXDXtEqjSXqJUVPp5AGplPoggxA=="
+        "thoughtSignature": "Eo8GCowGAQw51seLNB7/IjV0+hiG5igegUS16/oqS3qEq1zrs0CuJ2FeIz4ng/2cLXwH207WVKzLiFkK1sDPmo5djB6Vcr4mG+PHfCcRrsn1pxQJq4CZ9CryC/jCT6Z+ceNEcZOwJgpys4Z1tet9TkCGbU8HT0LXfE3wIYVLB8mJv0MvDRt4qMoN8hm6phspqehZkAul28ACYXbGK8S2xC7ncHa5h2/mXmERPb5uXIto01xZfjY2u6xcm+p0xdUuBnj2hlg6jejRFzaOyEyqZe9pAZ6Fmp1mqWpLyMzSeLkrKsMWlx9tFTvKQ/pWJt1BcLlLz+0K4IvR8ToYuH7nnNNaqEN4L3VZ+37nW/zEj4rIOT/d98ksNenn8SHENMBnSEos6W4ABbyg6NLEhpGVzMYXoDyN382mlzRN/1McCEeyAw8E/zwoiZuYUX+jQaYtKsFT1abdNHmcRHs4GaAqccL+AcQ7VDm3XClDmilND59KyPOTbHgc61o4wQeI9s2rqwj6pqTiclt5VlCYn3MTTeuvZFBjJIHo7C4An+ezdwV1C4m4aFOnoPcayfKDkSizdL49QPcvB/4cgEMOiqkT5DP5jdzP0KKvsb1fuq4xH6bHJTohTlszRfjDZxZRWdkJUXbYjNt+pw31EsjQRD14rsveYlysIpSN0Dm7lO7t1CR23PvjTuS6qPXQZTKTcWc2vQ0LeqasnDURjbaqqYSmCs4Slw1lvhh8A4IceNm5idUA0pTVFxW7NYIeEQhtpSWWHsx2J3uFcPI2tIE3/9SzeB3/VstmbL3SVPT5tihn8SIqekxzpIBGVWZsPkzSWbqcV/Jh5XbRjxRWoTnB3gyVmVxlakf33su7dPX0joVTcr6z3zgsB1Ysv6N9Vvyrt8vCXeHukWRU0Brd/2MS1ms/TlCfAzXJ/YmCBMPE+qOneYR/PCvEwMCMREuUWx9L5sm5CCQR4f5/XF0PZfzZIoN+PEKi5j2Rb7KnCP6gs24itY5vuo9OYp0NG+lK/PmUlcZnAgzJ8uFMxIgRVSZn9mJ6w8bX"
       }
     }
   }
@@ -243,10 +243,10 @@ TOOLS: [
 RESULTS: [
   {
     "type": "tool-result",
-    "toolCallId": "SnpDLz853mPvzRas",
+    "toolCallId": "CGeEL7vPvMZP7K2r",
     "toolName": "get_product_details",
     "input": {
-      "titleQuery": "Green Lotus"
+      "titleQuery": "Green Lotus Zirakpur"
     },
     "output": {
       "success": false,
@@ -255,7 +255,7 @@ RESULTS: [
     "dynamic": false,
     "providerMetadata": {
       "google": {
-        "thoughtSignature": "ErMICrAIAQw51sf9/d1GITb1PojICrAT+LWXJw2AN9xaSBKd7bk3VDYC9Y/s9auImHRXfEq9Nwr/G4Ij5sW5wAMtt3aqrUi7XtzCESw2fmtIicspWkChoVxpDkZJqDjeixeZHv8iY0vpdNrNS+Vi4uqOT3oEgIYqu9QiWuvO3pryLMVZyDR0cgqeIXSetkJb/DFdWcAZqY7zCroLVm3pvBopLEtauZyTvcVFsblfx2wvUwYXfCdNpvYCM9Tqj0QavqYASFkogl3Y2l9LnYUoBPvvXTwM/4NrSrT07f06rrcLM6YKh4EP7VJoONmiE/54g5PgpChUw6OeYcSXNTDi0UksjmIz+9IjCFW6FmeqsOmFIA+pnD+pDRHvKPZbOqosQNkOUOIslDUdsLMfQT6EeMxqnjT0GFQ2B57dtV61Cff8CKvbDS9Bzs/sJoZ8BASIOHFVUmUupHXIcp2iKrNnxTiOHouO9u6glB73xL3SeWLbJ2DUO5yucDBlgqHmZTCSq/j3AwiHFw8FjiuEq2albx0AwhYa0aMbU7/IS3nGI8nGqSFyWCrEi9WuikKM2BJVkp2VEpvyI7KV5CNEyxlfi9bLh6+WyAO0ZObb0loCVvakTVAHBu5VWzf5cP6yJV7Ah9Mf/EU3pR64kOm6zgsv9/jT/wWyZoMlI6dj333b+ZCnJzO4/EnkI5grfIBnUFau6GZMtVcaUEiDu95C31zwV1mxvriCuEkN73EZJh/4oYpdbvM3RBw8wHbIVFvgOLFbHQYO1RTOY2kYk50ALDRr98fZttgPbEhPBmazkeHBo7DnfNhl307Xv+TI8TdyLKjhncW7ZyHG48FMVhElItJNgzMECNZ//p4dCDub6+s7LJEA5h8G1pHPRzGyKiLA3HoIeXKYsN6phGX1zvBRJKo5QRv3vSDjUxKBYyA3t6wlsc3xaw7L+VNbODkHHCgxxtDGIZHTB0Y+yL+swgBog6h84PM1Em+Ct2BY6NHUfksvtYCViS9OS8j0ko1WCBPC5WTIGEO3gUUzrFNVHghmU+X6rSNdtkykE5TX4SEX6+AFBCK7qGavYLMbe84XkAhAThI0GGumpQj7KdOxCA/VJjbwF6nK0Q7zcG9rCGUheshUtugW23XW9GyWq8wDrBv6x78Da+W6F4FS8VVpmdJLkfllovTj+cuUaIUf4N775KUmZmkT8mNLDa/As2YYcBKUPZ8WmxI9Kta4II67k4uesejZpfL4ShFtmBiNEVGkDE7so6z5KesmohWlbc08TmIHr3hIhsxVOzatLdcH/MUjK1hCqwzrbVERKwTUKIsd+uMyVF82/JB038Pl0k5mYTwjX7sxJ2kImOonz3LSCGi5JeJepxNQVJ39fDilbxDvGzoBVC7l7Rw2eUPY6hHQ5MloQHIfCy4LXDXtEqjSXqJUVPp5AGplPoggxA=="
+        "thoughtSignature": "Eo8GCowGAQw51seLNB7/IjV0+hiG5igegUS16/oqS3qEq1zrs0CuJ2FeIz4ng/2cLXwH207WVKzLiFkK1sDPmo5djB6Vcr4mG+PHfCcRrsn1pxQJq4CZ9CryC/jCT6Z+ceNEcZOwJgpys4Z1tet9TkCGbU8HT0LXfE3wIYVLB8mJv0MvDRt4qMoN8hm6phspqehZkAul28ACYXbGK8S2xC7ncHa5h2/mXmERPb5uXIto01xZfjY2u6xcm+p0xdUuBnj2hlg6jejRFzaOyEyqZe9pAZ6Fmp1mqWpLyMzSeLkrKsMWlx9tFTvKQ/pWJt1BcLlLz+0K4IvR8ToYuH7nnNNaqEN4L3VZ+37nW/zEj4rIOT/d98ksNenn8SHENMBnSEos6W4ABbyg6NLEhpGVzMYXoDyN382mlzRN/1McCEeyAw8E/zwoiZuYUX+jQaYtKsFT1abdNHmcRHs4GaAqccL+AcQ7VDm3XClDmilND59KyPOTbHgc61o4wQeI9s2rqwj6pqTiclt5VlCYn3MTTeuvZFBjJIHo7C4An+ezdwV1C4m4aFOnoPcayfKDkSizdL49QPcvB/4cgEMOiqkT5DP5jdzP0KKvsb1fuq4xH6bHJTohTlszRfjDZxZRWdkJUXbYjNt+pw31EsjQRD14rsveYlysIpSN0Dm7lO7t1CR23PvjTuS6qPXQZTKTcWc2vQ0LeqasnDURjbaqqYSmCs4Slw1lvhh8A4IceNm5idUA0pTVFxW7NYIeEQhtpSWWHsx2J3uFcPI2tIE3/9SzeB3/VstmbL3SVPT5tihn8SIqekxzpIBGVWZsPkzSWbqcV/Jh5XbRjxRWoTnB3gyVmVxlakf33su7dPX0joVTcr6z3zgsB1Ysv6N9Vvyrt8vCXeHukWRU0Brd/2MS1ms/TlCfAzXJ/YmCBMPE+qOneYR/PCvEwMCMREuUWx9L5sm5CCQR4f5/XF0PZfzZIoN+PEKi5j2Rb7KnCP6gs24itY5vuo9OYp0NG+lK/PmUlcZnAgzJ8uFMxIgRVSZn9mJ6w8bX"
       }
     }
   }
@@ -267,19 +267,19 @@ REASONING:
 TOOLS: [
   {
     "type": "tool-call",
-    "toolCallId": "GoMJlNXJO9rh6Y4O",
+    "toolCallId": "rVamfyGUV3mCMC9l",
     "toolName": "generate_ad_creative",
     "input": {
-      "propertyTitle": "Green Lotus Luxury Apartments",
-      "propertyDescription": "Luxury 3, 4, 5+S BHK Green Apartments and Penthouses in Zirakpur, Punjab. Sustainable design, premium amenities, starting at 1.75 Cr.",
+      "propertyTitle": "Green Lotus Saksham Zirakpur",
+      "propertyDescription": "3, 4, 5 BHK & 6 BHK Duplex Green Apartments & Penthouses in Zirakpur. Premium high-end finishes, sustainable architecture.",
       "imageUrls": [
-        "https://scontent.fixc1-11.fna.fbcdn.net/v/t45.1600-4/567750097_24878421438463315_3942397142196987937_n.png?stp=dst-jpg_tt6&_nc_cat=107&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=QeaP69Or2GcQ7kNvwE3mSkb&_nc_oc=AdpjVhoRtFuf9fja9ZD8MibuJuSyLY7QxW8JXH4yMdhy3MshEiaAC9BmxkP2qM2vzjnCMKrInTid3eTSJugTOBDp&_nc_zt=1&_nc_ht=scontent.fixc1-11.fna&edm=ANIILHsEAAAA&_nc_gid=DgMi1l3yzW2C489RStpMhg&_nc_tpa=Q5bMBQGuCO_CbbOwm4J4izbtLrilzOggoXmiQKxHdsPHOheKX30AXBBvm9ct2EgahmMLVKCKf5PJ335U&oh=00_Af61IbByJHrtqBCQ-ZYDlkkZgkhiWpDdxjnzTV0UP0OD6g&oe=69FA6CEA"
+        "https://scontent.fixc1-11.fna.fbcdn.net/v/t45.1600-4/567750097_24878421438463315_3942397142196987937_n.png?stp=dst-jpg_tt6&_nc_cat=107&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=QeaP69Or2GcQ7kNvwE3mSkb&_nc_oc=AdpjVhoRtFuf9fja9ZD8MibuJuSyLY7QxW8JXH4yMdhy3MshEiaAC9BmxkP2qM2vzjnCMKrInTid3eTSJugTOBDp&_nc_zt=1&_nc_ht=scontent.fixc1-11.fna&edm=ANIILHsEAAAA&_nc_gid=UN05HPhYUD--FvnSqTf3Yg&_nc_tpa=Q5bMBQG73UlFvKYBs7zp4Esavzi8F-P-sKeYm5FL1sC2o9zhXnzQqELOLFGWeEktAHuK_JMYRi6Yzg2i&oh=00_Af4elV50-CAqjYa6iMtiguKdjA9Bag3KSbY083WEV21QrQ&oe=69FA6CEA"
       ],
-      "instructions": "Create a luxury real estate 'Hero Shot' ad for 'Green Lotus'. Move away from the cluttered 4-in-1 collage. Use a single high-impact image of a lush, modern exterior with green terraces or a grand double-height living room. Overlay clean, premium typography: 'LUXURY LIVING IN ZIRAKPUR' and 'Starting at ₹1.75 Cr*'. Include a subtle 'Green' element to reflect the 'Green Apartments' branding. Professional, airy, and high-end aesthetic."
+      "instructions": "Create a premium 'Hero' shot for a luxury real estate development. Move away from the cluttered 4-in-1 collage. Instead, focus on a single, expansive, high-ceiling luxury living room with floor-to-ceiling windows showing a lush green view. The aesthetic should be modern 'Green' luxury. Use a sophisticated color palette of emerald green, gold, and cream. Leave clear space on the top or bottom for professional typography including Price (Starting @ 1.75 Cr*), Location (Zirakpur), and a 'Schedule a Private Tour' CTA. Make it look like an elite architectural magazine cover to build instant trust."
     },
     "providerMetadata": {
       "google": {
-        "thoughtSignature": "ErQICrEIAQw51scJkapzpwCvYMEB1yR6BLFXA9Ng0eO/+HQQVn6kR7y9suKoxKxAxcEtD3yS3iLg5Lgh4Aue++P8HmpyUpYxh9Bm5Gk45JDWrNKQPiWE4Sq02sitq6dWtWYR7p3qAfviBdkt/+iqx5S81wrMf9cIyTClx5s4QW4rBfoJwzW4aHZMX4pSm8ZOeScAtazkZ3i8jo1tQst0k8xTp/mY1VcdtvFNiLESctBBtJ61q2BCl3irW8jTnLoPkGrasChkiU2Nb7zOiFie+N+JUg9bUXmdWQvuBQK4lrGqOAUuHaVBm94cSjBSIXzfmmviZ/rzvRRxXta36gUwoyi2ACNKCJ+638OkNXjFBDRP+XnuaDs2TEajVjT6XF4mD0q4QXmkPa3527mI+bsgMbMAVG0iT7xODY+MI0PSGSJvI4ZiDw+LWgEtk36C3AeYAQ49cpREwjTK+g4u2inR69taCLNRPfvI/ISQf72nrcbLQ387FyJ2i0Dqf3rjZAlRRHcLx/etPKHts5+gU8gfV2pwLFFRDYX0FNpIvOaLe5vvU7ohbIZqu46KLlWgoby/21TW6l7Gn6Gu9gZQsDWJSo+IgMIrK3Ocd6RUGcd4ZtGX3qy2CF/Pu7CDY69fjkQ4oWSD5kqWYtOjpXjoTkzEZVL6pPGBHvSeGPDPeBbT06aurE1if8Gv14JzDxS9QHWJFRmnSjf84CV4HYJ5mJXgqZNUXXMMnb2m0pnub1bWRRDmmV+tKyEjmoFROHKtWVFP0Q5F8A/8+x+3z5JL2U3LNkPr6t/NjOfg/+HNJB/xpALirkfA6OVLvEdGFvAktEaXN908aYN/TU04UAtHRjS4Iv7qgYXirU15b2OBu15Cn/DN4oG3aBRV6kSk0NtWSL9t5FRHojVdJd2ANf1H7mJleJ7KJDlnP6leeLt+JRF7TU6zEABrdXMbpTGdow+xsTtd0U7JKve8eJ3+06ZiEnrL5gfLK2qTXp8geTRBwz+ecDAS7Xxp+3DEbR2I7ypyzzpq7ULLDrtqZV6elJJqPccCQtfVPDwocEnZNw0/IVQ5Kg1Kdvc4WgC1LB2f1O0lHdw6NbVHEstWrNH3KOD6vWzJOSM6lNEJLVvPrZMZahK42xNP573YJ4UBfGR42/GNxwmxBrSAJRQOJJjUDQrMJ+WAJhK97YUOLZ0+WjN5ouzwK27oRnRAlOOtLphucT/qlmUNiwxtkBsWCjyjcVRAsJVKBPksP4u4/mnDurdFwXFN8llCDxhakMMr+qg9pr+Thn69OwtbWd1XDmyO5XZQ8t0WJjdifZCilzwR4nFbpDNL1e0CLyfgDvqlFFHyd4wtwJvTju8KRu8dVgbuOffxyRdafvniHAo/+djSAPX+QKjXReMHNiad3xIEjdrOn+8j34+D51u5pkI8cTYgSTLeyQbtplcgHnrkm7o="
+        "thoughtSignature": "EuQFCuEFAQw51sfXHdSY15NzSk4j36aa+srhvYhFtb5BXHctRSg9OPVPopW+l0H1qGtSCM9TrffHebqYLan4vIIin6VkB7yZ1C9pPIkqzaYK3699jLNE0iKgQWybsY9ccYitGmQEcE+OLgbYZowc84IQ6jPuEI33gHqPAhTG3HWzILzKBhYpfR9yqJ63S/7t2l59vX2PbcGjkkdiMhX/abKN4fuQPelH1KMjMmey0TOUjxDfG3X/doc9cHrk060Uz6GYOaENHw0qmB55r2uCqIO/4D65KBbl+kRoED5Nmy0Lis82OZGs4w0YiF2mOkZyCC+eEjZP8ud1udR3XalMAmQjqGpvB8FsS4DtjewaZmH431nldCJ5u3bOk5pa6hbs67NPgU4IGOYnwvooX5ovizx6cHxF2DPPaHqMYEsyReclDyQ5v++HMnYHJkdS7JAr8dhRPuuyJDUBTPa5aBtUenDpeYrkLc4Ex4qee+zodnHhrz4cKtdkNFfEocSsCbimPp1pBRprVtJ1SNiRQgQ2MjyxbCaGciJUroB0gx4Ji9OzFt+f7Qlh4dAsLGU4mAdu5q5n7z5zXhkaB/FDuz6Vt1FHvchE4qT4L+3G0MxxJG1x5E9U5GbSN1f7tVMV7Yoz2aOlwQLiV4w/DoMLvmKf3TkwuidklnbPO1WmguiZQc+sGzcO5/zyg3tRpqm29sycNQtA8/kVm4rbuZqo7Wvo2QPNG8v3/S09RUBpu6vyNz35dvv+3888tRQ4kMeYp4/53oeFUD+d5n07+N4xm2Xz0V4mDPaPkpHfH+C+Nnl4/vIAJSKbTePud7D9B/UyTq7PCNbughfS9pt8jiQE5lj/yLS2uqSmByy2PI2b0NRdUnkS23Z02l7ipvEKHaNX1tbzH17zCiXOB7qq2zL/aNQ2iViF/g4bCx9ew8jsoZ6/dRSwG7lDfkMSw3gTKXdAGjL0bzKYexOlA/1bvRoA1/dBiXTB5QlNmQ4="
       }
     }
   }

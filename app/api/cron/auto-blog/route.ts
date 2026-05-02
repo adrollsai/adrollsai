@@ -20,6 +20,13 @@ export async function POST(request: Request) {
 async function runSeoCron(request: Request) {
   try {
     const url = new URL(request.url);
+    const authHeader = request.headers.get('Authorization');
+    const cronSecret = url.searchParams.get('cronSecret') || (authHeader ? authHeader.replace('Bearer ', '') : null);
+
+    if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const specificUserId = url.searchParams.get('userId');
 
     const supabaseAdmin = createClient(

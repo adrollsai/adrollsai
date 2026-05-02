@@ -34,7 +34,7 @@ export async function POST(request: Request) {
         }
         `;
 
-        const aiRaw = await generateKieChat(llmPrompt, "gemini-3-flash");
+        const aiRaw = await generateKieChat(llmPrompt, "gemini-3-flash-preview");
         let parsed;
         try {
             parsed = JSON.parse(aiRaw.replace(/^```json\s*/, '').replace(/\s*```$/, ''));

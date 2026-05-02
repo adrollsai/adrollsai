@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import fs from 'fs';
+import * as fs from 'fs';
 import path from 'path';
-import { generateKieChat } from '@/utils/external-apis';
+import { callGemini } from '@/utils/external-apis';
 
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
 const LOG_FILE_PATH = path.join(process.cwd(), 'meta_ads_debug.txt');
 
-function logToFile(message: string, data?: any) {
+export function logToFile(message: string, data?: any) {
     try {
         const timestamp = new Date().toISOString();
         const dataStr = data ? JSON.stringify(data, null, 2) : '';
@@ -58,23 +58,27 @@ export async function POST(request: Request) {
         data.assetIds = formData.getAll('assetIds').map(String);
         
         data.creativeFiles = [];
-        for (const [key, value] of formData.entries()) {
+        formData.forEach((value, key) => {
             if (key.startsWith('creativeFiles[') && value instanceof Blob) {
                 data.creativeFiles.push(value);
             }
-        }
+        });
     }
 
-    // Auto-fill missing credentials from DB if not provided
-    if (!data.facebookToken || !data.adAccountId || !data.pageId) {
-        const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, fb_page_id, business_url').eq('id', user.id).single();
-        if (profile) {
-            data.facebookToken = data.facebookToken || profile.facebook_token;
-            data.adAccountId = data.adAccountId || profile.ad_account_id;
-            data.pageId = data.pageId || profile.fb_page_id;
-            data.linkUrl = data.linkUrl || profile.business_url;
-            data.privacyPolicyUrl = data.privacyPolicyUrl || (profile.business_url ? `${profile.business_url}/privacy` : '');
-        }
+    // ALWAYS fetch profile to get business name and contact info
+    const { data: profile } = await supabase.from('profiles')
+        .select('facebook_token, ad_account_id, fb_page_id, business_url, business_name, contact_number')
+        .eq('id', user.id)
+        .single();
+
+    if (profile) {
+        data.facebookToken = data.facebookToken || profile.facebook_token;
+        data.adAccountId = data.adAccountId || profile.ad_account_id;
+        data.pageId = data.pageId || profile.fb_page_id;
+        data.linkUrl = data.linkUrl || profile.business_url;
+        data.privacyPolicyUrl = data.privacyPolicyUrl || (profile.business_url ? `${profile.business_url}/privacy` : '');
+        data.business_name = profile.business_name;
+        data.contact_number = profile.contact_number;
     }
 
     const {
@@ -157,41 +161,92 @@ export async function POST(request: Request) {
         const formName = `AI Form - ${Date.now().toString().slice(-6)}`;
         
         let metaCustomQuestions: any[] = [];
-        if (customQuestionsStr && customQuestionsStr !== "[]") {
-            try {
-                const parsedQuestions = JSON.parse(customQuestionsStr);
-                metaCustomQuestions = parsedQuestions.map((q: any) => {
-                    const metaQ: any = { 
-                        type: 'CUSTOM', 
-                        label: q.label.substring(0, 200) 
-                    };
-                    
-                    if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
-                        const validOptions = q.options
-                            .filter((o: string) => o.trim() !== '')
-                            .map((opt: string) => ({ 
-                                value: opt.trim(),
-                                key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50)
-                            }));
-                            
-                        if (validOptions.length > 0) {
-                            metaQ.options = validOptions;
-                        }
-                    }
-                    return metaQ;
-                });
-            } catch (e) {
-                logToFile("Failed to parse custom questions", e);
+        const defaultQuestions = [
+            {
+                label: "What is your budget?",
+                type: "MULTIPLE_CHOICE",
+                options: ["Less than 50L", "50L - 70L", "70L - 1 Cr", "1 Cr - 1.5 Cr", "1.5Cr - 2 Cr", "Above 2 Cr"]
+            },
+            {
+                label: "What are you looking for?",
+                type: "MULTIPLE_CHOICE",
+                options: ["Residential", "Commercial", "Plots", "Apartments", "Villa", "Kothi"]
+            },
+            {
+                label: "How soon do you want to buy?",
+                type: "MULTIPLE_CHOICE",
+                options: ["Immediately", "Within a month", "Within 3 months", "Just Looking"]
+            },
+            {
+                label: "What time would you like to visit?",
+                type: "MULTIPLE_CHOICE",
+                options: ["10 AM - 1 PM", "1 PM - 4 PM", "4 PM - 7 PM"]
             }
+        ];
+
+        let questionsToUse = defaultQuestions;
+        let logicRules: any[] = [];
+        let metaLogicConfig: string | null = null;
+
+        try {
+            if (customQuestionsStr && customQuestionsStr !== "[]") {
+                questionsToUse = JSON.parse(customQuestionsStr);
+            }
+
+            metaCustomQuestions = questionsToUse.map((q: any) => {
+                const questionKey = q.label.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50);
+                const metaQ: any = { 
+                    type: 'CUSTOM', 
+                    label: q.label.substring(0, 200),
+                    key: questionKey
+                };
+                
+                if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
+                    const validOptions = q.options
+                        .filter((o: string) => o.trim() !== '')
+                        .map((opt: string) => ({ 
+                            value: opt.trim(),
+                            key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50)
+                        }));
+                        
+                    if (validOptions.length > 0) {
+                        metaQ.options = validOptions;
+                        
+                        // Handle Disqualification Logic (Lead Filtering)
+                        (q.disqualifyingOptions || []).forEach((d: string) => {
+                             if (q.options.includes(d)) {
+                                 logicRules.push({
+                                     action: "CLOSE",
+                                     conditions: [{
+                                         field_key: questionKey,
+                                         operator: "EQUALS",
+                                         value: d.trim()
+                                     }]
+                                 });
+                             }
+                        });
+                    }
+                }
+                return metaQ;
+            });
+
+            if (logicRules.length > 0) {
+                // Try as a JSON object first (common for JSON POSTs)
+                metaLogicConfig = { logic_rules: logicRules };
+            }
+        } catch (e: any) {
+            logToFile("Failed to parse custom questions or generate logic", e.message || e);
         }
 
-        const leadFormPayload = {
+        const finalFollowUpUrl = linkUrl || "https://adrolls.in"; // Fallback to prevent API crash
+
+        const leadFormPayload: any = {
             name: formName,
-            follow_up_action_url: linkUrl, 
+            follow_up_action_url: finalFollowUpUrl, 
             question_page_custom_headline: `Get Pricing & Details`,
             question_page_custom_text: "Confirm details to view pricing.",
             privacy_policy: { 
-                url: privacyPolicyUrl, 
+                url: privacyPolicyUrl || finalFollowUpUrl, 
                 link_text: "Privacy Policy" 
             },
             questions: [
@@ -200,27 +255,51 @@ export async function POST(request: Request) {
                 { type: "PHONE", key: "phone_number" },
                 ...metaCustomQuestions
             ],
+            form_type: "HIGHER_INTENT",
+            is_optimized_for_quality: true, // MANDATORY for conditional logic/lead filtering
             access_token: facebookToken
         };
 
-        const formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
+        if (metaLogicConfig) {
+            leadFormPayload.logic_config = metaLogicConfig;
+        }
+
+        logToFile("--- 2b. LEAD FORM PAYLOAD ---", leadFormPayload);
+
+        let formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
             method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json; charset=utf-8' 
-            },
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
             body: JSON.stringify(leadFormPayload)
         });
-        
-        const formDataRes = await formCreateRes.json();
+
+        let formCreateData = await formCreateRes.json();
+
+        // FALLBACK: If HIGHER_INTENT fails with "Capability" error, try MORE_VOLUME
+        if (!formCreateRes.ok && (formCreateData.error?.code === 3 || formCreateData.error?.message?.includes("capability"))) {
+            logToFile("⚠️ Meta App lacks Capability for HIGHER_INTENT forms. Falling back to MORE_VOLUME...");
+            
+            const fallbackPayload = { 
+                ...leadFormPayload, 
+                form_type: "MORE_VOLUME", 
+                is_optimized_for_quality: false 
+            };
+            delete fallbackPayload.logic_config; // Logic is likely the cause of the restriction
+
+            formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                body: JSON.stringify(fallbackPayload)
+            });
+            formCreateData = await formCreateRes.json();
+        }
 
         if (!formCreateRes.ok) {
             logToFile("❌ Lead Form Failed Payload:", leadFormPayload);
-            logToFile("❌ Lead Form Failed Response:", formDataRes);
-            const metaErrorMsg = formDataRes.error?.error_user_msg || formDataRes.error?.message || "Unknown Error";
-            throw new Error(`Meta Lead Form Error: ${metaErrorMsg}`);
+            logToFile("❌ Lead Form Failed Response:", formCreateData);
+            throw new Error(`Meta Lead Form Error: ${formCreateData.error?.message || "Unknown Error"}`);
         }
         
-        const leadFormId = formDataRes.id;
+        const leadFormId = formCreateData.id;
         logToFile(`✅ Lead Form Created: ${leadFormId}`);
 
         // --- Step C: Upload Creatives (PROXY UPLOAD) ---
@@ -276,22 +355,47 @@ export async function POST(request: Request) {
         logToFile(`✅ Uploaded ${metaCreativeHashes.length} creatives to Meta.`);
 
         // --- Step D: AI Copywriting (Gemini 3 Flash via Kie.ai) ---
-        logToFile("--- 4. AI COPYWRITING (MULTIPLE VARIATIONS) ---");
-        const numberOfAds = Math.max(metaCreativeHashes.length, 3);
-        const llmPrompt = `
-        Act as an elite direct-response real estate marketer. Craft exactly ${numberOfAds} distinct, highly persuasive ad copy variations.
+        // Prepare Vision Inputs (Multimodal)
+        const visionInputs: string[] = [];
         
-        Context provided by the user:
-        ${combinedContext || "Luxury properties."}
+        // Add public URLs from inventory/assets
+        if (inventoryIds.length > 0) {
+             const { data: props } = await supabase.from('properties').select('image_url').in('id', inventoryIds);
+             props?.forEach(p => { if (p.image_url) visionInputs.push(p.image_url); });
+        }
+        if (assetIds.length > 0) {
+             const { data: asts } = await supabase.from('assets').select('url').in('id', assetIds);
+             asts?.forEach(a => { if (a.url) visionInputs.push(a.url); });
+        }
+        // Add Local files as Base64
+        for (const file of creativeFiles) {
+             const arr = await file.arrayBuffer();
+             visionInputs.push(`data:${file.type};base64,${Buffer.from(arr).toString('base64')}`);
+        }
+
+        const businessName = data.business_name || "Our Business";
+        const contactInfo = data.contact_number || "";
+
+        const llmPrompt = `
+        Act as an elite direct-response marketer. Craft exactly 10 distinct, highly persuasive ad copy variations based on the provided visual context (images) and business details.
+        
+        Business Context:
+        Name: ${businessName}
+        Contact: ${contactInfo}
+        Mission/Details: ${combinedContext || "Quality services and products."}
         Target Location: "Multiple Selected Locations".
         
         CRITICAL RULES:
         1. Apply Alex Hormozi's marketing frameworks: Emphasize "Value Stacking", create "Grand Slam Offers", use risk reversal, and write strong, emotionally resonant hooks.
-        2. DO NOT use the term "2 BHK". If a unit type is mentioned, always use "2 RK".
+        2. MANDATORY: ALWAYS include the business name (${businessName}) and contact information (${contactInfo}) clearly within the "primary_text".
+        3. DO NOT include any website URLs, links, or domain names in the primary text or headline.
+        4. FORMATTING: Use a clean, structured layout with bullet points, short punchy sentences, and relevant emojis (e.g., ✅, 🚀, 💎). Avoid long blocks of text.
+        5. ADAPTIVE: Analyze the images provided to understand the industry and adapt the tone accordingly.
+        6. OUTPUT FORMAT: Return ONLY a valid JSON array of objects. No conversational text, no markdown code blocks, no bold markers (**), no explanation.
         
-        Output MUST be valid JSON array of objects, exactly like this:
+        JSON Structure:
         [
-          {"primary_text": "Engaging direct response copy highlighting the offer and value (max 125 chars).", "headline": "Short punchy hook (max 25 chars)"},
+          {"primary_text": "Hormozi-style copy with bullet points, emojis, business name, and phone (max 1000 chars).", "headline": "Short punchy hook (max 40 chars)"},
           ...
         ]
         `;
@@ -301,15 +405,28 @@ export async function POST(request: Request) {
         ];
 
         try {
-            const aiRaw = await generateKieChat(llmPrompt, "gemini-3-flash");
-            const cleanedJson = aiRaw.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+            logToFile("--- 4a. AI COPYWRITING INPUT ---", { promptLength: llmPrompt.length, visionImages: visionInputs.length });
+            logToFile("--- 4b. AI PROMPT ---", llmPrompt);
+
+            const aiRaw = await callGemini(llmPrompt, visionInputs);
+            logToFile("--- 4c. AI RAW RESPONSE ---", aiRaw);
+
+            // Robust JSON extraction & cleanup
+            const cleanedText = aiRaw
+                .replace(/```json\s*/g, '')
+                .replace(/\s*```/g, '')
+                .replace(/\*\*/g, ''); // Remove bold markers
+
+            const jsonMatch = cleanedText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+            const cleanedJson = jsonMatch ? jsonMatch[0] : cleanedText.trim();
+            
             const parsed = JSON.parse(cleanedJson);
             if (Array.isArray(parsed) && parsed.length > 0) {
                 copyVariations = parsed;
-                logToFile(`✅ Generated ${copyVariations.length} AI Copy Variations.`);
+                logToFile(`✅ Generated ${copyVariations.length} AI Copy Variations (Official Gemini Vision).`, copyVariations);
             }
-        } catch (e) {
-            logToFile("AI Generation Failed, using default copy.", e);
+        } catch (e: any) {
+            logToFile("AI Generation Failed (Official Gemini), using default copy.", e.message || e);
         }
 
         // --- Step E: Campaign ---
@@ -320,7 +437,7 @@ export async function POST(request: Request) {
             objective: 'OUTCOME_LEADS', 
             status: 'PAUSED', 
             buying_type: 'AUCTION',
-            daily_budget: dailyBudgetINR, 
+            daily_budget: Math.round(dailyBudgetINR * 100), // Meta expects budget in cents/paise
             bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
             special_ad_categories: ['HOUSING'],
             special_ad_category_country: ['IN'], 
@@ -334,7 +451,13 @@ export async function POST(request: Request) {
         });
         
         const campaignData = await campaignRes.json();
-        if (!campaignRes.ok) throw new Error(`Campaign Error: ${campaignData.error?.message}`);
+        if (!campaignRes.ok) {
+            logToFile("❌ Campaign Creation Failed:", campaignData);
+            const metaErr = campaignData.error;
+            const fullMsg = metaErr?.error_user_msg || metaErr?.message || "Invalid parameter";
+            const title = metaErr?.error_user_title ? `${metaErr.error_user_title}: ` : "";
+            throw new Error(`Campaign Error: ${title}${fullMsg}`);
+        }
         const campaignId = campaignData.id;
 
         // --- Parse Location Targeting ---
@@ -396,7 +519,10 @@ export async function POST(request: Request) {
         });
         
         const adSetData = await adSetRes.json();
-        if (!adSetRes.ok) throw new Error(`Ad Set Error: ${adSetData.error?.message}`);
+        if (!adSetRes.ok) {
+            logToFile("❌ Ad Set Creation Failed:", adSetData);
+            throw new Error(`Ad Set Error: ${adSetData.error?.message}`);
+        }
         const adSetId = adSetData.id;
 
         // --- Step G & H: Loop Creatives & Final Ads ---
@@ -405,9 +531,12 @@ export async function POST(request: Request) {
         let successfulAds = 0;
         let lastDraftError = null;
 
-        for (let i = 0; i < metaCreativeHashes.length; i++) {
-            const hash = metaCreativeHashes[i];
-            const copy = copyVariations[i % copyVariations.length]; // cycle if fewer copies than images
+        // Ensure we use ALL text variations by looping over them, cycling through images if needed
+        const totalAdsToCreate = Math.max(metaCreativeHashes.length, copyVariations.length);
+        
+        for (let i = 0; i < totalAdsToCreate; i++) {
+            const hash = metaCreativeHashes[i % metaCreativeHashes.length];
+            const copy = copyVariations[i % copyVariations.length];
 
             // Create Creative
             const creativePayload = {

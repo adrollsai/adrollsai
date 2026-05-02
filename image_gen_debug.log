@@ -1,0 +1,79 @@
+[2026-05-01T13:56:02.084Z] --- NEW IMAGE GEN REQUEST RECEIVED ---
+[2026-05-01T13:56:02.502Z] PAYLOAD RECEIVED: {
+  "propertyDescription": "",
+  "propImages": [],
+  "model": "nano-banana-2",
+  "aspectRatio": "1:1"
+}
+[2026-05-01T13:56:02.801Z] STARTING GENERATION | MODEL: nano-banana-2
+[2026-05-01T13:56:02.803Z] KIE PAYLOAD: {
+  "model": "nano-banana-2",
+  "input": {
+    "prompt": "Create a high-converting, professional Meta ad design for: \"undefined\". \n\nCONTEXT: . \nSTYLE: Premium real estate photography, clean lighting, bold typography. \nAspect Ratio: 1:1.",
+    "image_input": [],
+    "aspect_ratio": "1:1",
+    "resolution": "1K",
+    "output_format": "png"
+  }
+}
+[2026-05-01T13:56:03.257Z] KIE TASK CREATED: 396973329af899950d0d893060b8245a
+[2026-05-01T13:56:21.069Z] Caption generated successfully.
+[2026-05-02T09:50:19.593Z] --- NEW IMAGE GEN REQUEST RECEIVED ---
+[2026-05-02T09:50:19.886Z] PAYLOAD RECEIVED: {
+  "userInstructions": "Generate a high-quality, luxurious promotional social media poster for this product.",
+  "propertyDescription": "The pinnacle of Mohali luxury featuring 5-star concierge services. Vastu-compliant towers with indoor heated pools, biometric access security, and professional basketball courts.",
+  "propertyTitle": "Homeland Regalia",
+  "contactNumber": "+91 98724 90091",
+  "logoUrl": "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg",
+  "propImages": [
+    "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777546450659-2gcs4q.png"
+  ],
+  "templateUrl": null,
+  "aspectRatio": "1:1",
+  "model": "google/nano-banana-2"
+}
+[2026-05-02T09:50:20.075Z] STARTING GENERATION | MODEL: google/nano-banana-2
+[2026-05-02T09:50:20.077Z] KIE PAYLOAD (Attempt 1 - gpt-image-2-text-to-image): {
+  "model": "gpt-image-2-text-to-image",
+  "input": {
+    "prompt": "PERSONA: World-class Direct Response Graphic Ads Designer (20+ years exp) using Alex Hormozi high-conversion frameworks.\nOBJECTIVE: Design a \"WOW-factor\", out-of-the-box Meta Ad graphic that stops the scroll immediately.\n\nTITLE/OFFER: \"Homeland Regalia\"\nDESCRIPTION/CONTEXT: \"The pinnacle of Mohali luxury featuring 5-star concierge services. Vastu-compliant towers with indoor heated pools, biometric access security, and professional basketball courts.\"\nBUSINESS NAME: \"Bluesquare Infra\"\n\nDESIGN RULES:\n1. MAIN HOOK: Create a bold, attention-grabbing headline that stops the scroll. \n2. LOGO INTEGRATION: YOU MUST INCLUDE THE PROVIDED BUSINESS LOGO. Place it professionally in the corner or a prominent position.\n3. VISUALS: Use the provided images to create a super attractive, premium, and clean layout. \n4. CLUTTER-FREE: Give important info clearly but keep the design sophisticated and \"out-of-the-box\".\n5. NO GENERIC STOCK: Make it look like a high-budget premium agency design.\n\nUSER INSTRUCTIONS: Generate a high-quality, luxurious promotional social media poster for this product.\nASPECT RATIO: 1:1",
+    "image_input": [
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777546450659-2gcs4q.png",
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg"
+    ],
+    "aspect_ratio": "1:1",
+    "resolution": "1K",
+    "output_format": "png"
+  }
+}
+[2026-05-02T09:50:20.549Z] KIE TASK CREATED: 2034cf113547baf0376f5c3cb1e14ce5
+[2026-05-02T09:50:29.633Z] Caption generated successfully.
+[2026-05-02T09:58:10.168Z] --- NEW IMAGE GEN REQUEST RECEIVED ---
+[2026-05-02T09:58:10.408Z] PAYLOAD RECEIVED: {
+  "userInstructions": "Generate a high-quality, luxurious promotional social media poster for this product.",
+  "propertyDescription": "The pinnacle of Mohali luxury featuring 5-star concierge services. Vastu-compliant towers with indoor heated pools, biometric access security, and professional basketball courts.",
+  "propertyTitle": "Homeland Regalia",
+  "contactNumber": "+91 98724 90091",
+  "logoUrl": "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg",
+  "propImages": [
+    "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777546450659-2gcs4q.png"
+  ],
+  "templateUrl": null,
+  "aspectRatio": "1:1",
+  "model": "google/nano-banana-2"
+}
+[2026-05-02T09:58:10.637Z] STARTING GENERATION | MODEL: google/nano-banana-2
+[2026-05-02T09:58:10.639Z] KIE PAYLOAD (Attempt 1 - gpt-image-2-image-to-image): {
+  "model": "gpt-image-2-image-to-image",
+  "input": {
+    "prompt": "PERSONA: World-class Direct Response Graphic Ads Designer (20+ years exp) using Alex Hormozi high-conversion frameworks.\nOBJECTIVE: Design a \"WOW-factor\", out-of-the-box Meta Ad graphic that stops the scroll immediately.\n\nTITLE/OFFER: \"Homeland Regalia\"\nDESCRIPTION/CONTEXT: \"The pinnacle of Mohali luxury featuring 5-star concierge services. Vastu-compliant towers with indoor heated pools, biometric access security, and professional basketball courts.\"\nBUSINESS NAME: \"Bluesquare Infra\"\n\nDESIGN RULES:\n1. MAIN HOOK: Create a bold, attention-grabbing headline that stops the scroll. \n2. LOGO INTEGRATION: YOU MUST INCLUDE THE PROVIDED BUSINESS LOGO. Place it professionally in the corner or a prominent position.\n3. VISUALS: Use the provided images to create a super attractive, premium, and clean layout. \n4. CLUTTER-FREE: Give important info clearly but keep the design sophisticated and \"out-of-the-box\".\n5. NO GENERIC STOCK: Make it look like a high-budget premium agency design.\n\nUSER INSTRUCTIONS: Generate a high-quality, luxurious promotional social media poster for this product.\nASPECT RATIO: 1:1",
+    "aspect_ratio": "1:1",
+    "resolution": "1K",
+    "input_urls": [
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777546450659-2gcs4q.png",
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg"
+    ]
+  }
+}
+[2026-05-02T09:58:11.737Z] ✅ SUCCESS: KIE TASK CREATED: d0fc4b011d4122a3408c0127bfed08d1
+[2026-05-02T09:58:18.100Z] Caption generated successfully.

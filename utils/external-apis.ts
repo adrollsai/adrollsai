@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import { generateText } from 'ai';
+import { google } from '@ai-sdk/google';
 
 const KIE_API_KEY = process.env.KIE_API_KEY;
 const KIE_CREATE_TASK_URL = "https://api.kie.ai/api/v1/jobs/createTask";
@@ -156,27 +158,44 @@ export async function generateKieChat(prompt: string, model: string = "gemini-3-
 }
 
 /**
- * 5. Gemini Content Generation (Native Google Gemini API)
+ * 5. Gemini Content Generation (Official Google Gemini API via SDK)
+ * Upgraded to support multimodal vision (images)
  */
-export async function callGemini(prompt: string): Promise<string> {
-    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured.");
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent", {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': GEMINI_API_KEY
-        },
-        body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-        })
-    });
-    const data = await response.json();
-    
-    if (!response.ok || !data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        throw new Error(`Gemini API Error: ${data.error?.message || response.statusText}`);
-    }
+export async function callGemini(prompt: string, imageUrls?: string[]): Promise<string> {
+    try {
+        const content: any[] = [{ type: 'text', text: prompt }];
+        
+        if (imageUrls && imageUrls.length > 0) {
+            for (const url of imageUrls) {
+                if (url.startsWith('data:')) {
+                    const [header, base64Data] = url.split(',');
+                    const mimeType = header.split(':')[1].split(';')[0];
+                    content.push({ 
+                        type: 'image', 
+                        image: Buffer.from(base64Data, 'base64'),
+                        mimeType 
+                    });
+                } else {
+                    try {
+                        content.push({ 
+                            type: 'image', 
+                            image: new URL(url) 
+                        });
+                    } catch (e) {
+                        console.error("Invalid image URL for Gemini:", url);
+                    }
+                }
+            }
+        }
 
-    return data.candidates[0].content.parts[0].text;
+        const { text } = await generateText({
+            model: google('gemini-3-flash-preview'),
+            messages: [{ role: 'user', content }],
+        });
+        return text;
+    } catch (e: any) {
+        throw new Error(`Gemini SDK Error: ${e.message}`);
+    }
 }
 
 /**
@@ -214,6 +233,11 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
                 const leadsRes = await fetch(nextUrl);
                 const leadsData = await leadsRes.json();
                 
+                if (leadsData.error) {
+                    console.error("Meta Leads API Error:", leadsData.error);
+                    throw new Error(`Meta Leads Error: ${leadsData.error.message}`);
+                }
+
                 if (leadsData.data && leadsData.data.length > 0) {
                     const formattedLeads = leadsData.data.map((l: any) => {
                         const getField = (name: string) => l.field_data?.find((f: any) => f.name === name)?.values[0] || '';

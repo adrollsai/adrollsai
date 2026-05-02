@@ -82,16 +82,17 @@ export async function POST(request: Request) {
         winners.sort((a, b) => b.leads - a.leads || b.spend - a.spend);
         const topWinner = winners[0];
 
-        // 4. Fetch the ACTUAL Media URL for the Top Winner to feed to Multimodal AI
+        // 4. Fetch the ACTUAL Media URL and Lead Form for the Top Winner
         const adRes = await fetch(`${FB_GRAPH}/${topWinner.id}?fields=creative&access_token=${profile.facebook_token}`);
         const adData = await adRes.json();
         let topCreativeUrl = null;
+        let leadFormId = null;
 
         if (adData.creative?.id) {
-            const creativeRes = await fetch(`${FB_GRAPH}/${adData.creative.id}?fields=image_url,thumbnail_url&access_token=${profile.facebook_token}`);
+            const creativeRes = await fetch(`${FB_GRAPH}/${adData.creative.id}?fields=image_url,thumbnail_url,object_story_spec&access_token=${profile.facebook_token}`);
             const creativeData = await creativeRes.json();
-            // Use image_url (for images) or thumbnail_url (for videos)
             topCreativeUrl = creativeData.image_url || creativeData.thumbnail_url || null;
+            leadFormId = creativeData.object_story_spec?.link_data?.call_to_action?.value?.lead_gen_form_id;
         }
 
         // 5. Multimodal AI Analysis via Gemini 3 Flash
@@ -103,41 +104,70 @@ export async function POST(request: Request) {
         Leads Generated: ${topWinner.leads}
         Spend: ₹${topWinner.spend}
 
-        Task 1: Write a 1-sentence highly specific insight on WHY this visual is converting well.
-        Task 2: To feed the Meta Andromeda algorithm, we need high volume and diversification. Generate 3 distinct, highly realistic static image prompts (50 words each) based on the winning angle but varying the visual hook (e.g., one aesthetic, one showing people, one abstract). Do not include text in the image prompts.
+        Task 1: Write a sharp 1-sentence insight on WHY this visual is converting.
+        Task 2: Generate 10 distinct variations. For each, provide:
+           - An image generation prompt (max 60 words, focus on realism and visual hook).
+           - A high-converting Headline (max 40 chars).
+           - A Primary Text (ad copy) using Hormozi's framework (max 200 chars).
         
-        Output strictly as JSON:
+        Output MUST be valid JSON:
         {
             "visual_insight": "...",
             "variations": [
-                { "title": "Aesthetic Focus", "prompt": "..." },
-                { "title": "Human Element", "prompt": "..." },
-                { "title": "Abstract/Detail", "prompt": "..." }
+                { "title": "Variation 1", "image_prompt": "...", "headline": "...", "primary_text": "..." },
+                ... (10 items)
             ]
         }
         `;
 
-        // Pass the image URL to generateKieChat for true multimodal analysis
-        const aiRaw = await generateKieChat(llmPrompt, "gemini-3-flash", topCreativeUrl || undefined);
+        const aiRaw = await generateKieChat(llmPrompt, "gemini-3-flash-preview", topCreativeUrl || undefined);
         let parsed;
         try {
             parsed = JSON.parse(aiRaw.replace(/^```json\s*/, '').replace(/\s*```$/, ''));
         } catch (e) {
             console.error("Failed to parse Gemini output:", aiRaw);
-            parsed = { visual_insight: "High engagement detected.", variations: [] };
+            return NextResponse.json({ error: "Failed to parse AI strategy output." }, { status: 500 });
         }
 
-        // Return everything to the frontend to display to the user in the Agent Orchestrator
+        // 6. Trigger Background Tasks for Image Generation (5x nano-banana-2, 5x gpt-image-2)
+        const baseUrl = new URL(request.url).origin;
+        const generationResults = [];
+
+        for (let i = 0; i < parsed.variations.length; i++) {
+            const variant = parsed.variations[i];
+            const modelToUse = i % 2 === 0 ? 'nano-banana-2' : 'gpt/gpt-image-2-text-to-image';
+            const aspectRatio = i % 2 === 0 ? '1:1' : '4:5';
+            
+            // Trigger background worker
+            fetch(`${baseUrl}/api/background-worker`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: user.id,
+                    propertyTitle: variant.title,
+                    payload: {
+                        propertyTitle: variant.title,
+                        propertyDescription: variant.image_prompt,
+                        userInstructions: "Real estate optimization variation.",
+                        model: modelToUse,
+                        aspectRatio: aspectRatio
+                    },
+                    existingCaption: `${variant.headline}\n\n${variant.primary_text}`
+                })
+            }).catch(err => console.error(`Background worker trigger failed for variant ${i}:`, err));
+        }
+
         return NextResponse.json({ 
             status: 'success', 
             insight: parsed.visual_insight,
-            variations: parsed.variations,
+            variations: parsed.variations, // Return the plan to the UI immediately
             pausedAds: pausedAds,
             winnerImageAnalyzed: topCreativeUrl,
-            topWinner: topWinner
+            leadFormId: leadFormId,
+            message: "10 optimization variations are being generated in the background. Once they appear in your assets library, you can review and push them to the campaign."
         });
 
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
-}
+}

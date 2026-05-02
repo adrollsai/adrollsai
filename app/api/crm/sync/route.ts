@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { fetchFacebookLeads } from '@/utils/external-apis'
+import { logToFile } from '@/app/api/meta-ads/launch-campaign/route'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -8,6 +9,7 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
+    logToFile("--- CRM SYNC START ---");
     // Read body for specific form ID
     const body = await request.json().catch(() => ({}))
     const { formId } = body // Optional
@@ -28,6 +30,7 @@ export async function POST(request: Request) {
         profile.selected_page_id,
         formId
     );
+    console.log(`Retrieved ${leads.length} leads from Meta API`);
 
     let newCount = 0;
     for (const lead of leads) {
@@ -43,12 +46,21 @@ export async function POST(request: Request) {
             pipeline_stage: 'New'
         }, { onConflict: 'facebook_lead_id' })
         
-        if (!error) newCount++;
+        if (error) {
+            console.error("Supabase upsert error:", error);
+        } else {
+            newCount++;
+        }
     }
 
     return NextResponse.json({ success: true, count: newCount, total: leads.length })
 
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error("CRM Sync Error:", error);
+    logToFile("❌ CRM Sync Failed:", error.message || error);
+    return NextResponse.json({ 
+        error: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+    }, { status: 500 })
   }
 }

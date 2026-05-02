@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { fetchLeadForms } from '@/utils/external-apis'
+import { logToFile } from '@/app/api/meta-ads/launch-campaign/route'
 
 export async function GET(request: Request) {
   const supabase = await createClient()
@@ -23,6 +24,8 @@ export async function GET(request: Request) {
     const forms = await fetchLeadForms(profile.selected_page_token, profile.selected_page_id)
     return NextResponse.json({ forms })
   } catch (error: any) {
+    console.error("Fetch Forms Error:", error);
+    logToFile("❌ Fetch Lead Forms Failed:", error.message || error);
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

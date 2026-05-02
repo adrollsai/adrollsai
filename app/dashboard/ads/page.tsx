@@ -9,7 +9,7 @@ type Property = { id: string; title: string; price: string; image_url: string; d
 type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string }
 type Campaign = { id: string; name: string; status: string; objective: string }
 type LocationOption = { key: string; name: string; type: string; region?: string; country_code?: string; }
-type CustomQuestion = { label: string; type: 'SHORT_ANSWER' | 'MULTIPLE_CHOICE'; options?: string[] }
+type CustomQuestion = { label: string; type: 'SHORT_ANSWER' | 'MULTIPLE_CHOICE'; options?: string[]; disqualifyingOptions?: string[] }
 
 type SelectedCreative = {
   uid: string;
@@ -59,15 +59,20 @@ export default function AdsPage() {
     isOpen: boolean,
     mode: 'optimize' | 'remarketing' | null,
     campaign: Campaign | null,
-    status: 'analyzing' | 'presenting' | 'generating' | 'success' | 'error',
+    status: 'analyzing' | 'presenting' | 'generating' | 'reviewing' | 'pushing' | 'success' | 'error',
     logs: { id: number, text: string, type: 'system' | 'ai' | 'user' }[],
     variations: any[],
-    insight: string
-  }>({ isOpen: false, mode: null, campaign: null, status: 'analyzing', logs: [], variations: [], insight: '' })
+    selectedVariations: number[],
+    insight: string,
+    leadFormId: string | null
+  }>({ isOpen: false, mode: null, campaign: null, status: 'analyzing', logs: [], variations: [], selectedVariations: [], insight: '', leadFormId: null })
+
+  const [optimizedCampaigns, setOptimizedCampaigns] = useState<string[]>([])
 
   // Form States
   const [formQuestions, setFormQuestions] = useState<CustomQuestion[]>([])
   const [isAddingQuestion, setIsAddingQuestion] = useState(false)
+  const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const [newQuestion, setNewQuestion] = useState<CustomQuestion>({ label: '', type: 'SHORT_ANSWER', options: [''] })
 
   const [adForm, setAdForm] = useState({
@@ -155,7 +160,11 @@ export default function AdsPage() {
   }
 
   // Trigger initial fetch
-  useEffect(() => { fetchAdsData() }, [])
+  useEffect(() => { 
+    fetchAdsData() 
+    const saved = localStorage.getItem('optimized_campaign_ids')
+    if (saved) setOptimizedCampaigns(JSON.parse(saved))
+  }, [])
 
   // Location Search Debounce
   useEffect(() => {
@@ -209,6 +218,11 @@ export default function AdsPage() {
   }
 
   const handleOptimize = async (campaign: Campaign) => {
+      if (optimizedCampaigns.includes(campaign.id)) {
+          alert("This campaign has already been optimized by the AI Strategist.");
+          return;
+      }
+
       setOrchestrator({
           isOpen: true,
           mode: 'optimize',
@@ -216,7 +230,9 @@ export default function AdsPage() {
           status: 'analyzing',
           logs: [{ id: Date.now(), text: `Analyzing performance metrics for ${campaign.name}...`, type: 'system' }],
           variations: [],
-          insight: ''
+          selectedVariations: [],
+          insight: '',
+          leadFormId: null
       });
   
       try {
@@ -228,15 +244,22 @@ export default function AdsPage() {
           const data = await res.json();
           
           if (data.status === 'success') {
+              // Lock the campaign
+              const newOptimized = [...optimizedCampaigns, campaign.id];
+              setOptimizedCampaigns(newOptimized);
+              localStorage.setItem('optimized_campaign_ids', JSON.stringify(newOptimized));
+
               setOrchestrator(prev => ({
                   ...prev,
                   status: 'presenting',
                   insight: data.insight,
                   variations: data.variations || [],
+                  selectedVariations: (data.variations || []).map((_: any, i: number) => i), // Select all by default
+                  leadFormId: data.leadFormId,
                   logs: [
                       ...prev.logs, 
                       { id: Date.now(), text: data.insight, type: 'ai' },
-                      { id: Date.now()+1, text: "I've drafted 3 diverse visual concepts to feed the Andromeda algorithm for testing volume. Ready to generate?", type: 'system' }
+                      { id: Date.now()+1, text: "I've drafted 10 high-performance variations. Background generation for all 10 images has started. You will be notified when they are ready for final review.", type: 'system' }
                   ]
               }));
           } else {
@@ -255,7 +278,9 @@ export default function AdsPage() {
           status: 'analyzing',
           logs: [{ id: Date.now(), text: `Analyzing 100+ leads for ${campaign.name}...`, type: 'system' }],
           variations: [],
-          insight: ''
+          selectedVariations: [],
+          insight: '',
+          leadFormId: null
       });
   
       try {
@@ -287,52 +312,105 @@ export default function AdsPage() {
   }
 
   const handleApproveVariations = async () => {
-      if (!orchestrator.variations.length) return;
+      if (!orchestrator.variations.length || !orchestrator.campaign) return;
       
-      setOrchestrator(prev => ({
-          ...prev,
-          status: 'generating',
-          logs: [...prev.logs, { id: Date.now(), text: "Approving strategies... Generating assets via background worker.", type: 'user' }]
-      }));
-  
-      try {
-          const prompts = orchestrator.variations.map((v: any) => v.prompt);
-          const res = await fetch('/api/meta-ads/generate-variations', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ prompts })
-          });
-          const data = await res.json();
-          
-          if (data.success) {
-              const { data: { user } } = await supabase.auth.getUser();
-              // Trigger background polling for each task ID
-              data.taskIds.forEach((taskId: string) => {
-                  fetch('/api/background-worker', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ userId: user?.id, existingTaskId: taskId })
-                  });
+      if (orchestrator.status === 'presenting') {
+          // Move to generating phase
+          setOrchestrator(prev => ({
+              ...prev,
+              status: 'generating',
+              logs: [...prev.logs, { id: Date.now(), text: "Strategy approved. Background image generation tasks have been queued. You can close this and you will be notified when images are ready for final review.", type: 'user' }]
+          }));
+          return;
+      }
+
+      if (orchestrator.status === 'reviewing') {
+          // User has reviewed and is now pushing
+          setOrchestrator(prev => ({
+              ...prev,
+              status: 'pushing',
+              logs: [...prev.logs, { id: Date.now(), text: `Pushing ${prev.selectedVariations.length} selected variations to Meta...`, type: 'user' }]
+          }));
+
+          try {
+              // Fetch the actual asset objects from the state (we need URLs and captions)
+              const selectedAssets = orchestrator.variations.filter((_, i) => orchestrator.selectedVariations.includes(i));
+              
+              const res = await fetch('/api/meta-ads/push-optimized-ads', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ 
+                      campaignId: orchestrator.campaign.id, 
+                      selectedAssets,
+                      leadFormId: orchestrator.leadFormId 
+                  })
               });
-  
-              setOrchestrator(prev => ({
-                  ...prev,
-                  status: 'success',
-                  logs: [...prev.logs, { id: Date.now(), text: "Generation tasks queued! You will receive a push notification when they are ready in your Assets library.", type: 'system' }]
-              }));
-          } else {
-              setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: "Failed to queue generation tasks.", type: 'system' }]}));
+              const data = await res.json();
+
+              if (data.success) {
+                  setOrchestrator(prev => ({
+                      ...prev,
+                      status: 'success',
+                      logs: [...prev.logs, { id: Date.now(), text: `Successfully pushed ${data.pushedCount} new ads to Meta! They are currently in PAUSED state.`, type: 'system' }]
+                  }));
+              } else {
+                  setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: data.error || "Push failed.", type: 'system' }]}));
+              }
+          } catch (e) {
+              setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: "Network error during push.", type: 'system' }]}));
           }
-      } catch (e) {
-          setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: "Network error during generation.", type: 'system' }]}));
       }
   }
 
-  const handleAddPresetQuestion = (type: 'budget' | 'timeline') => {
+  const handleReviewOptimizedAssets = async () => {
+    if (!orchestrator.campaign) return;
+    
+    setOrchestrator(prev => ({...prev, status: 'analyzing', logs: [...prev.logs, { id: Date.now(), text: "Scanning library for newly generated optimization assets...", type: 'system' }]}));
+    
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        // Fetch assets with titles matching our variations
+        const { data: newAssets } = await supabase
+            .from('assets')
+            .select('*')
+            .eq('user_id', user?.id)
+            .ilike('property_id', `%opt%`) // We should have tagged them or we can just look for recent ones
+            .order('created_at', { ascending: false })
+            .limit(20);
+        
+        if (newAssets && newAssets.length > 0) {
+            // Map assets back to variations if possible, or just show them
+            setOrchestrator(prev => ({
+                ...prev,
+                status: 'reviewing',
+                variations: newAssets.map(a => ({
+                    id: a.id,
+                    title: a.property_id || "Optimized Creative",
+                    url: a.url,
+                    caption: a.caption,
+                    headline: a.caption?.split('\n\n')[0],
+                    primary_text: a.caption?.split('\n\n')[1]
+                })),
+                selectedVariations: newAssets.map((_, i) => i),
+                logs: [...prev.logs, { id: Date.now(), text: `Found ${newAssets.length} generated creatives ready for review.`, type: 'system' }]
+            }));
+        } else {
+            setOrchestrator(prev => ({...prev, status: 'generating', logs: [...prev.logs, { id: Date.now(), text: "No assets found yet. Please wait a few more minutes for generation to finish.", type: 'system' }]}));
+        }
+    } catch (e) {
+        setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: "Failed to load assets.", type: 'system' }]}));
+    }
+  }
+
+  const handleAddPresetQuestion = (type: 'budget' | 'timeline' | 'type' | 'visit') => {
       if (type === 'budget') {
-          setFormQuestions(prev => [...prev, { label: "What is your investment budget?", type: "MULTIPLE_CHOICE", options: ["Under INR 25L", "INR 25L - 50L", "INR 50L - 1Cr", "INR 1Cr+"] }]);
+          setFormQuestions(prev => [...prev, { label: "What is your budget?", type: "MULTIPLE_CHOICE", options: ["Less than 50L", "50L - 70L", "70L - 1 Cr", "1 Cr - 1.5 Cr", "1.5Cr - 2 Cr", "Above 2 Cr"], disqualifyingOptions: [] }]);
       } else if (type === 'timeline') {
-          setFormQuestions(prev => [...prev, { label: "When are you planning to invest?", type: "MULTIPLE_CHOICE", options: ["Immediately", "1-3 Months", "3-6 Months", "Just exploring"] }]);
+          setFormQuestions(prev => [...prev, { label: "How soon do you want to buy?", type: "MULTIPLE_CHOICE", options: ["Immediately", "WIthin a month", "Within 3 months", "Just Looking (Disqualify)"], disqualifyingOptions: ["Just Looking (Disqualify)"] }]);
+      } else if (type === 'type') {
+          setFormQuestions(prev => [...prev, { label: "What are you looking for?", type: "MULTIPLE_CHOICE", options: ["Residential", "Commercial", "Plots", "Apartments", "Villa", "Kothi"], disqualifyingOptions: [] }]);
+      } else if (type === 'visit') {
+          setFormQuestions(prev => [...prev, { label: "What time would you like to visit?", type: "MULTIPLE_CHOICE", options: ["10 AM - 1 PM", "1 PM - 4 PM", "4 PM - 7 PM"], disqualifyingOptions: [] }]);
       }
   }
 
@@ -363,6 +441,7 @@ export default function AdsPage() {
     if (!adForm.pageId || !selectedAdAccountId) { alert("Missing Facebook Page or Ad Account in Profile."); return }
     if (selectedCreatives.length === 0) { alert("Please select at least one creative (Inventory, Asset, or Upload)."); return; }
     if (adForm.metaLocations.length === 0 || adForm.dailyBudgetINR < 100) { alert("Please set a valid target location and budget."); return }
+    if (!adForm.linkUrl) { alert("Please provide a valid Website URL for the Lead Form."); return }
     
     setIsSubmitting(true)
     
@@ -500,18 +579,16 @@ export default function AdsPage() {
                                     <Sparkles size={14} /> Optimize
                                 </button>
 
-                                {campaignLeadCounts[campaign.id] >= 100 && (
-                                    <button 
-                                        onClick={() => handleRemarketing(campaign)} 
-                                        disabled={orchestrator.isOpen && orchestrator.mode === 'remarketing'}
-                                        className={`flex items-center justify-center gap-1.5 text-xs font-bold py-2 px-3 rounded-xl transition-all ${
-                                            orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'remarketing' ? 'bg-blue-100 text-blue-400' 
-                                            : 'bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 shadow-sm'
-                                        }`}
-                                    >
-                                        <Users size={14} /> Remarket
-                                    </button>
-                                )}
+                                <button 
+                                    onClick={() => handleRemarketing(campaign)} 
+                                    disabled={orchestrator.isOpen && orchestrator.mode === 'remarketing'}
+                                    className={`flex items-center justify-center gap-1.5 text-xs font-bold py-2 px-3 rounded-xl transition-all ${
+                                        orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'remarketing' ? 'bg-blue-100 text-blue-400' 
+                                        : 'bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 shadow-sm'
+                                    }`}
+                                >
+                                    <Users size={14} /> Remarket
+                                </button>
                                 
                                 <a 
                                     href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} 
@@ -576,14 +653,42 @@ export default function AdsPage() {
                       ) : null}
 
                       {/* Display Variations if Present */}
-                      {orchestrator.variations.length > 0 && orchestrator.status === 'presenting' && (
-                          <div className="space-y-3 mt-4 animate-in fade-in">
-                              {orchestrator.variations.map((v, i) => (
-                                  <div key={i} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-purple-200 transition-colors">
-                                      <h4 className="text-xs font-bold text-slate-800 uppercase mb-2">{v.title}</h4>
-                                      <p className="text-xs text-slate-600 font-medium leading-relaxed">{v.prompt}</p>
-                                  </div>
-                              ))}
+                      {orchestrator.variations.length > 0 && (orchestrator.status === 'presenting' || orchestrator.status === 'reviewing') && (
+                          <div className="space-y-4 mt-4 animate-in fade-in">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2 mb-2">Review variations below:</p>
+                              <div className="grid grid-cols-1 gap-4">
+                                  {orchestrator.variations.map((v, i) => {
+                                      const isSelected = orchestrator.selectedVariations.includes(i);
+                                      return (
+                                          <div 
+                                              key={i} 
+                                              onClick={() => {
+                                                  setOrchestrator(prev => {
+                                                      const newSelected = isSelected 
+                                                          ? prev.selectedVariations.filter(idx => idx !== i)
+                                                          : [...prev.selectedVariations, i];
+                                                      return { ...prev, selectedVariations: newSelected };
+                                                  });
+                                              }}
+                                              className={`relative bg-white border rounded-2xl p-4 shadow-sm transition-all cursor-pointer group ${
+                                                  isSelected ? 'border-purple-500 bg-purple-50/30 ring-1 ring-purple-100' : 'border-slate-200 hover:border-slate-300'
+                                              }`}
+                                          >
+                                              <div className="flex justify-between items-start mb-2">
+                                                  <h4 className="text-xs font-bold text-slate-800 uppercase">{v.title}</h4>
+                                                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-purple-600 border-purple-600 text-white' : 'border-slate-200'}`}>
+                                                      {isSelected && <CheckCircle size={12} />}
+                                                  </div>
+                                              </div>
+                                              <div className="space-y-2">
+                                                  <p className="text-[10px] font-bold text-purple-600 uppercase tracking-tighter leading-tight">Headline: {v.headline}</p>
+                                                  <p className="text-[10px] text-slate-600 font-medium leading-relaxed italic border-l-2 border-slate-100 pl-2">Prompt: {v.image_prompt}</p>
+                                              </div>
+                                              {!isSelected && <div className="absolute inset-0 bg-white/40 rounded-2xl z-10" />}
+                                          </div>
+                                      );
+                                  })}
+                              </div>
                           </div>
                       )}
                   </div>
@@ -593,10 +698,39 @@ export default function AdsPage() {
                       <div className="pt-4 border-t border-slate-100 relative z-10 animate-in fade-in">
                           <button 
                               onClick={handleApproveVariations}
-                              className="w-full bg-purple-600 text-white font-bold py-4 rounded-2xl hover:bg-purple-700 shadow-md transition-all flex items-center justify-center gap-2"
+                              disabled={orchestrator.selectedVariations.length === 0}
+                              className="w-full bg-purple-600 text-white font-bold py-4 rounded-2xl hover:bg-purple-700 shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:grayscale"
                           >
-                              <CheckCircle size={18} /> Approve & Generate Tasks
+                              <CheckCircle size={18} /> Push {orchestrator.selectedVariations.length} Winning Concepts
                           </button>
+                      </div>
+                  )}
+                  {orchestrator.status === 'generating' && (
+                      <div className="pt-4 border-t border-slate-100 relative z-10 animate-in fade-in">
+                          <button 
+                              onClick={handleReviewOptimizedAssets}
+                              className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl hover:bg-blue-700 shadow-md transition-all flex items-center justify-center gap-2"
+                          >
+                              <RefreshCw size={18} /> Load Generated Assets for Review
+                          </button>
+                      </div>
+                  )}
+                  {orchestrator.status === 'reviewing' && (
+                      <div className="pt-4 border-t border-slate-100 relative z-10 animate-in fade-in">
+                          <button 
+                              onClick={handleApproveVariations}
+                              disabled={orchestrator.selectedVariations.length === 0}
+                              className="w-full bg-green-600 text-white font-bold py-4 rounded-2xl hover:bg-green-700 shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                          >
+                              <Zap size={18} /> Push {orchestrator.selectedVariations.length} Selected to Meta
+                          </button>
+                      </div>
+                  )}
+                  {orchestrator.status === 'pushing' && (
+                      <div className="pt-4 border-t border-slate-100 relative z-10 animate-in fade-in">
+                          <div className="w-full bg-slate-100 text-slate-400 font-bold py-4 rounded-2xl flex items-center justify-center gap-2">
+                              <Loader2 size={18} className="animate-spin" /> Pushing to Meta...
+                          </div>
                       </div>
                   )}
                   {orchestrator.status === 'success' && (
@@ -820,18 +954,28 @@ export default function AdsPage() {
                               <div key={idx} className="bg-slate-50 border border-slate-200/60 rounded-[1.25rem] p-4 flex justify-between items-center group shadow-sm">
                                  <div>
                                      <div className="text-sm font-bold text-slate-800 leading-tight mb-1">{q.label}</div>
-                                     <div className="text-[10px] text-blue-600 font-bold uppercase tracking-wider">{q.type === 'MULTIPLE_CHOICE' ? `Multiple Choice` : 'Short Answer'}</div>
+                                     <div className="flex flex-wrap gap-1.5 mt-1">
+                                         <span className="text-[9px] bg-blue-100 text-blue-600 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">{q.type === 'MULTIPLE_CHOICE' ? `Multiple Choice` : 'Short Answer'}</span>
+                                         {q.type === 'MULTIPLE_CHOICE' && q.options?.map((opt, oIdx) => (
+                                             <span key={oIdx} className="text-[9px] bg-slate-100 text-slate-500 font-medium px-2 py-0.5 rounded-full">{opt}</span>
+                                         ))}
+                                     </div>
                                  </div>
-                                 <button onClick={() => setFormQuestions(prev => prev.filter((_, i) => i !== idx))} className="bg-white p-2 rounded-full text-slate-400 hover:text-red-500 shadow-sm border border-slate-100 transition-colors"><X size={14}/></button>
+                                 <div className="flex gap-2">
+                                     <button onClick={() => { setEditingIdx(idx); setNewQuestion(q); setIsAddingQuestion(true); }} className="bg-white p-2 rounded-full text-slate-400 hover:text-blue-500 shadow-sm border border-slate-100 transition-colors"><Settings2 size={14}/></button>
+                                     <button onClick={() => setFormQuestions(prev => prev.filter((_, i) => i !== idx))} className="bg-white p-2 rounded-full text-slate-400 hover:text-red-500 shadow-sm border border-slate-100 transition-colors"><X size={14}/></button>
+                                 </div>
                               </div>
                           ))}
                       </div>
                   )}
 
-                  {!isAddingQuestion ? (
+                  {(!isAddingQuestion && editingIdx === null) ? (
                       <div className="flex flex-wrap gap-2">
                           <button onClick={() => handleAddPresetQuestion('budget')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Budget</button>
+                          <button onClick={() => handleAddPresetQuestion('type')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Property Type</button>
                           <button onClick={() => handleAddPresetQuestion('timeline')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Timeline</button>
+                          <button onClick={() => handleAddPresetQuestion('visit')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Visit Time</button>
                           <button onClick={() => setIsAddingQuestion(true)} className="text-xs font-bold bg-slate-100 text-slate-600 px-4 py-2.5 rounded-full hover:bg-slate-200 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Custom</button>
                       </div>
                   ) : (
@@ -846,15 +990,79 @@ export default function AdsPage() {
                               </select>
                           </div>
                           {newQuestion.type === 'MULTIPLE_CHOICE' && (
-                              <input type="text" value={newQuestion.options?.join(', ')} onChange={e => setNewQuestion({...newQuestion, options: e.target.value.split(',')})} className="w-full bg-white py-3.5 px-4 rounded-2xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all" placeholder="Options (comma separated, e.g. 1 Month, 3 Months)" />
+                              <div className="space-y-3">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Configure Options</label>
+                                  {(newQuestion.options || []).map((opt, oIdx) => (
+                                      <div key={oIdx} className="flex gap-2 items-center">
+                                          <input 
+                                              type="text" 
+                                              value={opt} 
+                                              onChange={e => {
+                                                  const updated = [...(newQuestion.options || [])];
+                                                  updated[oIdx] = e.target.value;
+                                                  setNewQuestion({...newQuestion, options: updated});
+                                              }} 
+                                              className="flex-1 bg-white py-3 px-4 rounded-xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all" 
+                                              placeholder={`Option ${oIdx + 1}`} 
+                                          />
+                                          <button 
+                                              onClick={() => {
+                                                  const isDisq = newQuestion.disqualifyingOptions?.includes(opt);
+                                                  const newDisq = isDisq 
+                                                      ? (newQuestion.disqualifyingOptions || []).filter(d => d !== opt)
+                                                      : [...(newQuestion.disqualifyingOptions || []), opt];
+                                                  setNewQuestion({...newQuestion, disqualifyingOptions: newDisq});
+                                              }}
+                                              className={`px-3 py-3 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border ${
+                                                  newQuestion.disqualifyingOptions?.includes(opt) 
+                                                  ? 'bg-red-50 text-red-600 border-red-100 shadow-inner' 
+                                                  : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                              }`}
+                                          >
+                                              {newQuestion.disqualifyingOptions?.includes(opt) ? 'Disqualified' : 'Qualify'}
+                                          </button>
+                                          <button 
+                                              onClick={() => {
+                                                  const updated = (newQuestion.options || []).filter((_, i) => i !== oIdx);
+                                                  setNewQuestion({...newQuestion, options: updated});
+                                              }}
+                                              className="p-3 text-slate-400 hover:text-red-500 transition-colors"
+                                          >
+                                              <X size={16} />
+                                          </button>
+                                      </div>
+                                  ))}
+                                  <button 
+                                      onClick={() => setNewQuestion({...newQuestion, options: [...(newQuestion.options || []), '']})}
+                                      className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                                  >
+                                      <PlusCircle size={14} /> Add Another Option
+                                  </button>
+                              </div>
                           )}
-                          <div className="flex gap-3 pt-2">
-                              <button onClick={() => setIsAddingQuestion(false)} className="bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors">Cancel</button>
-                              <button onClick={() => { if(newQuestion.label){ setFormQuestions(prev => [...prev, newQuestion]); setIsAddingQuestion(false); setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); } }} className="flex-1 bg-slate-900 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors shadow-sm">Save Question</button>
-                          </div>
                       </div>
                   )}
-              </div>
+                          <div className="flex gap-3 pt-2">
+                              <button onClick={() => { setIsAddingQuestion(false); setEditingIdx(null); setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); }} className="bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors">Cancel</button>
+                              <button onClick={() => { 
+                                  if(newQuestion.label){ 
+                                      if (editingIdx !== null) {
+                                          const updated = [...formQuestions];
+                                          updated[editingIdx] = newQuestion;
+                                          setFormQuestions(updated);
+                                      } else {
+                                          setFormQuestions(prev => [...prev, newQuestion]); 
+                                      }
+                                      setIsAddingQuestion(false); 
+                                      setEditingIdx(null);
+                                      setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); 
+                                  } 
+                              }} className="flex-1 bg-slate-900 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors shadow-sm">
+                                  {editingIdx !== null ? 'Update Question' : 'Save Question'}
+                              </button>
+                          </div>
+                      </div>
+                  
 
             </div>
 
@@ -873,8 +1081,7 @@ export default function AdsPage() {
           </div>
         </div>
       )}
-      
-      </div> 
+      </div>
       {/* ASSET SELECTOR MODAL */}
       {showAssetSelector.isOpen && (
         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
