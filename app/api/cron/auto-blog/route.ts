@@ -8,6 +8,7 @@ import { z } from 'zod'
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
 export const revalidate = 0
+export const maxDuration = 60; // Increase timeout for Vercel
 
 export async function GET(request: Request) {
     return runSeoCron(request);
@@ -47,37 +48,38 @@ async function runSeoCron(request: Request) {
     }
 
     let successCount = 0;
-    let lastError = null;
+    const errors: string[] = [];
 
-    for (const profile of profiles) {
-        let article;
-        const { data: products } = await supabaseAdmin
-            .from('properties')
-            .select('title, price, property_type, description, image_url')
-            .eq('user_id', profile.id)
-            .limit(3);
+    // Process all profiles in parallel to avoid timeout
+    const results = await Promise.all(profiles.map(async (profile) => {
+        try {
+            const { data: products } = await supabaseAdmin
+                .from('properties')
+                .select('title, price, property_type, description, image_url')
+                .eq('user_id', profile.id)
+                .limit(3);
 
-        let inventoryContext = "General brand awareness and market updates.";
-        let featuredImage = 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=800&q=80';
-        
-        if (products && products.length > 0) {
-            inventoryContext = products.map(p => 
-                `- ${p.title} (${p.property_type || 'Product'}): ${p.price}. ${p.description || ''}`
-            ).join('\n');
-            if (products[0].image_url) featuredImage = products[0].image_url;
-        }
+            let inventoryContext = "General brand awareness and market updates.";
+            let featuredImage = 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=800&q=80';
+            
+            if (products && products.length > 0) {
+                inventoryContext = products.map(p => 
+                    `- ${p.title} (${p.property_type || 'Product'}): ${p.price}. ${p.description || ''}`
+                ).join('\n');
+                if (products[0].image_url) featuredImage = products[0].image_url;
+            }
 
-        // Fetch previous post titles to avoid repetition
-        const { data: previousPosts } = await supabaseAdmin
-            .from('posts')
-            .select('title')
-            .eq('user_id', profile.id)
-            .order('created_at', { ascending: false })
-            .limit(10);
-        
-        const previousTopics = previousPosts?.map(p => p.title).join(', ') || 'None';
+            // Fetch previous post titles to avoid repetition
+            const { data: previousPosts } = await supabaseAdmin
+                .from('posts')
+                .select('title')
+                .eq('user_id', profile.id)
+                .order('created_at', { ascending: false })
+                .limit(10);
+            
+            const previousTopics = previousPosts?.map(p => p.title).join(', ') || 'None';
 
-        const prompt = `
+            const prompt = `
 You are a Research-driven SEO Strategist and Content Marketer with 20 years of experience in direct-response growth.
 
 OBJECTIVE: Write a highly relevant, high-converting blog article that ranks on Google and provides MASSIVE value to potential customers.
@@ -102,7 +104,6 @@ STRICT GUIDELINES:
 
 OUTPUT: Return ONLY a valid JSON object with: 'title', 'excerpt' (compelling), 'content' (HTML), and 'tags' (SEO keywords).`;
 
-        try {
             const result = await generateObject({
               model: google('gemini-3-flash-preview'),
               prompt: prompt + `\n\nGenerate this uniquely for today's timestamp: ${new Date().toISOString()}`,
@@ -113,36 +114,35 @@ OUTPUT: Return ONLY a valid JSON object with: 'title', 'excerpt' (compelling), '
                 tags: z.array(z.string())
               })
             });
-            article = result.object;
+
+            const article = result.object;
+
+            const { error: insertError } = await supabaseAdmin.from('posts').insert({
+                user_id: profile.id,
+                title: article.title,
+                excerpt: article.excerpt,
+                content: article.content,
+                tags: article.tags,
+                status: 'published',
+                image_url: featuredImage 
+            });
+
+            if (insertError) throw insertError;
+            return { success: true };
         } catch (e: any) {
-            lastError = `Gemini API Error: ${e.message}`;
-            console.error(lastError);
-            continue;
+            console.error(`Error processing profile ${profile.id}:`, e.message);
+            return { success: false, error: e.message };
         }
+    }));
 
-        const { error: insertError } = await supabaseAdmin.from('posts').insert({
-            user_id: profile.id,
-            title: article.title,
-            excerpt: article.excerpt,
-            content: article.content,
-            tags: article.tags,
-            status: 'published',
-            image_url: featuredImage 
-        });
-
-        if (insertError) {
-             lastError = `Database Insert Error: ${insertError.message}`;
-             console.error(lastError);
-        } else {
-             successCount++;
-        }
-    }
+    successCount = results.filter(r => r.success).length;
+    const failures = results.filter(r => !r.success).map(r => r.error);
 
     if (specificUserId && successCount === 0) {
-        return NextResponse.json({ success: false, error: lastError || "Unknown error occurred during generation." }, { status: 400 });
+        return NextResponse.json({ success: false, error: failures[0] || "Unknown error occurred during generation." }, { status: 400 });
     }
 
-    return NextResponse.json({ success: true, generated: successCount });
+    return NextResponse.json({ success: true, generated: successCount, failures: failures.length });
 
   } catch (error: any) {
     console.error("Auto-Blog Fatal Error:", error);
