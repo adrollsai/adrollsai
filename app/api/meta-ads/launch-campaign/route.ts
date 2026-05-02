@@ -186,7 +186,7 @@ export async function POST(request: Request) {
 
         let questionsToUse = defaultQuestions;
         let logicRules: any[] = [];
-        let metaLogicConfig: string | null = null;
+        let metaLogicConfig: any = null;
 
         try {
             if (customQuestionsStr && customQuestionsStr !== "[]") {
