@@ -17,6 +17,8 @@ type GenerationResult = {
     error?: string;
 };
 
+export const maxDuration = 300; // Important for image generation polling
+
 export async function GET(request: Request) {
     // 1. Security check to ensure only your cron job can hit this endpoint
     const authHeader = request.headers.get('authorization');
