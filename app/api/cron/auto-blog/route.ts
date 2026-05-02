@@ -67,11 +67,44 @@ async function runSeoCron(request: Request) {
             if (products[0].image_url) featuredImage = products[0].image_url;
         }
 
-        const prompt = `You are an elite SEO copywriter and direct-response marketer trained in the exact principles of Alex Hormozi (Grand Slam Offers, Value Equation, clear CTAs, and building extreme trust). \n\nWrite a highly SEO-optimized, engaging blog article to rank the landing page for a business named "${profile.business_name || 'This Company'}".\n\nBusiness Context & Mission:\n"${profile.mission_statement || 'Providing top-tier services and maximum value to our customers.'}"\n\nHere is their current active inventory/products to feature naturally in the article:\n${inventoryContext}\n\nInstructions:\n1. Write a compelling, value-driven article that builds trust, highlights the immense value of these specific products/services, and drives the reader to take action.\n2. Format the body content strictly with HTML tags (<h2>, <p>, <b>, <ul>, <li>). Do NOT use markdown.\n3. Keep the total length under 400 words. \n4. Return ONLY a valid JSON object with the following exact keys: 'title', 'excerpt' (1 compelling sentence), 'content' (the HTML body), and 'tags' (array of 3 to 5 SEO keywords). Do not include markdown formatting blocks (like \`\`\`json) around the output.`;
+        // Fetch previous post titles to avoid repetition
+        const { data: previousPosts } = await supabaseAdmin
+            .from('posts')
+            .select('title')
+            .eq('user_id', profile.id)
+            .order('created_at', { ascending: false })
+            .limit(10);
+        
+        const previousTopics = previousPosts?.map(p => p.title).join(', ') || 'None';
+
+        const prompt = `
+You are a Research-driven SEO Strategist and Content Marketer with 20 years of experience in direct-response growth.
+
+OBJECTIVE: Write a highly relevant, high-converting blog article that ranks on Google and provides MASSIVE value to potential customers.
+
+BUSINESS CONTEXT:
+- Name: "${profile.business_name || 'This Company'}"
+- Mission/Bio: "${profile.mission_statement || 'Providing top-tier services.'}"
+- Products/Services to Feature: 
+${inventoryContext}
+
+AVOID REPETITION: 
+The following topics have already been covered. DO NOT write about these again:
+[${previousTopics}]
+
+STRICT GUIDELINES:
+1. RESEARCH-DRIVEN: Simulate industry research. Address a specific pain point or trend relevant to this business.
+2. NATURAL BRANDING: Do NOT repeat the business name over and over. Mention it naturally only once or twice (e.g., in the intro or CTA). Focus on the reader's needs.
+3. SEO OPTIMIZED: Target high-intent keywords. Use a mix of educational and transactional intent.
+4. CONVERSION: Follow Alex Hormozi's value-first framework. Build extreme trust before asking for the sale.
+5. FORMAT: Use ONLY HTML tags (<h2>, <p>, <b>, <ul>, <li>). No markdown.
+6. LENGTH: 350-450 words.
+
+OUTPUT: Return ONLY a valid JSON object with: 'title', 'excerpt' (compelling), 'content' (HTML), and 'tags' (SEO keywords).`;
 
         try {
             const result = await generateObject({
-              model: google('gemini-3-flash-preview'),
+              model: google('gemini-1.5-pro'),
               prompt: prompt + `\n\nGenerate this uniquely for today's timestamp: ${new Date().toISOString()}`,
               schema: z.object({
                 title: z.string(),

@@ -64,29 +64,30 @@ export async function GET(request: Request) {
                 const allInputImages = [...propImages];
                 if (logoUrl) allInputImages.push(logoUrl);
 
-                // C. Construct Prompts 
-                let finalImagePrompt = `Create a high-converting, professional Meta ad design for the product: "${prop.title}". \n\n`;
-                finalImagePrompt += `DESIGN PHILOSOPHY (ALEX HORMOZI FRAMEWORK):\n`;
-                finalImagePrompt += `2. BOLD TYPOGRAPHY: Use large, authoritative, high-contrast text for the main headline.\n`;
-                finalImagePrompt += `4. ZERO CLUTTER: Every element must drive the direct-response goal.\n\n`;
-                finalImagePrompt += `PRODUCT CONTEXT: ${prop.description || ''}. \n`;
-                finalImagePrompt += `VISUAL STYLE: Professional commercial photography, premium lighting, engaging composition. \n`;
+                // C. Construct Prompts (Hormozi Persona)
+                let finalImagePrompt = `PERSONA: World-class Direct Response Graphic Ads Designer using Alex Hormozi high-conversion frameworks.
+OBJECTIVE: Design a "WOW-factor", out-of-the-box Meta Ad graphic for: "${prop.title}".
 
-                if (logoUrl) {
-                    finalImagePrompt += `\n*** LOGO INSTRUCTIONS ***\nIntegrate the brand logo cleanly into the design without distortion.\n`;
-                }
+CONTEXT: "${prop.description || ''}"
+BUSINESS: "${businessName}"
 
-                finalImagePrompt += `\nAspect Ratio: 1:1.`;
-                if (contactNumber) finalImagePrompt += ` Display contact info: ${contactNumber}.`;
+DESIGN RULES:
+1. MAIN HOOK: Bold, attention-grabbing headline.
+2. BRANDING: Include the Business Logo provided in image inputs.
+3. VISUALS: Premium, clean layout. No generic stock feel.
+4. CLUTTER-FREE: High-impact but sophisticated.
+
+Aspect Ratio: 1:1.`;
+                
+                if (contactNumber) finalImagePrompt += ` Display contact: ${contactNumber}.`;
 
                 const payload = {
-                  "model": "nano-banana-2",
+                  "model": "gpt-image-2-image-to-image", // Upgraded to premium model
                   "input": {
                     "prompt": finalImagePrompt,
-                    "image_input": allInputImages,
+                    "input_urls": allInputImages, // Using correct field for image-to-image
                     "aspect_ratio": "1:1",
-                    "resolution": "1K",
-                    "output_format": "png"
+                    "resolution": "1K"
                   }
                 };
 
