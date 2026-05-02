@@ -104,7 +104,7 @@ OUTPUT: Return ONLY a valid JSON object with: 'title', 'excerpt' (compelling), '
 
         try {
             const result = await generateObject({
-              model: google('gemini-1.5-pro'),
+              model: google('gemini-3-flash-preview'),
               prompt: prompt + `\n\nGenerate this uniquely for today's timestamp: ${new Date().toISOString()}`,
               schema: z.object({
                 title: z.string(),
