@@ -246,7 +246,8 @@ export async function POST(request: Request) {
             question_page_custom_headline: `Get Pricing & Details`,
             question_page_custom_text: "Confirm details to view pricing.",
             privacy_policy: { 
-                url: privacyPolicyUrl || finalFollowUpUrl, 
+                // CRITICAL: Meta blocks 'localhost' URLs in Lead Forms. Force production domain if testing locally.
+                url: (privacyPolicyUrl && !privacyPolicyUrl.includes('localhost')) ? privacyPolicyUrl : "https://adrolls.in/privacy", 
                 link_text: "Privacy Policy" 
             },
             questions: [
@@ -273,17 +274,25 @@ export async function POST(request: Request) {
         });
 
         let formCreateData = await formCreateRes.json();
+        let finalFailedPayload = leadFormPayload;
 
-        // FALLBACK: If HIGHER_INTENT fails with "Capability" error, try MORE_VOLUME
+        // FALLBACK 1: If HIGHER_INTENT fails, try MORE_VOLUME
         if (!formCreateRes.ok && (formCreateData.error?.code === 3 || formCreateData.error?.message?.includes("capability"))) {
             logToFile("⚠️ Meta App lacks Capability for HIGHER_INTENT forms. Falling back to MORE_VOLUME...");
             
             const fallbackPayload = { 
                 ...leadFormPayload, 
-                form_type: "MORE_VOLUME", 
-                is_optimized_for_quality: false 
+                form_type: "MORE_VOLUME"
             };
-            delete fallbackPayload.logic_config; // Logic is likely the cause of the restriction
+            delete fallbackPayload.is_optimized_for_quality; 
+            delete fallbackPayload.logic_config; 
+            
+            // CRITICAL: These fields are ONLY for HIGHER_INTENT forms. 
+            // Including them in a MORE_VOLUME request triggers the "Capability" error.
+            delete fallbackPayload.question_page_custom_headline;
+            delete fallbackPayload.question_page_custom_text;
+            
+            finalFailedPayload = fallbackPayload;
 
             formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
                 method: 'POST',
@@ -293,8 +302,36 @@ export async function POST(request: Request) {
             formCreateData = await formCreateRes.json();
         }
 
+        // FALLBACK 2: If still fails, try MINIMAL (No Custom Questions)
+        if (!formCreateRes.ok && (formCreateData.error?.code === 3 || formCreateData.error?.message?.includes("capability"))) {
+            logToFile("⚠️ Still failing. Falling back to MINIMAL (No Custom Questions)...");
+            
+            const minimalPayload = {
+                name: formName + " - Basic",
+                follow_up_action_url: finalFollowUpUrl,
+                privacy_policy: { 
+                    url: "https://adrolls.in/privacy", 
+                    link_text: "Privacy Policy" 
+                },
+                questions: [
+                    { type: "FULL_NAME", key: "full_name" },
+                    { type: "EMAIL", key: "email" },
+                    { type: "PHONE", key: "phone_number" }
+                ],
+                access_token: facebookToken
+            };
+            finalFailedPayload = minimalPayload;
+
+            formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                body: JSON.stringify(minimalPayload)
+            });
+            formCreateData = await formCreateRes.json();
+        }
+
         if (!formCreateRes.ok) {
-            logToFile("❌ Lead Form Failed Payload:", leadFormPayload);
+            logToFile("❌ Lead Form Failed Payload:", finalFailedPayload);
             logToFile("❌ Lead Form Failed Response:", formCreateData);
             throw new Error(`Meta Lead Form Error: ${formCreateData.error?.message || "Unknown Error"}`);
         }
