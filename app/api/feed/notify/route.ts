@@ -24,10 +24,10 @@ export async function POST(request: Request) {
 
     if (postError || !post) throw new Error('Post not found')
 
-    // 2. Fetch the business profile to get the name
+    // 2. Fetch the business profile to get branding details
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('business_name')
+      .select('business_name, logo_url, custom_domain')
       .eq('id', ownerId)
       .single()
 
@@ -51,13 +51,17 @@ export async function POST(request: Request) {
       process.env.VAPID_PRIVATE_KEY!
     )
 
+    // Build the absolute URL
+    const baseUrl = profile?.custom_domain 
+        ? `https://${profile.custom_domain}` 
+        : `https://app.adrolls.in/shared/${ownerId}`;
+    
     const payload = JSON.stringify({
       title: `${profile?.business_name || 'Business Update'}`,
       body: post.title || 'New update posted to the feed!',
-      icon: post.image_url || '/icon-192x192.png',
-      data: {
-        url: `/shared/${ownerId}`
-      }
+      icon: profile?.logo_url || post.image_url || 'https://app.adrolls.in/icon-192x192.png',
+      badge: profile?.logo_url || 'https://app.adrolls.in/icon-192x192.png',
+      url: baseUrl
     })
 
     // 5. Send notifications

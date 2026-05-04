@@ -5,9 +5,9 @@ self.addEventListener('push', function (event) {
       const data = event.data.json();
       const options = {
         body: data.body,
-        icon: '/icon-192x192.png',
-        badge: '/icon-192x192.png',
-        data: { url: data.url || '/' }
+        icon: data.icon || '/icon-192x192.png',
+        badge: data.badge || data.icon || '/icon-192x192.png',
+        data: { url: data.url || (data.data && data.data.url) || '/' }
       };
       event.waitUntil(self.registration.showNotification(data.title, options));
     }
