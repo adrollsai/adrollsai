@@ -11,6 +11,7 @@ import PushManager from '@/components/PushManager'
 
 // --- TYPES ---
 type Profile = {
+  id: string
   business_name: string
   contact_number: string
   logo_url: string
