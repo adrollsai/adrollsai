@@ -43,17 +43,38 @@ export async function POST(request: Request) {
 
           if (!profile || !profile.selected_page_token) continue;
 
-          // Fetch the actual Lead Details (Name, Email, Phone)
-          const fbResponse = await fetch(`https://graph.facebook.com/v19.0/${leadgen_id}?access_token=${profile.selected_page_token}`)
+          // Fetch the actual Lead Details (Name, Email, Phone, Created Time, Form ID)
+          const fbResponse = await fetch(`https://graph.facebook.com/v19.0/${leadgen_id}?fields=id,created_time,field_data,form_id&access_token=${profile.selected_page_token}`)
           const fbLead = await fbResponse.json()
           if (fbLead.error) continue;
 
           let name = 'Unknown', phone = '', email = ''
+          const customFields: Record<string, any> = {}
+          
           fbLead.field_data?.forEach((field: any) => {
-            if (field.name === 'full_name' || field.name === 'name') name = field.values[0]
-            if (field.name === 'phone_number') phone = field.values[0]
-            if (field.name === 'email') email = field.values[0]
+            const fieldName = field.name
+            const fieldValue = field.values[0]
+
+            if (fieldName === 'full_name' || fieldName === 'name') name = fieldValue
+            else if (fieldName === 'phone_number') phone = fieldValue
+            else if (fieldName === 'email') email = fieldValue
+            else {
+              // Store all other fields (custom qualification questions)
+              customFields[fieldName] = fieldValue
+            }
           })
+
+          // Fetch Form Name
+          let formName = 'Facebook Lead Form'
+          if (fbLead.form_id) {
+            try {
+              const formRes = await fetch(`https://graph.facebook.com/v19.0/${fbLead.form_id}?fields=name&access_token=${profile.selected_page_token}`)
+              const formData = await formRes.json()
+              if (formData.name) formName = formData.name
+            } catch (e) {
+              console.error("Could not fetch Form metadata", e)
+            }
+          }
 
           // Fetch Ad and Campaign Name if available
           let adCampaignString = 'Direct Lead Form'
@@ -78,6 +99,10 @@ export async function POST(request: Request) {
             email,
             source: 'Facebook Ads',
             facebook_lead_id: leadgen_id,
+            facebook_created_at: fbLead.created_time,
+            form_id: fbLead.form_id,
+            form_name: formName,
+            custom_fields: customFields,
             pipeline_stage: 'New',
             ad_name: adCampaignString
           }).select().single()

@@ -240,16 +240,30 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
 
                 if (leadsData.data && leadsData.data.length > 0) {
                     const formattedLeads = leadsData.data.map((l: any) => {
-                        const getField = (name: string) => l.field_data?.find((f: any) => f.name === name)?.values[0] || '';
+                        const customFields: Record<string, any> = {}
+                        let name = 'Unknown', email = '', phone = ''
+
+                        l.field_data?.forEach((field: any) => {
+                            const fn = field.name
+                            const fv = field.values[0]
+                            if (fn === 'full_name' || fn === 'name') name = fv
+                            else if (fn === 'email') email = fv
+                            else if (fn === 'phone_number') phone = fv
+                            else customFields[fn] = fv
+                        })
+
                         const sourceTag = l.ad_name ? `${l.ad_name} | ${form.name}` : form.name;
                         return {
                             facebook_lead_id: l.id,
-                            name: getField('full_name') || getField('name') || 'Unknown',
-                            email: getField('email') || '',
-                            phone: getField('phone_number') || '',
+                            name,
+                            email,
+                            phone,
                             source: 'Facebook',
+                            form_id: form.id,
+                            form_name: form.name,
+                            custom_fields: customFields,
                             ad_name: sourceTag, 
-                            created_at: l.created_time
+                            facebook_created_at: l.created_time
                         };
                     });
                     allLeads.push(...formattedLeads);

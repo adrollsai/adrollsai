@@ -21,9 +21,10 @@ function urlBase64ToUint8Array(base64String: string) {
 
 interface PushManagerProps {
   variant?: 'banner' | 'inline';
+  ownerId?: string;
 }
 
-export default function PushManager({ variant = 'inline' }: PushManagerProps) {
+export default function PushManager({ variant = 'inline', ownerId }: PushManagerProps) {
   const [isSupported, setIsSupported] = useState(false)
   const [subscription, setSubscription] = useState<PushSubscription | null>(null)
   const [loading, setLoading] = useState(false)
@@ -110,12 +111,12 @@ export default function PushManager({ variant = 'inline' }: PushManagerProps) {
       const res = await fetch('/api/web-push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription: sub }),
+        body: JSON.stringify({ subscription: sub, ownerId }),
       })
 
       if (res.ok) {
           toast.success("Notifications Enabled!", {
-            description: "You will now receive high-value alerts."
+            description: "You are now subscribed to real-time updates."
           })
       }
 
@@ -174,8 +175,8 @@ export default function PushManager({ variant = 'inline' }: PushManagerProps) {
              <BellRing size={20} />
            </div>
            <div>
-              <p className="text-sm font-bold text-slate-900">Enable Notifications</p>
-              <p className="text-xs text-slate-500 leading-tight">Never miss a new lead.</p>
+              <p className="text-sm font-bold text-slate-900">Stay Updated</p>
+              <p className="text-xs text-slate-500 leading-tight">Get notified about new products & offers.</p>
            </div>
         </div>
 

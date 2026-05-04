@@ -156,6 +156,23 @@ export default function LeadProfilePage() {
                 </div>
             </div>
 
+            {/* Custom Qualification Questions */}
+            {lead.custom_fields && Object.keys(lead.custom_fields).length > 0 && (
+                <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 className="text-[10px] font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
+                        <CheckCircle2 size={12} className="text-emerald-500"/> Qualification Details
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {Object.entries(lead.custom_fields).map(([key, value]) => (
+                            <div key={key} className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">{key.replace(/_/g, ' ')}</span>
+                                <span className="text-xs font-bold text-slate-700">{String(value)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Context & Tags */}
             <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
                 <div>

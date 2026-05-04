@@ -148,43 +148,66 @@ export default function AssetsPage() {
  // 4. Handle WhatsApp Share (SINGLE-TAP WITH PROXY & FALLBACK)
   const handleShareWhatsApp = async () => {
     if (!selectedAsset) return;
+    
+    console.log("🟢 WhatsApp Share triggered for:", selectedAsset.url);
     const textFallback = `${caption ? caption + '\n\n' : ''}${selectedAsset.url}`;
 
+    // Video fallback (WhatsApp API doesn't support direct video file sharing via link)
     if (selectedAsset.type === 'video') {
+         console.log("📹 Video detected, using link sharing...");
          window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`;
          return;
     }
 
-    try {
+    const sharePromise = async () => {
       setIsDownloading(true);
-      const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(selectedAsset.url)}`;
-      const response = await fetch(proxyUrl);
-      
-      if (!response.ok) throw new Error("Network error fetching image through proxy.");
-      
-      const blob = await response.blob();
-      const mimeType = blob.type || 'image/jpeg';
-      const ext = mimeType.split('/')[1] || 'jpg';
-      const file = new File([blob], `marketing-asset.${ext}`, { type: mimeType });
-      const shareData = {
-          title: 'Marketing Asset',
-          text: caption || '',
-          files: [file]
-      };
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share(shareData);
-      } else {
-          window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`;
-      }
+      try {
+        // 1. Fetch the image file
+        const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(selectedAsset.url)}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error("Failed to fetch image for sharing.");
+        
+        const blob = await response.blob();
+        const mimeType = blob.type || 'image/jpeg';
+        const ext = mimeType.split('/')[1] || 'jpg';
+        const file = new File([blob], `marketing-asset-${Date.now()}.${ext}`, { type: mimeType });
+        
+        const shareData = {
+            title: 'Marketing Asset',
+            text: caption || '',
+            files: [file]
+        };
 
-    } catch (error: any) {
-      console.error("Share failed:", error);
-      if (error.name !== 'AbortError') {
-          window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`;
+        // 2. Try to share the ACTUAL FILE
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+            console.log("📱 Sharing actual file via native share sheet...");
+            await navigator.share(shareData);
+            return "Shared successfully!";
+        } else {
+            // 3. Fallback to link if file sharing is unsupported
+            console.warn("⚠️ File sharing not supported on this browser/platform. Falling back to link...");
+            window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`;
+            return "Shared via link (File sharing unsupported on desktop)";
+        }
+
+      } catch (error: any) {
+        console.error("❌ Share failed:", error);
+        if (error.name !== 'AbortError') {
+            // Last resort fallback
+            window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`;
+            return "Shared via link due to error";
+        }
+        throw error;
+      } finally {
+        setIsDownloading(false);
       }
-    } finally {
-      setIsDownloading(false);
-    }
+    };
+
+    toast.promise(sharePromise(), {
+      loading: 'Downloading image for WhatsApp...',
+      success: (msg) => msg,
+      error: 'Could not prepare image for sharing.'
+    });
   }
 
   // Helper for Dimensions

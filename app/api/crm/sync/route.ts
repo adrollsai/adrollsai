@@ -40,8 +40,12 @@ export async function POST(request: Request) {
             email: lead.email,
             phone: lead.phone,
             source: 'Facebook',
+            form_id: lead.form_id,
+            form_name: lead.form_name,
+            custom_fields: lead.custom_fields,
             ad_name: lead.ad_name,
             facebook_lead_id: lead.facebook_lead_id,
+            facebook_created_at: lead.facebook_created_at,
             status: 'New', 
             pipeline_stage: 'New'
         }, { onConflict: 'facebook_lead_id' })

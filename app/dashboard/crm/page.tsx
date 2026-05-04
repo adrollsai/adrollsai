@@ -416,6 +416,7 @@ export default function CRMPage() {
                         <div className="flex justify-between items-start mb-3">
                             <div className="flex-1 min-w-0 pr-4 mt-1">
                                 <h3 className="font-extrabold text-slate-900 text-lg truncate group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
+                                <p className="text-[11px] font-bold text-slate-500 mt-0.5">{lead.phone || 'No phone number'}</p>
                             </div>
                             <div className="flex gap-2 shrink-0">
                                 {lead.phone && (
@@ -432,7 +433,7 @@ export default function CRMPage() {
                         <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-100 border-dashed">
                             <span className="text-sm font-bold text-blue-600">{lead.pipeline_stage || 'New Lead'}</span>
                             <span className="text-[11px] font-bold text-slate-400">
-                                {new Date(lead.created_at).toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}
+                                {new Date(lead.facebook_created_at || lead.created_at).toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}
                             </span>
                         </div>
 

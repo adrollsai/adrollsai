@@ -87,6 +87,48 @@ export default function ProductsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const editFileInputRef = useRef<HTMLInputElement>(null)
 
+  // --- UTILS ---
+  const compressImage = (file: File, quality = 0.7, maxWidth = 1200): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxWidth) {
+            height = (maxWidth / width) * height;
+            width = maxWidth;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob((blob) => {
+            if (blob) {
+              const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), {
+                type: 'image/jpeg',
+                lastModified: Date.now(),
+              });
+              resolve(compressedFile);
+            } else {
+              reject(new Error('Canvas to Blob conversion failed'));
+            }
+          }, 'image/jpeg', quality);
+        };
+        img.onerror = (err) => reject(err);
+      };
+      reader.onerror = (err) => reject(err);
+    });
+  };
+
   // 1. SAFE FETCH WITH LOCAL CACHING
   const fetchProperties = async (force = false) => {
     try {
@@ -161,6 +203,14 @@ export default function ProductsPage() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files)
+      const currentCount = selectedFiles.length
+      const limit = 10
+
+      if (currentCount + newFiles.length > limit) {
+          toast.error(`Maximum ${limit} images allowed per product.`)
+          return
+      }
+
       setSelectedFiles(prev => [...prev, ...newFiles])
       const newPreviews = newFiles.map(file => URL.createObjectURL(file))
       setPreviews(prev => [...prev, ...newPreviews])
@@ -170,6 +220,14 @@ export default function ProductsPage() {
   const handleEditFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files)
+      const currentCount = existingImages.length + editFiles.length
+      const limit = 10
+
+      if (currentCount + newFiles.length > limit) {
+          toast.error(`Maximum ${limit} images allowed per product.`)
+          return
+      }
+
       setEditFiles(prev => [...prev, ...newFiles])
       const newPreviews = newFiles.map(file => URL.createObjectURL(file))
       setEditPreviews(prev => [...prev, ...newPreviews])
@@ -190,6 +248,12 @@ export default function ProductsPage() {
         toast.error("Please enter a Product/Service Name.")
         return
     }
+
+    if (existingImages.length + editFiles.length > 10) {
+        toast.error("Maximum 10 images allowed.")
+        return
+    }
+
     setIsSubmitting(true)
 
     try {
@@ -201,10 +265,12 @@ export default function ProductsPage() {
       // Upload any *new* files selected
       if (editFiles.length > 0) {
         const uploadPromises = editFiles.map(async (file) => {
-          const fileExt = file.name.split('.').pop()
+          // COMPRESS BEFORE UPLOAD
+          const compressedFile = await compressImage(file)
+          const fileExt = 'jpg'
           const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
          
-          const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, file)
+          const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, compressedFile)
           if (uploadError) throw uploadError
           const { data: { publicUrl } } = supabase.storage.from('properties').getPublicUrl(fileName)
           return publicUrl
@@ -357,6 +423,11 @@ export default function ProductsPage() {
         toast.error("Please enter a Product/Service Name.")
         return
     }
+    if (selectedFiles.length > 10) {
+        toast.error("Maximum 10 images allowed.")
+        return
+    }
+
     setIsSubmitting(true)
 
     try {
@@ -367,10 +438,12 @@ export default function ProductsPage() {
 
       if (selectedFiles.length > 0) {
         const uploadPromises = selectedFiles.map(async (file) => {
-          const fileExt = file.name.split('.').pop()
+          // COMPRESS BEFORE UPLOAD
+          const compressedFile = await compressImage(file)
+          const fileExt = 'jpg'
           const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
          
-          const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, file)
+          const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, compressedFile)
           if (uploadError) throw uploadError
           const { data: { publicUrl } } = supabase.storage.from('properties').getPublicUrl(fileName)
           return publicUrl
@@ -414,39 +487,57 @@ export default function ProductsPage() {
     e.stopPropagation()
   
     if (isSharingId) return 
-    setIsSharingId(prop.id)
-
+    
+    console.log("🟢 Inventory WhatsApp Share triggered for:", prop.title);
     const shareTitle = prop.title
     const shareText = `${shareTitle}\n\n${prop.description || ''}`
     let imageUrls = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url]
     imageUrls = imageUrls.slice(0, 4) 
-
     const textFallback = `${shareText}\n\n*Product Images:*\n${imageUrls.join('\n\n')}`
 
-    try {
-      const fetchPromises = imageUrls.map(async (url, index) => {
-        const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(url)}`
-        const response = await fetch(proxyUrl)
-        if (!response.ok) throw new Error(`Network error fetching image ${index}`)
-        const blob = await response.blob()
-        const mimeType = blob.type || 'image/jpeg'
-        const ext = mimeType.split('/')[1] || 'jpg'
-        return new File([blob], `product_${prop.id}_${index + 1}.${ext}`, { type: mimeType })
-      })
+    const sharePromise = async () => {
+      setIsSharingId(prop.id)
+      try {
+        // 1. Fetch all images first
+        const fetchPromises = imageUrls.map(async (url, index) => {
+          const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(url)}`
+          const response = await fetch(proxyUrl)
+          if (!response.ok) throw new Error(`Network error fetching image ${index}`)
+          const blob = await response.blob()
+          const mimeType = blob.type || 'image/jpeg'
+          const ext = mimeType.split('/')[1] || 'jpg'
+          return new File([blob], `product_${prop.id}_${index + 1}.${ext}`, { type: mimeType })
+        })
 
-      const filesArray = await Promise.all(fetchPromises)
+        const filesArray = await Promise.all(fetchPromises)
 
-      if (navigator.canShare && navigator.canShare({ files: filesArray })) {
-          await navigator.share({ title: shareTitle, text: shareText, files: filesArray })
-      } else {
-          window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`
+        // 2. Try to share actual files
+        if (navigator.canShare && navigator.canShare({ files: filesArray })) {
+            console.log("📱 Sharing product files via native share sheet...");
+            await navigator.share({ title: shareTitle, text: shareText, files: filesArray })
+            return "Shared successfully!"
+        } else {
+            console.warn("⚠️ File sharing not supported. Falling back to link...");
+            window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`
+            return "Shared via link"
+        }
+      } catch (error: any) { 
+        console.error("❌ Share failed", error) 
+        if (error.name !== 'AbortError') { 
+          window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}` 
+          return "Shared via link due to error"
+        }
+        throw error
+      } finally {
+          setIsSharingId(null)
       }
-    } catch (error: any) { 
-      console.error("Share failed", error) 
-      if (error.name !== 'AbortError') { window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}` }
-    } finally {
-        setIsSharingId(null)
     }
+
+    toast.promise(sharePromise(), {
+      loading: `Downloading ${imageUrls.length} image(s)...`,
+      success: (msg) => msg,
+      error: 'Could not prepare images for sharing.'
+    })
   }
 
   const filteredProperties = properties.filter(p => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2 } from 'lucide-react'
+import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2, Rss } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -68,6 +68,7 @@ export default function BottomNav() {
   // Removed 'Team' from the bottom nav items
   const allNavItems = [
     { name: 'Inventory', icon: LayoutGrid, path: '/dashboard' },
+    { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
     { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
     { name: 'Ads', icon: Zap, path: '/dashboard/ads' },

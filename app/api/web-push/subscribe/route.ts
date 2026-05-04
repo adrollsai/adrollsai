@@ -7,11 +7,11 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     
     const body = await request.json()
-    const { subscription } = body
+    const { subscription, ownerId } = body
     const { data: { user } } = await supabase.auth.getUser()
 
-    if (!user || !subscription) {
-      return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+    if (!subscription) {
+      return NextResponse.json({ error: 'Invalid subscription object' }, { status: 400 })
     }
 
     const { endpoint, keys } = subscription
@@ -22,14 +22,15 @@ export async function POST(request: Request) {
         process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // 1. DELETE: Remove this device from ANY other user to prevent "Zombie" notifs
+    // 1. DELETE: Remove this device from ANY other user/owner to prevent "Zombie" notifs
     await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', endpoint)
 
-    // 2. INSERT: Assign device to current user
+    // 2. INSERT: Assign device to current user OR catalog owner
     const { error } = await supabaseAdmin
       .from('push_subscriptions')
       .insert({
-        user_id: user.id,
+        user_id: user?.id || null,
+        catalog_owner_id: ownerId || null,
         endpoint,
         p256dh: keys.p256dh,
         auth: keys.auth
