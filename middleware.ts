@@ -19,10 +19,12 @@ export async function middleware(request: NextRequest) {
 
   // If it's a custom domain...
   if (!isPlatformDomain) {
-    // CRITICAL PWA FIX: Let API routes (like /api/manifest and /api/org-icon) pass through normally!
-    // Without this, the PWA installation on custom domains will 404.
-    if (url.pathname.startsWith('/api/')) {
-        // Do nothing, let it fall through to the API route
+    // CRITICAL PWA FIX: Let API routes and service worker files pass through normally!
+    // Without this, PWA installation and notifications on custom domains will 404.
+    const isStaticPwaFile = url.pathname.endsWith('.js') || url.pathname.endsWith('.webmanifest') || url.pathname.endsWith('.json');
+    
+    if (url.pathname.startsWith('/api/') || isStaticPwaFile) {
+        // Do nothing, let it fall through
     } else {
         // Rewrite all other frontend paths to the shared profile route
         return NextResponse.rewrite(new URL(`/shared/${hostname}${url.pathname}`, request.url));
@@ -94,6 +96,6 @@ export const config = {
      * - auth (auth callback routes)
      * - shared (custom domain internal routes)
      */
-    '/((?!_next/static|_next/image|favicon.ico|auth|shared).*)',
+    '/((?!_next/static|_next/image|favicon.ico|auth|shared|sw.js|sw-v2.js).*)',
   ],
 }
