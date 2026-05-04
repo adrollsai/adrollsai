@@ -19,10 +19,12 @@ self.addEventListener('push', function(event) {
       body: data.body,
       icon: data.icon || '/icon-192x192.png',
       badge: data.badge || data.icon || '/icon-192x192.png',
+      image: data.image,
+      tag: data.tag || 'general',
+      renotify: data.renotify || false,
       vibrate: [100, 50, 100],
       data: {
         dateOfArrival: Date.now(),
-        primaryKey: '2',
         url: data.url || '/'
       },
       actions: [
@@ -36,22 +38,28 @@ self.addEventListener('push', function(event) {
   }
 })
 
-// 3. Handle Click (iOS Focus Fix)
+// 3. Handle Click (PWA Focus Fix)
 self.addEventListener('notificationclick', function(event) {
   event.notification.close()
   const targetUrl = event.notification.data.url
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-      // A. Try to find an existing window to focus
+      // 1. Try to find an existing window already open to this URL
       for (var i = 0; i < windowClients.length; i++) {
         var client = windowClients[i]
-        // Match origin to ensure we own the window
-        if (client.url && 'focus' in client) {
-           return client.focus().then(c => c.navigate(targetUrl))
+        if (client.url === targetUrl && 'focus' in client) {
+           return client.focus()
         }
       }
-      // B. If no window open, open a new one
+      // 2. If any window is open for this origin (PWA context), focus and navigate it
+      if (windowClients.length > 0) {
+        const firstClient = windowClients[0]
+        if ('focus' in firstClient) {
+            return firstClient.focus().then(c => c.navigate(targetUrl))
+        }
+      }
+      // 3. Otherwise open a new window
       if (clients.openWindow) {
         return clients.openWindow(targetUrl)
       }

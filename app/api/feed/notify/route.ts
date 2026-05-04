@@ -51,17 +51,30 @@ export async function POST(request: Request) {
       process.env.VAPID_PRIVATE_KEY!
     )
 
-    // Build the absolute URL
-    const baseUrl = profile?.custom_domain 
-        ? `https://${profile.custom_domain}` 
-        : `https://app.adrolls.in/shared/${ownerId}`;
+    // Build the absolute URLs
+    const domain = profile?.custom_domain || `app.adrolls.in/shared/${ownerId}`;
+    const baseUrl = `https://${domain}`;
+    const feedUrl = profile?.custom_domain 
+        ? `https://${profile.custom_domain}?tab=feed` 
+        : `https://app.adrolls.in/shared/${ownerId}?tab=feed`;
+
+    // Use our dynamic icon processor for the notification icon
+    const iconUrl = profile?.custom_domain 
+        ? `https://${profile.custom_domain}/api/org-icon?type=icon`
+        : `https://app.adrolls.in/api/org-icon?type=icon&uid=${ownerId}`;
     
     const payload = JSON.stringify({
       title: `${profile?.business_name || 'Business Update'}`,
       body: post.title || 'New update posted to the feed!',
-      icon: profile?.logo_url || post.image_url || 'https://app.adrolls.in/icon-192x192.png',
-      badge: profile?.logo_url || 'https://app.adrolls.in/icon-192x192.png',
-      url: baseUrl
+      icon: iconUrl,
+      badge: iconUrl,
+      image: post.image_url || iconUrl, // Large image if available
+      tag: `feed-${ownerId}`, // Group notifications by business
+      renotify: true,
+      url: feedUrl,
+      data: {
+        url: feedUrl
+      }
     })
 
     // 5. Send notifications
