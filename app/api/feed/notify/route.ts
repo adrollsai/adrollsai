@@ -46,17 +46,16 @@ export async function POST(request: Request) {
 
     // 4. Configure web-push
     webpush.setVapidDetails(
-      'mailto:support@adrolls.ai',
+      'mailto:hello@marketingportal.online', // Generic VAPID subject to avoid domain attribution
       process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
       process.env.VAPID_PRIVATE_KEY!
     )
 
     // Build the absolute URLs
     const domain = profile?.custom_domain || `app.adrolls.in/shared/${ownerId}`;
-    const baseUrl = `https://${domain}`;
     const feedUrl = profile?.custom_domain 
-        ? `https://${profile.custom_domain}?tab=feed` 
-        : `https://app.adrolls.in/shared/${ownerId}?tab=feed`;
+        ? `https://${profile.custom_domain}/?tab=feed&t=${Date.now()}` 
+        : `https://app.adrolls.in/shared/${ownerId}?tab=feed&t=${Date.now()}`;
 
     // Use our dynamic icon processor for the notification icon
     const iconUrl = profile?.custom_domain 
@@ -64,16 +63,17 @@ export async function POST(request: Request) {
         : `https://app.adrolls.in/api/org-icon?type=icon&uid=${ownerId}`;
     
     const payload = JSON.stringify({
-      title: `${profile?.business_name || 'Business Update'}`,
-      body: post.title || 'New update posted to the feed!',
+      title: `${profile?.business_name || 'New Update'}`,
+      body: post.title || 'Check out our latest update!',
       icon: iconUrl,
       badge: iconUrl,
-      image: post.image_url || iconUrl, // Large image if available
-      tag: `feed-${ownerId}`, // Group notifications by business
+      image: post.image_url || iconUrl,
+      tag: `feed-${ownerId}`,
       renotify: true,
       url: feedUrl,
       data: {
-        url: feedUrl
+        url: feedUrl,
+        timestamp: Date.now()
       }
     })
 
