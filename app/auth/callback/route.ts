@@ -51,17 +51,17 @@ export async function GET(request: Request) {
       // We check for the provider tag or common token prefixes
       
       // --- FACEBOOK ---
-      if (provider === 'facebook' || (token && token.startsWith('EAA'))) {
+      if ((provider === 'facebook' || (token && token.startsWith('EAA'))) && token) {
           console.log("✅ Saving Facebook Token...")
           updates.facebook_token = token
       } 
       // --- LINKEDIN ---
-      else if (provider === 'linkedin_oidc') {
+      else if (provider === 'linkedin_oidc' && token) {
           console.log("✅ Saving LinkedIn Token...")
           updates.linkedin_token = token
       }
       // --- GOOGLE BUSINESS ---
-      else if (provider === 'google_business') {
+      else if (provider === 'google_business' && token) {
           console.log("✅ Saving Google Business Tokens...")
           updates.google_business_token = token
           if (refreshToken) {
@@ -69,7 +69,7 @@ export async function GET(request: Request) {
           }
       }
       // --- YOUTUBE ---
-      else if (provider === 'youtube') {
+      else if (provider === 'youtube' && token) {
           console.log("✅ Saving YouTube Tokens...")
           updates.youtube_token = token
           if (refreshToken) {

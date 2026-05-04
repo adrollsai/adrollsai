@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { toast } from 'sonner'
 
 type Asset = {
   id: string
@@ -244,6 +245,51 @@ export default function AssetsPage() {
     }
   }
 
+  const handleDownload = async () => {
+    if (!selectedAsset) return;
+    setIsDownloading(true);
+    try {
+      // 1. Fetch via proxy to avoid CORS and get actual blob
+      const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(selectedAsset.url)}`;
+      const response = await fetch(proxyUrl);
+      if (!response.ok) throw new Error("Download failed");
+      
+      const blob = await response.blob();
+      const mimeType = blob.type || (selectedAsset.type === 'video' ? 'video/mp4' : 'image/png');
+      const ext = mimeType.split('/')[1] || (selectedAsset.type === 'video' ? 'mp4' : 'png');
+      const fileName = `adroll-asset-${Date.now()}.${ext}`;
+      const file = new File([blob], fileName, { type: mimeType });
+
+      // 2. Try Web Share API (Best for PWA / Mobile to save to Photos)
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+              files: [file],
+              title: 'Download Asset',
+              text: 'Save this asset to your device'
+          });
+          toast.success("Share menu opened!");
+      } else {
+          // 3. Fallback: Traditional Blob Download
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          toast.success("Download started!");
+      }
+    } catch (error: any) {
+      console.error("Download Error:", error);
+      if (error.name !== 'AbortError') {
+          toast.error("Failed to download asset.");
+      }
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
   // Apply active filters
   const filteredAssets = assets.filter(asset => {
     const matchesType = activeFilter === 'All' || asset.type === activeFilter;
@@ -467,15 +513,14 @@ export default function AssetsPage() {
                             </button>
 
                             {/* Download Action */}
-                            <a 
-                                href={selectedAsset.url} 
-                                download={`asset.${selectedAsset.type === 'video' ? 'mp4' : 'png'}`} 
-                                target="_blank" 
-                                rel="noopener noreferrer" 
-                                className="w-full bg-slate-50 text-slate-700 py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 hover:bg-slate-100 border border-slate-200/60 transition-colors mt-2"
+                            <button 
+                                onClick={handleDownload}
+                                disabled={isPosting || isDownloading}
+                                className="w-full bg-slate-50 text-slate-700 py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 hover:bg-slate-100 border border-slate-200/60 transition-colors mt-2 active:scale-95 disabled:opacity-50"
                             >
-                                <Download size={18} /> Download High-Res File
-                            </a>
+                                {isDownloading ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+                                {isDownloading ? 'Downloading...' : 'Download High-Res File'}
+                            </button>
                         </div>
                     </div>
                 </div>
