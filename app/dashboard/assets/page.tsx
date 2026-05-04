@@ -247,47 +247,80 @@ export default function AssetsPage() {
 
   const handleDownload = async () => {
     if (!selectedAsset) return;
-    setIsDownloading(true);
-    try {
-      // 1. Fetch via proxy to avoid CORS and get actual blob
-      const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(selectedAsset.url)}`;
-      const response = await fetch(proxyUrl);
-      if (!response.ok) throw new Error("Download failed");
-      
-      const blob = await response.blob();
-      const mimeType = blob.type || (selectedAsset.type === 'video' ? 'video/mp4' : 'image/png');
-      const ext = mimeType.split('/')[1] || (selectedAsset.type === 'video' ? 'mp4' : 'png');
-      const fileName = `adroll-asset-${Date.now()}.${ext}`;
-      const file = new File([blob], fileName, { type: mimeType });
+    
+    // 1. Platform Detection
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    console.log("💾 Download triggered. Platform: ", isMobile ? "Mobile" : "Desktop");
 
-      // 2. Try Web Share API (Best for PWA / Mobile to save to Photos)
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-              files: [file],
-              title: 'Download Asset',
-              text: 'Save this asset to your device'
-          });
-          toast.success("Share menu opened!");
-      } else {
-          // 3. Fallback: Traditional Blob Download
-          const url = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = fileName;
-          document.body.appendChild(a);
-          a.click();
-          window.URL.revokeObjectURL(url);
-          document.body.removeChild(a);
-          toast.success("Download started!");
+    const downloadPromise = async () => {
+      setIsDownloading(true);
+      try {
+        // Fetch the file through our proxy to handle CORS
+        const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(selectedAsset.url)}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error("Failed to fetch asset file.");
+        
+        const blob = await response.blob();
+        const mimeType = blob.type || (selectedAsset.type === 'video' ? 'video/mp4' : 'image/png');
+        const ext = mimeType.split('/')[1] || (selectedAsset.type === 'video' ? 'mp4' : 'png');
+        const fileName = `adrolls-asset-${Date.now()}.${ext}`;
+        const file = new File([blob], fileName, { type: mimeType });
+
+        // 2. Platform-Specific Logic
+        // On Mobile/PWA: Use Share API to allow "Save to Photos"
+        // On Desktop: Use traditional download to avoid "User Gesture" errors and share sheet confusion
+        if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+                console.log("📱 Mobile detected, using Share API...");
+                await navigator.share({
+                    files: [file],
+                    title: 'Save Asset',
+                    text: 'Save this to your device'
+                });
+                return "Share menu opened!";
+            } catch (shareError: any) {
+                // If sharing was cancelled or failed (e.g. gesture lost), fallback to direct download
+                if (shareError.name === 'NotAllowedError' || shareError.name === 'AbortError') {
+                    console.warn("Share failed or was blocked, falling back to direct download...");
+                    triggerBlobDownload(blob, fileName);
+                    return "Download started!";
+                }
+                throw shareError;
+            }
+        } else {
+            // Desktop or Share API not supported
+            console.log("💻 Desktop/Standard environment, using blob download...");
+            triggerBlobDownload(blob, fileName);
+            return "Download started!";
+        }
+      } catch (error: any) {
+        console.error("❌ Download Error:", error);
+        throw error;
+      } finally {
+        setIsDownloading(false);
       }
-    } catch (error: any) {
-      console.error("Download Error:", error);
-      if (error.name !== 'AbortError') {
-          toast.error("Failed to download asset.");
-      }
-    } finally {
-      setIsDownloading(false);
-    }
+    };
+
+    // Helper to trigger the actual download
+    const triggerBlobDownload = (blob: Blob, fileName: string) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        }, 100);
+    };
+
+    toast.promise(downloadPromise(), {
+      loading: 'Preparing high-res file...',
+      success: (msg) => msg,
+      error: 'Failed to download asset.'
+    });
   }
 
   // Apply active filters
