@@ -244,12 +244,12 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
                         let name = 'Unknown', email = '', phone = ''
 
                         l.field_data?.forEach((field: any) => {
-                            const fn = field.name
+                            const fn = field.name.toLowerCase()
                             const fv = field.values[0]
                             if (fn === 'full_name' || fn === 'name') name = fv
                             else if (fn === 'email') email = fv
-                            else if (fn === 'phone_number') phone = fv
-                            else customFields[fn] = fv
+                            else if (fn === 'phone_number' || fn === 'phone' || fn === 'mobile_number') phone = fv
+                            else customFields[field.name] = fv
                         })
 
                         const sourceTag = l.ad_name ? `${l.ad_name} | ${form.name}` : form.name;

@@ -52,15 +52,15 @@ export async function POST(request: Request) {
           const customFields: Record<string, any> = {}
           
           fbLead.field_data?.forEach((field: any) => {
-            const fieldName = field.name
+            const fieldName = field.name.toLowerCase()
             const fieldValue = field.values[0]
 
             if (fieldName === 'full_name' || fieldName === 'name') name = fieldValue
-            else if (fieldName === 'phone_number') phone = fieldValue
             else if (fieldName === 'email') email = fieldValue
+            else if (fieldName === 'phone_number' || fieldName === 'phone' || fieldName === 'mobile_number') phone = fieldValue
             else {
               // Store all other fields (custom qualification questions)
-              customFields[fieldName] = fieldValue
+              customFields[field.name] = fieldValue
             }
           })
 

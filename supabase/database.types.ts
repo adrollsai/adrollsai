@@ -563,9 +563,13 @@ export type Database = {
           assigned_to: string | null
           budget: string | null
           created_at: string
+          custom_fields: Json | null
           email: string | null
           external_id: string | null
+          facebook_created_at: string | null
           facebook_lead_id: string | null
+          form_id: string | null
+          form_name: string | null
           id: string
           name: string
           next_followup: string | null
@@ -585,9 +589,13 @@ export type Database = {
           assigned_to?: string | null
           budget?: string | null
           created_at?: string
+          custom_fields?: Json | null
           email?: string | null
           external_id?: string | null
+          facebook_created_at?: string | null
           facebook_lead_id?: string | null
+          form_id?: string | null
+          form_name?: string | null
           id?: string
           name: string
           next_followup?: string | null
@@ -607,9 +615,13 @@ export type Database = {
           assigned_to?: string | null
           budget?: string | null
           created_at?: string
+          custom_fields?: Json | null
           email?: string | null
           external_id?: string | null
+          facebook_created_at?: string | null
           facebook_lead_id?: string | null
+          form_id?: string | null
+          form_name?: string | null
           id?: string
           name?: string
           next_followup?: string | null
