@@ -426,8 +426,21 @@ export default function FloatingAgent() {
               {isLoading && <div className="self-start bg-white border border-slate-100 px-4 py-3 rounded-[24px] shadow-sm text-slate-600 text-[14px] flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Working...</div>}
             </div>
             <form onSubmit={handleSubmit} className="p-4 bg-white border-t border-slate-100 flex gap-2 shrink-0 rounded-b-[32px]">
-              <input type="text" value={input} onChange={handleInputChange} placeholder="Message AI..." className="flex-1 bg-[#f1f5f9] rounded-full px-5 py-3 text-[15px] focus:outline-none" disabled={isLoading} />
-              <button disabled={!input.trim() || isLoading} type="submit" className="bg-[#003D6F] text-white w-12 h-12 rounded-full flex items-center justify-center disabled:opacity-50"><Send size={18} /></button>
+              <input 
+                type="text" 
+                value={input} 
+                onChange={handleInputChange} 
+                placeholder="Message AI..." 
+                className="flex-1 bg-[#f1f5f9] rounded-full px-5 py-3 text-[15px] focus:outline-none" 
+                disabled={isLoading} 
+              />
+              <button 
+                disabled={!input.trim() || isLoading} 
+                type="submit" 
+                className="bg-[#003D6F] text-white w-12 h-12 rounded-full flex items-center justify-center disabled:opacity-50 transition-all active:scale-95"
+              >
+                <Send size={18} />
+              </button>
             </form>
           </motion.div>
         )}

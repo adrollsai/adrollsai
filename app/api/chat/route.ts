@@ -71,18 +71,22 @@ export async function POST(request: Request) {
 
     // --- HORMORZI-STYLE DIRECT RESPONSE PROMPT ---
     let finalImagePrompt = `PERSONA: World-class Direct Response Graphic Ads Designer (20+ years exp) using Alex Hormozi high-conversion frameworks.
-OBJECTIVE: Design a "WOW-factor", out-of-the-box Meta Ad graphic that stops the scroll immediately.
+OBJECTIVE: Design a "WOW-factor", hyper-realistic Meta Ad graphic that stops the scroll immediately.
 
 TITLE/OFFER: "${propertyTitle}"
 DESCRIPTION/CONTEXT: "${propertyDescription}"
 BUSINESS NAME: "${businessName}"
 
 DESIGN RULES:
-1. MAIN HOOK: Create a bold, attention-grabbing headline that stops the scroll. 
-2. LOGO INTEGRATION: YOU MUST INCLUDE THE PROVIDED BUSINESS LOGO. Place it professionally in the corner or a prominent position.
-3. VISUALS: Use the provided images to create a super attractive, premium, and clean layout. 
-4. CLUTTER-FREE: Give important info clearly but keep the design sophisticated and "out-of-the-box".
-5. NO GENERIC STOCK: Make it look like a high-budget premium agency design.
+1. HYPER-REALISM: The image must look like a professional photograph taken with a high-end camera (Sony A7R V or Canon EOS R5). 
+2. NO ARTIFICIAL SHEEN: Avoid that typical "AI look". No plasticy textures, no artificial glowing sheen, and no saturated "HDR-style" over-processing.
+3. NATURAL LIGHTING: Use soft, natural light (Golden Hour or professional studio lighting). Shadows should be soft and realistic.
+4. PEOPLE: Include people ONLY if they look natural, authentic, and add value to the scene (e.g., a happy family in a home, a professional in an office). They should look like real people, not models from a stock catalog.
+5. MAIN HOOK: Create a bold, attention-grabbing headline that stops the scroll. 
+6. LOGO INTEGRATION: YOU MUST INCLUDE THE PROVIDED BUSINESS LOGO. Place it professionally in the corner or a prominent position.
+7. VISUALS: Use the provided images to create a super attractive, premium, and clean layout. 
+8. CLUTTER-FREE: Give important info clearly but keep the design sophisticated and "out-of-the-box".
+9. NO GENERIC STOCK: Make it look like a high-budget premium agency design.
 
 USER INSTRUCTIONS: ${userInstructions || 'None'}
 ASPECT RATIO: ${aspectRatio}`;

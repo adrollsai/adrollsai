@@ -77,3 +77,61 @@
 }
 [2026-05-02T09:58:11.737Z] ✅ SUCCESS: KIE TASK CREATED: d0fc4b011d4122a3408c0127bfed08d1
 [2026-05-02T09:58:18.100Z] Caption generated successfully.
+[2026-05-06T05:32:52.339Z] --- NEW IMAGE GEN REQUEST RECEIVED ---
+[2026-05-06T05:32:53.110Z] PAYLOAD RECEIVED: {
+  "userInstructions": "",
+  "propertyDescription": "Sprawling 16-acre project focusing on oversized living (3 BHKs starting at 2,050 sq. ft.). Integrates a commercial wing, solar-powered lighting, and senior citizen areas.",
+  "propertyTitle": "Genesis Heights",
+  "contactNumber": "+91 98724 90091",
+  "logoUrl": "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg",
+  "propImages": [
+    "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777546420663-8nr7t.webp"
+  ],
+  "templateUrl": null,
+  "aspectRatio": "4:5",
+  "model": "gpt/gpt-image-2-text-to-image"
+}
+[2026-05-06T05:32:53.909Z] STARTING GENERATION | MODEL: gpt/gpt-image-2-text-to-image
+[2026-05-06T05:32:53.911Z] KIE PAYLOAD (Attempt 1 - gpt-image-2-image-to-image): {
+  "model": "gpt-image-2-image-to-image",
+  "input": {
+    "prompt": "PERSONA: World-class Direct Response Graphic Ads Designer (20+ years exp) using Alex Hormozi high-conversion frameworks.\nOBJECTIVE: Design a \"WOW-factor\", hyper-realistic Meta Ad graphic that stops the scroll immediately.\n\nTITLE/OFFER: \"Genesis Heights\"\nDESCRIPTION/CONTEXT: \"Sprawling 16-acre project focusing on oversized living (3 BHKs starting at 2,050 sq. ft.). Integrates a commercial wing, solar-powered lighting, and senior citizen areas.\"\nBUSINESS NAME: \"Bluesquare Infra\"\n\nDESIGN RULES:\n1. HYPER-REALISM: The image must look like a professional photograph taken with a high-end camera (Sony A7R V or Canon EOS R5). \n2. NO ARTIFICIAL SHEEN: Avoid that typical \"AI look\". No plasticy textures, no artificial glowing sheen, and no saturated \"HDR-style\" over-processing.\n3. NATURAL LIGHTING: Use soft, natural light (Golden Hour or professional studio lighting). Shadows should be soft and realistic.\n4. PEOPLE: Include people ONLY if they look natural, authentic, and add value to the scene (e.g., a happy family in a home, a professional in an office). They should look like real people, not models from a stock catalog.\n5. MAIN HOOK: Create a bold, attention-grabbing headline that stops the scroll. \n6. LOGO INTEGRATION: YOU MUST INCLUDE THE PROVIDED BUSINESS LOGO. Place it professionally in the corner or a prominent position.\n7. VISUALS: Use the provided images to create a super attractive, premium, and clean layout. \n8. CLUTTER-FREE: Give important info clearly but keep the design sophisticated and \"out-of-the-box\".\n9. NO GENERIC STOCK: Make it look like a high-budget premium agency design.\n\nUSER INSTRUCTIONS: None\nASPECT RATIO: 4:5",
+    "aspect_ratio": "4:5",
+    "resolution": "1K",
+    "input_urls": [
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777546420663-8nr7t.webp",
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg"
+    ]
+  }
+}
+[2026-05-06T05:32:54.536Z] ✅ SUCCESS: KIE TASK CREATED: 8f540f24db349df4b70ca8640ef4fc01
+[2026-05-06T05:33:03.016Z] Caption generated successfully.
+[2026-05-06T05:34:51.708Z] --- NEW IMAGE GEN REQUEST RECEIVED ---
+[2026-05-06T05:34:51.993Z] PAYLOAD RECEIVED: {
+  "userInstructions": "highlight the indian family, they should be good looking too",
+  "propertyDescription": "Sprawling 16-acre project focusing on oversized living (3 BHKs starting at 2,050 sq. ft.). Integrates a commercial wing, solar-powered lighting, and senior citizen areas.",
+  "propertyTitle": "Genesis Heights",
+  "contactNumber": "+91 98724 90091",
+  "logoUrl": "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg",
+  "propImages": [
+    "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777546420663-8nr7t.webp"
+  ],
+  "templateUrl": null,
+  "aspectRatio": "4:5",
+  "model": "gpt/gpt-image-2-text-to-image"
+}
+[2026-05-06T05:34:52.296Z] STARTING GENERATION | MODEL: gpt/gpt-image-2-text-to-image
+[2026-05-06T05:34:52.298Z] KIE PAYLOAD (Attempt 1 - gpt-image-2-image-to-image): {
+  "model": "gpt-image-2-image-to-image",
+  "input": {
+    "prompt": "PERSONA: World-class Direct Response Graphic Ads Designer (20+ years exp) using Alex Hormozi high-conversion frameworks.\nOBJECTIVE: Design a \"WOW-factor\", hyper-realistic Meta Ad graphic that stops the scroll immediately.\n\nTITLE/OFFER: \"Genesis Heights\"\nDESCRIPTION/CONTEXT: \"Sprawling 16-acre project focusing on oversized living (3 BHKs starting at 2,050 sq. ft.). Integrates a commercial wing, solar-powered lighting, and senior citizen areas.\"\nBUSINESS NAME: \"Bluesquare Infra\"\n\nDESIGN RULES:\n1. HYPER-REALISM: The image must look like a professional photograph taken with a high-end camera (Sony A7R V or Canon EOS R5). \n2. NO ARTIFICIAL SHEEN: Avoid that typical \"AI look\". No plasticy textures, no artificial glowing sheen, and no saturated \"HDR-style\" over-processing.\n3. NATURAL LIGHTING: Use soft, natural light (Golden Hour or professional studio lighting). Shadows should be soft and realistic.\n4. PEOPLE: Include people ONLY if they look natural, authentic, and add value to the scene (e.g., a happy family in a home, a professional in an office). They should look like real people, not models from a stock catalog.\n5. MAIN HOOK: Create a bold, attention-grabbing headline that stops the scroll. \n6. LOGO INTEGRATION: YOU MUST INCLUDE THE PROVIDED BUSINESS LOGO. Place it professionally in the corner or a prominent position.\n7. VISUALS: Use the provided images to create a super attractive, premium, and clean layout. \n8. CLUTTER-FREE: Give important info clearly but keep the design sophisticated and \"out-of-the-box\".\n9. NO GENERIC STOCK: Make it look like a high-budget premium agency design.\n\nUSER INSTRUCTIONS: highlight the indian family, they should be good looking too\nASPECT RATIO: 4:5",
+    "aspect_ratio": "4:5",
+    "resolution": "1K",
+    "input_urls": [
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777546420663-8nr7t.webp",
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg"
+    ]
+  }
+}
+[2026-05-06T05:34:52.863Z] ✅ SUCCESS: KIE TASK CREATED: 5163adcbd46f9f7b3eb20c42388759f7
+[2026-05-06T05:35:00.530Z] Caption generated successfully.

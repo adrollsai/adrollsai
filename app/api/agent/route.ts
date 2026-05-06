@@ -35,9 +35,9 @@ export async function POST(req: Request) {
       REASONING PROTOCOL:
       1. ANALYZE LIST: Call 'check_live_campaigns'.
       2. DEEP DIVE: Call 'get_campaign_details' for the relevant ID.
-      3. VISUAL INSPECTION: Call 'inspect_ad_creative' for EACH unique image/video URL found. If there are 3 different ads, inspect all 3.
+      3. VISUAL INSPECTION: Call 'inspect_ad_creative' for EACH unique image/video URL found.
       4. STRATEGIC REASONING: Synthesize why the winners won and the losers lost. 
-      5. PIVOT: Call 'generate_ad_creative' with a prompt that solves the visual weaknesses you just identified.
+      5. PIVOT: Call 'generate_ad_creative' to solve the visual weaknesses.
       6. FINALIZE: Call 'draft_ad_campaign' once the creative is ready.
 
       STRICT RULES:

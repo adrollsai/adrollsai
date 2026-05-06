@@ -60,6 +60,28 @@ export default function CreationPage() {
   const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
   const [currentStep, setCurrentStep] = useState<string>('') 
+  const [chatAttachments, setChatAttachments] = useState<string[]>([])
+  const [isUploadingChat, setIsUploadingChat] = useState(false)
+  const chatFileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleChatFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    
+    setIsUploadingChat(true)
+    try {
+      const uploadPromises = Array.from(files).map(file => uploadToR2(file, 'chat-attachments'))
+      const urls = await Promise.all(uploadPromises)
+      setChatAttachments(prev => [...prev, ...urls])
+    } catch (error) {
+      console.error("Chat upload failed:", error)
+      toast.error("Failed to upload image.")
+    } finally {
+      setIsUploadingChat(false)
+      if (chatFileInputRef.current) chatFileInputRef.current.value = ''
+    }
+  }
+
   
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, role: 'ai', text: 'Ready to design! Select a product or just type an idea. You can also upload a reference style.' }
@@ -205,12 +227,14 @@ export default function CreationPage() {
         propertyTitle: prop?.title || "",
         contactNumber: contactInfo, // Corrected reference
         logoUrl: accountLogo,       // Corrected reference
-        propImages: propImages,
+        propImages: [...propImages, ...chatAttachments],
         templateUrl: activeReferenceUrl, 
         aspectRatio: selectedRatio,
         model: selectedModel 
     })
   })
+      
+      setChatAttachments([]) // Clear attachments after sending
       
       const startData = await startResponse.json()
       if (startData.error) throw new Error(startData.error)
@@ -487,21 +511,52 @@ export default function CreationPage() {
       {/* --- FLOATING INPUT AREA --- */}
       {/* ADDED PADDING (pb-24 sm:pb-32) SO IT FLOATS ABOVE THE NAVIGATION BAR */}
       <div className="bg-gradient-to-t from-[#F8FAFC] via-[#F8FAFC] to-transparent p-4 pb-24 sm:pb-32 border-t-0 flex-shrink-0 z-20">
+        <div className="max-w-4xl mx-auto mb-2 flex flex-wrap gap-2 px-4">
+            {chatAttachments.map((url, i) => (
+                <div key={i} className="relative group w-14 h-14 rounded-xl overflow-hidden border-2 border-white shadow-md flex-shrink-0">
+                    <img src={url} className="w-full h-full object-cover" alt="attachment" />
+                    <button 
+                        onClick={() => setChatAttachments(prev => prev.filter((_, idx) => idx !== i))}
+                        className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                        <X size={12} />
+                    </button>
+                </div>
+            ))}
+        </div>
+
         <form 
             onSubmit={(e) => { e.preventDefault(); handleSend(); }}
             className="flex items-center gap-2 max-w-4xl mx-auto relative shadow-lg shadow-slate-200/50 rounded-full bg-white border border-slate-200/60 transition-all focus-within:ring-4 focus-within:ring-blue-500/10 focus-within:border-blue-300"
         >
+            <input 
+              type="file" 
+              ref={chatFileInputRef} 
+              onChange={handleChatFileChange} 
+              className="hidden" 
+              accept="image/*" 
+              multiple 
+            />
+            <button 
+              type="button"
+              onClick={() => chatFileInputRef.current?.click()}
+              disabled={isThinking || isUploadingChat}
+              className="ml-2 p-3 text-slate-400 hover:text-blue-600 transition-colors rounded-full"
+            >
+              {isUploadingChat ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
+            </button>
+
             <input 
               type="text" 
               value={input} 
               onChange={(e) => setInput(e.target.value)} 
               placeholder={selectedPropId ? "Add a prompt (e.g. 'Make it luxurious')..." : "Describe what to generate..."} 
               disabled={isThinking} 
-              className="w-full bg-transparent py-4 pl-6 pr-16 text-sm text-slate-800 font-medium outline-none transition-all disabled:opacity-50 placeholder-slate-400" 
+              className="flex-1 bg-transparent py-4 pl-1 pr-16 text-sm text-slate-800 font-medium outline-none transition-all disabled:opacity-50 placeholder-slate-400" 
             />
             <button 
               type="submit" 
-              disabled={isThinking || (!input.trim() && !selectedPropId)} 
+              disabled={isThinking || isUploadingChat || (!input.trim() && !selectedPropId && chatAttachments.length === 0)} 
               className="absolute right-1.5 top-1.5 bottom-1.5 aspect-square bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center rounded-full transition-all duration-300 disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400 shadow-sm active:scale-90"
             >
               {isThinking ? <Loader2 size={18} className="animate-spin" /> : <Send size={16} className="ml-0.5" />}
