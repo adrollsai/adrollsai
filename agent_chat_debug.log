@@ -1,16 +1,10 @@
-=== AGENT CHAT DEBUG [2026-05-01T13:54:17.831Z] ===
+=== AGENT CHAT DEBUG [2026-05-06T07:17:23.095Z] ===
 
 --- INPUT MESSAGES ---
 [
   {
-    "parts": [
-      {
-        "type": "text",
-        "text": "Analyze my lead form 4 in 1 campaign and improve its performance."
-      }
-    ],
-    "id": "Th3h7g4wGoeuRNtO",
-    "role": "user"
+    "role": "user",
+    "content": "Generate 5 creative angles for Green Lotus Zirakpur. Instructions: "
   }
 ]
 
@@ -20,222 +14,14 @@ REASONING:
 TOOLS: [
   {
     "type": "tool-call",
-    "toolCallId": "MbQxZfjyFSlpRw1V",
-    "toolName": "check_live_campaigns",
-    "input": {},
-    "providerMetadata": {
-      "google": {
-        "thoughtSignature": "EuoCCucCAQw51sf1usbn+Q/7WhrImFqNerWHovuJyEZjf7B9/k8+H5r8d4Zu7pCzHxo73yhhLsFgyVEFJc/+gLus+VrB1esjXArF+lHgmKzPockVByrOwBUSCsxuqM2By0hm7oy4QjlQWjUWbU8QghJOZOd69nQ4lqkbm6ePky6CKTM/KcCrtkl7PadiQQNsKA929LcQnlCLnmGyjFbMDB/N16HdXVLQjnumuq+yWuVzXuYi9DPFMShbO/bcKoyye1pA4AS2sdqGCZ1Kh014v77zUtI65QV6yzxDMqHzMnAfaBTJAP/b+AIb+tkX0w5BgLGq7NQSmliaACAf5K6WxT5WYTwx6pUau3aGNbiMj39CCaElBw4yhMd5XfZpnzAUA0W/3doz8tdcVimlfcM6Q8hLtoQ/ti/rRCATPpzbzL52Zhr4t72Zq1YCRq5EU2GZWwn+SQx3L//yqHelFWcNwLHUEPJWqnMEurrqJNQ="
-      }
-    }
-  }
-]
-RESULTS: [
-  {
-    "type": "tool-result",
-    "toolCallId": "MbQxZfjyFSlpRw1V",
-    "toolName": "check_live_campaigns",
-    "input": {},
-    "output": {
-      "success": true,
-      "campaigns": [
-        {
-          "id": "120214387901990736",
-          "name": "Lead Form | 4 in 1 image | 06-12-2024",
-          "status": "ACTIVE",
-          "objective": "OUTCOME_LEADS",
-          "metrics": {
-            "message": "No recent performance data"
-          }
-        },
-        {
-          "id": "120214387844460736",
-          "name": "Lead Form | Carousel | 06-12-2024",
-          "status": "PAUSED",
-          "objective": "OUTCOME_LEADS",
-          "metrics": {
-            "message": "No recent performance data"
-          }
-        },
-        {
-          "id": "120214387680160736",
-          "name": "Lead Form | Promo Video with price and location | 06-12-2024",
-          "status": "PAUSED",
-          "objective": "OUTCOME_LEADS",
-          "metrics": {
-            "message": "No recent performance data"
-          }
-        },
-        {
-          "id": "120213252375210736",
-          "name": "Whatsapp Bot Traffic | 23-10-24",
-          "status": "PAUSED",
-          "objective": "OUTCOME_TRAFFIC",
-          "metrics": {
-            "message": "No recent performance data"
-          }
-        },
-        {
-          "id": "120213239249700736",
-          "name": "Whatsapp Traffic | 23-10-24",
-          "status": "PAUSED",
-          "objective": "OUTCOME_TRAFFIC",
-          "metrics": {
-            "message": "No recent performance data"
-          }
-        },
-        {
-          "id": "120213237883260736",
-          "name": "leads-23-10-24",
-          "status": "PAUSED",
-          "objective": "OUTCOME_LEADS",
-          "metrics": {
-            "message": "No recent performance data"
-          }
-        },
-        {
-          "id": "120213187394150736",
-          "name": "New-Broad | Leads | 21/10/24",
-          "status": "PAUSED",
-          "objective": "OUTCOME_LEADS",
-          "metrics": {
-            "message": "No recent performance data"
-          }
-        },
-        {
-          "id": "120213175413180736",
-          "name": "Green Lotus | Leads | CBO 500",
-          "status": "PAUSED",
-          "objective": "OUTCOME_LEADS",
-          "metrics": {
-            "message": "No recent performance data"
-          }
-        },
-        {
-          "id": "120213127559770736",
-          "name": "Green Lotus | Leads | 18-10-2024",
-          "status": "PAUSED",
-          "objective": "OUTCOME_LEADS",
-          "metrics": {
-            "message": "No recent performance data"
-          }
-        }
-      ]
-    },
-    "dynamic": false,
-    "providerMetadata": {
-      "google": {
-        "thoughtSignature": "EuoCCucCAQw51sf1usbn+Q/7WhrImFqNerWHovuJyEZjf7B9/k8+H5r8d4Zu7pCzHxo73yhhLsFgyVEFJc/+gLus+VrB1esjXArF+lHgmKzPockVByrOwBUSCsxuqM2By0hm7oy4QjlQWjUWbU8QghJOZOd69nQ4lqkbm6ePky6CKTM/KcCrtkl7PadiQQNsKA929LcQnlCLnmGyjFbMDB/N16HdXVLQjnumuq+yWuVzXuYi9DPFMShbO/bcKoyye1pA4AS2sdqGCZ1Kh014v77zUtI65QV6yzxDMqHzMnAfaBTJAP/b+AIb+tkX0w5BgLGq7NQSmliaACAf5K6WxT5WYTwx6pUau3aGNbiMj39CCaElBw4yhMd5XfZpnzAUA0W/3doz8tdcVimlfcM6Q8hLtoQ/ti/rRCATPpzbzL52Zhr4t72Zq1YCRq5EU2GZWwn+SQx3L//yqHelFWcNwLHUEPJWqnMEurrqJNQ="
-      }
-    }
-  }
-]
-
---- STEP FINISH ---
-TEXT: 
-REASONING: 
-TOOLS: [
-  {
-    "type": "tool-call",
-    "toolCallId": "sE3B76HioFrMo2GO",
-    "toolName": "get_campaign_details",
-    "input": {
-      "campaignId": "120214387901990736"
-    },
-    "providerMetadata": {
-      "google": {
-        "thoughtSignature": "EuwCCukCAQw51sdABt5h1iR/Pxu084rw6PdiRMq7s17Si1+QabKqcqfPDqpEWFYp0yDeF9UE9xa8cyUtDUZMadcHBWkXo5o+CZx3JfCXyudQs075y5QEasXw8vZm47IkMGqyUfYlTE3kpbxHPLVWhOWu3RfLKanudydxlgICg4p1DuP4W8kQEEBo4pgAR6SgrqrX/PNT0sbET14WdzI8Dfjd+hs+80KEZtUDDnJPfS+CYzHznuLaZ6DR0f5sNcRyj7pWYCldNaYUorhF3/tPHKzEPO/w2feeieT0pR+xaY84g5HGYaLt+VKhcL1h+fHRm9cPqMc/lp9Yp+0gH19O7kRq0FD44FBWGu4QW8o4eqnkL86k/reSemvKRt9XEp64GVdvVeJDITfv+KxeUrBw5fx1MgSTd0U2UoTbRiUK6Q51deuyOAwwR9EmbseCUAi0Nh/s1pG7dqbIW2QwY03c67KJ509tNEPF/gCJ+LCNAQ=="
-      }
-    }
-  }
-]
-RESULTS: [
-  {
-    "type": "tool-result",
-    "toolCallId": "sE3B76HioFrMo2GO",
-    "toolName": "get_campaign_details",
-    "input": {
-      "campaignId": "120214387901990736"
-    },
-    "output": {
-      "success": true,
-      "ads": [
-        {
-          "name": "4 in 1 image",
-          "status": "ACTIVE",
-          "creative": {
-            "name": "📍 Zirakpur : Starting @ Rs.1.75 Cr. 2024-12-09-902051308a7c4bd59677e0c2811a9b56",
-            "title": "📍 Zirakpur : Starting @ Rs.1.75 Cr.",
-            "body": "Click on Learn More for more details.\n\n3, 3+S, 4, 5+S, 5 BHK Duplex & 6 BHK Duplex Green Apartments, Penthouses & Shops.",
-            "image_url": "https://scontent.fixc1-11.fna.fbcdn.net/v/t45.1600-4/567750097_24878421438463315_3942397142196987937_n.png?stp=dst-jpg_tt6&_nc_cat=107&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=QeaP69Or2GcQ7kNvwE3mSkb&_nc_oc=AdpjVhoRtFuf9fja9ZD8MibuJuSyLY7QxW8JXH4yMdhy3MshEiaAC9BmxkP2qM2vzjnCMKrInTid3eTSJugTOBDp&_nc_zt=1&_nc_ht=scontent.fixc1-11.fna&edm=ANIILHsEAAAA&_nc_gid=UN05HPhYUD--FvnSqTf3Yg&_nc_tpa=Q5bMBQG73UlFvKYBs7zp4Esavzi8F-P-sKeYm5FL1sC2o9zhXnzQqELOLFGWeEktAHuK_JMYRi6Yzg2i&oh=00_Af4elV50-CAqjYa6iMtiguKdjA9Bag3KSbY083WEV21QrQ&oe=69FA6CEA",
-            "thumbnail_url": "https://external.fixc1-9.fna.fbcdn.net/emg1/v/t13/16828940867348005167?url=https%3A%2F%2Fwww.facebook.com%2Fads%2Fimage%2F%3Fd%3DAQJQiHc94TFdrgP5EVtdAIPaaBZ7VgR6zJkaPDNvkGR_5wPQ4e6shQIZVgX1hG22c5FYFVT848BMK7HenWNruW531n9lT_bQ2LuhXiTvfpE9qMRXFfu34_0wQSWs398KHeVcJlSBNnnbn22EHB1kJ9yp&fb_obo=1&utld=facebook.com&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&edm=ANIILHsEAAAA&_nc_gid=UN05HPhYUD--FvnSqTf3Yg&_nc_oc=Adrbu9d6RXPbzNI1MVomB7U554yjDghPHPaK06syFXiSf1xOG9rE8vaBoG7dU9m-3SkNaom3a9ckwcTfln7yKDX9&ccb=13-1&oh=06_Q3--AQzQV6hQKbFg5lzQem0oRwxVvgNkMYJWUr6PY9CZJDox&oe=69F6749E&_nc_sid=58080a",
-            "id": "120214453170510736"
-          },
-          "id": "120214387901980736"
-        }
-      ]
-    },
-    "dynamic": false,
-    "providerMetadata": {
-      "google": {
-        "thoughtSignature": "EuwCCukCAQw51sdABt5h1iR/Pxu084rw6PdiRMq7s17Si1+QabKqcqfPDqpEWFYp0yDeF9UE9xa8cyUtDUZMadcHBWkXo5o+CZx3JfCXyudQs075y5QEasXw8vZm47IkMGqyUfYlTE3kpbxHPLVWhOWu3RfLKanudydxlgICg4p1DuP4W8kQEEBo4pgAR6SgrqrX/PNT0sbET14WdzI8Dfjd+hs+80KEZtUDDnJPfS+CYzHznuLaZ6DR0f5sNcRyj7pWYCldNaYUorhF3/tPHKzEPO/w2feeieT0pR+xaY84g5HGYaLt+VKhcL1h+fHRm9cPqMc/lp9Yp+0gH19O7kRq0FD44FBWGu4QW8o4eqnkL86k/reSemvKRt9XEp64GVdvVeJDITfv+KxeUrBw5fx1MgSTd0U2UoTbRiUK6Q51deuyOAwwR9EmbseCUAi0Nh/s1pG7dqbIW2QwY03c67KJ509tNEPF/gCJ+LCNAQ=="
-      }
-    }
-  }
-]
-
---- STEP FINISH ---
-TEXT: 
-REASONING: 
-TOOLS: [
-  {
-    "type": "tool-call",
-    "toolCallId": "r2VtrSIjbAbFBeDQ",
-    "toolName": "inspect_ad_creative",
-    "input": {
-      "imageUrl": "https://scontent.fixc1-11.fna.fbcdn.net/v/t45.1600-4/567750097_24878421438463315_3942397142196987937_n.png?stp=dst-jpg_tt6&_nc_cat=107&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=QeaP69Or2GcQ7kNvwE3mSkb&_nc_oc=AdpjVhoRtFuf9fja9ZD8MibuJuSyLY7QxW8JXH4yMdhy3MshEiaAC9BmxkP2qM2vzjnCMKrInTid3eTSJugTOBDp&_nc_zt=1&_nc_ht=scontent.fixc1-11.fna&edm=ANIILHsEAAAA&_nc_gid=UN05HPhYUD--FvnSqTf3Yg&_nc_tpa=Q5bMBQG73UlFvKYBs7zp4Esavzi8F-P-sKeYm5FL1sC2o9zhXnzQqELOLFGWeEktAHuK_JMYRi6Yzg2i&oh=00_Af4elV50-CAqjYa6iMtiguKdjA9Bag3KSbY083WEV21QrQ&oe=69FA6CEA"
-    },
-    "providerMetadata": {
-      "google": {
-        "thoughtSignature": "EoYJCoMJAQw51sffFJ+FwHkmCO/JUVAMMXognRF5SRgMTuhXA7DQvvK2q0wLF0CLTfHrBKcEulETDvdf23hRmMu9/xC5F4qhnZDD0qcw8we0K4Sq2lc5N8m22d52ZbEpIa+UOvAKal3w1hobTC/A8euYooK9Ac4adKz/BzZfmQGVhsFhpZaktJaYOebPEhPSpLVgeHEgeLJdc/1w/vRHzhyWaIpgaMw1g7DbS8fZxGG37Kt3bbUQQdJ/DgLyW/7KQnz5DSKCIwzxKqbHZfq7kHw30M53HLO6yVwqjUaDFGzgVEeDw7Y3vAAQnOF0i9jI0e8gnSiLL3FeZkqnvLoI8s1LaFyeMbed0mBpyrPBcoMH5L2wmxzqgNXHVxOt2gDxtmlH5PxCoe8ZKEVkL5lfMfI50NjYRa8kDrXGH9AVtBL0eQCcMNIXxuhtVdutcpQz5fdIiuriLTKxePsnuEV4fXzqGhFnCvnoNVxpGrNOtPQcecD/smYefPTPA2vUlao2kC8L2sYzyobf3NXxThHZClCflrzlnAVluq0z9Sdf2QJqSm9b//IFzdNrw7bqXrxWqtRDd/Jspl6p0HonLVtTAFAI/T0gxsMlkkZHOrP5yRuPEZ//6erHyzLpSVyZCd/8SCj+Xhw3J24kK0MUAwBrYY+LkRgsgw2QhhfrLtNoIxuHmvtmUkw3PW9h3RVBi2Th3Hz6LKNxFIYIJO+PDQncADVKf7MzRj9hL67iK90/u9/rDvmNYLYLXoZOecD4iwWVf3bFbkWWA8CDlSG7m/HGEYrT6WC4uR+BNMa8dYDEkvzgIq5ZS4Vts1bz36dOxt/1Rk7UxxZBrOPdiVYzOa2r2rMARE/AowddWWaWnKhKPqe6j80i5qAjjLnEcA2pbnDNkQpebONMSb9X0SaO3ysnC6dcJZFTM51TAPPCgHvC90KpAXok6ERneFxa6nOGyd5/9N61XuVAeIPkIYBeGU/tWWmV7iwGnxf2L8BOM3ZiGyrTnRM4EVRm6vKUeoL8jL5rvfw7Sb4p9eZq27Sbpi/PJiNEyiuluGsfdQ/pA8I7MnrKTK11PG0XiZxIImW3tbFPUuNmkW2GS2UC3WSLZAc0Nz2AOsaR/pjUxtETAYduLruv1SbIImgXVJ20rBvctbkmu23tyMJmZdKlQwvVaH6UtyT9jSaIt+b/xMfRSQi53Yuzto86mYLRS05zFJ6bdXKzjpbiC33hIKR3VsBh5UzW0pzZuyb6+oGqJasFv4SUbNY/+4+FziuS9+fCvWulID9y4zkknwu/h751fZInaMMXfecNrt+zbWGdsdWYo6Pz8+wWjrnSvOD8mpAtvjsKR8SnuBKUiyKuEi7EcZ6/Vs1ffbymWIhwPlKmZOlTWpcljS8ez7RFnY3/Zttn/1gOuPPCLimLQj7zwdlQz1GBwgbz3bZZHiSd7+vxKbnLRMqeBTB0nDYK+JoTMJFr+V0M3Tr8Wu+UoGT9jneIpYgEclyXB5iZ7d/3w1cxyVs98jKoZAjuLc1voiBkk1gVC/ewk93/oyPFFy/11GHR"
-      }
-    }
-  }
-]
-RESULTS: [
-  {
-    "type": "tool-result",
-    "toolCallId": "r2VtrSIjbAbFBeDQ",
-    "toolName": "inspect_ad_creative",
-    "input": {
-      "imageUrl": "https://scontent.fixc1-11.fna.fbcdn.net/v/t45.1600-4/567750097_24878421438463315_3942397142196987937_n.png?stp=dst-jpg_tt6&_nc_cat=107&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=QeaP69Or2GcQ7kNvwE3mSkb&_nc_oc=AdpjVhoRtFuf9fja9ZD8MibuJuSyLY7QxW8JXH4yMdhy3MshEiaAC9BmxkP2qM2vzjnCMKrInTid3eTSJugTOBDp&_nc_zt=1&_nc_ht=scontent.fixc1-11.fna&edm=ANIILHsEAAAA&_nc_gid=UN05HPhYUD--FvnSqTf3Yg&_nc_tpa=Q5bMBQG73UlFvKYBs7zp4Esavzi8F-P-sKeYm5FL1sC2o9zhXnzQqELOLFGWeEktAHuK_JMYRi6Yzg2i&oh=00_Af4elV50-CAqjYa6iMtiguKdjA9Bag3KSbY083WEV21QrQ&oe=69FA6CEA"
-    },
-    "output": {
-      "analysis": "This is an analysis of the real estate ad creative provided:\n\n### 1. What is the visual hook?\nThe primary visual hook is the **bold, high-contrast price point (₹ 1.75 Cr.)** and the **location name (Zirakpur)**. In real estate, these are the two most critical filters for a buyer. \n\nSecondary to the text, the **collage of bright, well-lit interior photos** acts as an aspirational hook. Specifically, the top-right image featuring a large, unique horse head sculpture serves as a \"thumb-stopping\" detail that differentiates these interiors from more generic real estate photos.\n\n### 2. What is the hierarchy?\nThe hierarchy is well-organized and follows a logical flow for a real estate lead:\n1.  **The \"Deal Breakers\" (Top Level):** Price and Location. These are the largest elements, allowing a viewer to immediately know if this property is relevant to them.\n2.  **The \"Social Proof/Aspiration\" (Second Level):** The surrounding photos. They validate the price by showing high-end finishes, lighting, and spaciousness.\n3.  **The Specifications (Third Level):** The configuration list (3, 4, 5 BHK, etc.) and the more specific address (PR-7, Near Airport Rd). This provides the technical details for an interested lead.\n\n### 3. Is it professional?\nIt is **semi-professional**. \n\n*   **Pros:** The layout is clean, the typography is modern and legible, and the color palette (using greens and whites) is consistent. The images are high-quality, likely professionally staged and photographed.\n*   **Cons:** It lacks **Brand Identity**. There is no developer logo, no project name (other than the location), and no company branding. Furthermore, there is no **Call to Action (CTA)** or contact information visible on the creative itself. In a professional real estate context, the absence of a brand makes the ad look like a generic lead-generation template used by a third-party broker rather than a premium developer.\n\n### 4. Why might it be failing or succeeding?\n\n**Why it might be SUCCEEDING:**\n*   **Directness:** It doesn't hide the price. This qualifies leads immediately, ensuring that anyone who clicks or inquires is already comfortable with a 1.75 Cr. starting point.\n*   **Visual Variety:** By showing six different rooms (dining, kitchen, multiple bedrooms, living), it communicates the \"scale\" and \"luxury\" of a large duplex or 6 BHK unit effectively.\n*   **Location Specificity:** Zirakpur is a high-growth area; placing that name in a large font captures local search intent perfectly.\n\n**Why it might be FAILING:**\n*   **Lack of Trust:** High-ticket real estate purchases (₹ 1.75 Cr.+) require immense trust. The lack of a project name or a reputable developer logo might make potential buyers hesitant to engage, fearing a \"bait and switch\" or an unprofessional broker.\n*   **Clutter on Mobile:** While it looks fine on a desktop, six images plus a text box can feel very \"busy\" and cluttered on a small smartphone screen. The details in the photos might get lost.\n*   **No Frictionless Next Step:** Because there is no \"Call Now\" button or website URL on the image, the user is entirely dependent on the caption of the post to know how to move forward. If the caption is weak, the ad fails.\n*   **Missing \"Hero\" Shot:** Collage styles are informative, but they often lack the emotional impact of one single, stunning \"Hero\" shot of a grand living room or the building’s exterior."
-    },
-    "dynamic": false,
-    "providerMetadata": {
-      "google": {
-        "thoughtSignature": "EoYJCoMJAQw51sffFJ+FwHkmCO/JUVAMMXognRF5SRgMTuhXA7DQvvK2q0wLF0CLTfHrBKcEulETDvdf23hRmMu9/xC5F4qhnZDD0qcw8we0K4Sq2lc5N8m22d52ZbEpIa+UOvAKal3w1hobTC/A8euYooK9Ac4adKz/BzZfmQGVhsFhpZaktJaYOebPEhPSpLVgeHEgeLJdc/1w/vRHzhyWaIpgaMw1g7DbS8fZxGG37Kt3bbUQQdJ/DgLyW/7KQnz5DSKCIwzxKqbHZfq7kHw30M53HLO6yVwqjUaDFGzgVEeDw7Y3vAAQnOF0i9jI0e8gnSiLL3FeZkqnvLoI8s1LaFyeMbed0mBpyrPBcoMH5L2wmxzqgNXHVxOt2gDxtmlH5PxCoe8ZKEVkL5lfMfI50NjYRa8kDrXGH9AVtBL0eQCcMNIXxuhtVdutcpQz5fdIiuriLTKxePsnuEV4fXzqGhFnCvnoNVxpGrNOtPQcecD/smYefPTPA2vUlao2kC8L2sYzyobf3NXxThHZClCflrzlnAVluq0z9Sdf2QJqSm9b//IFzdNrw7bqXrxWqtRDd/Jspl6p0HonLVtTAFAI/T0gxsMlkkZHOrP5yRuPEZ//6erHyzLpSVyZCd/8SCj+Xhw3J24kK0MUAwBrYY+LkRgsgw2QhhfrLtNoIxuHmvtmUkw3PW9h3RVBi2Th3Hz6LKNxFIYIJO+PDQncADVKf7MzRj9hL67iK90/u9/rDvmNYLYLXoZOecD4iwWVf3bFbkWWA8CDlSG7m/HGEYrT6WC4uR+BNMa8dYDEkvzgIq5ZS4Vts1bz36dOxt/1Rk7UxxZBrOPdiVYzOa2r2rMARE/AowddWWaWnKhKPqe6j80i5qAjjLnEcA2pbnDNkQpebONMSb9X0SaO3ysnC6dcJZFTM51TAPPCgHvC90KpAXok6ERneFxa6nOGyd5/9N61XuVAeIPkIYBeGU/tWWmV7iwGnxf2L8BOM3ZiGyrTnRM4EVRm6vKUeoL8jL5rvfw7Sb4p9eZq27Sbpi/PJiNEyiuluGsfdQ/pA8I7MnrKTK11PG0XiZxIImW3tbFPUuNmkW2GS2UC3WSLZAc0Nz2AOsaR/pjUxtETAYduLruv1SbIImgXVJ20rBvctbkmu23tyMJmZdKlQwvVaH6UtyT9jSaIt+b/xMfRSQi53Yuzto86mYLRS05zFJ6bdXKzjpbiC33hIKR3VsBh5UzW0pzZuyb6+oGqJasFv4SUbNY/+4+FziuS9+fCvWulID9y4zkknwu/h751fZInaMMXfecNrt+zbWGdsdWYo6Pz8+wWjrnSvOD8mpAtvjsKR8SnuBKUiyKuEi7EcZ6/Vs1ffbymWIhwPlKmZOlTWpcljS8ez7RFnY3/Zttn/1gOuPPCLimLQj7zwdlQz1GBwgbz3bZZHiSd7+vxKbnLRMqeBTB0nDYK+JoTMJFr+V0M3Tr8Wu+UoGT9jneIpYgEclyXB5iZ7d/3w1cxyVs98jKoZAjuLc1voiBkk1gVC/ewk93/oyPFFy/11GHR"
-      }
-    }
-  }
-]
-
---- STEP FINISH ---
-TEXT: 
-REASONING: 
-TOOLS: [
-  {
-    "type": "tool-call",
-    "toolCallId": "CGeEL7vPvMZP7K2r",
+    "toolCallId": "3920NDORy7nm32PP",
     "toolName": "get_product_details",
     "input": {
       "titleQuery": "Green Lotus Zirakpur"
     },
     "providerMetadata": {
       "google": {
-        "thoughtSignature": "Eo8GCowGAQw51seLNB7/IjV0+hiG5igegUS16/oqS3qEq1zrs0CuJ2FeIz4ng/2cLXwH207WVKzLiFkK1sDPmo5djB6Vcr4mG+PHfCcRrsn1pxQJq4CZ9CryC/jCT6Z+ceNEcZOwJgpys4Z1tet9TkCGbU8HT0LXfE3wIYVLB8mJv0MvDRt4qMoN8hm6phspqehZkAul28ACYXbGK8S2xC7ncHa5h2/mXmERPb5uXIto01xZfjY2u6xcm+p0xdUuBnj2hlg6jejRFzaOyEyqZe9pAZ6Fmp1mqWpLyMzSeLkrKsMWlx9tFTvKQ/pWJt1BcLlLz+0K4IvR8ToYuH7nnNNaqEN4L3VZ+37nW/zEj4rIOT/d98ksNenn8SHENMBnSEos6W4ABbyg6NLEhpGVzMYXoDyN382mlzRN/1McCEeyAw8E/zwoiZuYUX+jQaYtKsFT1abdNHmcRHs4GaAqccL+AcQ7VDm3XClDmilND59KyPOTbHgc61o4wQeI9s2rqwj6pqTiclt5VlCYn3MTTeuvZFBjJIHo7C4An+ezdwV1C4m4aFOnoPcayfKDkSizdL49QPcvB/4cgEMOiqkT5DP5jdzP0KKvsb1fuq4xH6bHJTohTlszRfjDZxZRWdkJUXbYjNt+pw31EsjQRD14rsveYlysIpSN0Dm7lO7t1CR23PvjTuS6qPXQZTKTcWc2vQ0LeqasnDURjbaqqYSmCs4Slw1lvhh8A4IceNm5idUA0pTVFxW7NYIeEQhtpSWWHsx2J3uFcPI2tIE3/9SzeB3/VstmbL3SVPT5tihn8SIqekxzpIBGVWZsPkzSWbqcV/Jh5XbRjxRWoTnB3gyVmVxlakf33su7dPX0joVTcr6z3zgsB1Ysv6N9Vvyrt8vCXeHukWRU0Brd/2MS1ms/TlCfAzXJ/YmCBMPE+qOneYR/PCvEwMCMREuUWx9L5sm5CCQR4f5/XF0PZfzZIoN+PEKi5j2Rb7KnCP6gs24itY5vuo9OYp0NG+lK/PmUlcZnAgzJ8uFMxIgRVSZn9mJ6w8bX"
+        "thoughtSignature": "EtIDCs8DAQw51sfliL/wCeNLGthB8sNm8W2vMQ6kGHC/fYiB+eVHnseUtwW785RkbymaTNQpAbGFjzuN0FSQ+Uve9V10iFt2rake/SEwH/Oct+BWTVJdSloxoFUy8A60OQMLp8kq8izalcQsUDARYp7Ci3h023Yi8ggaFBeWFSJP6j+Ow4lerZDi5WPh1U/Zc6OzaQbWYgqe5RRMCsW1L6JMYYnb5/p1fwh+fLqPWID22vxoUB4Sp7iUU6Rg34DAG2z++AOKJj+9ZmBdOCCbHxdSHOCkPQNm2tbkV/vYNVNcyXzJU+voOXfXZ8iPvSLP/I69ITCuNjk3bK6TPYP1LZ19gA7p9mqn5NCAFlg251C9/oULwfuuJrbYZxwd7iaEUz7Lblq3kwRfjRZINBthCF8HdZ0oOotrdkLKcpL9JAPskQ8+HzCcLHkWhjujTI7pb3HSccYP3lBQwxTvLiCLAgqAwhh4kPz1oOSr8vbnNpP4xykjb/DXo+VNuJ/jVUJniFMo5DrCJC/l4GGNRIlIZ8wK0LXTpEc2L3tgox0Wn6OVPG2fvjVUqDUFZqsj4vdNwr6897avm75Ww2LXc4TsA8s9dEfobMqwqjVwhAFT1VnFFcJ1jQ=="
       }
     }
   }
@@ -243,19 +29,26 @@ TOOLS: [
 RESULTS: [
   {
     "type": "tool-result",
-    "toolCallId": "CGeEL7vPvMZP7K2r",
+    "toolCallId": "3920NDORy7nm32PP",
     "toolName": "get_product_details",
     "input": {
       "titleQuery": "Green Lotus Zirakpur"
     },
     "output": {
-      "success": false,
-      "message": "Product details not found in inventory."
+      "success": true,
+      "product": {
+        "title": "Green Lotus Zirakpur",
+        "description": "Green Lotus Utsav: Luxury Eco-Friendly Living on Airport RoadExperience the pinnacle of sustainable luxury at Green Lotus Utsav, Zirakpur’s premier IGBC Platinum-Certified residential project. Designed for those who value wellness and elegance, this \"Ready to Move\" development offers a serene, drive-free environment with world-class amenities.✨ Property HighlightsLocation: Prime PR-7 Airport Road, Zirakpur (Chandigarh Capital Region).Project Status: Ready to Move / Nearing Completion.Certification: IGBC Platinum Rated (Eco-friendly, energy-efficient, and sustainable).Unit Types: Ultra-spacious 3, 4, 5 BHK Apartments and Penthouses.🌿 Sustainable & Smart LivingEco-Features: Solar power integration, rainwater harvesting, and organic gardens.Greenery: Spread over 12+ acres with over 21,000 trees and a dedicated drive-free green zone.Smart Homes: Digitalized home automation for modern convenience and security.🏢 World-Class AmenitiesElite Clubhouse: 40,000+ sq. ft. of luxury featuring a gym, spa, sauna, and steam room.Swimming: All-weather indoor/outdoor swimming pools.Sports & Leisure: Yoga studio, jogging tracks, squash courts, and dedicated kids' play areas.Security: Comprehensive 3-tier security system with 24/7 surveillance.📍 Strategic ConnectivityInternational Airport: ~10-15 mins drive.Proximity: Easy access to top-tier schools, multi-speciality hospitals, and shopping malls.Accessibility: Located on the 200 ft. wide PR-7 Airport Road, connecting Punjab, Haryana, and Himachal Pradesh.Invest in a lifestyle that breathes. Contact us today for a private site visit!",
+        "image_url": "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1777642888232-h93nhm.jpg",
+        "images": [
+          "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1777642888232-h93nhm.jpg"
+        ]
+      }
     },
     "dynamic": false,
     "providerMetadata": {
       "google": {
-        "thoughtSignature": "Eo8GCowGAQw51seLNB7/IjV0+hiG5igegUS16/oqS3qEq1zrs0CuJ2FeIz4ng/2cLXwH207WVKzLiFkK1sDPmo5djB6Vcr4mG+PHfCcRrsn1pxQJq4CZ9CryC/jCT6Z+ceNEcZOwJgpys4Z1tet9TkCGbU8HT0LXfE3wIYVLB8mJv0MvDRt4qMoN8hm6phspqehZkAul28ACYXbGK8S2xC7ncHa5h2/mXmERPb5uXIto01xZfjY2u6xcm+p0xdUuBnj2hlg6jejRFzaOyEyqZe9pAZ6Fmp1mqWpLyMzSeLkrKsMWlx9tFTvKQ/pWJt1BcLlLz+0K4IvR8ToYuH7nnNNaqEN4L3VZ+37nW/zEj4rIOT/d98ksNenn8SHENMBnSEos6W4ABbyg6NLEhpGVzMYXoDyN382mlzRN/1McCEeyAw8E/zwoiZuYUX+jQaYtKsFT1abdNHmcRHs4GaAqccL+AcQ7VDm3XClDmilND59KyPOTbHgc61o4wQeI9s2rqwj6pqTiclt5VlCYn3MTTeuvZFBjJIHo7C4An+ezdwV1C4m4aFOnoPcayfKDkSizdL49QPcvB/4cgEMOiqkT5DP5jdzP0KKvsb1fuq4xH6bHJTohTlszRfjDZxZRWdkJUXbYjNt+pw31EsjQRD14rsveYlysIpSN0Dm7lO7t1CR23PvjTuS6qPXQZTKTcWc2vQ0LeqasnDURjbaqqYSmCs4Slw1lvhh8A4IceNm5idUA0pTVFxW7NYIeEQhtpSWWHsx2J3uFcPI2tIE3/9SzeB3/VstmbL3SVPT5tihn8SIqekxzpIBGVWZsPkzSWbqcV/Jh5XbRjxRWoTnB3gyVmVxlakf33su7dPX0joVTcr6z3zgsB1Ysv6N9Vvyrt8vCXeHukWRU0Brd/2MS1ms/TlCfAzXJ/YmCBMPE+qOneYR/PCvEwMCMREuUWx9L5sm5CCQR4f5/XF0PZfzZIoN+PEKi5j2Rb7KnCP6gs24itY5vuo9OYp0NG+lK/PmUlcZnAgzJ8uFMxIgRVSZn9mJ6w8bX"
+        "thoughtSignature": "EtIDCs8DAQw51sfliL/wCeNLGthB8sNm8W2vMQ6kGHC/fYiB+eVHnseUtwW785RkbymaTNQpAbGFjzuN0FSQ+Uve9V10iFt2rake/SEwH/Oct+BWTVJdSloxoFUy8A60OQMLp8kq8izalcQsUDARYp7Ci3h023Yi8ggaFBeWFSJP6j+Ow4lerZDi5WPh1U/Zc6OzaQbWYgqe5RRMCsW1L6JMYYnb5/p1fwh+fLqPWID22vxoUB4Sp7iUU6Rg34DAG2z++AOKJj+9ZmBdOCCbHxdSHOCkPQNm2tbkV/vYNVNcyXzJU+voOXfXZ8iPvSLP/I69ITCuNjk3bK6TPYP1LZ19gA7p9mqn5NCAFlg251C9/oULwfuuJrbYZxwd7iaEUz7Lblq3kwRfjRZINBthCF8HdZ0oOotrdkLKcpL9JAPskQ8+HzCcLHkWhjujTI7pb3HSccYP3lBQwxTvLiCLAgqAwhh4kPz1oOSr8vbnNpP4xykjb/DXo+VNuJ/jVUJniFMo5DrCJC/l4GGNRIlIZ8wK0LXTpEc2L3tgox0Wn6OVPG2fvjVUqDUFZqsj4vdNwr6897avm75Ww2LXc4TsA8s9dEfobMqwqjVwhAFT1VnFFcJ1jQ=="
       }
     }
   }
@@ -267,22 +60,94 @@ REASONING:
 TOOLS: [
   {
     "type": "tool-call",
-    "toolCallId": "rVamfyGUV3mCMC9l",
-    "toolName": "generate_ad_creative",
+    "toolCallId": "pbNTTtSz2n1qckaQ",
+    "toolName": "generate_creative_angles",
     "input": {
-      "propertyTitle": "Green Lotus Saksham Zirakpur",
-      "propertyDescription": "3, 4, 5 BHK & 6 BHK Duplex Green Apartments & Penthouses in Zirakpur. Premium high-end finishes, sustainable architecture.",
-      "imageUrls": [
-        "https://scontent.fixc1-11.fna.fbcdn.net/v/t45.1600-4/567750097_24878421438463315_3942397142196987937_n.png?stp=dst-jpg_tt6&_nc_cat=107&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=QeaP69Or2GcQ7kNvwE3mSkb&_nc_oc=AdpjVhoRtFuf9fja9ZD8MibuJuSyLY7QxW8JXH4yMdhy3MshEiaAC9BmxkP2qM2vzjnCMKrInTid3eTSJugTOBDp&_nc_zt=1&_nc_ht=scontent.fixc1-11.fna&edm=ANIILHsEAAAA&_nc_gid=UN05HPhYUD--FvnSqTf3Yg&_nc_tpa=Q5bMBQG73UlFvKYBs7zp4Esavzi8F-P-sKeYm5FL1sC2o9zhXnzQqELOLFGWeEktAHuK_JMYRi6Yzg2i&oh=00_Af4elV50-CAqjYa6iMtiguKdjA9Bag3KSbY083WEV21QrQ&oe=69FA6CEA"
-      ],
-      "instructions": "Create a premium 'Hero' shot for a luxury real estate development. Move away from the cluttered 4-in-1 collage. Instead, focus on a single, expansive, high-ceiling luxury living room with floor-to-ceiling windows showing a lush green view. The aesthetic should be modern 'Green' luxury. Use a sophisticated color palette of emerald green, gold, and cream. Leave clear space on the top or bottom for professional typography including Price (Starting @ 1.75 Cr*), Location (Zirakpur), and a 'Schedule a Private Tour' CTA. Make it look like an elite architectural magazine cover to build instant trust."
+      "productTitle": "Green Lotus Zirakpur",
+      "productDescription": "Green Lotus Utsav: Luxury Eco-Friendly Living on Airport Road. IGBC Platinum-Certified residential project. Ready to Move. PR-7 Airport Road, Zirakpur. 3, 4, 5 BHK Apartments and Penthouses. Solar power, rainwater harvesting, organic gardens. 12+ acres with 21,000 trees. Drive-free green zone. Digitalized home automation. 40,000+ sq. ft. elite clubhouse, gym, spa, indoor/outdoor pools. 10-15 mins to International Airport.",
+      "quantity": 5
     },
     "providerMetadata": {
       "google": {
-        "thoughtSignature": "EuQFCuEFAQw51sfXHdSY15NzSk4j36aa+srhvYhFtb5BXHctRSg9OPVPopW+l0H1qGtSCM9TrffHebqYLan4vIIin6VkB7yZ1C9pPIkqzaYK3699jLNE0iKgQWybsY9ccYitGmQEcE+OLgbYZowc84IQ6jPuEI33gHqPAhTG3HWzILzKBhYpfR9yqJ63S/7t2l59vX2PbcGjkkdiMhX/abKN4fuQPelH1KMjMmey0TOUjxDfG3X/doc9cHrk060Uz6GYOaENHw0qmB55r2uCqIO/4D65KBbl+kRoED5Nmy0Lis82OZGs4w0YiF2mOkZyCC+eEjZP8ud1udR3XalMAmQjqGpvB8FsS4DtjewaZmH431nldCJ5u3bOk5pa6hbs67NPgU4IGOYnwvooX5ovizx6cHxF2DPPaHqMYEsyReclDyQ5v++HMnYHJkdS7JAr8dhRPuuyJDUBTPa5aBtUenDpeYrkLc4Ex4qee+zodnHhrz4cKtdkNFfEocSsCbimPp1pBRprVtJ1SNiRQgQ2MjyxbCaGciJUroB0gx4Ji9OzFt+f7Qlh4dAsLGU4mAdu5q5n7z5zXhkaB/FDuz6Vt1FHvchE4qT4L+3G0MxxJG1x5E9U5GbSN1f7tVMV7Yoz2aOlwQLiV4w/DoMLvmKf3TkwuidklnbPO1WmguiZQc+sGzcO5/zyg3tRpqm29sycNQtA8/kVm4rbuZqo7Wvo2QPNG8v3/S09RUBpu6vyNz35dvv+3888tRQ4kMeYp4/53oeFUD+d5n07+N4xm2Xz0V4mDPaPkpHfH+C+Nnl4/vIAJSKbTePud7D9B/UyTq7PCNbughfS9pt8jiQE5lj/yLS2uqSmByy2PI2b0NRdUnkS23Z02l7ipvEKHaNX1tbzH17zCiXOB7qq2zL/aNQ2iViF/g4bCx9ew8jsoZ6/dRSwG7lDfkMSw3gTKXdAGjL0bzKYexOlA/1bvRoA1/dBiXTB5QlNmQ4="
+        "thoughtSignature": "EsgECsUEAQw51sdvkAJzijR59rBpIWxL/IUchWytfOOlV/G1Sn5HXwWPXoXXJGGj+KcEZctS4KyjPxqbQwhmtHGL67OJafKluF9ILpt9wtmfXX8c4Ke1REV/4wvHTiN1I9pmNXYGuga/1iW51i7q5Ev1saKwJDV3IryBzhawSZ7LbVGDxggY5tUFe04OL+uPMfSrCw9aR8U81J6PtSCQm+z41hDfD69WicYGSsQ0O+wQGgJy18l1nnsPb759BB1AyNPj1e69JOrxu1cqyV2WlVsjv00KXB0mRU4paq+fneAtS4VgmE0NgVQ5ZuSWXopT+L3Ihx16EHUAsg2O7b1J2nEY7CjLGR0yBnzmc/PSOBJ5zHtk14oUpYEr61bb+KEcZ7echwj/vobr6BUJrJotmQdQw0XveTesg8OzvqTHdtvcX6nTUST1Rwiao/4LXVjAyB+iZxxgL6AFCddx7hDVcTdrcOU396T3/+3Y2LQQ0OTi6y4+kLJdmgFOCwsLQAm2Oa3zeMNpdbVo0jh1UGli2ZyLJArjQxwA/HeavVl1vpVzOGVpNQ4dqT3uZhWVQRHiTYkd1PLpDd2J08r/utT/ZFTggWO+OZ4mWZC5U3S89hs2pCN1lnMqIM3+z/M+M5d1M750PZNKN4KL1gCgih85kFlosvFCO0o1A48Vd+V8WFDQlQG1QiYJVR7/Qv4sLzNNzqN5DGNnIYu1oWx1X/zyDQg5RrOL0wU3JHjCH1hKq4+NR4clPqd+rTV5sOF5qj5O/izwj7ZyH+zPMWc="
       }
     }
   }
 ]
+RESULTS: [
+  {
+    "type": "tool-result",
+    "toolCallId": "pbNTTtSz2n1qckaQ",
+    "toolName": "generate_creative_angles",
+    "input": {
+      "productTitle": "Green Lotus Zirakpur",
+      "productDescription": "Green Lotus Utsav: Luxury Eco-Friendly Living on Airport Road. IGBC Platinum-Certified residential project. Ready to Move. PR-7 Airport Road, Zirakpur. 3, 4, 5 BHK Apartments and Penthouses. Solar power, rainwater harvesting, organic gardens. 12+ acres with 21,000 trees. Drive-free green zone. Digitalized home automation. 40,000+ sq. ft. elite clubhouse, gym, spa, indoor/outdoor pools. 10-15 mins to International Airport.",
+      "quantity": 5
+    },
+    "output": {
+      "success": true,
+      "angles": [
+        {
+          "title": "Stop Paying for a 'Future' and Move into the Present",
+          "brief": "This angle leverages the 'Time Delay' and 'Perceived Likelihood' elements of Hormozi's equation. Most luxury projects in Zirakpur are years from completion, carrying high risk. By emphasizing 'Ready to Move,' we collapse the time delay to zero and maximize the likelihood of achievement. It targets the affluent renter or investor tired of construction delays.",
+          "visual_concept": "A 'Raw' style video or photo of a resident opening a massive, high-end wooden door with a key, stepping directly into a fully furnished, sun-lit living room. No stock footage—just a real, shaky-cam walkthrough that feels like a friend showing off their new home."
+        },
+        {
+          "title": "The 21,000-Tree Shield: Health as the Ultimate Luxury",
+          "brief": "Focuses on the 'Dream Outcome' of health and longevity. In a region often plagued by urban smog, a 12-acre 'drive-free' green zone with IGBC Platinum certification is a massive competitive advantage. It positions the project as a sanctuary that protects the buyer’s family from pollution, reducing the 'Effort' required to live a healthy lifestyle.",
+          "visual_concept": "A split-screen comparison: On the left, a grey, congested city street. On the right, a vibrant, lush green walkway inside Green Lotus Utsav where a child is running freely. The caption reads: '10 minutes away vs. 10 years longer life expectancy.'"
+        },
+        {
+          "title": "The 'Zero-Sacrifice' Eco-Mansion",
+          "brief": "Most people assume 'Eco-friendly' means sacrificing comfort. This angle attacks that 'Effort & Sacrifice' pain point. We highlight that you get the solar power and organic gardens *alongside* a 40,000 sq. ft. clubhouse and digital automation. It’s luxury without the environmental guilt, increasing the 'Dream Outcome' value.",
+          "visual_concept": "An organic, 'over-the-shoulder' shot of someone using a tablet to dim the lights (Home Automation) while a lush, green organic garden is visible through the massive floor-to-ceiling windows in the background."
+        },
+        {
+          "title": "10 Minutes to the Gate, 0 Minutes to Peace",
+          "brief": "Specifically targets the High-Net-Worth 'International Citizen' or frequent flyer. By highlighting the 10-15 min proximity to the International Airport on PR-7, we solve the 'Effort' of commuting. The value is found in the time saved and the prestige of the location, maximizing the 'Dream Outcome' of a global lifestyle.",
+          "visual_concept": "A person in business attire dropping their suitcase in a luxury foyer, looking relaxed. A digital overlay shows a Google Maps screenshot: 'Chandigarh International Airport to Green Lotus Utsav: 12 mins.' The image should look like a quick smartphone snap."
+        },
+        {
+          "title": "The 'Drive-Free' Childhood",
+          "brief": "This angle targets the 'Dream Outcome' for parents: safety and freedom for their children. By highlighting the drive-free green zone, we eliminate the 'Sacrifice' of constant parental supervision and the fear of traffic within the complex. It frames the 12+ acres as a private, safe kingdom for the family.",
+          "visual_concept": "A low-angle, 'candid' shot of two children riding bicycles on a paved path surrounded by dense trees, with no cars in sight. The focus is on the joy and safety of the kids, looking like a photo a parent would post on Instagram."
+        }
+      ]
+    },
+    "dynamic": false,
+    "providerMetadata": {
+      "google": {
+        "thoughtSignature": "EsgECsUEAQw51sdvkAJzijR59rBpIWxL/IUchWytfOOlV/G1Sn5HXwWPXoXXJGGj+KcEZctS4KyjPxqbQwhmtHGL67OJafKluF9ILpt9wtmfXX8c4Ke1REV/4wvHTiN1I9pmNXYGuga/1iW51i7q5Ev1saKwJDV3IryBzhawSZ7LbVGDxggY5tUFe04OL+uPMfSrCw9aR8U81J6PtSCQm+z41hDfD69WicYGSsQ0O+wQGgJy18l1nnsPb759BB1AyNPj1e69JOrxu1cqyV2WlVsjv00KXB0mRU4paq+fneAtS4VgmE0NgVQ5ZuSWXopT+L3Ihx16EHUAsg2O7b1J2nEY7CjLGR0yBnzmc/PSOBJ5zHtk14oUpYEr61bb+KEcZ7echwj/vobr6BUJrJotmQdQw0XveTesg8OzvqTHdtvcX6nTUST1Rwiao/4LXVjAyB+iZxxgL6AFCddx7hDVcTdrcOU396T3/+3Y2LQQ0OTi6y4+kLJdmgFOCwsLQAm2Oa3zeMNpdbVo0jh1UGli2ZyLJArjQxwA/HeavVl1vpVzOGVpNQ4dqT3uZhWVQRHiTYkd1PLpDd2J08r/utT/ZFTggWO+OZ4mWZC5U3S89hs2pCN1lnMqIM3+z/M+M5d1M750PZNKN4KL1gCgih85kFlosvFCO0o1A48Vd+V8WFDQlQG1QiYJVR7/Qv4sLzNNzqN5DGNnIYu1oWx1X/zyDQg5RrOL0wU3JHjCH1hKq4+NR4clPqd+rTV5sOF5qj5O/izwj7ZyH+zPMWc="
+      }
+    }
+  }
+]
+
+--- STEP FINISH ---
+TEXT: Based on the IGBC Platinum-certified luxury of Green Lotus Utsav, here are 5 creative angles designed to maximize perceived value and minimize perceived effort:
+
+1. **Stop Paying for a 'Future' and Move into the Present**
+*   **Strategy:** Targets the "Time Delay" and "Perceived Likelihood of Achievement." In a market full of delayed construction, this emphasizes the immediate "Ready to Move" status.
+*   **Visual Concept:** A raw, authentic "walkthrough" style shot of a resident opening their front door to a sun-drenched, finished living room.
+
+2. **The 21,000-Tree Shield: Health as the Ultimate Luxury**
+*   **Strategy:** Focuses on the "Dream Outcome" of longevity. It positions the 12-acre drive-free zone as a protective barrier against urban pollution.
+*   **Visual Concept:** A split-screen comparison: the grey congestion of the city vs. the vibrant, lush green walkways of the project.
+
+3. **The 'Zero-Sacrifice' Eco-Mansion**
+*   **Strategy:** Addresses the "Effort & Sacrifice" pain point—the idea that being green means living less luxuriously. It highlights solar power and organic gardens alongside a 40,000 sq. ft. clubhouse.
+*   **Visual Concept:** A candid "over-the-shoulder" shot of someone using home automation on a tablet while an organic garden is visible through floor-to-ceiling windows.
+
+4. **10 Minutes to the Gate, 0 Minutes to Peace**
+*   **Strategy:** Solves the "Effort" of commuting for high-net-worth frequent flyers. Focuses on the prime PR-7 Airport Road location to maximize life efficiency.
+*   **Visual Concept:** A traveler dropping a suitcase in a luxury foyer with a Google Maps overlay showing a 12-minute commute from the International Airport.
+
+5. **The 'Drive-Free' Childhood**
+*   **Strategy:** A "Dream Outcome" for parents. It eliminates the "Sacrifice" of constant supervision and the fear of traffic, framing the 12+ acres as a private kingdom for children.
+*   **Visual Concept:** A low-angle, candid shot of kids riding bikes on a tree-lined path with no cars in sight—pure freedom and safety.
+
+**Which of these angles would you like to develop into a visual creative?**
+REASONING: 
+TOOLS: []
 RESULTS: []
 

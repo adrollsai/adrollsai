@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw } from 'lucide-react'
+import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { toast } from 'sonner'
@@ -53,6 +53,7 @@ export default function CreationPage() {
   const [isLoadingProperties, setIsLoadingProperties] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const [targetUserId, setTargetUserId] = useState<string | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [selectedPropId, setSelectedPropId] = useState<string>('')
   
@@ -118,12 +119,13 @@ export default function CreationPage() {
 
       // Fetch Fresh Data
       const currentRole = profileData?.role || 'admin'
-      const targetUserId = (currentRole === 'agent' && profileData?.parent_id) ? profileData.parent_id : user.id
+      const tUserId = (currentRole === 'agent' && profileData?.parent_id) ? profileData.parent_id : user.id
+      setTargetUserId(tUserId)
 
       const { data, error: dbError } = await supabase
         .from('properties')
         .select('id, title, address, price, images, image_url, description, created_at')
-        .eq('user_id', targetUserId)
+        .eq('user_id', tUserId)
         .order('created_at', { ascending: false })
 
       if (dbError) throw new Error(dbError.message)
@@ -139,6 +141,109 @@ export default function CreationPage() {
       setIsLoadingProperties(false)
       setIsRefreshing(false)
     }
+  }
+
+  // --- BATCH CREATIVE WORKFLOW LOGIC ---
+  const [creativeFlow, setCreativeFlow] = useState<{
+    isOpen: boolean,
+    step: 'setup' | 'angles' | 'rendering' | 'final',
+    product: Property | null,
+    instructions: string,
+    quantity: number,
+    isOrganic: boolean,
+    angles: any[],
+    selectedAngles: number[],
+    generatedAssets: any[],
+    status: 'idle' | 'loading' | 'error'
+  }>({
+    isOpen: false,
+    step: 'setup',
+    product: null,
+    instructions: '',
+    quantity: 5,
+    isOrganic: true,
+    angles: [],
+    selectedAngles: [],
+    generatedAssets: [],
+    status: 'idle'
+  })
+
+  const handleGenerateAngles = async () => {
+    if (!creativeFlow.product) return;
+    setCreativeFlow(prev => ({ ...prev, status: 'loading' }));
+    try {
+      const strategyRes = await fetch('/api/agent/strategy', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              product: creativeFlow.product,
+              quantity: creativeFlow.quantity,
+              instructions: creativeFlow.instructions,
+              previousAngles: (creativeFlow.angles || []).map((a: any) => a.title).join(', ')
+          })
+      });
+      const strategyData = await strategyRes.json();
+      setCreativeFlow(prev => ({ 
+          ...prev, 
+          step: 'angles', 
+          angles: [...prev.angles, ...(strategyData.angles || [])],
+          status: 'idle' 
+      }));
+    } catch (e) {
+      setCreativeFlow(prev => ({ ...prev, status: 'error' }));
+    }
+  }
+
+  const handleStartBatchRendering = async () => {
+    setCreativeFlow(prev => ({ ...prev, step: 'rendering', status: 'loading' }));
+    const selected = creativeFlow.angles.filter((_, i) => creativeFlow.selectedAngles.includes(i));
+    const batchId = crypto.randomUUID();
+    
+    // Batch process
+    const results: any[] = [];
+    for (const angle of selected) {
+        try {
+            const payload = {
+                propertyTitle: creativeFlow.product?.title,
+                propertyDescription: (creativeFlow.product?.description || "") + "\n\nANGLE: " + angle.title + "\nCONCEPT: " + angle.visual_concept,
+                userInstructions: creativeFlow.instructions,
+                propImages: [creativeFlow.product?.image_url],
+                isOrganic: creativeFlow.isOrganic,
+                aspectRatio: "4:5",
+                model: 'image-2.0',
+                contactNumber: profile?.contact_number,
+                logoUrl: profile?.logo_url
+            };
+
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            
+            if (data.taskId) {
+                // Trigger Background Worker to save to DB
+                fetch('/api/background-worker', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: targetUserId || userId,
+                        propId: creativeFlow.product?.id,
+                        propertyTitle: creativeFlow.product?.title,
+                        existingTaskId: data.taskId,
+                        existingCaption: data.caption,
+                        batchId: batchId
+                    })
+                }).catch(err => console.error("Worker trigger failed:", err));
+                
+                results.push({ ...angle, taskId: data.taskId });
+            }
+        } catch (e) {
+            console.error("Batch error for angle:", angle.title);
+        }
+    }
+    setCreativeFlow(prev => ({ ...prev, generatedAssets: results, status: 'idle', step: 'final' }));
   }
 
   // Trigger fetch on mount
@@ -255,7 +360,7 @@ export default function CreationPage() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                userId: userId,
+                userId: targetUserId || userId,
                 propId: selectedPropId || null,
                 propertyTitle: prop?.title || '',
                 existingTaskId: taskId,
@@ -271,7 +376,8 @@ export default function CreationPage() {
 
         while (attempts < maxAttempts) {
             attempts++
-            await new Promise(resolve => setTimeout(resolve, 4000))
+            // Slowed down polling to 12s as requested
+            await new Promise(resolve => setTimeout(resolve, 12000))
 
             const checkResponse = await fetch('/api/check-status', {
                 method: 'POST',
@@ -281,21 +387,25 @@ export default function CreationPage() {
 
             const checkData = await checkResponse.json()
             
-            if (checkData.data && checkData.data.state === 'success') { 
-                if (checkData.data.resultJson) {
+            const status = checkData.status || checkData.data?.status || checkData.data?.state;
+            
+            if (status === 'succeeded' || status === 'completed' || status === 'success') {
+                const result = checkData.result || checkData.data?.result || checkData.data;
+                finalImageUrl = result?.image_url || 
+                               result?.output_url || 
+                               result?.url || 
+                               (typeof result === 'string' && result.startsWith('http') ? result : null);
+
+                if (!finalImageUrl && checkData.data?.resultJson) {
                     try {
-                        const resultObj = JSON.parse(checkData.data.resultJson)
-                        if (resultObj.resultUrls?.[0]) {
-                            finalImageUrl = resultObj.resultUrls[0]
-                            break 
-                        }
+                        const parsed = JSON.parse(checkData.data.resultJson);
+                        finalImageUrl = parsed.resultUrls?.[0] || parsed.url;
                     } catch(e) {}
-                } else if (checkData.data.resultUrl) {
-                    finalImageUrl = checkData.data.resultUrl
-                    break 
                 }
-            } else if (checkData.data && checkData.data.state === 'failed') {
-                throw new Error("Generation failed: " + (checkData.data.failMsg || "Unknown error"))
+                
+                if (finalImageUrl) break;
+            } else if (status === 'failed' || status === 'error') {
+                throw new Error("Generation failed: " + (checkData.failMsg || checkData.data?.failMsg || "Unknown error"));
             }
         }
 
@@ -341,6 +451,18 @@ export default function CreationPage() {
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
                 <Sparkles size={20} className="text-blue-500" /> AI Creator
             </h1>
+            <div className="flex items-center gap-3">
+                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-wider transition-all ${profile?.logo_url && profile?.contact_number ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-amber-50 border-amber-100 text-amber-600'}`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${profile?.logo_url && profile?.contact_number ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                    {profile?.logo_url && profile?.contact_number ? 'Branding Active' : 'Profile Incomplete'}
+                </div>
+                <button 
+                    onClick={() => setCreativeFlow(prev => ({ ...prev, isOpen: true, step: 'setup' }))}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full shadow-md shadow-blue-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 font-bold text-xs"
+                >
+                    <Zap size={14} className="text-yellow-300" /> Batch Workflow
+                </button>
+            </div>
         </div>
 
         {/* 
@@ -559,11 +681,249 @@ export default function CreationPage() {
               disabled={isThinking || isUploadingChat || (!input.trim() && !selectedPropId && chatAttachments.length === 0)} 
               className="absolute right-1.5 top-1.5 bottom-1.5 aspect-square bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center rounded-full transition-all duration-300 disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400 shadow-sm active:scale-90"
             >
-              {isThinking ? <Loader2 size={18} className="animate-spin" /> : <Send size={16} className="ml-0.5" />}
+            {isThinking ? <Loader2 size={18} className="animate-spin" /> : <Send size={16} className="ml-0.5" />}
             </button>
         </form>
       </div>
 
+      {/* CREATIVE FLOW MODAL */}
+      <CreativeFlowModal 
+        creativeFlow={creativeFlow}
+        setCreativeFlow={setCreativeFlow}
+        properties={properties}
+        handleGenerateAngles={handleGenerateAngles}
+        handleStartBatchRendering={handleStartBatchRendering}
+      />
+
     </div>
   )
 }
+
+function CreativeFlowModal({ 
+    creativeFlow, 
+    setCreativeFlow, 
+    properties, 
+    handleGenerateAngles, 
+    handleStartBatchRendering
+  }: any) {
+    if (!creativeFlow.isOpen) return null;
+  
+    const currentStep = creativeFlow.step;
+  
+    return (
+      <div className="fixed inset-0 z-[120] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-300 border border-white/20">
+          
+          <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <Sparkles className="text-blue-600" size={24} /> AI Creative Engine
+              </h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                Step {currentStep === 'setup' ? '1' : currentStep === 'angles' ? '2' : currentStep === 'rendering' ? '3' : '4'} of 4
+              </p>
+            </div>
+            <button 
+              onClick={() => setCreativeFlow((prev: any) => ({ ...prev, isOpen: false }))}
+              className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+  
+          <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+            
+            {currentStep === 'setup' && (
+              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">1. Select Product to Promote</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {properties.map((p: any) => (
+                      <div 
+                        key={p.id}
+                        onClick={() => setCreativeFlow((prev: any) => ({ ...prev, product: p }))}
+                        className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-2 transition-all ${
+                          creativeFlow.product?.id === p.id ? 'border-blue-600 ring-4 ring-blue-500/10' : 'border-transparent hover:border-slate-200'
+                        }`}
+                      >
+                        <img src={p.image_url} className="w-full h-full object-cover" alt={p.title} />
+                        <div className="absolute inset-0 bg-black/20" />
+                        <div className="absolute bottom-2 left-2 right-2 truncate text-[10px] font-bold text-white drop-shadow-sm">{p.title}</div>
+                        {creativeFlow.product?.id === p.id && (
+                          <div className="absolute top-2 right-2 bg-blue-600 text-white p-1 rounded-full"><CheckCircle size={12} /></div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+  
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">2. Quantity</label>
+                    <select 
+                      value={creativeFlow.quantity}
+                      onChange={(e) => setCreativeFlow((prev: any) => ({ ...prev, quantity: parseInt(e.target.value) }))}
+                      className="w-full bg-slate-50 border border-slate-200 py-3.5 px-4 rounded-2xl text-sm font-bold outline-none"
+                    >
+                      {[3, 5, 10, 15].map(q => <option key={q} value={q}>{q} Variations</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">3. Vibe</label>
+                    <button 
+                      onClick={() => setCreativeFlow((prev: any) => ({ ...prev, isOrganic: !prev.isOrganic }))}
+                      className={`w-full py-3.5 px-4 rounded-2xl text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
+                        creativeFlow.isOrganic ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-blue-50 border-blue-200 text-blue-700'
+                      }`}
+                    >
+                      {creativeFlow.isOrganic ? <Zap size={16} /> : <ImageIcon size={16} />}
+                      {creativeFlow.isOrganic ? 'Raw & Organic' : 'Hyper-Realistic Studio'}
+                    </button>
+                  </div>
+                </div>
+  
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">4. Additional Context (Optional)</label>
+                  <textarea 
+                    value={creativeFlow.instructions}
+                    onChange={(e) => setCreativeFlow((prev: any) => ({ ...prev, instructions: e.target.value }))}
+                    placeholder="e.g. Focus on the spacious balcony or the premium marble flooring..."
+                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl text-sm font-medium outline-none h-24"
+                  />
+                </div>
+              </div>
+            )}
+  
+            {currentStep === 'angles' && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                <div className="flex justify-between items-center bg-blue-50/50 p-4 rounded-2xl border border-blue-100 mb-6">
+                  <p className="text-xs font-bold text-blue-700 uppercase tracking-widest">Select hooks to render</p>
+                  <button 
+                     onClick={handleGenerateAngles}
+                     disabled={creativeFlow.status === 'loading'}
+                     className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-full hover:bg-slate-50 transition-all flex items-center gap-1"
+                  >
+                     <RefreshCw size={12} className={creativeFlow.status === 'loading' ? 'animate-spin' : ''} /> More Options
+                  </button>
+                </div>
+  
+                <div className="space-y-3">
+                  {creativeFlow.angles.map((angle: any, i: number) => {
+                    const isSelected = creativeFlow.selectedAngles.includes(i);
+                    return (
+                      <div 
+                        key={i}
+                        onClick={() => setCreativeFlow((prev: any) => ({
+                          ...prev,
+                          selectedAngles: isSelected 
+                            ? prev.selectedAngles.filter((idx: number) => idx !== i)
+                            : [...prev.selectedAngles, i]
+                        }))}
+                        className={`p-5 rounded-[1.5rem] border-2 transition-all cursor-pointer group relative overflow-hidden ${
+                          isSelected ? 'border-blue-600 bg-blue-50/30' : 'border-slate-100 hover:border-slate-200 bg-slate-50/30'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <h4 className="text-sm font-bold text-slate-900 group-hover:text-blue-700 transition-colors">{angle.title}</h4>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'}`}>
+                            {isSelected && <CheckCircle size={12} />}
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-relaxed font-medium mb-3">{angle.brief}</p>
+                        <div className="bg-white/60 p-3 rounded-xl border border-slate-100">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5"><ImageIcon size={12}/> Visual Concept</p>
+                          <p className="text-[10px] text-slate-700 font-bold italic">"{angle.visual_concept}"</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+  
+            {currentStep === 'rendering' && (
+              <div className="flex flex-col items-center justify-center py-20 animate-in fade-in zoom-in-95">
+                <div className="relative mb-8">
+                  <div className="w-24 h-24 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
+                  <div className="absolute inset-0 flex items-center justify-center text-blue-600">
+                    <Sparkles size={32} className="animate-pulse" />
+                  </div>
+                </div>
+                <h3 className="text-xl font-bold text-slate-900 mb-2">Batch Rendering Pipeline</h3>
+                <p className="text-sm text-slate-500 font-medium text-center max-w-sm">
+                  Generating {creativeFlow.selectedAngles.length} variations in high-fidelity 4:5 aspect ratio. This may take up to 60 seconds...
+                </p>
+                
+                <div className="w-full max-w-xs bg-slate-100 h-1.5 rounded-full mt-8 overflow-hidden">
+                  <div className="bg-blue-600 h-full w-1/2 animate-shimmer" style={{backgroundSize: '200% 100%'}} />
+                </div>
+              </div>
+            )}
+  
+            {currentStep === 'final' && (
+              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 text-center">
+                  <p className="text-sm font-bold text-emerald-800">Batch generation complete! Preview tasks below.</p>
+                  <p className="text-[10px] text-emerald-600 uppercase tracking-widest font-bold mt-1">Generated assets will be saved to your "Campaign Ready" bucket.</p>
+                </div>
+  
+                <div className="grid grid-cols-1 gap-4">
+                  {creativeFlow.generatedAssets.map((asset: any, i: number) => (
+                    <div key={i} className="bg-white border border-slate-200 rounded-[1.5rem] p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
+                      <div className="w-20 h-20 bg-slate-100 rounded-xl flex items-center justify-center border border-slate-100 flex-shrink-0">
+                        <ImageIcon size={24} className="text-slate-300" />
+                      </div>
+                      <div className="flex-1 overflow-hidden">
+                        <h4 className="text-xs font-bold text-slate-800 uppercase truncate">{asset.title}</h4>
+                        <p className="text-[10px] text-slate-500 font-medium mt-1 truncate">Task ID: {asset.taskId}</p>
+                        <div className="flex gap-2 mt-2">
+                          <span className="text-[9px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full uppercase">Render Queued</span>
+                          <span className="text-[9px] font-bold bg-slate-50 text-slate-400 px-2 py-0.5 rounded-full uppercase tracking-tighter italic">"Campaign Ready" Bucket</span>
+                        </div>
+                      </div>
+                      <div className="bg-emerald-50 text-emerald-600 p-3 rounded-xl border border-emerald-100 shadow-sm">
+                        <CheckCircle size={18} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+  
+          </div>
+  
+          <div className="p-6 border-t border-slate-100 bg-white flex justify-between items-center">
+            {currentStep !== 'setup' && currentStep !== 'rendering' ? (
+              <button 
+                onClick={() => setCreativeFlow((prev: any) => ({ ...prev, step: currentStep === 'angles' ? 'setup' : 'angles' }))}
+                className="bg-slate-100 text-slate-600 px-6 py-3 rounded-2xl font-bold hover:bg-slate-200 transition-colors"
+              >
+                Back
+              </button>
+            ) : <div />}
+  
+            <button 
+              disabled={
+                (currentStep === 'setup' && !creativeFlow.product) ||
+                (currentStep === 'angles' && creativeFlow.selectedAngles.length === 0) ||
+                creativeFlow.status === 'loading'
+              }
+              onClick={() => {
+                if (currentStep === 'setup') handleGenerateAngles();
+                else if (currentStep === 'angles') handleStartBatchRendering();
+                else if (currentStep === 'final') setCreativeFlow((prev: any) => ({ ...prev, isOpen: false }));
+              }}
+              className="bg-blue-600 text-white px-8 py-3.5 rounded-2xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/20 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2"
+            >
+              {creativeFlow.status === 'loading' ? <Loader2 className="animate-spin" size={18} /> : (
+                <>
+                  {currentStep === 'setup' ? 'Next: Strategy Review' : currentStep === 'angles' ? `Generate ${creativeFlow.selectedAngles.length} Creatives` : 'Done'}
+                  {currentStep !== 'final' && <Plus size={18} />}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }

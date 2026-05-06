@@ -18,32 +18,42 @@ export async function POST(req: Request) {
 
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    // Detailed request logging
+    const logPrefix = `[Agent][${new Date().toISOString()}]`;
+    console.log(`${logPrefix} New Request. Messages: ${messages?.length}`);
+
     // Force overwrite debug log for a clean start on each new request
-    try { fs.writeFileSync(LOG_FILE, `=== AGENT CHAT DEBUG [${new Date().toISOString()}] ===\n\n--- INPUT MESSAGES ---\n${JSON.stringify(messages, null, 2)}\n\n`); } catch (e) {
-      console.error("Failed to write log file:", e);
+    try { 
+        fs.writeFileSync(LOG_FILE, `=== AGENT CHAT DEBUG [${new Date().toISOString()}] ===\n\n--- INPUT MESSAGES ---\n${JSON.stringify(messages, null, 2)}\n\n`); 
+    } catch (e: any) {
+        console.error(`${logPrefix} Log write failed:`, e.message);
     }
 
     // 1. GATHER DYNAMIC CONTEXT
     const { data: profile } = await supabase.from('profiles').select('business_name').eq('id', user.id).single();
     const { data: properties } = await supabase.from('properties').select('title').eq('user_id', user.id);
-    const availableTitles = properties?.map(p => p.title).join(', ') || 'None';
+    const availableTitles = properties && Array.isArray(properties) ? properties.map(p => p.title).join(', ') : 'None';
 
     const systemMessage = `
       You are the AdRolls AI Growth Strategist. You operate on the modern "Andromeda" philosophy: CREATIVES ARE THE NEW TARGETING. 
       You have the ability to "SEE" ad visuals to provide deep analysis.
 
-      REASONING PROTOCOL:
+      REASONING PROTOCOL (CREATIVE GENERATION):
+      1. ANALYZE PRODUCT: Call 'get_product_details' to understand assets.
+      2. STRATEGIZE: Call 'generate_creative_angles' based on product context and Hormozi frameworks.
+      3. REVIEW: Present angles to the user for selection.
+      
+      REASONING PROTOCOL (CAMPAIGN ANALYSIS):
       1. ANALYZE LIST: Call 'check_live_campaigns'.
       2. DEEP DIVE: Call 'get_campaign_details' for the relevant ID.
       3. VISUAL INSPECTION: Call 'inspect_ad_creative' for EACH unique image/video URL found.
       4. STRATEGIC REASONING: Synthesize why the winners won and the losers lost. 
-      5. PIVOT: Call 'generate_ad_creative' to solve the visual weaknesses.
+      5. PIVOT: Call 'generate_creative_angles' or 'generate_ad_creative' to solve weaknesses.
       6. FINALIZE: Call 'draft_ad_campaign' once the creative is ready.
 
       STRICT RULES:
-      - Do NOT skip inspection. You must "see" the ads before suggesting changes.
-      - If you see multiple unique URLs, inspect all of them to get a complete picture.
-      - Use the detailed analysis from 'inspect_ad_creative' to write your NEW design prompts.
+      - Do NOT skip inspection when analyzing campaigns.
+      - Use 'generate_creative_angles' as the first step for new creative tasks.
       - CONCISENESS: Keep your analysis sharp. No markdown.
     `;
 
@@ -51,9 +61,16 @@ export async function POST(req: Request) {
     const result = streamText({
       model: google('gemini-3-flash-preview'),
       system: systemMessage,
-      messages: await convertToModelMessages(messages, {
-        ignoreIncompleteToolCalls: true,
-      }),
+      messages: await (async () => {
+        // AI SDK 5.0+ convertToModelMessages expects UIMessages with 'parts'.
+        // If we have simple CoreMessages (like from manual AdsPage fetch), skip conversion.
+        if (Array.isArray(messages) && messages.length > 0 && !messages[0].parts) {
+          return messages;
+        }
+        return convertToModelMessages(messages, {
+          ignoreIncompleteToolCalls: true,
+        });
+      })(),
       stopWhen: stepCountIs(10),
       tools: {
         // ... (tools remain the same)
@@ -64,12 +81,17 @@ export async function POST(req: Request) {
           }),
           execute: async ({ titleQuery }) => {
             console.log(`[Tool] get_product_details: ${titleQuery}`);
-            const { data } = await supabase
+            const { data, error } = await supabase
               .from('properties')
-              .select('title, description, prop_images, images')
+              .select('title, description, image_url, images')
               .ilike('title', `%${titleQuery}%`)
               .eq('user_id', user.id)
               .maybeSingle();
+
+            if (error) {
+                console.error(`[Tool Error] get_product_details:`, error);
+                return { success: false, message: `Database error: ${error.message}` };
+            }
 
             if (data) {
               return { success: true, product: data };
@@ -162,6 +184,52 @@ export async function POST(req: Request) {
             return { totalLeads: totalLeads || 0, newLeads: newLeads || 0 };
           },
         }),
+        generate_creative_angles: tool({
+          description: "Generates multiple strategic ad 'angles' or 'hooks' for a product using Alex Hormozi tactics (Value Equation). Use this before generating images.",
+          inputSchema: z.object({
+            productTitle: z.string().describe("The product title"),
+            productDescription: z.string().describe("The product description"),
+            quantity: z.number().describe("Number of angles to generate"),
+            additionalInstructions: z.string().optional().describe("User's extra context"),
+            previousContext: z.string().optional().describe("Context of previously generated angles to avoid duplicates"),
+          }),
+          execute: async ({ productTitle, productDescription, quantity, additionalInstructions, previousContext }) => {
+            console.log(`[Tool] generate_creative_angles`);
+            
+            const prompt = `
+              You are a world-class Direct Response Marketing Strategist. 
+              Generate ${quantity || 5} unique high-converting ad angles/hooks for this product:
+              
+              PRODUCT: ${productTitle || 'Unknown Product'}
+              DESCRIPTION: ${productDescription || 'No description provided'}
+              USER INSTRUCTIONS: ${additionalInstructions || 'None'}
+              PREVIOUS ANGLES (AVOID THESE): ${previousContext || 'None'}
+
+              FRAMEWORK: Use Alex Hormozi's Value Equation (Dream Outcome, Perceived Likelihood of Achievement, Time Delay, Effort & Sacrifice).
+              
+              For each angle, provide:
+              1. Title (The Hook)
+              2. Brief (Marketing strategy and 'why' it works)
+              3. Visual Concept (What should the 'Raw/Organic' image look like?)
+              
+              FORMAT: JSON array of objects with keys: title, brief, visual_concept.
+            `;
+
+            const { text } = await generateText({
+              model: google('gemini-3-flash-preview'), // Using latest Flash
+              prompt,
+            });
+
+            try {
+              // Extract JSON if wrapped in markdown
+              const jsonStr = text.includes('```json') ? text.split('```json')[1].split('```')[0] : text;
+              const angles = JSON.parse(jsonStr);
+              return { success: true, angles };
+            } catch (e) {
+              return { success: true, raw_text: text };
+            }
+          },
+        }),
         generate_ad_creative: tool({
           description: "Triggers the visual image generation pipeline. Yields control to the client UI.",
           inputSchema: z.object({
@@ -197,7 +265,7 @@ export async function POST(req: Request) {
       },
     });
 
-    return result.toUIMessageStreamResponse();
+    return result.toTextStreamResponse();
   } catch (error: any) {
     console.error(`[Agent Error] ${error.message}`);
     return NextResponse.json({ error: error.message }, { status: 500 });

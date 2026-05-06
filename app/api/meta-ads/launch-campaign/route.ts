@@ -414,7 +414,7 @@ export async function POST(request: Request) {
         const contactInfo = data.contact_number || "";
 
         const llmPrompt = `
-        Act as an elite direct-response marketer. Craft exactly 10 distinct, highly persuasive ad copy variations based on the provided visual context (images) and business details.
+        Act as an elite direct-response marketer. Craft exactly 5 distinct, highly persuasive ad copy variations based on the provided visual context (images) and business details.
         
         Business Context:
         Name: ${businessName}
@@ -424,11 +424,14 @@ export async function POST(request: Request) {
         
         CRITICAL RULES:
         1. Apply Alex Hormozi's marketing frameworks: Emphasize "Value Stacking", create "Grand Slam Offers", use risk reversal, and write strong, emotionally resonant hooks.
-        2. MANDATORY: ALWAYS include the business name (${businessName}) and contact information (${contactInfo}) clearly within the "primary_text".
+        2. MANDATORY: YOU MUST ALWAYS INCLUDE THE BUSINESS NAME (${businessName}) AND CONTACT INFORMATION (${contactInfo}) IN EVERY SINGLE VARIATION. If you miss this, the ad will fail.
         3. DO NOT include any website URLs, links, or domain names in the primary text or headline.
-        4. FORMATTING: Use a clean, structured layout with bullet points, short punchy sentences, and relevant emojis (e.g., ✅, 🚀, 💎). Avoid long blocks of text.
-        5. ADAPTIVE: Analyze the images provided to understand the industry and adapt the tone accordingly.
-        6. OUTPUT FORMAT: Return ONLY a valid JSON array of objects. No conversational text, no markdown code blocks, no bold markers (**), no explanation.
+        4. NO HASHTAGS (#): Do not use any hashtags in the copy.
+        5. MODERATE LENGTH: Keep the primary text moderate (max 400 characters). Avoid long, exhausting paragraphs.
+        6. KEYWORDS: At the very end of each primary_text, add 5-6 relevant keywords in brackets, e.g., [Keyword1, Keyword2, Keyword3...]
+        7. FORMATTING: Use a clean, structured layout with bullet points, short punchy sentences, and relevant emojis (e.g., ✅, 🚀, 💎). 
+        8. ADAPTIVE: Analyze the images provided to understand the industry and adapt the tone accordingly.
+        9. OUTPUT FORMAT: Return ONLY a valid JSON array of objects. No conversational text, no markdown code blocks, no bold markers (**), no explanation.
         
         JSON Structure:
         [
@@ -568,10 +571,11 @@ export async function POST(request: Request) {
         let successfulAds = 0;
         let lastDraftError = null;
 
-        // Ensure we use ALL text variations by looping over them, cycling through images if needed
-        const totalAdsToCreate = Math.max(metaCreativeHashes.length, copyVariations.length);
+        // Ensure we create exactly 5 ads (or fewer if fewer assets available)
+        const totalAdsToCreate = 5;
         
         for (let i = 0; i < totalAdsToCreate; i++) {
+            // Cycle through unique assets and unique copy
             const hash = metaCreativeHashes[i % metaCreativeHashes.length];
             const copy = copyVariations[i % copyVariations.length];
 

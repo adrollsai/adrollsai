@@ -50,7 +50,8 @@ export async function POST(request: Request) {
         templateUrl, 
         aspectRatio = "1:1",
         model,
-        isDirect = false // New flag to force fast model
+        isDirect = false,
+        isOrganic = false // New flag for raw/organic look
     } = body;
 
     // Fetch user profile for business context
@@ -70,23 +71,29 @@ export async function POST(request: Request) {
     if (templateUrl) allInputImages.push(templateUrl);
 
     // --- HORMORZI-STYLE DIRECT RESPONSE PROMPT ---
+    let styleInstructions = isOrganic 
+      ? `AESTHETIC: RAW & ORGANIC. Use a smartphone-photo style. It must look like an unedited, authentic photo taken by a regular person, not a professional photographer. 
+         LIGHTING: Natural, slightly imperfect, no studio glow.
+         TYPOGRAPHY: Hand-written or slightly unorganized text overlays. Avoid professional agency layouts. It must feel "real" and trustworthy.`
+      : `HYPER-REALISM: The image must look like a professional photograph taken with a high-end camera (Sony A7R V or Canon EOS R5). 
+         NO ARTIFICIAL SHEEN: Avoid that typical "AI look". No plasticy textures, no artificial glowing sheen, and no saturated "HDR-style" over-processing.
+         NATURAL LIGHTING: Use soft, natural light (Golden Hour or professional studio lighting). Shadows should be soft and realistic.`;
+
     let finalImagePrompt = `PERSONA: World-class Direct Response Graphic Ads Designer (20+ years exp) using Alex Hormozi high-conversion frameworks.
-OBJECTIVE: Design a "WOW-factor", hyper-realistic Meta Ad graphic that stops the scroll immediately.
+OBJECTIVE: Design a "WOW-factor" Meta Ad graphic that stops the scroll immediately.
 
 TITLE/OFFER: "${propertyTitle}"
 DESCRIPTION/CONTEXT: "${propertyDescription}"
 BUSINESS NAME: "${businessName}"
+CONTACT NUMBER: "${contactNumber || 'Not provided'}"
 
 DESIGN RULES:
-1. HYPER-REALISM: The image must look like a professional photograph taken with a high-end camera (Sony A7R V or Canon EOS R5). 
-2. NO ARTIFICIAL SHEEN: Avoid that typical "AI look". No plasticy textures, no artificial glowing sheen, and no saturated "HDR-style" over-processing.
-3. NATURAL LIGHTING: Use soft, natural light (Golden Hour or professional studio lighting). Shadows should be soft and realistic.
-4. PEOPLE: Include people ONLY if they look natural, authentic, and add value to the scene (e.g., a happy family in a home, a professional in an office). They should look like real people, not models from a stock catalog.
-5. MAIN HOOK: Create a bold, attention-grabbing headline that stops the scroll. 
-6. LOGO INTEGRATION: YOU MUST INCLUDE THE PROVIDED BUSINESS LOGO. Place it professionally in the corner or a prominent position.
-7. VISUALS: Use the provided images to create a super attractive, premium, and clean layout. 
-8. CLUTTER-FREE: Give important info clearly but keep the design sophisticated and "out-of-the-box".
-9. NO GENERIC STOCK: Make it look like a high-budget premium agency design.
+1. ${styleInstructions}
+2. PEOPLE: Include people ONLY if they look natural, authentic, and add value to the scene. If Organic mode is ON, they should look like they are in a candid snapshot.
+3. MAIN HOOK: Create a bold, attention-grabbing headline that stops the scroll. 
+4. BRAND INTEGRATION: YOU MUST INCLUDE THE PROVIDED BUSINESS LOGO AND THE CONTACT NUMBER (${contactNumber || ''}) CLEARLY IN THE DESIGN. Place them professionally (or slightly casually if Organic mode is ON) so they are legible but don't overpower the main visual.
+5. VISUALS: Use the provided images to create a clean but high-impact layout.
+6. NO GENERIC STOCK: Avoid the "stock photo" feel at all costs.
 
 USER INSTRUCTIONS: ${userInstructions || 'None'}
 ASPECT RATIO: ${aspectRatio}`;
@@ -187,8 +194,11 @@ Contact: "${contactNumber || 'DM for details!'}".
 
 RULES: 
 - Use Alex Hormozi frameworks (Hook, Retain, Reward). 
+- Keep the length MODERATE (max 400 characters). Avoid long, exhausting paragraphs.
 - Use bullet points and emojis. 
 - No bold markdown (**). 
+- DO NOT use any hashtags (#).
+- At the very end of the caption, add 5-6 important keywords relevant to the business/property inside a single bracket, e.g., [Keyword1, Keyword2, Keyword3...]
 - Make it stop the scroll.
 - Output ONLY the caption, NO extra text.`,
         });

@@ -151,6 +151,7 @@ export async function generateKieChat(prompt: string, model: string = "gemini-3-
     const data = await response.json();
     
     if (!response.ok || !data.choices?.[0]?.message?.content) {
+        console.error("Kie.ai Error Detail:", JSON.stringify(data, null, 2));
         throw new Error(`Kie.ai Chat API Error: ${data.error?.message || response.statusText || 'Unknown Error'}`);
     }
 

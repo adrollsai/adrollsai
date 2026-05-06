@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendPushNotification } from '@/utils/notification-helper';
+import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 
 // IMPORTANT: Prevents Vercel from timing out the request before generation finishes
 export const maxDuration = 300; 
@@ -13,8 +15,9 @@ const supabaseAdmin = createClient(
 export async function POST(req: Request) {
     try {
         const body = await req.json();
+        console.log("[Worker] Request received:", JSON.stringify(body, null, 2));
         // Accept either payload (from Products) OR existingTaskId (from Creation Chat)
-        const { userId, propId, propertyTitle, payload, existingTaskId, existingCaption } = body;
+        const { userId, propId, propertyTitle, payload, existingTaskId, existingCaption, batchId } = body;
 
         const requestUrl = new URL(req.url);
         const baseUrl = requestUrl.origin; 
@@ -53,9 +56,10 @@ export async function POST(req: Request) {
         let finalImageUrl = '';
 
         // 2. Poll for Status ON THE SERVER (Unhindered by locked phones)
-        while (attempts < 30) {
+        while (attempts < 20) {
             attempts++;
-            await new Promise(resolve => setTimeout(resolve, 4000));
+            // Wait 15 seconds between checks to avoid spamming the status API
+            await new Promise(resolve => setTimeout(resolve, 15000));
             
             const checkResponse = await fetch(`${baseUrl}/api/check-status`, {
                 method: 'POST',
@@ -67,35 +71,98 @@ export async function POST(req: Request) {
             });
             const checkData = await checkResponse.json();
 
-            if (checkData.data?.state === 'success') {
-                if (checkData.data.resultJson) {
+            // The Kie.ai API response usually has status at the root or within data
+            const status = checkData.status || checkData.data?.status || checkData.data?.state;
+            
+            if (status === 'succeeded' || status === 'completed' || status === 'success') {
+                // Robust extraction of the URL
+                const result = checkData.result || checkData.data?.result || checkData.data;
+                
+                finalImageUrl = result?.image_url || 
+                               result?.output_url || 
+                               result?.url || 
+                               (typeof result === 'string' && result.startsWith('http') ? result : null);
+
+                // Check resultJson fallback (used in some versions)
+                if (!finalImageUrl && checkData.data?.resultJson) {
                     try {
-                        const resultObj = JSON.parse(checkData.data.resultJson);
-                        if (resultObj.resultUrls?.[0]) finalImageUrl = resultObj.resultUrls[0];
+                        const parsed = JSON.parse(checkData.data.resultJson);
+                        finalImageUrl = parsed.resultUrls?.[0] || parsed.url;
                     } catch(e) {}
-                } else if (checkData.data.resultUrl) {
-                    finalImageUrl = checkData.data.resultUrl;
                 }
-                break;
-            } else if (checkData.data?.state === 'failed') {
-                console.error("[Worker] Generation Failed via API:", checkData.data.failMsg);
+
+                if (finalImageUrl) {
+                    console.log("[Worker] Found Image URL:", finalImageUrl);
+                    break;
+                }
+            } else if (status === 'failed' || status === 'error') {
+                console.error("[Worker] Generation Failed:", checkData.failMsg || checkData.error);
                 break;
             }
         }
 
         if (!finalImageUrl) {
+             console.error("[Worker] Polling finished but no finalImageUrl found.");
              return NextResponse.json({ error: 'Generation Timed Out' }, { status: 408 });
         }
 
+        console.log("[Worker] Successfully found image URL:", finalImageUrl);
+
+        // --- NEW: PERSIST TO R2 ---
+        let persistedUrl = finalImageUrl;
+        try {
+            console.log("[Worker] Persisting image to R2...");
+            const imgRes = await fetch(finalImageUrl);
+            const buffer = Buffer.from(await imgRes.arrayBuffer());
+            const fileName = `generated/${userId}/${Date.now()}.png`;
+            
+            await r2.send(new PutObjectCommand({
+                Bucket: R2_BUCKET,
+                Key: fileName,
+                Body: buffer,
+                ContentType: 'image/png'
+            }));
+            
+            // Fixed: Including 'adrolls-storage' in the path as per working assets
+            persistedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${fileName}`;
+            console.log("[Worker] Successfully persisted to R2:", persistedUrl);
+        } catch (r2Error) {
+            console.error("[Worker] R2 Persistence Failed, using original URL:", r2Error);
+        }
+
         // 3. Save directly to DB via Server Admin
-        await supabaseAdmin.from('assets').insert({
-            user_id: userId,
-            property_id: propId || null,
-            url: finalImageUrl,
-            type: 'image',
-            status: 'Draft',
-            caption: generatedCaption
-        });
+        try {
+            // CRITICAL: If this is a batch asset, we MUST ensure the master record exists first
+            // due to foreign key constraints on the 'assets' table.
+            if (batchId && batchId.length === 36) {
+                console.log(`[Worker] Ensuring master_creative record exists for batch: ${batchId}`);
+                await supabaseAdmin.from('master_creatives').upsert({
+                    id: batchId,
+                    property_id: propId,
+                    url: persistedUrl, // Use this image as the representative master image
+                    type: 'image',
+                    is_active: true
+                }, { onConflict: 'id' });
+            }
+
+            const { error: insertError } = await supabaseAdmin.from('assets').insert({
+                user_id: userId,
+                property_id: propId || null,
+                master_creative_id: (batchId && batchId.length === 36) ? batchId : null,
+                url: persistedUrl,
+                type: 'image',
+                status: 'Draft',
+                caption: generatedCaption
+            });
+
+            if (insertError) {
+                console.error("[Worker] Supabase Asset Insert Error:", insertError);
+            } else {
+                console.log("[Worker] Successfully saved asset to database for User:", userId);
+            }
+        } catch (dbErr) {
+            console.error("[Worker] Database Operation Failed:", dbErr);
+        }
 
         // 4. OPTIONAL: Push to Meta Ads Campaign
         const { metaCampaignId, metaLeadFormId } = body;
