@@ -193,6 +193,43 @@ export async function POST(request: Request) {
             return NextResponse.json({ status: 'success', batchId });
         }
 
+        if (step === 'generate-copy') {
+            const { imageUrls = [], captions = [], campaignName = "Our Campaign" } = body;
+            const llmPrompt = `
+            Act as an elite direct-response marketer. Craft exactly ONE (1) distinct, highly persuasive ad copy variation for a campaign named "${campaignName}".
+            
+            Business Context:
+            Name: ${profile.business_name || 'Our Company'}
+            Contact: ${profile.contact_number || 'Contact Us'}
+            Existing Captions (Context): ${captions ? captions.join(' | ') : 'None provided'}
+            
+            CRITICAL RULES:
+            1. Apply Alex Hormozi's marketing frameworks: Emphasize "Value Stacking", create "Grand Slam Offers", use risk reversal, and write strong, emotionally resonant hooks.
+            2. MANDATORY: YOU MUST ALWAYS INCLUDE THE BUSINESS NAME (${profile.business_name || 'Our Company'}) AND CONTACT INFORMATION (${profile.contact_number || 'Contact Us'}) IN EVERY SINGLE VARIATION.
+            3. DO NOT include any website URLs, links, or domain names in the primary text or headline.
+            4. NO HASHTAGS (#): Do not use any hashtags in the copy.
+            5. MODERATE LENGTH: Keep the primary text moderate (max 400 characters).
+            6. KEYWORDS: At the very end of each primary_text, add 5-6 relevant keywords in brackets.
+            7. OUTPUT FORMAT: Return ONLY a valid JSON object.
+            
+            JSON Structure:
+            {"primary_text": "...", "headline": "..."}
+            `;
+
+            const aiRaw = await callGemini(llmPrompt, imageUrls);
+            
+            let variation;
+            try {
+                const jsonMatch = aiRaw.match(/\{[\s\S]*\}/);
+                variation = JSON.parse(jsonMatch ? jsonMatch[0] : aiRaw);
+            } catch (e) {
+                console.error("Copy generation parse error:", aiRaw);
+                return NextResponse.json({ error: "Failed to parse AI copy variation" }, { status: 500 });
+            }
+
+            return NextResponse.json({ status: 'success', variation });
+        }
+
         console.error("[Optimize] Unhandled Step:", step);
         return NextResponse.json({ error: `Invalid Step: ${step}` }, { status: 400 });
 

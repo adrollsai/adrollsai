@@ -750,3 +750,65 @@
 [2026-05-06T13:01:26.365Z] ✅ SUCCESS: KIE TASK CREATED: 511a251091990123dfcfa59614583b72
 [2026-05-06T13:01:37.049Z] Caption generated successfully.
 [2026-05-06T13:02:05.800Z] Caption generated successfully.
+[2026-05-07T06:56:08.925Z] --- NEW IMAGE GEN REQUEST RECEIVED ---
+[2026-05-07T06:56:08.927Z] --- NEW IMAGE GEN REQUEST RECEIVED ---
+[2026-05-07T06:56:09.117Z] PAYLOAD RECEIVED: {
+  "propertyTitle": "ROI Calculator Hook",
+  "propertyDescription": "A split-screen visual. Left: The Creative 3 high-rise architectural render. Right: A clean, hyper-bold 'ROI GROWTH' chart showing a 2x trajectory in gold 3D letters. High-tech blueprint aesthetic overlays. Professional, aggressive, wealthy vibe.",
+  "userInstructions": "AI Optimization: highlight Limited Inventory, Assured ROI",
+  "model": "image-2.0",
+  "isOrganic": false,
+  "aspectRatio": "1:1",
+  "logoUrl": "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/bc63c065-9bcc-4793-bedc-f0960406425b-1777893347501.png",
+  "contactNumber": "8288835235",
+  "propImages": [
+    "https://scontent.fixc1-3.fna.fbcdn.net/v/t45.1600-4/565417280_25317212687874427_4228148257485232739_n.jpg?_nc_cat=110&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=R3WR6OB_pgQQ7kNvwH5jjWi&_nc_oc=Adqm_6SUG7Pv008Ji1omajeXkabGkqYtq92-slx__JyNfoQ_ZNQcK9QOmdTGpk1baMl3MleioasJW9Je46_9cWBu&_nc_zt=1&_nc_ht=scontent.fixc1-3.fna&edm=AAwGEdEEAAAA&_nc_gid=FX1Wkml_J4VfvNJ7iaFoCA&_nc_tpa=Q5bMBQFJcAsEUvtCDQN9POlCyThBElKLzMX2mekaFnjLfwLToJnt3fsd5zjHfM50WEg6TIovp8imcdqT&oh=00_Af4bTxpgGb3eQa3LjkO3JeAqcmcVtedV-qekriAetKQ2zQ&oe=6A0207BF",
+    "https://scontent.fixc1-5.fna.fbcdn.net/v/t45.1600-4/567122103_24421115287591096_532207796024115826_n.jpg?_nc_cat=106&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=nHrzMEbMme8Q7kNvwHQeDfS&_nc_oc=Adp-YIIfTzakndPkZYbjpOvr8i2gajcqtjORMr05e60_OO8roMySK2xvPnwcHPRdfAc-dMMGtvEVhQ0W5yNKFAZe&_nc_zt=1&_nc_ht=scontent.fixc1-5.fna&edm=AAwGEdEEAAAA&_nc_gid=FX1Wkml_J4VfvNJ7iaFoCA&_nc_tpa=Q5bMBQGpryHg8AhUbae0agmLryVm9TTj4mwvR_eEJD6a4j48qEZW6JJW1j9rvfHJ5IndbMaN8JTzbMKc&oh=00_Af5Qole-BvDeqlBgBjHQ0pVEULKkqWgfTUN3Y9jyAlm5ow&oe=6A01FCE1"
+  ]
+}
+[2026-05-07T06:56:09.137Z] PAYLOAD RECEIVED: {
+  "propertyTitle": "The Scarcity Countdown",
+  "propertyDescription": "Hyper-realistic ultra-modern high-rise building (Visual DNA: Creative 3) with a glowing red '85% SOLD OUT' digital overlay across the facade. Use high-contrast midnight blue and neon gold lighting. Wide angle, PR9 Mohali street level view with luxury cars in motion blur.",
+  "userInstructions": "AI Optimization: highlight Limited Inventory, Assured ROI",
+  "model": "image-2.0",
+  "isOrganic": false,
+  "aspectRatio": "1:1",
+  "logoUrl": "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/bc63c065-9bcc-4793-bedc-f0960406425b-1777893347501.png",
+  "contactNumber": "8288835235",
+  "propImages": [
+    "https://scontent.fixc1-3.fna.fbcdn.net/v/t45.1600-4/565417280_25317212687874427_4228148257485232739_n.jpg?_nc_cat=110&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=R3WR6OB_pgQQ7kNvwH5jjWi&_nc_oc=Adqm_6SUG7Pv008Ji1omajeXkabGkqYtq92-slx__JyNfoQ_ZNQcK9QOmdTGpk1baMl3MleioasJW9Je46_9cWBu&_nc_zt=1&_nc_ht=scontent.fixc1-3.fna&edm=AAwGEdEEAAAA&_nc_gid=FX1Wkml_J4VfvNJ7iaFoCA&_nc_tpa=Q5bMBQFJcAsEUvtCDQN9POlCyThBElKLzMX2mekaFnjLfwLToJnt3fsd5zjHfM50WEg6TIovp8imcdqT&oh=00_Af4bTxpgGb3eQa3LjkO3JeAqcmcVtedV-qekriAetKQ2zQ&oe=6A0207BF",
+    "https://scontent.fixc1-5.fna.fbcdn.net/v/t45.1600-4/567122103_24421115287591096_532207796024115826_n.jpg?_nc_cat=106&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=nHrzMEbMme8Q7kNvwHQeDfS&_nc_oc=Adp-YIIfTzakndPkZYbjpOvr8i2gajcqtjORMr05e60_OO8roMySK2xvPnwcHPRdfAc-dMMGtvEVhQ0W5yNKFAZe&_nc_zt=1&_nc_ht=scontent.fixc1-5.fna&edm=AAwGEdEEAAAA&_nc_gid=FX1Wkml_J4VfvNJ7iaFoCA&_nc_tpa=Q5bMBQGpryHg8AhUbae0agmLryVm9TTj4mwvR_eEJD6a4j48qEZW6JJW1j9rvfHJ5IndbMaN8JTzbMKc&oh=00_Af5Qole-BvDeqlBgBjHQ0pVEULKkqWgfTUN3Y9jyAlm5ow&oe=6A01FCE1"
+  ]
+}
+[2026-05-07T06:56:09.370Z] STARTING GENERATION | MODEL: image-2.0
+[2026-05-07T06:56:09.372Z] KIE PAYLOAD (Attempt 1 - gpt-image-2-image-to-image): {
+  "model": "gpt-image-2-image-to-image",
+  "input": {
+    "prompt": "PERSONA: World-class Direct Response Graphic Ads Designer (20+ years exp) using Alex Hormozi high-conversion frameworks.\nOBJECTIVE: Design a \"WOW-factor\" Meta Ad graphic that stops the scroll immediately.\n\nTITLE/OFFER: \"ROI Calculator Hook\"\nDESCRIPTION/CONTEXT: \"A split-screen visual. Left: The Creative 3 high-rise architectural render. Right: A clean, hyper-bold 'ROI GROWTH' chart showing a 2x trajectory in gold 3D letters. High-tech blueprint aesthetic overlays. Professional, aggressive, wealthy vibe.\"\nBUSINESS NAME: \"AdRolls.in\"\nCONTACT NUMBER: \"8288835235\"\n\nDESIGN RULES:\n1. HYPER-REALISM: The image must look like a professional photograph taken with a high-end camera (Sony A7R V or Canon EOS R5). \n         NO ARTIFICIAL SHEEN: Avoid that typical \"AI look\". No plasticy textures, no artificial glowing sheen, and no saturated \"HDR-style\" over-processing.\n         NATURAL LIGHTING: Use soft, natural light (Golden Hour or professional studio lighting). Shadows should be soft and realistic.\n2. PEOPLE: Include people ONLY if they look natural, authentic, and add value to the scene. If Organic mode is ON, they should look like they are in a candid snapshot.\n3. MAIN HOOK: Create a bold, attention-grabbing headline that stops the scroll. \n4. BRAND INTEGRATION: YOU MUST INCLUDE THE PROVIDED BUSINESS LOGO AND THE CONTACT NUMBER (8288835235) CLEARLY IN THE DESIGN. Place them professionally (or slightly casually if Organic mode is ON) so they are legible but don't overpower the main visual.\n5. VISUALS: Use the provided images to create a clean but high-impact layout.\n6. NO GENERIC STOCK: Avoid the \"stock photo\" feel at all costs.\n\nUSER INSTRUCTIONS: AI Optimization: highlight Limited Inventory, Assured ROI\nASPECT RATIO: 1:1",
+    "aspect_ratio": "1:1",
+    "resolution": "1K",
+    "input_urls": [
+      "https://scontent.fixc1-3.fna.fbcdn.net/v/t45.1600-4/565417280_25317212687874427_4228148257485232739_n.jpg?_nc_cat=110&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=R3WR6OB_pgQQ7kNvwH5jjWi&_nc_oc=Adqm_6SUG7Pv008Ji1omajeXkabGkqYtq92-slx__JyNfoQ_ZNQcK9QOmdTGpk1baMl3MleioasJW9Je46_9cWBu&_nc_zt=1&_nc_ht=scontent.fixc1-3.fna&edm=AAwGEdEEAAAA&_nc_gid=FX1Wkml_J4VfvNJ7iaFoCA&_nc_tpa=Q5bMBQFJcAsEUvtCDQN9POlCyThBElKLzMX2mekaFnjLfwLToJnt3fsd5zjHfM50WEg6TIovp8imcdqT&oh=00_Af4bTxpgGb3eQa3LjkO3JeAqcmcVtedV-qekriAetKQ2zQ&oe=6A0207BF",
+      "https://scontent.fixc1-5.fna.fbcdn.net/v/t45.1600-4/567122103_24421115287591096_532207796024115826_n.jpg?_nc_cat=106&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=nHrzMEbMme8Q7kNvwHQeDfS&_nc_oc=Adp-YIIfTzakndPkZYbjpOvr8i2gajcqtjORMr05e60_OO8roMySK2xvPnwcHPRdfAc-dMMGtvEVhQ0W5yNKFAZe&_nc_zt=1&_nc_ht=scontent.fixc1-5.fna&edm=AAwGEdEEAAAA&_nc_gid=FX1Wkml_J4VfvNJ7iaFoCA&_nc_tpa=Q5bMBQGpryHg8AhUbae0agmLryVm9TTj4mwvR_eEJD6a4j48qEZW6JJW1j9rvfHJ5IndbMaN8JTzbMKc&oh=00_Af5Qole-BvDeqlBgBjHQ0pVEULKkqWgfTUN3Y9jyAlm5ow&oe=6A01FCE1",
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/bc63c065-9bcc-4793-bedc-f0960406425b-1777893347501.png"
+    ]
+  }
+}
+[2026-05-07T06:56:09.375Z] STARTING GENERATION | MODEL: image-2.0
+[2026-05-07T06:56:09.376Z] KIE PAYLOAD (Attempt 1 - gpt-image-2-image-to-image): {
+  "model": "gpt-image-2-image-to-image",
+  "input": {
+    "prompt": "PERSONA: World-class Direct Response Graphic Ads Designer (20+ years exp) using Alex Hormozi high-conversion frameworks.\nOBJECTIVE: Design a \"WOW-factor\" Meta Ad graphic that stops the scroll immediately.\n\nTITLE/OFFER: \"The Scarcity Countdown\"\nDESCRIPTION/CONTEXT: \"Hyper-realistic ultra-modern high-rise building (Visual DNA: Creative 3) with a glowing red '85% SOLD OUT' digital overlay across the facade. Use high-contrast midnight blue and neon gold lighting. Wide angle, PR9 Mohali street level view with luxury cars in motion blur.\"\nBUSINESS NAME: \"AdRolls.in\"\nCONTACT NUMBER: \"8288835235\"\n\nDESIGN RULES:\n1. HYPER-REALISM: The image must look like a professional photograph taken with a high-end camera (Sony A7R V or Canon EOS R5). \n         NO ARTIFICIAL SHEEN: Avoid that typical \"AI look\". No plasticy textures, no artificial glowing sheen, and no saturated \"HDR-style\" over-processing.\n         NATURAL LIGHTING: Use soft, natural light (Golden Hour or professional studio lighting). Shadows should be soft and realistic.\n2. PEOPLE: Include people ONLY if they look natural, authentic, and add value to the scene. If Organic mode is ON, they should look like they are in a candid snapshot.\n3. MAIN HOOK: Create a bold, attention-grabbing headline that stops the scroll. \n4. BRAND INTEGRATION: YOU MUST INCLUDE THE PROVIDED BUSINESS LOGO AND THE CONTACT NUMBER (8288835235) CLEARLY IN THE DESIGN. Place them professionally (or slightly casually if Organic mode is ON) so they are legible but don't overpower the main visual.\n5. VISUALS: Use the provided images to create a clean but high-impact layout.\n6. NO GENERIC STOCK: Avoid the \"stock photo\" feel at all costs.\n\nUSER INSTRUCTIONS: AI Optimization: highlight Limited Inventory, Assured ROI\nASPECT RATIO: 1:1",
+    "aspect_ratio": "1:1",
+    "resolution": "1K",
+    "input_urls": [
+      "https://scontent.fixc1-3.fna.fbcdn.net/v/t45.1600-4/565417280_25317212687874427_4228148257485232739_n.jpg?_nc_cat=110&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=R3WR6OB_pgQQ7kNvwH5jjWi&_nc_oc=Adqm_6SUG7Pv008Ji1omajeXkabGkqYtq92-slx__JyNfoQ_ZNQcK9QOmdTGpk1baMl3MleioasJW9Je46_9cWBu&_nc_zt=1&_nc_ht=scontent.fixc1-3.fna&edm=AAwGEdEEAAAA&_nc_gid=FX1Wkml_J4VfvNJ7iaFoCA&_nc_tpa=Q5bMBQFJcAsEUvtCDQN9POlCyThBElKLzMX2mekaFnjLfwLToJnt3fsd5zjHfM50WEg6TIovp8imcdqT&oh=00_Af4bTxpgGb3eQa3LjkO3JeAqcmcVtedV-qekriAetKQ2zQ&oe=6A0207BF",
+      "https://scontent.fixc1-5.fna.fbcdn.net/v/t45.1600-4/567122103_24421115287591096_532207796024115826_n.jpg?_nc_cat=106&ccb=1-7&_nc_sid=d5bd00&_nc_ohc=nHrzMEbMme8Q7kNvwHQeDfS&_nc_oc=Adp-YIIfTzakndPkZYbjpOvr8i2gajcqtjORMr05e60_OO8roMySK2xvPnwcHPRdfAc-dMMGtvEVhQ0W5yNKFAZe&_nc_zt=1&_nc_ht=scontent.fixc1-5.fna&edm=AAwGEdEEAAAA&_nc_gid=FX1Wkml_J4VfvNJ7iaFoCA&_nc_tpa=Q5bMBQGpryHg8AhUbae0agmLryVm9TTj4mwvR_eEJD6a4j48qEZW6JJW1j9rvfHJ5IndbMaN8JTzbMKc&oh=00_Af5Qole-BvDeqlBgBjHQ0pVEULKkqWgfTUN3Y9jyAlm5ow&oe=6A01FCE1",
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/bc63c065-9bcc-4793-bedc-f0960406425b-1777893347501.png"
+    ]
+  }
+}
+[2026-05-07T06:56:09.952Z] ✅ SUCCESS: KIE TASK CREATED: b242a54b00964c6edf85cdc9f4c7dc5e
+[2026-05-07T06:56:09.990Z] ✅ SUCCESS: KIE TASK CREATED: d578bf391e2ff1f1d24f042c93365892
+[2026-05-07T06:56:17.305Z] Caption generated successfully.
+[2026-05-07T06:56:19.676Z] Caption generated successfully.

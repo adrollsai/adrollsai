@@ -57,7 +57,7 @@ export default function AdsPage() {
     isOpen: boolean,
     mode: 'optimize' | 'remarketing' | null,
     campaign: Campaign | null,
-    status: 'setup' | 'analyzing' | 'presenting' | 'generating' | 'reviewing' | 'pushing' | 'success' | 'error',
+    status: 'setup' | 'analyzing' | 'presenting' | 'generating' | 'reviewing' | 'picking' | 'pushing' | 'success' | 'error',
     logs: { id: number, text: string, type: 'system' | 'ai' | 'user' }[],
     variations: any[],
     selectedVariations: number[],
@@ -68,7 +68,34 @@ export default function AdsPage() {
     generationCount: number,
     style: 'hyper' | 'organic',
     customInstructions: string
-  }>({ isOpen: false, mode: null, campaign: null, status: 'setup', logs: [], variations: [], selectedVariations: [], insight: '', winningImageUrls: [], leadFormId: null, batchId: null, generationCount: 5, style: 'hyper', customInstructions: '' })
+  }>(() => {
+    if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('adrolls_orchestrator_cache');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                return { 
+                    isOpen: false, mode: null, campaign: null, status: 'setup', logs: [], 
+                    variations: parsed.variations || [], 
+                    selectedVariations: parsed.selectedVariations || [], 
+                    winningImageUrls: [], insight: '', leadFormId: null, batchId: null, 
+                    generationCount: 5, style: 'hyper', customInstructions: '' 
+                };
+            } catch (e) {}
+        }
+    }
+    return { isOpen: false, mode: null, campaign: null, status: 'setup', logs: [], variations: [], selectedVariations: [], winningImageUrls: [], insight: '', leadFormId: null, batchId: null, generationCount: 5, style: 'hyper', customInstructions: '' };
+  });
+
+  // Save orchestrator state to local storage whenever variations change
+  useEffect(() => {
+      if (orchestrator.variations.length > 0) {
+          localStorage.setItem('adrolls_orchestrator_cache', JSON.stringify({
+              variations: orchestrator.variations,
+              selectedVariations: orchestrator.selectedVariations
+          }));
+      }
+  }, [orchestrator.variations, orchestrator.selectedVariations]);
   
   // Persist Orchestrator State
   useEffect(() => {
@@ -79,7 +106,7 @@ export default function AdsPage() {
         if (parsed.isOpen) {
           // Migration: Ensure winningImageUrls exists
           if (!parsed.winningImageUrls) parsed.winningImageUrls = [];
-          setOrchestrator(parsed);
+          setOrchestrator(prev => ({ ...prev, ...parsed }));
         }
       } catch (e) {}
     }
@@ -101,26 +128,36 @@ export default function AdsPage() {
     if (orchestrator.status === 'generating' && orchestrator.batchId) {
         interval = setInterval(async () => {
             console.log("[Orchestrator] Polling for assets in batch:", orchestrator.batchId);
-            const res = await fetch(`/api/assets?batchId=${orchestrator.batchId}`);
-            const data = await res.json();
             
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const { data: batchAssets } = await supabase
+                .from('assets')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('master_creative_id', orchestrator.batchId)
+                .order('created_at', { ascending: false });
+
             // If we found at least one asset, we can show them, 
             // but ideally we wait for at least the count the user requested.
-            if (data.assets && data.assets.length >= orchestrator.selectedVariations.length) {
-                console.log("[Orchestrator] Found all assets! Switching to review.");
+            if (batchAssets && batchAssets.length >= orchestrator.selectedVariations.length) {
+                console.log("[Orchestrator] Found all assets! Switching to picking.");
                 // Match assets back to variations if possible, or just replace
                 setOrchestrator(prev => ({ 
                     ...prev, 
-                    status: 'reviewing', 
-                    variations: data.assets.map((a: any) => ({
+                    status: 'picking', // Switch to picking state so they can review/regenerate copy
+                    variations: batchAssets.map((a: any) => ({
                         title: 'Generated Variation',
                         headline: a.caption?.split('\n\n')[0] || 'AI Variation',
                         primary_text: a.caption?.split('\n\n').slice(1).join('\n\n') || '',
                         image_url: a.url,
+                        url: a.url,
+                        caption: a.caption,
                         asset_id: a.id
                     })),
-                    selectedVariations: data.assets.map((_: any, i: number) => i),
-                    logs: [...prev.logs, { id: Date.now(), text: "Assets generated and ready for review!", type: 'system' }] 
+                    selectedVariations: batchAssets.map((_: any, i: number) => i),
+                    logs: [...prev.logs, { id: Date.now(), text: "Assets generated! Now let's optimize the ad copy for these images.", type: 'system' }] 
                 }));
                 clearInterval(interval);
             }
@@ -428,35 +465,50 @@ export default function AdsPage() {
       }
   }
 
-  const handleReviewOptimizedAssets = async () => {
-    if (!orchestrator.campaign) return;
-    setOrchestrator(prev => ({...prev, status: 'analyzing', logs: [...prev.logs, { id: Date.now(), text: "Fetching generated creatives...", type: 'system' }]}));
-    try {
-        const { data: { user } } = await supabase.auth.getUser();
-        let query = supabase.from('assets').select('*').eq('user_id', user?.id).order('created_at', { ascending: false }).limit(20);
+    const handleGenerateMoreCopy = async (instructions?: string) => {
+        if (!orchestrator.campaign) return;
         
-        if (orchestrator.batchId) {
-            query = query.eq('master_creative_id', orchestrator.batchId);
-        } else {
-            query = query.ilike('property_id', `%opt%`);
-        }
+        // Use currently selected images from variations (before replacement) or from the picking state
+        const sourceAssets = orchestrator.variations.length > 0 ? orchestrator.variations : [];
+        if (sourceAssets.length === 0) return;
 
-        const { data: newAssets } = await query;
-        if (newAssets && newAssets.length > 0) {
-            setOrchestrator(prev => ({
-                ...prev,
-                status: 'reviewing',
-                variations: newAssets.map(a => ({ id: a.id, title: a.property_id || "Optimized", url: a.url, caption: a.caption, headline: a.caption?.split('\n\n')[0], primary_text: a.caption?.split('\n\n')[1] })),
-                selectedVariations: newAssets.map((_, i) => i),
-                logs: [...prev.logs, { id: Date.now(), text: `Found ${newAssets.length} creatives.`, type: 'system' }]
-            }));
-        } else {
-            setOrchestrator(prev => ({...prev, status: 'generating', logs: [...prev.logs, { id: Date.now(), text: "No assets found yet.", type: 'system' }]}));
+        setOrchestrator(prev => ({ 
+            ...prev, 
+            status: 'analyzing', 
+            logs: [...prev.logs, { id: Date.now(), text: instructions ? `Refining copy: ${instructions}` : "Generating more premium copy variations...", type: 'system' }] 
+        }));
+
+        try {
+            const res = await fetch('/api/meta-ads/optimize-campaign', {
+                method: 'POST',
+                body: JSON.stringify({ 
+                    campaignId: orchestrator.campaign?.id,
+                    campaignName: orchestrator.campaign?.name,
+                    step: 'generate-copy',
+                    imageUrls: sourceAssets.map(v => v.image_url),
+                    captions: sourceAssets.map(v => v.caption).filter(Boolean),
+                    userInstructions: instructions || ''
+                })
+            });
+            const data = await res.json();
+            if (data.variation) {
+                const newVar = {
+                    ...data.variation,
+                    asset_id: sourceAssets[0]?.asset_id,
+                    image_url: sourceAssets[0]?.image_url
+                };
+                setOrchestrator(prev => ({ 
+                    ...prev, 
+                    status: 'reviewing', 
+                    variations: [...prev.variations, newVar],
+                    selectedVariations: [...prev.selectedVariations, prev.variations.length],
+                    logs: [...prev.logs, { id: Date.now(), text: "Added another premium variation.", type: 'ai' }] 
+                }));
+            }
+        } catch (e) {
+            setOrchestrator(prev => ({ ...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: "Failed to generate copy.", type: 'system' }] }));
         }
-    } catch (e) {
-        setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: "Failed to load.", type: 'system' }]}));
-    }
-  }
+    };
 
   const handleAddPresetQuestion = (type: 'budget' | 'timeline' | 'type' | 'visit') => {
       if (type === 'budget') setFormQuestions(prev => [...prev, { label: "What is your budget?", type: "MULTIPLE_CHOICE", options: ["Less than 50L", "50L - 70L", "70L - 1 Cr", "1 Cr - 1.5 Cr", "1.5Cr - 2 Cr", "Above 2 Cr"], disqualifyingOptions: [] }]);
@@ -583,10 +635,65 @@ export default function AdsPage() {
                   </div>
                   <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-2 mb-6 relative z-10">
                       {orchestrator.logs.map((log) => (<div key={log.id} className={`flex ${log.type === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2`}><div className={`max-w-[85%] p-4 rounded-2xl text-sm font-medium leading-relaxed ${log.type === 'user' ? 'bg-purple-600 text-white rounded-br-sm' : log.type === 'system' ? 'bg-slate-50 text-slate-600 border border-slate-100 rounded-bl-sm' : 'bg-purple-50 text-purple-900 border border-purple-100 rounded-bl-sm shadow-sm'}`}>{log.type === 'ai' && <div className="flex items-center gap-1.5 mb-2 text-purple-600"><Sparkles size={14} className="animate-pulse"/> <span className="text-[10px] uppercase tracking-widest font-bold">Analysis</span></div>}{log.text}</div></div>))}
-                      {(orchestrator.status === 'analyzing' || orchestrator.status === 'generating') && (<div className="flex justify-start animate-in fade-in"><div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl rounded-bl-sm flex items-center gap-3"><div className="flex gap-1.5"><div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{animationDelay: '0ms'}} /><div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{animationDelay: '150ms'}} /><div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{animationDelay: '300ms'}} /></div><span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Processing</span></div></div>)}
-                               <div className="grid grid-cols-1 gap-4">{orchestrator.variations.map((v, i) => { const isSelected = orchestrator.selectedVariations.includes(i); return (<div key={i} onClick={() => { setOrchestrator(prev => { const newSelected = isSelected ? prev.selectedVariations.filter(idx => idx !== i) : [...prev.selectedVariations, i]; return { ...prev, selectedVariations: newSelected }; }); }} className={`relative bg-white border rounded-2xl p-4 shadow-sm transition-all cursor-pointer group ${isSelected ? 'border-purple-500 bg-purple-50/30 ring-1 ring-purple-100' : 'border-slate-200 hover:border-slate-300'}`}>{v.image_url && <div className="aspect-square w-full rounded-xl overflow-hidden mb-3 bg-slate-100"><img src={v.image_url} alt="AI variation" className="w-full h-full object-cover" /></div>}<div className="flex justify-between items-start mb-2"><h4 className="text-xs font-bold text-slate-800 uppercase">{v.title}</h4><div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-purple-600 border-purple-600 text-white' : 'border-slate-200'}`}>{isSelected && <CheckCircle size={12} />}</div></div><div className="space-y-2"><p className="text-[10px] font-bold text-purple-600 uppercase tracking-tighter leading-tight">Headline: {v.headline}</p><p className="text-[10px] text-slate-600 font-medium leading-relaxed italic border-l-2 border-slate-100 pl-2">{v.image_url ? 'Design Ready' : `Prompt: ${v.image_prompt}`}</p></div>{!isSelected && <div className="absolute inset-0 bg-white/40 rounded-2xl z-10" />}</div>); })}</div>
-                  </div>
-                  <div className="pt-4 border-t border-slate-100 relative z-10">
+                      {orchestrator.status === 'reviewing' && (
+                          <div className="space-y-4 animate-in fade-in">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Review & Select AI Copy Variations:</p>
+                              <div className="space-y-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2">
+                                  {orchestrator.variations.map((v, i) => {
+                                      const isSelected = orchestrator.selectedVariations.includes(i);
+                                      return (
+                                          <div key={i} onClick={() => {
+                                              setOrchestrator(prev => {
+                                                  const newSelected = isSelected ? prev.selectedVariations.filter(idx => idx !== i) : [...prev.selectedVariations, i];
+                                                  return { ...prev, selectedVariations: newSelected };
+                                              });
+                                          }} className={`relative bg-white border rounded-2xl p-5 shadow-sm transition-all cursor-pointer group ${isSelected ? 'border-purple-500 bg-purple-50/30 ring-1 ring-purple-100' : 'border-slate-200 hover:border-slate-300'}`}>
+                                              <div className="flex justify-between items-start mb-3">
+                                                  <div className="flex-1">
+                                                      <p className="text-[10px] font-bold text-purple-600 uppercase tracking-widest mb-1">Headline</p>
+                                                      <h4 className="text-sm font-bold text-slate-900">{v.headline}</h4>
+                                                  </div>
+                                                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-purple-600 border-purple-600 text-white' : 'border-slate-200'}`}>{isSelected && <CheckCircle size={12} />}</div>
+                                              </div>
+                                              <div>
+                                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Primary Text</p>
+                                                  <p className="text-xs text-slate-600 font-medium leading-relaxed">{v.primary_text}</p>
+                                              </div>
+                                          </div>
+                                      );
+                                  })}
+                              </div>
+
+                              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mt-4">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Instructions for More Variations</label>
+                                  <div className="flex gap-2">
+                                      <input 
+                                          type="text" 
+                                          placeholder="E.g. Make it more urgent, focus on luxury..." 
+                                          className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-2 text-xs outline-none focus:ring-2 focus:ring-purple-500/20 transition-all"
+                                          onKeyDown={(e) => {
+                                              if (e.key === 'Enter') {
+                                                  const input = e.currentTarget;
+                                                  handleGenerateMoreCopy(input.value);
+                                                  input.value = '';
+                                              }
+                                          }}
+                                      />
+                                      <button 
+                                          onClick={(e) => {
+                                              const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                              handleGenerateMoreCopy(input.value);
+                                              input.value = '';
+                                          }}
+                                          className="bg-white border border-slate-200 p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition-all"
+                                      >
+                                          <RefreshCw size={18} />
+                                      </button>
+                                  </div>
+                              </div>
+                          </div>
+                      )}
+
                       {orchestrator.status === 'setup' && (
                           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
                                <div className="grid grid-cols-2 gap-3 mb-2">
@@ -606,8 +713,94 @@ export default function AdsPage() {
                                        <span className="text-lg font-black text-purple-600 w-8">{orchestrator.generationCount}</span>
                                    </div>
                                </div>
+                          </div>
+                      )}
+                  </div>
+                  <div className="pt-4 border-t border-slate-100 relative z-10">
+                      {orchestrator.status === 'setup' && (
+                          <div className="space-y-4">
+                               <button onClick={handleStartOptimization} className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-black shadow-lg transition-all flex items-center justify-center gap-2"><Sparkles size={18} className="text-purple-400" /> Start AI Analysis</button>
 
-                               <button onClick={handleStartOptimization} className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-black shadow-lg transition-all flex items-center justify-center gap-2 mt-4"><Sparkles size={18} className="text-purple-400" /> Start AI Analysis</button>
+                               {optimizedCampaigns.includes(orchestrator.campaign?.id || '') && (
+                                   <div className="pt-4 border-t border-slate-100">
+                                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center mb-3">Or continue from previous work</p>
+                                       <button onClick={() => setOrchestrator(prev => ({ ...prev, status: 'picking' }))} className="w-full bg-slate-50 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-100 transition-all flex items-center justify-center gap-2 border border-slate-100 shadow-sm"><ImageIcon size={18} /> Pick from Library</button>
+                                   </div>
+                               )}
+                          </div>
+                      )}
+
+                      {orchestrator.status === 'picking' && (
+                          <div className="space-y-4 animate-in fade-in">
+                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Select assets from your library:</p>
+                               <div className="grid grid-cols-3 gap-2 max-h-60 overflow-y-auto custom-scrollbar p-1">
+                                   {assets.map(a => {
+                                       const isSelected = orchestrator.variations.some(v => v.asset_id === a.id);
+                                       return (
+                                           <div key={a.id} onClick={() => {
+                                               setOrchestrator(prev => {
+                                                   const exists = prev.variations.find(v => v.asset_id === a.id);
+                                                   if (exists) {
+                                                       return { ...prev, variations: prev.variations.filter(v => v.asset_id !== a.id), selectedVariations: prev.variations.filter(v => v.asset_id !== a.id).map((_, i) => i) };
+                                                   }
+                                                   
+                                                   const lines = (a.caption || '').split('\n\n');
+                                                   const headline = lines[0] || `${orchestrator.campaign?.name} - Exclusive Offer`;
+                                                   const primaryText = lines.slice(1).join('\n\n') || lines[0] || `Premium opportunities at ${orchestrator.campaign?.name}. Contact us today!`;
+
+                                                   const newVar = { 
+                                                       asset_id: a.id, 
+                                                       image_url: a.url, 
+                                                       url: a.url,
+                                                       headline: headline,
+                                                       primary_text: primaryText,
+                                                       title: 'Selected Asset'
+                                                   };
+                                                   const newVariations = [...prev.variations, newVar];
+                                                   return { ...prev, variations: newVariations, selectedVariations: newVariations.map((_, i) => i) };
+                                               });
+                                           }} className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-slate-100 hover:border-slate-200'}`}>
+                                               <img src={fixR2Url(a.url)} className="w-full h-full object-cover" />
+                                               {isSelected && <div className="absolute top-1 right-1 bg-blue-500 text-white rounded-full p-0.5"><CheckCircle size={10} /></div>}
+                                           </div>
+                                       );
+                                   })}
+                               </div>
+                               <div className="grid grid-cols-2 gap-2 mt-4">
+                                   <button onClick={() => setOrchestrator(prev => ({ ...prev, status: 'setup' }))} className="w-full bg-slate-100 text-slate-600 font-bold py-3 rounded-2xl hover:bg-slate-200 transition-all">Back</button>
+                                   <button onClick={async () => {
+                                       if (orchestrator.variations.length === 0) return;
+                                       setOrchestrator(prev => ({ ...prev, status: 'analyzing', logs: [...prev.logs, { id: Date.now(), text: "Generating premium AI copy...", type: 'system' }] }));
+                                       try {
+                                           const res = await fetch('/api/meta-ads/optimize-campaign', {
+                                               method: 'POST',
+                                               body: JSON.stringify({ 
+                                                   campaignId: orchestrator.campaign?.id,
+                                                   campaignName: orchestrator.campaign?.name,
+                                                   step: 'generate-copy',
+                                                   imageUrls: orchestrator.variations.map(v => v.image_url),
+                                                   captions: orchestrator.variations.map(v => v.caption).filter(Boolean)
+                                               })
+                                           });
+                                           const data = await res.json();
+                                           if (data.variation) {
+                                               setOrchestrator(prev => ({ 
+                                                   ...prev, 
+                                                   status: 'reviewing', 
+                                                   variations: [{
+                                                       ...data.variation,
+                                                       asset_id: prev.variations[0].asset_id,
+                                                       image_url: prev.variations[0].image_url
+                                                   }],
+                                                   selectedVariations: [0],
+                                                   logs: [...prev.logs, { id: Date.now(), text: "AI has generated a high-converting variation. You can add more if needed.", type: 'ai' }] 
+                                               }));
+                                           }
+                                       } catch (e) {
+                                           setOrchestrator(prev => ({ ...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: "Failed to generate copy.", type: 'system' }] }));
+                                       }
+                                   }} disabled={orchestrator.variations.length === 0} className="w-full bg-blue-600 text-white font-bold py-3 rounded-2xl hover:bg-blue-700 transition-all disabled:opacity-50">Generate AI Copy</button>
+                               </div>
                           </div>
                       )}
 
@@ -623,7 +816,6 @@ export default function AdsPage() {
                                <button onClick={handleApproveVariations} className="w-full bg-purple-600 text-white font-bold py-4 rounded-2xl hover:bg-purple-700 shadow-md transition-all flex items-center justify-center gap-2"><Sparkles size={18} /> Generate {orchestrator.selectedVariations.length} Variations</button>
                           </div>
                       )}
-                      {orchestrator.status === 'generating' && (<button onClick={handleReviewOptimizedAssets} className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl hover:bg-blue-700 shadow-md transition-all flex items-center justify-center gap-2 animate-pulse"><RefreshCw size={18} /> Review Generated Assets</button>)}
                       {orchestrator.status === 'reviewing' && (<button onClick={handleApproveVariations} disabled={orchestrator.selectedVariations.length === 0} className="w-full bg-green-600 text-white font-bold py-4 rounded-2xl hover:bg-green-700 shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"><Zap size={18} /> Push {orchestrator.selectedVariations.length} Selected</button>)}
                       {orchestrator.status === 'pushing' && (<div className="w-full bg-slate-100 text-slate-400 font-bold py-4 rounded-2xl flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" /> Pushing to Meta...</div>)}
                       {orchestrator.status === 'success' && (<button onClick={() => setOrchestrator(prev => ({...prev, isOpen: false}))} className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-slate-800 shadow-md transition-all flex items-center justify-center gap-2">Done</button>)}

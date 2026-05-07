@@ -11,12 +11,17 @@ export async function POST(request: Request) {
 
         const { campaignId, selectedAssets, leadFormId } = await request.json();
         
-        const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, fb_page_id, business_url').eq('id', user.id).single();
+        const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, custom_domain').eq('id', user.id).single();
         if (!profile?.facebook_token || !profile?.ad_account_id) {
+            console.error("[Push] Profile missing credentials for user:", user.id);
             return NextResponse.json({ error: 'Missing Meta credentials' }, { status: 400 });
         }
 
-        // 1. Get First Ad Set
+        // 1. Get Campaign Objective & First Ad Set
+        const campaignRes = await fetch(`${FB_URL}/${campaignId}?fields=objective&access_token=${profile.facebook_token}`);
+        const campaignData = await campaignRes.json();
+        const objective = campaignData.objective;
+
         const adSetsRes = await fetch(`${FB_URL}/${campaignId}/adsets?fields=id&access_token=${profile.facebook_token}`);
         const adSetsData = await adSetsRes.json();
         const adSetId = adSetsData.data?.[0]?.id;
@@ -24,9 +29,16 @@ export async function POST(request: Request) {
 
         let successCount = 0;
 
-        for (const asset of selectedAssets) {
-            // A. Upload Image to Meta (Asset URL to Hash)
-            const imgFetch = await fetch(asset.url);
+        // 2. Deduplicate images from selected variations
+        const uniqueImageUrls = Array.from(new Set(selectedAssets.map((a: any) => (a.image_url || a.url) as string)));
+        const allHeadlines = selectedAssets.map((a: any) => a.headline).filter(Boolean);
+        const allPrimaryTexts = selectedAssets.map((a: any) => a.primary_text).filter(Boolean);
+
+        for (const imageUrl of uniqueImageUrls) {
+            console.log("[Push] Processing image:", imageUrl);
+            
+            // A. Upload Image
+            const imgFetch = await fetch(imageUrl as string);
             const imgBlob = await imgFetch.blob();
             const uploadData = new FormData();
             uploadData.append('source', imgBlob, `opt_push_${Date.now()}.png`);
@@ -36,49 +48,59 @@ export async function POST(request: Request) {
             const uploadResult = await uploadRes.json();
             const imgHash = uploadResult.images?.[Object.keys(uploadResult.images)[0]]?.hash;
 
-            if (!imgHash) continue;
+            if (!imgHash) {
+                console.error("[Push] Image upload failed:", uploadResult);
+                continue;
+            }
 
-            // B. Create Creative
-            const [headline, ...rest] = (asset.caption || '').split('\n\n');
-            const primaryText = rest.join('\n\n') || headline;
+            // For Awareness campaigns or standard ad sets, we create individual ads for variations
+            // to ensure 100% compatibility and avoid Meta API "unsupported field" errors.
+            const isLeadGen = objective === 'OUTCOME_LEADS';
+            for (let i = 0; i < allPrimaryTexts.length; i++) {
+                const headline = allHeadlines[i] || allHeadlines[0];
+                const primaryText = allPrimaryTexts[i] || allPrimaryTexts[0];
 
-            const creativePayload = {
-                name: `AI Push - ${asset.id}`,
-                object_story_spec: {
-                    page_id: profile.fb_page_id,
-                    link_data: {
-                        message: primaryText,
-                        name: headline,
-                        link: profile.business_url || 'https://adrolls.in',
-                        image_hash: imgHash,
-                        call_to_action: { type: 'SIGN_UP', value: { lead_gen_form_id: leadFormId } }
-                    }
-                },
-                access_token: profile.facebook_token
-            };
-
-            const creativeRes = await fetch(`${FB_URL}/${profile.ad_account_id}/adcreatives`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(creativePayload)
-            });
-            const creativeData = await creativeRes.json();
-
-            if (creativeData.id) {
-                // C. Create Ad
-                const adPayload = {
-                    name: `AI Optimized Variation - ${Date.now()}`,
-                    adset_id: adSetId,
-                    creative: { creative_id: creativeData.id },
-                    status: 'PAUSED',
+                const creativePayload = {
+                    name: `AI Optimized Variation ${i + 1} - ${Date.now()}`,
+                    object_story_spec: {
+                        page_id: profile.selected_page_id,
+                        link_data: {
+                            image_hash: imgHash,
+                            link: profile.custom_domain ? `https://${profile.custom_domain}` : 'https://adrolls.in',
+                            message: primaryText,
+                            name: headline,
+                            call_to_action: { 
+                                type: isLeadGen ? 'SIGN_UP' : 'LEARN_MORE',
+                                value: isLeadGen ? { lead_gen_form_id: leadFormId } : {}
+                            }
+                        }
+                    },
                     access_token: profile.facebook_token
                 };
-                const adRes = await fetch(`${FB_URL}/${profile.ad_account_id}/ads`, {
+
+                const creativeRes = await fetch(`${FB_URL}/${profile.ad_account_id}/adcreatives`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(adPayload)
+                    body: JSON.stringify(creativePayload)
                 });
-                if (adRes.ok) successCount++;
+                const creativeData = await creativeRes.json();
+
+                if (creativeData.id) {
+                    console.log(`[Push] Creative ${i+1} created:`, creativeData.id);
+                    const adPayload = {
+                        name: `AI Optimized Ad - Var ${i + 1}`,
+                        adset_id: adSetId,
+                        creative: { creative_id: creativeData.id },
+                        status: 'PAUSED',
+                        access_token: profile.facebook_token
+                    };
+                    const adRes = await fetch(`${FB_URL}/${profile.ad_account_id}/ads`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(adPayload)
+                    });
+                    if (adRes.ok) successCount++;
+                }
             }
         }
 
