@@ -67,19 +67,19 @@ export async function GET(request: Request) {
                 if (logoUrl) allInputImages.push(logoUrl);
 
                 // C. Construct Prompts (Hormozi Persona)
-                let finalImagePrompt = `PERSONA: World-class Direct Response Graphic Ads Designer using Alex Hormozi high-conversion frameworks.
-OBJECTIVE: Design a "WOW-factor", out-of-the-box Meta Ad graphic for: "${prop.title}".
+                let finalImagePrompt = `PERSONA: World-class Senior Ad Creative Director (20+ years exp) at a top-tier global advertising agency.
+OBJECTIVE: Design a "High-Value" professional Meta Ad creative for: "${prop.title}".
 
 CONTEXT: "${prop.description || ''}"
 BUSINESS: "${businessName}"
 
 DESIGN RULES:
-1. MAIN HOOK: Bold, attention-grabbing headline.
-2. BRANDING: Include the Business Logo provided in image inputs.
-3. VISUALS: Premium, clean layout. No generic stock feel.
-4. CLUTTER-FREE: High-impact but sophisticated.
-
-Aspect Ratio: 1:1.`;
+1. PREMIUM AESTHETIC: High-quality photography, sophisticated lighting, and clean visual hierarchy.
+2. PEOPLE: ALWAYS include "super beautiful", high-end people that match the ethnicity of the business context (${businessName}).
+3. BRAND ENCAPSULATION: Professionally integrate product info. It must look like a premium advertisement.
+4. NO NONSENSE: Perfectly clean anatomy, legible text, and zero AI artifacts.
+5. HOOK: Bold, attention-grabbing visual hook.
+`;
                 
                 if (contactNumber) finalImagePrompt += ` Display contact: ${contactNumber}.`;
 

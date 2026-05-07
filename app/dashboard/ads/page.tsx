@@ -492,6 +492,8 @@ export default function AdsPage() {
             });
             const data = await res.json();
             if (data.variation) {
+                // If we have multiple unique images, we might want to generate for each
+                // For now, let's just add the variation to the first image as a "new text option"
                 const newVar = {
                     ...data.variation,
                     asset_id: sourceAssets[0]?.asset_id,
@@ -770,30 +772,42 @@ export default function AdsPage() {
                                    <button onClick={() => setOrchestrator(prev => ({ ...prev, status: 'setup' }))} className="w-full bg-slate-100 text-slate-600 font-bold py-3 rounded-2xl hover:bg-slate-200 transition-all">Back</button>
                                    <button onClick={async () => {
                                        if (orchestrator.variations.length === 0) return;
-                                       setOrchestrator(prev => ({ ...prev, status: 'analyzing', logs: [...prev.logs, { id: Date.now(), text: "Generating premium AI copy...", type: 'system' }] }));
+                                       setOrchestrator(prev => ({ ...prev, status: 'analyzing', logs: [...prev.logs, { id: Date.now(), text: "Generating premium AI copy for all creatives...", type: 'system' }] }));
                                        try {
-                                           const res = await fetch('/api/meta-ads/optimize-campaign', {
-                                               method: 'POST',
-                                               body: JSON.stringify({ 
-                                                   campaignId: orchestrator.campaign?.id,
-                                                   campaignName: orchestrator.campaign?.name,
-                                                   step: 'generate-copy',
-                                                   imageUrls: orchestrator.variations.map(v => v.image_url),
-                                                   captions: orchestrator.variations.map(v => v.caption).filter(Boolean)
-                                               })
-                                           });
-                                           const data = await res.json();
-                                           if (data.variation) {
+                                           // We generate 1 variation per unique image
+                                           const uniqueImages = Array.from(new Set(orchestrator.variations.map(v => v.image_url)));
+                                           const newVariations: any[] = [];
+
+                                           for (const imgUrl of uniqueImages) {
+                                               const sourceVar = orchestrator.variations.find(v => v.image_url === imgUrl);
+                                               const res = await fetch('/api/meta-ads/optimize-campaign', {
+                                                   method: 'POST',
+                                                   body: JSON.stringify({ 
+                                                       campaignId: orchestrator.campaign?.id,
+                                                       campaignName: orchestrator.campaign?.name,
+                                                       step: 'generate-copy',
+                                                       imageUrls: [imgUrl],
+                                                       captions: sourceVar?.caption ? [sourceVar.caption] : []
+                                                   })
+                                               });
+                                               const data = await res.json();
+                                               if (data.variation) {
+                                                   newVariations.push({
+                                                       ...data.variation,
+                                                       asset_id: sourceVar?.asset_id,
+                                                       image_url: imgUrl,
+                                                       caption: sourceVar?.caption
+                                                   });
+                                               }
+                                           }
+
+                                           if (newVariations.length > 0) {
                                                setOrchestrator(prev => ({ 
                                                    ...prev, 
                                                    status: 'reviewing', 
-                                                   variations: [{
-                                                       ...data.variation,
-                                                       asset_id: prev.variations[0].asset_id,
-                                                       image_url: prev.variations[0].image_url
-                                                   }],
-                                                   selectedVariations: [0],
-                                                   logs: [...prev.logs, { id: Date.now(), text: "AI has generated a high-converting variation. You can add more if needed.", type: 'ai' }] 
+                                                   variations: newVariations,
+                                                   selectedVariations: newVariations.map((_, i) => i),
+                                                   logs: [...prev.logs, { id: Date.now(), text: `AI has generated tailored copy for each of your ${newVariations.length} creatives.`, type: 'ai' }] 
                                                }));
                                            }
                                        } catch (e) {

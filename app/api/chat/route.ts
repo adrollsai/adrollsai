@@ -79,8 +79,8 @@ export async function POST(request: Request) {
          NO ARTIFICIAL SHEEN: Avoid that typical "AI look". No plasticy textures, no artificial glowing sheen, and no saturated "HDR-style" over-processing.
          NATURAL LIGHTING: Use soft, natural light (Golden Hour or professional studio lighting). Shadows should be soft and realistic.`;
 
-    let finalImagePrompt = `PERSONA: World-class Direct Response Graphic Ads Designer (20+ years exp) using Alex Hormozi high-conversion frameworks.
-OBJECTIVE: Design a "WOW-factor" Meta Ad graphic that stops the scroll immediately.
+    let finalImagePrompt = `PERSONA: World-class Senior Ad Creative Director (20+ years exp) at a top-tier global advertising agency.
+OBJECTIVE: Design a "High-Value" professional Meta Ad creative that encapsulates the product's essence with industry-standard excellence while maintaining extreme scroll-stopping power.
 
 TITLE/OFFER: "${propertyTitle}"
 DESCRIPTION/CONTEXT: "${propertyDescription}"
@@ -89,11 +89,12 @@ CONTACT NUMBER: "${contactNumber || 'Not provided'}"
 
 DESIGN RULES:
 1. ${styleInstructions}
-2. PEOPLE: Include people ONLY if they look natural, authentic, and add value to the scene. If Organic mode is ON, they should look like they are in a candid snapshot.
-3. MAIN HOOK: Create a bold, attention-grabbing headline that stops the scroll. 
-4. BRAND INTEGRATION: YOU MUST INCLUDE THE PROVIDED BUSINESS LOGO AND THE CONTACT NUMBER (${contactNumber || ''}) CLEARLY IN THE DESIGN. Place them professionally (or slightly casually if Organic mode is ON) so they are legible but don't overpower the main visual.
-5. VISUALS: Use the provided images to create a clean but high-impact layout.
-6. NO GENERIC STOCK: Avoid the "stock photo" feel at all costs.
+2. PEOPLE: ALWAYS include high-quality, "super beautiful" people who look successful and aspirational. 
+3. ETHNICITY: Match the ethnicity of the people to the context of the Business Name (${businessName}) and Location. If the business is regional, use the appropriate local ethnicity.
+4. BRAND ENCAPSULATION: Professionally integrate the product details into the scene. It should feel like a premium, state-of-the-art brand advertisement.
+5. NO NONSENSE: Ensure perfectly clean anatomy, correct text rendering where applicable, and NO nonsensical artifacts or "AI hallucinations".
+6. HOOK & HIERARCHY: Use a clear visual hook that immediately draws the eye to the most important element of the offer.
+7. BRAND INTEGRATION: Include the provided BUSINESS LOGO and the CONTACT NUMBER (${contactNumber || ''}) with premium, high-end typography and placement.
 
 USER INSTRUCTIONS: ${userInstructions || 'None'}
 ASPECT RATIO: ${aspectRatio}`;

@@ -112,10 +112,16 @@ export async function POST(request: Request) {
             TASK:
             1. Identify which visuals and copy angles are winning (generating leads at low cost).
             2. Identify which ones are failing.
-            3. Provide a sharp 2-sentence summary of WHAT works and WHY, respecting the User's Strategy Notes.
-            4. Suggest 6 brand new high-converting "Angles" or "Variations" to test next, adhering to the "${style}" aesthetic.
+            3. Provide a sharp 2-sentence summary of WHAT works and WHY.
+            4. Suggest 6 brand new "Professional High-End Variations" to test next.
             
-            IMPORTANT: Use the winning visuals (${imageUrls.length} provided) as your "Visual DNA". Your prompts should describe how to evolve these winners into even better versions.
+            IMAGE PROMPT GUIDELINES:
+            - Goal: Create industry-standard, professional ad creatives that encapsulate product info beautifully.
+            - Style: High-quality photography, premium lighting, state-of-the-art design.
+            - People: Include "super beautiful" people that match the ethnicity of the business context (${profile.business_name || 'Global'}).
+            - Cleanliness: NO nonsensical elements or AI artifacts.
+            
+            IMPORTANT: Use the winning visuals (${imageUrls.length} provided) as your "Visual DNA". Your image_prompt should describe how to evolve these winners into premium, attention-grabbing agency-grade creatives.
             
             OUTPUT VALID JSON:
             {
