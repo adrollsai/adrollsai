@@ -3,21 +3,13 @@ import { createClient } from '@/utils/supabase/server'
 import { createKieTask } from '@/utils/external-apis';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google'; 
-import fs from 'fs';
-import path from 'path';
 import { checkLimitAndIncrement } from '@/utils/subscription-server';
-
-const DEBUG_LOG = path.join(process.cwd(), 'image_gen_debug.log');
 
 function logToFile(msg: string) {
   const timestamp = new Date().toISOString();
-  const entry = `[${timestamp}] ${msg}\n`;
-  console.log(`[ImageGen] ${msg}`); // Also log to console for dev server
-  try {
-    fs.appendFileSync(DEBUG_LOG, entry, { encoding: 'utf8' });
-  } catch (e: any) {
-    console.error("CRITICAL: Failed to write to log file:", e.message);
-  }
+  // Using standard console.log for Vercel/Next.js cloud logs
+  // Local file system writing is disabled due to EROFS errors in serverless functions.
+  console.log(`[ImageGen] [${timestamp}] ${msg}`);
 }
 
 export async function POST(request: Request) {

@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import * as fs from 'fs';
-import path from 'path';
 import { callGemini } from '@/utils/external-apis';
 import { checkLimitAndIncrement } from '@/utils/subscription-server';
 
