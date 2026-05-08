@@ -24,7 +24,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       // Check user's subscription status
       const { data } = await supabase
         .from('profiles')
-        .select('subscription_status, role')
+        .select('subscription_status, role, parent_id')
         .eq('id', session.user.id)
         .single()
 
@@ -36,6 +36,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (!isPaid && !isBillingPage && data?.role === 'admin') {
         router.push('/dashboard/billing')
       } else {
+        // AUTO-FIX: If they are 'agent' but have no parent_id, they are a self-registered business owner -> Admin
+        if (data?.role === 'agent' && !data?.parent_id) {
+          console.log("🛠️ Auto-upgrading self-registered user to admin...");
+          await supabase
+            .from('profiles')
+            .update({ role: 'admin' })
+            .eq('id', session.user.id);
+        }
         setIsAuthorized(true)
       }
     }

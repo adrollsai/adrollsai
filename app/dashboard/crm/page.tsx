@@ -80,6 +80,9 @@ export default function CRMPage() {
       if (currentRole === 'admin') {
           const { data: teamData } = await supabase.from('profiles').select('id, business_name').eq('parent_id', user.id)
           setTeam(teamData || [])
+      } else {
+          // For agents, we should at least have their own info in "team" so they don't see "Unassigned" for themselves
+          setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
       }
 
       let query = supabase.from('leads').select('*, lead_history(action_type, description, created_at)').order('created_at', { ascending: false })

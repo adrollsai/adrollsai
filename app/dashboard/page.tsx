@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil } from 'lucide-react'
+import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil, Maximize2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner' 
+import ImagePreviewModal from '@/components/ImagePreviewModal'
 
 // Custom WhatsApp SVG Icon
 const WhatsAppIcon = ({ size = 24, className = "" }) => (
@@ -48,6 +49,7 @@ export default function ProductsPage() {
   // RBAC & Ownership State
   const [role, setRole] = useState<'admin' | 'agent'>('admin')
   const [ownerId, setOwnerId] = useState<string | null>(null) 
+  const [adminCustomDomain, setAdminCustomDomain] = useState<string | null>(null)
   
   // Interaction State
   const [isSharingId, setIsSharingId] = useState<string | null>(null)
@@ -72,6 +74,9 @@ export default function ProductsPage() {
   const [modalTab, setModalTab] = useState<'details' | 'assets'>('details')
   const [propertyAssets, setPropertyAssets] = useState<Asset[]>([])
   const [isLoadingAssets, setIsLoadingAssets] = useState(false)
+  
+  // Image Preview Modal
+  const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string }>({ isOpen: false, url: '', title: '' })
   
   // Add Form State
   const [newProp, setNewProp] = useState({ title: '', description: '' })
@@ -145,9 +150,16 @@ export default function ProductsPage() {
 
 
 
-      const { data: profile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id, custom_domain').eq('id', user.id).single()
       const currentRole = profile?.role || 'admin'
       setRole(currentRole)
+
+      let adminDomain = profile?.custom_domain
+      if (currentRole === 'agent' && profile?.parent_id) {
+          const { data: adminProfile } = await supabase.from('profiles').select('custom_domain').eq('id', profile.parent_id).single()
+          adminDomain = adminProfile?.custom_domain
+      }
+      setAdminCustomDomain(adminDomain)
 
       const targetUserId = (currentRole === 'agent' && profile?.parent_id) ? profile.parent_id : user.id
       setOwnerId(targetUserId)
@@ -478,7 +490,10 @@ export default function ProductsPage() {
     if (!ownerId) return 
     const params = new URLSearchParams()
     if (searchQuery) params.set('q', searchQuery)
-    const shareUrl = `${window.location.origin}/shared/${ownerId}?${params.toString()}`
+    
+    const baseUrl = adminCustomDomain ? `https://${adminCustomDomain}` : "https://app.adrolls.in";
+    const shareUrl = `${baseUrl}/shared/${ownerId}?${params.toString()}`
+    
     navigator.clipboard.writeText(shareUrl)
     toast.success("✅ Link Copied!")
   }
@@ -665,14 +680,16 @@ export default function ProductsPage() {
                   
                   {/* Action Buttons Row */}
                   <div className="flex items-center gap-2 shrink-0">
-                      <button 
-                          onClick={(e) => handleBackgroundGeneration(e, prop)} 
-                          disabled={generatingProps.includes(prop.id)}
-                          className="bg-purple-50 text-purple-600 p-2.5 rounded-full hover:bg-purple-600 hover:text-white transition-colors flex-shrink-0 disabled:opacity-50 disabled:hover:bg-purple-50 disabled:hover:text-purple-600"
-                          title="Generate AI Poster"
-                      >
-                         {generatingProps.includes(prop.id) ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                      </button>
+                      {role === 'admin' && (
+                        <button 
+                            onClick={(e) => handleBackgroundGeneration(e, prop)} 
+                            disabled={generatingProps.includes(prop.id)}
+                            className="bg-purple-50 text-purple-600 p-2.5 rounded-full hover:bg-purple-600 hover:text-white transition-colors flex-shrink-0 disabled:opacity-50 disabled:hover:bg-purple-50 disabled:hover:text-purple-600"
+                            title="Generate AI Poster"
+                        >
+                           {generatingProps.includes(prop.id) ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                        </button>
+                      )}
                       <button 
                           onClick={(e) => handleNativeShare(e, prop)} 
                           disabled={isSharingId === prop.id}
@@ -689,19 +706,21 @@ export default function ProductsPage() {
                 </p>
 
                 {/* Auto Generate Toggle */}
-                <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
-                  <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
-                    <Sparkles size={14} className={prop.auto_generate ? "text-amber-500" : "text-slate-400"} />
-                    Auto-Gen Daily
-                  </span>
-                  <button
-                    onClick={(e) => handleToggleAutoGenerate(e, prop.id, !!prop.auto_generate)}
-                    disabled={isTogglingId === prop.id}
-                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-500/20 ${prop.auto_generate ? 'bg-blue-600' : 'bg-slate-300'} ${isTogglingId === prop.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-300 ease-out ${prop.auto_generate ? 'translate-x-5' : 'translate-x-0'}`} />
-                  </button>
-                </div>
+                {role === 'admin' && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
+                    <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
+                      <Sparkles size={14} className={prop.auto_generate ? "text-amber-500" : "text-slate-400"} />
+                      Auto-Gen Daily
+                    </span>
+                    <button
+                      onClick={(e) => handleToggleAutoGenerate(e, prop.id, !!prop.auto_generate)}
+                      disabled={isTogglingId === prop.id}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-500/20 ${prop.auto_generate ? 'bg-blue-600' : 'bg-slate-300'} ${isTogglingId === prop.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-300 ease-out ${prop.auto_generate ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+                )}
 
               </div>
             </div>
@@ -968,12 +987,23 @@ export default function ProductsPage() {
                            ) : (
                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                                    {propertyAssets.map(asset => (
-                                       <div key={asset.id} className="aspect-square bg-slate-200 rounded-[1.5rem] overflow-hidden relative shadow-sm border border-slate-200 group">
+                                       <div key={asset.id} className="aspect-square bg-slate-200 rounded-[1.5rem] overflow-hidden relative shadow-sm border border-slate-200 group cursor-pointer">
                                            {asset.type === 'video' ? (
                                                <video src={asset.url} className="w-full h-full object-cover" />
                                            ) : (
                                                <img src={asset.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="Creative" />
                                            )}
+                                           <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                               <button 
+                                                   onClick={(e) => {
+                                                       e.stopPropagation();
+                                                       setPreviewImage({ isOpen: true, url: asset.url, title: selectedProperty.title || 'Asset Preview' });
+                                                   }}
+                                                   className="bg-white/90 backdrop-blur-sm p-2 rounded-full text-slate-900 shadow-xl hover:bg-white transition-all"
+                                               >
+                                                   <Maximize2 size={18} />
+                                               </button>
+                                           </div>
                                            <div className={`absolute top-2.5 right-2.5 w-3 h-3 rounded-full border-2 border-white shadow-sm ${asset.status === 'Published' ? 'bg-green-500' : 'bg-amber-400'}`} title={`Status: ${asset.status}`} />
                                        </div>
                                    ))}
@@ -986,6 +1016,12 @@ export default function ProductsPage() {
         </div>
       )}
 
+      <ImagePreviewModal 
+          isOpen={previewImage.isOpen} 
+          onClose={() => setPreviewImage(prev => ({ ...prev, isOpen: false }))} 
+          imageUrl={previewImage.url} 
+          title={previewImage.title} 
+      />
     </div>
   )
 }

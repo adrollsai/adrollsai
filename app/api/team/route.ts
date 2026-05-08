@@ -10,7 +10,7 @@ const supabaseAdmin = createClient(
 // --- INVITE / ADD AGENT ---
 export async function POST(req: Request) {
   try {
-    const { adminId, email, password, businessName } = await req.json();
+    const { adminId, email, password, businessName, fullName } = await req.json();
 
     if (!adminId || !email || !password) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -31,7 +31,8 @@ export async function POST(req: Request) {
           role: 'agent',
           // Optionally reset their selected meta pages so they don't bring old data
           selected_page_id: null, 
-          ad_account_id: null 
+          ad_account_id: null,
+          business_name: fullName || businessName 
         })
         .eq('id', existingUser.id);
 
@@ -54,7 +55,8 @@ export async function POST(req: Request) {
       if (createData?.user?.id) {
           await supabaseAdmin.from('profiles').update({
               parent_id: adminId,
-              role: 'agent'
+              role: 'agent',
+              business_name: fullName || businessName
           }).eq('id', createData.user.id);
       }
 
@@ -87,13 +89,49 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: 'Unauthorized to remove this agent' }, { status: 403 });
     }
 
-    // 2. Completely delete the user from Auth (This will cascade delete their profile)
+    // 2. Comprehensive data unlinking to avoid foreign key constraint violations.
+    // We re-assign ownership to the Admin and clear agent-specific assignments/subscriptions.
+    try {
+        await Promise.all([
+            // Transfer ownership of core assets to the admin
+            supabaseAdmin.from('properties').update({ user_id: adminId }).eq('user_id', agentId),
+            supabaseAdmin.from('assets').update({ user_id: adminId }).eq('user_id', agentId),
+            supabaseAdmin.from('posts').update({ user_id: adminId }).eq('user_id', agentId),
+            
+            // Re-assign leads: ownership goes to admin, assignment is cleared
+            supabaseAdmin.from('leads').update({ user_id: adminId, assigned_to: null }).eq('user_id', agentId),
+            supabaseAdmin.from('leads').update({ assigned_to: null }).eq('assigned_to', agentId),
+            
+            // Re-assign history logs to admin to preserve the record
+            supabaseAdmin.from('lead_history').update({ user_id: adminId }).eq('user_id', agentId),
+            
+            // Remove push subscriptions so they don't get notifications anymore
+            supabaseAdmin.from('push_subscriptions').delete().eq('user_id', agentId),
+
+            // Remove automations linked to the agent
+            supabaseAdmin.from('automations').delete().eq('user_id', agentId),
+
+            // Re-assign ad optimizations
+            supabaseAdmin.from('ad_optimizations').update({ user_id: adminId }).eq('user_id', agentId)
+        ]);
+
+        // Manually delete the profile first to ensure no internal FKs block the Auth deletion
+        await supabaseAdmin.from('profiles').delete().eq('id', agentId);
+    } catch (unlinkError: any) {
+        console.error("Cleanup/Unlink Error Detail:", unlinkError);
+    }
+
+    // 3. Completely delete the user from Auth
     const { error } = await supabaseAdmin.auth.admin.deleteUser(agentId);
 
-    if (error) throw error;
+    if (error) {
+        console.error("Supabase Auth Delete Error:", error);
+        throw error;
+    }
 
     return NextResponse.json({ success: true, message: 'Agent account successfully removed.' });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Team DELETE Fatal Error:", error);
+    return NextResponse.json({ error: error.message || "Failed to remove agent" }, { status: 500 });
   }
 }

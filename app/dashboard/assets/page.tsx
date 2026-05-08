@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Filter, Download, Facebook, Instagram, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { toast } from 'sonner'
 
 type Asset = {
@@ -39,9 +40,13 @@ export default function AssetsPage() {
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
     const [isPosting, setIsPosting] = useState(false)
     const [caption, setCaption] = useState('')
+    const [userRole, setUserRole] = useState<string | null>(null)
 
     // Single Tap Download State
     const [isDownloading, setIsDownloading] = useState(false)
+
+    // Image Preview Modal
+    const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string }>({ isOpen: false, url: '', title: '' })
 
     // 1. SAFE FETCH WITH LOCAL CACHING
     const fetchAssets = async (force = false) => {
@@ -53,17 +58,23 @@ export default function AssetsPage() {
             const { data: { user }, error: userError } = await supabase.auth.getUser()
             if (userError || !user) return
 
-            // 2. Simple fetch for current user (centralized library)
+            // Fetch profile to check role and parent_id
+            const { data: profile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
+            if (profile) setUserRole(profile.role)
+
+            const targetUserId = (profile?.role === 'agent' && profile?.parent_id) ? profile.parent_id : user.id
+
+            // 2. Fetch assets for the organization (Admin's user_id)
             const { data: assetData, error: assetError } = await supabase
                 .from('assets')
                 .select('*')
-                .eq('user_id', user.id)
+                .eq('user_id', targetUserId)
                 .order('created_at', { ascending: false })
 
             const { data: propData } = await supabase
                 .from('properties')
                 .select('id, title')
-                .eq('user_id', user.id)
+                .eq('user_id', targetUserId)
                 .order('created_at', { ascending: false })
 
             if (assetError) throw assetError
@@ -77,6 +88,8 @@ export default function AssetsPage() {
             if (propData) {
                 setProperties(propData)
             }
+
+            // Removed redundant profile fetch as it's now done at the start of fetchAssets
 
         } catch (error) {
             console.error("Fetch Error:", error)
@@ -467,13 +480,34 @@ export default function AssetsPage() {
                                         {batchAssets.map((asset) => (
                                             <div
                                                 key={asset.id}
-                                                onClick={() => {
-                                                    setSelectedAsset(asset);
-                                                    setCaption(asset.caption || '');
-                                                }}
                                                 className="relative aspect-square rounded-[1.5rem] overflow-hidden bg-slate-50 border border-slate-200/40 group cursor-pointer active:scale-95 transition-all duration-300 hover:shadow-lg hover:-translate-y-1"
                                             >
                                                 <img src={fixR2Url(asset.url)} alt="Asset" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                                    <div className="flex gap-2">
+                                                        <button 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setPreviewImage({ isOpen: true, url: asset.url, title: property?.title || 'Asset Preview' });
+                                                            }}
+                                                            className="bg-white/90 backdrop-blur-sm p-2 rounded-full text-slate-900 shadow-xl hover:bg-white transition-all"
+                                                        >
+                                                            <Maximize2 size={18} />
+                                                        </button>
+                                    {userRole !== 'agent' && (
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedAsset(asset);
+                                                setCaption(asset.caption || '');
+                                            }}
+                                            className="bg-white/90 backdrop-blur-sm p-2 rounded-full text-blue-600 shadow-xl hover:bg-white transition-all"
+                                        >
+                                            <Globe size={18} />
+                                        </button>
+                                    )}
+                                                    </div>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -492,10 +526,6 @@ export default function AssetsPage() {
                         {filteredAssets.map((asset) => (
                             <div
                                 key={asset.id}
-                                onClick={() => {
-                                    setSelectedAsset(asset);
-                                    setCaption(asset.caption || '');
-                                }}
                                 className="relative aspect-square rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden bg-white shadow-sm border border-slate-200/40 group cursor-pointer active:scale-95 transition-all duration-300 hover:shadow-xl hover:-translate-y-1"
                             >
                                 {asset.type === 'video' ? (
@@ -511,14 +541,39 @@ export default function AssetsPage() {
                                     <img src={fixR2Url(asset.url)} alt="Asset" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                 )}
 
+                                {/* Overlay Actions */}
+                                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <div className="flex gap-3">
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setPreviewImage({ isOpen: true, url: asset.url, title: 'Asset Preview' });
+                                            }}
+                                            className="bg-white p-3 rounded-full text-slate-900 shadow-xl hover:scale-110 transition-all"
+                                        >
+                                            <Maximize2 size={20} />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedAsset(asset);
+                                                setCaption(asset.caption || '');
+                                            }}
+                                            className="bg-white p-3 rounded-full text-blue-600 shadow-xl hover:scale-110 transition-all"
+                                        >
+                                            <Globe size={20} />
+                                        </button>
+                                    </div>
+                                </div>
+
                                 {/* Status Badge */}
-                                <div className="absolute top-3 right-3 shadow-md">
+                                <div className="absolute top-4 right-4 shadow-md z-10">
                                     {asset.status === 'Published' ? (
-                                        <div className="bg-emerald-500 text-white p-1 rounded-full border-2 border-white" title="Published">
-                                            <CheckCircle2 size={12} strokeWidth={3} />
+                                        <div className="bg-emerald-500 text-white p-1.5 rounded-full border-2 border-white" title="Published">
+                                            <CheckCircle2 size={14} strokeWidth={3} />
                                         </div>
                                     ) : (
-                                        <div className="bg-amber-400 w-3.5 h-3.5 rounded-full border-2 border-white" title="Draft / Unused" />
+                                        <div className="bg-amber-400 w-4 h-4 rounded-full border-2 border-white" title="Draft / Unused" />
                                     )}
                                 </div>
                             </div>
@@ -643,6 +698,13 @@ export default function AssetsPage() {
                     </div>
                 )}
             </div>
+
+            <ImagePreviewModal 
+                isOpen={previewImage.isOpen} 
+                onClose={() => setPreviewImage(prev => ({ ...prev, isOpen: false }))} 
+                imageUrl={previewImage.url} 
+                title={previewImage.title} 
+            />
         </div>
     )
 }

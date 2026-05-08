@@ -1,20 +1,20 @@
 
-[2026-05-03T04:23:07.304Z] === STARTING AI CAMPAIGN LAUNCH (MULTI-CREATIVE) ===
+[2026-05-07T11:59:51.910Z] === STARTING AI CAMPAIGN LAUNCH (MULTI-CREATIVE) ===
 
 ------------------------------------------------
 
-[2026-05-03T04:23:07.577Z] --- 2. CREATING LEAD FORM ---
+[2026-05-07T11:59:52.115Z] --- 2. CREATING LEAD FORM ---
 
 ------------------------------------------------
 
-[2026-05-03T04:23:07.579Z] --- 2b. LEAD FORM PAYLOAD ---
+[2026-05-07T11:59:52.117Z] --- 2b. LEAD FORM PAYLOAD ---
 {
-  "name": "AI Form - 187578",
-  "follow_up_action_url": "https://adrolls.in",
+  "name": "AI Form - 192117",
+  "follow_up_action_url": "https://app.adrolls.in/shared/bc63c065-9bcc-4793-bedc-f0960406425b",
   "question_page_custom_headline": "Get Pricing & Details",
   "question_page_custom_text": "Confirm details to view pricing.",
   "privacy_policy": {
-    "url": "https://adrolls.in/privacy",
+    "url": "https://app.adrolls.in/privacy/bc63c065-9bcc-4793-bedc-f0960406425b",
     "link_text": "Privacy Policy"
   },
   "questions": [
@@ -33,7 +33,6 @@
     {
       "type": "CUSTOM",
       "label": "What is your budget?",
-      "key": "what_is_your_budget_",
       "options": [
         {
           "value": "Less than 50L",
@@ -62,124 +61,58 @@
       ]
     }
   ],
-  "form_type": "HIGHER_INTENT",
-  "is_optimized_for_quality": true,
-  "access_token": "EAAMaVhrzxNABRQWW961kVgQhGctZCibjerMH5BS2DIMesvTakefR4XXiOZBJ1NZBTKO94ZA58gONRZAHuZBuZBx6vzWqnbZAegyomHdmNpNyfNgo8Igby3ZAWsgOlsPBnACSSxCiEx8yz3c2NflFS7q4CvalX5VNMxGhLYL352bL2ch6rbJy1rgJM89jCj1MMzManvvpl63iQrLZCdihx0dOwB2qN2zOn7AafCxEiGahgw3SYHL5VfQ8pS51PZA9NkClwjA9vmetA4BQUbtBtGkPHw64m5zVGRgA3ZCmK0M9"
+  "access_token": "EAAMaVhrzxNABRT5ZBYWH3L7MwUk67IcPAuIidZAUZApZAx3KUej3OHrAPZBBMsZBLcWDEmjZCgLlGm4zps7MUSLiDiKGJkr18bhZAUo2NSMvajE8aLVn9ZB4Anciqj3OaeZBCIGlAzk4TaxTq0JZCoSrvXcAhjZCZCCVWoMYAsDo7tGU9A2njkTjWPPsPL5vCFBB50x2Hms6ZA25eCZBw6JcSMBYClGL26G6ZAzTSgANHZB2DZCJHGlhjOlzkGUo2IOJ4ZBXCmj1cxZAbeRy7Rak5sLshjRLjP6iHRSKiE0X77RZCHiBZC"
 }
 ------------------------------------------------
 
-[2026-05-03T04:23:07.919Z] ⚠️ Meta App lacks Capability for HIGHER_INTENT forms. Falling back to MORE_VOLUME...
+[2026-05-07T11:59:53.900Z] ✅ Lead Form Created: 962583836485360
 
 ------------------------------------------------
 
-[2026-05-03T04:23:08.248Z] ⚠️ Still failing. Falling back to MINIMAL (No Custom Questions)...
+[2026-05-07T11:59:53.902Z] --- 3. UPLOADING ALL CREATIVES ---
 
 ------------------------------------------------
 
-[2026-05-03T04:23:09.485Z] ✅ Lead Form Created: 2066163824297678
+[2026-05-07T11:59:57.310Z] ✅ Uploaded 1 creatives to Meta.
 
 ------------------------------------------------
 
-[2026-05-03T04:23:09.498Z] --- 3. UPLOADING ALL CREATIVES ---
-
-------------------------------------------------
-
-[2026-05-03T04:23:14.336Z] ✅ Uploaded 2 creatives to Meta.
-
-------------------------------------------------
-
-[2026-05-03T04:23:14.678Z] --- 4a. AI COPYWRITING INPUT ---
+[2026-05-07T11:59:57.615Z] --- 4a. AI COPYWRITING INPUT ---
 {
-  "promptLength": 1487,
-  "visionImages": 2
+  "promptLength": 1910,
+  "visionImages": 1
 }
 ------------------------------------------------
 
-[2026-05-03T04:23:14.679Z] --- 4b. AI PROMPT ---
-"\n        Act as an elite direct-response marketer. Craft exactly 10 distinct, highly persuasive ad copy variations based on the provided visual context (images) and business details.\n        \n        Business Context:\n        Name: Our Business\n        Contact: \n        Mission/Details: Quality services and products.\n        Target Location: \"Multiple Selected Locations\".\n        \n        CRITICAL RULES:\n        1. Apply Alex Hormozi's marketing frameworks: Emphasize \"Value Stacking\", create \"Grand Slam Offers\", use risk reversal, and write strong, emotionally resonant hooks.\n        2. MANDATORY: ALWAYS include the business name (Our Business) and contact information () clearly within the \"primary_text\".\n        3. DO NOT include any website URLs, links, or domain names in the primary text or headline.\n        4. FORMATTING: Use a clean, structured layout with bullet points, short punchy sentences, and relevant emojis (e.g., ✅, 🚀, 💎). Avoid long blocks of text.\n        5. ADAPTIVE: Analyze the images provided to understand the industry and adapt the tone accordingly.\n        6. OUTPUT FORMAT: Return ONLY a valid JSON array of objects. No conversational text, no markdown code blocks, no bold markers (**), no explanation.\n        \n        JSON Structure:\n        [\n          {\"primary_text\": \"Hormozi-style copy with bullet points, emojis, business name, and phone (max 1000 chars).\", \"headline\": \"Short punchy hook (max 40 chars)\"},\n          ...\n        ]\n        "
+[2026-05-07T11:59:57.616Z] --- 4b. AI PROMPT ---
+"\n        Act as a Senior Ad Creative Director at a top-tier global agency. Craft exactly 1 distinct, highly persuasive ad copy variations—one for each of the 1 creatives provided.\n        \n        Business Context:\n        Name: Our Business\n        Contact: \n        Mission/Details: Quality services and products.\n        Target Location: \"Multiple Selected Locations\".\n        \n        CRITICAL RULES:\n        1. STRATEGY: Use professional, high-end agency standards. Focus on elite \"Visual DNA\" evolution—use the context from the images to write copy that feels like it was born from those visuals.\n        2. MANDATORY: YOU MUST ALWAYS INCLUDE THE BUSINESS NAME (Our Business) AND CONTACT INFORMATION () IN EVERY SINGLE VARIATION. If you miss this, the ad will fail.\n        3. DO NOT include any website URLs, links, or domain names in the primary text or headline.\n        4. NO HASHTAGS (#): Do not use any hashtags in the copy.\n        5. MODERATE LENGTH: Keep the primary text moderate (max 400 characters). Avoid long, exhausting paragraphs.\n        6. KEYWORDS: At the very end of each primary_text, add 5-6 relevant keywords in brackets, e.g., [Keyword1, Keyword2, Keyword3...]\n        7. FORMATTING: Use a clean, structured layout with bullet points, short punchy sentences, and relevant emojis (e.g., ✅, 🚀, 💎). \n        8. SUBJECTS: Ensure the tone is aspirational and premium. If the images contain people, align the copy with their demographic and business context.\n        9. OUTPUT FORMAT: Return ONLY a valid JSON array of objects. No conversational text, no markdown code blocks, no bold markers (**), no explanation.\n        \n        JSON Structure:\n        [\n          {\"primary_text\": \"Premium agency-grade copy with bullet points, emojis, business name, and phone.\", \"headline\": \"Short punchy hook (max 40 chars)\"}\n        ]\n        (Generate exactly 1 objects in the array)\n        "
 ------------------------------------------------
 
-[2026-05-03T04:23:33.562Z] --- 4c. AI RAW RESPONSE ---
-"[\n  {\n    \"primary_text\": \"Stop settling for low-yield investments. 📉 Our Business presents a Grand Slam Offer at Tech Plaza 9. Secure a future-ready asset designed for maximum cash flow. \\n\\n✅ Grade A Office & Retail Spaces \\n✅ High Rental Yield Potential \\n✅ Ready For Immediate Possession \\n✅ Prime Strategic Location \\n\\nWe’ve removed the risk—the building is ready, the location is prime, and the returns are powerful. Don't let inflation eat your savings. \\n\\nContact Our Business today: 8288835235 📞\",\n    \"headline\": \"Stop Losing Money to Inflation 💸\"\n  },\n  {\n    \"primary_text\": \"Most real estate deals are a waiting game. Not this one. 🚀 Our Business offers you immediate entry into Tech Plaza 9. \\n\\n💎 Premium Grade A Infrastructure \\n📈 Massive Capital Appreciation \\n🏬 Retail & Office Options Available \\n🛡️ Zero Construction Risk - Ready Now \\n\\nStack the odds in your favor with an asset that starts working the moment you sign. \\n\\nCall Our Business now: 8288835235 📲\",\n    \"headline\": \"Ready to Earn? Possession is NOW 🔑\"\n  },\n  {\n    \"primary_text\": \"Want to own the most prestigious address in town? 🏢 Our Business introduces Tech Plaza 9. This isn't just property; it's a legacy. \\n\\n🚀 Grade A Standards \\n🚀 High-Traffic Retail Zones \\n🚀 Professional Office Hubs \\n🚀 Immediate Possession \\n\\nValue Stack: Location + Quality + Ready to Move. It’s the ultimate investment trifecta. \\n\\nReach out to Our Business: 8288835235 ✅\",\n    \"headline\": \"The Gold Standard of Real Estate 🏆\"\n  },\n  {\n    \"primary_text\": \"Is your capital sitting idle? 🏦 Put it to work at Tech Plaza 9 with Our Business. We specialize in high-performance commercial assets. \\n\\n💰 High Rental Yield Potential \\n🏢 Grade A Corporate Spaces \\n🛍️ Premium Retail Opportunities \\n🔑 Keys Delivered Immediately \\n\\nRisk Reversal: Buy today, move in tomorrow. No more broken promises or delayed projects. \\n\\nContact Our Business: 8288835235 📞\",\n    \"headline\": \"Turn Your Capital Into Cash Flow 💰\"\n  },\n  {\n    \"primary_text\": \"The secret to wealth isn't working harder; it's owning better assets. 💎 Our Business presents Tech Plaza 9—the pinnacle of commercial real estate. \\n\\n✨ Premium Grade A Finishes \\n✨ High-Demand Location \\n✨ Instant Possession Available \\n✨ Proven High-Yield Model \\n\\nSecure your financial advantage before the best units are gone. \\n\\nCall Our Business: 8288835235 🚀\",\n    \"headline\": \"Secure Your Financial Advantage 🛡️\"\n  },\n  {\n    \"primary_text\": \"Don't buy a floor plan. Buy a finished masterpiece. 🏗️ Tech Plaza 9 is officially ready for possession via Our Business. \\n\\n✅ Grade A Office Excellence \\n✅ High-Visibility Retail Shops \\n✅ Guaranteed Prime Location \\n✅ Massive Rental Potential \\n\\nWe deliver quality services and products that stand the test of time. \\n\\nCall Our Business at 8288835235 to book a tour. 📲\",\n    \"headline\": \"Own a Piece of the Future Today 🏢\"\n  },\n  {\n    \"primary_text\": \"Looking for a Grand Slam investment? ⚾ Our Business has the perfect play at Tech Plaza 9. High returns, low risk, and total prestige. \\n\\n💎 Grade A Office Spaces \\n💎 Premium Retail Frontage \\n💎 Ready for Immediate Possession \\n💎 High Rental Yield potential \\n\\nValue Stacking: We provide the location, the quality, and the immediate possession. You just bring the vision. \\n\\nContact Our Business: 8288835235 📞\",\n    \"headline\": \"The Ultimate Passive Income Play 📈\"\n  },\n  {\n    \"primary_text\": \"Your business deserves a Grade A home. 🏢 Elevate your brand at Tech Plaza 9 with Our Business. \\n\\n🚀 Future-Ready Asset \\n🚀 Strong Rental Returns \\n🚀 Retail & Office Flexibility \\n🚀 Zero Waiting Period \\n\\nStop paying rent and start building equity in a location that commands respect. \\n\\nCall Our Business now: 8288835235 ✅\",\n    \"headline\": \"Upgrade Your Business Address 📍\"\n  },\n  {\n    \"primary_text\": \"Real estate is about three things: Location, Quality, and Timing. 🕒 Our Business gives you all three at Tech Plaza 9. \\n\\n✅ Prime Strategic Location \\n✅ Grade A Premium Spaces \\n✅ Ready for Immediate Possession \\n✅ Powerful ROI Potential \\n\\nThe time to act is now while these premium units remain available. \\n\\nReach Our Business at 8288835235 📲\",\n    \"headline\": \"Timing Is Everything. Act Now! ⚡\"\n  },\n  {\n    \"primary_text\": \"Why settle for average when you can own Grade A? 💎 Our Business is proud to present Tech Plaza 9—the area's premier commercial destination. \\n\\n🏬 High-Yield Retail Shops \\n🏢 Professional Office Suites \\n🔑 Possession Ready Today \\n🌍 Located in a High-Growth Zone \\n\\nJoin the elite circle of owners who demand quality and returns. \\n\\nContact Our Business: 8288835235 📞\",\n    \"headline\": \"Elite Spaces. Powerful Returns. 💎\"\n  }\n]"
+[2026-05-07T12:00:08.416Z] --- 4c. AI RAW RESPONSE ---
+"[\n  {\n    \"primary_text\": \"Elevate your investment portfolio with Tech Plaza 9 by Our Business. Secure premium Grade A office spaces and retail shops designed for maximum returns. 🚀\\n\\n✅ Ready for Possession\\n✅ High Rental Yield Potential\\n✅ Prime Business Location\\n\\nBuild your legacy today. Call us at 8288835235 for exclusive details. 💎\\n\\n[Real Estate, Office Space, Retail Shops, Investment, Commercial Property, Tech Plaza]\",\n    \"headline\": \"Invest in Success at Tech Plaza 9\"\n  }\n]"
 ------------------------------------------------
 
-[2026-05-03T04:23:33.565Z] ✅ Generated 10 AI Copy Variations (Official Gemini Vision).
+[2026-05-07T12:00:08.420Z] ✅ Generated 1 AI Copy Variations (Official Gemini Vision).
 [
   {
-    "primary_text": "Stop settling for low-yield investments. 📉 Our Business presents a Grand Slam Offer at Tech Plaza 9. Secure a future-ready asset designed for maximum cash flow. \n\n✅ Grade A Office & Retail Spaces \n✅ High Rental Yield Potential \n✅ Ready For Immediate Possession \n✅ Prime Strategic Location \n\nWe’ve removed the risk—the building is ready, the location is prime, and the returns are powerful. Don't let inflation eat your savings. \n\nContact Our Business today: 8288835235 📞",
-    "headline": "Stop Losing Money to Inflation 💸"
-  },
-  {
-    "primary_text": "Most real estate deals are a waiting game. Not this one. 🚀 Our Business offers you immediate entry into Tech Plaza 9. \n\n💎 Premium Grade A Infrastructure \n📈 Massive Capital Appreciation \n🏬 Retail & Office Options Available \n🛡️ Zero Construction Risk - Ready Now \n\nStack the odds in your favor with an asset that starts working the moment you sign. \n\nCall Our Business now: 8288835235 📲",
-    "headline": "Ready to Earn? Possession is NOW 🔑"
-  },
-  {
-    "primary_text": "Want to own the most prestigious address in town? 🏢 Our Business introduces Tech Plaza 9. This isn't just property; it's a legacy. \n\n🚀 Grade A Standards \n🚀 High-Traffic Retail Zones \n🚀 Professional Office Hubs \n🚀 Immediate Possession \n\nValue Stack: Location + Quality + Ready to Move. It’s the ultimate investment trifecta. \n\nReach out to Our Business: 8288835235 ✅",
-    "headline": "The Gold Standard of Real Estate 🏆"
-  },
-  {
-    "primary_text": "Is your capital sitting idle? 🏦 Put it to work at Tech Plaza 9 with Our Business. We specialize in high-performance commercial assets. \n\n💰 High Rental Yield Potential \n🏢 Grade A Corporate Spaces \n🛍️ Premium Retail Opportunities \n🔑 Keys Delivered Immediately \n\nRisk Reversal: Buy today, move in tomorrow. No more broken promises or delayed projects. \n\nContact Our Business: 8288835235 📞",
-    "headline": "Turn Your Capital Into Cash Flow 💰"
-  },
-  {
-    "primary_text": "The secret to wealth isn't working harder; it's owning better assets. 💎 Our Business presents Tech Plaza 9—the pinnacle of commercial real estate. \n\n✨ Premium Grade A Finishes \n✨ High-Demand Location \n✨ Instant Possession Available \n✨ Proven High-Yield Model \n\nSecure your financial advantage before the best units are gone. \n\nCall Our Business: 8288835235 🚀",
-    "headline": "Secure Your Financial Advantage 🛡️"
-  },
-  {
-    "primary_text": "Don't buy a floor plan. Buy a finished masterpiece. 🏗️ Tech Plaza 9 is officially ready for possession via Our Business. \n\n✅ Grade A Office Excellence \n✅ High-Visibility Retail Shops \n✅ Guaranteed Prime Location \n✅ Massive Rental Potential \n\nWe deliver quality services and products that stand the test of time. \n\nCall Our Business at 8288835235 to book a tour. 📲",
-    "headline": "Own a Piece of the Future Today 🏢"
-  },
-  {
-    "primary_text": "Looking for a Grand Slam investment? ⚾ Our Business has the perfect play at Tech Plaza 9. High returns, low risk, and total prestige. \n\n💎 Grade A Office Spaces \n💎 Premium Retail Frontage \n💎 Ready for Immediate Possession \n💎 High Rental Yield potential \n\nValue Stacking: We provide the location, the quality, and the immediate possession. You just bring the vision. \n\nContact Our Business: 8288835235 📞",
-    "headline": "The Ultimate Passive Income Play 📈"
-  },
-  {
-    "primary_text": "Your business deserves a Grade A home. 🏢 Elevate your brand at Tech Plaza 9 with Our Business. \n\n🚀 Future-Ready Asset \n🚀 Strong Rental Returns \n🚀 Retail & Office Flexibility \n🚀 Zero Waiting Period \n\nStop paying rent and start building equity in a location that commands respect. \n\nCall Our Business now: 8288835235 ✅",
-    "headline": "Upgrade Your Business Address 📍"
-  },
-  {
-    "primary_text": "Real estate is about three things: Location, Quality, and Timing. 🕒 Our Business gives you all three at Tech Plaza 9. \n\n✅ Prime Strategic Location \n✅ Grade A Premium Spaces \n✅ Ready for Immediate Possession \n✅ Powerful ROI Potential \n\nThe time to act is now while these premium units remain available. \n\nReach Our Business at 8288835235 📲",
-    "headline": "Timing Is Everything. Act Now! ⚡"
-  },
-  {
-    "primary_text": "Why settle for average when you can own Grade A? 💎 Our Business is proud to present Tech Plaza 9—the area's premier commercial destination. \n\n🏬 High-Yield Retail Shops \n🏢 Professional Office Suites \n🔑 Possession Ready Today \n🌍 Located in a High-Growth Zone \n\nJoin the elite circle of owners who demand quality and returns. \n\nContact Our Business: 8288835235 📞",
-    "headline": "Elite Spaces. Powerful Returns. 💎"
+    "primary_text": "Elevate your investment portfolio with Tech Plaza 9 by Our Business. Secure premium Grade A office spaces and retail shops designed for maximum returns. 🚀\n\n✅ Ready for Possession\n✅ High Rental Yield Potential\n✅ Prime Business Location\n\nBuild your legacy today. Call us at 8288835235 for exclusive details. 💎\n\n[Real Estate, Office Space, Retail Shops, Investment, Commercial Property, Tech Plaza]",
+    "headline": "Invest in Success at Tech Plaza 9"
   }
 ]
 ------------------------------------------------
 
-[2026-05-03T04:23:33.566Z] --- 5. CAMPAIGN ---
+[2026-05-07T12:00:08.423Z] --- 5. CAMPAIGN ---
 
 ------------------------------------------------
 
-[2026-05-03T04:23:34.851Z] --- PREPARING LOCATION TARGETING ---
+[2026-05-07T12:00:09.840Z] --- PREPARING LOCATION TARGETING ---
 
 ------------------------------------------------
 
-[2026-05-03T04:23:34.853Z] --- 6. AD SET ---
+[2026-05-07T12:00:09.846Z] --- 6. AD SET ---
 
 ------------------------------------------------
 
-[2026-05-03T04:23:37.108Z] --- 7. GENERATING MULTIPLE ADS ---
-
-------------------------------------------------
-
-[2026-05-04T09:59:11.690Z] --- CRM SYNC START ---
-
-------------------------------------------------
-
-[2026-05-04T09:59:19.840Z] --- CRM SYNC START ---
-
-------------------------------------------------
-
-[2026-05-04T12:23:18.523Z] --- CRM SYNC START ---
-
-------------------------------------------------
-
-[2026-05-04T12:41:01.065Z] --- CRM SYNC START ---
-
-------------------------------------------------
-
-[2026-05-04T12:41:11.306Z] --- CRM SYNC START ---
+[2026-05-07T12:00:11.749Z] --- 7. GENERATING MULTIPLE ADS ---
 
 ------------------------------------------------

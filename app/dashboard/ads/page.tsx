@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Zap, Plus, X, Loader2, Image as ImageIcon, Upload, RefreshCw, ExternalLink, TrendingUp, CreditCard, Eye, MousePointerClick, Users, Settings2, Sparkles, Video, MapPin, LayoutGrid, PauseCircle, PlayCircle, PlusCircle, CheckCircle } from 'lucide-react'
+import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { useRouter } from 'next/navigation'
 
 type Property = { id: string; title: string; price: string; image_url: string; description?: string }
@@ -191,6 +192,8 @@ export default function AdsPage() {
   }
 
   const isVideoFile = (file: File) => file.type.startsWith('video/');
+
+  const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string }>({ isOpen: false, url: '', title: '' })
 
   const checkAccountStatus = async (accountId: string) => {
       try {
@@ -551,7 +554,7 @@ export default function AdsPage() {
     formPayload.append('pageId', adForm.pageId);
     formPayload.append('metaLocations', JSON.stringify(adForm.metaLocations));
     formPayload.append('gender', adForm.gender);
-    formPayload.append('dailyBudgetINR', (adForm.dailyBudgetINR * 100).toString()); 
+    formPayload.append('dailyBudgetINR', adForm.dailyBudgetINR.toString()); 
     formPayload.append('linkUrl', adForm.linkUrl);
     formPayload.append('privacyPolicyUrl', autoPrivacyUrl);
     formPayload.append('optimizeForConversions', adForm.optimizeForConversions.toString());
@@ -881,7 +884,7 @@ export default function AdsPage() {
                 </div>
                 <input type="file" ref={fileInputRef} onChange={handleLocalFiles} accept="image/*,video/*" className="hidden" multiple />
                 <button onClick={() => fileInputRef.current?.click()} className="w-full mb-4 py-3.5 border-2 border-dashed border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50 rounded-2xl text-sm font-bold text-slate-500 hover:text-blue-600 flex items-center justify-center gap-2 transition-all"><Upload size={18} /> Upload Custom Files</button>
-                {selectedCreatives.length > 0 && (<div className="flex gap-3 overflow-x-auto pb-2 pt-2 custom-scrollbar">{selectedCreatives.map((c) => (<div key={c.uid} className="relative w-20 h-20 rounded-[1.25rem] flex-shrink-0 bg-white shadow-sm border border-slate-200 group">{c.sourceType === 'local' && c.file && isVideoFile(c.file) ? (<video src={c.previewUrl} className="w-full h-full object-cover rounded-[1.25rem]" />) : (<img src={c.previewUrl} className="w-full h-full object-cover rounded-[1.25rem]" />)}<button onClick={() => removeCreative(c.uid)} className="absolute -top-2 -right-2 bg-white rounded-full p-1 text-red-500 shadow-md border border-slate-100 hover:bg-red-50 transition-colors"><X size={14}/></button></div>))}</div>)}
+                {selectedCreatives.length > 0 && (<div className="flex gap-3 overflow-x-auto pb-2 pt-2 custom-scrollbar">{selectedCreatives.map((c) => (<div key={c.uid} className="relative w-20 h-20 rounded-[1.25rem] flex-shrink-0 bg-white shadow-sm border border-slate-200 group cursor-pointer" onClick={() => setPreviewImage({ isOpen: true, url: c.previewUrl, title: c.name })}>{c.sourceType === 'local' && c.file && isVideoFile(c.file) ? (<video src={c.previewUrl} className="w-full h-full object-cover rounded-[1.25rem]" />) : (<img src={c.previewUrl} className="w-full h-full object-cover rounded-[1.25rem]" />)}<div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-[1.25rem]"><Maximize2 size={16} className="text-white"/></div><button onClick={(e) => { e.stopPropagation(); removeCreative(c.uid); }} className="absolute -top-2 -right-2 bg-white rounded-full p-1 text-red-500 shadow-md border border-slate-100 hover:bg-red-50 transition-colors z-10"><X size={14}/></button></div>))}</div>)}
               </div>
 
               <div>
@@ -918,7 +921,7 @@ export default function AdsPage() {
                       <div className="bg-slate-50/80 p-5 rounded-[1.5rem] border border-slate-200 space-y-4 shadow-inner">
                           <div><input type="text" value={newQuestion.label} onChange={e => setNewQuestion({...newQuestion, label: e.target.value})} className="w-full bg-white py-3.5 px-4 rounded-2xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all" placeholder="Question Text..." /></div>
                           <div><select value={newQuestion.type} onChange={e => setNewQuestion({...newQuestion, type: e.target.value as any})} className="w-full bg-white py-3.5 px-4 rounded-2xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all cursor-pointer"><option value="SHORT_ANSWER">Short Answer (Text)</option><option value="MULTIPLE_CHOICE">Multiple Choice</option></select></div>
-                          {newQuestion.type === 'MULTIPLE_CHOICE' && (<div className="space-y-3"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Configure Options</label>{(newQuestion.options || []).map((opt, oIdx) => (<div key={oIdx} className="flex gap-2 items-center"><input type="text" value={opt} onChange={e => { const updated = [...(newQuestion.options || [])]; updated[oIdx] = e.target.value; setNewQuestion({...newQuestion, options: updated}); }} className="flex-1 bg-white py-3 px-4 rounded-xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all" placeholder={`Option ${oIdx + 1}`} /><button onClick={() => { const isDisq = newQuestion.disqualifyingOptions?.includes(opt); const newDisq = isDisq ? (newQuestion.disqualifyingOptions || []).filter(d => d !== opt) : [...(newQuestion.disqualifyingOptions || []), opt]; setNewQuestion({...newQuestion, disqualifyingOptions: newDisq}); }} className={`px-3 py-3 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border ${newQuestion.disqualifyingOptions?.includes(opt) ? 'bg-red-50 text-red-600 border-red-100 shadow-inner' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>{newQuestion.disqualifyingOptions?.includes(opt) ? 'Disqualified' : 'Qualify'}</button><button onClick={() => { const updated = (newQuestion.options || []).filter((_, i) => i !== oIdx); setNewQuestion({...newQuestion, options: updated}); }} className="p-3 text-slate-400 hover:text-red-500 transition-colors"><X size={16} /></button></div>))}<button onClick={() => setNewQuestion({...newQuestion, options: [...(newQuestion.options || []), '']})} className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"><PlusCircle size={14} /> Add Another Option</button></div>)}
+                          {newQuestion.type === 'MULTIPLE_CHOICE' && (<div className="space-y-3"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Configure Options</label>{(newQuestion.options || []).map((opt, oIdx) => (<div key={oIdx} className="flex gap-2 items-center"><input type="text" value={opt} onChange={e => { const updated = [...(newQuestion.options || [])]; updated[oIdx] = e.target.value; setNewQuestion({...newQuestion, options: updated}); }} className="flex-1 bg-white py-3 px-4 rounded-xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all" placeholder={`Option ${oIdx + 1}`} /><button onClick={() => { const updated = (newQuestion.options || []).filter((_, i) => i !== oIdx); setNewQuestion({...newQuestion, options: updated}); }} className="p-3 text-slate-400 hover:text-red-500 transition-colors"><X size={16} /></button></div>))}<button onClick={() => setNewQuestion({...newQuestion, options: [...(newQuestion.options || []), '']})} className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"><PlusCircle size={14} /> Add Another Option</button></div>)}
                           <div className="flex gap-3 pt-2"><button onClick={() => { setIsAddingQuestion(false); setEditingIdx(null); setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); }} className="bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors">Cancel</button><button onClick={() => { if(newQuestion.label){ if (editingIdx !== null) { const updated = [...formQuestions]; updated[editingIdx] = newQuestion; setFormQuestions(updated); } else { setFormQuestions(prev => [...prev, newQuestion]); } setIsAddingQuestion(false); setEditingIdx(null); setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); } }} className="flex-1 bg-slate-900 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors shadow-sm">{editingIdx !== null ? 'Update Question' : 'Save Question'}</button></div>
                       </div>
                   )}
@@ -985,6 +988,13 @@ export default function AdsPage() {
             </div>
         </div>
       )}
+
+      <ImagePreviewModal 
+        isOpen={previewImage.isOpen} 
+        onClose={() => setPreviewImage(prev => ({ ...prev, isOpen: false }))} 
+        imageUrl={previewImage.url} 
+        title={previewImage.title} 
+      />
     </div>
   )
 }

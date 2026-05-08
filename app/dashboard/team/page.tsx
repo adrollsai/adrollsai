@@ -28,6 +28,7 @@ export default function TeamManagementPage() {
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [invitePassword, setInvitePassword] = useState('')
+  const [inviteName, setInviteName] = useState('')
   const [isInviting, setIsInviting] = useState(false)
   const [isRemoving, setIsRemoving] = useState<string | null>(null)
 
@@ -76,7 +77,7 @@ export default function TeamManagementPage() {
       const res = await fetch('/api/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId, email: inviteEmail.trim(), password: invitePassword, businessName })
+        body: JSON.stringify({ adminId, email: inviteEmail.trim(), password: invitePassword, businessName, fullName: inviteName.trim() })
       })
 
       const data = await res.json()
@@ -85,6 +86,7 @@ export default function TeamManagementPage() {
       toast.success(data.message)
       setInviteEmail('')
       setInvitePassword('')
+      setInviteName('')
       setShowInviteModal(false)
       
       // Refresh list
@@ -232,6 +234,21 @@ export default function TeamManagementPage() {
             </p>
 
             <form onSubmit={handleInvite} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 mb-2 block">Agent's Full Name</label>
+                <div className="relative">
+                    <CheckCircle2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                        type="text" 
+                        required
+                        value={inviteName}
+                        onChange={(e) => setInviteName(e.target.value)}
+                        className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-4 pl-12 pr-4 rounded-[1.25rem] text-slate-800 text-sm font-medium focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-400 outline-none border border-slate-200/60 transition-all" 
+                        placeholder="John Doe" 
+                    />
+                </div>
+              </div>
+
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 mb-2 block">Agent's Email Address</label>
                 <div className="relative">
