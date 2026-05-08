@@ -72,7 +72,7 @@ export default function CRMPage() {
       setUserId(user.id)
 
       // Fetch Fresh Data
-      const { data: profile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id, business_name').eq('id', user.id).single()
       const currentRole = profile?.role || 'admin'
       setRole(currentRole)
       if (profile?.parent_id) setParentAdminId(profile.parent_id)
