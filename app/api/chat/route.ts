@@ -3,7 +3,7 @@ import { createClient } from '@/utils/supabase/server'
 import { createKieTask } from '@/utils/external-apis';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google'; 
-import { checkLimitAndIncrement } from '@/utils/subscription-server';
+import { checkLimitAndIncrement, refundLimit, checkStorageLimit } from '@/utils/subscription-server';
 
 function logToFile(msg: string) {
   const timestamp = new Date().toISOString();
@@ -36,6 +36,7 @@ export async function POST(request: Request) {
     // --- SUBSCRIPTION CHECK ---
     try {
       await checkLimitAndIncrement(user.id, 'ai_creatives');
+      await checkStorageLimit(user.id);
     } catch (limitErr: any) {
       logToFile(`QUOTA ERROR: ${limitErr.message}`);
       return NextResponse.json({ error: limitErr.message }, { status: 403 });
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
         logoUrl,
         propImages, 
         templateUrl, 
-        aspectRatio = "1:1",
+        aspectRatio = "4:5",
         model,
         isDirect = false,
         isOrganic = false // New flag for raw/organic look
@@ -66,10 +67,21 @@ export async function POST(request: Request) {
 
     logToFile(`STARTING GENERATION | MODEL: ${model}`);
     
-    // Consolidate images
-    const allInputImages = [...(propImages || [])];
-    if (logoUrl) allInputImages.push(logoUrl);
-    if (templateUrl) allInputImages.push(templateUrl);
+    // Consolidate and filter images (Remove placeholders, SVGs and invalid URLs)
+    // SVGs are often rejected by Image-to-Image models as 'unsupported file type'.
+    const filterImages = (urls: any[]) => (urls || []).filter(url => 
+        url && 
+        typeof url === 'string' && 
+        url.startsWith('http') && 
+        !url.includes('placehold.co') && 
+        !url.toLowerCase().endsWith('.svg')
+    );
+
+    const validPropImages = filterImages(propImages);
+    const validLogo = filterImages([logoUrl]);
+    const validTemplate = filterImages([templateUrl]);
+    
+    const allInputImages = [...validPropImages, ...validLogo, ...validTemplate];
 
     // --- HORMORZI-STYLE DIRECT RESPONSE PROMPT ---
     let styleInstructions = isOrganic 
@@ -103,7 +115,7 @@ ASPECT RATIO: ${aspectRatio}`;
     let kieModel = isDirect ? 'nano-banana-2' : 'gpt-image-2-text-to-image';
     let imageField = 'image_input'; // Default for text-to-image and nano
 
-    // If we have images, switch to Image-to-Image for GPT Image 2.0
+    // Revert: If we have ANY valid images (including logo), use Image-to-Image
     if (!isDirect && allInputImages.length > 0) {
         kieModel = 'gpt-image-2-image-to-image';
         imageField = 'input_urls';
@@ -127,8 +139,10 @@ ASPECT RATIO: ${aspectRatio}`;
       }
     };
     
-    // Assign the correct image field based on the model
-    payload.input[imageField] = allInputImages;
+    // Assign the correct image field based on the model if we have images
+    if (allInputImages.length > 0) {
+        payload.input[imageField] = allInputImages;
+    }
     
     // Only text-to-image supports output_format usually
     if (kieModel === 'gpt-image-2-text-to-image') {
@@ -178,6 +192,10 @@ Premium design, clean layout, bold headline.`;
     if (!kieResult || kieResult.error || !kieResult.taskId) {
       const finalError = kieResult?.error || "Final attempt failed";
       logToFile(`Kie AI Task failed permanently: ${finalError}`);
+      
+      // REFUND: Give back the credit if task failed to start even after failover
+      await refundLimit(user.id, 'ai_creatives');
+      
       throw new Error(`Design server error: ${finalError}`);
     }
     

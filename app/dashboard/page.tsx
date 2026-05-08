@@ -383,7 +383,7 @@ export default function ProductsPage() {
           logoUrl: profile?.logo_url || "",
           propImages: propImages,
           templateUrl: null,
-          aspectRatio: '1:1',
+          aspectRatio: '4:5',
           model: 'google/nano-banana-2'
       }
 

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@/utils/supabase/server';
 import { generateKieChat, createKieImageTask, callGemini } from '@/utils/external-apis';
-import { checkLimitAndIncrement } from '@/utils/subscription-server';
+import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 
 const FB_GRAPH = "https://graph.facebook.com/v19.0";
 
@@ -16,6 +16,12 @@ export async function POST(request: Request) {
     console.log("[Optimize] Request Body:", JSON.stringify(body, null, 2));
     const { campaignId, step = 'analyze', variations: requestedVariations, winningImageUrls: passedWinningImages, count = 5, style = 'hyper', userInstructions = '' } = body;
     if (!campaignId) return NextResponse.json({ error: 'Missing Campaign ID' }, { status: 400 });
+    // --- SUBSCRIPTION CHECK ---
+    try {
+        await checkLimitAndIncrement(user.id, 'ai_ad_optimizations');
+    } catch (limitErr: any) {
+        return NextResponse.json({ error: limitErr.message }, { status: 403 });
+    }
 
     try {
         console.log("[Optimize] User ID from auth:", user.id);
@@ -251,6 +257,12 @@ export async function POST(request: Request) {
 
     } catch (error: any) {
         console.error("[Optimize] Fatal API Error:", error);
+        
+        // REFUND: Give back the optimization credit if the process failed
+        if (user?.id) {
+            await refundLimit(user.id, 'ai_ad_optimizations');
+        }
+
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

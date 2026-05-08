@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { callGemini } from '@/utils/external-apis';
-import { checkLimitAndIncrement } from '@/utils/subscription-server';
+import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
@@ -532,6 +532,12 @@ export async function POST(request: Request) {
 
     } catch (error: any) {
         logToFile("!!! API CRASH !!!", error.message);
+        
+        // REFUND: Give back the campaign launch credit if the process failed
+        if (user?.id) {
+            await refundLimit(user.id, 'campaign_launches');
+        }
+
         return NextResponse.json(
             { error: error.message || "Internal Server Error" }, 
             { status: 500 }

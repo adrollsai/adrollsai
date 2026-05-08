@@ -1,224 +1,204 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/utils/supabase/client'
-import { 
-    Zap, BarChart3, Image as ImageIcon, Rocket, Target, 
-    RefreshCcw, FileText, HardDrive, Loader2, AlertCircle, ShieldCheck
-} from 'lucide-react'
-import { PLAN_LIMITS } from '@/utils/subscription'
+import { PieChart, Users, HardDrive, Zap, Rocket, Search, MessageSquare, ShieldCheck, RefreshCw, ChevronRight } from 'lucide-react'
+import { toast } from 'sonner'
 
 export default function UsagePage() {
-    const supabase = createClient()
+    const [usage, setUsage] = useState<any>(null)
     const [loading, setLoading] = useState(true)
-    const [usage, setUsage] = useState({
-        ai_creatives_used: 0,
-        campaign_launches_used: 0,
-        ai_ad_optimizations_used: 0,
-        remarketing_campaigns_used: 0,
-        seo_articles_used: 0,
-        storage_bytes_used: 0
-    })
+
+    const fetchUsage = async () => {
+        setLoading(true)
+        try {
+            const res = await fetch('/api/subscription/usage')
+            const data = await res.json()
+            if (data.error) throw new Error(data.error)
+            setUsage(data)
+        } catch (err: any) {
+            toast.error("Failed to load usage data")
+        } finally {
+            setLoading(false)
+        }
+    }
 
     useEffect(() => {
-        const fetchUsage = async () => {
-            try {
-                const { data: { user } } = await supabase.auth.getUser()
-                if (!user) return
-
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('ai_creatives_used, campaign_launches_used, ai_ad_optimizations_used, remarketing_campaigns_used, seo_articles_used, storage_bytes_used')
-                    .eq('id', user.id)
-                    .single()
-
-                if (profile) {
-                    setUsage({
-                        ai_creatives_used: profile.ai_creatives_used || 0,
-                        campaign_launches_used: profile.campaign_launches_used || 0,
-                        ai_ad_optimizations_used: profile.ai_ad_optimizations_used || 0,
-                        remarketing_campaigns_used: profile.remarketing_campaigns_used || 0,
-                        seo_articles_used: profile.seo_articles_used || 0,
-                        storage_bytes_used: profile.storage_bytes_used || 0
-                    })
-                }
-            } catch (err) {
-                console.error("Error fetching usage:", err)
-            } finally {
-                setLoading(false)
-            }
-        }
         fetchUsage()
-    }, [supabase])
-
-    const calculatePercent = (used: number, limit: number) => {
-        return Math.min(Math.round((used / limit) * 100), 100)
-    }
-
-    const formatStorage = (bytes: number) => {
-        const gb = bytes / (1024 * 1024 * 1024)
-        return gb.toFixed(2)
-    }
-
-    const stats = [
-        {
-            label: 'AI Creatives',
-            used: usage.ai_creatives_used,
-            limit: PLAN_LIMITS.ai_creatives,
-            icon: <ImageIcon size={20} />,
-            color: 'bg-blue-500',
-            description: 'AI-generated visual variations'
-        },
-        {
-            label: 'Campaign Launches',
-            used: usage.campaign_launches_used,
-            limit: PLAN_LIMITS.campaign_launches,
-            icon: <Rocket size={20} />,
-            color: 'bg-purple-500',
-            description: 'New Meta campaign deployments'
-        },
-        {
-            label: 'AI Optimizations',
-            used: usage.ai_ad_optimizations_used,
-            limit: PLAN_LIMITS.ai_ad_optimizations,
-            icon: <Target size={20} />,
-            color: 'bg-emerald-500',
-            description: 'AI-driven campaign health checks'
-        },
-        {
-            label: 'Remarketing',
-            used: usage.remarketing_campaigns_used,
-            limit: PLAN_LIMITS.remarketing_campaigns,
-            icon: <RefreshCcw size={20} />,
-            color: 'bg-amber-500',
-            description: 'Audience re-engagement cycles'
-        },
-        {
-            label: 'SEO Articles',
-            used: usage.seo_articles_used,
-            limit: PLAN_LIMITS.seo_articles,
-            icon: <FileText size={20} />,
-            color: 'bg-indigo-500',
-            description: 'AI-generated blog posts'
-        },
-        {
-            label: 'Cloud Storage',
-            used: parseFloat(formatStorage(usage.storage_bytes_used)),
-            limit: PLAN_LIMITS.storage_gb,
-            unit: 'GB',
-            icon: <HardDrive size={20} />,
-            color: 'bg-slate-700',
-            description: 'Asset and document storage'
-        }
-    ]
+    }, [])
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
-                <Loader2 className="animate-spin text-blue-600" size={28} />
-                <p className="text-sm text-slate-500 font-medium tracking-tight">Calculating your usage...</p>
+            <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                    <p className="text-slate-500 font-bold animate-pulse">Calculating Usage...</p>
+                </div>
             </div>
         )
     }
 
+    if (!usage) return null
+
+    const getProgressColor = (used: number, limit: number) => {
+        const percent = (used / limit) * 100
+        if (percent >= 90) return 'bg-red-500'
+        if (percent >= 70) return 'bg-amber-500'
+        return 'bg-blue-600'
+    }
+
+    const getBgColor = (used: number, limit: number) => {
+        const percent = (used / limit) * 100
+        if (percent >= 90) return 'bg-red-50'
+        if (percent >= 70) return 'bg-amber-50'
+        return 'bg-blue-50'
+    }
+
     return (
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-            
-            <div className="mb-10 sm:mb-12 flex flex-col sm:flex-row sm:items-end justify-between gap-6">
-                <div>
-                    <div className="flex items-center gap-2 mb-3">
-                        <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
-                            <BarChart3 size={24} />
-                        </div>
-                        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Usage & Quotas</h1>
-                    </div>
-                    <p className="text-slate-500 text-sm font-medium">Tracking your <strong>Early Bird Plan</strong> consumption for the current billing cycle.</p>
-                </div>
-                
-                <div className="bg-white border border-slate-200 px-5 py-3 rounded-2xl shadow-sm flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
-                        <Zap size={20} fill="currentColor" />
-                    </div>
+        <div className="min-h-screen bg-[#F8FAFC] pb-32 pt-16">
+            <div className="max-w-4xl mx-auto px-6 pt-8">
+
+                {/* Header */}
+                <div className="flex justify-between items-end mb-10">
                     <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Current Plan</p>
-                        <p className="text-sm font-extrabold text-slate-900">Early Bird Access</p>
+                        <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight">Usage & Quota</h1>
+                        <p className="text-slate-500 mt-2 font-medium">Tracking your "{usage.planName}" resources</p>
                     </div>
+                    <button
+                        onClick={fetchUsage}
+                        className="p-3 bg-white rounded-2xl shadow-sm border border-slate-200 text-slate-400 hover:text-blue-600 transition-all active:scale-95"
+                    >
+                        <RefreshCw size={20} />
+                    </button>
                 </div>
-            </div>
 
-            {/* Main Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8 mb-12">
-                {stats.map((stat, idx) => {
-                    const percent = calculatePercent(stat.used, stat.limit)
-                    const isNearLimit = percent > 85
-                    
-                    return (
-                        <div key={idx} className="bg-white p-6 sm:p-8 rounded-[1.75rem] xs:rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-md transition-shadow group">
-                            <div className="flex items-start justify-between mb-6">
-                                <div className={`p-3 rounded-2xl ${stat.color} text-white shadow-lg shadow-${stat.color.split('-')[1]}-200/50`}>
-                                    {stat.icon}
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{stat.label}</p>
-                                    <p className="text-xl font-black text-slate-900 tracking-tight">
-                                        {stat.used} <span className="text-slate-300">/</span> {stat.limit}{stat.unit || ''}
-                                    </p>
-                                </div>
-                            </div>
-                            
-                            <div className="mb-4">
-                                <div className="flex justify-between items-center mb-2.5">
-                                    <span className="text-xs font-bold text-slate-500">Cycle Consumption</span>
-                                    <span className={`text-xs font-black ${isNearLimit ? 'text-red-500' : 'text-blue-600'}`}>
-                                        {percent}%
-                                    </span>
-                                </div>
-                                <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
-                                    <div 
-                                        className={`h-full transition-all duration-1000 ${isNearLimit ? 'bg-red-500' : stat.color}`}
-                                        style={{ width: `${percent}%` }}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 text-slate-400">
-                                <AlertCircle size={14} className="shrink-0" />
-                                <p className="text-[11px] font-medium leading-tight">{stat.description}</p>
-                            </div>
+                {/* Reset Banner */}
+                <div className="bg-slate-900 rounded-[2rem] p-8 mb-8 text-white relative overflow-hidden shadow-2xl shadow-slate-900/20">
+                    <div className="relative z-10">
+                        <div className="flex items-center gap-2 mb-2">
+                            <ShieldCheck className="text-blue-400" size={18} />
+                            <span className="text-xs font-bold uppercase tracking-widest text-blue-400">Fair Usage Active</span>
                         </div>
-                    )
-                })}
-            </div>
-
-            {/* Unlimited Features Banner */}
-            <div className="bg-slate-900 rounded-[1.75rem] xs:rounded-[2.5rem] p-8 sm:p-12 text-white relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
-                <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl translate-x-1/2 translate-y-1/2"></div>
-                
-                <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
-                    <div>
-                        <h2 className="text-2xl sm:text-3xl font-black tracking-tight mb-4 flex items-center gap-3">
-                            <ShieldCheck className="text-blue-400" size={32} /> Unlimited Features
-                        </h2>
-                        <p className="text-slate-400 text-sm sm:text-base font-medium max-w-xl">
-                            Your Early Bird plan includes unlimited access to CRM management, team collaboration, 
-                            product inventory syncing, and push notification services.
-                        </p>
+                        <h2 className="text-2xl font-bold mb-1">Your limits reset on {new Date(usage.resetDate).toLocaleDateString()}</h2>
+                        <p className="text-slate-400 text-sm font-medium">Unused credits do not roll over to the next month.</p>
                     </div>
-                    
-                    <div className="flex gap-4 flex-wrap justify-center">
-                        {['CRM', 'Team Members', 'Contacts', 'Lead Sync', 'Push Alerts'].map(f => (
-                            <span key={f} className="bg-white/10 border border-white/10 px-4 py-2 rounded-xl text-xs font-bold tracking-wide uppercase">
-                                {f}
-                            </span>
-                        ))}
+                    <Zap className="absolute -right-8 -bottom-8 text-white/5 w-64 h-64 rotate-12" />
+                </div>
+
+                {/* Usage Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+
+                    {/* Storage Card */}
+                    <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200/60 flex flex-col justify-between group hover:shadow-md transition-all">
+                        <div className="flex justify-between items-start mb-6">
+                            <div className="p-4 bg-indigo-50 text-indigo-600 rounded-3xl group-hover:scale-110 transition-transform">
+                                <HardDrive size={24} />
+                            </div>
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Storage</span>
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-end mb-2">
+                                <h3 className="text-2xl font-black text-slate-900">{usage.limits.storage.used} <span className="text-sm text-slate-400 font-bold">/ {usage.limits.storage.limit} GB</span></h3>
+                                <span className="text-xs font-bold text-slate-500">{((usage.limits.storage.used / usage.limits.storage.limit) * 100).toFixed(1)}%</span>
+                            </div>
+                            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                    className={`h-full transition-all duration-1000 ${getProgressColor(usage.limits.storage.used, usage.limits.storage.limit)}`}
+                                    style={{ width: `${(usage.limits.storage.used / usage.limits.storage.limit) * 100}%` }}
+                                />
+                            </div>
+                            <p className="mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Includes Media Assets & Lead Database</p>
+                        </div>
+                    </div>
+
+                    {/* AI Creatives Card */}
+                    <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200/60 flex flex-col justify-between group hover:shadow-md transition-all">
+                        <div className="flex justify-between items-start mb-6">
+                            <div className="p-4 bg-blue-50 text-blue-600 rounded-3xl group-hover:scale-110 transition-transform">
+                                <Zap size={24} />
+                            </div>
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">AI Designs</span>
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-end mb-2">
+                                <h3 className="text-2xl font-black text-slate-900">{usage.limits.ai_creatives.used} <span className="text-sm text-slate-400 font-bold">/ {usage.limits.ai_creatives.limit}</span></h3>
+                                <span className="text-xs font-bold text-slate-500">{Math.round((usage.limits.ai_creatives.used / usage.limits.ai_creatives.limit) * 100)}%</span>
+                            </div>
+                            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                    className={`h-full transition-all duration-1000 ${getProgressColor(usage.limits.ai_creatives.used, usage.limits.ai_creatives.limit)}`}
+                                    style={{ width: `${(usage.limits.ai_creatives.used / usage.limits.ai_creatives.limit) * 100}%` }}
+                                />
+                            </div>
+                            <p className="mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">AI Content Generation Quota</p>
+                        </div>
+                    </div>
+
+                    {/* Other limits as list */}
+                    <div className="sm:col-span-2 space-y-4 mt-4">
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] ml-4 mb-4">Other Plan Resources</h4>
+
+                        {[
+                            { key: 'campaign_launches', icon: Rocket, color: 'text-orange-600', bg: 'bg-orange-50' },
+                            { key: 'ai_ad_optimizations', icon: ShieldCheck, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                            { key: 'remarketing_campaigns', icon: RefreshCw, color: 'text-purple-600', bg: 'bg-purple-50' },
+                            { key: 'seo_articles', icon: Search, color: 'text-rose-600', bg: 'bg-rose-50' }
+                        ].map((item) => {
+                            const data = usage.limits[item.key]
+                            const Icon = item.icon
+                            return (
+                                <div key={item.key} className="bg-white p-6 rounded-3xl border border-slate-200/60 shadow-sm flex items-center justify-between group hover:border-slate-300 transition-all">
+                                    <div className="flex items-center gap-4">
+                                        <div className={`p-3 ${item.bg} ${item.color} rounded-2xl`}>
+                                            <Icon size={20} />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-bold text-slate-900">{data.label}</p>
+                                            <p className="text-xs text-slate-500 font-medium">Monthly allocation</p>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-lg font-black text-slate-900">{data.used} <span className="text-xs text-slate-400 font-bold">/ {data.limit}</span></p>
+                                        <div className="w-24 h-1.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
+                                            <div
+                                                className={`h-full ${getProgressColor(data.used, data.limit)}`}
+                                                style={{ width: `${(data.used / data.limit) * 100}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )
+                        })}
+
+                        {/* UNLIMITED FEATURES SECTION */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+                            {[
+                                { label: 'CRM & Leads Sync', icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                                { label: 'Team Members', icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50' },
+                                { label: 'Ad Performance Tracking', icon: Zap, color: 'text-amber-600', bg: 'bg-amber-50' },
+                                { label: 'Whitelabeled Catalog', icon: ShieldCheck, color: 'text-indigo-600', bg: 'bg-indigo-50' }
+                            ].map((feat, idx) => (
+                                <div key={idx} className="bg-white/60 p-5 rounded-3xl border border-slate-100 flex items-center gap-4">
+                                    <div className={`p-3 ${feat.bg} ${feat.color} rounded-2xl`}>
+                                        <feat.icon size={18} />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-900">{feat.label}</p>
+                                        <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Unlimited</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <p className="text-center text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em] mt-12">
-                Quotas reset every 30 days based on your subscription start date.
-            </p>
+                {/* Info Card instead of Upgrade CTA */}
+                <div className="mt-12 bg-slate-900 rounded-[2.5rem] p-10 text-center relative overflow-hidden shadow-2xl shadow-slate-900/20">
+                    <h3 className="text-2xl font-bold text-white mb-2">You're on the "Early Bird" Plan</h3>
+                    <p className="text-slate-400 font-medium max-w-md mx-auto">You have full access to all Andromeda AI features as a founding member.</p>
+                    <PieChart className="absolute -left-10 -bottom-10 text-white/5 w-48 h-48 -rotate-12" />
+                </div>
+
+            </div>
         </div>
     )
 }

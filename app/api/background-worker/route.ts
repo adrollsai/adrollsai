@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { sendPushNotification } from '@/utils/notification-helper';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { refundLimit } from '@/utils/subscription-server';
 
 // IMPORTANT: Prevents Vercel from timing out the request before generation finishes
 export const maxDuration = 300; 
@@ -52,14 +53,30 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'No Task ID provided or generated.' }, { status: 400 });
         }
 
+        // --- NEW: PERSISTENCE-FIRST PLACEHOLDER ---
+        // Create the record immediately so that if the worker times out, the task ID is not lost.
+        const { data: placeholder, error: placeholderError } = await supabaseAdmin.from('assets').insert({
+            user_id: userId,
+            property_id: propId || null,
+            kie_task_id: taskId,
+            type: 'image',
+            status: 'Processing',
+            url: 'https://designs.adrolls.in/processing', // Temporary URL to satisfy NOT NULL constraint
+            caption: generatedCaption
+        }).select().single();
+
+        if (placeholderError) {
+            console.error("[Worker] Failed to create placeholder asset:", placeholderError);
+        }
+
         let attempts = 0;
         let finalImageUrl = '';
 
-        // 2. Poll for Status ON THE SERVER (Unhindered by locked phones)
-        while (attempts < 20) {
+        // 2. Poll for Status ON THE SERVER
+        // Optimized: Poll every 10 seconds for up to 29 attempts (~290 seconds total)
+        while (attempts < 29) {
             attempts++;
-            // Wait 15 seconds between checks to avoid spamming the status API
-            await new Promise(resolve => setTimeout(resolve, 15000));
+            await new Promise(resolve => setTimeout(resolve, 10000));
             
             const checkResponse = await fetch(`${baseUrl}/api/check-status`, {
                 method: 'POST',
@@ -97,6 +114,14 @@ export async function POST(req: Request) {
                 }
             } else if (status === 'failed' || status === 'error') {
                 console.error("[Worker] Generation Failed:", checkData.failMsg || checkData.error);
+                
+                // REFUND: Task failed on Kie AI's side (e.g. content policy or server error)
+                await refundLimit(userId, 'ai_creatives');
+
+                // Update placeholder to Failed so user knows it won't finish
+                if (placeholder?.id) {
+                    await supabaseAdmin.from('assets').update({ status: 'Failed' }).eq('id', placeholder.id);
+                }
                 break;
             }
         }
@@ -130,35 +155,42 @@ export async function POST(req: Request) {
             console.error("[Worker] R2 Persistence Failed, using original URL:", r2Error);
         }
 
-        // 3. Save directly to DB via Server Admin
+        // 3. Finalize Asset in DB
         try {
-            // CRITICAL: If this is a batch asset, we MUST ensure the master record exists first
-            // due to foreign key constraints on the 'assets' table.
             if (batchId && batchId.length === 36) {
-                console.log(`[Worker] Ensuring master_creative record exists for batch: ${batchId}`);
                 await supabaseAdmin.from('master_creatives').upsert({
                     id: batchId,
                     property_id: propId,
-                    url: persistedUrl, // Use this image as the representative master image
+                    url: persistedUrl,
                     type: 'image',
                     is_active: true
                 }, { onConflict: 'id' });
             }
 
-            const { error: insertError } = await supabaseAdmin.from('assets').insert({
-                user_id: userId,
-                property_id: propId || null,
-                master_creative_id: (batchId && batchId.length === 36) ? batchId : null,
-                url: persistedUrl,
-                type: 'image',
-                status: 'Draft',
-                caption: generatedCaption
-            });
-
-            if (insertError) {
-                console.error("[Worker] Supabase Asset Insert Error:", insertError);
+            let dbResult;
+            if (placeholder?.id) {
+                dbResult = await supabaseAdmin.from('assets').update({
+                    master_creative_id: (batchId && batchId.length === 36) ? batchId : null,
+                    url: persistedUrl,
+                    status: 'Draft',
+                    caption: generatedCaption
+                }).eq('id', placeholder.id);
             } else {
-                console.log("[Worker] Successfully saved asset to database for User:", userId);
+                dbResult = await supabaseAdmin.from('assets').insert({
+                    user_id: userId,
+                    property_id: propId || null,
+                    master_creative_id: (batchId && batchId.length === 36) ? batchId : null,
+                    url: persistedUrl,
+                    type: 'image',
+                    status: 'Draft',
+                    caption: generatedCaption
+                });
+            }
+
+            if (dbResult.error) {
+                console.error("[Worker] Asset Update/Insert Error:", dbResult.error);
+            } else {
+                console.log("[Worker] Successfully finalized asset in database.");
             }
         } catch (dbErr) {
             console.error("[Worker] Database Operation Failed:", dbErr);

@@ -88,7 +88,7 @@ DESIGN RULES:
                   "input": {
                     "prompt": finalImagePrompt,
                     "input_urls": allInputImages, // Using correct field for image-to-image
-                    "aspect_ratio": "1:1",
+                    "aspect_ratio": "4:5",
                     "resolution": "1K"
                   }
                 };

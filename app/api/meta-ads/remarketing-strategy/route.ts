@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { generateKieChat } from '@/utils/external-apis';
-import { checkLimitAndIncrement } from '@/utils/subscription-server';
+import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 
 export async function POST(request: Request) {
     try {
@@ -53,6 +53,11 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ status: 'success', insight: parsed.strategy_insight, variations: parsed.variations });
     } catch (error: any) {
+        // REFUND: Give back the remarketing credit if the strategy failed to generate
+        const { data: { user } } = await (await createClient()).auth.getUser();
+        if (user?.id) {
+            await refundLimit(user.id, 'remarketing_campaigns');
+        }
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

@@ -528,7 +528,16 @@ export default function AssetsPage() {
                                 key={asset.id}
                                 className="relative aspect-square rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden bg-white shadow-sm border border-slate-200/40 group cursor-pointer active:scale-95 transition-all duration-300 hover:shadow-xl hover:-translate-y-1"
                             >
-                                {asset.type === 'video' ? (
+                                {asset.status === 'Processing' ? (
+                                    <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center p-4 text-center">
+                                        <div className="relative">
+                                            <Loader2 size={28} className="animate-spin text-purple-500" />
+                                            <Sparkles size={12} className="absolute -top-1 -right-1 text-amber-400 animate-pulse" />
+                                        </div>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-3">AI Designing...</p>
+                                        <p className="text-[9px] text-slate-400 font-medium mt-1">Check back in a bit</p>
+                                    </div>
+                                ) : asset.type === 'video' ? (
                                     <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
                                         <video src={asset.url} className="w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity" />
                                         <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-transparent transition-colors">
@@ -542,33 +551,39 @@ export default function AssetsPage() {
                                 )}
 
                                 {/* Overlay Actions */}
-                                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                    <div className="flex gap-3">
-                                        <button 
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setPreviewImage({ isOpen: true, url: asset.url, title: 'Asset Preview' });
-                                            }}
-                                            className="bg-white p-3 rounded-full text-slate-900 shadow-xl hover:scale-110 transition-all"
-                                        >
-                                            <Maximize2 size={20} />
-                                        </button>
-                                        <button 
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setSelectedAsset(asset);
-                                                setCaption(asset.caption || '');
-                                            }}
-                                            className="bg-white p-3 rounded-full text-blue-600 shadow-xl hover:scale-110 transition-all"
-                                        >
-                                            <Globe size={20} />
-                                        </button>
+                                {asset.status !== 'Processing' && (
+                                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                        <div className="flex gap-3">
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setPreviewImage({ isOpen: true, url: asset.url, title: 'Asset Preview' });
+                                                }}
+                                                className="bg-white p-3 rounded-full text-slate-900 shadow-xl hover:scale-110 transition-all"
+                                            >
+                                                <Maximize2 size={20} />
+                                            </button>
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedAsset(asset);
+                                                    setCaption(asset.caption || '');
+                                                }}
+                                                className="bg-white p-3 rounded-full text-blue-600 shadow-xl hover:scale-110 transition-all"
+                                            >
+                                                <Globe size={20} />
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
+                                )}
 
                                 {/* Status Badge */}
                                 <div className="absolute top-4 right-4 shadow-md z-10">
-                                    {asset.status === 'Published' ? (
+                                    {asset.status === 'Processing' ? (
+                                        <div className="bg-purple-500 text-white p-1.5 rounded-full border-2 border-white animate-pulse">
+                                            <Sparkles size={14} />
+                                        </div>
+                                    ) : asset.status === 'Published' ? (
                                         <div className="bg-emerald-500 text-white p-1.5 rounded-full border-2 border-white" title="Published">
                                             <CheckCircle2 size={14} strokeWidth={3} />
                                         </div>
