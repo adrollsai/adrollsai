@@ -100,20 +100,20 @@ export default function BottomNav() {
               <Link 
                 key={item.name} 
                 href={item.path}
-                className="flex flex-col items-center gap-1.5 min-w-[72px] sm:min-w-[84px] group pt-2 pb-1 shrink-0"
+                className="flex flex-col items-center gap-1.5 min-w-[64px] xs:min-w-[72px] sm:min-w-[84px] group pt-2 pb-1 shrink-0"
               >
                 <div className={`
-                  px-5 py-1.5 rounded-full transition-all duration-300 ease-out flex items-center justify-center
+                  px-4 xs:px-5 py-1.5 rounded-full transition-all duration-300 ease-out flex items-center justify-center
                   ${isActive ? 'bg-blue-100 shadow-inner scale-105' : 'bg-transparent group-hover:bg-slate-100'}
                 `}>
                   <item.icon 
-                    size={22} 
+                    size={20} 
                     strokeWidth={isActive ? 2.5 : 2} 
                     className={`transition-colors duration-300 ${isActive ? 'text-blue-700 animate-in zoom-in' : 'text-slate-500 group-hover:text-slate-700'}`} 
                   />
                 </div>
                 
-                <span className={`text-[10px] sm:text-xs font-bold transition-all duration-300 ${isActive ? 'text-blue-700' : 'text-slate-500 group-hover:text-slate-700'}`}>
+                <span className={`text-[9px] xs:text-[10px] sm:text-xs font-bold transition-all duration-300 ${isActive ? 'text-blue-700' : 'text-slate-500 group-hover:text-slate-700'}`}>
                   {item.name}
                 </span>
               </Link>

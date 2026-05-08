@@ -22,6 +22,25 @@ interface KieTaskResponse {
 }
 
 /**
+ * Helper to fetch with retry logic for rate limits (429)
+ */
+async function fetchWithRetry(url: string, options: any, maxRetries = 3): Promise<Response> {
+    let retries = 0;
+    while (retries < maxRetries) {
+        const response = await fetch(url, options);
+        if (response.status === 429) {
+            const waitTime = Math.pow(2, retries) * 1000 + Math.random() * 500;
+            console.log(`[Rate Limit] Hit 429, retrying in ${waitTime}ms...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            retries++;
+            continue;
+        }
+        return response;
+    }
+    return fetch(url, options); // Final attempt
+}
+
+/**
  * 1. Kie.ai Task Generation (Video/Image/Misc)
  * Updated with robust error handling and standardized return objects.
  */
@@ -29,7 +48,7 @@ export async function createKieTask(payload: any): Promise<{ taskId: string | nu
     if (!KIE_API_KEY) return { taskId: null, error: "KIE_API_KEY is not configured." };
     
     try {
-        const response = await fetch(KIE_CREATE_TASK_URL, {
+        const response = await fetchWithRetry(KIE_CREATE_TASK_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -137,7 +156,7 @@ export async function generateKieChat(prompt: string, model: string = "gemini-3-
         ];
     }
     
-    const response = await fetch(endpoint, {
+    const response = await fetchWithRetry(endpoint, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -331,7 +350,7 @@ export async function fetchFacebookPixels(accessToken: string, adAccountId: stri
  */
 export async function createKieImageTask(prompt: string, model: string = "flux2/flex-text-to-image"): Promise<string> {
     if (!KIE_API_KEY) throw new Error("KIE_API_KEY is not configured.");
-    const response = await fetch(KIE_CREATE_TASK_URL, {
+    const response = await fetchWithRetry(KIE_CREATE_TASK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${KIE_API_KEY}` },
         body: JSON.stringify({ model: model, prompt: prompt })

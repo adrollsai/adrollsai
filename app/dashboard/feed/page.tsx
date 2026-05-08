@@ -203,14 +203,14 @@ export default function FeedManagementPage() {
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="animate-spin text-blue-500" size={32} /></div>
       ) : posts.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200">
+        <div className="text-center py-20 bg-white rounded-[1.75rem] xs:rounded-[2.5rem] border-2 border-dashed border-slate-200">
           <MessageSquare className="mx-auto text-slate-300 mb-4" size={48} />
           <p className="text-slate-500 font-bold">No posts yet. Start by sharing an update!</p>
         </div>
       ) : (
         <div className="space-y-6">
           {posts.map(post => (
-            <div key={post.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col sm:flex-row gap-6 relative group transition-all hover:shadow-md">
+            <div key={post.id} className="bg-white p-6 rounded-[1.5rem] xs:rounded-[2rem] border border-slate-100 shadow-sm flex flex-col sm:flex-row gap-6 relative group transition-all hover:shadow-md">
               {post.image_url && (
                 <div className="w-full sm:w-48 h-48 rounded-2xl overflow-hidden shrink-0">
                   <img src={post.image_url} className="w-full h-full object-cover" alt="Post" />
@@ -246,7 +246,7 @@ export default function FeedManagementPage() {
       {/* ADD POST MODAL */}
       {showAddModal && (
         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-lg rounded-t-[2.5rem] sm:rounded-[3rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-white w-full max-w-lg rounded-t-[1.75rem] xs:rounded-t-[2.5rem] sm:rounded-[3rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-8">
               <h2 className="text-2xl font-black text-slate-900">Share Update</h2>
               <button onClick={() => setShowAddModal(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@/utils/supabase/server';
 import { generateKieChat, createKieImageTask, callGemini } from '@/utils/external-apis';
+import { checkLimitAndIncrement } from '@/utils/subscription-server';
 
 const FB_GRAPH = "https://graph.facebook.com/v19.0";
 
@@ -35,6 +36,12 @@ export async function POST(request: Request) {
         const realPropId = firstProp?.id || null;
 
         if (step === 'analyze') {
+            // --- SUBSCRIPTION CHECK ---
+            try {
+                await checkLimitAndIncrement(user.id, 'ai_ad_optimizations');
+            } catch (limitErr: any) {
+                return NextResponse.json({ error: limitErr.message }, { status: 403 });
+            }
             // 1. Fetch Ad-Level Insights
             const insightsRes = await fetch(`${FB_GRAPH}/${campaignId}/insights?fields=ad_id,ad_name,spend,impressions,cpc,actions&level=ad&date_preset=maximum&access_token=${profile.facebook_token}`);
             const insightsData = await insightsRes.json();
@@ -101,7 +108,8 @@ export async function POST(request: Request) {
             const imageUrls = Array.from(new Set(performanceSummary.map((p: any) => p.imageUrl).filter(Boolean))) as string[];
             
             const llmPrompt = `
-            You are a world-class AI media buyer. Analyze the performance of these ${performanceSummary.length} ads.
+            PERSONA: World-class AI Creative Director & Media Buying Strategist (20+ years exp).
+            OBJECTIVE: Analyze the performance of these ${performanceSummary.length} ads and architect 6 "High-Value" professional Meta Ad variations that evolve the winning "Visual DNA" into industry-standard excellence.
             
             USER STRATEGY NOTES: ${userInstructions || 'None'}
             USER PREFERRED STYLE: ${style}
@@ -110,16 +118,18 @@ export async function POST(request: Request) {
             ${JSON.stringify(performanceSummary, null, 2)}
             
             TASK:
-            1. Identify which visuals and copy angles are winning (generating leads at low cost).
-            2. Identify which ones are failing.
+            1. Identify winning visuals and copy angles.
+            2. Identify failing elements.
             3. Provide a sharp 2-sentence summary of WHAT works and WHY.
             4. Suggest 6 brand new "Professional High-End Variations" to test next.
             
-            IMAGE PROMPT GUIDELINES:
-            - Goal: Create industry-standard, professional ad creatives that encapsulate product info beautifully.
-            - Style: High-quality photography, premium lighting, state-of-the-art design.
-            - People: Include "super beautiful" people that match the ethnicity of the business context (${profile.business_name || 'Global'}).
-            - Cleanliness: NO nonsensical elements or AI artifacts.
+            IMAGE PROMPT GUIDELINES (FOR VARIATIONS):
+            - HYPER-REALISM: The images must look like professional photographs taken with a high-end camera (Sony A7R V). No "AI sheen" or plasticy textures.
+            - NATURAL LIGHTING: Use soft, natural light or professional studio lighting.
+            - PEOPLE: ALWAYS include high-quality, "super beautiful" people who look successful and aspirational.
+            - ETHNICITY: Match the ethnicity to the business context (${profile.business_name || 'Global'}).
+            - HOOK & HIERARCHY: Use a clear visual hook that immediately draws the eye.
+            - DESIGN: Describe the composition, lighting, and brand encapsulation for the generator.
             
             IMPORTANT: Use the winning visuals (${imageUrls.length} provided) as your "Visual DNA". Your image_prompt should describe how to evolve these winners into premium, attention-grabbing agency-grade creatives.
             

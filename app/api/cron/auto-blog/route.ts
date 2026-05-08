@@ -53,6 +53,19 @@ async function runSeoCron(request: Request) {
     // Process all profiles in parallel to avoid timeout
     const results = await Promise.all(profiles.map(async (profile) => {
         try {
+            // --- SUBSCRIPTION CHECK ---
+            const { data: usageProfile } = await supabaseAdmin
+                .from('profiles')
+                .select('seo_articles_used')
+                .eq('id', profile.id)
+                .single();
+            
+            const used = usageProfile?.seo_articles_used || 0;
+            if (used >= 30) { // PLAN_LIMITS.seo_articles is 30
+                console.log(`[SEO Cron] User ${profile.id} reached SEO limit.`);
+                return { success: false, userId: profile.id, error: "Limit reached" };
+            }
+
             const { data: products } = await supabaseAdmin
                 .from('properties')
                 .select('title, price, property_type, description, image_url')
@@ -128,6 +141,13 @@ OUTPUT: Return ONLY a valid JSON object with: 'title', 'excerpt' (compelling), '
             });
 
             if (insertError) throw insertError;
+
+            // Increment usage
+            await supabaseAdmin
+                .from('profiles')
+                .update({ seo_articles_used: used + 1 })
+                .eq('id', profile.id);
+
             return { success: true };
         } catch (e: any) {
             console.error(`Error processing profile ${profile.id}:`, e.message);

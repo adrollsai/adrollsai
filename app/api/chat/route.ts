@@ -5,6 +5,7 @@ import { generateText } from 'ai';
 import { google } from '@ai-sdk/google'; 
 import fs from 'fs';
 import path from 'path';
+import { checkLimitAndIncrement } from '@/utils/subscription-server';
 
 const DEBUG_LOG = path.join(process.cwd(), 'image_gen_debug.log');
 
@@ -39,6 +40,14 @@ export async function POST(request: Request) {
     }
     
     logToFile(`PAYLOAD RECEIVED: ${JSON.stringify(body, null, 2)}`);
+
+    // --- SUBSCRIPTION CHECK ---
+    try {
+      await checkLimitAndIncrement(user.id, 'ai_creatives');
+    } catch (limitErr: any) {
+      logToFile(`QUOTA ERROR: ${limitErr.message}`);
+      return NextResponse.json({ error: limitErr.message }, { status: 403 });
+    }
     
     const { 
         userInstructions, 

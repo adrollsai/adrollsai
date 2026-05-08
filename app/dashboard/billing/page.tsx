@@ -92,11 +92,17 @@ export default function BillingPage() {
   }
 
   const features = [
-    "Unlimited AI Asset Generation",
-    "Smart Meta Ads Automation",
-    "Lead CRM & Team Distribution",
-    "Custom Domain Integration",
-    "Automated SEO Blog Generation",
+    "80 AI Creatives per month",
+    "10 Campaign Launches per month",
+    "10 AI Ad Optimizations per month",
+    "10 Remarketing Campaigns per month",
+    "30 AI SEO Articles per month",
+    "Social Media Posting to Meta",
+    "Unlimited Inventory Products",
+    "10 GB Cloud Storage",
+    "Custom Whitelabeled App",
+    "Unlimited CRM & Team Members",
+    "Unlimited Lead Form Syncs",
     "Priority WhatsApp Support"
   ]
 
@@ -133,11 +139,14 @@ export default function BillingPage() {
       <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-10 sm:pt-16">
           
           <div className="text-center mb-10">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold uppercase tracking-widest mb-4 border border-blue-100">
+                  <Zap size={12} fill="currentColor" /> Limited period offer
+              </div>
               <h2 className="text-3xl font-bold text-slate-900 tracking-tight mb-3">
-                  One plan. Full access.
+                  Early Bird Plan
               </h2>
               <p className="text-slate-500 text-sm sm:text-base max-w-lg mx-auto">
-                  Unlock the complete suite of AI creation tools, CRM pipelines, and Meta ad automation features.
+                  Unlock the full power of AI-driven marketing with our exclusive Early Bird offer. <strong>No onboarding charges</strong> for a limited time.
               </p>
           </div>
 
@@ -150,7 +159,7 @@ export default function BillingPage() {
                           <Check className="w-5 h-5" />
                           <div>
                               <p className="text-sm font-semibold">Your subscription is active</p>
-                              <p className="text-xs text-green-600/80">You have access to all Pro features.</p>
+                              <p className="text-xs text-green-600/80">You have access to all Early Bird features.</p>
                           </div>
                       </div>
                       {renewalDate && (
@@ -167,8 +176,8 @@ export default function BillingPage() {
                   {/* Left Column: Pricing & CTA */}
                   <div className="flex-1 flex flex-col">
                       <div className="mb-2">
-                          <h3 className="text-lg font-semibold text-slate-900">Pro All-Access</h3>
-                          <p className="text-sm text-slate-500 mt-1">Billed monthly. Cancel anytime.</p>
+                          <h3 className="text-lg font-semibold text-slate-900">Early Bird Access</h3>
+                          <p className="text-xs text-blue-600 font-bold mt-1 uppercase tracking-tight">Free Onboarding Included</p>
                       </div>
 
                       <div className="my-6">
@@ -177,6 +186,7 @@ export default function BillingPage() {
                               <span className="text-5xl font-bold text-slate-900 tracking-tight">9,999</span>
                               <span className="text-base text-slate-500 font-medium ml-1">/ mo</span>
                           </div>
+                          <p className="text-[10px] text-slate-400 mt-2">Inclusive of all taxes</p>
                       </div>
 
                       <div className="mt-auto pt-4">
@@ -198,7 +208,7 @@ export default function BillingPage() {
                                   ) : (
                                       <>
                                           <Zap size={16} className="text-blue-200" /> 
-                                          Subscribe Now
+                                          Claim Offer
                                       </>
                                   )}
                               </button>
@@ -214,8 +224,8 @@ export default function BillingPage() {
 
                   {/* Right Column: Features List */}
                   <div className="flex-1 md:pl-10 md:border-l border-slate-100">
-                      <h4 className="text-sm font-semibold text-slate-900 mb-6 uppercase tracking-wider">What's included</h4>
-                      <ul className="space-y-4">
+                      <h4 className="text-xs font-semibold text-slate-900 mb-6 uppercase tracking-wider">Plan Highlights</h4>
+                      <ul className="space-y-3">
                           {features.map((feature, idx) => (
                               <li key={idx} className="flex items-start gap-3">
                                   <div className="shrink-0 mt-0.5 w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100">

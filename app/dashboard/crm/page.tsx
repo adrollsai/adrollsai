@@ -339,7 +339,7 @@ export default function CRMPage() {
         </div>
 
         {/* SEARCH & FILTERS BAR */}
-        <div className="bg-white p-4 sm:p-5 rounded-[2rem] shadow-sm border border-slate-200/60 mb-8 space-y-4">
+        <div className="bg-white p-4 sm:p-5 rounded-[1.5rem] xs:rounded-[2rem] shadow-sm border border-slate-200/60 mb-8 space-y-4">
             
             <div className="flex flex-col md:flex-row gap-3">
                 <div className="relative flex-1">
@@ -530,7 +530,7 @@ export default function CRMPage() {
       {/* ADD MODAL */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
-            <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 flex flex-col overflow-hidden">
+            <div className="bg-white w-full max-w-md rounded-t-[1.75rem] xs:rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 flex flex-col overflow-hidden">
                 <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white">
                     <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                         <UserPlus size={22} className="text-blue-600" /> Manual Entry
@@ -567,7 +567,7 @@ export default function CRMPage() {
       {/* SYNC MODAL */}
       {role === 'admin' && isSyncModalOpen && (
         <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
-            <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 flex flex-col overflow-hidden">
+            <div className="bg-white w-full max-w-md rounded-t-[1.75rem] xs:rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 flex flex-col overflow-hidden">
                 <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white">
                     <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2"><Download size={22} className="text-emerald-500"/> Sync Meta Leads</h2>
                     <button onClick={() => setIsSyncModalOpen(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={18} /></button>

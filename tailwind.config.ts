@@ -8,6 +8,9 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      screens: {
+        'xs': '340px',
+      },
       // Here is where we define your "Material 3" Palette
       colors: {
         primary: "#D0E8FF", // Light Blue (Google style container)

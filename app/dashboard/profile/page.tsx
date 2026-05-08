@@ -18,7 +18,8 @@ import {
   FileText,
   Shield,
   RefreshCw,
-  Copy
+  Copy,
+  BarChart3
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -973,6 +974,19 @@ export default function ProfilePage() {
                     <span className="font-bold text-sm text-slate-900">Subscription & Billing</span>
                   </div>
                   <ChevronRight size={20} className="text-slate-400" />
+                </button>
+
+                <button onClick={() => router.push('/dashboard/usage')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-indigo-100 text-indigo-600 p-3 rounded-2xl">
+                      <BarChart3 size={20} />
+                    </div>
+                    <span className="font-bold text-sm text-slate-900">Track Usage & Quotas</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="bg-blue-50 text-blue-600 text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-wider">Early Bird</span>
+                    <ChevronRight size={20} className="text-slate-400" />
+                  </div>
                 </button>
 
                 <button onClick={() => router.push('/dashboard/team')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">

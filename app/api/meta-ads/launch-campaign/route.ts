@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server';
 import * as fs from 'fs';
 import path from 'path';
 import { callGemini } from '@/utils/external-apis';
+import { checkLimitAndIncrement } from '@/utils/subscription-server';
 
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
@@ -22,6 +23,14 @@ export async function POST(request: Request) {
             { error: 'Unauthorized' }, 
             { status: 401 }
         );
+    }
+
+    // --- SUBSCRIPTION CHECK ---
+    try {
+        await checkLimitAndIncrement(user.id, 'campaign_launches');
+    } catch (limitErr: any) {
+        logToFile(`QUOTA ERROR: ${limitErr.message}`);
+        return NextResponse.json({ error: limitErr.message }, { status: 403 });
     }
 
     let data: any = {};

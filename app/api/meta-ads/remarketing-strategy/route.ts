@@ -1,12 +1,20 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { generateKieChat } from '@/utils/external-apis';
+import { checkLimitAndIncrement } from '@/utils/subscription-server';
 
 export async function POST(request: Request) {
     try {
         const supabase = await createClient();
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        // --- SUBSCRIPTION CHECK ---
+        try {
+            await checkLimitAndIncrement(user.id, 'remarketing_campaigns');
+        } catch (limitErr: any) {
+            return NextResponse.json({ error: limitErr.message }, { status: 403 });
+        }
 
         const { campaignId, campaignName } = await request.json();
         

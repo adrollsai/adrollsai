@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { 
   MapPin, Phone, Loader2, Image as ImageIcon, LayoutGrid, Rss, 
-  ChevronRight, X, Filter, Check, Facebook, Instagram, Linkedin, Youtube, Share2, ArrowUpRight, ChevronLeft, Search, MessageCircle, MessageSquare
+  ChevronRight, X, Filter, Check, Facebook, Instagram, Linkedin, Youtube, Share2, ArrowUpRight, ChevronLeft, Search, MessageCircle, MessageSquare, RefreshCw
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import PushManager from '@/components/PushManager'
@@ -71,6 +71,7 @@ export default function SharedCataloguePage() {
   // --- STATE ---
   const [activeTab, setActiveTab] = useState<'inventory' | 'feed'>('inventory')
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   
   // Data
@@ -103,74 +104,82 @@ export default function SharedCataloguePage() {
   }
 
   // --- 2. DATA FETCHING ---
-  useEffect(() => {
+  const fetchData = async (isManual = false) => {
     const identifier = getSafeIdentifier()
-    
-    // Init filters
-    const urlMin = searchParams.get('min'); if(urlMin) setMinPrice(urlMin)
-    const urlMax = searchParams.get('max'); if(urlMax) setMaxPrice(urlMax)
-    const urlTypes = searchParams.get('types'); if(urlTypes) setSelectedTypes(urlTypes.split(','))
-    const q = searchParams.get('q'); if (q) setSearchQuery(q)
-
     if (!identifier) {
         setErrorMsg("Invalid Page Link")
         setLoading(false)
         return
     }
 
-    const fetchData = async () => {
-      try {
-        let profileQuery = supabase.from('profiles').select('*')
-        
-        if (identifier.includes('.')) {
-            profileQuery = profileQuery.eq('custom_domain', identifier)
-        } else {
-            profileQuery = profileQuery.eq('id', identifier)
-        }
-        
-        const { data: profileData, error: profileError } = await profileQuery.maybeSingle()
-        
-        if (profileError) {
-            console.error("Database error fetching profile:", profileError)
-            throw new Error("Failed to load catalog database.")
-        }
+    if (isManual) setIsRefreshing(true)
+    else if (properties.length === 0) setLoading(true)
 
-        if (!profileData) {
-            setErrorMsg("This catalog is unavailable or the link is incorrect.")
-            setLoading(false)
-            return
-        }
-
-        setProfile(profileData)
-
-        const { data: props } = await supabase
-            .from('properties')
-            .select('*')
-            .eq('user_id', profileData.id)
-            .order('created_at', { ascending: false })
-        
-        if (props) {
-            const activeProps = props.filter(p => p.status !== 'Archived' && p.status !== 'Sold')
-            setProperties(activeProps)
-        }
-
-        const { data: blogPosts } = await supabase
-            .from('posts')
-            .select('*')
-            .eq('user_id', profileData.id)
-            .eq('status', 'published')
-            .order('created_at', { ascending: false })
-        if (blogPosts) setPosts(blogPosts)
-
-      } catch (err) {
-          console.error(err)
-          setErrorMsg("Failed to load content.")
-      } finally {
-          setLoading(false)
+    try {
+      let profileQuery = supabase.from('profiles').select('*')
+      
+      if (identifier.includes('.')) {
+          profileQuery = profileQuery.eq('custom_domain', identifier)
+      } else {
+          profileQuery = profileQuery.eq('id', identifier)
       }
+      
+      const { data: profileData, error: profileError } = await profileQuery.maybeSingle()
+      
+      if (profileError) {
+          console.error("Database error fetching profile:", profileError)
+          throw new Error("Failed to load catalog database.")
+      }
+
+      if (!profileData) {
+          setErrorMsg("This catalog is unavailable or the link is incorrect.")
+          setLoading(false)
+          return
+      }
+
+      setProfile(profileData)
+
+      const { data: props } = await supabase
+          .from('properties')
+          .select('*')
+          .eq('user_id', profileData.id)
+          .order('created_at', { ascending: false })
+      
+      if (props) {
+          const activeProps = props.filter(p => p.status !== 'Archived' && p.status !== 'Sold')
+          setProperties(activeProps)
+      }
+
+      const { data: blogPosts } = await supabase
+          .from('posts')
+          .select('*')
+          .eq('user_id', profileData.id)
+          .eq('status', 'published')
+          .order('created_at', { ascending: false })
+      if (blogPosts) setPosts(blogPosts)
+
+    } catch (err) {
+        console.error(err)
+        setErrorMsg("Failed to load content.")
+    } finally {
+        setLoading(false)
+        setIsRefreshing(false)
     }
+  }
+
+  useEffect(() => {
+    // Init filters from URL
+    const urlMin = searchParams.get('min'); if(urlMin) setMinPrice(urlMin)
+    const urlMax = searchParams.get('max'); if(urlMax) setMaxPrice(urlMax)
+    const urlTypes = searchParams.get('types'); if(urlTypes) setSelectedTypes(urlTypes.split(','))
+    const q = searchParams.get('q'); if (q) setSearchQuery(q)
+
     fetchData()
   }, [])
+
+  const handleManualRefresh = () => {
+    fetchData(true)
+  }
 
   // --- 3. FILTER LOGIC ---
   const toggleType = (type: string) => {
@@ -275,8 +284,17 @@ export default function SharedCataloguePage() {
   if (errorMsg) return <div className="flex h-screen w-full items-center justify-center p-6 text-slate-400 bg-[#F8FAFC]"><p className="bg-white px-8 py-5 rounded-3xl shadow-sm font-bold border border-slate-200 text-center w-full max-w-md">{errorMsg}</p></div>
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-24 font-sans selection:bg-blue-200">
+    <div className="min-h-screen bg-[#F8FAFC] pb-24 font-sans selection:bg-blue-200 relative">
       
+      {/* REFRESH BUTTON */}
+      <button 
+          onClick={handleManualRefresh}
+          className="fixed bottom-24 right-4 z-[60] sm:bottom-auto sm:top-24 bg-white/90 backdrop-blur-md p-3 rounded-full shadow-lg border border-slate-200 text-slate-500 hover:text-blue-600 transition-all active:scale-95"
+          title="Refresh Content"
+      >
+          <RefreshCw size={20} className={isRefreshing ? "animate-spin text-blue-600" : ""} />
+      </button>
+
       {/* 1. PUBLIC HEADER */}
       <div className="bg-white/90 sticky top-0 z-40 border-b border-slate-200/60 shadow-sm backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">

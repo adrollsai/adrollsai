@@ -638,7 +638,7 @@ export default function ProductsPage() {
             <div 
               key={prop.id} 
               onClick={() => setSelectedProperty(prop)}
-              className="bg-white rounded-[1.5rem] shadow-sm hover:shadow-xl border border-slate-200/60 transition-all cursor-pointer group hover:-translate-y-1 flex flex-col overflow-hidden relative"
+              className="bg-white rounded-[1.75rem] xs:rounded-[2.5rem] shadow-sm hover:shadow-xl border border-slate-200/60 transition-all cursor-pointer group hover:-translate-y-1 flex flex-col overflow-hidden relative"
             >
               
               {/* ADMIN CONTROLS (Edit & Delete) */}

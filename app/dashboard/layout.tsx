@@ -56,7 +56,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC]">
+    <div className="min-h-screen bg-[#F8FAFC] overflow-x-hidden">
       {/* PushManager deployed as a banner. It auto-hides if enabled or dismissed */}
       <PushManager variant="banner" />
       

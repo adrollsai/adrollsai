@@ -151,7 +151,7 @@ export default function TeamManagementPage() {
 
         {/* Dashboard Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200/60 flex items-center gap-4">
+            <div className="bg-white p-6 rounded-[1.5rem] xs:rounded-[2rem] shadow-sm border border-slate-200/60 flex items-center gap-4">
                 <div className="bg-emerald-100 text-emerald-600 p-4 rounded-[1.25rem]">
                     <Shield size={24} />
                 </div>
@@ -161,7 +161,7 @@ export default function TeamManagementPage() {
                 </div>
             </div>
             
-            <div className="sm:col-span-2 bg-slate-900 p-6 rounded-[2rem] shadow-sm flex flex-col justify-center relative overflow-hidden">
+            <div className="sm:col-span-2 bg-slate-900 p-6 rounded-[1.5rem] xs:rounded-[2rem] shadow-sm flex flex-col justify-center relative overflow-hidden">
                 <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-emerald-500/20 to-transparent"></div>
                 <h4 className="text-white font-bold text-lg mb-1 flex items-center gap-2">
                     <CheckCircle2 size={18} className="text-emerald-400" /> Secure Workspace
@@ -171,7 +171,7 @@ export default function TeamManagementPage() {
         </div>
 
         {/* Agents List */}
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden">
+        <div className="bg-white rounded-[1.5rem] xs:rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden">
             <div className="p-6 border-b border-slate-100">
                 <h3 className="font-bold text-lg text-slate-800">Current Members</h3>
             </div>
