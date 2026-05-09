@@ -130,10 +130,11 @@ export async function POST(request: Request) {
             4. Suggest 6 brand new "Professional High-End Variations" to test next.
             
             IMAGE PROMPT GUIDELINES (FOR VARIATIONS):
-            - HYPER-REALISM: The images must look like professional photographs taken with a high-end camera (Sony A7R V). No "AI sheen" or plasticy textures.
-            - NATURAL LIGHTING: Use soft, natural light or professional studio lighting.
+            - HYPER-REALISM: The images must look like professional photographs taken with a high-end camera. No "AI sheen".
+            - NATURAL LIGHTING: Use soft, natural light.
             - PEOPLE: ALWAYS include high-quality, "super beautiful" people who look successful and aspirational.
             - ETHNICITY: Match the ethnicity to the business context (${profile.business_name || 'Global'}).
+            - TYPOGRAPHY & TEXT DENSITY: Use minimal, high-impact text. Do NOT clutter the image with long sentences. Include ONLY the Business Name and the most important "Hook". Ensure all text is large, bold, and easily readable on a small mobile screen.
             - HOOK & HIERARCHY: Use a clear visual hook that immediately draws the eye.
             - DESIGN: Describe the composition, lighting, and brand encapsulation for the generator.
             

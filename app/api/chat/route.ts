@@ -105,9 +105,10 @@ DESIGN RULES:
 2. PEOPLE: ALWAYS include high-quality, "super beautiful" people who look successful and aspirational. 
 3. ETHNICITY: Match the ethnicity of the people to the context of the Business Name (${businessName}) and Location. If the business is regional, use the appropriate local ethnicity.
 4. BRAND ENCAPSULATION: Professionally integrate the product details into the scene. It should feel like a premium, state-of-the-art brand advertisement.
-5. NO NONSENSE: Ensure perfectly clean anatomy, correct text rendering where applicable, and NO nonsensical artifacts or "AI hallucinations".
+5. NO NONSENSE: Ensure perfectly clean anatomy and NO nonsensical artifacts or "AI hallucinations".
 6. HOOK & HIERARCHY: Use a clear visual hook that immediately draws the eye to the most important element of the offer.
-7. BRAND INTEGRATION: Include the provided BUSINESS LOGO and the CONTACT NUMBER (${contactNumber || ''}) with premium, high-end typography and placement.
+7. TYPOGRAPHY & TEXT DENSITY: Use minimal, high-impact text. Do NOT clutter the image with long sentences. Include ONLY the Business Name and the most important "Hook" or "Offer". Ensure all text is large, bold, and easily readable on a small mobile screen. Avoid tiny fine print.
+8. BRAND INTEGRATION: Include the provided BUSINESS LOGO and the CONTACT NUMBER (${contactNumber || ''}) with premium, high-end typography and placement.
 
 USER INSTRUCTIONS: ${userInstructions || 'None'}
 ASPECT RATIO: ${aspectRatio}`;

@@ -77,8 +77,9 @@ DESIGN RULES:
 1. PREMIUM AESTHETIC: High-quality photography, sophisticated lighting, and clean visual hierarchy.
 2. PEOPLE: ALWAYS include "super beautiful", high-end people that match the ethnicity of the business context (${businessName}).
 3. BRAND ENCAPSULATION: Professionally integrate product info. It must look like a premium advertisement.
-4. NO NONSENSE: Perfectly clean anatomy, legible text, and zero AI artifacts.
-5. HOOK: Bold, attention-grabbing visual hook.
+4. NO NONSENSE: Perfectly clean anatomy and zero AI artifacts.
+5. TYPOGRAPHY & TEXT DENSITY: Use minimal, high-impact text. Do NOT clutter the image with long sentences. Include ONLY the Business Name and a single bold "Offer". Ensure all text is large and readable on mobile.
+6. HOOK: Bold, attention-grabbing visual hook.
 `;
                 
                 if (contactNumber) finalImagePrompt += ` Display contact: ${contactNumber}.`;

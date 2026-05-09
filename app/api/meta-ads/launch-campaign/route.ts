@@ -103,6 +103,40 @@ export async function POST(request: Request) {
 
     logToFile("=== STARTING AI CAMPAIGN LAUNCH (MULTI-CREATIVE) ===");
 
+    // --- PRE-FLIGHT: CHECK AD ACCOUNT STATUS ---
+    try {
+        logToFile("--- 0. CHECKING AD ACCOUNT STATUS ---");
+        const accCheckRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}?fields=account_status,disable_reason,balance,currency`, {
+            headers: { 'Authorization': `Bearer ${facebookToken}` }
+        });
+        const accStatus = await accCheckRes.json();
+        
+        if (accStatus.error) {
+            logToFile("Ad Account Check Failed:", accStatus.error);
+        } else {
+            logToFile("Ad Account Status:", accStatus);
+            // account_status 1 = ACTIVE, 2 = DISABLED, 3 = UNSETTLED, 7 = PENDING_RISK_REVIEW, 8 = PENDING_SETTLEMENT
+            if (accStatus.account_status !== 1) {
+                const reasons: Record<number, string> = {
+                    2: "DISABLED (Check Meta Ads Manager for policy violations)",
+                    3: "UNSETTLED (There is an outstanding balance to be paid)",
+                    7: "PENDING_RISK_REVIEW (Meta is reviewing your account security)",
+                    8: "PENDING_SETTLEMENT (Waiting for last payment to clear)",
+                    101: "PENDING_CLOSURE",
+                    102: "CLOSED"
+                };
+                const reasonStr = reasons[accStatus.account_status as number] || `Status Code: ${accStatus.account_status}`;
+                logToFile(`⚠️ Ad Account is not Active: ${reasonStr}`);
+                
+                if (accStatus.account_status === 3) {
+                    logToFile("💡 Suggestion: Pay the outstanding balance in Meta Ads Manager.");
+                }
+            }
+        }
+    } catch (e) {
+        logToFile("Ad Account Pre-flight Error:", e);
+    }
+
     try {
         // --- Step A: Get Source Data & Context ---
         let combinedContext = "";
@@ -158,9 +192,31 @@ export async function POST(request: Request) {
             try {
                 const parsedQuestions = JSON.parse(customQuestionsStr);
                 metaCustomQuestions = parsedQuestions.map((q: any) => {
+                    const label = q.label.trim();
+                    const lowerLabel = label.toLowerCase();
+                    
+                    // NEW: Smart mapping to avoid SAQ (Short Answer Question) PII violations
+                    // Meta forbids custom short-answer questions for PII (like Company Name, City, etc.)
+                    // We map these to official pre-fill types if they look like standard info.
+                    
+                    if (q.type !== 'MULTIPLE_CHOICE') {
+                        if (lowerLabel.includes('company') || lowerLabel.includes('business name')) {
+                            return { type: 'COMPANY_NAME', key: 'company_name' };
+                        }
+                        if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) {
+                            return { type: 'JOB_TITLE', key: 'job_title' };
+                        }
+                        if (lowerLabel.includes('city')) {
+                            return { type: 'CITY', key: 'city' };
+                        }
+                        if (lowerLabel.includes('state')) {
+                            return { type: 'STATE', key: 'state' };
+                        }
+                    }
+
                     const metaQ: any = { 
                         type: 'CUSTOM', 
-                        label: q.label.substring(0, 200) 
+                        label: label.substring(0, 200) 
                     };
                     
                     if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
@@ -177,6 +233,16 @@ export async function POST(request: Request) {
                     }
                     return metaQ;
                 });
+
+                // Deduplicate questions (don't add COMPANY_NAME twice if it's already there)
+                const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
+                metaCustomQuestions = metaCustomQuestions.filter(q => {
+                    if (q.type === 'CUSTOM') return true;
+                    if (seenTypes.has(q.type)) return false;
+                    seenTypes.add(q.type);
+                    return true;
+                });
+
             } catch (e) {
                 logToFile("Failed to parse custom questions", e);
             }
@@ -243,8 +309,8 @@ export async function POST(request: Request) {
         } 
         
         if (initialImageUrls.length > 0) {
-            // Deduplicate URLs and limit to prevent overload
-            const uniqueUrls = Array.from(new Set(initialImageUrls)).slice(0, 5);
+            // Deduplicate URLs
+            const uniqueUrls = Array.from(new Set(initialImageUrls));
             for (const url of uniqueUrls) {
                 const imageFetch = await fetch(url);
                 if (!imageFetch.ok) continue; 
@@ -275,18 +341,42 @@ export async function POST(request: Request) {
         }
         logToFile(`✅ Uploaded ${metaCreativeHashes.length} creatives to Meta.`);
 
-        // --- Step D: AI Copywriting (Gemini 3 Flash via Kie.ai) ---
+        // --- Step D: AI Copywriting (Batch Processing) ---
+        logToFile("--- 4. AI COPYWRITING (BATCHING) ---");
+        
         // Prepare Vision Inputs (Multimodal)
         const visionInputs: string[] = [];
         
-        // Add public URLs from inventory/assets
+        // Add public URLs from inventory/assets (Converted to Base64 for reliability)
         if (inventoryIds.length > 0) {
              const { data: props } = await supabase.from('properties').select('image_url').in('id', inventoryIds);
-             props?.forEach(p => { if (p.image_url) visionInputs.push(p.image_url); });
+             for (const p of (props || [])) {
+                 if (p.image_url) {
+                    try {
+                        const res = await fetch(p.image_url);
+                        const buf = await res.arrayBuffer();
+                        const mime = res.headers.get('content-type') || 'image/png';
+                        visionInputs.push(`data:${mime};base64,${Buffer.from(buf).toString('base64')}`);
+                    } catch (e) {
+                        logToFile("Failed to convert inventory image to base64:", p.image_url);
+                    }
+                 }
+             }
         }
         if (assetIds.length > 0) {
              const { data: asts } = await supabase.from('assets').select('url').in('id', assetIds);
-             asts?.forEach(a => { if (a.url) visionInputs.push(a.url); });
+             for (const a of (asts || [])) {
+                 if (a.url) {
+                    try {
+                        const res = await fetch(a.url);
+                        const buf = await res.arrayBuffer();
+                        const mime = res.headers.get('content-type') || 'image/png';
+                        visionInputs.push(`data:${mime};base64,${Buffer.from(buf).toString('base64')}`);
+                    } catch (e) {
+                        logToFile("Failed to convert asset image to base64:", a.url);
+                    }
+                 }
+             }
         }
         // Add Local files as Base64
         for (const file of creativeFiles) {
@@ -296,62 +386,69 @@ export async function POST(request: Request) {
 
         const businessName = data.business_name || "Our Business";
         const contactInfo = data.contact_number || "";
+        
+        let allCopyVariations: any[] = [];
+        const BATCH_SIZE = 10;
+        const totalToGenerate = metaCreativeHashes.length;
 
-        const llmPrompt = `
-        Act as a Senior Ad Creative Director at a top-tier global agency. Craft exactly ${metaCreativeHashes.length} distinct, highly persuasive ad copy variations—one for each of the ${metaCreativeHashes.length} creatives provided.
-        
-        Business Context:
-        Name: ${businessName}
-        Contact: ${contactInfo}
-        Mission/Details: ${combinedContext || "Quality services and products."}
-        Target Location: "Multiple Selected Locations".
-        
-        CRITICAL RULES:
-        1. STRATEGY: Use professional, high-end agency standards. Focus on elite "Visual DNA" evolution—use the context from the images to write copy that feels like it was born from those visuals.
-        2. MANDATORY: YOU MUST ALWAYS INCLUDE THE BUSINESS NAME (${businessName}) AND CONTACT INFORMATION (${contactInfo}) IN EVERY SINGLE VARIATION. If you miss this, the ad will fail.
-        3. DO NOT include any website URLs, links, or domain names in the primary text or headline.
-        4. NO HASHTAGS (#): Do not use any hashtags in the copy.
-        5. MODERATE LENGTH: Keep the primary text moderate (max 400 characters). Avoid long, exhausting paragraphs.
-        6. KEYWORDS: At the very end of each primary_text, add 5-6 relevant keywords in brackets, e.g., [Keyword1, Keyword2, Keyword3...]
-        7. FORMATTING: Use a clean, structured layout with bullet points, short punchy sentences, and relevant emojis (e.g., ✅, 🚀, 💎). 
-        8. SUBJECTS: Ensure the tone is aspirational and premium. If the images contain people, align the copy with their demographic and business context.
-        9. OUTPUT FORMAT: Return ONLY a valid JSON array of objects. No conversational text, no markdown code blocks, no bold markers (**), no explanation.
-        
-        JSON Structure:
-        [
-          {"primary_text": "Premium agency-grade copy with bullet points, emojis, business name, and phone.", "headline": "Short punchy hook (max 40 chars)"}
-        ]
-        (Generate exactly ${metaCreativeHashes.length} objects in the array)
-        `;
-        
-        let copyVariations = [
+        for (let batchStart = 0; batchStart < totalToGenerate; batchStart += BATCH_SIZE) {
+            const batchEnd = Math.min(batchStart + BATCH_SIZE, totalToGenerate);
+            const batchImages = visionInputs.slice(batchStart, batchEnd);
+            const batchCount = batchEnd - batchStart;
+
+            const batchPrompt = `
+            Act as a Senior Ad Creative Director. Craft exactly ${batchCount} distinct, highly persuasive ad copy variations for the ${batchCount} images provided in this batch.
+            
+            Business Context:
+            Name: ${businessName}
+            Contact: ${contactInfo}
+            Mission: ${combinedContext || "Quality services and products."}
+            
+            CRITICAL RULES:
+            1. MANDATORY: INCLUDE BUSINESS NAME (${businessName}) AND CONTACT (${contactInfo}) IN EVERY VARIATION.
+            2. DO NOT include URLs or hashtags.
+            3. LENGTH: Moderate (max 400 chars).
+            4. FORMAT: Return ONLY a valid JSON array of objects.
+            
+            JSON Structure:
+            [
+              {"primary_text": "...", "headline": "..."}
+            ]
+            (Generate exactly ${batchCount} objects)
+            `;
+
+            try {
+                logToFile(`--- Batch ${batchStart / BATCH_SIZE + 1} Input ---`, { count: batchCount, images: batchImages.length });
+                const aiRaw = await callGemini(batchPrompt, batchImages);
+                
+                const cleanedText = aiRaw
+                    .replace(/```json\s*/g, '')
+                    .replace(/\s*```/g, '')
+                    .replace(/\*\*/g, '');
+
+                const jsonMatch = cleanedText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+                const cleanedJson = jsonMatch ? jsonMatch[0] : cleanedText.trim();
+                
+                const parsed = JSON.parse(cleanedJson);
+                if (Array.isArray(parsed)) {
+                    allCopyVariations = [...allCopyVariations, ...parsed];
+                    logToFile(`✅ Batch ${batchStart / BATCH_SIZE + 1} Done: ${parsed.length} variations.`);
+                }
+            } catch (e: any) {
+                logToFile(`❌ Batch ${batchStart / BATCH_SIZE + 1} Failed:`, e.message || e);
+                // Fallback for this batch
+                for (let k = 0; k < batchCount; k++) {
+                    allCopyVariations.push({ 
+                        primary_text: "Exclusive Property Deal. Contact us for details.", 
+                        headline: "Limited Time Offer" 
+                    });
+                }
+            }
+        }
+
+        const copyVariations = allCopyVariations.length > 0 ? allCopyVariations : [
             { primary_text: "Exclusive Property Deal. View pricing & details now.", headline: "View Details" }
         ];
-
-        try {
-            logToFile("--- 4a. AI COPYWRITING INPUT ---", { promptLength: llmPrompt.length, visionImages: visionInputs.length });
-            logToFile("--- 4b. AI PROMPT ---", llmPrompt);
-
-            const aiRaw = await callGemini(llmPrompt, visionInputs);
-            logToFile("--- 4c. AI RAW RESPONSE ---", aiRaw);
-
-            // Robust JSON extraction & cleanup
-            const cleanedText = aiRaw
-                .replace(/```json\s*/g, '')
-                .replace(/\s*```/g, '')
-                .replace(/\*\*/g, ''); // Remove bold markers
-
-            const jsonMatch = cleanedText.match(/\[\s*\{[\s\S]*\}\s*\]/);
-            const cleanedJson = jsonMatch ? jsonMatch[0] : cleanedText.trim();
-            
-            const parsed = JSON.parse(cleanedJson);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-                copyVariations = parsed;
-                logToFile(`✅ Generated ${copyVariations.length} AI Copy Variations (Official Gemini Vision).`, copyVariations);
-            }
-        } catch (e: any) {
-            logToFile("AI Generation Failed (Official Gemini), using default copy.", e.message || e);
-        }
 
         // --- Step E: Campaign ---
         logToFile("--- 5. CAMPAIGN ---");
@@ -359,7 +456,7 @@ export async function POST(request: Request) {
         const campaignPayload = {
             name: `AI Leads - Multi-Creative - ${new Date().toISOString().slice(0, 10)} - ${campaignNameSuffix}`,
             objective: 'OUTCOME_LEADS', 
-            status: 'PAUSED', 
+            status: 'ACTIVE', 
             buying_type: 'AUCTION',
             daily_budget: Math.round(dailyBudgetINR * 100), // Fixed: Multiplied by 100 as Meta expects budget in Paise/Cents. 500 becomes 50,000 (500 INR).
             bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
@@ -431,7 +528,7 @@ export async function POST(request: Request) {
             targeting: targetingConfig,
             promoted_object: { page_id: pageId },
             start_time: startTime, 
-            status: 'PAUSED',
+            status: 'ACTIVE',
             access_token: facebookToken,
         };
 
@@ -495,7 +592,7 @@ export async function POST(request: Request) {
                 name: `AI Ad Variation ${i + 1}`,
                 adset_id: adSetId,
                 creative: { creative_id: creativeData.id },
-                status: 'PAUSED', 
+                status: 'ACTIVE', 
                 access_token: facebookToken,
             };
 

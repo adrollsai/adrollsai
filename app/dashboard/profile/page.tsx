@@ -255,6 +255,7 @@ export default function ProfilePage() {
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
   const [isConnectingFb, setIsConnectingFb] = useState(false) // Added connection loading state
+  const [isTestingPayment, setIsTestingPayment] = useState(false)
 
   // Connections
   const [isFacebookConnected, setIsFacebookConnected] = useState(false)
@@ -302,6 +303,27 @@ export default function ProfilePage() {
     if (cached) {
       const parsed = JSON.parse(cached);
       localStorage.setItem(cacheKey, JSON.stringify({ ...parsed, ...updates }));
+    }
+  }
+
+  const handleTestPayment = async () => {
+    setIsTestingPayment(true)
+    try {
+      const res = await fetch('/api/payment/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: 'Early Bird Plan' })
+      })
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        throw new Error(data.error || 'Failed to initiate test payment')
+      }
+    } catch (err: any) {
+      toast.error("Test Payment Error", { description: err.message })
+    } finally {
+      setIsTestingPayment(false)
     }
   }
 
@@ -987,6 +1009,24 @@ export default function ProfilePage() {
                     <span className="bg-blue-50 text-blue-600 text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-wider">Early Bird</span>
                     <ChevronRight size={20} className="text-slate-400" />
                   </div>
+                </button>
+
+                {/* TEST PAYMENT BUTTON */}
+                <button 
+                  onClick={handleTestPayment} 
+                  disabled={isTestingPayment}
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-amber-50 transition-colors border-b border-slate-100 group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-amber-100 text-amber-600 p-3 rounded-2xl group-hover:scale-110 transition-all">
+                      {isTestingPayment ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />}
+                    </div>
+                    <div className="text-left">
+                      <span className="font-bold text-sm text-slate-900 block">Test ₹5 Subscription</span>
+                      <span className="text-[10px] text-amber-600 font-bold uppercase tracking-tight">Recurring Autopay Test</span>
+                    </div>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400" />
                 </button>
 
                 <button onClick={() => router.push('/dashboard/team')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
