@@ -11,53 +11,52 @@ export async function POST(req: Request) {
 
         const { planId } = await req.json();
         
-        // For testing, we use Rs. 5 (500 paise). In production, this would be the plan price.
-        const TEST_AMOUNT = 500; 
+        // For testing, we use Rs. 10 (1000 paise).
+        const TEST_AMOUNT = 1000; 
         
-        const safeUserId = user.id.replace(/-/g, '');
-        const transactionId = `SUB-TXN-${safeUserId.substring(0,6)}-${Date.now()}`;
-        const subscriptionId = `SUB-${safeUserId.substring(0,6)}-${Date.now()}`;
+        // Use a much simpler transaction ID format
+        const transactionId = `T${Date.now().toString().slice(-8)}`;
 
         const currentOrigin = req.headers.get('origin') || 
                               req.headers.get('referer')?.split('/').slice(0,3).join('/') || 
                               (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/['"]/g, '').trim();
 
-        // --- PHONEPE STANDARD CHECKOUT SUBSCRIPTION SETUP (CORRECT DOUBLE NESTING) ---
-        const payload = {
+        // --- PHONEPE CLEAN ENTERPRISE SPEC ---
+        const oneTimePayload = {
             merchantOrderId: transactionId,
-            amount: TEST_AMOUNT, 
-            
+            amount: TEST_AMOUNT,
             paymentFlow: {
-                type: "SUBSCRIPTION_CHECKOUT_SETUP",
+                type: "PG_CHECKOUT",
                 merchantUrls: {
-                    redirectUrl: `${currentOrigin}/api/payment/redirect?planId=${planId}&userId=${user.id}&subscriptionId=${subscriptionId}`,
-                    redirectMode: "POST",
+                    redirectUrl: "https://www.google.com", 
+                    redirectMode: "GET",
                     callbackUrl: process.env.PHONEPE_CALLBACK_URL
-                },
-                subscriptionDetails: {
-                    subscriptionType: "RECURRING",
-                    merchantSubscriptionId: subscriptionId,
-                    authWorkflowType: "TRANSACTION", 
-                    amountType: "FIXED",
-                    maxAmount: TEST_AMOUNT, // Required for setup
-                    frequency: "MONTHLY",
-                    productType: "UPI_MANDATE", // Standard for V2 Autopay
-                    expireAt: Math.floor((Date.now() + (5 * 365 * 24 * 60 * 60 * 1000))), // 5 years
                 }
             }
         };
 
-        const data = await setupSubscription(payload, "/checkout/v2/pay");
+        console.log("Attempting PhonePe One-time Payment Setup...");
+        const data = await setupSubscription(oneTimePayload, "/checkout/v2/pay");
 
-        if (data.success && data.data?.instrumentResponse?.redirectInfo?.url) {
-            return NextResponse.json({ url: data.data.instrumentResponse.redirectInfo.url });
+        const redirectUrl = data.redirectUrl || data.data?.instrumentResponse?.redirectInfo?.url;
+
+        if (data.success && redirectUrl) {
+            return NextResponse.json({ url: redirectUrl });
         } else {
-            console.error("PhonePe Subscription Setup Error:", data);
-            throw new Error(data.message || "Subscription setup failed.");
+            console.error("PhonePe Initiation Error Final:", JSON.stringify(data, null, 2));
+            return NextResponse.json({ 
+                error: data.message || "Payment initiation failed.",
+                details: data 
+            }, { status: 400 });
         }
 
     } catch (error: any) {
         console.error("Payment Initiation Error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ 
+            error: error.message,
+            hint: error.message?.includes("Subscription not enabled") 
+                ? "Contact PhonePe to enable Autopay/Subscriptions for your MID." 
+                : "Check the 'details' field in this response or server logs for the full PhonePe error payload."
+        }, { status: 500 });
     }
 }

@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/jszip": "^3.4.0",
     "@types/node": "^20.19.27",
     "@types/nodemailer": "^7.0.4",
     "@types/react": "^19",

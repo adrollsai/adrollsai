@@ -61,15 +61,21 @@ export async function setupSubscription(payload: any, customPath?: string) {
     const path = customPath || "/subscriptions/v2/setup";
     const url = `${BASE_URL}${path}`;
 
-    const headers = {
+    const headers: any = {
         'Authorization': `O-Bearer ${token}`,
         'Content-Type': 'application/json',
         'accept': 'application/json',
         'X-MERCHANT-ID': MERCHANT_ID
     };
 
+    // --- V2 ENTERPRISE: Dynamic Callback URL via Header ---
+    if (payload.paymentFlow?.merchantUrls?.callbackUrl) {
+        headers['X-CALLBACK-URL'] = payload.paymentFlow.merchantUrls.callbackUrl;
+    }
+
     console.log("--- PhonePe Setup Request ---");
     console.log("URL:", url);
+    console.log("Method: POST");
     console.log("Headers:", JSON.stringify({ ...headers, 'Authorization': 'O-Bearer [MASKED]' }, null, 2));
     console.log("Payload:", JSON.stringify(payload, null, 2));
 
@@ -80,10 +86,20 @@ export async function setupSubscription(payload: any, customPath?: string) {
     });
 
     const data = await response.json();
-    if (!response.ok || !data.success) {
-        console.error("PhonePe Subscription Setup Error:", JSON.stringify(data, null, 2));
+    
+    console.log("--- PhonePe Setup Response ---");
+    console.log("Status:", response.status);
+    console.log("Body:", JSON.stringify(data, null, 2));
+
+    // V2 Enterprise API might not have data.success, it uses HTTP status
+    const isActuallySuccessful = response.ok && (data.success || data.redirectUrl || data.state === 'PENDING');
+
+    if (!isActuallySuccessful) {
+        console.error("PhonePe Subscription Setup Error Logged.");
+        return { ...data, success: false };
     }
-    return data;
+    
+    return { ...data, success: true };
 }
 
 /**

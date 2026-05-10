@@ -353,9 +353,17 @@ export async function createKieImageTask(prompt: string, model: string = "flux2/
     const response = await fetchWithRetry(KIE_CREATE_TASK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${KIE_API_KEY}` },
-        body: JSON.stringify({ model: model, prompt: prompt })
+        body: JSON.stringify({ 
+            model: model, 
+            input: { 
+                prompt: prompt,
+                aspect_ratio: "1:1",
+                resolution: "1K"
+            } 
+        })
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.msg || data.error || "Image task failed");
+    if (!data.data?.taskId) throw new Error("Kie AI response missing taskId");
     return data.data.taskId;
 }

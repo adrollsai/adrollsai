@@ -15,11 +15,9 @@ const pwa = withPWA({
 });
 
 const nextConfig: NextConfig = {
-  // MOVED: This is now a top-level option in Next.js 16+
   serverExternalPackages: ['@supabase/supabase-js'],
-  
-  experimental: {
-    // Empty for now
+  serverActions: {
+    bodySizeLimit: "50mb",
   },
 };
 

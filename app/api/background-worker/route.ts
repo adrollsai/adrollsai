@@ -113,14 +113,18 @@ export async function POST(req: Request) {
                     break;
                 }
             } else if (status === 'failed' || status === 'error') {
-                console.error("[Worker] Generation Failed:", checkData.failMsg || checkData.error);
+                const failReason = checkData.failMsg || checkData.error || checkData.msg || "Unknown Kie.ai Error";
+                console.error(`[Worker] Generation Failed for taskId ${taskId}:`, failReason);
                 
                 // REFUND: Task failed on Kie AI's side (e.g. content policy or server error)
                 await refundLimit(userId, 'ai_creatives');
 
                 // Update placeholder to Failed so user knows it won't finish
                 if (placeholder?.id) {
-                    await supabaseAdmin.from('assets').update({ status: 'Failed' }).eq('id', placeholder.id);
+                    await supabaseAdmin.from('assets').update({ 
+                        status: 'Failed',
+                        caption: `Error: ${failReason}` 
+                    }).eq('id', placeholder.id);
                 }
                 break;
             }
