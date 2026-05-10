@@ -44,7 +44,7 @@ export async function POST(request: Request) {
           // Find the User based on the Page ID using Admin Client
           const { data: profile, error: profileErr } = await supabaseAdmin
             .from('profiles')
-            .select('id, selected_page_token, facebook_pixel_id')
+            .select('id, selected_page_token, pixel_id')
             .eq('selected_page_id', page_id)
             .single()
 
