@@ -100,9 +100,10 @@ export async function postToFacebook(accessToken: string, imageUrl: string, capt
 }
 
 /**
- * 3. Instagram Posting 
+ * 3. Instagram Posting (Upgraded with Polling & Video Support)
  */
-export async function postToInstagram(accessToken: string, pageId: string, imageUrl: string, caption: string): Promise<any> {
+export async function postToInstagram(accessToken: string, pageId: string, mediaUrl: string, caption: string): Promise<any> {
+    // 1. Get IG Account ID
     const igAccountRes = await fetch(`${FACEBOOK_GRAPH_URL}/${pageId}?fields=instagram_business_account&access_token=${accessToken}`);
     const igAccountData = await igAccountRes.json();
     if (igAccountData.error || !igAccountData.instagram_business_account?.id) {
@@ -110,14 +111,25 @@ export async function postToInstagram(accessToken: string, pageId: string, image
     }
     const igAccountId = igAccountData.instagram_business_account.id;
 
+    // 2. Detect Media Type (Video vs Image)
+    const isVideo = mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/) || mediaUrl.includes('video');
+    const mediaPayload: any = {
+        caption: caption,
+        access_token: accessToken,
+    };
+
+    if (isVideo) {
+        mediaPayload.video_url = mediaUrl;
+        mediaPayload.media_type = 'VIDEO';
+    } else {
+        mediaPayload.image_url = mediaUrl;
+    }
+
+    // 3. Create Media Container
     const containerRes = await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            image_url: imageUrl,
-            caption: caption,
-            access_token: accessToken,
-        }),
+        body: JSON.stringify(mediaPayload),
     });
     const containerData = await containerRes.json();
     if (containerData.error || !containerData.id) {
@@ -125,6 +137,27 @@ export async function postToInstagram(accessToken: string, pageId: string, image
     }
     const creationId = containerData.id;
 
+    // 4. POLL STATUS (Crucial for Videos and High-Res Images)
+    // We wait up to 60 seconds for processing to finish
+    let status = 'IN_PROGRESS';
+    let attempts = 0;
+    while (status !== 'FINISHED' && attempts < 12) {
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5s
+        const statusRes = await fetch(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code&access_token=${accessToken}`);
+        const statusData = await statusRes.json();
+        status = statusData.status_code;
+        
+        if (status === 'ERROR') {
+            throw new Error(`Instagram processing failed: ${statusData.status_description || 'Unknown Meta processing error'}`);
+        }
+        attempts++;
+    }
+
+    if (status !== 'FINISHED') {
+        throw new Error("Instagram media processing timed out. Please try again in a few minutes.");
+    }
+
+    // 5. Publish Container
     const publishRes = await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
