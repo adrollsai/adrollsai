@@ -9,12 +9,16 @@ export async function GET(request: Request) {
   const token = searchParams.get('hub.verify_token')
   const challenge = searchParams.get('hub.challenge')
 
+  console.log(`🔗 WEBHOOK VERIFY ATTEMPT: mode=${mode}, token=${token}`)
+
   const VERIFY_TOKEN = process.env.FACEBOOK_WEBHOOK_VERIFY_TOKEN || 'adrolls_secure_webhook_token'
 
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-    return new NextResponse(challenge, { status: 200 })
+    console.log("✅ WEBHOOK VERIFIED")
+    return new Response(challenge, { status: 200 })
   }
-  return new NextResponse('Forbidden', { status: 403 })
+  console.error("❌ WEBHOOK VERIFICATION FAILED: Token Mismatch")
+  return new Response('Forbidden', { status: 403 })
 }
 
 // Bypassing RLS with Admin Key because Webhooks lack user cookies
@@ -26,6 +30,7 @@ const supabaseAdmin = createClient(
 export async function POST(request: Request) {
   try {
     const body = await request.json()
+    console.log("📥 WEBHOOK RECEIVED:", JSON.stringify(body, null, 2))
 
     if (body.object !== 'page') return NextResponse.json({ success: true }, { status: 200 })
 
@@ -34,20 +39,34 @@ export async function POST(request: Request) {
         if (change.field === 'leadgen') {
           const leadData = change.value
           const { leadgen_id, page_id, ad_id } = leadData
+          console.log(`🔍 Processing Lead: ${leadgen_id} for Page: ${page_id}`)
 
           // Find the User based on the Page ID using Admin Client
-          const { data: profile } = await supabaseAdmin
+          const { data: profile, error: profileErr } = await supabaseAdmin
             .from('profiles')
             .select('id, selected_page_token, facebook_pixel_id')
             .eq('selected_page_id', page_id)
             .single()
 
-          if (!profile || !profile.selected_page_token) continue;
+          if (profileErr || !profile) {
+            console.error(`❌ No profile found for Page ID: ${page_id}. Error:`, profileErr)
+            continue;
+          }
+
+          if (!profile.selected_page_token) {
+            console.error(`❌ Profile found but NO Page Token for Page ID: ${page_id}`)
+            continue;
+          }
 
           // Fetch the actual Lead Details (Name, Email, Phone, Created Time, Form ID)
-          const fbResponse = await fetch(`https://graph.facebook.com/v19.0/${leadgen_id}?fields=id,created_time,field_data,form_id&access_token=${profile.selected_page_token}`)
+          const fbUrl = `https://graph.facebook.com/v19.0/${leadgen_id}?fields=id,created_time,field_data,form_id&access_token=${profile.selected_page_token}`
+          const fbResponse = await fetch(fbUrl)
           const fbLead = await fbResponse.json()
-          if (fbLead.error) continue;
+          
+          if (fbLead.error) {
+            console.error(`❌ Meta Lead Fetch Failed:`, fbLead.error)
+            continue;
+          }
 
           let name = 'Unknown', phone = '', email = ''
           const customFields: Record<string, any> = {}
