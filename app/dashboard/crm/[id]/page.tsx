@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
-const STAGES = ['New', 'Qualified', 'Site Visit Done', 'Closed']
+const STAGES = ['New', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
 
 export default function LeadProfilePage() {
   const { id } = useParams()

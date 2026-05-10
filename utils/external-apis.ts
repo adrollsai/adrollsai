@@ -263,14 +263,23 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
                         const customFields: Record<string, any> = {}
                         let name = 'Unknown', email = '', phone = ''
 
+                        let firstName = '', lastName = ''
                         l.field_data?.forEach((field: any) => {
+                            if (!field.name || !field.values || field.values.length === 0) return;
+                            
                             const fn = field.name.toLowerCase()
                             const fv = field.values[0]
                             if (fn === 'full_name' || fn === 'name') name = fv
+                            else if (fn === 'first_name') firstName = fv
+                            else if (fn === 'last_name') lastName = fv
                             else if (fn === 'email') email = fv
                             else if (fn === 'phone_number' || fn === 'phone' || fn === 'mobile_number') phone = fv
                             else customFields[field.name] = fv
                         })
+
+                        if (name === 'Unknown' && (firstName || lastName)) {
+                            name = `${firstName} ${lastName}`.trim()
+                        }
 
                         const sourceTag = l.ad_name ? `${l.ad_name} | ${form.name}` : form.name;
                         return {
@@ -300,7 +309,19 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
 /**
  * 8. Send Facebook CAPI Event
  */
-export async function sendCAPIEvent(accessToken: string, pixelId: string, eventName: string, userData: { email?: string, phone?: string }, value?: number) {
+export async function sendCAPIEvent(
+    accessToken: string, 
+    pixelId: string, 
+    eventName: string, 
+    userData: { 
+        email?: string, 
+        phone?: string,
+        firstName?: string,
+        lastName?: string,
+        externalId?: string
+    }, 
+    value?: number
+) {
     if (!pixelId) return;
     const hashData = (data: string) => crypto.createHash('sha256').update(data.trim().toLowerCase()).digest('hex');
 
@@ -308,9 +329,13 @@ export async function sendCAPIEvent(accessToken: string, pixelId: string, eventN
         data: [{
             event_name: eventName,
             event_time: Math.floor(Date.now() / 1000),
+            action_source: 'system_generated',
             user_data: {
                 em: userData.email ? [hashData(userData.email)] : [],
                 ph: userData.phone ? [hashData(userData.phone)] : [],
+                fn: userData.firstName ? [hashData(userData.firstName)] : [],
+                ln: userData.lastName ? [hashData(userData.lastName)] : [],
+                external_id: userData.externalId ? [hashData(userData.externalId)] : [],
             },
             custom_data: {
                 currency: 'INR',

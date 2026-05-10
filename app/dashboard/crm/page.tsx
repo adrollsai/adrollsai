@@ -10,7 +10,7 @@ import {
 import { createClient } from '@/utils/supabase/client'
 import TestNotificationBtn from '@/components/TestNotificationBtn'
 
-const STAGES = ['New', 'Qualified', 'Site Visit Done', 'Closed']
+const STAGES = ['New', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
 
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -85,7 +85,10 @@ export default function CRMPage() {
           setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
       }
 
-      let query = supabase.from('leads').select('*, lead_history(action_type, description, created_at)').order('created_at', { ascending: false })
+      let query = supabase.from('leads')
+        .select('*, lead_history(action_type, description, created_at)')
+        .order('facebook_created_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
       if (currentRole === 'admin') {
           query = query.eq('user_id', user.id) 
       } else {
@@ -382,7 +385,7 @@ export default function CRMPage() {
                 </div>
             )}
 
-            <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-hide pt-1">
+            <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-hide pt-1 sm:overflow-x-visible sm:flex-wrap">
                 {STAGES.map(stage => (
                     <button 
                         key={stage} 

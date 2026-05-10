@@ -27,23 +27,35 @@ export async function POST(request: Request) {
     // 2. Trigger CAPI if stage warrants it
     const { data: profile } = await supabase
         .from('profiles')
-        .select('facebook_token, pixel_id')
+        .select('selected_page_token, facebook_pixel_id')
         .eq('id', user.id)
         .single()
 
-    if (profile?.facebook_token && profile?.pixel_id) {
+    if (profile?.selected_page_token && profile?.facebook_pixel_id) {
         let eventName = '';
-        if (newStage === 'Site Visit Done') eventName = 'Schedule';
         if (newStage === 'Qualified') eventName = 'Lead';
+        if (newStage === 'Appointment booked') eventName = 'Schedule';
+        if (newStage === 'Appointment done') eventName = 'Other';
         if (newStage === 'Closed') eventName = 'Purchase';
 
         if (eventName) {
+            // Split name if possible
+            const nameParts = (lead.name || '').split(' ');
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts.slice(1).join(' ') || '';
+
             await sendCAPIEvent(
-                profile.facebook_token, 
-                profile.pixel_id, 
+                profile.selected_page_token, 
+                profile.facebook_pixel_id, 
                 eventName, 
-                { email: lead.email, phone: lead.phone },
-                newStage === 'Closed' ? 10000 : 0 // Arbitrary value for purchase
+                { 
+                    email: lead.email, 
+                    phone: lead.phone,
+                    firstName,
+                    lastName,
+                    externalId: lead.id
+                },
+                newStage === 'Closed' ? 50000 : 0 // Assigning a default value for Closed leads
             );
         }
     }

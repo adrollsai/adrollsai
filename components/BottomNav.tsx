@@ -89,7 +89,7 @@ export default function BottomNav() {
       
       <div className="bg-white/90 backdrop-blur-xl border-t sm:border border-slate-200/60 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] sm:shadow-2xl w-full sm:w-auto sm:rounded-[2.5rem] px-2 sm:px-6 py-2 sm:py-3 pointer-events-auto transition-all">
         
-        <div className="flex items-center justify-center gap-1 sm:gap-2 overflow-x-auto scrollbar-hide pb-4 sm:pb-0 px-2 sm:px-0">
+        <div className="flex items-center justify-start sm:justify-center gap-1 sm:gap-2 overflow-x-auto scrollbar-hide pb-4 sm:pb-0 px-4 sm:px-0">
           
           {navItems.map((item) => {
             const isActive = item.path === '/dashboard' 

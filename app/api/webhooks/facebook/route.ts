@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
+import { sendCAPIEvent } from '@/utils/external-apis'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
           // Find the User based on the Page ID using Admin Client
           const { data: profile } = await supabaseAdmin
             .from('profiles')
-            .select('id, selected_page_token')
+            .select('id, selected_page_token, facebook_pixel_id')
             .eq('selected_page_id', page_id)
             .single()
 
@@ -50,19 +51,26 @@ export async function POST(request: Request) {
 
           let name = 'Unknown', phone = '', email = ''
           const customFields: Record<string, any> = {}
-          
+          let firstName = '', lastName = ''
           fbLead.field_data?.forEach((field: any) => {
+            if (!field.name || !field.values || field.values.length === 0) return;
+            
             const fieldName = field.name.toLowerCase()
             const fieldValue = field.values[0]
 
             if (fieldName === 'full_name' || fieldName === 'name') name = fieldValue
+            else if (fieldName === 'first_name') firstName = fieldValue
+            else if (fieldName === 'last_name') lastName = fieldValue
             else if (fieldName === 'email') email = fieldValue
             else if (fieldName === 'phone_number' || fieldName === 'phone' || fieldName === 'mobile_number') phone = fieldValue
             else {
-              // Store all other fields (custom qualification questions)
               customFields[field.name] = fieldValue
             }
           })
+
+          if (name === 'Unknown' && (firstName || lastName)) {
+            name = `${firstName} ${lastName}`.trim()
+          }
 
           // Fetch Form Name
           let formName = 'Facebook Lead Form'

@@ -33,8 +33,10 @@ export async function POST(request: Request) {
     console.log(`Retrieved ${leads.length} leads from Meta API`);
 
     let newCount = 0;
-    for (const lead of leads) {
-        const { error } = await supabase.from('leads').upsert({
+    // Batch Upsert for Performance (200 at a time)
+    const BATCH_SIZE = 200;
+    for (let i = 0; i < leads.length; i += BATCH_SIZE) {
+        const chunk = leads.slice(i, i + BATCH_SIZE).map(lead => ({
             user_id: user.id,
             name: lead.name,
             email: lead.email,
@@ -48,12 +50,17 @@ export async function POST(request: Request) {
             facebook_created_at: lead.facebook_created_at,
             status: 'New', 
             pipeline_stage: 'New'
-        }, { onConflict: 'facebook_lead_id' })
-        
+        }));
+
+        const { error } = await supabase.from('leads').upsert(chunk, { 
+            onConflict: 'facebook_lead_id',
+            ignoreDuplicates: false 
+        });
+
         if (error) {
-            console.error("Supabase upsert error:", error);
+            console.error(`Batch upsert error at index ${i}:`, error);
         } else {
-            newCount++;
+            newCount += chunk.length;
         }
     }
 
