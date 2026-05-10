@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon } from 'lucide-react'
+import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { toast } from 'sonner'
@@ -12,7 +12,7 @@ type Message = {
   role: 'user' | 'ai'
   text: string
   mediaUrl?: string
-  mediaType?: 'image'
+  mediaType?: 'image' | 'video'
   steps?: string[]
 }
 
@@ -97,6 +97,16 @@ export default function CreationPage() {
   const [uploadedRefUrl, setUploadedRefUrl] = useState<string | null>(null)
   const [isUploadingRef, setIsUploadingRef] = useState(false)
   const refFileInputRef = useRef<HTMLInputElement>(null)
+  
+  // NEW: Creation Mode Toggle
+  const [creationMode, setCreationMode] = useState<'image' | 'video'>('image')
+  
+  // NEW: Script Review State
+  const [scriptReview, setScriptReview] = useState<{
+    title: string;
+    scenes: { prompt: string; dialogue: string }[];
+    finalCaption: string;
+  } | null>(null);
   
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -303,9 +313,67 @@ export default function CreationPage() {
     
     setInput('')
     setIsThinking(true)
-    setCurrentStep('Initializing Design Engine...')
+    setCurrentStep(creationMode === 'image' ? 'Initializing Design Engine...' : 'Scripting Video Content...')
 
     try {
+        if (creationMode === 'video' && !scriptReview) {
+            // --- STEP 1: SCRIPTING ---
+            setCurrentStep('AI Creative Director is scripting your video...');
+            const scriptResponse = await fetch('/api/video/script', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    propertyId: selectedPropId,
+                    userInstructions: userText
+                })
+            });
+
+            const scriptData = await scriptResponse.json();
+            if (scriptData.error) throw new Error(scriptData.error);
+
+            setScriptReview(scriptData);
+            
+            const aiMsg: Message = {
+                id: Date.now() + 1,
+                role: 'ai',
+                text: `I've prepared a script for your 30-second UGC video! 🎬\n\n**Title:** ${scriptData.title}\n\nPlease review the scenes below and click "Approve & Generate" to start the process.`
+            };
+            setMessages(prev => [...prev, aiMsg]);
+            setIsThinking(false);
+            return;
+        }
+
+        if (creationMode === 'video' && scriptReview) {
+            // --- STEP 2: APPROVED GENERATION ---
+            setCurrentStep('Approved! Starting 4-part video generation...');
+            const videoResponse = await fetch('/api/video/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    propertyId: selectedPropId,
+                    prompts: scriptReview.scenes.map(s => s.prompt),
+                    aspectRatio: selectedRatio
+                })
+            });
+
+            const videoData = await videoResponse.json();
+            if (videoData.error) throw new Error(videoData.error);
+
+            toast.success("Video Production Started! 🎬", {
+                description: "Generating 4 sequential clips. Check your Assets in ~5 mins."
+            });
+
+            const aiMsg: Message = {
+                id: Date.now() + 2,
+                role: 'ai',
+                text: "Video production is now running in the background! 🎬\n\nYou'll see a placeholder in your **Assets** tab. I'll notify you as soon as the final 30-second video is ready."
+            };
+            setMessages(prev => [...prev, aiMsg]);
+            setScriptReview(null); // Reset review state
+            setIsThinking(false);
+            return;
+        }
+
   // A. Prepare Data
   const prop = properties.find(p => p.id === selectedPropId)
   
@@ -468,15 +536,23 @@ export default function CreationPage() {
         */}
         <div className="px-4 mb-3 grid grid-cols-2 md:grid-cols-3 gap-2">
             
-            <button 
-                onClick={() => setCreativeFlow(prev => ({ ...prev, isOpen: true, step: 'setup' }))}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-[1rem] shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2 font-bold text-[10px] sm:text-[11px] uppercase tracking-tight"
-            >
-                <Zap size={14} className="text-yellow-300" /> Batch Mode
-            </button>
+            <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full">
+                <button 
+                    onClick={() => setCreationMode('image')}
+                    className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-1 ${creationMode === 'image' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <ImageIcon size={12} className="hidden sm:block" /> Image
+                </button>
+                <button 
+                    onClick={() => { setCreationMode('video'); setSelectedRatio('9:16'); }}
+                    className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-1 ${creationMode === 'video' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <VideoIcon size={12} className="hidden sm:block" /> Video
+                </button>
+            </div>
 
             {/* Ratio Selector Pill */}
-            <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full">
+            <div className={`flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full transition-opacity ${creationMode === 'video' ? 'opacity-50 pointer-events-none' : ''}`}>
                 {ASPECT_RATIOS.map(ratio => {
                     const Icon = ratio.icon
                     return (
@@ -589,11 +665,56 @@ export default function CreationPage() {
                 
                 {msg.mediaUrl && (
                   <div className={`relative overflow-hidden rounded-[1.5rem] border-[4px] border-white shadow-md group max-w-sm w-full`}>
-                      <img src={msg.mediaUrl} alt="Generated content" className="w-full h-auto object-cover" />
+                      {msg.mediaType === 'video' ? (
+                          <video 
+                              src={msg.mediaUrl} 
+                              controls 
+                              autoPlay 
+                              loop 
+                              muted 
+                              className="w-full h-auto object-cover aspect-[9/16]" 
+                          />
+                      ) : (
+                          <img src={msg.mediaUrl} alt="Generated content" className="w-full h-auto object-cover" />
+                      )}
                       <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                          <span className="opacity-0 group-hover:opacity-100 bg-white text-slate-800 text-xs font-bold px-4 py-2 rounded-full shadow-lg transition-all duration-300 transform scale-95 group-hover:scale-100">View Full Size</span>
+                          <span className="opacity-0 group-hover:opacity-100 bg-white text-slate-800 text-xs font-bold px-4 py-2 rounded-full shadow-lg transition-all duration-300 transform scale-95 group-hover:scale-100">
+                              {msg.mediaType === 'video' ? 'Download Video' : 'View Full Size'}
+                          </span>
                       </a>
                   </div>
+                )}
+
+                {/* SCRIPT REVIEW UI */}
+                {scriptReview && msg.id === messages[messages.length - 1]?.id && (
+                    <div className="bg-white border border-blue-100 rounded-[1.5rem] p-4 mt-3 shadow-sm max-w-md animate-in slide-in-from-top-2">
+                        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
+                            <Bot size={16} className="text-blue-500" /> Video Script Preview
+                        </h3>
+                        <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                            {scriptReview.scenes.map((scene, idx) => (
+                                <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                    <p className="text-[10px] font-black text-blue-600 uppercase mb-1">Scene {idx + 1} (7.5s)</p>
+                                    <p className="text-[11px] text-slate-700 italic leading-relaxed">"{scene.dialogue}"</p>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-4 flex gap-2">
+                            <button 
+                                onClick={() => handleSend()} // Trigger step 2
+                                disabled={isThinking}
+                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-95"
+                            >
+                                <Sparkles size={14} /> Approve & Generate
+                            </button>
+                            <button 
+                                onClick={() => setScriptReview(null)}
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-500 px-4 py-3 rounded-xl text-xs font-bold"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
                 )}
               </div>
             </div>

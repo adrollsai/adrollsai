@@ -4,6 +4,8 @@ import { google } from '@ai-sdk/google';
 
 const KIE_API_KEY = process.env.KIE_API_KEY;
 const KIE_CREATE_TASK_URL = "https://api.kie.ai/api/v1/jobs/createTask";
+const KIE_VEO_GENERATE_URL = "https://api.kie.ai/api/v1/veo/generate";
+const KIE_VEO_EXTEND_URL = "https://api.kie.ai/api/v1/veo/extend";
 const FACEBOOK_GRAPH_URL = "https://graph.facebook.com/v19.0";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
@@ -424,4 +426,81 @@ export async function createKieImageTask(prompt: string, model: string = "flux2/
     if (!response.ok) throw new Error(data.msg || data.error || "Image task failed");
     if (!data.data?.taskId) throw new Error("Kie AI response missing taskId");
     return data.data.taskId;
+}
+
+/**
+ * 11. Kie.ai Veo 3.1 Video Generator (Lite Model)
+ */
+export async function createVeoTask(payload: any): Promise<{ taskId: string | null; error: string | null }> {
+    if (!KIE_API_KEY) return { taskId: null, error: "KIE_API_KEY is not configured." };
+    
+    try {
+        const response = await fetchWithRetry(KIE_VEO_GENERATE_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${KIE_API_KEY}`
+            },
+            body: JSON.stringify({
+                ...payload,
+                model: payload.model || "veo3_lite",
+                resolution: payload.resolution || "720p"
+            })
+        });
+
+        const result: KieTaskResponse = await response.json();
+
+        if (!response.ok || (result.code !== 0 && result.code !== 200)) {
+            return { 
+                taskId: null, 
+                error: result.msg || result.error || `Veo AI Task creation failed with status ${response.status}` 
+            };
+        }
+
+        return { 
+            taskId: result.data?.taskId || null, 
+            error: null 
+        };
+
+    } catch (e: any) {
+        return { taskId: null, error: `Network error: ${e.message}` };
+    }
+}
+
+/**
+ * 12. Kie.ai Veo 3.1 Video Extension (Lite Model)
+ */
+export async function extendVeoTask(payload: any): Promise<{ taskId: string | null; error: string | null }> {
+    if (!KIE_API_KEY) return { taskId: null, error: "KIE_API_KEY is not configured." };
+    
+    try {
+        const response = await fetchWithRetry(KIE_VEO_EXTEND_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${KIE_API_KEY}`
+            },
+            body: JSON.stringify({
+                ...payload,
+                model: payload.model || "lite"
+            })
+        });
+
+        const result: KieTaskResponse = await response.json();
+
+        if (!response.ok || (result.code !== 0 && result.code !== 200)) {
+            return { 
+                taskId: null, 
+                error: result.msg || result.error || `Veo AI Extension failed with status ${response.status}` 
+            };
+        }
+
+        return { 
+            taskId: result.data?.taskId || null, 
+            error: null 
+        };
+
+    } catch (e: any) {
+        return { taskId: null, error: `Network error: ${e.message}` };
+    }
 }

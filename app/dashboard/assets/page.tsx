@@ -50,7 +50,7 @@ export default function AssetsPage() {
     const [isDownloading, setIsDownloading] = useState(false)
 
     // Image Preview Modal
-    const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string }>({ isOpen: false, url: '', title: '' })
+    const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string, type?: 'image' | 'video' }>({ isOpen: false, url: '', title: '', type: 'image' })
 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
     const [isZipping, setIsZipping] = useState(false)
@@ -771,7 +771,7 @@ export default function AssetsPage() {
                                                         <button 
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                setPreviewImage({ isOpen: true, url: asset.url, title: property?.title || 'Asset Preview' });
+                                                                setPreviewImage({ isOpen: true, url: asset.url, title: property?.title || 'Asset Preview', type: asset.type });
                                                             }}
                                                             className="bg-white/90 backdrop-blur-sm p-2 rounded-full text-slate-900 shadow-xl hover:bg-white transition-all"
                                                         >
@@ -866,7 +866,7 @@ export default function AssetsPage() {
                                             <button 
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setPreviewImage({ isOpen: true, url: asset.url, title: 'Asset Preview' });
+                                                    setPreviewImage({ isOpen: true, url: asset.url, title: 'Asset Preview', type: asset.type });
                                                 }}
                                                 className="bg-white p-3 rounded-full text-slate-900 shadow-xl hover:scale-110 transition-all"
                                             >
@@ -1041,6 +1041,7 @@ export default function AssetsPage() {
                 onClose={() => setPreviewImage(prev => ({ ...prev, isOpen: false }))} 
                 imageUrl={previewImage.url} 
                 title={previewImage.title} 
+                type={previewImage.type}
             />
 
             {/* FLOATING BATCH ACTION BAR */}

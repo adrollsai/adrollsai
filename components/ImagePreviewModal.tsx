@@ -9,9 +9,10 @@ interface ImagePreviewModalProps {
     onClose: () => void
     imageUrl: string
     title?: string
+    type?: 'image' | 'video'
 }
 
-export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title }: ImagePreviewModalProps) {
+export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, type }: ImagePreviewModalProps) {
     const [scale, setScale] = useState(1)
     const [position, setPosition] = useState({ x: 0, y: 0 })
     const [isDragging, setIsDragging] = useState(false)
@@ -102,14 +103,23 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title }: 
                                 y: position.y
                             }}
                             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                            className="relative max-w-full max-h-full"
+                            className="relative max-w-full max-h-full flex items-center justify-center"
                         >
-                            <img 
-                                src={imageUrl} 
-                                alt="Preview" 
-                                className="max-w-[90vw] max-h-[80vh] object-contain select-none shadow-2xl rounded-lg"
-                                draggable={false}
-                            />
+                            {type === 'video' || imageUrl.toLowerCase().endsWith('.mp4') ? (
+                                <video 
+                                    src={imageUrl} 
+                                    controls 
+                                    autoPlay
+                                    className="max-w-[90vw] max-h-[80vh] object-contain select-none shadow-2xl rounded-lg bg-black"
+                                />
+                            ) : (
+                                <img 
+                                    src={imageUrl} 
+                                    alt="Preview" 
+                                    className="max-w-[90vw] max-h-[80vh] object-contain select-none shadow-2xl rounded-lg"
+                                    draggable={false}
+                                />
+                            )}
                         </motion.div>
                     </div>
 
