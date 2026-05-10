@@ -91,11 +91,17 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
           }
       }
 
-      const registration = await navigator.serviceWorker.ready
+      // 2. Force a fresh registration to ensure we have a clean, active worker
+      const registration = await navigator.serviceWorker.register('/sw.js', {
+        scope: '/',
+        updateViaCache: 'none',
+      })
       
+      // 3. Immediately move forward without waiting for long 'ready' promises
       const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
       if (!vapidKey) {
         toast.error("Configuration Error: Missing VAPID Key")
+        setLoading(false)
         return
       }
 

@@ -33,7 +33,7 @@ export async function generateMetadata(): Promise<Metadata> {
     profileData = data;
   }
 
-  const defaultTitle = "AdRolls AI";
+  const defaultTitle = "AdRolls AI | Ultimate Marketing Automation for SMBs";
   const title = profileData?.business_name || defaultTitle;
   const logoVersion = profileData?.logo_url ? encodeURIComponent(profileData.logo_url.split('/').pop() || 'v1') : 'v1';
   const uidParam = user ? `&uid=${user.id}` : '';
@@ -48,8 +48,13 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase: new URL(`https://${host}`),
-    title: title,
-    description: profileData?.business_name ? `Welcome to ${title}` : "Keep your ads rolling...",
+    title: {
+      default: title,
+      template: `%s | ${defaultTitle}`
+    },
+    description: profileData?.business_name 
+      ? `Welcome to ${title}. Manage your real estate leads and marketing automation effortlessly.` 
+      : "AdRolls AI is the ultimate marketing automation platform for SMBs. Scale your Meta Ads, automate lead management, and grow your business with our agentic AI infrastructure.",
     // Manifest is injected manually into <head> below to allow dynamic params
     icons: {
       icon: faviconUrl,
@@ -63,7 +68,9 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     openGraph: {
       title: title,
-      description: profileData?.business_name ? `Welcome to ${title}` : "Automate your real estate marketing",
+      description: profileData?.business_name 
+        ? `Scale your growth with ${title}. Professional real estate marketing automation.` 
+        : "AdRolls AI - Automate your Meta Ads, lead management, and SMB growth with agentic AI infrastructure.",
       url: `https://${host}`,
       siteName: title,
       images: [{ url: iconUrl, width: 512, height: 512, alt: title }],
