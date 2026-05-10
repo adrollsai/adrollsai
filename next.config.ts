@@ -16,8 +16,10 @@ const pwa = withPWA({
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ['@supabase/supabase-js'],
-  serverActions: {
-    bodySizeLimit: "50mb",
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "50mb",
+    },
   },
 };
 
