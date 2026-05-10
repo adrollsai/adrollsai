@@ -5,13 +5,15 @@ import withPWA from "@ducanh2912/next-pwa";
 
 const pwa = withPWA({
   dest: "public",
-  register: true,
-  disable: process.env.NODE_ENV === "development", 
+  register: false,
+  disable: false, 
   workboxOptions: {
     disableDevLogs: true,
     skipWaiting: true,
     clientsClaim: true,
+    importScripts: ['/custom-sw.js'],
   },
+  sw: "/sw.js", // This ensures it uses the generated sw.js which we will link to custom-sw.js
 });
 
 const nextConfig: NextConfig = {

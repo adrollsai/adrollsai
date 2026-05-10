@@ -60,7 +60,7 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
   // This function manually registers custom-sw.js
   async function registerServiceWorker() {
     try {
-      const registration = await navigator.serviceWorker.register('/sw-v2.js', {
+      const registration = await navigator.serviceWorker.register('/sw.js', {
         scope: '/',
         updateViaCache: 'none',
       })
