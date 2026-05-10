@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: '/',
       disallow: '/dashboard/', // Keep private dashboard out of search results
     },
-    sitemap: 'https://app.adrolls.in/sitemap.xml',
+    sitemap: 'https://adrolls.in/sitemap.xml',
   }
 }
