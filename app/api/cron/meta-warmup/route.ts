@@ -48,27 +48,27 @@ export async function GET(request: Request) {
             const token = profile.facebook_token;
             
             try {
-                // TASK A: Fetch Page Info (1 Call)
-                if (profile.facebook_page_id) {
-                    const pageRes = await fetch(`${FB_GRAPH_URL}/${profile.facebook_page_id}?fields=name,fan_count,is_published&access_token=${token}`);
-                    if (pageRes.ok) stats.success++; else stats.failed++;
-                    stats.callsMade++;
-                }
+                // TASK A: Fetch Ad Account Details (1 Call)
+                const adAccount = profile.ad_account_id.startsWith('act_') ? profile.ad_account_id : `act_${profile.ad_account_id}`;
+                
+                const accountRes = await fetch(`${FB_GRAPH_URL}/${adAccount}?fields=name,account_status,currency,amount_spent&access_token=${token}`);
+                if (accountRes.ok) stats.success++; else stats.failed++;
+                stats.callsMade++;
 
-                // TASK B: Fetch Lead Forms List (1 Call)
-                if (profile.facebook_page_id) {
-                    const formsRes = await fetch(`${FB_GRAPH_URL}/${profile.facebook_page_id}/leadgen_forms?limit=10&access_token=${token}`);
-                    if (formsRes.ok) stats.success++; else stats.failed++;
-                    stats.callsMade++;
-                }
+                // TASK B: Fetch Campaigns (1 Call)
+                const campRes = await fetch(`${FB_GRAPH_URL}/${adAccount}/campaigns?fields=name,status,objective&limit=10&access_token=${token}`);
+                if (campRes.ok) stats.success++; else stats.failed++;
+                stats.callsMade++;
 
-                // TASK C: Fetch Active Campaigns (1 Call)
-                if (profile.ad_account_id) {
-                    const adAccount = profile.ad_account_id.startsWith('act_') ? profile.ad_account_id : `act_${profile.ad_account_id}`;
-                    const campRes = await fetch(`${FB_GRAPH_URL}/${adAccount}/campaigns?fields=name,status,objective&limit=5&access_token=${token}`);
-                    if (campRes.ok) stats.success++; else stats.failed++;
-                    stats.callsMade++;
-                }
+                // TASK C: Fetch Ad Sets (1 Call)
+                const adsetRes = await fetch(`${FB_GRAPH_URL}/${adAccount}/adsets?fields=name,status,billing_event&limit=10&access_token=${token}`);
+                if (adsetRes.ok) stats.success++; else stats.failed++;
+                stats.callsMade++;
+
+                // TASK D: Fetch Ads (1 Call)
+                const adsRes = await fetch(`${FB_GRAPH_URL}/${adAccount}/ads?fields=name,status,creative&limit=10&access_token=${token}`);
+                if (adsRes.ok) stats.success++; else stats.failed++;
+                stats.callsMade++;
 
             } catch (e) {
                 stats.failed++;

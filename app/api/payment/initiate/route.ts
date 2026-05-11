@@ -11,8 +11,8 @@ export async function POST(req: Request) {
 
         const { planId } = await req.json();
         
-        // For testing, we use Rs. 10 (1000 paise).
-        const TEST_AMOUNT = 1000; 
+        // For testing, we use Rs. 1 (100 paise).
+        const TEST_AMOUNT = 100; 
         
         // Use a much simpler transaction ID format
         const transactionId = `T${Date.now().toString().slice(-8)}`;
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
             paymentFlow: {
                 type: "PG_CHECKOUT",
                 merchantUrls: {
-                    redirectUrl: "https://www.google.com", 
+                    redirectUrl: `${currentOrigin}/dashboard/profile?payment_test=success`, 
                     redirectMode: "GET",
                     callbackUrl: process.env.PHONEPE_CALLBACK_URL
                 }
