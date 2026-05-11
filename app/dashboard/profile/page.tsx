@@ -399,7 +399,7 @@ export default function ProfilePage() {
     if (!page || !userId) return
 
     setSelectedPageId(pageId)
-    
+
     // 1. Save to DB
     await supabase.from('profiles').update({
       selected_page_id: page.id,
@@ -409,19 +409,19 @@ export default function ProfilePage() {
 
     // 2. TRIGGER WEBHOOK SUBSCRIPTION (Fixes "No app associated" error)
     try {
-        await fetch('/api/facebook/subscribe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pageId: page.id, pageToken: page.access_token })
-        })
-        toast.success(`Connected to ${page.name}!`, {
-            description: "Real-time leads are now enabled for this page."
-        })
+      await fetch('/api/facebook/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageId: page.id, pageToken: page.access_token })
+      })
+      toast.success(`Connected to ${page.name}!`, {
+        description: "Real-time leads are now enabled for this page."
+      })
     } catch (e) {
-        console.error("Auto-subscription failed:", e)
-        toast.error("Connected with warnings", {
-            description: "CRM saving works, but real-time notifications might need a manual refresh."
-        })
+      console.error("Auto-subscription failed:", e)
+      toast.error("Connected with warnings", {
+        description: "CRM saving works, but real-time notifications might need a manual refresh."
+      })
     }
 
     updateLocalCache({ selected_page_id: page.id, selected_page_name: page.name, selected_page_token: page.access_token })
@@ -1031,8 +1031,8 @@ export default function ProfilePage() {
                 </button>
 
                 {/* TEST PAYMENT BUTTON */}
-                <button 
-                  onClick={handleTestPayment} 
+                <button
+                  onClick={handleTestPayment}
                   disabled={isTestingPayment}
                   className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-amber-50 transition-colors border-b border-slate-100 group"
                 >

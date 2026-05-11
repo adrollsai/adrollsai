@@ -1,9 +1,14 @@
 import crypto from 'crypto';
 
-const CLIENT_ID = process.env.PHONEPE_CLIENT_ID || "";
-const CLIENT_SECRET = process.env.PHONEPE_CLIENT_SECRET || "";
-const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID || "";
-const BASE_URL = process.env.PHONEPE_BASE_URL || "https://api.phonepe.com/apis/hermes";
+const CLIENT_ID = (process.env.PHONEPE_CLIENT_ID || "").replace(/['"]/g, '').trim();
+const CLIENT_SECRET = (process.env.PHONEPE_CLIENT_SECRET || "").replace(/['"]/g, '').trim();
+const MERCHANT_ID = (process.env.PHONEPE_MERCHANT_ID || "").replace(/['"]/g, '').trim();
+
+// --- FORCE HERMES PRODUCTION ---
+// Even if PHONEPE_BASE_URL is set to standard /pg, we must use /hermes for V2 Enterprise
+const BASE_URL = (process.env.PHONEPE_BASE_URL && process.env.PHONEPE_BASE_URL.replace(/['"]/g, '').trim().includes('hermes')) 
+    ? process.env.PHONEPE_BASE_URL.replace(/['"]/g, '').trim() 
+    : "https://api.phonepe.com/apis/hermes";
 
 let cachedToken: { token: string; expires: number } | null = null;
 
@@ -21,6 +26,9 @@ export async function getPhonePeAuthToken() {
         ? `https://api.phonepe.com/apis/identity-manager/v1/oauth/token`
         : `${BASE_URL}/v1/oauth/token`;
     
+    console.log("--- PhonePe Auth ---");
+    console.log("Merchant ID:", MERCHANT_ID);
+    console.log("Is Live:", isLive);
     console.log("Attempting Auth at:", authUrl);
     
     // Body is x-www-form-urlencoded
@@ -83,7 +91,7 @@ export async function setupSubscription(payload: any, customPath?: string) {
         merchantId: MERCHANT_ID,
         ...payload
     };
-    console.log("Payload:", JSON.stringify(finalPayload, null, 2));
+    console.log("Payload Sent to PhonePe:", JSON.stringify(finalPayload, null, 2));
 
     const response = await fetch(url, {
         method: 'POST',

@@ -59,9 +59,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen bg-[#F8FAFC] overflow-x-hidden">
       {/* PushManager deployed as a banner. It auto-hides if enabled or dismissed */}
       <PushManager variant="banner" />
-      
+
       {children}
-      
+
       {/* Hide the navigation bar if they are trapped on the billing page */}
       {pathname !== '/dashboard/billing' && <BottomNav />}
     </div>

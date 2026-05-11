@@ -9,11 +9,13 @@ const supabaseAdmin = createAdminClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const MERCHANT_ID = (process.env.PHONEPE_MERCHANT_ID || "PGTESTPAYUAT").replace(/['"]/g, '').trim();
-const SALT_KEY = (process.env.PHONEPE_SALT_KEY || "099eb0cd-02cf-4e2a-8aca-3e6c6aff0399").replace(/['"]/g, '').trim();
-const SALT_INDEX = (process.env.PHONEPE_SALT_INDEX || "1").replace(/['"]/g, '').trim();
+const MERCHANT_ID = (process.env.PHONEPE_MERCHANT_ID || "").replace(/['"]/g, '').trim();
+const SALT_KEY = (process.env.PHONEPE_SALT_KEY || "").replace(/['"]/g, '').trim();
+const SALT_INDEX = (process.env.PHONEPE_SALT_INDEX || "").replace(/['"]/g, '').trim();
 
-const STATUS_URL = `https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/status`;
+// --- PRODUCTION STATUS URL ---
+const STATUS_URL = `https://api.phonepe.com/apis/hermes/pg/v1/status`;
+// Fallback for Standard PG if needed: `https://api.phonepe.com/apis/pg/pg/v1/status`;
 
 export async function POST(req: Request) {
     try {
