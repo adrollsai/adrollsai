@@ -11,32 +11,32 @@ export async function POST(req: Request) {
 
         const { planId } = await req.json();
         
-        // For testing, we use Rs. 1 (100 paise).
-        const TEST_AMOUNT = 100; 
+        // Live activation amount (₹1)
+        const liveAmount = 100; 
         
-        // Use a much simpler transaction ID format
-        const transactionId = `T${Date.now().toString().slice(-8)}`;
+        // AdRolls Production Transaction ID
+        const transactionId = `ADR${Date.now().toString().slice(-8)}`;
 
         const currentOrigin = req.headers.get('origin') || 
                               req.headers.get('referer')?.split('/').slice(0,3).join('/') || 
                               (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/['"]/g, '').trim();
 
-        // --- PHONEPE CLEAN ENTERPRISE SPEC ---
-        const oneTimePayload = {
+        // --- PHONEPE LIVE PAYLOAD ---
+        const livePayload = {
             merchantOrderId: transactionId,
-            amount: TEST_AMOUNT,
+            amount: liveAmount,
             paymentFlow: {
                 type: "PG_CHECKOUT",
                 merchantUrls: {
-                    redirectUrl: `${currentOrigin}/dashboard/profile?payment_test=success`, 
+                    redirectUrl: `${currentOrigin}/dashboard/profile?payment=success`, 
                     redirectMode: "GET",
                     callbackUrl: process.env.PHONEPE_CALLBACK_URL
                 }
             }
         };
 
-        console.log("Attempting PhonePe One-time Payment Setup...");
-        const data = await setupSubscription(oneTimePayload, "/checkout/v2/pay");
+        console.log("Initiating Live PhonePe Payment...");
+        const data = await setupSubscription(livePayload, "/checkout/v2/pay");
 
         const redirectUrl = data.redirectUrl || data.data?.instrumentResponse?.redirectInfo?.url;
 

@@ -1041,8 +1041,8 @@ export default function ProfilePage() {
                       {isTestingPayment ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />}
                     </div>
                     <div className="text-left">
-                      <span className="font-bold text-sm text-slate-900 block">Test ₹1 Payment</span>
-                      <span className="text-[10px] text-amber-600 font-bold uppercase tracking-tight">One-time Payment Test</span>
+                      <span className="font-bold text-sm text-slate-900 block">Activate Live Account (₹1)</span>
+                      <span className="text-[10px] text-blue-600 font-bold uppercase tracking-tight">Standard PG Checkout</span>
                     </div>
                   </div>
                   <ChevronRight size={20} className="text-slate-400" />

@@ -3,7 +3,7 @@ import crypto from 'crypto';
 const CLIENT_ID = process.env.PHONEPE_CLIENT_ID || "";
 const CLIENT_SECRET = process.env.PHONEPE_CLIENT_SECRET || "";
 const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID || "";
-const BASE_URL = process.env.PHONEPE_BASE_URL || "https://api-preprod.phonepe.com/apis/pg-sandbox";
+const BASE_URL = process.env.PHONEPE_BASE_URL || "https://api.phonepe.com/apis/hermes";
 
 let cachedToken: { token: string; expires: number } | null = null;
 
@@ -77,12 +77,18 @@ export async function setupSubscription(payload: any, customPath?: string) {
     console.log("URL:", url);
     console.log("Method: POST");
     console.log("Headers:", JSON.stringify({ ...headers, 'Authorization': 'O-Bearer [MASKED]' }, null, 2));
-    console.log("Payload:", JSON.stringify(payload, null, 2));
+    
+    // --- CRITICAL FIX: Ensure merchantId is in body for V2 Enterprise ---
+    const finalPayload = {
+        merchantId: MERCHANT_ID,
+        ...payload
+    };
+    console.log("Payload:", JSON.stringify(finalPayload, null, 2));
 
     const response = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify(payload)
+        body: JSON.stringify(finalPayload)
     });
 
     const data = await response.json();
@@ -126,7 +132,7 @@ export async function executeRecurringDebit(payload: {
             'accept': 'application/json',
             'X-MERCHANT-ID': MERCHANT_ID
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(fullPayload)
     });
 
     const data = await response.json();
