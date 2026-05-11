@@ -49,19 +49,33 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Failed to initialize video asset" }, { status: 500 });
         }
 
-        // 2. Initiate First Veo Task
+        // --- BASE URL DETECTION ---
+        // Prioritize request headers (Vercel/Ngrok) to get the true external domain
+        const forwardedHost = request.headers.get('x-forwarded-host');
+        const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+        const requestOrigin = new URL(request.url).origin;
         const publicUrl = process.env.NEXT_PUBLIC_APP_URL;
-        const baseUrl = (publicUrl && publicUrl.startsWith('http') && !publicUrl.includes('localhost')) 
-            ? publicUrl 
-            : new URL(request.url).origin;
-            
+
+        let baseUrl = requestOrigin;
+        
+        if (forwardedHost && !forwardedHost.includes('localhost')) {
+            // Case 1: Running on Vercel or through a proxy with a real domain
+            baseUrl = `${forwardedProto}://${forwardedHost}`;
+        } else if (!requestOrigin.includes('localhost')) {
+            // Case 2: Request origin itself is a real domain
+            baseUrl = requestOrigin;
+        } else if (publicUrl && publicUrl.startsWith('http') && !publicUrl.includes('localhost')) {
+            // Case 3: Local dev with ngrok configured in ENV
+            baseUrl = publicUrl;
+        }
+
         const callbackUrl = `${baseUrl}/api/video/callback`;
 
-        console.log(`[Video Generate] Source Origin: ${new URL(request.url).origin}, Selected Base: ${baseUrl}`);
+        console.log(`[Video Generate] Source Origin: ${requestOrigin}, Selected Base: ${baseUrl}`);
         console.log(`[Video Generate] Using callback URL: ${callbackUrl}`);
         
         if (baseUrl.includes('localhost')) {
-            console.warn("[Video Generate] WARNING: Using localhost for callback! Kie.ai will NOT be able to reach your server. Please set NEXT_PUBLIC_APP_URL to your ngrok URL.");
+            console.warn("[Video Generate] WARNING: Using localhost for callback! Kie.ai will NOT be able to reach your server.");
         }
 
         const firstPayload = {

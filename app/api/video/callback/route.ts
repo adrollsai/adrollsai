@@ -99,18 +99,29 @@ export async function POST(request: Request) {
             console.log(`[Video Callback] CLIP ${videoTask.current_index + 1} DONE. Extending to CLIP ${nextIndex + 1}...`);
             
             const nextPrompt = videoTask.prompts[nextIndex];
+            // --- BASE URL DETECTION ---
+            const forwardedHost = request.headers.get('x-forwarded-host');
+            const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+            const requestOrigin = new URL(request.url).origin;
             const publicUrl = process.env.NEXT_PUBLIC_APP_URL;
-            const baseUrl = (publicUrl && publicUrl.startsWith('http') && !publicUrl.includes('localhost')) 
-                ? publicUrl 
-                : new URL(request.url).origin;
+
+            let baseUrl = requestOrigin;
+            
+            if (forwardedHost && !forwardedHost.includes('localhost')) {
+                baseUrl = `${forwardedProto}://${forwardedHost}`;
+            } else if (!requestOrigin.includes('localhost')) {
+                baseUrl = requestOrigin;
+            } else if (publicUrl && publicUrl.startsWith('http') && !publicUrl.includes('localhost')) {
+                baseUrl = publicUrl;
+            }
                 
             const callbackUrl = `${baseUrl}/api/video/callback`;
             
-            console.log(`[Video Callback] Source Origin: ${new URL(request.url).origin}, Selected Base: ${baseUrl}`);
+            console.log(`[Video Callback] Source Origin: ${requestOrigin}, Selected Base: ${baseUrl}`);
             console.log(`[Video Callback] Using callback URL: ${callbackUrl}`);
             
             if (baseUrl.includes('localhost')) {
-                console.warn("[Video Callback] WARNING: Using localhost for callback! Kie.ai will NOT be able to reach your server. Please set NEXT_PUBLIC_APP_URL to your ngrok URL.");
+                console.warn("[Video Callback] WARNING: Using localhost for callback! Kie.ai will NOT be able to reach your server.");
             }
 
             const extendPayload = {
