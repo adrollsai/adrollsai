@@ -19,6 +19,7 @@ import {
   Shield,
   RefreshCw,
   Copy,
+  Linkedin,
   BarChart3
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -248,17 +249,25 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
-  const [role, setRole] = useState<'admin' | 'agent'>('agent')
+  const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent'>('agent')
+
+  const isAdminLike = ['super_admin', 'agency', 'admin', 'client'].includes(role)
 
   // Actions
   const [isSaving, setIsSaving] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
-  const [isDisconnecting, setIsDisconnecting] = useState(false)
   const [isConnectingFb, setIsConnectingFb] = useState(false) // Added connection loading state
   const [isTestingPayment, setIsTestingPayment] = useState(false)
 
   // Connections
   const [isFacebookConnected, setIsFacebookConnected] = useState(false)
+  const [isDisconnecting, setIsDisconnecting] = useState(false)
+
+  // --- LINKEDIN STATE ---
+  const [isLinkedinConnected, setIsLinkedinConnected] = useState(false)
+  const [linkedinName, setLinkedinName] = useState('')
+  const [isConnectingLinkedin, setIsConnectingLinkedin] = useState(false)
+
   const [facebookToken, setFacebookToken] = useState<string | null>(null);
 
   const [fbPages, setFbPages] = useState<FBPage[]>([])
@@ -473,7 +482,7 @@ export default function ProfilePage() {
       profileData = data
 
       if (profileData) {
-        setRole(profileData.role || 'admin')
+        setRole(profileData.role as any || 'admin')
 
         setDomainData({
           domain: profileData.custom_domain || '',
@@ -513,17 +522,15 @@ export default function ProfilePage() {
           setFacebookToken(null);
           setAdAccounts([]);
           setPixels([]);
+        }
 
-          // AUTO-REPAIR: If DB says not connected, but Auth has identity, clean it up automatically
-          if (user?.identities?.some(id => id.provider === 'facebook')) {
-            console.log("♻️ Auto-cleaning zombie Facebook identity found on profile load...")
-            const fbIdentity = user.identities.find(id => id.provider === 'facebook')
-            if (fbIdentity) {
-              supabase.auth.unlinkIdentity(fbIdentity).then(({ error }) => {
-                if (!error) console.log("✅ Zombie identity auto-removed.")
-              })
-            }
-          }
+        // Handle LinkedIn Status
+        if (profileData.linkedin_token) {
+          setIsLinkedinConnected(true)
+          setLinkedinName(profileData.linkedin_name || 'Connected Account')
+        } else {
+          setIsLinkedinConnected(false)
+          setLinkedinName('')
         }
       }
 
@@ -540,6 +547,43 @@ export default function ProfilePage() {
   }, [router, supabase])
 
   // --- ACTIONS ---
+
+  const handleConnectLinkedin = async () => {
+    setIsConnectingLinkedin(true)
+    try {
+      // Redirect to our LinkedIn Auth API
+      window.location.href = '/api/auth/linkedin'
+    } catch (err) {
+      toast.error('Failed to initiate LinkedIn connection')
+      setIsConnectingLinkedin(false)
+    }
+  }
+
+  const handleDisconnectLinkedin = async () => {
+    if (!confirm('Are you sure you want to unlink your LinkedIn account?')) return
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ 
+          linkedin_token: null, 
+          linkedin_id: null,
+          linkedin_name: null 
+        })
+        .eq('id', user.id)
+
+      if (error) throw error
+      
+      setIsLinkedinConnected(false)
+      setLinkedinName('')
+      toast.success('LinkedIn unlinked successfully')
+    } catch (err: any) {
+      toast.error('Failed to unlink LinkedIn', { description: err.message })
+    }
+  }
 
   // THE FIX: Using linkIdentity instead of signInWithOAuth to handle email mismatches
   const handleConnectFacebook = async () => {
@@ -677,8 +721,8 @@ export default function ProfilePage() {
       contact_number: formData.contact,
       address: formData.address,
       logo_url: formData.logoUrl,
-      facebook_url: role === 'admin' ? formData.facebookUrl : undefined,
-      instagram_url: role === 'admin' ? formData.instagramUrl : undefined,
+      facebook_url: isAdminLike ? formData.facebookUrl : undefined,
+      instagram_url: isAdminLike ? formData.instagramUrl : undefined,
       custom_prompt: formData.customPrompt
     }
 
@@ -750,7 +794,7 @@ export default function ProfilePage() {
               </div>
               <div className="flex-1 mt-2">
                 <h2 className="text-2xl font-bold text-slate-900 mb-2">
-                  {formData.businessName || (role === 'admin' ? 'Your Business' : 'Your Name')}
+                  {formData.businessName || (isAdminLike ? 'Your Business' : 'Your Name')}
                 </h2>
                 <p className="text-slate-500 text-sm leading-relaxed max-w-md">
                   Personalize your workspace. Branding set here reflects on your landing pages.
@@ -770,7 +814,7 @@ export default function ProfilePage() {
               <div className="space-y-5">
                 <div>
                   <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">
-                    {role === 'admin' ? 'Business Name' : 'Full Name'}
+                    {isAdminLike ? 'Business Name' : 'Full Name'}
                   </label>
                   <input
                     type="text"
@@ -801,7 +845,7 @@ export default function ProfilePage() {
                   />
                 </div>
 
-                {role === 'admin' && (
+                {isAdminLike && (
                   <div className="pt-4 mt-2">
                     <label className="text-xs font-bold text-slate-500 ml-2 block mb-3 uppercase tracking-wider">Public Social Links</label>
                     <div className="space-y-3">
@@ -877,7 +921,7 @@ export default function ProfilePage() {
                 </div>
 
                 {/* DOMAIN MANAGER SECTION */}
-                {role === 'admin' && (
+                {isAdminLike && (
                   <div className="pt-2 border-t border-slate-100">
                     <DomainManager
                       initialDomain={domainData.domain}
@@ -906,7 +950,7 @@ export default function ProfilePage() {
               <PushManager variant="inline" />
             </div>
 
-            {role === 'admin' && (
+            {isAdminLike && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
                 <div className="p-6 sm:p-7">
                   <div className="flex items-center justify-between mb-4">
@@ -1025,7 +1069,41 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {role === 'admin' && (
+            {isAdminLike && (
+              <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md mb-6">
+                <div className="p-6 sm:p-7">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3.5">
+                      <div className="bg-[#0A66C2] p-3 rounded-full text-white shadow-md shadow-[#0A66C2]/20">
+                        <Linkedin size={20} fill="white" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-base text-slate-900">LinkedIn Profile</h4>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5">
+                          {isLinkedinConnected ? `Connected as ${linkedinName}` : 'Share professional updates'}
+                        </p>
+                      </div>
+                    </div>
+                    {isLinkedinConnected ? (
+                      <button onClick={handleDisconnectLinkedin} className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-full font-bold transition-colors">
+                        Unlink
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleConnectLinkedin}
+                        disabled={isConnectingLinkedin}
+                        className="bg-[#0A66C2] hover:bg-[#084d91] text-white px-5 py-2 rounded-full text-xs font-bold shadow-sm transition-colors disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {isConnectingLinkedin ? <Loader2 size={14} className="animate-spin" /> : null}
+                        {isConnectingLinkedin ? 'Connecting...' : 'Connect'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {isAdminLike && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
                 <button onClick={() => router.push('/dashboard/billing')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100">
                   <div className="flex items-center gap-4">

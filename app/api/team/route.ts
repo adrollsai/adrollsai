@@ -7,7 +7,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// --- INVITE / ADD AGENT ---
+// --- INVITE / ADD MEMBER OR SUB-ACCOUNT ---
 export async function POST(req: Request) {
   try {
     const { adminId, email, password, businessName, fullName, role } = await req.json();
@@ -17,50 +17,56 @@ export async function POST(req: Request) {
     }
 
     // 1. Search for the user in the auth system
-    // Using admin API to safely check if the user exists without exposing data
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.listUsers();
     const existingUser = authData?.users.find(u => u.email === email);
 
+    // Determine the correct link column based on role
+    // Clients link to Agency via agency_id
+    // Agents link to Admin via parent_id or agency_id
+    const profileUpdates: any = {
+      role: role || 'agent',
+      business_name: fullName || businessName,
+      selected_page_id: null, 
+      ad_account_id: null,
+    }
+
+    if (role === 'client') {
+        profileUpdates.agency_id = adminId
+    } else {
+        profileUpdates.parent_id = adminId
+        // Also inherit agency_id if the parent has one
+        const { data: adminProfile } = await supabaseAdmin.from('profiles').select('agency_id').eq('id', adminId).single()
+        if (adminProfile?.agency_id) {
+            profileUpdates.agency_id = adminProfile.agency_id
+        }
+    }
+
     if (existingUser) {
-      // 2A. User EXISTS (e.g., They left another company)
-      // We just update their profile to link them to the NEW Admin
+      // 2A. User EXISTS
       const { error: updateError } = await supabaseAdmin
         .from('profiles')
-        .update({
-          parent_id: adminId,
-          role: role || 'agent',
-          // Optionally reset their selected meta pages so they don't bring old data
-          selected_page_id: null, 
-          ad_account_id: null,
-          business_name: fullName || businessName 
-        })
+        .update(profileUpdates)
         .eq('id', existingUser.id);
 
       if (updateError) throw updateError;
 
-      return NextResponse.json({ success: true, message: 'Existing user successfully added to your team.' });
+      return NextResponse.json({ success: true, message: 'Existing user successfully updated and linked.' });
     } else {
       // 2B. User DOES NOT EXIST
-      // Create user directly with email and password
       const { data: createData, error: createError } = await supabaseAdmin.auth.admin.createUser({
           email: email,
           password: password,
           email_confirm: true,
-          user_metadata: { role: role || 'agent', parent_id: adminId } 
+          user_metadata: { role: role || 'agent' } 
       });
 
       if (createError) throw createError;
 
-      // Ensure their profile is correctly linked immediately
       if (createData?.user?.id) {
-          await supabaseAdmin.from('profiles').update({
-              parent_id: adminId,
-              role: role || 'agent',
-              business_name: fullName || businessName
-          }).eq('id', createData.user.id);
+          await supabaseAdmin.from('profiles').update(profileUpdates).eq('id', createData.user.id);
       }
 
-      return NextResponse.json({ success: true, message: 'Agent account created successfully.' });
+      return NextResponse.json({ success: true, message: `${role === 'client' ? 'Sub-account' : 'Member'} created successfully.` });
     }
 
   } catch (error: any) {
@@ -69,7 +75,7 @@ export async function POST(req: Request) {
   }
 }
 
-// --- REMOVE / OFFBOARD AGENT ---
+// --- REMOVE / OFFBOARD MEMBER OR SUB-ACCOUNT ---
 export async function DELETE(req: Request) {
   try {
     const { adminId, agentId } = await req.json();
@@ -78,50 +84,39 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 1. First, fetch to ensure safety
+    // 1. Verify authority
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('parent_id')
+      .select('parent_id, agency_id, role')
       .eq('id', agentId)
       .single();
       
-    if (profile?.parent_id !== adminId) {
-      return NextResponse.json({ error: 'Unauthorized to remove this agent' }, { status: 403 });
+    const isAuthorized = profile?.parent_id === adminId || profile?.agency_id === adminId;
+
+    if (!isAuthorized) {
+      return NextResponse.json({ error: 'Unauthorized to remove this account' }, { status: 403 });
     }
 
-    // 2. Comprehensive data unlinking to avoid foreign key constraint violations.
-    // We re-assign ownership to the Admin and clear agent-specific assignments/subscriptions.
+    // 2. Comprehensive data unlinking
     try {
         await Promise.all([
-            // Transfer ownership of core assets to the admin
             supabaseAdmin.from('properties').update({ user_id: adminId }).eq('user_id', agentId),
             supabaseAdmin.from('assets').update({ user_id: adminId }).eq('user_id', agentId),
             supabaseAdmin.from('posts').update({ user_id: adminId }).eq('user_id', agentId),
-            
-            // Re-assign leads: ownership goes to admin, assignment is cleared
             supabaseAdmin.from('leads').update({ user_id: adminId, assigned_to: null }).eq('user_id', agentId),
             supabaseAdmin.from('leads').update({ assigned_to: null }).eq('assigned_to', agentId),
-            
-            // Re-assign history logs to admin to preserve the record
             supabaseAdmin.from('lead_history').update({ user_id: adminId }).eq('user_id', agentId),
-            
-            // Remove push subscriptions so they don't get notifications anymore
             supabaseAdmin.from('push_subscriptions').delete().eq('user_id', agentId),
-
-            // Remove automations linked to the agent
             supabaseAdmin.from('automations').delete().eq('user_id', agentId),
-
-            // Re-assign ad optimizations
             supabaseAdmin.from('ad_optimizations').update({ user_id: adminId }).eq('user_id', agentId)
         ]);
 
-        // Manually delete the profile first to ensure no internal FKs block the Auth deletion
         await supabaseAdmin.from('profiles').delete().eq('id', agentId);
     } catch (unlinkError: any) {
         console.error("Cleanup/Unlink Error Detail:", unlinkError);
     }
 
-    // 3. Completely delete the user from Auth
+    // 3. Delete from Auth
     const { error } = await supabaseAdmin.auth.admin.deleteUser(agentId);
 
     if (error) {
@@ -129,9 +124,9 @@ export async function DELETE(req: Request) {
         throw error;
     }
 
-    return NextResponse.json({ success: true, message: 'Agent account successfully removed.' });
+    return NextResponse.json({ success: true, message: 'Account successfully removed.' });
   } catch (error: any) {
     console.error("Team DELETE Fatal Error:", error);
-    return NextResponse.json({ error: error.message || "Failed to remove agent" }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Failed to remove account" }, { status: 500 });
   }
 }

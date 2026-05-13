@@ -37,7 +37,7 @@ export default function TeamManagementPage() {
     const { data } = await supabase
       .from('profiles')
       .select('id, business_name, logo_url, role')
-      .eq('parent_id', userId)
+      .eq('agency_id', userId)
       .order('created_at', { ascending: false })
       
     if (data) setAgents(data)
@@ -51,10 +51,12 @@ export default function TeamManagementPage() {
           return
       }
 
-      // Check if user is an admin
+      // Check if user is an admin-like role
       const { data: profile } = await supabase.from('profiles').select('role, business_name').eq('id', user.id).single()
       
-      if (profile?.role !== 'admin') {
+      const isAdminLike = ['super_admin', 'agency', 'admin'].includes(profile?.role || '')
+
+      if (!isAdminLike) {
           toast.error("Unauthorized. Only Admins can manage teams.")
           router.push('/dashboard')
           return
@@ -200,8 +202,8 @@ export default function TeamManagementPage() {
                                 <div>
                                     <h4 className="font-bold text-slate-900">{agent.business_name || 'Agent User'}</h4>
                                     <div className="flex items-center gap-2 mt-1">
-                                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border ${agent.role === 'admin' ? 'bg-blue-100 text-blue-700 border-blue-200/60' : 'bg-emerald-100 text-emerald-700 border-emerald-200/60'}`}>
-                                            {agent.role === 'admin' ? 'Team Admin' : 'Active Agent'}
+                                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border ${['super_admin', 'agency', 'admin'].includes(agent.role) ? 'bg-blue-100 text-blue-700 border-blue-200/60' : 'bg-emerald-100 text-emerald-700 border-emerald-200/60'}`}>
+                                            {['super_admin', 'agency', 'admin'].includes(agent.role) ? 'Team Admin' : 'Active Agent'}
                                         </span>
                                         <span className="text-xs text-slate-400 font-mono">ID: {agent.id.split('-')[0]}...</span>
                                     </div>

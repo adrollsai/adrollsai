@@ -47,7 +47,7 @@ export default function ProductsPage() {
   const [authError, setAuthError] = useState(false)
   
   // RBAC & Ownership State
-  const [role, setRole] = useState<'admin' | 'agent'>('admin')
+  const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent'>('admin')
   const [ownerId, setOwnerId] = useState<string | null>(null) 
   const [adminCustomDomain, setAdminCustomDomain] = useState<string | null>(null)
   
@@ -148,20 +148,45 @@ export default function ProductsPage() {
         return
       }
 
+      // Check for impersonation
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
 
-
-      const { data: profile } = await supabase.from('profiles').select('role, parent_id, custom_domain').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id, custom_domain, agency_id').eq('id', user.id).single()
       const currentRole = profile?.role || 'admin'
-      setRole(currentRole)
+      setRole(currentRole as any)
 
       let adminDomain = profile?.custom_domain
-      if (currentRole === 'agent' && profile?.parent_id) {
-          const { data: adminProfile } = await supabase.from('profiles').select('custom_domain').eq('id', profile.parent_id).single()
+      if ((currentRole === 'agent' || currentRole === 'client') && (profile?.parent_id || profile?.agency_id)) {
+          const parentId = profile.parent_id || profile.agency_id
+          const { data: adminProfile } = await supabase.from('profiles').select('custom_domain').eq('id', parentId).single()
           adminDomain = adminProfile?.custom_domain
       }
       setAdminCustomDomain(adminDomain)
 
-      const targetUserId = (currentRole === 'agent' && profile?.parent_id) ? profile.parent_id : user.id
+      // Resolve Target User ID
+      let targetUserId = user.id
+
+      // Impersonation Logic
+      if (impersonateId && (['super_admin', 'agency', 'admin'].includes(currentRole))) {
+          // Verify relationship if not super_admin
+          if (currentRole !== 'super_admin') {
+              const { data: subAccount } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('id', impersonateId)
+                .eq('agency_id', user.id)
+                .single()
+              
+              if (subAccount) targetUserId = impersonateId
+          } else {
+              targetUserId = impersonateId
+          }
+      } else if (currentRole === 'agent' && (profile?.parent_id || profile?.agency_id)) {
+          // Staff agents see their parent's data
+          targetUserId = (profile.parent_id || profile.agency_id) as string
+      }
+      
       setOwnerId(targetUserId)
 
       const { data, error: dbError } = await supabase
@@ -559,6 +584,8 @@ export default function ProductsPage() {
     return p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || p.description?.toLowerCase().includes(searchQuery.toLowerCase())
   })
 
+  const isAdminLike = ['super_admin', 'agency', 'admin'].includes(role)
+
   // --- RENDER ---
   if (authError) return <div className="flex h-screen items-center justify-center"><button onClick={handleManualLogout} className="text-blue-600 font-bold bg-blue-50 px-6 py-3 rounded-full">Session Expired. Login Again</button></div>
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
@@ -604,7 +631,7 @@ export default function ProductsPage() {
                   <MoreHorizontal size={20} />
                 </button>
                 
-                {role === 'admin' && (
+                {isAdminLike && (
                   <button 
                     onClick={() => setShowAddModal(true)} 
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3.5 px-6 rounded-[1.25rem] shadow-md transition-all active:scale-95 font-bold text-sm"
@@ -642,7 +669,7 @@ export default function ProductsPage() {
             >
               
               {/* ADMIN CONTROLS (Edit & Delete) */}
-              {role === 'admin' && (
+              {isAdminLike && (
                   <div className="absolute top-3 right-3 z-10 flex gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-all duration-300">
                       <button 
                           onClick={(e) => { e.stopPropagation(); openEditModal(prop); }}
@@ -680,7 +707,7 @@ export default function ProductsPage() {
                   
                   {/* Action Buttons Row */}
                   <div className="flex items-center gap-2 shrink-0">
-                      {role === 'admin' && (
+                      {isAdminLike && (
                         <button 
                             onClick={(e) => handleBackgroundGeneration(e, prop)} 
                             disabled={generatingProps.includes(prop.id)}
@@ -706,7 +733,7 @@ export default function ProductsPage() {
                 </p>
 
                 {/* Auto Generate Toggle */}
-                {role === 'admin' && (
+                {isAdminLike && (
                   <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
                     <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
                       <Sparkles size={14} className={prop.auto_generate ? "text-amber-500" : "text-slate-400"} />
@@ -760,7 +787,7 @@ export default function ProductsPage() {
       )}
 
       {/* ADD MODAL */}
-      {role === 'admin' && showAddModal && (
+      {isAdminLike && showAddModal && (
         <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
@@ -825,7 +852,7 @@ export default function ProductsPage() {
       )}
 
       {/* EDIT MODAL */}
-      {role === 'admin' && showEditModal && editProp && (
+      {isAdminLike && showEditModal && editProp && (
         <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
@@ -911,7 +938,7 @@ export default function ProductsPage() {
                <div className="bg-white px-6 py-5 border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
                    <h2 className="text-xl font-extrabold text-slate-900 truncate pr-4">{selectedProperty.title}</h2>
                    <div className="flex items-center gap-2">
-                       {role === 'admin' && (
+                       {isAdminLike && (
                            <>
                                <button 
                                    onClick={() => { openEditModal(selectedProperty); setSelectedProperty(null); }}

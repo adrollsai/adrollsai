@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { postToFacebook, postToInstagram } from '@/utils/external-apis'
+import { postToFacebook, postToInstagram, postToLinkedin } from '@/utils/external-apis'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   // 2. Get User Credentials
   const { data: profile } = await supabase
     .from('profiles')
-    .select('selected_page_token, selected_page_id')
+    .select('selected_page_token, selected_page_id, linkedin_token, linkedin_id')
     .eq('id', user.id)
     .single()
 
@@ -62,6 +62,21 @@ export async function POST(request: Request) {
       )))
     } else {
       results.instagram = 'skipped_no_token_or_page_id' 
+    }
+  }
+
+  // --- LINKEDIN ---
+  if (platforms.includes('linkedin')) {
+    if (profile.linkedin_token && profile.linkedin_id) {
+      promises.push(sendToPlatform('linkedin', () => postToLinkedin(
+        profile.linkedin_token!,
+        profile.linkedin_id!,
+        imageUrl,
+        caption,
+        type
+      )))
+    } else {
+      results.linkedin = 'skipped_no_token'
     }
   }
 

@@ -11,7 +11,7 @@ export default function BottomNav() {
   const supabase = createClient()
   
   const [showDistribute, setShowDistribute] = useState(false)
-  const [role, setRole] = useState<'admin' | 'agent' | null>(null) 
+  const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent' | null>(null) 
 
   useEffect(() => {
     let isMounted = true;
@@ -34,13 +34,9 @@ export default function BottomNav() {
           return;
       }
 
-      const fetchedRole = data?.role?.toLowerCase()
+      const fetchedRole = data?.role?.toLowerCase() as any
 
-      if (fetchedRole === 'agent') {
-          setRole('agent') 
-      } else {
-          setRole('admin') 
-      }
+      setRole(fetchedRole || 'admin')
 
       if (data?.enable_distribution) {
           setShowDistribute(true)
@@ -65,7 +61,6 @@ export default function BottomNav() {
 
   if (!role) return null;
 
-  // Removed 'Team' from the bottom nav items
   const allNavItems = [
     { name: 'Inventory', icon: LayoutGrid, path: '/dashboard' },
     { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
@@ -74,10 +69,16 @@ export default function BottomNav() {
     { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
     ...(showDistribute ? [{ name: 'Distribute', icon: Share2, path: '/dashboard/distribute' }] : []),
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
+    { name: 'Accounts', icon: Users, path: '/dashboard/accounts' }, // New Accounts tab
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
   ]
 
   const navItems = allNavItems.filter(item => {
+      // Hide Accounts from non-admin/non-agency
+      if (item.name === 'Accounts') {
+          return ['super_admin', 'agency', 'admin'].includes(role)
+      }
+
       if (role === 'agent') {
           return ['Inventory', 'CRM', 'Assets', 'Profile'].includes(item.name)
       }

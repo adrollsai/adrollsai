@@ -29,11 +29,13 @@ export default function CRMPage() {
   const router = useRouter()
   
   // --- ROLE & HIERARCHY STATE ---
-  const [role, setRole] = useState<'admin' | 'agent'>('admin')
+  const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent'>('admin')
   const [team, setTeam] = useState<any[]>([])
   const [parentAdminId, setParentAdminId] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [isAssigning, setIsAssigning] = useState(false)
+
+  const isAdminLike = ['super_admin', 'agency', 'admin', 'client'].includes(role)
 
   // --- CRM STATE (LOCAL CACHE) ---
   const [leads, setLeads] = useState<any[]>([])
@@ -72,16 +74,17 @@ export default function CRMPage() {
       setUserId(user.id)
 
       // Fetch Fresh Data
-      const { data: profile } = await supabase.from('profiles').select('role, parent_id, business_name').eq('id', user.id).single()
-      const currentRole = profile?.role || 'admin'
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name').eq('id', user.id).single()
+      const currentRole = profile?.role as any || 'admin'
       setRole(currentRole)
-      if (profile?.parent_id) setParentAdminId(profile.parent_id)
+      
+      const parentId = profile?.parent_id || profile?.agency_id
+      if (parentId) setParentAdminId(parentId)
 
-      if (currentRole === 'admin') {
-          const { data: teamData } = await supabase.from('profiles').select('id, business_name').eq('parent_id', user.id)
+      if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
+          const { data: teamData } = await supabase.from('profiles').select('id, business_name').eq('agency_id', user.id)
           setTeam(teamData || [])
       } else {
-          // For agents, we should at least have their own info in "team" so they don't see "Unassigned" for themselves
           setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
       }
 
@@ -89,10 +92,20 @@ export default function CRMPage() {
         .select('*, lead_history(action_type, description, created_at)')
         .order('facebook_created_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
-      if (currentRole === 'admin') {
-          query = query.eq('user_id', user.id) 
+
+      if (currentRole === 'super_admin') {
+          // Super admin sees everything
+      } else if (currentRole === 'agency') {
+          // Agency sees their own + their clients'
+          const { data: clientIds } = await supabase.from('profiles').select('id').eq('agency_id', user.id)
+          const allIds = [user.id, ...(clientIds?.map(c => c.id) || [])]
+          query = query.in('user_id', allIds)
+      } else if (currentRole === 'admin' || currentRole === 'client') {
+          // Client/Business Owner sees all their leads
+          query = query.eq('user_id', user.id)
       } else {
-          query = query.eq('user_id', profile?.parent_id).eq('assigned_to', user.id) 
+          // Agents see only leads assigned to them from their parent
+          query = query.eq('user_id', parentAdminId).eq('assigned_to', user.id) 
       }
 
       const { data, error } = await query
@@ -346,7 +359,7 @@ END:VCARD\n`
             </div>
             
             <div className="flex gap-2.5 flex-wrap w-full md:w-auto">
-                {role === 'admin' && (
+                {isAdminLike && (
                     <>
                         <button onClick={executeRoundRobin} disabled={isAssigning} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-violet-200 bg-violet-50 text-violet-600 hover:bg-violet-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
                             {isAssigning ? <Loader2 size={16} className="animate-spin" /> : <Shuffle size={16} />}
@@ -503,7 +516,7 @@ END:VCARD\n`
                             {/* Left Column */}
                             <div className="flex flex-col gap-1">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lead Manager</span>
-                                {role === 'admin' ? (
+                                {isAdminLike ? (
                                     <div onClick={e => e.stopPropagation()} className="relative mt-0.5">
                                         <select value={lead.assigned_to || ''} onChange={(e) => assignLead(lead.id, e.target.value, e)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 text-slate-700 text-xs font-bold rounded-lg py-1.5 pl-2 pr-6 outline-none transition-all cursor-pointer truncate border border-slate-200/60">
                                             <option value="">Unassigned</option>
@@ -623,7 +636,7 @@ END:VCARD\n`
       )}
 
       {/* SYNC MODAL */}
-      {role === 'admin' && isSyncModalOpen && (
+      {isAdminLike && isSyncModalOpen && (
         <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
             <div className="bg-white w-full max-w-md rounded-t-[1.75rem] xs:rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 flex flex-col overflow-hidden">
                 <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white">

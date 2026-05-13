@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/client'
 import BottomNav from '@/components/BottomNav'
 import PushManager from '@/components/PushManager'
 import { Loader2 } from 'lucide-react'
+import { Toaster } from 'sonner'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -24,31 +25,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       // Check user's profile
       const { data: userProfile } = await supabase
         .from('profiles')
-        .select('subscription_status, role, parent_id')
+        .select('subscription_status, role, parent_id, agency_id')
         .eq('id', session.user.id)
         .single()
 
       // Resolve Primary User for subscription check
       let subscriptionStatus = userProfile?.subscription_status?.toLowerCase() || ''
-      if (userProfile?.parent_id) {
+      const parentId = userProfile?.parent_id || userProfile?.agency_id
+      if (parentId) {
           const { data: parentProfile } = await supabase
             .from('profiles')
             .select('subscription_status')
-            .eq('id', userProfile.parent_id)
+            .eq('id', parentId)
             .single()
           subscriptionStatus = parentProfile?.subscription_status?.toLowerCase() || ''
       }
 
       const isPaid = subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro'
       const isBillingPage = pathname === '/dashboard/billing'
+      const isAdminLike = ['super_admin', 'agency', 'admin', 'client'].includes(userProfile?.role || '')
 
       // If they haven't paid, and they aren't already on the billing page, trap them!
-      // This applies to both primary admins and team admins
-      if (!isPaid && !isBillingPage && userProfile?.role === 'admin') {
+      // This applies to primary accounts
+      if (!isPaid && !isBillingPage && isAdminLike) {
         router.push('/dashboard/billing')
       } else {
-        // AUTO-FIX: If they are 'agent' but have no parent_id, they are a self-registered business owner -> Admin
-        if (userProfile?.role === 'agent' && !userProfile?.parent_id) {
+        // AUTO-FIX: If they are 'agent'/'client' but have no parent_id/agency_id, they are a self-registered business owner -> Admin/Agency
+        if ((userProfile?.role === 'agent' || userProfile?.role === 'client') && !userProfile?.parent_id && !userProfile?.agency_id) {
           console.log("🛠️ Auto-upgrading self-registered user to admin...");
           await supabase
             .from('profiles')
@@ -72,6 +75,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <PushManager variant="banner" />
 
       {children}
+      <Toaster position="top-center" richColors />
 
       {/* Hide the navigation bar if they are trapped on the billing page */}
       {pathname !== '/dashboard/billing' && <BottomNav />}

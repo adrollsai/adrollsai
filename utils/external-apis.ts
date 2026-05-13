@@ -176,6 +176,95 @@ export async function postToInstagram(accessToken: string, pageId: string, media
 }
 
 /**
+ * 3.5 LinkedIn Posting (Latest 2026 Versioned REST API)
+ */
+export async function postToLinkedin(accessToken: string, linkedinId: string, assetUrl: string, commentary: string, type: string = 'image'): Promise<any> {
+    const urn = `urn:li:person:${linkedinId}`
+    const linkedinVersion = '202604'
+    let assetUrn = null
+
+    if (assetUrl) {
+        const isVideo = type === 'video'
+        const initEndpoint = isVideo 
+            ? 'https://api.linkedin.com/rest/videos?action=initializeUpload'
+            : 'https://api.linkedin.com/rest/images?action=initializeUpload'
+
+        // 1. Initialize
+        const initRes = await fetch(initEndpoint, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Linkedin-Version': linkedinVersion,
+                'X-Restli-Protocol-Version': '2.0.0',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                initializeUploadRequest: { owner: urn }
+            })
+        })
+        const initData = await initRes.json()
+        if (!initRes.ok) throw new Error(`LinkedIn Init Error: ${initData.message || 'Failed'}`)
+
+        const uploadUrl = isVideo ? initData.value.uploadInstructions[0].uploadUrl : initData.value.uploadUrl
+        assetUrn = isVideo ? initData.value.video : initData.value.image
+
+        // 2. Upload Binary
+        const fileRes = await fetch(assetUrl)
+        const fileBlob = await fileRes.arrayBuffer()
+        const uploadRes = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': type === 'video' ? 'video/mp4' : 'image/jpeg'
+            },
+            body: fileBlob
+        })
+        if (!uploadRes.ok) throw new Error('LinkedIn Binary Upload Failed')
+
+        // 2.5 Wait for processing
+        await new Promise(resolve => setTimeout(resolve, 3000))
+    }
+
+    // 3. Create Post
+    const payload: any = {
+        author: urn,
+        commentary: commentary,
+        visibility: 'PUBLIC',
+        distribution: {
+            feedDistribution: 'MAIN_FEED'
+        },
+        lifecycleState: 'PUBLISHED'
+    }
+
+    if (assetUrn) {
+        payload.content = {
+            media: {
+                id: assetUrn
+            }
+        }
+    }
+
+    const response = await fetch('https://api.linkedin.com/rest/posts', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Linkedin-Version': linkedinVersion,
+            'X-Restli-Protocol-Version': '2.0.0',
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+    })
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'LinkedIn API error' }))
+        throw new Error(errorData.message || `LinkedIn error ${response.status}`)
+    }
+
+    const postId = response.headers.get('x-restli-id')
+    return { id: postId }
+}
+
+/**
  * 4. Kie.ai Chat API (Upgraded for Multimodal Vision)
  */
 export async function generateKieChat(prompt: string, model: string = "gemini-3-flash", imageUrl?: string): Promise<string> {

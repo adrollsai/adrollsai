@@ -67,16 +67,41 @@ export async function GET(request: Request) {
   try {
     const supabase = await createClient();
     
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('business_name, logo_url')
-      .eq('custom_domain', host)
-      .single();
+    let brandingProfile = null;
 
-    if (profile) {
-      const businessName = profile.business_name || 'Marketing Portal';
-      const logoVersion = profile.logo_url 
-        ? encodeURIComponent(profile.logo_url.split('/').pop() || 'v1') 
+    // 1. If it's a custom domain, fetch that profile directly
+    if (!isPrimaryDomain) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('business_name, logo_url, role, agency_id')
+        .eq('custom_domain', host)
+        .single();
+      brandingProfile = data;
+    } 
+    // 2. If it's the primary domain and a UID is provided, use that context
+    else if (uid) {
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('business_name, logo_url, role, agency_id')
+        .eq('id', uid)
+        .single();
+      
+      if (userProfile?.role === 'client' && userProfile.agency_id) {
+        const { data: agencyProfile } = await supabase
+          .from('profiles')
+          .select('business_name, logo_url')
+          .eq('id', userProfile.agency_id)
+          .single();
+        brandingProfile = agencyProfile;
+      } else {
+        brandingProfile = userProfile;
+      }
+    }
+
+    if (brandingProfile) {
+      const businessName = brandingProfile.business_name || 'Marketing Portal';
+      const logoVersion = brandingProfile.logo_url 
+        ? encodeURIComponent(brandingProfile.logo_url.split('/').pop() || 'v1') 
         : 'v1';
       
       manifestData = {
@@ -88,7 +113,7 @@ export async function GET(request: Request) {
         scope: '/',
         display: 'standalone',
         background_color: '#FFFFFF',
-        theme_color: '#000000',
+        theme_color: '#2563EB',
         icons: [
           { 
             src: `/api/org-icon?type=icon&v=${logoVersion}`, 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Filter, Download, Facebook, Instagram, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2, Check, Trash2, Upload } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, Linkedin, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2, Check, Trash2, Upload } from 'lucide-react'
 import JSZip from 'jszip'
 import { analyzeMediaAction } from './actions'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -173,6 +173,35 @@ export default function AssetsPage() {
             }
         } catch (e) {
             alert('Network error')
+        } finally {
+            setIsPosting(false)
+        }
+    }
+
+    // 3.5 Handle Post to LinkedIn
+    const handlePostLinkedin = async () => {
+        if (!selectedAsset) return
+        setIsPosting(true)
+        try {
+            const response = await fetch('/api/post/linkedin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    assetUrl: selectedAsset.url,
+                    text: caption || 'Shared via AdRolls AI Professional 🚀',
+                    type: selectedAsset.type
+                })
+            })
+            const data = await response.json()
+            if (response.ok) {
+                toast.success('Successfully posted to LinkedIn!')
+                setSelectedAsset(null)
+                fetchAssets(true)
+            } else {
+                toast.error('LinkedIn Error: ' + (data.error || 'Failed to post'))
+            }
+        } catch (e) {
+            toast.error('Network error connecting to LinkedIn')
         } finally {
             setIsPosting(false)
         }
@@ -430,7 +459,7 @@ export default function AssetsPage() {
                     imageUrl: selectedAsset.url,
                     caption: caption || 'Automated Post via AdRolls AI 🚀',
                     type: selectedAsset.type,
-                    platforms: targets
+                    platforms: [...targets, 'linkedin'] // Always try LinkedIn if connected
                 })
             })
 
@@ -965,21 +994,28 @@ export default function AssetsPage() {
                                 {/* Actions Grid */}
                                 <div className="flex flex-col gap-3">
 
-                                    {/* Meta Socials Grid */}
-                                    <div className="flex gap-3">
+                                    {/* Socials Grid */}
+                                    <div className="grid grid-cols-3 gap-3">
                                         <button
                                             onClick={handlePostFacebook}
                                             disabled={isPosting || isDownloading}
-                                            className="flex-1 bg-[#1877F2]/10 text-[#1877F2] hover:bg-[#1877F2] hover:text-white py-3.5 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                            className="bg-[#1877F2]/10 text-[#1877F2] hover:bg-[#1877F2] hover:text-white py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
                                         >
-                                            <Facebook size={18} className="currentColor" /> Facebook
+                                            <Facebook size={18} /> FB
                                         </button>
                                         <button
                                             onClick={handlePostInstagram}
                                             disabled={isPosting || isDownloading}
-                                            className="flex-1 bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white opacity-90 hover:opacity-100 py-3.5 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 transition-opacity shadow-sm disabled:opacity-50"
+                                            className="bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white opacity-90 hover:opacity-100 py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-opacity shadow-sm disabled:opacity-50"
                                         >
-                                            <Instagram size={18} /> Instagram
+                                            <Instagram size={18} /> Insta
+                                        </button>
+                                        <button
+                                            onClick={handlePostLinkedin}
+                                            disabled={isPosting || isDownloading}
+                                            className="bg-[#0A66C2]/10 text-[#0A66C2] hover:bg-[#0A66C2] hover:text-white py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                        >
+                                            <Linkedin size={18} /> LinkedIn
                                         </button>
                                     </div>
 

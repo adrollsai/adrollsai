@@ -25,12 +25,21 @@ export async function generateMetadata(): Promise<Metadata> {
 
   let profileData = null;
 
+  // Resolve branding based on host first (Custom Domain)
   if (!isSystemHost(host)) {
-    const { data } = await supabase.from('profiles').select('business_name, logo_url').eq('custom_domain', host).single();
+    const { data } = await supabase.from('profiles').select('business_name, logo_url, role, agency_id').eq('custom_domain', host).single();
     profileData = data;
   } else if (user) {
-    const { data } = await supabase.from('profiles').select('business_name, logo_url').eq('id', user.id).single();
-    profileData = data;
+    // If on platform domain, use logged in user context
+    const { data: userProfile } = await supabase.from('profiles').select('business_name, logo_url, role, agency_id').eq('id', user.id).single();
+    
+    // If it's a client, we MUST show the Agency branding
+    if (userProfile?.role === 'client' && userProfile.agency_id) {
+      const { data: agencyProfile } = await supabase.from('profiles').select('business_name, logo_url').eq('id', userProfile.agency_id).single();
+      profileData = agencyProfile;
+    } else {
+      profileData = userProfile;
+    }
   }
 
   const defaultTitle = "AdRolls AI | Ultimate Marketing Automation for SMBs";
@@ -101,27 +110,31 @@ export default async function RootLayout({
   let splashUrl = "/api/org-icon?type=splash"; 
   let manifestUrl = "/api/manifest";
 
-  let profileData = null;
+  let brandingProfile = null;
 
- // THE FIX: Fetch profile data if custom domain OR if user is logged in!
   if (!isSystemHost(host)) {
-     const { data } = await supabase.from('profiles').select('logo_url').eq('custom_domain', host).single();
-     profileData = data;
+     const { data } = await supabase.from('profiles').select('logo_url, role, agency_id').eq('custom_domain', host).single();
+     brandingProfile = data;
   } else if (user) {
-     const { data } = await supabase.from('profiles').select('logo_url').eq('id', user.id).single();
-     profileData = data;
+     const { data: userProfile } = await supabase.from('profiles').select('logo_url, role, agency_id').eq('id', user.id).single();
+     
+     // Resolve Agency Branding if user is a client
+     if (userProfile?.role === 'client' && userProfile.agency_id) {
+        const { data: agencyProfile } = await supabase.from('profiles').select('logo_url').eq('id', userProfile.agency_id).single();
+        brandingProfile = agencyProfile;
+     } else {
+        brandingProfile = userProfile;
+     }
   }
 
-  if (profileData?.logo_url) {
-     const v = encodeURIComponent(profileData.logo_url.split('/').pop() || 'v1');
+  if (brandingProfile?.logo_url) {
+     const v = encodeURIComponent(brandingProfile.logo_url.split('/').pop() || 'v1');
      const uidParam = user ? `&uid=${user.id}` : '';
      
      splashUrl = `/api/org-icon?type=splash&v=${v}${uidParam}`;
-     // FIXED: Just use the uidParam we already safely created!
      manifestUrl = `/api/manifest?v=${v}${uidParam}`; 
      
   } else if (user) {
-     // Even if no custom logo is uploaded, pass UID so it processes the default icon perfectly
      splashUrl = `/api/org-icon?type=splash&uid=${user.id}`;
      manifestUrl = `/api/manifest?uid=${user.id}`;
   }
@@ -132,7 +145,6 @@ export default async function RootLayout({
         <link rel="manifest" href={manifestUrl} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        {/* iOS Splash Screen: Dynamically points to the Sharp image processor */}
         <link rel="apple-touch-startup-image" href={splashUrl} />
       </head>
       <body className={inter.className}>
