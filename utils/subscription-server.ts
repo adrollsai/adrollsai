@@ -26,7 +26,7 @@ export async function checkLimitAndIncrement(
     if (profile.parent_id) {
         const { data: parentProfile } = await supabase
             .from('profiles')
-            .select(`id, ${type}_used, usage_reset_date`)
+            .select(`id, ${type}_used, usage_reset_date, parent_id`)
             .eq('id', profile.parent_id)
             .single();
         if (parentProfile) profileToUpdate = parentProfile;
