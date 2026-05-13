@@ -21,23 +21,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return
       }
 
-      // Check user's subscription status
-      const { data } = await supabase
+      // Check user's profile
+      const { data: userProfile } = await supabase
         .from('profiles')
         .select('subscription_status, role, parent_id')
         .eq('id', session.user.id)
         .single()
 
-      const currentStatus = data?.subscription_status?.toLowerCase() || ''
-      const isPaid = currentStatus === 'active' || currentStatus === 'trialing' || currentStatus === 'pro'
+      // Resolve Primary User for subscription check
+      let subscriptionStatus = userProfile?.subscription_status?.toLowerCase() || ''
+      if (userProfile?.parent_id) {
+          const { data: parentProfile } = await supabase
+            .from('profiles')
+            .select('subscription_status')
+            .eq('id', userProfile.parent_id)
+            .single()
+          subscriptionStatus = parentProfile?.subscription_status?.toLowerCase() || ''
+      }
+
+      const isPaid = subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro'
       const isBillingPage = pathname === '/dashboard/billing'
 
       // If they haven't paid, and they aren't already on the billing page, trap them!
-      if (!isPaid && !isBillingPage && data?.role === 'admin') {
+      // This applies to both primary admins and team admins
+      if (!isPaid && !isBillingPage && userProfile?.role === 'admin') {
         router.push('/dashboard/billing')
       } else {
         // AUTO-FIX: If they are 'agent' but have no parent_id, they are a self-registered business owner -> Admin
-        if (data?.role === 'agent' && !data?.parent_id) {
+        if (userProfile?.role === 'agent' && !userProfile?.parent_id) {
           console.log("🛠️ Auto-upgrading self-registered user to admin...");
           await supabase
             .from('profiles')

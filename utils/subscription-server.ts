@@ -10,7 +10,7 @@ export async function checkLimitAndIncrement(
     // 1. Fetch current usage and reset date
     const { data: profile, error } = await supabase
         .from('profiles')
-        .select(`id, ${type}_used, usage_reset_date`)
+        .select(`id, ${type}_used, usage_reset_date, parent_id`)
         .eq('id', userId)
         .single();
 
@@ -18,13 +18,27 @@ export async function checkLimitAndIncrement(
         throw new Error("Could not verify account status.");
     }
 
-    let used = (profile as any)[`${type}_used`] || 0;
-    const resetDate = profile.usage_reset_date;
+    // Resolve Primary User ID (Owner of the limits)
+    const primaryUserId = profile.parent_id || userId;
+    
+    // If current user is an agent, we MUST re-fetch the parent's actual usage
+    let profileToUpdate = profile;
+    if (profile.parent_id) {
+        const { data: parentProfile } = await supabase
+            .from('profiles')
+            .select(`id, ${type}_used, usage_reset_date`)
+            .eq('id', profile.parent_id)
+            .single();
+        if (parentProfile) profileToUpdate = parentProfile;
+    }
+
+    let used = (profileToUpdate as any)[`${type}_used`] || 0;
+    const resetDate = profileToUpdate.usage_reset_date;
     const now = new Date();
 
     // 2. Check for monthly reset
     if (!resetDate || now > new Date(resetDate)) {
-        console.log(`[Subscription] Resetting usage for user ${userId}`);
+        console.log(`[Subscription] Resetting usage for primary user ${primaryUserId}`);
         const nextReset = new Date();
         nextReset.setMonth(nextReset.getMonth() + 1);
 
@@ -37,7 +51,7 @@ export async function checkLimitAndIncrement(
             usage_reset_date: nextReset.toISOString()
         };
 
-        await supabase.from('profiles').update(resetData).eq('id', userId);
+        await supabase.from('profiles').update(resetData).eq('id', primaryUserId);
         used = 0; // Reset local value for this check
     }
 
@@ -54,7 +68,7 @@ export async function checkLimitAndIncrement(
         .update({
             [`${type}_used`]: used + 1
         })
-        .eq('id', userId);
+        .eq('id', primaryUserId);
 
     if (updateError) {
         throw new Error("Failed to update usage quota.");
@@ -69,11 +83,15 @@ export async function refundLimit(
 ) {
     const supabase = await createClient();
     
-    // Fetch current usage
+    // Resolve Primary User ID
+    const { data: userProfile } = await supabase.from('profiles').select('parent_id').eq('id', userId).single();
+    const primaryUserId = userProfile?.parent_id || userId;
+
+    // Fetch current usage of primary user
     const { data: profile } = await supabase
         .from('profiles')
         .select(`${type}_used`)
-        .eq('id', userId)
+        .eq('id', primaryUserId)
         .single();
 
     const used = (profile as any)?.[`${type}_used`] || 0;
@@ -85,35 +103,42 @@ export async function refundLimit(
             .update({
                 [`${type}_used`]: used - 1
             })
-            .eq('id', userId);
-        console.log(`[Subscription] Refunded 1 ${type} to user ${userId}`);
+            .eq('id', primaryUserId);
+        console.log(`[Subscription] Refunded 1 ${type} to user ${primaryUserId} (requested by ${userId})`);
     }
 }
 
 export async function trackStorageUsage(userId: string, bytes: number) {
     const supabase = await createClient();
     
+    const { data: userProfile } = await supabase.from('profiles').select('parent_id').eq('id', userId).single();
+    const primaryUserId = userProfile?.parent_id || userId;
+    
     const { data: profile } = await supabase
         .from('profiles')
         .select('storage_bytes_used')
-        .eq('id', userId)
+        .eq('id', primaryUserId)
         .single();
         
     const currentBytes = profile?.storage_bytes_used || 0;
     
     await supabase.from('profiles').update({
         storage_bytes_used: currentBytes + bytes
-    }).eq('id', userId);
+    }).eq('id', primaryUserId);
 }
 
 export async function checkStorageLimit(userId: string) {
     const supabase = await createClient();
     
+    // Resolve Primary User ID
+    const { data: userProfile } = await supabase.from('profiles').select('parent_id').eq('id', userId).single();
+    const primaryUserId = userProfile?.parent_id || userId;
+    
     // Calculate real-time usage (more accurate than just trusting storage_bytes_used)
-    const { count: assetCount } = await supabase.from('assets').select('id', { count: 'exact', head: true }).eq('user_id', userId);
-    const { count: propCount } = await supabase.from('properties').select('id', { count: 'exact', head: true }).eq('user_id', userId);
-    const { count: leadCount } = await supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId);
-    const { count: msgCount } = await supabase.from('messages').select('id', { count: 'exact', head: true }).eq('user_id', userId);
+    const { count: assetCount } = await supabase.from('assets').select('id', { count: 'exact', head: true }).eq('user_id', primaryUserId);
+    const { count: propCount } = await supabase.from('properties').select('id', { count: 'exact', head: true }).eq('user_id', primaryUserId);
+    const { count: leadCount } = await supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', primaryUserId);
+    const { count: msgCount } = await supabase.from('messages').select('id', { count: 'exact', head: true }).eq('user_id', primaryUserId);
 
     const safeAssetCount = assetCount || 0;
     const safePropCount = propCount || 0;

@@ -10,7 +10,7 @@ const supabaseAdmin = createClient(
 // --- INVITE / ADD AGENT ---
 export async function POST(req: Request) {
   try {
-    const { adminId, email, password, businessName, fullName } = await req.json();
+    const { adminId, email, password, businessName, fullName, role } = await req.json();
 
     if (!adminId || !email || !password) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
         .from('profiles')
         .update({
           parent_id: adminId,
-          role: 'agent',
+          role: role || 'agent',
           // Optionally reset their selected meta pages so they don't bring old data
           selected_page_id: null, 
           ad_account_id: null,
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
           email: email,
           password: password,
           email_confirm: true,
-          user_metadata: { role: 'agent', parent_id: adminId } 
+          user_metadata: { role: role || 'agent', parent_id: adminId } 
       });
 
       if (createError) throw createError;
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
       if (createData?.user?.id) {
           await supabaseAdmin.from('profiles').update({
               parent_id: adminId,
-              role: 'agent',
+              role: role || 'agent',
               business_name: fullName || businessName
           }).eq('id', createData.user.id);
       }
