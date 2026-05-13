@@ -93,36 +93,42 @@ export type Database = {
           caption: string | null
           created_at: string
           id: string
+          kie_task_id: string | null
           master_creative_id: string | null
+          metadata: Json | null
           property_id: string | null
           share_stats: Json | null
           status: string | null
           type: string | null
-          url: string
+          url: string | null
           user_id: string | null
         }
         Insert: {
           caption?: string | null
           created_at?: string
           id?: string
+          kie_task_id?: string | null
           master_creative_id?: string | null
+          metadata?: Json | null
           property_id?: string | null
           share_stats?: Json | null
           status?: string | null
           type?: string | null
-          url: string
+          url?: string | null
           user_id?: string | null
         }
         Update: {
           caption?: string | null
           created_at?: string
           id?: string
+          kie_task_id?: string | null
           master_creative_id?: string | null
+          metadata?: Json | null
           property_id?: string | null
           share_stats?: Json | null
           status?: string | null
           type?: string | null
-          url?: string
+          url?: string | null
           user_id?: string | null
         }
         Relationships: [
@@ -431,54 +437,6 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
-      }
-      fraction_bookings: {
-        Row: {
-          created_at: string | null
-          end_date: string
-          holding_id: string
-          id: string
-          property_id: string
-          start_date: string
-          status: string | null
-          type: string
-        }
-        Insert: {
-          created_at?: string | null
-          end_date: string
-          holding_id: string
-          id?: string
-          property_id: string
-          start_date: string
-          status?: string | null
-          type: string
-        }
-        Update: {
-          created_at?: string | null
-          end_date?: string
-          holding_id?: string
-          id?: string
-          property_id?: string
-          start_date?: string
-          status?: string | null
-          type?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "fraction_bookings_holding_id_fkey"
-            columns: ["holding_id"]
-            isOneToOne: false
-            referencedRelation: "customer_holdings"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "fraction_bookings_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       fractions: {
         Row: {
@@ -876,13 +834,17 @@ export type Database = {
           ad_account_id: string | null
           ad_credits: number | null
           address: string | null
+          ai_ad_optimizations_used: number | null
+          ai_creatives_used: number | null
           badges: string[] | null
           brand_color: string | null
           business_name: string | null
+          campaign_launches_used: number | null
           contact_number: string | null
           created_at: string
           current_streak: number | null
           custom_domain: string | null
+          custom_prompt: string | null
           domain_verify_status: string | null
           domain_verify_token: string | null
           email: string | null
@@ -904,14 +866,18 @@ export type Database = {
           organization_id: string | null
           parent_id: string | null
           pixel_id: string | null
+          remarketing_campaigns_used: number | null
           role: string | null
           selected_page_id: string | null
           selected_page_name: string | null
           selected_page_token: string | null
+          seo_articles_used: number | null
+          storage_bytes_used: number | null
           subscription_plan: string | null
           subscription_status: string | null
           subscription_valid_until: string | null
           total_xp: number | null
+          usage_reset_date: string | null
           whatsapp_access_token: string | null
           whatsapp_business_account_id: string | null
           whatsapp_phone_number_id: string | null
@@ -923,13 +889,17 @@ export type Database = {
           ad_account_id?: string | null
           ad_credits?: number | null
           address?: string | null
+          ai_ad_optimizations_used?: number | null
+          ai_creatives_used?: number | null
           badges?: string[] | null
           brand_color?: string | null
           business_name?: string | null
+          campaign_launches_used?: number | null
           contact_number?: string | null
           created_at?: string
           current_streak?: number | null
           custom_domain?: string | null
+          custom_prompt?: string | null
           domain_verify_status?: string | null
           domain_verify_token?: string | null
           email?: string | null
@@ -951,14 +921,18 @@ export type Database = {
           organization_id?: string | null
           parent_id?: string | null
           pixel_id?: string | null
+          remarketing_campaigns_used?: number | null
           role?: string | null
           selected_page_id?: string | null
           selected_page_name?: string | null
           selected_page_token?: string | null
+          seo_articles_used?: number | null
+          storage_bytes_used?: number | null
           subscription_plan?: string | null
           subscription_status?: string | null
           subscription_valid_until?: string | null
           total_xp?: number | null
+          usage_reset_date?: string | null
           whatsapp_access_token?: string | null
           whatsapp_business_account_id?: string | null
           whatsapp_phone_number_id?: string | null
@@ -970,13 +944,17 @@ export type Database = {
           ad_account_id?: string | null
           ad_credits?: number | null
           address?: string | null
+          ai_ad_optimizations_used?: number | null
+          ai_creatives_used?: number | null
           badges?: string[] | null
           brand_color?: string | null
           business_name?: string | null
+          campaign_launches_used?: number | null
           contact_number?: string | null
           created_at?: string
           current_streak?: number | null
           custom_domain?: string | null
+          custom_prompt?: string | null
           domain_verify_status?: string | null
           domain_verify_token?: string | null
           email?: string | null
@@ -998,14 +976,18 @@ export type Database = {
           organization_id?: string | null
           parent_id?: string | null
           pixel_id?: string | null
+          remarketing_campaigns_used?: number | null
           role?: string | null
           selected_page_id?: string | null
           selected_page_name?: string | null
           selected_page_token?: string | null
+          seo_articles_used?: number | null
+          storage_bytes_used?: number | null
           subscription_plan?: string | null
           subscription_status?: string | null
           subscription_valid_until?: string | null
           total_xp?: number | null
+          usage_reset_date?: string | null
           whatsapp_access_token?: string | null
           whatsapp_business_account_id?: string | null
           whatsapp_phone_number_id?: string | null
@@ -1131,7 +1113,7 @@ export type Database = {
           endpoint: string
           id: string
           p256dh: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           auth: string
@@ -1140,7 +1122,7 @@ export type Database = {
           endpoint: string
           id?: string
           p256dh: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           auth?: string
@@ -1149,7 +1131,7 @@ export type Database = {
           endpoint?: string
           id?: string
           p256dh?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -1157,44 +1139,6 @@ export type Database = {
             columns: ["catalog_owner_id"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      quarterly_preferences: {
-        Row: {
-          created_at: string | null
-          holding_id: string
-          id: string
-          locked_at: string | null
-          preference: string
-          quarter: number
-          year: number
-        }
-        Insert: {
-          created_at?: string | null
-          holding_id: string
-          id?: string
-          locked_at?: string | null
-          preference: string
-          quarter: number
-          year: number
-        }
-        Update: {
-          created_at?: string | null
-          holding_id?: string
-          id?: string
-          locked_at?: string | null
-          preference?: string
-          quarter?: number
-          year?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "quarterly_preferences_holding_id_fkey"
-            columns: ["holding_id"]
-            isOneToOne: false
-            referencedRelation: "customer_holdings"
             referencedColumns: ["id"]
           },
         ]
@@ -1236,6 +1180,75 @@ export type Database = {
             columns: ["ad_id"]
             isOneToOne: false
             referencedRelation: "ads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      video_tasks: {
+        Row: {
+          aspect_ratio: string | null
+          asset_id: string | null
+          created_at: string | null
+          current_index: number | null
+          final_caption: string | null
+          id: string
+          last_error: string | null
+          last_successful_task_id: string | null
+          last_task_id: string | null
+          prompts: Json
+          property_id: string | null
+          retry_count: number | null
+          status: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          aspect_ratio?: string | null
+          asset_id?: string | null
+          created_at?: string | null
+          current_index?: number | null
+          final_caption?: string | null
+          id?: string
+          last_error?: string | null
+          last_successful_task_id?: string | null
+          last_task_id?: string | null
+          prompts: Json
+          property_id?: string | null
+          retry_count?: number | null
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          aspect_ratio?: string | null
+          asset_id?: string | null
+          created_at?: string | null
+          current_index?: number | null
+          final_caption?: string | null
+          id?: string
+          last_error?: string | null
+          last_successful_task_id?: string | null
+          last_task_id?: string | null
+          prompts?: Json
+          property_id?: string | null
+          retry_count?: number | null
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_tasks_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "video_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
             referencedColumns: ["id"]
           },
         ]

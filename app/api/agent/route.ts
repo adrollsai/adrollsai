@@ -30,7 +30,11 @@ export async function POST(req: Request) {
     }
 
     // 1. GATHER DYNAMIC CONTEXT
-    const { data: profile } = await supabase.from('profiles').select('business_name').eq('id', user.id).single();
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('business_name, mission_statement, custom_prompt')
+      .eq('id', user.id)
+      .single();
     const { data: properties } = await supabase.from('properties').select('title').eq('user_id', user.id);
     const availableTitles = properties && Array.isArray(properties) ? properties.map(p => p.title).join(', ') : 'None';
 
@@ -55,6 +59,15 @@ export async function POST(req: Request) {
       - Do NOT skip inspection when analyzing campaigns.
       - Use 'generate_creative_angles' as the first step for new creative tasks.
       - CONCISENESS: Keep your analysis sharp. No markdown.
+
+      BUSINESS CONTEXT (PRIORITY):
+      Business Name: ${profile?.business_name || 'Not provided'}
+      Business Mission: ${profile?.mission_statement || 'Not provided'}
+      Global Visual Style Preference (MUST PRIORITIZE): ${profile?.custom_prompt || 'No specific style provided'}
+      
+      INSTRUCTIONS FOR EMPTY INVENTORY:
+      If 'get_product_details' returns no results or if the user has no items in 'availableTitles', 
+      you MUST proceed using ONLY the Business Name and Mission Statement above to create general brand creatives or service-based ads.
     `;
 
     console.log(`[Agent] Processing request for user: ${user.id}`);
@@ -203,6 +216,7 @@ export async function POST(req: Request) {
               PRODUCT: ${productTitle || 'Unknown Product'}
               DESCRIPTION: ${productDescription || 'No description provided'}
               USER INSTRUCTIONS: ${additionalInstructions || 'None'}
+              VISUAL STYLE PREFERENCE (MUST FOLLOW): ${profile?.custom_prompt || 'None'}
               PREVIOUS ANGLES (AVOID THESE): ${previousContext || 'None'}
 
               FRAMEWORK: Use Alex Hormozi's Value Equation (Dream Outcome, Perceived Likelihood of Achievement, Time Delay, Effort & Sacrifice).

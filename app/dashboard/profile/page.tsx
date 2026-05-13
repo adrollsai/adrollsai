@@ -288,7 +288,8 @@ export default function ProfilePage() {
     address: '',
     logoUrl: '',
     facebookUrl: '',
-    instagramUrl: ''
+    instagramUrl: '',
+    customPrompt: ''
   })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -465,7 +466,7 @@ export default function ProfilePage() {
 
       const { data } = await supabase
         .from('profiles')
-        .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id, custom_domain, domain_verify_token, domain_verify_status, role')
+        .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id, custom_domain, domain_verify_token, domain_verify_status, role, custom_prompt')
         .eq('id', user.id)
         .single()
 
@@ -488,7 +489,8 @@ export default function ProfilePage() {
           address: profileData.address || '',
           logoUrl: profileData.logo_url || '',
           facebookUrl: profileData.facebook_url || '',
-          instagramUrl: profileData.instagram_url || ''
+          instagramUrl: profileData.instagram_url || '',
+          customPrompt: profileData.custom_prompt || ''
         })
 
         if (profileData.facebook_token && isValidFacebookToken(profileData.facebook_token)) {
@@ -677,6 +679,7 @@ export default function ProfilePage() {
       logo_url: formData.logoUrl,
       facebook_url: role === 'admin' ? formData.facebookUrl : undefined,
       instagram_url: role === 'admin' ? formData.instagramUrl : undefined,
+      custom_prompt: formData.customPrompt
     }
 
     const { error } = await supabase.from('profiles').update(updates).eq('id', user.id)
@@ -837,7 +840,24 @@ export default function ProfilePage() {
                     value={formData.mission}
                     onChange={(e) => setFormData({ ...formData, mission: e.target.value })}
                     className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-4 px-5 rounded-3xl text-slate-800 text-sm font-medium resize-none focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all"
+                    placeholder="What does your business do? What are you trying to achieve?"
                   />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-blue-600 ml-2 block mb-2 mt-2 uppercase tracking-wider flex items-center gap-2">
+                    <Target size={14} /> Custom Image/Video Generation Prompt
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={formData.customPrompt}
+                    onChange={(e) => setFormData({ ...formData, customPrompt: e.target.value })}
+                    className="w-full bg-blue-50/30 hover:bg-blue-50/50 focus:bg-white py-4 px-5 rounded-3xl text-slate-800 text-sm font-medium resize-none focus:ring-4 focus:ring-blue-500/20 outline-none border border-blue-200 focus:border-blue-400 transition-all"
+                    placeholder="e.g. 'Cinematic lighting, hyper-realistic, professional photography style, vibrant colors...'"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-2 ml-3 font-medium">
+                    This detailed style guide will be prioritized in all AI creative generations.
+                  </p>
                 </div>
 
                 <div className="pb-2">

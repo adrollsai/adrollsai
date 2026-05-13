@@ -72,6 +72,8 @@ OBJECTIVE: Design a "High-Value" professional Meta Ad creative for: "${prop.titl
 
 CONTEXT: "${prop.description || ''}"
 BUSINESS: "${businessName}"
+MISSION: "${profile.mission_statement || ''}"
+STYLE PREFERENCE (MUST PRIORITIZE): "${profile.custom_prompt || ''}"
 
 DESIGN RULES:
 1. PREMIUM AESTHETIC: High-quality photography, sophisticated lighting, and clean visual hierarchy.
@@ -100,6 +102,7 @@ DESIGN RULES:
                   TITLE: ${prop.title}
                   DETAILS: ${prop.description || ''}
                   COMPANY: ${businessName}
+                  MISSION: ${profile.mission_statement || ''}
                   CONTACT: ${contactNumber || 'DM for details!'}
                   FRAMEWORK:
                   1. HOOK: Call out the buyer.

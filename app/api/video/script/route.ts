@@ -24,7 +24,7 @@ export async function POST(request: Request) {
 
         const { data: profile } = await supabase
             .from('profiles')
-            .select('business_name')
+            .select('business_name, mission_statement, custom_prompt')
             .eq('id', user.id)
             .single();
 
@@ -37,6 +37,8 @@ Objective: Script a 30-second hyper-realistic UGC-style "talking head" video for
 
 Input Data:
 Business Name: ${businessName}
+Mission/Goal: ${profile?.mission_statement || 'N/A'}
+Global Visual Style (PRIORITY): ${profile?.custom_prompt || 'N/A'}
 Product Info: ${productInfo}
 User Custom Instructions: ${userInstructions || 'Create an engaging promotion.'}
 
