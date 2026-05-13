@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone } from 'lucide-react'
+import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 const STAGES = ['New', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
@@ -107,6 +107,30 @@ export default function LeadProfilePage() {
     await supabase.from('leads').update({ [field]: value }).eq('id', id)
   }
 
+  const downloadVCard = () => {
+    if (!lead) return
+    // Format name for VCF
+    const vcfName = lead.name || 'Lead'
+    const vcfPhone = lead.phone || ''
+    
+    const vcard = `BEGIN:VCARD
+VERSION:3.0
+FN:${vcfName}
+TEL;TYPE=CELL:${vcfPhone}
+EMAIL:${lead.email || ''}
+END:VCARD`
+    
+    const blob = new Blob([vcard], { type: 'text/vcard' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `${vcfName.replace(/\s+/g, '_')}.vcf`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  }
+
   if (loading) return <div className="p-10 flex justify-center"><RefreshCw className="animate-spin text-slate-400" /></div>
   if (!lead) return <div className="p-10 text-center text-slate-500">Lead not found.</div>
 
@@ -122,9 +146,14 @@ export default function LeadProfilePage() {
                 <p className="text-xs font-medium text-slate-500 mt-0.5 truncate">{lead.phone} {lead.email ? `• ${lead.email}` : ''}</p>
             </div>
             {lead.phone && (
-                <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-3 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors"><MessageCircle size={18}/></a>
+                <div className="flex gap-2">
+                    <button onClick={downloadVCard} className="p-3 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-full shadow-sm transition-colors" title="Save to Contacts">
+                        <UserPlus size={18}/>
+                    </button>
+                    <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-3 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors"><MessageCircle size={18}/></a>
+                    <a href={`tel:${lead.phone}`} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full shadow-sm transition-colors"><Phone size={18}/></a>
+                </div>
             )}
-            <a href={`tel:${lead.phone}`} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full shadow-sm transition-colors"><Phone size={18}/></a>
         </div>
 
         {/* Content Body */}

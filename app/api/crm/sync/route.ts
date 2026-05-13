@@ -54,7 +54,7 @@ export async function POST(request: Request) {
 
         const { error } = await supabase.from('leads').upsert(chunk, { 
             onConflict: 'facebook_lead_id',
-            ignoreDuplicates: false 
+            ignoreDuplicates: true 
         });
 
         if (error) {

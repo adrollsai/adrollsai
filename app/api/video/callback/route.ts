@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { extendVeoTask } from '@/utils/external-apis';
+import { extendVeoTask, createVeoTask, callGemini } from '@/utils/external-apis';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { sendPushNotification } from '@/utils/notification-helper';
@@ -60,11 +60,93 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Task not found' }, { status: 404 });
         }
 
-        // 2. Handle failure
+        // 2. Handle failure (Retry Logic)
         if (code !== 200 && code !== 0) {
             console.error(`[Video Callback] Kie.ai Task Failed: ${msg}`);
-            await supabaseAdmin.from('video_tasks').update({ status: 'Failed' }).eq('id', videoTask.id);
-            // Also update asset status to Failed so it stops spinning
+            
+            const retryCount = videoTask.retry_count || 0;
+            const maxRetries = 3;
+
+            if (retryCount < maxRetries) {
+                console.log(`[Video Callback] Attempting retry ${retryCount + 1}/${maxRetries} for task ${videoTask.id}`);
+                
+                let currentPrompt = videoTask.prompts[videoTask.current_index];
+                const isPolicyViolation = /policy|allowed|sensitive|restricted|violation/i.test(msg || "");
+
+                if (isPolicyViolation) {
+                    console.log(`[Video Callback] Policy violation detected. Rewriting prompt with AI...`);
+                    try {
+                        const rewrittenPrompt = await callGemini(`The following video generation prompt was flagged for a policy violation: "${currentPrompt}". Please rewrite it to be safe, professional, and compliant with AI safety guidelines while maintaining the original creative intent for a real estate marketing video. Avoid any sensitive, restricted, or potentially harmful content. Return ONLY the rewritten prompt text.`);
+                        if (rewrittenPrompt) {
+                            console.log(`[Video Callback] Original: ${currentPrompt}`);
+                            console.log(`[Video Callback] Rewritten: ${rewrittenPrompt}`);
+                            currentPrompt = rewrittenPrompt;
+                            
+                            // Update the prompt in the database so we use the safe version from now on
+                            const updatedPrompts = [...videoTask.prompts];
+                            updatedPrompts[videoTask.current_index] = rewrittenPrompt;
+                            await supabaseAdmin.from('video_tasks').update({ prompts: updatedPrompts }).eq('id', videoTask.id);
+                        }
+                    } catch (aiErr) {
+                        console.error("[Video Callback] AI Rewrite Failed, retrying with original prompt anyway.", aiErr);
+                    }
+                }
+
+                // Prepare Retry Payload
+                const isFirstScene = videoTask.current_index === 0;
+                let nextTaskId = null;
+                let error = null;
+
+                // Detect Base URL for Callback
+                const forwardedHost = request.headers.get('x-forwarded-host');
+                const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+                const requestOrigin = new URL(request.url).origin;
+                const publicUrl = process.env.NEXT_PUBLIC_APP_URL;
+                let baseUrl = requestOrigin;
+                if (forwardedHost && !forwardedHost.includes('localhost')) baseUrl = `${forwardedProto}://${forwardedHost}`;
+                else if (!requestOrigin.includes('localhost')) baseUrl = requestOrigin;
+                else if (publicUrl && publicUrl.startsWith('http') && !publicUrl.includes('localhost')) baseUrl = publicUrl;
+                const callbackUrl = `${baseUrl}/api/video/callback`;
+
+                if (isFirstScene) {
+                    // Retry Scene 1 (Initial Task)
+                    const { taskId: retryTaskId, error: retryError } = await createVeoTask({
+                        prompt: currentPrompt,
+                        model: "veo3_lite",
+                        resolution: "720p",
+                        aspect_ratio: videoTask.aspect_ratio || "9:16",
+                        callBackUrl: callbackUrl
+                    });
+                    nextTaskId = retryTaskId;
+                    error = retryError;
+                } else {
+                    // Retry Scene 2-4 (Extension Task)
+                    // We use the last successful task ID as the base for the extension
+                    const baseTaskId = videoTask.last_successful_task_id || videoTask.last_task_id;
+                    const { taskId: retryTaskId, error: retryError } = await extendVeoTask({
+                        taskId: baseTaskId, 
+                        prompt: currentPrompt,
+                        model: "lite",
+                        callBackUrl: callbackUrl
+                    });
+                    nextTaskId = retryTaskId;
+                    error = retryError;
+                }
+
+                if (nextTaskId) {
+                    await supabaseAdmin.from('video_tasks').update({
+                        last_task_id: nextTaskId,
+                        retry_count: retryCount + 1,
+                        last_error: msg
+                    }).eq('id', videoTask.id);
+                    return NextResponse.json({ success: true, message: "Retry triggered" });
+                } else {
+                    console.error("[Video Callback] Retry trigger failed:", error);
+                }
+            }
+
+            // If we reach here, all retries failed or max retries reached
+            await supabaseAdmin.from('video_tasks').update({ status: 'Failed', last_error: msg }).eq('id', videoTask.id);
             if (videoTask.asset_id) {
                 await supabaseAdmin.from('assets').update({ status: 'Failed' }).eq('id', videoTask.asset_id);
             }
@@ -142,7 +224,8 @@ export async function POST(request: Request) {
             } else {
                 await supabaseAdmin.from('video_tasks').update({
                     current_index: nextIndex,
-                    last_task_id: nextTaskId
+                    last_task_id: nextTaskId,
+                    last_successful_task_id: taskId
                 }).eq('id', videoTask.id);
             }
         } else {

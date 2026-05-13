@@ -266,6 +266,34 @@ export default function CRMPage() {
     reader.readAsText(file)
   }
 
+  const downloadAllVCard = () => {
+    if (leads.length === 0) return alert("No contacts to export")
+    
+    let vcfContent = ""
+    leads.forEach(lead => {
+        const vcfName = lead.name || 'Lead'
+        const vcfPhone = lead.phone || ''
+        const vcfEmail = lead.email || ''
+        
+        vcfContent += `BEGIN:VCARD
+VERSION:3.0
+FN:${vcfName}
+TEL;TYPE=CELL:${vcfPhone}
+EMAIL:${vcfEmail}
+END:VCARD\n`
+    })
+    
+    const blob = new Blob([vcfContent], { type: 'text/vcard' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `CRM_Contacts_Export_${new Date().toISOString().split('T')[0]}.vcf`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  }
+
   // --- DYNAMIC FILTER EXTRACTION ---
   const uniqueCampaigns = useMemo(() => {
     const campaigns = leads.map(l => l.ad_name || l.campaign_name).filter(Boolean)
@@ -320,23 +348,29 @@ export default function CRMPage() {
             <div className="flex gap-2.5 flex-wrap w-full md:w-auto">
                 {role === 'admin' && (
                     <>
-                        <button onClick={executeRoundRobin} disabled={isAssigning} className="flex-1 md:flex-none p-3.5 rounded-2xl shadow-sm border border-violet-200 bg-violet-50 text-violet-600 hover:bg-violet-100 active:scale-95 transition-all flex items-center justify-center gap-2">
-                            {isAssigning ? <Loader2 size={18} className="animate-spin" /> : <Shuffle size={18} />}
-                            <span className="hidden sm:inline font-bold text-sm">Distribute</span>
+                        <button onClick={executeRoundRobin} disabled={isAssigning} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-violet-200 bg-violet-50 text-violet-600 hover:bg-violet-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
+                            {isAssigning ? <Loader2 size={16} className="animate-spin" /> : <Shuffle size={16} />}
+                            <span className="font-bold text-[10px] sm:text-sm">Distribute</span>
                         </button>
-                        <button onClick={() => { setIsSyncModalOpen(true); fetch('/api/facebook/forms').then(r=>r.json()).then(d=>setForms(d.forms||[])) }} className="flex-1 md:flex-none p-3.5 rounded-2xl shadow-sm border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 active:scale-95 transition-all flex items-center justify-center gap-2">
-                            <Download size={18} />
-                            <span className="hidden sm:inline font-bold text-sm">Sync Meta</span>
+                        <button onClick={() => { setIsSyncModalOpen(true); fetch('/api/facebook/forms').then(r=>r.json()).then(d=>setForms(d.forms||[])) }} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
+                            <Download size={16} />
+                            <span className="font-bold text-[10px] sm:text-sm">Sync Meta</span>
                         </button>
-                        <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none p-3.5 rounded-2xl shadow-sm border border-slate-200/60 bg-white hover:bg-slate-50 active:scale-95 transition-all flex items-center justify-center">
-                            <Upload size={18} className="text-slate-600" />
+                        <button onClick={downloadAllVCard} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-slate-200/60 bg-white hover:bg-slate-50 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2" title="Export All Contacts to Phone">
+                            <Download size={16} className="text-slate-600" />
+                            <span className="font-bold text-[10px] sm:text-sm text-slate-600">Export VCF</span>
+                        </button>
+                        <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-slate-200/60 bg-white hover:bg-slate-50 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
+                            <Upload size={16} className="text-slate-600" />
+                            <span className="font-bold text-[10px] sm:text-sm text-slate-600">Import CSV</span>
                         </button>
                         <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv" className="hidden" />
                     </>
                 )}
                 
-                <button onClick={() => setIsAddModalOpen(true)} className="flex-1 md:flex-none bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-md shadow-slate-900/20 active:scale-95 transition-all flex items-center justify-center gap-2 font-bold">
-                    <Plus size={18} strokeWidth={3} /> <span className="hidden sm:inline">Add Lead</span>
+                <button onClick={() => setIsAddModalOpen(true)} className="flex-1 md:flex-none bg-slate-900 text-white p-3 rounded-2xl shadow-md shadow-slate-900/20 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 font-bold">
+                    <Plus size={16} strokeWidth={3} /> 
+                    <span className="text-[10px] sm:text-sm">Add Lead</span>
                 </button>
             </div>
         </div>
@@ -427,6 +461,27 @@ export default function CRMPage() {
                             <div className="flex gap-2 shrink-0">
                                 {lead.phone && (
                                     <>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const vcfName = lead.name || 'Lead';
+                                                const vcfPhone = lead.phone || '';
+                                                const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${vcfName}\nTEL;TYPE=CELL:${vcfPhone}\nEMAIL:${lead.email || ''}\nEND:VCARD`;
+                                                const blob = new Blob([vcard], { type: 'text/vcard' });
+                                                const url = window.URL.createObjectURL(blob);
+                                                const link = document.createElement('a');
+                                                link.href = url;
+                                                link.setAttribute('download', `${vcfName.replace(/\s+/g, '_')}.vcf`);
+                                                document.body.appendChild(link);
+                                                link.click();
+                                                document.body.removeChild(link);
+                                                window.URL.revokeObjectURL(url);
+                                            }} 
+                                            className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-500 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
+                                            title="Save to Contacts"
+                                        >
+                                            <UserPlus size={16} />
+                                        </button>
                                         <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} onClick={e => e.stopPropagation()} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-slate-50 text-slate-600 hover:bg-[#25D366] hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><MessageCircle size={16} /></a>
                                         <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Phone size={16} /></a>
                                     </>

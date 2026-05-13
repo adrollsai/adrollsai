@@ -1051,7 +1051,7 @@ export default function AssetsPage() {
                         initial={{ y: 100, opacity: 0 }}
                         animate={{ y: 0, opacity: 1 }}
                         exit={{ y: 100, opacity: 0 }}
-                        className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] w-[95%] max-w-2xl"
+                        className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] w-[95%] max-w-2xl"
                     >
                         <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 rounded-[2rem] p-4 shadow-2xl flex items-center justify-between gap-4">
                             <div className="flex items-center gap-4 ml-2">

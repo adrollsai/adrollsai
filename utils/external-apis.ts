@@ -359,15 +359,16 @@ export async function sendCAPIEvent(
 ) {
     if (!pixelId) return;
     const hashData = (data: string) => crypto.createHash('sha256').update(data.trim().toLowerCase()).digest('hex');
+    const cleanPhone = (phone: string) => phone.replace(/\D/g, ''); // Keep only digits
 
     const payload = {
         data: [{
             event_name: eventName,
             event_time: Math.floor(Date.now() / 1000),
-            action_source: 'system_generated',
+            action_source: 'other', 
             user_data: {
                 em: userData.email ? [hashData(userData.email)] : [],
-                ph: userData.phone ? [hashData(userData.phone)] : [],
+                ph: userData.phone ? [hashData(cleanPhone(userData.phone))] : [],
                 fn: userData.firstName ? [hashData(userData.firstName)] : [],
                 ln: userData.lastName ? [hashData(userData.lastName)] : [],
                 external_id: userData.externalId ? [hashData(userData.externalId)] : [],
@@ -380,14 +381,19 @@ export async function sendCAPIEvent(
         access_token: accessToken
     };
     try {
-        await fetch(`${FACEBOOK_GRAPH_URL}/${pixelId}/events`, {
+        const response = await fetch(`${FACEBOOK_GRAPH_URL}/${pixelId}/events`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        console.log(`CAPI Event '${eventName}' Sent.`);
+        const result = await response.json();
+        if (!response.ok) {
+            console.error("CAPI Meta Error:", JSON.stringify(result, null, 2));
+        } else {
+            console.log(`CAPI Event '${eventName}' Sent. Meta Response:`, result);
+        }
     } catch (e) {
-        console.error("CAPI Error:", e);
+        console.error("CAPI Network Error:", e);
     }
 }
 
