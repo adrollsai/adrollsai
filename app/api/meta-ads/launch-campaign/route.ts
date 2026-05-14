@@ -23,7 +23,30 @@ export async function POST(request: Request) {
         );
     }
 
-    // --- SUBSCRIPTION CHECK ---
+    // --- 0. Resolve Target User ID ---
+    const url = new URL(request.url);
+    const impersonateId = url.searchParams.get('impersonate');
+    let targetUserId = user.id;
+
+    if (impersonateId) {
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (['super_admin', 'agency', 'admin'].includes(profile?.role || '')) {
+            if (profile?.role !== 'super_admin') {
+                const { data: subAccount } = await supabase
+                    .from('profiles')
+                    .select('id')
+                    .eq('id', impersonateId)
+                    .eq('agency_id', user.id)
+                    .single();
+                if (subAccount) targetUserId = impersonateId;
+                else return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+            } else {
+                targetUserId = impersonateId;
+            }
+        }
+    }
+
+    // --- SUBSCRIPTION CHECK (Always deduct from the authenticated user, i.e., the agency) ---
     try {
         await checkLimitAndIncrement(user.id, 'campaign_launches');
     } catch (limitErr: any) {
@@ -58,20 +81,20 @@ export async function POST(request: Request) {
         });
     }
 
-    // ALWAYS fetch profile to get business name and contact info
-    const { data: profile } = await supabase.from('profiles')
+    // Fetch TARGET profile for credentials and business info
+    const { data: targetProfile } = await supabase.from('profiles')
         .select('facebook_token, ad_account_id, fb_page_id, business_url, business_name, contact_number')
-        .eq('id', user.id)
+        .eq('id', targetUserId)
         .single();
 
-    if (profile) {
-        data.facebookToken = data.facebookToken || profile.facebook_token;
-        data.adAccountId = data.adAccountId || profile.ad_account_id;
-        data.pageId = data.pageId || profile.fb_page_id;
-        data.linkUrl = data.linkUrl || profile.business_url;
-        data.privacyPolicyUrl = data.privacyPolicyUrl || (profile.business_url ? `${profile.business_url}/privacy` : '');
-        data.business_name = profile.business_name;
-        data.contact_number = profile.contact_number;
+    if (targetProfile) {
+        data.facebookToken = data.facebookToken || targetProfile.facebook_token;
+        data.adAccountId = data.adAccountId || targetProfile.ad_account_id;
+        data.pageId = data.pageId || targetProfile.fb_page_id;
+        data.linkUrl = data.linkUrl || targetProfile.business_url;
+        data.privacyPolicyUrl = data.privacyPolicyUrl || (targetProfile.business_url ? `${targetProfile.business_url}/privacy` : '');
+        data.business_name = targetProfile.business_name;
+        data.contact_number = targetProfile.contact_number;
     }
 
     const {
@@ -412,7 +435,7 @@ export async function POST(request: Request) {
             
             JSON Structure:
             [
-              {"primary_text": "...", "headline": "..."}
+              {"primary_text": "...", "headline": "...", "description": "..."}
             ]
             (Generate exactly ${batchCount} objects)
             `;
@@ -440,14 +463,15 @@ export async function POST(request: Request) {
                 for (let k = 0; k < batchCount; k++) {
                     allCopyVariations.push({ 
                         primary_text: "Exclusive Property Deal. Contact us for details.", 
-                        headline: "Limited Time Offer" 
+                        headline: "Limited Time Offer",
+                        description: "View details and pricing now."
                     });
                 }
             }
         }
 
         const copyVariations = allCopyVariations.length > 0 ? allCopyVariations : [
-            { primary_text: "Exclusive Property Deal. View pricing & details now.", headline: "View Details" }
+            { primary_text: "Exclusive Property Deal. View pricing & details now.", headline: "View Details", description: "Special offer available today." }
         ];
 
         // --- Step E: Campaign ---
@@ -567,6 +591,7 @@ export async function POST(request: Request) {
                     link_data: {
                         message: copy.primary_text || "View our latest property.", 
                         name: copy.headline || "View Details", 
+                        description: copy.description || "",
                         link: linkUrl, 
                         image_hash: hash, 
                         call_to_action: { type: 'SIGN_UP', value: { lead_gen_form_id: leadFormId } }
@@ -585,6 +610,19 @@ export async function POST(request: Request) {
             if (!creativeRes.ok) {
                 logToFile(`❌ Creative ${i+1} Failed:`, creativeData);
                 continue; // Skip to next if creative fails
+            }
+
+            // NEW: Persist generated copy back to assets table for future Strategist use
+            try {
+                // Try to find the asset id for this hash
+                // Note: This is an approximation if multiple assets have same image
+                const assetId = assetIds[i % assetIds.length];
+                if (assetId) {
+                    const fullCaption = `${copy.headline}\n\n${copy.primary_text}${copy.description ? `\n\n${copy.description}` : ''}`;
+                    await supabase.from('assets').update({ caption: fullCaption }).eq('id', assetId);
+                }
+            } catch (persistErr) {
+                logToFile("Failed to persist copy to assets table:", persistErr);
             }
 
             // Create Ad

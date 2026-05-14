@@ -79,7 +79,25 @@ export default function AssetsPage() {
             const { data: profile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
             if (profile) setUserRole(profile.role)
 
-            const targetUserId = (profile?.role === 'agent' && profile?.parent_id) ? profile.parent_id : user.id
+            const urlParams = new URLSearchParams(window.location.search)
+            const impersonateId = urlParams.get('impersonate')
+
+            let targetUserId = (profile?.role === 'agent' && profile?.parent_id) ? profile.parent_id : user.id
+
+            // Impersonation Logic
+            if (impersonateId && (['super_admin', 'agency', 'admin'].includes(profile?.role || ''))) {
+                if (profile?.role !== 'super_admin') {
+                    const { data: subAccount } = await supabase
+                        .from('profiles')
+                        .select('id')
+                        .eq('id', impersonateId)
+                        .eq('agency_id', user.id)
+                        .single()
+                    if (subAccount) targetUserId = impersonateId
+                } else {
+                    targetUserId = impersonateId
+                }
+            }
 
             // 2. Fetch assets for the organization (Admin's user_id)
             const { data: assetData, error: assetError } = await supabase
@@ -126,8 +144,10 @@ export default function AssetsPage() {
     const handlePostFacebook = async () => {
         if (!selectedAsset) return
         setIsPosting(true)
+        const urlParams = new URLSearchParams(window.location.search)
+        const impersonateId = urlParams.get('impersonate')
         try {
-            const response = await fetch('/api/post-social', {
+            const response = await fetch(`/api/post-social${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -154,8 +174,10 @@ export default function AssetsPage() {
     const handlePostInstagram = async () => {
         if (!selectedAsset) return
         setIsPosting(true)
+        const urlParams = new URLSearchParams(window.location.search)
+        const impersonateId = urlParams.get('impersonate')
         try {
-            const response = await fetch('/api/post-instagram', {
+            const response = await fetch(`/api/post-instagram${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -182,8 +204,10 @@ export default function AssetsPage() {
     const handlePostLinkedin = async () => {
         if (!selectedAsset) return
         setIsPosting(true)
+        const urlParams = new URLSearchParams(window.location.search)
+        const impersonateId = urlParams.get('impersonate')
         try {
-            const response = await fetch('/api/post/linkedin', {
+            const response = await fetch(`/api/post/linkedin${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

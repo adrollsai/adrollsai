@@ -9,10 +9,33 @@ export async function POST(req: Request) {
     
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: profile } = await supabase.from('profiles').select('linkedin_token, linkedin_id').eq('id', user.id).single()
+    // Resolve Target User ID
+    const url = new URL(req.url);
+    const impersonateId = url.searchParams.get('impersonate');
+    let targetUserId = user.id;
+
+    if (impersonateId) {
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (['super_admin', 'agency', 'admin'].includes(profile?.role || '')) {
+            if (profile?.role !== 'super_admin') {
+                const { data: subAccount } = await supabase
+                    .from('profiles')
+                    .select('id')
+                    .eq('id', impersonateId)
+                    .eq('agency_id', user.id)
+                    .single();
+                if (subAccount) targetUserId = impersonateId;
+                else return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+            } else {
+                targetUserId = impersonateId;
+            }
+        }
+    }
+
+    const { data: profile } = await supabase.from('profiles').select('linkedin_token, linkedin_id').eq('id', targetUserId).single()
     
     if (!profile?.linkedin_token || !profile?.linkedin_id) {
-      return NextResponse.json({ error: 'LinkedIn not connected' }, { status: 400 })
+      return NextResponse.json({ error: impersonateId ? 'Client LinkedIn not connected' : 'LinkedIn not connected' }, { status: 400 })
     }
 
     const accessToken = profile.linkedin_token

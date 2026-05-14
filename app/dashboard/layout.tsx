@@ -1,12 +1,37 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { useEffect, useState, Suspense } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import BottomNav from '@/components/BottomNav'
 import PushManager from '@/components/PushManager'
-import { Loader2 } from 'lucide-react'
+import { Loader2, XCircle } from 'lucide-react'
 import { Toaster } from 'sonner'
+
+function ImpersonationBanner() {
+    const searchParams = useSearchParams()
+    const router = useRouter()
+    const pathname = usePathname()
+    const impersonateId = searchParams.get('impersonate')
+
+    if (!impersonateId) return null
+
+    const handleExit = () => {
+        router.push(pathname) // Push the same path without query params
+    }
+
+    return (
+        <div className="fixed top-0 left-0 right-0 z-[100] bg-slate-900 text-white px-4 py-2 flex items-center justify-center gap-4 shadow-xl animate-in slide-in-from-top duration-300">
+            <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Viewing Client Account</span>
+            <button 
+                onClick={handleExit}
+                className="bg-white text-slate-900 px-3 py-1 rounded-full text-[10px] font-black hover:bg-slate-200 transition-colors flex items-center gap-1.5"
+            >
+                <XCircle size={14} /> Exit
+            </button>
+        </div>
+    )
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -71,6 +96,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] overflow-x-hidden">
+      <Suspense fallback={null}>
+        <ImpersonationBanner />
+      </Suspense>
+
       {/* PushManager deployed as a banner. It auto-hides if enabled or dismissed */}
       <PushManager variant="banner" />
 

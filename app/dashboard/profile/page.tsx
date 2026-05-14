@@ -51,13 +51,17 @@ function DomainManager({
   verifyToken,
   verifyStatus,
   userId,
-  onDomainUpdate
+  onDomainUpdate,
+  type = 'catalogue',
+  label = 'Custom Domain (Optional)'
 }: {
   initialDomain: string,
   verifyToken: string | null,
   verifyStatus: string | null,
   userId: string | null,
-  onDomainUpdate: () => void
+  onDomainUpdate: () => void,
+  type?: 'catalogue' | 'platform',
+  label?: string
 }) {
   const [domain, setDomain] = useState(initialDomain || '')
   const [loading, setLoading] = useState(false)
@@ -79,7 +83,7 @@ function DomainManager({
       const res = await fetch('/api/domains', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain: cleanDomain, userId })
+        body: JSON.stringify({ domain: cleanDomain, userId, type })
       })
 
       const data = await res.json()
@@ -103,7 +107,7 @@ function DomainManager({
       const res = await fetch('/api/domains/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain, userId })
+        body: JSON.stringify({ domain, userId, type })
       })
 
       const data = await res.json()
@@ -126,7 +130,7 @@ function DomainManager({
       const res = await fetch('/api/domains', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain, userId })
+        body: JSON.stringify({ domain, userId, type })
       })
 
       if (!res.ok) throw new Error('Failed to unlink domain')
@@ -149,7 +153,7 @@ function DomainManager({
   return (
     <div className="bg-blue-50/60 p-5 rounded-3xl border border-blue-100/50 mt-4 transition-all">
       <label className="text-xs font-bold text-blue-800 ml-1 mb-2 flex items-center gap-1.5 uppercase tracking-wider">
-        <Globe size={14} /> Custom Domain (Optional)
+        <Globe size={14} /> {label}
       </label>
 
       <div className="flex flex-col sm:flex-row gap-3">
@@ -220,7 +224,7 @@ function DomainManager({
       )}
 
       {/* VERIFIED STATE */}
-      {status === 'success' && verifyStatus === 'verified' && (
+      {verifyStatus === 'verified' && (
         <div className="mt-4 bg-white p-5 rounded-3xl border border-green-200 shadow-sm animate-in fade-in slide-in-from-top-2">
           <p className="text-sm font-bold text-green-700 flex items-center gap-2 mb-3">
             <CheckCircle2 size={18} /> Domain Verified & Linked!
@@ -249,9 +253,11 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const [targetUserId, setTargetUserId] = useState<string | null>(null)
   const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent'>('agent')
+  const [authRole, setAuthRole] = useState<string | null>(null)
 
-  const isAdminLike = ['super_admin', 'agency', 'admin', 'client'].includes(role)
+  const isAdminLike = ['super_admin', 'agency', 'admin', 'client'].includes(authRole || role)
 
   // Actions
   const [isSaving, setIsSaving] = useState(false)
@@ -289,6 +295,12 @@ export default function ProfilePage() {
     status: null as string | null
   })
 
+  const [whitelabelDomainData, setWhitelabelDomainData] = useState({
+    domain: '',
+    token: null as string | null,
+    status: null as string | null
+  })
+
   const [formData, setFormData] = useState({
     businessName: '',
     mission: '',
@@ -307,8 +319,9 @@ export default function ProfilePage() {
   const isValidFacebookToken = (token: string) => token && token.startsWith('EAA')
 
   const updateLocalCache = (updates: any) => {
-    if (!userId) return;
-    const cacheKey = `profile_cache_${userId}`;
+    const effectiveUserId = targetUserId || userId;
+    if (!effectiveUserId) return;
+    const cacheKey = `profile_cache_${effectiveUserId}`;
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached);
@@ -405,8 +418,9 @@ export default function ProfilePage() {
 
   // --- SELECTION HANDLERS ---
   const handlePageSelect = async (pageId: string) => {
+    const effectiveUserId = targetUserId || userId;
     const page = fbPages.find(p => p.id === pageId)
-    if (!page || !userId) return
+    if (!page || !effectiveUserId) return
 
     setSelectedPageId(pageId)
 
@@ -415,7 +429,7 @@ export default function ProfilePage() {
       selected_page_id: page.id,
       selected_page_name: page.name,
       selected_page_token: page.access_token
-    }).eq('id', userId)
+    }).eq('id', effectiveUserId)
 
     // 2. TRIGGER WEBHOOK SUBSCRIPTION (Fixes "No app associated" error)
     try {
@@ -438,21 +452,23 @@ export default function ProfilePage() {
   }
 
   const handleAdAccountSelect = async (adAccountId: string) => {
-    if (!userId) return
+    const effectiveUserId = targetUserId || userId;
+    if (!effectiveUserId) return
 
     setSelectedAdAccountId(adAccountId)
     await supabase.from('profiles').update({
       ad_account_id: adAccountId,
-    }).eq('id', userId)
+    }).eq('id', effectiveUserId)
 
     updateLocalCache({ ad_account_id: adAccountId })
     fetchPixels(adAccountId)
   }
 
   const handlePixelSelect = async (pixelId: string) => {
-    if (!userId) return
+    const effectiveUserId = targetUserId || userId;
+    if (!effectiveUserId) return
     setSelectedPixelId(pixelId)
-    await supabase.from('profiles').update({ pixel_id: pixelId }).eq('id', userId)
+    await supabase.from('profiles').update({ pixel_id: pixelId }).eq('id', effectiveUserId)
     updateLocalCache({ pixel_id: pixelId })
   }
 
@@ -471,12 +487,37 @@ export default function ProfilePage() {
       }
       setUserId(user.id)
 
+      // Get AUTH user role first
+      const { data: authProfile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      const currentAuthRole = authProfile?.role || 'admin'
+      setAuthRole(currentAuthRole)
+
+      // Impersonation Logic
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      let tUserId = user.id
+
+      if (impersonateId && (['super_admin', 'agency', 'admin'].includes(currentAuthRole))) {
+          if (currentAuthRole !== 'super_admin') {
+              const { data: subAccount } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('id', impersonateId)
+                .eq('agency_id', user.id)
+                .single()
+              if (subAccount) tUserId = impersonateId
+          } else {
+              tUserId = impersonateId
+          }
+      }
+      setTargetUserId(tUserId)
+
       let profileData = null
 
       const { data } = await supabase
         .from('profiles')
-        .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id, custom_domain, domain_verify_token, domain_verify_status, role, custom_prompt')
-        .eq('id', user.id)
+        .select('*, facebook_token, selected_page_id, ad_account_id, pixel_id, custom_domain, domain_verify_token, domain_verify_status, whitelabel_domain, whitelabel_verify_token, whitelabel_verify_status, role, custom_prompt')
+        .eq('id', tUserId)
         .single()
 
       profileData = data
@@ -488,6 +529,12 @@ export default function ProfilePage() {
           domain: profileData.custom_domain || '',
           token: profileData.domain_verify_token,
           status: profileData.domain_verify_status
+        })
+
+        setWhitelabelDomainData({
+          domain: profileData.whitelabel_domain || '',
+          token: profileData.whitelabel_verify_token,
+          status: profileData.whitelabel_verify_status
         })
 
         setFormData({
@@ -643,13 +690,14 @@ export default function ProfilePage() {
     if (!confirm("Disconnect Facebook?")) return
     setIsDisconnecting(true)
 
+    const effectiveUserId = targetUserId || userId;
     try {
-      if (userId) {
+      if (effectiveUserId) {
         // 1. Clear profile table
         await supabase.from('profiles').update({
           facebook_token: null, selected_page_id: null, selected_page_name: null, selected_page_token: null,
           ad_account_id: null, pixel_id: null
-        }).eq('id', userId)
+        }).eq('id', effectiveUserId)
 
         // 2. Unlink from Supabase Auth identities so re-linking triggers a fresh token flow
         const { data: { user } } = await supabase.auth.getUser()
@@ -687,11 +735,12 @@ export default function ProfilePage() {
     try {
       if (!event.target.files || !event.target.files.length) return
       setUploadingLogo(true)
-      if (!userId) return
+      const effectiveUserId = targetUserId || userId;
+      if (!effectiveUserId) return
 
       const file = event.target.files[0]
       const fileExt = file.name.split('.').pop()
-      const fileName = `${userId}-${Date.now()}.${fileExt}`
+      const fileName = `${effectiveUserId}-${Date.now()}.${fileExt}`
 
       const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
       if (uploadError) throw uploadError
@@ -699,7 +748,7 @@ export default function ProfilePage() {
       const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
 
       setFormData(prev => ({ ...prev, logoUrl: publicUrl }))
-      await supabase.from('profiles').update({ logo_url: publicUrl }).eq('id', userId)
+      await supabase.from('profiles').update({ logo_url: publicUrl }).eq('id', effectiveUserId)
       updateLocalCache({ logo_url: publicUrl })
 
     } catch (error) {
@@ -711,8 +760,8 @@ export default function ProfilePage() {
 
   const handleSave = async () => {
     setIsSaving(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    const effectiveUserId = targetUserId || userId;
+    if (!effectiveUserId) return
 
     const updates = {
       business_name: formData.businessName,
@@ -726,7 +775,7 @@ export default function ProfilePage() {
       custom_prompt: formData.customPrompt
     }
 
-    const { error } = await supabase.from('profiles').update(updates).eq('id', user.id)
+    const { error } = await supabase.from('profiles').update(updates).eq('id', effectiveUserId)
 
     if (error) {
       alert(`Error saving: ${error.message}`)
@@ -922,14 +971,28 @@ export default function ProfilePage() {
 
                 {/* DOMAIN MANAGER SECTION */}
                 {isAdminLike && (
-                  <div className="pt-2 border-t border-slate-100">
+                  <div className="pt-2 border-t border-slate-100 space-y-4">
                     <DomainManager
                       initialDomain={domainData.domain}
                       verifyToken={domainData.token}
                       verifyStatus={domainData.status}
                       userId={userId}
                       onDomainUpdate={fetchProfile}
+                      type="catalogue"
+                      label="Public Catalog Domain"
                     />
+
+                    {(role === 'agency' || role === 'super_admin') && (
+                      <DomainManager
+                        initialDomain={whitelabelDomainData.domain}
+                        verifyToken={whitelabelDomainData.token}
+                        verifyStatus={whitelabelDomainData.status}
+                        userId={userId}
+                        onDomainUpdate={fetchProfile}
+                        type="platform"
+                        label="White-label Platform Domain"
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -947,7 +1010,7 @@ export default function ProfilePage() {
 
           <div className="lg:col-span-5 space-y-6">
             <div className="rounded-[2rem] overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-              <PushManager variant="inline" />
+              <PushManager variant="inline" ownerId={targetUserId || userId || undefined} />
             </div>
 
             {isAdminLike && (

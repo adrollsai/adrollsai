@@ -14,7 +14,7 @@ const supabaseAdmin = createClient(
 // This now generates a token for the user to add to their DNS
 export async function POST(req: Request) {
   try {
-    const { domain, userId } = await req.json();
+    const { domain, userId, type = 'catalogue' } = await req.json();
 
     if (!domain || !userId) {
       return NextResponse.json({ error: 'Missing domain or userId' }, { status: 400 });
@@ -23,11 +23,11 @@ export async function POST(req: Request) {
     // 1. Clean the domain string
     const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim().toLowerCase();
 
-    // 2. Check if domain is already claimed by someone else in YOUR database
+    // 2. Check if domain is already claimed by someone else in YOUR database (check both columns)
     const { data: existingOwner } = await supabaseAdmin
       .from('profiles')
       .select('id')
-      .eq('custom_domain', cleanDomain)
+      .or(`custom_domain.eq.${cleanDomain},whitelabel_domain.eq.${cleanDomain}`)
       .single();
 
     if (existingOwner && existingOwner.id !== userId) {
@@ -37,15 +37,21 @@ export async function POST(req: Request) {
     // 3. Generate a unique verification token
     const verifyToken = `adrolls-verify=${Math.random().toString(36).substring(2, 15)}`;
 
-    // 4. Update the user profile in Supabase with 'pending' status[cite: 10]
-    // We save the token so the user can see it in their dashboard
+    // 4. Update the user profile in Supabase with 'pending' status
+    const updates: any = {};
+    if (type === 'platform') {
+        updates.whitelabel_domain = cleanDomain;
+        updates.whitelabel_verify_token = verifyToken;
+        updates.whitelabel_verify_status = 'pending';
+    } else {
+        updates.custom_domain = cleanDomain;
+        updates.domain_verify_token = verifyToken;
+        updates.domain_verify_status = 'pending';
+    }
+
     const { error: dbError } = await supabaseAdmin
       .from('profiles')
-      .update({ 
-        custom_domain: cleanDomain,
-        domain_verify_token: verifyToken,
-        domain_verify_status: 'pending' 
-      })
+      .update(updates)
       .eq('id', userId);
 
     if (dbError) throw dbError;
@@ -63,16 +69,16 @@ export async function POST(req: Request) {
 }
 
 // --- UNLINK DOMAIN (DELETE) ---
-// Removes the domain from both Vercel and your database[cite: 10]
+// Removes the domain from both Vercel and your database
 export async function DELETE(req: Request) {
   try {
-    const { domain, userId } = await req.json();
+    const { domain, userId, type = 'catalogue' } = await req.json();
 
     if (!domain || !userId) {
       return NextResponse.json({ error: 'Missing domain or userId' }, { status: 400 });
     }
 
-    // 1. Remove domain from Vercel Project[cite: 10]
+    // 1. Remove domain from Vercel Project
     const vercelResponse = await fetch(
       `https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/domains/${domain}`,
       {
@@ -83,14 +89,21 @@ export async function DELETE(req: Request) {
       }
     );
 
-    // 2. Remove domain and verification data from Supabase profile[cite: 10]
+    // 2. Remove domain and verification data from Supabase profile
+    const updates: any = {};
+    if (type === 'platform') {
+        updates.whitelabel_domain = null;
+        updates.whitelabel_verify_token = null;
+        updates.whitelabel_verify_status = null;
+    } else {
+        updates.custom_domain = null;
+        updates.domain_verify_token = null;
+        updates.domain_verify_status = null;
+    }
+
     const { error: dbError } = await supabaseAdmin
       .from('profiles')
-      .update({ 
-        custom_domain: null,
-        domain_verify_token: null,
-        domain_verify_status: null
-      })
+      .update(updates)
       .eq('id', userId);
 
     if (dbError) throw dbError;

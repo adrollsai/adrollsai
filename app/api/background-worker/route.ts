@@ -20,8 +20,9 @@ export async function POST(req: Request) {
         // Accept either payload (from Products) OR existingTaskId (from Creation Chat)
         const { userId, propId, propertyTitle, payload, existingTaskId, existingCaption, batchId } = body;
 
-        const requestUrl = new URL(req.url);
-        const baseUrl = requestUrl.origin; 
+        const host = req.headers.get('host') || 'localhost:3000';
+        const protocol = host.includes('localhost') ? 'http' : 'https';
+        const baseUrl = `${protocol}://${host}`; 
         const cookieHeader = req.headers.get('cookie') || '';
 
         let taskId = existingTaskId;
@@ -62,7 +63,8 @@ export async function POST(req: Request) {
             type: 'image',
             status: 'Processing',
             url: 'https://designs.adrolls.in/processing', // Temporary URL to satisfy NOT NULL constraint
-            caption: generatedCaption
+            caption: generatedCaption,
+            metadata: body.payload?.socialCaption ? { social_caption: body.payload.socialCaption } : {}
         }).select().single();
 
         if (placeholderError) {
@@ -177,7 +179,8 @@ export async function POST(req: Request) {
                     master_creative_id: (batchId && batchId.length === 36) ? batchId : null,
                     url: persistedUrl,
                     status: 'Draft',
-                    caption: generatedCaption
+                    caption: generatedCaption,
+                    metadata: body.payload?.socialCaption ? { social_caption: body.payload.socialCaption } : {}
                 }).eq('id', placeholder.id);
             } else {
                 dbResult = await supabaseAdmin.from('assets').insert({
@@ -187,7 +190,8 @@ export async function POST(req: Request) {
                     url: persistedUrl,
                     type: 'image',
                     status: 'Draft',
-                    caption: generatedCaption
+                    caption: generatedCaption,
+                    metadata: body.payload?.socialCaption ? { social_caption: body.payload.socialCaption } : {}
                 });
             }
 

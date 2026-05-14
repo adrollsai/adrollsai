@@ -121,16 +121,36 @@ export default function CreationPage() {
 
       setUserId(user.id)
 
-      // We still fetch the profile locally because we need the logo & contact number for AI prompts
-      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      // 1. Resolve Target User ID (Impersonation check first)
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      
+      // Fetch CURRENT user profile to check role
+      const { data: currentUserProfile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
+      const currentRole = currentUserProfile?.role || 'admin'
+      
+      let tUserId = (currentRole === 'agent' && currentUserProfile?.parent_id) ? currentUserProfile.parent_id : user.id
+
+      if (impersonateId && (['super_admin', 'agency', 'admin'].includes(currentRole))) {
+          if (currentRole !== 'super_admin') {
+              const { data: subAccount } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('id', impersonateId)
+                .eq('agency_id', user.id)
+                .single()
+              if (subAccount) tUserId = impersonateId
+          } else {
+              tUserId = impersonateId
+          }
+      }
+      setTargetUserId(tUserId)
+
+      // 2. Fetch TARGET Profile (If impersonating, we need the client's logo & branding)
+      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', tUserId).single()
       if (profileData) {
           setProfile(profileData)
       }
-
-      // Fetch Fresh Data
-      const currentRole = profileData?.role || 'admin'
-      const tUserId = (currentRole === 'agent' && profileData?.parent_id) ? profileData.parent_id : user.id
-      setTargetUserId(tUserId)
 
       const { data, error: dbError } = await supabase
         .from('properties')
@@ -520,6 +540,14 @@ export default function CreationPage() {
                 <h1 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
                     <Sparkles size={20} className="text-blue-500" /> AI Creator
                 </h1>
+                
+                <button 
+                    onClick={() => setCreativeFlow(prev => ({ ...prev, isOpen: true }))}
+                    className="flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest shadow-md shadow-blue-500/20 active:scale-95 transition-all"
+                >
+                    <Zap size={10} fill="white" /> Batch Mode
+                </button>
+
                 <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-wider transition-all ${profile?.logo_url && profile?.contact_number ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-amber-50 border-amber-100 text-amber-600'}`}>
                     <div className={`w-1.5 h-1.5 rounded-full ${profile?.logo_url && profile?.contact_number ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
                     {profile?.logo_url && profile?.contact_number ? 'Branding Active' : 'Profile Incomplete'}

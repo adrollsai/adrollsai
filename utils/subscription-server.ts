@@ -7,6 +7,9 @@ export async function checkLimitAndIncrement(
 ) {
     const supabase = await createClient();
     
+    const UNLIMITED_USERS = ['bc63c065-9bcc-4793-bedc-f0960406425b'];
+    if (UNLIMITED_USERS.includes(userId)) return true;
+
     // 1. Fetch current usage and reset date
     const { data: profile, error } = await supabase
         .from('profiles')

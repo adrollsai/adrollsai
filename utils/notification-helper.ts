@@ -24,7 +24,7 @@ export async function sendPushNotification(
   const { data: subscriptions } = await supabaseAdmin
     .from('push_subscriptions')
     .select('*')
-    .eq('user_id', userId);
+    .or(`user_id.eq.${userId},catalog_owner_id.eq.${userId}`);
 
   if (!subscriptions || subscriptions.length === 0) {
       console.log(`[PUSH] FAILED: 0 tokens found in database! User is not subscribed.`);

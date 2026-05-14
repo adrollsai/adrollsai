@@ -42,12 +42,6 @@ export async function POST(request: Request) {
         const realPropId = firstProp?.id || null;
 
         if (step === 'analyze') {
-            // --- SUBSCRIPTION CHECK ---
-            try {
-                await checkLimitAndIncrement(user.id, 'ai_ad_optimizations');
-            } catch (limitErr: any) {
-                return NextResponse.json({ error: limitErr.message }, { status: 403 });
-            }
             // 1. Fetch Ad-Level Insights
             const insightsRes = await fetch(`${FB_GRAPH}/${campaignId}/insights?fields=ad_id,ad_name,spend,impressions,cpc,actions&level=ad&date_preset=maximum&access_token=${profile.facebook_token}`);
             const insightsData = await insightsRes.json();
@@ -144,7 +138,7 @@ export async function POST(request: Request) {
             {
                 "insight": "...",
                 "suggested_variations": [
-                    { "title": "Angle 1", "image_prompt": "...", "headline": "...", "primary_text": "..." },
+                    { "title": "Angle 1", "image_prompt": "...", "headline": "...", "primary_text": "...", "description": "...", "social_caption": "..." },
                     ...
                 ]
             }
@@ -173,13 +167,17 @@ export async function POST(request: Request) {
         }
 
         if (step === 'generate') {
-            const baseUrl = new URL(request.url).origin;
+            // Robust baseUrl for local/production loopback
+            const host = request.headers.get('host') || 'localhost:3000';
+            const protocol = host.includes('localhost') ? 'http' : 'https';
+            const baseUrl = `${protocol}://${host}`;
+            
             const batchId = crypto.randomUUID();
 
             for (let i = 0; i < requestedVariations.length; i++) {
                 const variant = requestedVariations[i];
                 const modelToUse = 'image-2.0';
-                const aspectRatio = '1:1';
+                const aspectRatio = '4:5';
                 
                 const cookieHeader = request.headers.get('cookie') || '';
                 
@@ -206,9 +204,10 @@ export async function POST(request: Request) {
                             aspectRatio: aspectRatio,
                             logoUrl: profile.logo_url,
                             contactNumber: profile.contact_number,
-                            propImages: referenceImages
+                            propImages: referenceImages,
+                            socialCaption: variant.social_caption
                         },
-                        existingCaption: `${variant.headline}\n\n${variant.primary_text}`
+                        existingCaption: `${variant.headline}\n\n${variant.primary_text}${variant.description ? `\n\n${variant.description}` : ''}`
                     })
                 }).catch(err => console.error("Worker trigger failed:", err));
             }
@@ -236,7 +235,7 @@ export async function POST(request: Request) {
             7. OUTPUT FORMAT: Return ONLY a valid JSON object.
             
             JSON Structure:
-            {"primary_text": "...", "headline": "..."}
+            {"primary_text": "...", "headline": "...", "description": "..."}
             `;
 
             const aiRaw = await callGemini(llmPrompt, imageUrls);

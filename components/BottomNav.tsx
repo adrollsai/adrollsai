@@ -2,17 +2,19 @@
 
 import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2, Rss } from 'lucide-react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
 
 export default function BottomNav() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const supabase = createClient()
   
   const [showDistribute, setShowDistribute] = useState(false)
   const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent' | null>(null) 
 
+  const impersonateId = searchParams.get('impersonate')
   useEffect(() => {
     let isMounted = true;
 
@@ -74,8 +76,9 @@ export default function BottomNav() {
   ]
 
   const navItems = allNavItems.filter(item => {
-      // Hide Accounts from non-admin/non-agency
+      // Hide Accounts from non-admin/non-agency, or if impersonating
       if (item.name === 'Accounts') {
+          if (impersonateId) return false
           return ['super_admin', 'agency', 'admin'].includes(role)
       }
 
@@ -97,10 +100,12 @@ export default function BottomNav() {
                 ? pathname === '/dashboard' 
                 : pathname === item.path || pathname.startsWith(`${item.path}/`)
 
+            const href = impersonateId ? `${item.path}?impersonate=${impersonateId}` : item.path
+
             return (
               <Link 
                 key={item.name} 
-                href={item.path}
+                href={href}
                 className="flex flex-col items-center gap-1.5 min-w-[64px] xs:min-w-[72px] sm:min-w-[84px] group pt-2 pb-1 shrink-0"
               >
                 <div className={`

@@ -11,6 +11,29 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Resolve Target User ID
+  const url = new URL(request.url);
+  const impersonateId = url.searchParams.get('impersonate');
+  let targetUserId = user.id;
+
+  if (impersonateId) {
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      if (['super_admin', 'agency', 'admin'].includes(profile?.role || '')) {
+          if (profile?.role !== 'super_admin') {
+              const { data: subAccount } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('id', impersonateId)
+                .eq('agency_id', user.id)
+                .single();
+              if (subAccount) targetUserId = impersonateId;
+              else return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+          } else {
+              targetUserId = impersonateId;
+          }
+      }
+  }
+
   const body = await request.json()
   const { imageUrl, caption } = body
 
@@ -18,12 +41,12 @@ export async function POST(request: Request) {
   const { data: profile } = await supabase
     .from('profiles')
     .select('selected_page_token, selected_page_name')
-    .eq('id', user.id)
+    .eq('id', targetUserId)
     .single()
 
   if (!profile?.selected_page_token) {
     return NextResponse.json({ 
-      error: 'No Facebook Page selected. Please go to Profile -> Social Accounts and select a page.' 
+      error: 'Target account has no Facebook Page selected. Please ensure the client has connected their Meta account.' 
     }, { status: 400 })
   }
 

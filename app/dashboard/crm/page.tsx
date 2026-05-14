@@ -33,6 +33,7 @@ export default function CRMPage() {
   const [team, setTeam] = useState<any[]>([])
   const [parentAdminId, setParentAdminId] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+  const [targetUserId, setTargetUserId] = useState<string | null>(null)
   const [isAssigning, setIsAssigning] = useState(false)
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client'].includes(role)
@@ -81,8 +82,28 @@ export default function CRMPage() {
       const parentId = profile?.parent_id || profile?.agency_id
       if (parentId) setParentAdminId(parentId)
 
+      // Impersonation Logic
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      let targetUserId = user.id
+
+      if (impersonateId && (['super_admin', 'agency', 'admin'].includes(currentRole))) {
+          if (currentRole !== 'super_admin') {
+              const { data: subAccount } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('id', impersonateId)
+                .eq('agency_id', user.id)
+                .single()
+              if (subAccount) targetUserId = impersonateId
+          } else {
+              targetUserId = impersonateId
+          }
+      }
+      setTargetUserId(targetUserId)
+
       if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
-          const { data: teamData } = await supabase.from('profiles').select('id, business_name').eq('agency_id', user.id)
+          const { data: teamData } = await supabase.from('profiles').select('id, business_name').eq('agency_id', targetUserId)
           setTeam(teamData || [])
       } else {
           setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
@@ -94,15 +115,20 @@ export default function CRMPage() {
         .order('created_at', { ascending: false })
 
       if (currentRole === 'super_admin') {
-          // Super admin sees everything
+          // Super admin sees everything (filtered by target if impersonating)
+          if (impersonateId) query = query.eq('user_id', targetUserId)
       } else if (currentRole === 'agency') {
           // Agency sees their own + their clients'
-          const { data: clientIds } = await supabase.from('profiles').select('id').eq('agency_id', user.id)
-          const allIds = [user.id, ...(clientIds?.map(c => c.id) || [])]
-          query = query.in('user_id', allIds)
+          if (impersonateId) {
+              query = query.eq('user_id', targetUserId)
+          } else {
+              const { data: clientIds } = await supabase.from('profiles').select('id').eq('agency_id', user.id)
+              const allIds = [user.id, ...(clientIds?.map(c => c.id) || [])]
+              query = query.in('user_id', allIds)
+          }
       } else if (currentRole === 'admin' || currentRole === 'client') {
           // Client/Business Owner sees all their leads
-          query = query.eq('user_id', user.id)
+          query = query.eq('user_id', targetUserId)
       } else {
           // Agents see only leads assigned to them from their parent
           query = query.eq('user_id', parentAdminId).eq('assigned_to', user.id) 
@@ -247,8 +273,10 @@ export default function CRMPage() {
 
   const handleSync = async () => {
     setIsSyncing(true)
+    const urlParams = new URLSearchParams(window.location.search)
+    const impersonateId = urlParams.get('impersonate')
     try {
-        const res = await fetch('/api/crm/sync', { 
+        const res = await fetch(`/api/crm/sync${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { 
             method: 'POST', headers: { 'Content-Type': 'application/json' }, 
             body: JSON.stringify({ formId: selectedFormId || undefined }) 
         })
@@ -263,12 +291,13 @@ export default function CRMPage() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file || !userId) return
+    const effectiveUserId = targetUserId || userId;
+    if (!file || !effectiveUserId) return
     const reader = new FileReader()
     reader.onload = async (event) => {
         const rows = (event.target?.result as string).split('\n').slice(1)
         const newLeads = rows.map(r => r.split(',')).filter(c => c.length >= 2).map(cols => ({ 
-            user_id: userId, name: cols[0]?.trim(), phone: cols[1]?.trim(), 
+            user_id: effectiveUserId, name: cols[0]?.trim(), phone: cols[1]?.trim(), 
             email: cols[2]?.trim(), source: 'CSV Import', pipeline_stage: 'New' 
         }))
         if (newLeads.length > 0) {
@@ -365,7 +394,12 @@ END:VCARD\n`
                             {isAssigning ? <Loader2 size={16} className="animate-spin" /> : <Shuffle size={16} />}
                             <span className="font-bold text-[10px] sm:text-sm">Distribute</span>
                         </button>
-                        <button onClick={() => { setIsSyncModalOpen(true); fetch('/api/facebook/forms').then(r=>r.json()).then(d=>setForms(d.forms||[])) }} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
+                        <button onClick={() => { 
+                            setIsSyncModalOpen(true); 
+                            const urlParams = new URLSearchParams(window.location.search);
+                            const impersonateId = urlParams.get('impersonate');
+                            fetch(`/api/facebook/forms${impersonateId ? `?impersonate=${impersonateId}` : ''}`).then(r=>r.json()).then(d=>setForms(d.forms||[])) 
+                        }} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
                             <Download size={16} />
                             <span className="font-bold text-[10px] sm:text-sm">Sync Meta</span>
                         </button>

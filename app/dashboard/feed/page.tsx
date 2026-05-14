@@ -86,10 +86,31 @@ export default function FeedManagementPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      
+      // Impersonation Logic
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      let targetUserId = user.id
+
+      if (impersonateId && (['super_admin', 'agency', 'admin'].includes(profile?.role || ''))) {
+          if (profile?.role !== 'super_admin') {
+              const { data: subAccount } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('id', impersonateId)
+                .eq('agency_id', user.id)
+                .single()
+              if (subAccount) targetUserId = impersonateId
+          } else {
+              targetUserId = impersonateId
+          }
+      }
+
       const { data, error } = await supabase
         .from('posts')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', targetUserId)
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -125,10 +146,31 @@ export default function FeedManagementPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error("Not authenticated")
 
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      
+      // Impersonation Logic
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      let targetUserId = user.id
+
+      if (impersonateId && (['super_admin', 'agency', 'admin'].includes(profile?.role || ''))) {
+          if (profile?.role !== 'super_admin') {
+              const { data: subAccount } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('id', impersonateId)
+                .eq('agency_id', user.id)
+                .single()
+              if (subAccount) targetUserId = impersonateId
+          } else {
+              targetUserId = impersonateId
+          }
+      }
+
       let image_url = null
       if (selectedFile) {
         const compressedFile = await compressImage(selectedFile)
-        const fileName = `${user.id}/feed/${Date.now()}.jpg`
+        const fileName = `${targetUserId}/feed/${Date.now()}.jpg`
         const { error: uploadError } = await supabase.storage
           .from('assets')
           .upload(fileName, compressedFile)
@@ -139,7 +181,7 @@ export default function FeedManagementPage() {
       }
 
       const { data: postData, error } = await supabase.from('posts').insert({
-        user_id: user.id,
+        user_id: targetUserId,
         title: newPost.title || 'Update',
         content: newPost.content,
         image_url,
@@ -156,7 +198,7 @@ export default function FeedManagementPage() {
       fetch('/api/feed/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: postData.id, ownerId: user.id })
+        body: JSON.stringify({ postId: postData.id, ownerId: targetUserId })
       }).catch(err => console.error("Notification trigger failed", err))
 
       setShowAddModal(false)

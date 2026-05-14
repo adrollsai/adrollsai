@@ -10,10 +10,30 @@ export async function POST(request: Request) {
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const { campaignId, selectedAssets, leadFormId } = await request.json();
+        const { searchParams } = new URL(request.url);
+        const impersonateId = searchParams.get('impersonate');
+
+        const { data: myProfile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        const isAdminLike = ['super_admin', 'agency', 'admin'].includes(myProfile?.role || '');
+
+        let targetUserId = user.id;
+        if (impersonateId && isAdminLike) {
+            if (myProfile?.role !== 'super_admin') {
+                const { data: subAccount } = await supabase
+                    .from('profiles')
+                    .select('id')
+                    .eq('id', impersonateId)
+                    .eq('agency_id', user.id)
+                    .single();
+                if (subAccount) targetUserId = impersonateId;
+            } else {
+                targetUserId = impersonateId;
+            }
+        }
         
-        const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, custom_domain').eq('id', user.id).single();
+        const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, custom_domain, logo_url').eq('id', targetUserId).single();
         if (!profile?.facebook_token || !profile?.ad_account_id) {
-            console.error("[Push] Profile missing credentials for user:", user.id);
+            console.error("[Push] Profile missing credentials for target user:", targetUserId);
             return NextResponse.json({ error: 'Missing Meta credentials' }, { status: 400 });
         }
 
@@ -21,86 +41,176 @@ export async function POST(request: Request) {
         const campaignRes = await fetch(`${FB_URL}/${campaignId}?fields=objective&access_token=${profile.facebook_token}`);
         const campaignData = await campaignRes.json();
         const objective = campaignData.objective;
+        const isLeadGen = objective === 'OUTCOME_LEADS';
 
         const adSetsRes = await fetch(`${FB_URL}/${campaignId}/adsets?fields=id&access_token=${profile.facebook_token}`);
         const adSetsData = await adSetsRes.json();
         const adSetId = adSetsData.data?.[0]?.id;
         if (!adSetId) return NextResponse.json({ error: 'No Ad Set found in campaign' }, { status: 404 });
 
+        let activeLeadFormId = leadFormId;
+        if (isLeadGen && !activeLeadFormId) {
+            console.log("[Push] Objective is LEADS, searching for existing form...");
+            const adsRes = await fetch(`${FB_URL}/${campaignId}/ads?fields=creative{id,object_story_spec}&access_token=${profile.facebook_token}&limit=5`);
+            const adsData = await adsRes.json();
+            for (const ad of (adsData.data || [])) {
+                const spec = ad.creative?.object_story_spec;
+                const formId = spec?.link_data?.call_to_action?.value?.lead_gen_form_id || 
+                             spec?.video_data?.call_to_action?.value?.lead_gen_form_id;
+                if (formId) {
+                    activeLeadFormId = formId;
+                    console.log("[Push] Inherited Lead Form ID:", activeLeadFormId);
+                    break;
+                }
+            }
+        }
+
         let successCount = 0;
 
-        // 2. Deduplicate images from selected variations
-        const uniqueImageUrls = Array.from(new Set(selectedAssets.map((a: any) => (a.image_url || a.url) as string)));
-        const allHeadlines = selectedAssets.map((a: any) => a.headline).filter(Boolean);
-        const allPrimaryTexts = selectedAssets.map((a: any) => a.primary_text).filter(Boolean);
-
-        for (const imageUrl of uniqueImageUrls) {
-            console.log("[Push] Processing image:", imageUrl);
+        let globalThumbHash = null;
+        const hasVideos = selectedAssets.some((a: any) => a.type === 'video' || (a.image_url || a.url || '').toLowerCase().match(/\.(mp4|mov|avi|wmv)$/));
+        
+        if (hasVideos) {
+            console.log("[Push] Preparing video thumbnail for batch...");
+            const thumbSource = profile.logo_url || 
+                               selectedAssets.find((a: any) => a.type !== 'video' && !(a.image_url || a.url || '').toLowerCase().match(/\.(mp4|mov|avi|wmv)$/))?.url ||
+                               'https://adrolls.in/logo-square.png'; // High-reliability fallback
             
-            // A. Upload Image
-            const imgFetch = await fetch(imageUrl as string);
-            const imgBlob = await imgFetch.blob();
-            const uploadData = new FormData();
-            uploadData.append('source', imgBlob, `opt_push_${Date.now()}.png`);
-            uploadData.append('access_token', profile.facebook_token);
-            
-            const uploadRes = await fetch(`${FB_URL}/${profile.ad_account_id}/adimages`, { method: 'POST', body: uploadData });
-            const uploadResult = await uploadRes.json();
-            const imgHash = uploadResult.images?.[Object.keys(uploadResult.images)[0]]?.hash;
+            if (thumbSource) {
+                console.log("[Push] Using thumb source:", thumbSource);
+                try {
+                    const thumbFetch = await fetch(thumbSource);
+                    const thumbBlob = await thumbFetch.blob();
+                    const thumbData = new FormData();
+                    thumbData.append('source', thumbBlob, `thumb_${Date.now()}.png`);
+                    thumbData.append('access_token', profile.facebook_token);
+                    const thumbRes = await fetch(`${FB_URL}/${profile.ad_account_id}/adimages`, { method: 'POST', body: thumbData });
+                    const thumbResult = await thumbRes.json();
+                    globalThumbHash = thumbResult.images?.[Object.keys(thumbResult.images)[0]]?.hash;
+                    console.log("[Push] Prepared global thumbnail hash:", globalThumbHash);
+                } catch (e) {
+                    console.error("[Push] Failed to prepare video thumbnail:", e);
+                }
+            } else {
+                console.warn("[Push] No thumb source found (no logo and no images in batch).");
+            }
+        }
 
-            if (!imgHash) {
-                console.error("[Push] Image upload failed:", uploadResult);
-                continue;
+        for (const asset of selectedAssets) {
+            const imageUrl = asset.image_url || asset.url;
+            const isVideo = asset.type === 'video' || imageUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/);
+            
+            console.log(`[Push] Processing ${isVideo ? 'video' : 'image'}:`, imageUrl);
+            
+            let creativeId = null;
+            let imgHash = null;
+            let videoId = null;
+
+            if (isVideo) {
+                // A. Upload Video
+                const videoData = new FormData();
+                videoData.append('file_url', imageUrl);
+                videoData.append('access_token', profile.facebook_token);
+                
+                const videoRes = await fetch(`${FB_URL}/${profile.ad_account_id}/advideos`, { method: 'POST', body: videoData });
+                const videoResult = await videoRes.json();
+                videoId = videoResult.id;
+
+                if (!videoId) {
+                    console.error("[Push] Video upload failed:", videoResult);
+                    continue;
+                }
+                
+                // Wait for video processing (Meta requirement)
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            } else {
+                // A. Upload Image
+                const imgFetch = await fetch(imageUrl as string);
+                const imgBlob = await imgFetch.blob();
+                const uploadData = new FormData();
+                uploadData.append('source', imgBlob, `opt_push_${Date.now()}.png`);
+                uploadData.append('access_token', profile.facebook_token);
+                
+                const uploadRes = await fetch(`${FB_URL}/${profile.ad_account_id}/adimages`, { method: 'POST', body: uploadData });
+                const uploadResult = await uploadRes.json();
+                imgHash = uploadResult.images?.[Object.keys(uploadResult.images)[0]]?.hash;
+
+                if (!imgHash) {
+                    console.error("[Push] Image upload failed:", uploadResult);
+                    continue;
+                }
+                // We can also use this as a global thumb hash for future videos in this loop
+                if (!globalThumbHash) globalThumbHash = imgHash;
             }
 
-            // For Awareness campaigns or standard ad sets, we create individual ads for variations
-            // to ensure 100% compatibility and avoid Meta API "unsupported field" errors.
             const isLeadGen = objective === 'OUTCOME_LEADS';
-            for (let i = 0; i < allPrimaryTexts.length; i++) {
-                const headline = allHeadlines[i] || allHeadlines[0];
-                const primaryText = allPrimaryTexts[i] || allPrimaryTexts[0];
+            const headline = asset.headline || asset.name || "Special Offer";
+            const primaryText = asset.primary_text || "Contact us today for more details!";
+            const description = asset.description || "";
 
-                const creativePayload = {
-                    name: `AI Optimized Variation ${i + 1} - ${Date.now()}`,
-                    object_story_spec: {
-                        page_id: profile.selected_page_id,
-                        link_data: {
-                            image_hash: imgHash,
-                            link: profile.custom_domain ? `https://${profile.custom_domain}` : 'https://adrolls.in',
-                            message: primaryText,
-                            name: headline,
-                            call_to_action: { 
-                                type: isLeadGen ? 'SIGN_UP' : 'LEARN_MORE',
-                                value: isLeadGen ? { lead_gen_form_id: leadFormId } : {}
-                            }
-                        }
-                    },
+            const creativePayload: any = {
+                name: `AI Optimized Variation - ${Date.now()}`,
+                access_token: profile.facebook_token,
+                object_story_spec: {
+                    page_id: profile.selected_page_id,
+                }
+            };
+
+            if (isVideo) {
+                creativePayload.object_story_spec.video_data = {
+                    video_id: videoId,
+                    message: primaryText,
+                    title: headline,
+                    image_hash: globalThumbHash, // Meta requires a thumbnail
+                    call_to_action: {
+                        type: isLeadGen ? 'SIGN_UP' : 'LEARN_MORE',
+                        value: isLeadGen ? { lead_gen_form_id: activeLeadFormId, link: profile.custom_domain ? `https://${profile.custom_domain}` : 'https://adrolls.in' } : { link: profile.custom_domain ? `https://${profile.custom_domain}` : 'https://adrolls.in' }
+                    }
+                };
+            } else {
+                creativePayload.object_story_spec.link_data = {
+                    image_hash: imgHash,
+                    link: profile.custom_domain ? `https://${profile.custom_domain}` : 'https://adrolls.in',
+                    message: primaryText,
+                    name: headline,
+                    description: description,
+                    call_to_action: { 
+                        type: isLeadGen ? 'SIGN_UP' : 'LEARN_MORE',
+                        value: isLeadGen ? { lead_gen_form_id: activeLeadFormId } : {}
+                    }
+                };
+            }
+
+            const creativeRes = await fetch(`${FB_URL}/${profile.ad_account_id}/adcreatives`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(creativePayload)
+            });
+            const creativeData = await creativeRes.json();
+
+            if (creativeData.id) {
+                console.log(`[Push] Creative created:`, creativeData.id);
+                const adPayload = {
+                    name: `AI Optimized Ad - ${isVideo ? 'Video' : 'Image'} - ${Date.now()}`,
+                    adset_id: adSetId,
+                    creative: { creative_id: creativeData.id },
+                    status: 'ACTIVE',
                     access_token: profile.facebook_token
                 };
-
-                const creativeRes = await fetch(`${FB_URL}/${profile.ad_account_id}/adcreatives`, {
+                const adRes = await fetch(`${FB_URL}/${profile.ad_account_id}/ads`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(creativePayload)
+                    body: JSON.stringify(adPayload)
                 });
-                const creativeData = await creativeRes.json();
-
-                if (creativeData.id) {
-                    console.log(`[Push] Creative ${i+1} created:`, creativeData.id);
-                    const adPayload = {
-                        name: `AI Optimized Ad - Var ${i + 1}`,
-                        adset_id: adSetId,
-                        creative: { creative_id: creativeData.id },
-                        status: 'PAUSED',
-                        access_token: profile.facebook_token
-                    };
-                    const adRes = await fetch(`${FB_URL}/${profile.ad_account_id}/ads`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(adPayload)
-                    });
-                    if (adRes.ok) successCount++;
+                const adData = await adRes.json();
+                if (adRes.ok) {
+                    console.log(`[Push] Ad created successfully:`, adData.id);
+                    successCount++;
+                } else {
+                    console.error("[Push] Ad creation failed:", adData);
                 }
+            } else {
+                console.error("[Push] Creative creation failed:", creativeData);
             }
         }
 

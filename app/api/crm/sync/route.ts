@@ -14,14 +14,37 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}))
     const { formId } = body // Optional
 
+    // Resolve Target User ID
+    const url = new URL(request.url);
+    const impersonateId = url.searchParams.get('impersonate');
+    let targetUserId = user.id;
+
+    if (impersonateId) {
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (['super_admin', 'agency', 'admin'].includes(profile?.role || '')) {
+            if (profile?.role !== 'super_admin') {
+                const { data: subAccount } = await supabase
+                  .from('profiles')
+                  .select('id')
+                  .eq('id', impersonateId)
+                  .eq('agency_id', user.id)
+                  .single();
+                if (subAccount) targetUserId = impersonateId;
+                else return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+            } else {
+                targetUserId = impersonateId;
+            }
+        }
+    }
+
     const { data: profile } = await supabase
       .from('profiles')
       .select('selected_page_token, selected_page_id')
-      .eq('id', user.id)
+      .eq('id', targetUserId)
       .single()
 
     if (!profile?.selected_page_token || !profile?.selected_page_id) {
-        return NextResponse.json({ error: 'Page not connected' }, { status: 400 })
+        return NextResponse.json({ error: 'Target account has no Page connected' }, { status: 400 })
     }
 
     // Pass formId to the helper
@@ -37,7 +60,7 @@ export async function POST(request: Request) {
     const BATCH_SIZE = 200;
     for (let i = 0; i < leads.length; i += BATCH_SIZE) {
         const chunk = leads.slice(i, i + BATCH_SIZE).map(lead => ({
-            user_id: user.id,
+            user_id: targetUserId,
             name: lead.name,
             email: lead.email,
             phone: lead.phone,

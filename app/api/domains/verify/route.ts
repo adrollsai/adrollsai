@@ -12,52 +12,46 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
   try {
-    const { domain, userId } = await req.json();
+    const { domain, userId, type = 'catalogue' } = await req.json();
 
     if (!domain || !userId) {
       return NextResponse.json({ error: 'Missing domain or userId' }, { status: 400 });
     }
 
     // 1. Fetch the exact token from Supabase
+    const tokenField = type === 'platform' ? 'whitelabel_verify_token' : 'domain_verify_token';
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('domain_verify_token')
+      .select(tokenField)
       .eq('id', userId)
       .single();
 
-    if (profileError || !profile?.domain_verify_token) {
+    const verifyToken = profile?.[tokenField as keyof typeof profile];
+
+    if (profileError || !verifyToken) {
       return NextResponse.json({ error: 'Verification token not found in database.' }, { status: 404 });
     }
 
     // 2. Safely extract root domain 
-    // This safely strips "app." or "www." without breaking subdomains
     const cleanRoot = domain.replace(/^(app|www)\./i, '');
     const verifyHost = `adrolls-verify.${cleanRoot}`;
-    const tokenToFind = profile.domain_verify_token.trim();
+    const tokenToFind = (verifyToken as string).trim();
 
-    // 3. DNS-over-HTTPS (DoH) via Google
-    // Bypasses Vercel's serverless UDP port 53 blocking
+    // ... (DNS CHECK Logic remains the same) ...
     let isVerified = false;
     
     try {
       const fetchUrl = `https://dns.google/resolve?name=${verifyHost}&type=TXT`;
-      console.log(`[DNS CHECK] Fetching URL: ${fetchUrl}`);
-
       const dohRes = await fetch(fetchUrl, {
           cache: 'no-store',
           headers: { 'Accept': 'application/json' }
       });
-      
       const dohData = await dohRes.json();
-      
-      // Convert the entire payload to a string to bypass all quotation and formatting quirks
       const googleResponseString = JSON.stringify(dohData);
-
       if (googleResponseString.includes(tokenToFind)) {
         isVerified = true;
       }
     } catch (fetchErr) {
-      console.error("[DNS CHECK] Fetch Error:", fetchErr);
       return NextResponse.json({ error: 'Failed to reach Google DNS API.' }, { status: 500 });
     }
 
@@ -67,16 +61,10 @@ export async function POST(req: Request) {
       }, { status: 403 });
     }
 
-    console.log(`[DNS CHECK] SUCCESS! Token found. Adding to Vercel...`);
-
-    // 4. Ownership confirmed! Add to Vercel
+    // ... (Vercel API Logic remains the same) ...
     const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
     let vercelApiUrl = `https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/domains`;
-    
-    // Support for Vercel Team accounts
-    if (VERCEL_TEAM_ID) {
-      vercelApiUrl += `?teamId=${VERCEL_TEAM_ID}`;
-    }
+    if (VERCEL_TEAM_ID) vercelApiUrl += `?teamId=${VERCEL_TEAM_ID}`;
 
     const vercelRes = await fetch(vercelApiUrl, {
       method: 'POST',
@@ -87,32 +75,29 @@ export async function POST(req: Request) {
       body: JSON.stringify({ name: domain }),
     });
 
-    // Handle Vercel Responses & Race Conditions
     if (!vercelRes.ok) {
       const errorData = await vercelRes.json();
       const errorMessage = errorData.error?.message || '';
-
-      // If Vercel says it's already added, we treat it as a success!
       const isAlreadyAdded = errorMessage.toLowerCase().includes('already in use') || 
                              errorMessage.toLowerCase().includes('already been added');
-
       if (!isAlreadyAdded) {
-        console.error("[VERCEL API ERROR]:", errorData);
-        return NextResponse.json({ 
-            error: `Vercel Error: ${errorMessage || 'Failed to link domain'}` 
-        }, { status: vercelRes.status });
-      } else {
-        console.log('[VERCEL] Domain already exists in Vercel. Proceeding to update database.');
+        return NextResponse.json({ error: `Vercel Error: ${errorMessage}` }, { status: vercelRes.status });
       }
     }
 
     // 5. Update Supabase Database
+    const updates: any = {};
+    if (type === 'platform') {
+        updates.whitelabel_verify_status = 'verified';
+        updates.whitelabel_domain = domain;
+    } else {
+        updates.domain_verify_status = 'verified';
+        updates.custom_domain = domain;
+    }
+
     const { error: updateError } = await supabaseAdmin
       .from('profiles')
-      .update({ 
-        domain_verify_status: 'verified',
-        custom_domain: domain // Explicitly save the verified domain string
-      })
+      .update(updates)
       .eq('id', userId);
 
     if (updateError) {
