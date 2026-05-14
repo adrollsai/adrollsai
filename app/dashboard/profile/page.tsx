@@ -647,16 +647,13 @@ export default function ProfilePage() {
       }
 
       // 2. Optimized Link Request
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
       const { data, error } = await supabase.auth.linkIdentity({
         provider: 'facebook',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/dashboard/profile&provider=facebook`,
-          // IMPORTANT: email and public_profile MUST be first
-          scopes: 'email,public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management,pages_manage_ads,leads_retrieval',
-          queryParams: {
-            auth_type: 'rerequest', // Forces Facebook to ask for missing permissions
-            display: 'popup'
-          }
+          redirectTo: `${origin}/auth/callback?next=/dashboard/profile&provider=facebook`,
+          // Switching to space-separated scopes which is more standard for Facebook OAuth
+          scopes: 'email public_profile pages_show_list pages_manage_posts pages_read_engagement instagram_basic instagram_content_publish business_management ads_management pages_manage_ads leads_retrieval'
         }
       })
 
