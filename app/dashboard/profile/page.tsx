@@ -632,57 +632,39 @@ export default function ProfilePage() {
     }
   }
 
-  // THE FIX: Using linkIdentity instead of signInWithOAuth to handle email mismatches
   const handleConnectFacebook = async () => {
-    // 1. Immediate UI Feedback
     setIsConnectingFb(true)
 
     try {
-      // --- CLEANUP STEP ---
+      // 1. Cleanup existing zombie identities to prevent "already linked" errors
       const { data: { user } } = await supabase.auth.getUser()
-      console.log("🔍 Checking for zombie identities for user:", user?.id)
-
       if (user?.identities) {
         const fbIdentity = user.identities.find(id => id.provider === 'facebook')
         if (fbIdentity) {
-          console.log("🗑️ Zombie identity found! Unlinking...")
-          toast.info("Cleaning up previous connection attempt...")
-          const { error: unlinkErr } = await supabase.auth.unlinkIdentity(fbIdentity)
-          if (unlinkErr) {
-            console.error("❌ Unlink error:", unlinkErr)
-          } else {
-            console.log("✅ Identity unlinked successfully.")
-            // Wait a bit longer for Supabase Auth to settle
-            await new Promise(r => setTimeout(r, 1500))
-          }
-        } else {
-          console.log("✨ No existing Facebook identity found in Auth.")
+          await supabase.auth.unlinkIdentity(fbIdentity)
+          await new Promise(r => setTimeout(r, 1000)) // Settle time
         }
       }
 
-      console.log("🚀 Initiating fresh Facebook link...")
-      // 2. Use linkIdentity directly
+      // 2. Optimized Link Request
       const { data, error } = await supabase.auth.linkIdentity({
         provider: 'facebook',
         options: {
-          // IMPORTANT: Ensure this URL is whitelisted in Supabase Dashboard -> Auth -> URL Configuration
           redirectTo: `${window.location.origin}/auth/callback?next=/dashboard/profile&provider=facebook`,
-          scopes: 'email,public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management,pages_manage_ads,leads_retrieval'
+          // IMPORTANT: email and public_profile MUST be first
+          scopes: 'email,public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management,pages_manage_ads,leads_retrieval',
+          queryParams: {
+            auth_type: 'rerequest', // Forces Facebook to ask for missing permissions
+            display: 'popup'
+          }
         }
       })
 
       if (error) throw error
-
-      // If successful, the browser WILL redirect here, and this line below will never be reached 
-      // in the current window session.
     } catch (error: any) {
       console.error("Linking error:", error)
-      setIsConnectingFb(false) // Reset loader only on error
-      if (error.message.includes('already linked')) {
-        toast.error("This Facebook account is already connected to another user.")
-      } else {
-        toast.error("Failed to connect Facebook: " + error.message)
-      }
+      setIsConnectingFb(false)
+      toast.error("Connection Failed", { description: error.message })
     }
   }
 
