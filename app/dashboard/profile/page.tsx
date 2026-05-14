@@ -634,35 +634,9 @@ export default function ProfilePage() {
 
   const handleConnectFacebook = async () => {
     setIsConnectingFb(true)
-
-    try {
-      // 1. Cleanup existing zombie identities to prevent "already linked" errors
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user?.identities) {
-        const fbIdentity = user.identities.find(id => id.provider === 'facebook')
-        if (fbIdentity) {
-          await supabase.auth.unlinkIdentity(fbIdentity)
-          await new Promise(r => setTimeout(r, 1000)) // Settle time
-        }
-      }
-
-      // 2. Optimized Link Request
-      const origin = typeof window !== 'undefined' ? window.location.origin : ''
-      const { data, error } = await supabase.auth.linkIdentity({
-        provider: 'facebook',
-        options: {
-          redirectTo: `${origin}/auth/callback?next=/dashboard/profile&provider=facebook`,
-          // Switching to space-separated scopes which is more standard for Facebook OAuth
-          scopes: 'email public_profile pages_show_list pages_manage_posts pages_read_engagement instagram_basic instagram_content_publish business_management ads_management pages_manage_ads leads_retrieval'
-        }
-      })
-
-      if (error) throw error
-    } catch (error: any) {
-      console.error("Linking error:", error)
-      setIsConnectingFb(false)
-      toast.error("Connection Failed", { description: error.message })
-    }
+    // EMERGENCY BYPASS: Use custom route to avoid Supabase Auth email errors
+    // This acquires the marketing token without requiring a unique email match
+    window.location.href = '/api/facebook/connect'
   }
 
   const handleDisconnectFacebook = async () => {
