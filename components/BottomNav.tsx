@@ -79,7 +79,7 @@ export default function BottomNav() {
       // Hide Accounts from non-admin/non-agency, or if impersonating
       if (item.name === 'Accounts') {
           if (impersonateId) return false
-          return ['super_admin', 'agency', 'admin'].includes(role)
+          return ['super_admin', 'agency'].includes(role)
       }
 
       if (role === 'agent') {
