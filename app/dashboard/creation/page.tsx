@@ -45,6 +45,11 @@ const ASPECT_RATIOS = [
   { label: '9:16', value: '9:16', icon: Smartphone }
 ]
 
+const ALLOWED_VIDEO_USERS = [
+  'bc63c065-9bcc-4793-bedc-f0960406425b',
+  '2f62a259-f23b-48ee-a920-c436f36eaa4b'
+]
+
 export default function CreationPage() {
   const supabase = createClient()
   
@@ -567,20 +572,22 @@ export default function CreationPage() {
         */}
         <div className="px-4 mb-3 grid grid-cols-2 md:grid-cols-3 gap-2">
             
-            <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full">
-                <button 
-                    onClick={() => setCreationMode('image')}
-                    className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-1 ${creationMode === 'image' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                    <ImageIcon size={12} className="hidden sm:block" /> Image
-                </button>
-                <button 
-                    onClick={() => { setCreationMode('video'); setSelectedRatio('9:16'); }}
-                    className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-1 ${creationMode === 'video' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                    <VideoIcon size={12} className="hidden sm:block" /> Video
-                </button>
-            </div>
+            {ALLOWED_VIDEO_USERS.includes(userId || '') && (
+                <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full">
+                    <button 
+                        onClick={() => setCreationMode('image')}
+                        className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-1 ${creationMode === 'image' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <ImageIcon size={12} className="hidden sm:block" /> Image
+                    </button>
+                    <button 
+                        onClick={() => { setCreationMode('video'); setSelectedRatio('9:16'); }}
+                        className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-1 ${creationMode === 'video' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <VideoIcon size={12} className="hidden sm:block" /> Video
+                    </button>
+                </div>
+            )}
 
             {/* Ratio Selector Pill */}
             <div className={`flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full transition-opacity ${creationMode === 'video' ? 'opacity-50 pointer-events-none' : ''}`}>

@@ -64,6 +64,7 @@ export default function AssetsPage() {
         headline: string;
         selectedPlatforms: ('facebook' | 'instagram' | 'whatsapp')[];
     } | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
 
     // 1. SAFE FETCH WITH LOCAL CACHING
     const fetchAssets = async (force = false) => {
@@ -261,6 +262,68 @@ export default function AssetsPage() {
             headline: "",
             selectedPlatforms: ['facebook']
         });
+    };
+    
+    const handleLibraryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+
+        setIsUploading(true);
+        const uploadPromises = Array.from(files).map(async (file) => {
+            try {
+                // 1. Get current user for ownerId
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) throw new Error("Authentication required");
+
+                // Check role for targetUserId resolution
+                const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
+                let targetUserId = user.id;
+                if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+                    targetUserId = (profile?.parent_id || profile?.agency_id) as string;
+                }
+
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${targetUserId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+                const filePath = `library/${fileName}`;
+
+                // 2. Upload to Supabase Storage
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('assets')
+                    .upload(filePath, file);
+
+                if (uploadError) throw uploadError;
+
+                const { data: { publicUrl } } = supabase.storage.from('assets').getPublicUrl(filePath);
+
+                // 3. Insert into assets table
+                const { error: insertError } = await supabase.from('assets').insert({
+                    user_id: targetUserId,
+                    type: file.type.startsWith('video') ? 'video' : 'image',
+                    url: publicUrl,
+                    status: 'Ready',
+                    caption: `Uploaded: ${file.name}`
+                });
+
+                if (insertError) throw insertError;
+                return true;
+            } catch (err: any) {
+                console.error("Upload error:", err);
+                toast.error(`Failed to upload ${file.name}: ${err.message}`);
+                return false;
+            }
+        });
+
+        const results = await Promise.all(uploadPromises);
+        const successCount = results.filter(Boolean).length;
+        
+        if (successCount > 0) {
+            toast.success(`Successfully uploaded ${successCount} assets!`);
+            fetchAssets(true); // Refresh library
+        }
+        
+        setIsUploading(false);
+        // Clear input
+        e.target.value = '';
     };
 
     const runAIAnalysis = async () => {
@@ -695,6 +758,22 @@ export default function AssetsPage() {
                             accept="image/*,video/*"
                             onChange={handleDirectUpload}
                         />
+                        <input 
+                            type="file" 
+                            className="hidden" 
+                            id="library-upload"
+                            multiple
+                            accept="image/*,video/*"
+                            onChange={handleLibraryUpload}
+                        />
+                        <button
+                            onClick={() => document.getElementById('library-upload')?.click()}
+                            disabled={isUploading}
+                            className="bg-slate-900 text-white px-6 py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
+                        >
+                            {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
+                            {isUploading ? 'Uploading...' : 'Upload Assets'}
+                        </button>
                         <button
                             onClick={() => setDirectPostData({
                                 file: null,
