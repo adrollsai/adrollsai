@@ -224,7 +224,7 @@ export default function CRMPage() {
     
     if (userId) {
         const leadPayload: any = {
-            user_id: role === 'agent' && parentAdminId ? parentAdminId : userId,
+            user_id: targetUserId || userId,
             name: newLead.name, phone: newLead.phone, email: newLead.email, notes: newLead.notes,
             source: 'Manual', pipeline_stage: 'New'
         }

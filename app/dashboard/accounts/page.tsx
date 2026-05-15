@@ -79,13 +79,13 @@ export default function AccountsPage() {
     if (profile?.role === 'super_admin') {
       // Super admin sees EVERYONE on the platform
       query = query.neq('id', targetUserId) // Hide self
-    } else if (profile?.role === 'agency' || profile?.role === 'admin') {
-      // Agency/Admin sees only their clients/staff
+    } else if (profile?.role === 'agency') {
+      // Agency sees only their clients/staff
       query = query.or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
     } else {
-      // For agents or basic clients who shouldn't see this page, we redirect
+      // For admins, agents or basic clients who shouldn't see this page, we redirect
       // BUT if we are impersonating them as a super_admin, we stay
-      if (authProfile?.role !== 'super_admin') {
+      if (authProfile?.role !== 'super_admin' && authProfile?.role !== 'agency') {
           router.push('/dashboard')
           return
       }

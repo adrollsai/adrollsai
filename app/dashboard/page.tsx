@@ -491,9 +491,24 @@ export default function ProductsPage() {
           uploadedUrls.push(`https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newProp.title)}`)
       }
 
+      // Resolve correct attribution ID
+      let finalOwnerId = user.id
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
+      if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+          finalOwnerId = (profile?.parent_id || profile?.agency_id) as string
+      }
+
       const { error } = await supabase.from('properties').insert({
-          user_id: user.id, title: newProp.title, description: newProp.description, address: '', price: '', 
-          property_type: 'Generic', status: 'Active', image_url: uploadedUrls[0], images: uploadedUrls, auto_generate: false 
+          user_id: finalOwnerId, 
+          title: newProp.title, 
+          description: newProp.description, 
+          address: '', 
+          price: '', 
+          property_type: 'Generic', 
+          status: 'Active', 
+          image_url: uploadedUrls[0], 
+          images: uploadedUrls, 
+          auto_generate: false 
         })
 
       if (error) throw error
@@ -591,7 +606,7 @@ export default function ProductsPage() {
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 min-h-screen pb-24 pt-16 relative">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 min-h-screen pb-32 pt-16 relative">
       
       {/* FIXED REFRESH BUTTON */}
       <button 

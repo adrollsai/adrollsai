@@ -1114,9 +1114,9 @@ export default function AssetsPage() {
                         initial={{ y: 100, opacity: 0 }}
                         animate={{ y: 0, opacity: 1 }}
                         exit={{ y: 100, opacity: 0 }}
-                        className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] w-[95%] max-w-2xl"
+                        className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[140] w-[95%] max-w-2xl"
                     >
-                        <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 rounded-[2rem] p-4 shadow-2xl flex items-center justify-between gap-4">
+                        <div className="bg-slate-900/95 backdrop-blur-2xl border border-slate-700/50 rounded-[2rem] p-4 shadow-2xl flex items-center justify-between gap-4">
                             <div className="flex items-center gap-4 ml-2">
                                 <div className="bg-blue-500 text-white w-10 h-10 rounded-2xl flex items-center justify-center font-bold shadow-lg shadow-blue-500/20">
                                     {selectedIds.size}

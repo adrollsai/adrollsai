@@ -46,6 +46,7 @@ export default function AdsPage() {
   const [selectedAdAccountId, setSelectedAdAccountId] = useState<string | null>(null)
   const [facebookToken, setFacebookToken] = useState<string | null>(null)
   const [accountStatus, setAccountStatus] = useState<any>(null)
+  const [currency, setCurrency] = useState('INR')
 
   // Location Search
   const [locationSearchText, setLocationSearchText] = useState('')
@@ -219,7 +220,7 @@ export default function AdsPage() {
       // Resolve Target User ID
       const urlParams = new URLSearchParams(window.location.search)
       const impersonateId = urlParams.get('impersonate')
-      const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name, currency').eq('id', user.id).single()
       let targetUserId = user.id
       if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
           targetUserId = (profile?.parent_id || profile?.agency_id) as string
@@ -244,7 +245,7 @@ export default function AdsPage() {
       if (targetUserId !== user.id) {
           const { data: tProf } = await supabase
             .from('profiles')
-            .select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name')
+            .select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name, currency')
             .eq('id', targetUserId)
             .single()
           if (tProf) targetProfile = tProf
@@ -252,6 +253,7 @@ export default function AdsPage() {
       }
       
       if (targetProfile) {
+        setCurrency(targetProfile.currency || 'INR')
         setFacebookToken(targetProfile.facebook_token)
         setSelectedAdAccountId(targetProfile.ad_account_id)
         
@@ -655,11 +657,17 @@ export default function AdsPage() {
     
     setIsSubmitting(true)
     const { data: { user } } = await supabase.auth.getUser();
+    const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user?.id).single();
     
     // Resolve targetUserId for privacy policy
-    const urlParams = new URLSearchParams(window.location.search)
-    const impersonateId = urlParams.get('impersonate')
-    const tUserId = impersonateId || user?.id;
+    const urlParams = new URLSearchParams(window.location.search);
+    const impersonateId = urlParams.get('impersonate');
+    
+    let tUserId = user?.id;
+    if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+        tUserId = (profile?.parent_id || profile?.agency_id) as string;
+    }
+    if (impersonateId) tUserId = impersonateId;
 
     const autoPrivacyUrl = `https://app.adrolls.in/privacy/${tUserId}`;
     
@@ -695,7 +703,17 @@ export default function AdsPage() {
         setSelectedCreatives([]);
         setFormQuestions([]);
         fetchAdsData(true);
-      } else throw new Error(data.error || 'Failed to Start');
+      } else {
+        const metaError = data.metaError;
+        // Subcode 1815089 = Lead Ads TOS not accepted
+        if (metaError?.error_subcode === 1815089) {
+            if (confirm("Facebook Terms Not Accepted: You need to accept Facebook's Lead Generation Terms of Service for your Page before launching lead ads.\n\nWould you like to open the terms page now?")) {
+                window.open(`https://www.facebook.com/ads/leadgen/tos/?page_id=${adForm.pageId}`, '_blank');
+            }
+        } else {
+            alert('Launch Failed: ' + (data.error || 'Unknown error'));
+        }
+      }
     } catch (e: any) { alert('Launch Failed: ' + e.message); } 
     finally { setIsSubmitting(false) }
   }
@@ -1201,7 +1219,7 @@ export default function AdsPage() {
                       </div>
                   ) : statsModal.insights ? (
                       <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><CreditCard size={14}/> Spend</div><div className="text-2xl font-black text-slate-800">₹{statsModal.insights.spend || '0'}</div></div>
+                          <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><CreditCard size={14}/> Spend</div><div className="text-2xl font-black text-slate-800">{currency === 'INR' ? '₹' : '$'}{statsModal.insights.spend || '0'}</div></div>
                           <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Eye size={14}/> Views</div><div className="text-2xl font-black text-slate-800">{statsModal.insights.impressions || '0'}</div></div>
                           <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><MousePointerClick size={14}/> Clicks</div><div className="text-2xl font-black text-slate-800">{statsModal.insights.clicks || '0'}</div></div>
                           <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100 shadow-sm"><div className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14}/> Leads</div><div className="text-3xl font-black text-blue-700">{statsModal.insights.actions?.find((a:any) => a.action_type === 'lead')?.value || '0'}</div></div>
@@ -1252,7 +1270,20 @@ export default function AdsPage() {
                     
                       <div className="flex flex-col sm:flex-row gap-4">
                           <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Gender</label><select value={adForm.gender} onChange={(e) => setAdForm(prev => ({...prev, gender: e.target.value}))} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 px-4 rounded-2xl text-slate-800 text-sm font-medium outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer">{GENDERS.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
-                          <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Daily Budget (₹)</label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span><input type="number" min="100" step="100" value={adForm.dailyBudgetINR} onChange={(e) => setAdForm(prev => ({...prev, dailyBudgetINR: parseInt(e.target.value) || 0}))} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 pl-9 pr-4 rounded-2xl text-slate-800 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all" /></div></div>
+                          <div className="flex-1">
+                              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Daily Budget ({currency === 'INR' ? '₹' : '$'})</label>
+                              <div className="relative">
+                                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">{currency === 'INR' ? '₹' : currency === 'AED' ? 'د.إ' : currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$'}</span>
+                                  <input 
+                                    type="number" 
+                                    min={currency === 'INR' ? 100 : 5} 
+                                    step={currency === 'INR' ? 100 : 1} 
+                                    value={adForm.dailyBudgetINR} 
+                                    onChange={(e) => setAdForm(prev => ({...prev, dailyBudgetINR: parseInt(e.target.value) || 0}))} 
+                                    className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 pl-11 pr-4 rounded-2xl text-slate-800 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all" 
+                                  />
+                              </div>
+                          </div>
                       </div>
                   </div>
               </div>

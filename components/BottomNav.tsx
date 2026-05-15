@@ -79,7 +79,7 @@ export default function BottomNav() {
   const navItems = allNavItems.filter(item => {
     // Hide Accounts from non-admin/non-agency
     if (item.name === 'Accounts') {
-      return ['super_admin', 'agency', 'admin'].includes(role)
+      return ['super_admin', 'agency'].includes(role)
     }
 
     // Team visibility
@@ -94,11 +94,9 @@ export default function BottomNav() {
   })
 
   return (
-    <div className="fixed bottom-0 sm:bottom-6 left-0 right-0 z-50 flex justify-center pointer-events-none">
-
-      <div className="bg-white/90 backdrop-blur-xl border-t sm:border border-slate-200/60 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] sm:shadow-2xl w-full sm:w-auto sm:rounded-[2.5rem] px-2 sm:px-6 py-2 sm:py-3 pointer-events-auto transition-all">
-
-        <div className="flex items-center justify-start sm:justify-center gap-1 sm:gap-2 overflow-x-auto scrollbar-hide pb-4 sm:pb-0 px-4 sm:px-0">
+    <div className="fixed bottom-0 left-0 right-0 z-[70] flex justify-center pointer-events-none pb-[env(safe-area-inset-bottom)]">
+      <div className="bg-white/95 backdrop-blur-2xl border-t sm:border border-slate-200/60 shadow-[0_-8px_40px_rgba(0,0,0,0.08)] sm:shadow-2xl w-full sm:w-auto sm:max-w-[95%] sm:mb-6 sm:rounded-[2.5rem] px-2 sm:px-6 py-2 sm:py-3 pointer-events-auto transition-all">
+        <div className="flex items-center justify-start sm:justify-center gap-1 sm:gap-2 overflow-x-auto scrollbar-hide px-4 sm:px-0">
 
           {navItems.map((item) => {
             const isActive = item.path === '/dashboard'

@@ -312,7 +312,8 @@ export default function ProfilePage() {
     logoUrl: '',
     facebookUrl: '',
     instagramUrl: '',
-    customPrompt: ''
+    customPrompt: '',
+    currency: 'INR'
   })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -552,7 +553,8 @@ export default function ProfilePage() {
           logoUrl: profileData.logo_url || '',
           facebookUrl: profileData.facebook_url || '',
           instagramUrl: profileData.instagram_url || '',
-          customPrompt: profileData.custom_prompt || ''
+          customPrompt: profileData.custom_prompt || '',
+          currency: profileData.currency || 'INR'
         })
 
         if (profileData.facebook_token && isValidFacebookToken(profileData.facebook_token)) {
@@ -731,7 +733,8 @@ export default function ProfilePage() {
       logo_url: formData.logoUrl,
       facebook_url: isAdminLike ? formData.facebookUrl : undefined,
       instagram_url: isAdminLike ? formData.instagramUrl : undefined,
-      custom_prompt: formData.customPrompt
+      custom_prompt: formData.customPrompt,
+      currency: formData.currency
     }
 
     const { error } = await supabase.from('profiles').update(updates).eq('id', effectiveUserId)
@@ -830,6 +833,22 @@ export default function ProfilePage() {
                     onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
                     className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all"
                   />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">Business Currency</label>
+                  <select
+                    value={formData.currency}
+                    onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-bold focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all cursor-pointer"
+                  >
+                    <option value="INR">INR (₹) - Indian Rupee</option>
+                    <option value="CAD">CAD ($) - Canadian Dollar</option>
+                    <option value="USD">USD ($) - US Dollar</option>
+                    <option value="GBP">GBP (£) - British Pound</option>
+                    <option value="EUR">EUR (€) - Euro</option>
+                    <option value="AED">AED (د.إ) - UAE Dirham</option>
+                  </select>
                 </div>
 
                 <div>

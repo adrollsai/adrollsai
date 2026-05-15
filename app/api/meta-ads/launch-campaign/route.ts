@@ -26,35 +26,25 @@ export async function POST(request: Request) {
     // --- 0. Resolve Target User ID ---
     const url = new URL(request.url);
     const impersonateId = url.searchParams.get('impersonate');
+    const { data: ownProfile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
     let targetUserId = user.id;
 
-    if (impersonateId) {
-        // Security Check: Who is allowed to impersonate this ID?
-        const { data: profile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single();
-        
-        if (['super_admin', 'agency', 'admin'].includes(profile?.role || '')) {
-            if (profile?.role !== 'super_admin') {
-                // 1. Is it their own agency owner? (For staff)
-                const isParent = (profile?.agency_id === impersonateId || profile?.parent_id === impersonateId);
-                
-                // 2. Is it one of their clients?
-                const { data: subAccount } = await supabase
-                    .from('profiles')
-                    .select('id')
-                    .eq('id', impersonateId)
-                    .eq('agency_id', profile?.agency_id || user.id) // Check shared root
-                    .single();
+    if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
+        targetUserId = (ownProfile?.parent_id || ownProfile?.agency_id) as string;
+    }
 
-                if (isParent || subAccount) {
-                    targetUserId = impersonateId;
-                } else {
-                    return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
-                }
-            } else {
+    if (impersonateId && ['super_admin', 'agency', 'admin'].includes(ownProfile?.role || '')) {
+        if (ownProfile?.role !== 'super_admin') {
+            const isParent = (ownProfile?.agency_id === impersonateId || ownProfile?.parent_id === impersonateId);
+            const { data: subAccount } = await supabase.from('profiles').select('id').eq('id', impersonateId).eq('agency_id', ownProfile?.agency_id || user.id).single();
+
+            if (isParent || subAccount) {
                 targetUserId = impersonateId;
+            } else {
+                return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
             }
         } else {
-            return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+            targetUserId = impersonateId;
         }
     }
 
@@ -76,7 +66,7 @@ export async function POST(request: Request) {
         data.adAccountId = formData.get('adAccountId')?.toString();
         data.facebookToken = formData.get('facebookToken')?.toString();
         data.metaLocations = formData.get('metaLocations')?.toString();
-        data.dailyBudgetINR = parseFloat(formData.get('dailyBudgetINR')?.toString() || '500');
+        data.dailyBudget = parseFloat(formData.get('dailyBudgetINR')?.toString() || formData.get('dailyBudget')?.toString() || '500');
         data.pageId = formData.get('pageId')?.toString();
         data.linkUrl = formData.get('linkUrl')?.toString();
         data.privacyPolicyUrl = formData.get('privacyPolicyUrl')?.toString();
@@ -95,7 +85,7 @@ export async function POST(request: Request) {
 
     // Fetch TARGET profile for credentials and business info
     const { data: targetProfile } = await supabase.from('profiles')
-        .select('facebook_token, ad_account_id, fb_page_id, business_url, business_name, contact_number')
+        .select('facebook_token, ad_account_id, fb_page_id, business_url, business_name, contact_number, currency')
         .eq('id', targetUserId)
         .single();
 
@@ -115,7 +105,7 @@ export async function POST(request: Request) {
         pageId,
         linkUrl,
         privacyPolicyUrl,
-        dailyBudgetINR = 500,
+        dailyBudget = 500,
         metaLocations: metaLocationsStr,
         optimizeForConversions,
         customQuestions: customQuestionsStr,
@@ -123,6 +113,8 @@ export async function POST(request: Request) {
         assetIds = [],
         creativeFiles = []
     } = data;
+    
+    const currency = targetProfile?.currency || 'INR';
 
     if (!facebookToken || !adAccountId || !pageId) {
         const missing = [];
@@ -494,7 +486,7 @@ export async function POST(request: Request) {
             objective: 'OUTCOME_LEADS', 
             status: 'ACTIVE', 
             buying_type: 'AUCTION',
-            daily_budget: Math.round(dailyBudgetINR * 100), // Fixed: Multiplied by 100 as Meta expects budget in Paise/Cents. 500 becomes 50,000 (500 INR).
+            daily_budget: Math.round(dailyBudget * 100), // Budget in smallest unit (Cents/Paise)
             bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
             special_ad_categories: [], // Removed HOUSING category constraint
             access_token: facebookToken,
@@ -577,7 +569,19 @@ export async function POST(request: Request) {
         const adSetData = await adSetRes.json();
         if (!adSetRes.ok) {
             logToFile("❌ Ad Set Creation Failed:", adSetData);
-            throw new Error(`Ad Set Error: ${adSetData.error?.message}`);
+            const metaErr = adSetData.error || {};
+            return NextResponse.json({ 
+                error: `Ad Set Error: ${metaErr.message}`,
+                metaError: {
+                    message: metaErr.message,
+                    type: metaErr.type,
+                    code: metaErr.code,
+                    error_subcode: metaErr.error_subcode,
+                    error_user_title: metaErr.error_user_title,
+                    error_user_msg: metaErr.error_user_msg,
+                    fbtrace_id: metaErr.fbtrace_id
+                }
+            }, { status: 400 });
         }
         const adSetId = adSetData.id;
 

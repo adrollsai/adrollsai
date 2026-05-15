@@ -68,7 +68,10 @@ export async function POST(request: Request) {
             const maxRetries = 3;
 
             if (retryCount < maxRetries) {
-                console.log(`[Video Callback] Attempting retry ${retryCount + 1}/${maxRetries} for task ${videoTask.id}`);
+                console.log(`[Video Callback] Clip failed. Waiting 10 seconds before attempting retry ${retryCount + 1}/${maxRetries} for task ${videoTask.id}...`);
+                
+                // Add a slightly longer delay to handle transient API issues
+                await new Promise(resolve => setTimeout(resolve, 10000));
                 
                 let currentPrompt = videoTask.prompts[videoTask.current_index];
                 const isPolicyViolation = /policy|allowed|sensitive|restricted|violation/i.test(msg || "");
