@@ -76,13 +76,16 @@ export default function AssetsPage() {
             if (userError || !user) return
 
             // Fetch profile to check role and parent_id
-            const { data: profile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
+            const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
             if (profile) setUserRole(profile.role)
 
             const urlParams = new URLSearchParams(window.location.search)
             const impersonateId = urlParams.get('impersonate')
 
-            let targetUserId = (profile?.role === 'agent' && profile?.parent_id) ? profile.parent_id : user.id
+            let targetUserId = user.id
+            if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+                targetUserId = (profile?.parent_id || profile?.agency_id) as string
+            }
 
             // Impersonation Logic
             if (impersonateId && (['super_admin', 'agency', 'admin'].includes(profile?.role || ''))) {

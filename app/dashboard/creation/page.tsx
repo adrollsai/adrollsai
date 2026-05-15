@@ -126,10 +126,13 @@ export default function CreationPage() {
       const impersonateId = urlParams.get('impersonate')
       
       // Fetch CURRENT user profile to check role
-      const { data: currentUserProfile } = await supabase.from('profiles').select('role, parent_id').eq('id', user.id).single()
+      const { data: currentUserProfile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
       const currentRole = currentUserProfile?.role || 'admin'
       
-      let tUserId = (currentRole === 'agent' && currentUserProfile?.parent_id) ? currentUserProfile.parent_id : user.id
+      let tUserId = user.id
+      if (['admin', 'agent'].includes(currentRole as string) && (currentUserProfile?.parent_id || currentUserProfile?.agency_id)) {
+          tUserId = (currentUserProfile?.parent_id || currentUserProfile?.agency_id) as string
+      }
 
       if (impersonateId && (['super_admin', 'agency', 'admin'].includes(currentRole))) {
           if (currentRole !== 'super_admin') {

@@ -82,10 +82,12 @@ export default function CRMPage() {
       const parentId = profile?.parent_id || profile?.agency_id
       if (parentId) setParentAdminId(parentId)
 
-      // Impersonation Logic
+      // Impersonation & Hierarchy Logic
       const urlParams = new URLSearchParams(window.location.search)
       const impersonateId = urlParams.get('impersonate')
-      let targetUserId = user.id
+      let targetUserId = (['admin', 'agent'].includes(currentRole) && (profile?.parent_id || profile?.agency_id)) 
+        ? (profile.parent_id || profile.agency_id) 
+        : user.id
 
       if (impersonateId && (['super_admin', 'agency', 'admin'].includes(currentRole))) {
           if (currentRole !== 'super_admin') {
@@ -93,7 +95,7 @@ export default function CRMPage() {
                 .from('profiles')
                 .select('id')
                 .eq('id', impersonateId)
-                .eq('agency_id', user.id)
+                .eq('agency_id', profile?.agency_id || user.id) // Correctly check agency root
                 .single()
               if (subAccount) targetUserId = impersonateId
           } else {

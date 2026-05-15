@@ -182,8 +182,8 @@ export default function ProductsPage() {
           } else {
               targetUserId = impersonateId
           }
-      } else if (currentRole === 'agent' && (profile?.parent_id || profile?.agency_id)) {
-          // Staff agents see their parent's data
+      } else if (['admin', 'agent'].includes(currentRole as string) && (profile?.parent_id || profile?.agency_id)) {
+          // Staff (Admin/Agent) see their parent agency's data
           targetUserId = (profile.parent_id || profile.agency_id) as string
       }
       

@@ -23,7 +23,7 @@ import {
   BarChart3
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import PushManager from '@/components/PushManager'
 
@@ -247,6 +247,8 @@ function DomainManager({
 
 export default function ProfilePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const impersonateId = searchParams.get('impersonate')
   const supabase = createClient()
 
   // --- STATE ---
@@ -488,22 +490,26 @@ export default function ProfilePage() {
       setUserId(user.id)
 
       // Get AUTH user role first
-      const { data: authProfile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      const { data: authProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
       const currentAuthRole = authProfile?.role || 'admin'
       setAuthRole(currentAuthRole)
 
-      // Impersonation Logic
-      const urlParams = new URLSearchParams(window.location.search)
-      const impersonateId = urlParams.get('impersonate')
+      // Resolve Target User ID
       let tUserId = user.id
 
+      // 1. Staff (Admin/Agent) automatically see their Agency's profile
+      if (['admin', 'agent'].includes(currentAuthRole) && (authProfile?.agency_id || authProfile?.parent_id)) {
+          tUserId = (authProfile?.agency_id || authProfile?.parent_id) as string
+      }
+      
+      // 2. Impersonation (Super Admin or Agency viewing a client)
       if (impersonateId && (['super_admin', 'agency', 'admin'].includes(currentAuthRole))) {
           if (currentAuthRole !== 'super_admin') {
               const { data: subAccount } = await supabase
                 .from('profiles')
                 .select('id')
                 .eq('id', impersonateId)
-                .eq('agency_id', user.id)
+                .eq('agency_id', authProfile?.agency_id || user.id)
                 .single()
               if (subAccount) tUserId = impersonateId
           } else {
@@ -1121,7 +1127,10 @@ export default function ProfilePage() {
 
             {isAdminLike && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
-                <button onClick={() => router.push('/dashboard/billing')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100">
+                <button 
+                  onClick={() => router.push(`/dashboard/billing${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"
+                >
                   <div className="flex items-center gap-4">
                     <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl">
                       <CreditCard size={20} />
@@ -1131,7 +1140,10 @@ export default function ProfilePage() {
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>
 
-                <button onClick={() => router.push('/dashboard/usage')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100">
+                <button 
+                  onClick={() => router.push(`/dashboard/usage${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"
+                >
                   <div className="flex items-center gap-4">
                     <div className="bg-indigo-100 text-indigo-600 p-3 rounded-2xl">
                       <BarChart3 size={20} />
@@ -1162,7 +1174,10 @@ export default function ProfilePage() {
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>
 
-                <button onClick={() => router.push('/dashboard/team')} className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                <button 
+                  onClick={() => router.push(`/dashboard/team${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all"
+                >
                   <div className="flex items-center gap-4">
                     <div className="bg-emerald-100 text-emerald-600 p-3 rounded-2xl">
                       <Shield size={20} />

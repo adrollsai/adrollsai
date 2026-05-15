@@ -16,21 +16,33 @@ export async function GET(request: Request) {
   const url = new URL(request.url)
   const impersonateId = url.searchParams.get('impersonate')
 
-  let targetUserId = user.id
+  // 1.5 Get User Profile for role/hierarchy
+  const { data: profile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+  
+  let targetUserId = (['admin', 'agent'].includes(profile?.role || '') && (profile?.agency_id || profile?.parent_id)) 
+    ? (profile.agency_id || profile.parent_id) 
+    : user.id
 
   if (impersonateId) {
-      // Check if user is super_admin or agency/admin owner of this client
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      // Security Check: Who is allowed to impersonate this ID?
       if (['super_admin', 'agency', 'admin'].includes(profile?.role || '')) {
           if (profile?.role !== 'super_admin') {
+              // 1. Is it their own agency owner? (For staff)
+              const isParent = (profile?.agency_id === impersonateId || profile?.parent_id === impersonateId);
+              
+              // 2. Is it one of their clients?
               const { data: subAccount } = await supabase
                 .from('profiles')
                 .select('id')
                 .eq('id', impersonateId)
-                .eq('agency_id', user.id)
+                .eq('agency_id', profile?.agency_id || user.id) // Check if they share the same agency root
                 .single()
-              if (subAccount) targetUserId = impersonateId
-              else return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
+
+              if (isParent || subAccount) {
+                  targetUserId = impersonateId
+              } else {
+                  return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
+              }
           } else {
               targetUserId = impersonateId
           }

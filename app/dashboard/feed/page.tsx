@@ -86,7 +86,7 @@ export default function FeedManagementPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('role, agency_id').eq('id', user.id).single()
       
       // Impersonation Logic
       const urlParams = new URLSearchParams(window.location.search)
@@ -99,7 +99,7 @@ export default function FeedManagementPage() {
                 .from('profiles')
                 .select('id')
                 .eq('id', impersonateId)
-                .eq('agency_id', user.id)
+                .eq('agency_id', profile?.agency_id || user.id)
                 .single()
               if (subAccount) targetUserId = impersonateId
           } else {
@@ -146,7 +146,7 @@ export default function FeedManagementPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error("Not authenticated")
 
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('role, agency_id').eq('id', user.id).single()
       
       // Impersonation Logic
       const urlParams = new URLSearchParams(window.location.search)
@@ -159,7 +159,7 @@ export default function FeedManagementPage() {
                 .from('profiles')
                 .select('id')
                 .eq('id', impersonateId)
-                .eq('agency_id', user.id)
+                .eq('agency_id', profile?.agency_id || user.id)
                 .single()
               if (subAccount) targetUserId = impersonateId
           } else {

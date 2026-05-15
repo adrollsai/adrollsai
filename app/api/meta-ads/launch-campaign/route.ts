@@ -29,20 +29,32 @@ export async function POST(request: Request) {
     let targetUserId = user.id;
 
     if (impersonateId) {
-        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        // Security Check: Who is allowed to impersonate this ID?
+        const { data: profile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single();
+        
         if (['super_admin', 'agency', 'admin'].includes(profile?.role || '')) {
             if (profile?.role !== 'super_admin') {
+                // 1. Is it their own agency owner? (For staff)
+                const isParent = (profile?.agency_id === impersonateId || profile?.parent_id === impersonateId);
+                
+                // 2. Is it one of their clients?
                 const { data: subAccount } = await supabase
                     .from('profiles')
                     .select('id')
                     .eq('id', impersonateId)
-                    .eq('agency_id', user.id)
+                    .eq('agency_id', profile?.agency_id || user.id) // Check shared root
                     .single();
-                if (subAccount) targetUserId = impersonateId;
-                else return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+
+                if (isParent || subAccount) {
+                    targetUserId = impersonateId;
+                } else {
+                    return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+                }
             } else {
                 targetUserId = impersonateId;
             }
+        } else {
+            return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
         }
     }
 

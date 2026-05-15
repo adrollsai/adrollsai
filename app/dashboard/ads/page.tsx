@@ -219,8 +219,11 @@ export default function AdsPage() {
       // Resolve Target User ID
       const urlParams = new URLSearchParams(window.location.search)
       const impersonateId = urlParams.get('impersonate')
-      const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, role, parent_id, custom_domain').eq('id', user.id).single()
-      let targetUserId = (profile?.role === 'agent' && profile?.parent_id) ? profile.parent_id : user.id
+      const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name').eq('id', user.id).single()
+      let targetUserId = user.id
+      if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+          targetUserId = (profile?.parent_id || profile?.agency_id) as string
+      }
 
       if (impersonateId && (['super_admin', 'agency', 'admin'].includes(profile?.role || ''))) {
           if (profile?.role !== 'super_admin') {
@@ -236,15 +239,16 @@ export default function AdsPage() {
           }
       }
 
-      // 2. Fetch TARGET Profile (If impersonating, we need the client's tokens)
+      // 2. Fetch TARGET Profile (If impersonating or staff, we need the parent's tokens)
       let targetProfile = profile
       if (targetUserId !== user.id) {
           const { data: tProf } = await supabase
             .from('profiles')
-            .select('facebook_token, ad_account_id, selected_page_id, role, parent_id, custom_domain')
+            .select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name')
             .eq('id', targetUserId)
             .single()
           if (tProf) targetProfile = tProf
+          console.log(`[ADS] Mirroring Agency: ${targetProfile?.business_name} (${targetUserId})`)
       }
       
       if (targetProfile) {

@@ -24,19 +24,42 @@ interface KieTaskResponse {
 }
 
 /**
- * Helper to fetch with retry logic for rate limits (429)
+ * Helper to fetch with retry logic for rate limits (429 or Meta Error Codes)
  */
 async function fetchWithRetry(url: string, options: any, maxRetries = 3): Promise<Response> {
     let retries = 0;
     while (retries < maxRetries) {
         const response = await fetch(url, options);
+        
+        // 1. Handle standard HTTP 429
         if (response.status === 429) {
-            const waitTime = Math.pow(2, retries) * 1000 + Math.random() * 500;
+            const waitTime = Math.pow(2, retries) * 2000 + Math.random() * 1000;
             console.log(`[Rate Limit] Hit 429, retrying in ${waitTime}ms...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
             retries++;
             continue;
         }
+
+        // 2. Handle Meta-Specific Rate Limits (Status 400/403 with error codes 4, 17, 32)
+        if (!response.ok) {
+            try {
+                const clone = response.clone();
+                const errorData = await clone.json();
+                const metaErrorCode = errorData.error?.code;
+                const metaErrorMsg = errorData.error?.message || "";
+
+                if ([4, 17, 32, 613].includes(metaErrorCode) || metaErrorMsg.includes("request limit reached")) {
+                    const waitTime = Math.pow(2, retries) * 3000 + Math.random() * 1000;
+                    console.warn(`[Meta Rate Limit] Code ${metaErrorCode} hit. Retrying in ${waitTime}ms... (Attempt ${retries + 1}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                    retries++;
+                    continue;
+                }
+            } catch (e) {
+                // Not JSON or other error, proceed to return original response
+            }
+        }
+
         return response;
     }
     return fetch(url, options); // Final attempt
@@ -102,18 +125,18 @@ export async function postToFacebook(accessToken: string, imageUrl: string, capt
 }
 
 /**
- * 3. Instagram Posting (Upgraded with Polling & Video Support)
+ * 3. Instagram Posting (Upgraded with Polling & Rate Limit Resilience)
  */
 export async function postToInstagram(accessToken: string, pageId: string, mediaUrl: string, caption: string): Promise<any> {
-    // 1. Get IG Account ID
-    const igAccountRes = await fetch(`${FACEBOOK_GRAPH_URL}/${pageId}?fields=instagram_business_account&access_token=${accessToken}`);
+    // 1. Get IG Account ID (Try to be efficient)
+    const igAccountRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${pageId}?fields=instagram_business_account&access_token=${accessToken}`, {});
     const igAccountData = await igAccountRes.json();
     if (igAccountData.error || !igAccountData.instagram_business_account?.id) {
         throw new Error(`Failed to get IG Account ID: ${igAccountData.error?.message || 'Page not connected to IG'}`);
     }
     const igAccountId = igAccountData.instagram_business_account.id;
 
-    // 2. Detect Media Type (Video vs Image)
+    // 2. Detect Media Type
     const isVideo = mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/) || mediaUrl.includes('video');
     const mediaPayload: any = {
         caption: caption,
@@ -128,7 +151,7 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     }
 
     // 3. Create Media Container
-    const containerRes = await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media`, {
+    const containerRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mediaPayload),
@@ -139,13 +162,12 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     }
     const creationId = containerData.id;
 
-    // 4. POLL STATUS (Crucial for Videos and High-Res Images)
-    // We wait up to 60 seconds for processing to finish
+    // 4. POLL STATUS (Increased delay to 15s to avoid hitting App Limits)
     let status = 'IN_PROGRESS';
     let attempts = 0;
-    while (status !== 'FINISHED' && attempts < 12) {
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5s
-        const statusRes = await fetch(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code&access_token=${accessToken}`);
+    while (status !== 'FINISHED' && attempts < 15) {
+        await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15s (Conserves API limit)
+        const statusRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code,status_description&access_token=${accessToken}`, {});
         const statusData = await statusRes.json();
         status = statusData.status_code;
         
@@ -160,7 +182,7 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     }
 
     // 5. Publish Container
-    const publishRes = await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
+    const publishRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
