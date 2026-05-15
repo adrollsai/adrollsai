@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { toast } from 'sonner'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { useRouter } from 'next/navigation'
 
@@ -1154,17 +1155,39 @@ export default function AdsPage() {
                                         const newVariations: any[] = [];
                                         const impersonateId = new URLSearchParams(window.location.search).get('impersonate');
                                         const optimizeUrl = `/api/meta-ads/optimize-campaign${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
+                                        
                                         for (const sourceVar of orchestrator.variations) {
-                                            const res = await fetch(optimizeUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId: orchestrator.campaign?.id, campaignName: orchestrator.campaign?.name, step: 'generate-copy', imageUrls: [sourceVar.image_url], captions: sourceVar?.caption ? [sourceVar.caption] : [] }) });
+                                            const res = await fetch(optimizeUrl, { 
+                                                method: 'POST', 
+                                                headers: { 'Content-Type': 'application/json' }, 
+                                                body: JSON.stringify({ 
+                                                    campaignId: orchestrator.campaign?.id, 
+                                                    campaignName: orchestrator.campaign?.name, 
+                                                    step: 'generate-copy', 
+                                                    imageUrls: [sourceVar.image_url], 
+                                                    captions: sourceVar?.caption ? [sourceVar.caption] : [] 
+                                                }) 
+                                            });
+
+                                            if (!res.ok) {
+                                                const errData = await res.json();
+                                                throw new Error(errData.error || 'Copy generation failed');
+                                            }
+
                                             const data = await res.json();
                                             if (data.variation) {
                                                 const fullCaption = `${data.variation.headline}\n\n${data.variation.primary_text}${data.variation.description ? `\n\n${data.variation.description}` : ''}`;
                                                 newVariations.push({ ...data.variation, asset_id: sourceVar?.asset_id, image_url: sourceVar.image_url, type: sourceVar?.type || 'image', caption: fullCaption });
                                             }
                                         }
+
+                                        if (newVariations.length === 0) throw new Error("No variations generated.");
+
                                         setOrchestrator(prev => ({ ...prev, step: 3, status: 'reviewing', variations: newVariations, selectedVariations: newVariations.map((_, i) => i) }));
-                                    } catch (e) {
+                                    } catch (e: any) {
+                                        console.error("Copy Gen Error:", e);
                                         setOrchestrator(prev => ({ ...prev, status: 'error' }));
+                                        toast.error(e.message || "Failed to generate copy.");
                                     }
                                 }}
                                 className="w-full bg-purple-600 text-white font-bold py-4 rounded-2xl hover:bg-purple-700 shadow-md transition-all flex items-center justify-center gap-2"

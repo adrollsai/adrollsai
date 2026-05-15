@@ -327,40 +327,97 @@ export async function generateKieChat(prompt: string, model: string = "gemini-3-
  * 5. Gemini Content Generation (Official Google Gemini API via SDK)
  * Upgraded to support multimodal vision (images)
  */
+import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
 export async function callGemini(prompt: string, imageUrls?: string[]): Promise<string> {
+    const fileManager = new GoogleAIFileManager(GEMINI_API_KEY!);
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY!);
+    
     try {
-        const content: any[] = [{ type: 'text', text: prompt }];
+        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" }); 
+        
+        const contents: any[] = [prompt];
         
         if (imageUrls && imageUrls.length > 0) {
             for (const url of imageUrls) {
                 if (url.startsWith('data:')) {
                     const [header, base64Data] = url.split(',');
                     const mimeType = header.split(':')[1].split(';')[0];
-                    content.push({ 
-                        type: 'image', 
-                        image: Buffer.from(base64Data, 'base64'),
-                        mimeType 
+                    
+                    contents.push({
+                        inlineData: {
+                            data: base64Data,
+                            mimeType
+                        }
                     });
                 } else {
                     try {
-                        content.push({ 
-                            type: 'image', 
-                            image: new URL(url) 
-                        });
-                    } catch (e) {
-                        console.error("Invalid image URL for Gemini:", url);
+                        const isVideo = url.toLowerCase().match(/\.(mp4|mov|avi|wmv|webm)$/) || url.includes('video');
+                        
+                        if (isVideo) {
+                            console.log("[Gemini] Video detected, uploading to Google AI File Manager:", url);
+                            
+                            // 1. Download to Buffer
+                            const videoRes = await fetch(url);
+                            const videoBuffer = await videoRes.arrayBuffer();
+                            
+                            // 2. Upload to Google
+                            const uploadResult = await fileManager.uploadFile(
+                                Buffer.from(videoBuffer), 
+                                { mimeType: 'video/mp4', displayName: 'Campaign Video' }
+                            );
+
+                            // 3. Wait for file to be ACTIVE
+                            let file = await fileManager.getFile(uploadResult.file.name);
+                            let attempts = 0;
+                            while (file.state === FileState.PROCESSING && attempts < 20) {
+                                console.log(`[Gemini] Processing video: ${file.name}... State: ${file.state}`);
+                                await new Promise(resolve => setTimeout(resolve, 3000));
+                                file = await fileManager.getFile(uploadResult.file.name);
+                                attempts++;
+                            }
+
+                            if (file.state !== FileState.ACTIVE) {
+                                throw new Error(`Video processing failed or timed out: ${file.state}`);
+                            }
+
+                            // 4. Use the file URI
+                            contents.push({
+                                fileData: {
+                                    fileUri: file.uri,
+                                    mimeType: file.mimeType
+                                }
+                            });
+                        } else {
+                            // For images via URL, we have to download them for the native SDK 
+                            // or pass them as inlineData if small
+                            const imgRes = await fetch(url);
+                            const imgBuffer = await imgRes.arrayBuffer();
+                            const mimeType = imgRes.headers.get('content-type') || 'image/jpeg';
+                            
+                            contents.push({
+                                inlineData: {
+                                    data: Buffer.from(imgBuffer).toString('base64'),
+                                    mimeType
+                                }
+                            });
+                        }
+                    } catch (e: any) {
+                        console.error("Asset processing failed for Gemini:", url, e.message);
+                        contents.push(`[Context: Asset at ${url}]`);
                     }
                 }
             }
         }
 
-        const { text } = await generateText({
-            model: google('gemini-3-flash-preview'),
-            messages: [{ role: 'user', content }],
-        });
-        return text;
+        const result = await model.generateContent(contents);
+        const response = await result.response;
+        return response.text();
+
     } catch (e: any) {
-        throw new Error(`Gemini SDK Error: ${e.message}`);
+        console.error("[Gemini Native Error]", e);
+        throw new Error(`Gemini Native Error: ${e.message}`);
     }
 }
 

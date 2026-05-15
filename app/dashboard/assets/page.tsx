@@ -6,6 +6,7 @@ import JSZip from 'jszip'
 import { analyzeMediaAction } from './actions'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/utils/supabase/client'
+import { uploadToR2 } from '@/utils/upload-helper'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { toast } from 'sonner'
 
@@ -282,18 +283,8 @@ export default function AssetsPage() {
                     targetUserId = (profile?.parent_id || profile?.agency_id) as string;
                 }
 
-                const fileExt = file.name.split('.').pop();
-                const fileName = `${targetUserId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-                const filePath = `library/${fileName}`;
-
-                // 2. Upload to Supabase Storage
-                const { data: uploadData, error: uploadError } = await supabase.storage
-                    .from('assets')
-                    .upload(filePath, file);
-
-                if (uploadError) throw uploadError;
-
-                const { data: { publicUrl } } = supabase.storage.from('assets').getPublicUrl(filePath);
+                // 2. Upload to Cloudflare R2
+                const publicUrl = await uploadToR2(file, 'library');
 
                 // 3. Insert into assets table
                 const { error: insertError } = await supabase.from('assets').insert({

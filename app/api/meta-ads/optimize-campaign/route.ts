@@ -24,20 +24,47 @@ export async function POST(request: Request) {
     }
 
     try {
-        console.log("[Optimize] User ID from auth:", user.id);
-        const { data: profile, error: profileErr } = await supabase.from('profiles').select('facebook_token, ad_account_id, business_name, logo_url, contact_number').eq('id', user.id).single();
+        // --- 0. Resolve Target User ID ---
+        const url = new URL(request.url);
+        const impersonateId = url.searchParams.get('impersonate');
+        const { data: ownProfile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
+        let targetUserId = user.id;
+
+        if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
+            targetUserId = (ownProfile?.parent_id || ownProfile?.agency_id) as string;
+        }
+
+        if (impersonateId && ['super_admin', 'agency', 'admin'].includes(ownProfile?.role || '')) {
+            if (ownProfile?.role !== 'super_admin') {
+                const isParent = (ownProfile?.agency_id === impersonateId || ownProfile?.parent_id === impersonateId);
+                const { data: subAccount } = await supabase.from('profiles').select('id').eq('id', impersonateId).eq('agency_id', ownProfile?.agency_id || user.id).single();
+                if (isParent || subAccount) {
+                    targetUserId = impersonateId;
+                }
+            } else {
+                targetUserId = impersonateId;
+            }
+        }
+
+        console.log("[Optimize] Authenticated User:", user.id);
+        console.log("[Optimize] Resolved Target User:", targetUserId);
+
+        const { data: profile, error: profileErr } = await supabase.from('profiles')
+            .select('facebook_token, ad_account_id, business_name, logo_url, contact_number')
+            .eq('id', targetUserId)
+            .single();
         
         if (profileErr) {
             console.error("[Optimize] Supabase Profile Error:", profileErr);
         }
 
         if (!profile?.facebook_token || !profile?.ad_account_id) {
-            console.error("[Optimize] Profile Error: Missing tokens. Profile found?", !!profile);
-            return NextResponse.json({ error: 'Missing Meta credentials' }, { status: 400 });
+            console.error("[Optimize] Profile Error: Missing tokens for targetUserId:", targetUserId, "Profile found?", !!profile);
+            return NextResponse.json({ error: 'Missing Meta credentials. Please ensure your Meta account is linked.' }, { status: 400 });
         }
 
         // Fetch a real property ID for the user to avoid UUID type errors in Supabase
-        const { data: firstProp } = await supabase.from('properties').select('id').eq('user_id', user.id).limit(1).single();
+        const { data: firstProp } = await supabase.from('properties').select('id').eq('user_id', targetUserId).limit(1).single();
         console.log("[Optimize] Property ID found:", firstProp?.id);
         const realPropId = firstProp?.id || null;
 

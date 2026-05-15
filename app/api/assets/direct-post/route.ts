@@ -6,6 +6,15 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 export const maxDuration = 300; 
 export const runtime = 'nodejs';
 
+// Increase body size limit for video uploads
+export const config = {
+    api: {
+        bodyParser: {
+            sizeLimit: '50mb',
+        },
+    },
+};
+
 export async function POST(req: Request) {
     try {
         const supabase = await createClient();
