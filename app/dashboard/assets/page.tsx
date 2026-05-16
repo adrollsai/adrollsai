@@ -90,7 +90,7 @@ export default function AssetsPage() {
             }
 
             // Impersonation Logic
-            if (impersonateId && (['super_admin', 'agency', 'admin'].includes(profile?.role || ''))) {
+            if (impersonateId && (['super_admin', 'agency', 'admin', 'agent'].includes(profile?.role || ''))) {
                 if (profile?.role !== 'super_admin') {
                     const { data: subAccount } = await supabase
                         .from('profiles')
@@ -741,43 +741,48 @@ export default function AssetsPage() {
                         <p className="text-slate-500 text-sm sm:text-base mt-1 font-medium ml-1">Manage and distribute your marketing creatives</p>
                     </div>
 
+                    {userRole !== 'agent' && (
+                        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                            <input 
+                                type="file" 
+                                className="hidden" 
+                                id="direct-post-upload"
+                                accept="image/*,video/*"
+                                onChange={handleDirectUpload}
+                            />
+                            <input 
+                                type="file" 
+                                className="hidden" 
+                                id="library-upload"
+                                multiple
+                                accept="image/*,video/*"
+                                onChange={handleLibraryUpload}
+                            />
+                            <button
+                                onClick={() => document.getElementById('library-upload')?.click()}
+                                disabled={isUploading}
+                                className="bg-slate-900 text-white px-6 py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                                {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
+                                {isUploading ? 'Uploading...' : 'Upload Assets'}
+                            </button>
+                            <button
+                                onClick={() => setDirectPostData({
+                                    file: null,
+                                    previewUrl: null,
+                                    caption: "",
+                                    headline: "",
+                                    selectedPlatforms: ['facebook']
+                                })}
+                                className="bg-blue-600 text-white px-6 py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-95"
+                            >
+                                {isAnalyzing ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                                {isAnalyzing ? 'AI Analyzing...' : 'Post Content'}
+                            </button>
+                        </div>
+                    )}
+                    
                     <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                        <input 
-                            type="file" 
-                            className="hidden" 
-                            id="direct-post-upload"
-                            accept="image/*,video/*"
-                            onChange={handleDirectUpload}
-                        />
-                        <input 
-                            type="file" 
-                            className="hidden" 
-                            id="library-upload"
-                            multiple
-                            accept="image/*,video/*"
-                            onChange={handleLibraryUpload}
-                        />
-                        <button
-                            onClick={() => document.getElementById('library-upload')?.click()}
-                            disabled={isUploading}
-                            className="bg-slate-900 text-white px-6 py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
-                        >
-                            {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
-                            {isUploading ? 'Uploading...' : 'Upload Assets'}
-                        </button>
-                        <button
-                            onClick={() => setDirectPostData({
-                                file: null,
-                                previewUrl: null,
-                                caption: "",
-                                headline: "",
-                                selectedPlatforms: ['facebook']
-                            })}
-                            className="bg-blue-600 text-white px-6 py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-95"
-                        >
-                            {isAnalyzing ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                            {isAnalyzing ? 'AI Analyzing...' : 'Post Content'}
-                        </button>
                         <button onClick={() => fetchAssets(true)} className="bg-white text-slate-700 border border-slate-200/60 px-6 py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all active:scale-95">
                             <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
                             Refresh
@@ -1008,15 +1013,18 @@ export default function AssetsPage() {
                                             >
                                                 <Globe size={20} />
                                             </button>
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleDeleteAsset(asset.id);
-                                                }}
-                                                className="bg-white p-3 rounded-full text-red-500 shadow-xl hover:scale-110 transition-all"
-                                            >
-                                                <Trash2 size={20} />
-                                            </button>
+                                            
+                                            {userRole !== 'agent' && (
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDeleteAsset(asset.id);
+                                                    }}
+                                                    className="bg-white p-3 rounded-full text-red-500 shadow-xl hover:scale-110 transition-all"
+                                                >
+                                                    <Trash2 size={20} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 ) : null}
@@ -1090,47 +1098,51 @@ export default function AssetsPage() {
 
                                 {/* Actions Grid */}
                                 <div className="flex flex-col gap-3">
-
-                                    {/* Socials Grid */}
-                                    <div className="grid grid-cols-3 gap-3">
-                                        <button
-                                            onClick={handlePostFacebook}
-                                            disabled={isPosting || isDownloading}
-                                            className="bg-[#1877F2]/10 text-[#1877F2] hover:bg-[#1877F2] hover:text-white py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
-                                        >
-                                            <Facebook size={18} /> FB
-                                        </button>
-                                        <button
-                                            onClick={handlePostInstagram}
-                                            disabled={isPosting || isDownloading}
-                                            className="bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white opacity-90 hover:opacity-100 py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-opacity shadow-sm disabled:opacity-50"
-                                        >
-                                            <Instagram size={18} /> Insta
-                                        </button>
-                                        <button
-                                            onClick={handlePostLinkedin}
-                                            disabled={isPosting || isDownloading}
-                                            className="bg-[#0A66C2]/10 text-[#0A66C2] hover:bg-[#0A66C2] hover:text-white py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
-                                        >
-                                            <Linkedin size={18} /> LinkedIn
-                                        </button>
-                                    </div>
+                                    {userRole !== 'agent' && (
+                                        <div className="grid grid-cols-3 gap-3 mb-4">
+                                            <button
+                                                onClick={handlePostFacebook}
+                                                disabled={isPosting || isDownloading}
+                                                className="bg-[#1877F2]/10 text-[#1877F2] hover:bg-[#1877F2] hover:text-white py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                            >
+                                                <Facebook size={18} /> FB
+                                            </button>
+                                            <button
+                                                onClick={handlePostInstagram}
+                                                disabled={isPosting || isDownloading}
+                                                className="bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white opacity-90 hover:opacity-100 py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-opacity shadow-sm disabled:opacity-50"
+                                            >
+                                                <Instagram size={18} /> Insta
+                                            </button>
+                                            <button
+                                                onClick={handlePostLinkedin}
+                                                disabled={isPosting || isDownloading}
+                                                className="bg-[#0A66C2]/10 text-[#0A66C2] hover:bg-[#0A66C2] hover:text-white py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                            >
+                                                <Linkedin size={18} /> LinkedIn
+                                            </button>
+                                        </div>
+                                    )}
 
                                     {/* Universal Post */}
-                                    <button
-                                        onClick={handleUniversalPost}
-                                        disabled={isPosting || isDownloading}
-                                        className="w-full bg-slate-900 text-white py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all disabled:opacity-50 active:scale-95"
-                                    >
-                                        {isPosting ? <Loader2 size={18} className="animate-spin" /> : <Globe size={18} />}
-                                        Publish Everywhere
-                                    </button>
+                                    {userRole !== 'agent' && (
+                                        <button
+                                            onClick={handleUniversalPost}
+                                            disabled={isPosting || isDownloading}
+                                            className="w-full bg-slate-900 text-white py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all disabled:opacity-50 active:scale-95"
+                                        >
+                                            {isPosting ? <Loader2 size={18} className="animate-spin" /> : <Globe size={18} />}
+                                            Publish Everywhere
+                                        </button>
+                                    )}
 
-                                    <div className="relative py-2 flex items-center">
-                                        <div className="flex-grow border-t border-slate-200/80"></div>
-                                        <span className="flex-shrink-0 mx-4 text-xs font-bold text-slate-400 uppercase tracking-widest">or share manually</span>
-                                        <div className="flex-grow border-t border-slate-200/80"></div>
-                                    </div>
+                                    {userRole !== 'agent' && (
+                                        <div className="relative py-2 flex items-center">
+                                            <div className="flex-grow border-t border-slate-200/80"></div>
+                                            <span className="flex-shrink-0 mx-4 text-xs font-bold text-slate-400 uppercase tracking-widest">or share manually</span>
+                                            <div className="flex-grow border-t border-slate-200/80"></div>
+                                        </div>
+                                    )}
 
                                     {/* WhatsApp Direct Share */}
                                     <button

@@ -258,8 +258,9 @@ export default function ProfilePage() {
   const [targetUserId, setTargetUserId] = useState<string | null>(null)
   const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent'>('agent')
   const [authRole, setAuthRole] = useState<string | null>(null)
+  const [authUserName, setAuthUserName] = useState<string | null>(null)
 
-  const isAdminLike = ['super_admin', 'agency', 'admin', 'client'].includes(authRole || role)
+  const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(authRole || role)
 
   // Actions
   const [isSaving, setIsSaving] = useState(false)
@@ -491,9 +492,10 @@ export default function ProfilePage() {
       setUserId(user.id)
 
       // Get AUTH user role first
-      const { data: authProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+      const { data: authProfile } = await supabase.from('profiles').select('role, agency_id, parent_id, business_name').eq('id', user.id).single()
       const currentAuthRole = authProfile?.role || 'admin'
       setAuthRole(currentAuthRole)
+      setAuthUserName(authProfile?.business_name || null)
 
       // Resolve Target User ID
       let tUserId = user.id
@@ -504,7 +506,7 @@ export default function ProfilePage() {
       }
       
       // 2. Impersonation (Super Admin or Agency viewing a client)
-      if (impersonateId && (['super_admin', 'agency', 'admin'].includes(currentAuthRole))) {
+      if (impersonateId && (['super_admin', 'agency', 'admin', 'agent'].includes(currentAuthRole))) {
           if (currentAuthRole !== 'super_admin') {
               const { data: subAccount } = await supabase
                 .from('profiles')
@@ -810,6 +812,12 @@ export default function ProfilePage() {
                 <p className="text-slate-500 text-sm leading-relaxed max-w-md">
                   Personalize your workspace. Branding set here reflects on your landing pages.
                 </p>
+                {authUserName && authRole === 'agent' && (
+                  <div className="mt-4 flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full w-fit border border-blue-100">
+                    <Shield size={14} />
+                    <span className="text-[11px] font-bold uppercase tracking-wider">Logged in as: {authUserName}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -948,7 +956,7 @@ export default function ProfilePage() {
                 </div>
 
                 {/* DOMAIN MANAGER SECTION */}
-                {isAdminLike && (
+                {isAdminLike && authRole !== 'agent' && (
                   <div className="pt-2 border-t border-slate-100 space-y-4">
                     <DomainManager
                       initialDomain={domainData.domain}
@@ -991,7 +999,7 @@ export default function ProfilePage() {
               <PushManager variant="inline" ownerId={targetUserId || userId || undefined} />
             </div>
 
-            {isAdminLike && (
+            {isAdminLike && authRole !== 'agent' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
                 <div className="p-6 sm:p-7">
                   <div className="flex items-center justify-between mb-4">
@@ -1110,7 +1118,7 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {isAdminLike && (
+            {isAdminLike && authRole !== 'agent' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md mb-6">
                 <div className="p-6 sm:p-7">
                   <div className="flex items-center justify-between">
@@ -1144,7 +1152,7 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {isAdminLike && (
+            {isAdminLike && authRole !== 'agent' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
                 <button 
                   onClick={() => router.push(`/dashboard/billing${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 

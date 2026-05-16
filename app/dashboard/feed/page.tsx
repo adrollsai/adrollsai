@@ -88,6 +88,11 @@ export default function FeedManagementPage() {
 
       const { data: profile } = await supabase.from('profiles').select('role, agency_id').eq('id', user.id).single()
       
+      if (profile?.role === 'agent') {
+          router.push('/dashboard')
+          return
+      }
+      
       // Impersonation Logic
       const urlParams = new URLSearchParams(window.location.search)
       const impersonateId = urlParams.get('impersonate')

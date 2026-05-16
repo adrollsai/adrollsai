@@ -303,6 +303,11 @@ export default function TeamPage() {
                     <option value="agent">Agent (Standard Access)</option>
                     <option value="admin">Admin (Full Management)</option>
                   </select>
+                  <p className="mt-3 text-[10px] text-slate-500 font-medium leading-relaxed px-1">
+                    {newMember.role === 'agent' 
+                      ? 'Agents can manage inventory, ads, and CRM leads assigned to them. They cannot access billing or team settings.' 
+                      : 'Admins have full access to billing, team management, and all workspace assets.'}
+                  </p>
                 </div>
 
                 {isCreating ? (

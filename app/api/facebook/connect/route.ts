@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
     const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID;
-    const redirectUri = `${new URL(req.url).origin}/api/facebook/callback`;
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin;
+    const redirectUri = `${baseUrl}/api/facebook/callback`;
     const scopes = [
         'public_profile',
         'pages_show_list',
@@ -13,6 +14,7 @@ export async function GET(req: Request) {
         'business_management',
         'ads_management',
         'pages_manage_ads',
+        'pages_read_user_content',
         'leads_retrieval'
     ].join(',');
 

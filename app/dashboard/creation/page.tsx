@@ -5,6 +5,7 @@ import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartp
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
 
 // --- TYPES ---
 type Message = {
@@ -51,6 +52,7 @@ const ALLOWED_VIDEO_USERS = [
 ]
 
 export default function CreationPage() {
+  const router = useRouter()
   const supabase = createClient()
   
   // Data State
@@ -134,12 +136,17 @@ export default function CreationPage() {
       const { data: currentUserProfile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
       const currentRole = currentUserProfile?.role || 'admin'
       
+      if (currentRole === 'agent') {
+          router.push('/dashboard')
+          return
+      }
+      
       let tUserId = user.id
       if (['admin', 'agent'].includes(currentRole as string) && (currentUserProfile?.parent_id || currentUserProfile?.agency_id)) {
           tUserId = (currentUserProfile?.parent_id || currentUserProfile?.agency_id) as string
       }
 
-      if (impersonateId && (['super_admin', 'agency', 'admin'].includes(currentRole))) {
+      if (impersonateId && (['super_admin', 'agency', 'admin', 'agent'].includes(currentRole))) {
           if (currentRole !== 'super_admin') {
               const { data: subAccount } = await supabase
                 .from('profiles')

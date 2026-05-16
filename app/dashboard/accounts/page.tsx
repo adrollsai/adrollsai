@@ -62,7 +62,7 @@ export default function AccountsPage() {
         targetUserId = (authProfile?.agency_id || authProfile?.parent_id) as string
     }
     
-    if (impersonateId && (authProfile?.role === 'super_admin' || authProfile?.role === 'agency' || authProfile?.role === 'admin')) {
+    if (impersonateId && (authProfile?.role === 'super_admin' || authProfile?.role === 'agency' || authProfile?.role === 'admin' || authProfile?.role === 'agent')) {
         targetUserId = impersonateId
     }
 

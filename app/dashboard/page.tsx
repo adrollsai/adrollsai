@@ -599,7 +599,7 @@ export default function ProductsPage() {
     return p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || p.description?.toLowerCase().includes(searchQuery.toLowerCase())
   })
 
-  const isAdminLike = ['super_admin', 'agency', 'admin'].includes(role)
+  const isAdminLike = ['super_admin', 'agency', 'admin', 'agent'].includes(role)
 
   // --- RENDER ---
   if (authError) return <div className="flex h-screen items-center justify-center"><button onClick={handleManualLogout} className="text-blue-600 font-bold bg-blue-50 px-6 py-3 rounded-full">Session Expired. Login Again</button></div>
@@ -684,7 +684,7 @@ export default function ProductsPage() {
             >
               
               {/* ADMIN CONTROLS (Edit & Delete) */}
-              {isAdminLike && (
+              {isAdminLike && role !== 'agent' && (
                   <div className="absolute top-3 right-3 z-10 flex gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-all duration-300">
                       <button 
                           onClick={(e) => { e.stopPropagation(); openEditModal(prop); }}

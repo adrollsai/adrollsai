@@ -36,7 +36,7 @@ export default function CRMPage() {
   const [targetUserId, setTargetUserId] = useState<string | null>(null)
   const [isAssigning, setIsAssigning] = useState(false)
 
-  const isAdminLike = ['super_admin', 'agency', 'admin', 'client'].includes(role)
+  const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(role)
 
   // --- CRM STATE (LOCAL CACHE) ---
   const [leads, setLeads] = useState<any[]>([])
@@ -61,6 +61,10 @@ export default function CRMPage() {
   const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', notes: '' })
   const [isAdding, setIsAdding] = useState(false)
  
+  const [isCampaignAssignModalOpen, setIsCampaignAssignModalOpen] = useState(false)
+  const [batchCampaign, setBatchCampaign] = useState('')
+  const [batchAgentId, setBatchAgentId] = useState('')
+  
   const [isPushEnabled, setIsPushEnabled] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -133,7 +137,7 @@ export default function CRMPage() {
           query = query.eq('user_id', targetUserId)
       } else {
           // Agents see only leads assigned to them from their parent
-          query = query.eq('user_id', parentAdminId).eq('assigned_to', user.id) 
+          query = query.eq('user_id', parentId).eq('assigned_to', user.id) 
       }
 
       const { data, error } = await query
@@ -273,6 +277,31 @@ export default function CRMPage() {
     finally { setIsAssigning(false) }
   }
 
+  const handleCampaignAssign = async () => {
+    if (!batchCampaign || !batchAgentId) return alert("Select both Campaign and Agent")
+    setIsAssigning(true)
+    try {
+        const leadsToAssign = leads.filter(l => (l.ad_name === batchCampaign || l.campaign_name === batchCampaign))
+        if (leadsToAssign.length === 0) {
+            alert("No leads found for this campaign.")
+            return
+        }
+
+        const leadIds = leadsToAssign.map(l => l.id)
+        const { error } = await supabase.from('leads').update({ assigned_to: batchAgentId }).in('id', leadIds)
+        
+        if (error) throw error
+        
+        await fetchLeads(true)
+        alert(`Successfully assigned ${leadsToAssign.length} leads from "${batchCampaign}" to the selected agent.`)
+        setIsCampaignAssignModalOpen(false)
+    } catch (e: any) {
+        alert(e.message)
+    } finally {
+        setIsAssigning(false)
+    }
+  }
+
   const handleSync = async () => {
     setIsSyncing(true)
     const urlParams = new URLSearchParams(window.location.search)
@@ -390,11 +419,15 @@ END:VCARD\n`
             </div>
             
             <div className="flex gap-2.5 flex-wrap w-full md:w-auto">
-                {isAdminLike && (
+                {isAdminLike && role !== 'agent' && (
                     <>
                         <button onClick={executeRoundRobin} disabled={isAssigning} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-violet-200 bg-violet-50 text-violet-600 hover:bg-violet-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
                             {isAssigning ? <Loader2 size={16} className="animate-spin" /> : <Shuffle size={16} />}
                             <span className="font-bold text-[10px] sm:text-sm">Distribute</span>
+                        </button>
+                        <button onClick={() => setIsCampaignAssignModalOpen(true)} disabled={isAssigning} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
+                            <Tag size={16} />
+                            <span className="font-bold text-[10px] sm:text-sm">Campaign Assign</span>
                         </button>
                         <button onClick={() => { 
                             setIsSyncModalOpen(true); 
@@ -535,7 +568,9 @@ END:VCARD\n`
                                         <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Phone size={16} /></a>
                                     </>
                                 )}
-                                <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Trash2 size={16} /></button>
+                                {role !== 'agent' && (
+                                    <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Trash2 size={16} /></button>
+                                )}
                             </div>
                         </div>
 
@@ -712,6 +747,67 @@ END:VCARD\n`
                 </div>
             </div>
         </div>
+      )}
+
+      {/* CAMPAIGN ASSIGN MODAL */}
+      {isCampaignAssignModalOpen && (
+          <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-300">
+              <div className="bg-white w-full max-w-md rounded-t-[1.75rem] xs:rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 flex flex-col overflow-hidden">
+                  <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white">
+                      <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                        <Tag className="text-orange-600" size={20} />
+                        Campaign Assignment
+                      </h2>
+                      <button onClick={() => setIsCampaignAssignModalOpen(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button>
+                  </div>
+
+                  <div className="p-6 space-y-6 overflow-y-auto max-h-[80vh] custom-scrollbar">
+                      <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 ml-1">Step 1: Select Campaign</label>
+                          <div className="relative">
+                              <select 
+                                  value={batchCampaign} 
+                                  onChange={(e) => setBatchCampaign(e.target.value)}
+                                  className="w-full appearance-none bg-slate-50 border border-slate-100 py-4 px-6 rounded-2xl text-sm font-bold text-slate-900 focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 outline-none transition-all cursor-pointer"
+                              >
+                                  <option value="">Choose Campaign...</option>
+                                  {uniqueCampaigns.map((camp, i) => <option key={i} value={camp}>{camp}</option>)}
+                              </select>
+                              <ChevronDown size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                          </div>
+                      </div>
+
+                      <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 ml-1">Step 2: Assign To Agent</label>
+                          <div className="relative">
+                              <select 
+                                  value={batchAgentId} 
+                                  onChange={(e) => setBatchAgentId(e.target.value)}
+                                  className="w-full appearance-none bg-slate-50 border border-slate-100 py-4 px-6 rounded-2xl text-sm font-bold text-slate-900 focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 outline-none transition-all cursor-pointer"
+                              >
+                                  <option value="">Choose Agent...</option>
+                                  {team.map(member => <option key={member.id} value={member.id}>{member.business_name || 'Agent'}</option>)}
+                              </select>
+                              <ChevronDown size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                          </div>
+                      </div>
+
+                      <div className="bg-orange-50 p-5 rounded-3xl border border-orange-100 mb-2">
+                          <p className="text-xs font-bold text-orange-700 leading-relaxed">
+                              This will assign all leads from the selected campaign to this agent. This action is bulk and permanent.
+                          </p>
+                      </div>
+
+                      <button 
+                          onClick={handleCampaignAssign}
+                          disabled={isAssigning || !batchCampaign || !batchAgentId}
+                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-5 rounded-[2rem] text-sm font-bold shadow-xl shadow-slate-900/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                          {isAssigning ? <Loader2 className="animate-spin" size={20} /> : <><CheckCircle2 size={18} /> Confirm Bulk Assignment</>}
+                      </button>
+                  </div>
+              </div>
+          </div>
       )}
       </div>
     </div>

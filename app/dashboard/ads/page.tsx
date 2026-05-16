@@ -218,6 +218,13 @@ export default function AdsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
 
+      // Get profile for role check
+      const { data: initialProfile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      if (initialProfile?.role === 'agent') {
+          router.push('/dashboard')
+          return
+      }
+
       // Resolve Target User ID
       const urlParams = new URLSearchParams(window.location.search)
       const impersonateId = urlParams.get('impersonate')
@@ -227,7 +234,7 @@ export default function AdsPage() {
           targetUserId = (profile?.parent_id || profile?.agency_id) as string
       }
 
-      if (impersonateId && (['super_admin', 'agency', 'admin'].includes(profile?.role || ''))) {
+      if (impersonateId && (['super_admin', 'agency', 'admin', 'agent'].includes(profile?.role || ''))) {
           if (profile?.role !== 'super_admin') {
               const { data: subAccount } = await supabase
                 .from('profiles')

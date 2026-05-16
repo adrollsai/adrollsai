@@ -68,7 +68,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       const isPaid = subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro'
       const isBillingPage = pathname === '/dashboard/billing'
-      const isAdminLike = ['super_admin', 'agency', 'admin', 'client'].includes(userProfile?.role || '')
+      const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(userProfile?.role || '')
 
       // If they haven't paid, and they aren't already on the billing page, trap them!
       // This applies to primary accounts
