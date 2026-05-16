@@ -17,12 +17,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
-  const [showPassword, setShowPassword] = useState(false) // Toggle visibility state[cite: 1]
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setSuccessMessage('')
+    setError(null)
 
     try {
       if (mode === 'signup') {
@@ -55,7 +57,9 @@ export default function LoginPage() {
         toast.success("Reset link sent!")
       }
     } catch (error: any) {
-      toast.error(error.message || 'An error occurred during authentication.')
+      const msg = error.message || 'An error occurred during authentication.'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setLoading(false)
     }
@@ -119,6 +123,13 @@ export default function LoginPage() {
                </div>
             ) : (
                 <form onSubmit={handleEmailAuth} className="space-y-5">
+                    
+                    {/* Error Message */}
+                    {error && (
+                        <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-2xl text-xs font-bold animate-in fade-in slide-in-from-top-2 duration-300">
+                            {error === 'Invalid login credentials' ? 'Invalid email or password. Please try again.' : error}
+                        </div>
+                    )}
                     
                     {/* Email Field */}
                     <div>

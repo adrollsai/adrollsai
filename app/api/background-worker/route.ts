@@ -246,7 +246,7 @@ export async function POST(req: Request) {
                                         name: headline,
                                         link: profile.business_url || 'https://adrolls.in',
                                         image_hash: imgHash,
-                                        call_to_action: { type: 'SIGN_UP', value: { lead_gen_form_id: metaLeadFormId } }
+                                        call_to_action: { type: 'LEARN_MORE', value: { lead_gen_form_id: metaLeadFormId } }
                                     }
                                 },
                                 access_token: profile.facebook_token

@@ -96,6 +96,8 @@ export const viewport: Viewport = {
 };
 
 
+import { Toaster } from "sonner";
+
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -149,7 +151,8 @@ export default async function RootLayout({
       </head>
       <body className={inter.className}>
         {children}
+        <Toaster richColors position="top-right" />
       </body>
     </html>
   );
-}
+}

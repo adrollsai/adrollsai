@@ -357,7 +357,7 @@ export default function ProfilePage() {
   const fetchPages = async () => {
     setIsLoadingPages(true)
     try {
-      const res = await fetch('/api/facebook/pages')
+      const res = await fetch(`/api/facebook/pages${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
       const data = await res.json()
       if (data.pages && Array.isArray(data.pages)) {
         setFbPages(data.pages)

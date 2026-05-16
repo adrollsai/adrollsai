@@ -610,7 +610,7 @@ export async function POST(request: Request) {
                         description: copy.description || "",
                         link: linkUrl, 
                         image_hash: hash, 
-                        call_to_action: { type: 'SIGN_UP', value: { lead_gen_form_id: leadFormId } }
+                        call_to_action: { type: 'LEARN_MORE', value: { lead_gen_form_id: leadFormId } }
                     }
                 },
                 access_token: facebookToken,

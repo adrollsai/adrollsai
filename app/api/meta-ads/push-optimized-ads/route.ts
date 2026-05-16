@@ -165,7 +165,7 @@ export async function POST(request: Request) {
                     title: headline,
                     image_hash: globalThumbHash, // Meta requires a thumbnail
                     call_to_action: {
-                        type: isLeadGen ? 'SIGN_UP' : 'LEARN_MORE',
+                        type: 'LEARN_MORE',
                         value: isLeadGen ? { lead_gen_form_id: activeLeadFormId, link: profile.custom_domain ? `https://${profile.custom_domain}` : 'https://adrolls.in' } : { link: profile.custom_domain ? `https://${profile.custom_domain}` : 'https://adrolls.in' }
                     }
                 };
@@ -177,7 +177,7 @@ export async function POST(request: Request) {
                     name: headline,
                     description: description,
                     call_to_action: { 
-                        type: isLeadGen ? 'SIGN_UP' : 'LEARN_MORE',
+                        type: 'LEARN_MORE',
                         value: isLeadGen ? { lead_gen_form_id: activeLeadFormId } : {}
                     }
                 };
