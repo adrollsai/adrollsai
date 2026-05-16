@@ -273,8 +273,8 @@ export default function CRMPage() {
   }
 
   const executeRoundRobin = async () => {
-    // Filter out the main 'agency' or 'super_admin' roles from auto-distribution if staff (admin/agent) exist
-    const distributionPool = team.filter(m => ['admin', 'agent'].includes(m.role || ''))
+    // Filter out the main workspace owner (targetUserId) from auto-distribution if other team members exist
+    const distributionPool = team.filter(m => m.id !== targetUserId)
     const finalPool = distributionPool.length > 0 ? distributionPool : team
 
     if (finalPool.length === 0) return alert("Add team members first.")
