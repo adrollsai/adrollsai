@@ -109,8 +109,21 @@ export default function CRMPage() {
       setTargetUserId(targetUserId)
 
       if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
-          const { data: teamData } = await supabase.from('profiles').select('id, business_name').eq('agency_id', targetUserId)
-          setTeam(teamData || [])
+          // Fetch all staff members under this agency/organization
+          const { data: teamData } = await supabase.from('profiles')
+            .select('id, business_name, role')
+            .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
+            .in('role', ['admin', 'agent', 'agency'])
+          
+          let finalTeam = teamData || []
+          
+          // Ensure the target user (Agency/Parent) is also in the team list if not already
+          if (!finalTeam.find(t => t.id === targetUserId)) {
+              const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, role').eq('id', targetUserId).single()
+              if (targetProfile) finalTeam.push(targetProfile)
+          }
+
+          setTeam(finalTeam)
       } else {
           setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
       }
@@ -260,7 +273,11 @@ export default function CRMPage() {
   }
 
   const executeRoundRobin = async () => {
-    if (team.length === 0) return alert("Add team members first.")
+    // Filter out the main 'agency' or 'super_admin' roles from auto-distribution if staff (admin/agent) exist
+    const distributionPool = team.filter(m => ['admin', 'agent'].includes(m.role || ''))
+    const finalPool = distributionPool.length > 0 ? distributionPool : team
+
+    if (finalPool.length === 0) return alert("Add team members first.")
     const unassignedLeads = leads.filter(l => !l.assigned_to)
     if (unassignedLeads.length === 0) return alert("All leads assigned.")
 
@@ -268,11 +285,11 @@ export default function CRMPage() {
     let idx = 0
     try {
         for (const lead of unassignedLeads) {
-            await supabase.from('leads').update({ assigned_to: team[idx].id }).eq('id', lead.id)
-            idx = (idx + 1) % team.length
+            await supabase.from('leads').update({ assigned_to: finalPool[idx].id }).eq('id', lead.id)
+            idx = (idx + 1) % finalPool.length
         }
         fetchLeads(true)
-        alert(`Distributed ${unassignedLeads.length} leads.`)
+        alert(`Distributed ${unassignedLeads.length} leads across ${finalPool.length} staff members.`)
     } catch (e: any) { alert(e.message) } 
     finally { setIsAssigning(false) }
   }
