@@ -4,6 +4,16 @@ import { createClient } from '@/utils/supabase/server';
 export async function GET(req: Request) {
     const { searchParams, origin } = new URL(req.url);
     const code = searchParams.get('code');
+    const stateParam = searchParams.get('state');
+    
+    let impersonateId = null;
+    if (stateParam) {
+        try {
+            const decoded = JSON.parse(decodeURIComponent(stateParam));
+            impersonateId = decoded.impersonateId;
+        } catch(e) {}
+    }
+
     const supabase = await createClient();
 
     // Support for ngrok/forwarded hosts
@@ -11,7 +21,9 @@ export async function GET(req: Request) {
     const forwardedProto = req.headers.get('x-forwarded-proto') || 'https';
     const baseUrl = forwardedHost ? `${forwardedProto}://${forwardedHost}` : origin;
 
-    if (!code) return NextResponse.redirect(`${baseUrl}/dashboard/profile?error=No code received`);
+    const redirectBackBase = `${baseUrl}/dashboard/profile${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
+
+    if (!code) return NextResponse.redirect(`${redirectBackBase}${impersonateId ? '&' : '?'}error=No code received`);
 
     try {
         // 1. Exchange code for Token
@@ -23,14 +35,29 @@ export async function GET(req: Request) {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error("Not authenticated");
 
-            // 3. Save Token to Profile (Bypassing Auth Link)
+            // 3. Resolve Target (Impersonation check)
+            let targetUserId = user.id;
+            if (impersonateId) {
+                // Verify Agency/Admin permission for this target
+                const { data: ownProfile } = await supabase.from('profiles').select('role, agency_id').eq('id', user.id).single();
+                if (['super_admin', 'agency', 'admin'].includes(ownProfile?.role || '')) {
+                    if (ownProfile?.role !== 'super_admin') {
+                        const { data: subAccount } = await supabase.from('profiles').select('id').eq('id', impersonateId).eq('agency_id', ownProfile?.agency_id || user.id).single();
+                        if (subAccount) targetUserId = impersonateId;
+                    } else {
+                        targetUserId = impersonateId;
+                    }
+                }
+            }
+
+            // 4. Save Token to Profile
             const { error: updateError } = await supabase.from('profiles').update({
                 facebook_token: tokenData.access_token
-            }).eq('id', user.id);
+            }).eq('id', targetUserId);
 
             if (updateError) throw updateError;
 
-            return NextResponse.redirect(`${baseUrl}/dashboard/profile?success=Facebook Connected`);
+            return NextResponse.redirect(`${redirectBackBase}${impersonateId ? '&' : '?'}success=Facebook Connected`);
         }
         
         throw new Error(tokenData.error?.message || "Failed to get token from Facebook");

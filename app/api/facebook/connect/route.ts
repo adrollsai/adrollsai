@@ -16,7 +16,13 @@ export async function GET(req: Request) {
         'leads_retrieval'
     ].join(',');
 
-    const fbUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&response_type=code&auth_type=rerequest`;
+    const { searchParams } = new URL(req.url);
+    const impersonateId = searchParams.get('impersonate');
+    
+    // Pass impersonateId in state so callback knows which profile to update
+    const state = impersonateId ? encodeURIComponent(JSON.stringify({ impersonateId })) : '';
+
+    const fbUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&response_type=code&auth_type=reauthenticate,rerequest${state ? `&state=${state}` : ''}`;
 
     return NextResponse.redirect(fbUrl);
 }

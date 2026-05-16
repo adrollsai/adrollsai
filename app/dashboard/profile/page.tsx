@@ -644,7 +644,7 @@ export default function ProfilePage() {
     setIsConnectingFb(true)
     // EMERGENCY BYPASS: Use custom route to avoid Supabase Auth email errors
     // This acquires the marketing token without requiring a unique email match
-    window.location.href = '/api/facebook/connect'
+    window.location.href = `/api/facebook/connect${impersonateId ? `?impersonate=${impersonateId}` : ''}`
   }
 
   const handleDisconnectFacebook = async () => {
