@@ -42,6 +42,7 @@ export default function CRMPage() {
   const [leads, setLeads] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [enableDistribution, setEnableDistribution] = useState(false)
 
   // --- FILTER STATE ---
   const [activeStage, setActiveStage] = useState('New')
@@ -63,7 +64,8 @@ export default function CRMPage() {
  
   const [isCampaignAssignModalOpen, setIsCampaignAssignModalOpen] = useState(false)
   const [batchCampaign, setBatchCampaign] = useState('')
-  const [batchAgentId, setBatchAgentId] = useState('')
+  const [batchAgentIds, setBatchAgentIds] = useState<string[]>([])
+  const [autoAssignFuture, setAutoAssignFuture] = useState(true)
   
   const [isPushEnabled, setIsPushEnabled] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -78,10 +80,29 @@ export default function CRMPage() {
       if (!user) return
       setUserId(user.id)
 
+      // Try synchronous cache loading for instant UI
+      if (!force) {
+          const cacheKey = `crm_cache_${user.id}`;
+          const cachedData = localStorage.getItem(cacheKey);
+          if (cachedData && leads.length === 0) {
+              try {
+                  setLeads(JSON.parse(cachedData));
+                  setLoading(false);
+                  
+                  // Restore scroll position gracefully
+                  const savedScroll = sessionStorage.getItem('crm_scroll');
+                  if (savedScroll) {
+                      setTimeout(() => window.scrollTo({ top: parseInt(savedScroll, 10), behavior: 'instant' }), 50);
+                  }
+              } catch (e) {}
+          }
+      }
+
       // Fetch Fresh Data
-      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution').eq('id', user.id).single()
       const currentRole = profile?.role as any || 'admin'
       setRole(currentRole)
+      setEnableDistribution(!!profile?.enable_distribution)
       
       const parentId = profile?.parent_id || profile?.agency_id
       if (parentId) setParentAdminId(parentId)
@@ -159,6 +180,7 @@ export default function CRMPage() {
       
       if (data) {
           setLeads(data)
+          if (user?.id) localStorage.setItem(`crm_cache_${user.id}`, JSON.stringify(data))
       }
     } catch (e) {
       console.error(e)
@@ -181,8 +203,8 @@ export default function CRMPage() {
     const channel = supabase.channel('realtime_leads')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
         const newLead = payload.new
-        // Only inject into UI if this lead belongs to this Admin OR is assigned to this Agent
-        if (newLead.user_id === userId || newLead.assigned_to === userId) {
+        // Only inject into UI if this lead belongs to the target (impersonated/agency client), the logged-in user, or assigned to this user
+        if (newLead.user_id === targetUserId || newLead.user_id === userId || newLead.assigned_to === userId) {
              setLeads(prev => {
                  // Prevent duplicates if manual add triggered exactly at same time
                  if (prev.find(l => l.id === newLead.id)) return prev;
@@ -201,7 +223,7 @@ export default function CRMPage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [userId, supabase])
+  }, [userId, targetUserId, supabase])
 
   // --- PUSH NOTIFICATIONS ---
   const checkPushSubscription = async () => {
@@ -232,7 +254,10 @@ export default function CRMPage() {
     } catch (e) { console.error(e); }
   }
 
-  const handleLeadClick = (lead: any) => router.push(`/dashboard/crm/${lead.id}`)
+  const handleLeadClick = (lead: any) => {
+      sessionStorage.setItem('crm_scroll', window.scrollY.toString())
+      router.push(`/dashboard/crm/${lead.id}`)
+  }
 
   // --- ACTIONS ---
   const handleAddLead = async () => {
@@ -269,48 +294,105 @@ export default function CRMPage() {
     e.stopPropagation()
     const targetAgentId = agentId === '' ? null : agentId;
     await supabase.from('leads').update({ assigned_to: targetAgentId }).eq('id', leadId)
+    
+    // Notify Agent
+    if (targetAgentId) {
+        const leadName = leads.find(l => l.id === leadId)?.name || 'A new lead';
+        fetch('/api/crm/notify-assignment', {
+            method: 'POST',
+            body: JSON.stringify({ agentId: targetAgentId, title: 'Lead Assigned to You', message: `${leadName} has been assigned to you.`, url: `/dashboard/crm/${leadId}` })
+        }).catch(() => {})
+    }
+    
     fetchLeads(true) 
   }
 
-  const executeRoundRobin = async () => {
+  const executeRoundRobin = async (isTogglingOn = false) => {
     // Filter out the main workspace owner (targetUserId) from auto-distribution if other team members exist
     const distributionPool = team.filter(m => m.id !== targetUserId)
     const finalPool = distributionPool.length > 0 ? distributionPool : team
 
-    if (finalPool.length === 0) return alert("Add team members first.")
+    if (finalPool.length === 0) {
+        if (!isTogglingOn) alert("Add team members first.")
+        return
+    }
     const unassignedLeads = leads.filter(l => !l.assigned_to)
-    if (unassignedLeads.length === 0) return alert("All leads assigned.")
+    if (unassignedLeads.length === 0) {
+        if (!isTogglingOn) alert("All leads assigned.")
+        return
+    }
 
     setIsAssigning(true)
     let idx = 0
     try {
         for (const lead of unassignedLeads) {
-            await supabase.from('leads').update({ assigned_to: finalPool[idx].id }).eq('id', lead.id)
+            const agentId = finalPool[idx].id;
+            await supabase.from('leads').update({ assigned_to: agentId }).eq('id', lead.id)
+            
+            // Notify
+            fetch('/api/crm/notify-assignment', {
+                method: 'POST',
+                body: JSON.stringify({ agentId, title: 'New Leads Assigned', message: `You have new leads from round-robin distribution.`, url: `/dashboard/crm` })
+            }).catch(() => {})
+            
             idx = (idx + 1) % finalPool.length
         }
         fetchLeads(true)
-        alert(`Distributed ${unassignedLeads.length} leads across ${finalPool.length} staff members.`)
+        if (!isTogglingOn) alert(`Distributed ${unassignedLeads.length} leads across ${finalPool.length} staff members.`)
     } catch (e: any) { alert(e.message) } 
     finally { setIsAssigning(false) }
   }
 
+  const toggleGlobalDistribution = async () => {
+    const newValue = !enableDistribution
+    setEnableDistribution(newValue)
+    const effectiveUserId = targetUserId || userId
+    if (effectiveUserId) {
+        await supabase.from('profiles').update({ enable_distribution: newValue }).eq('id', effectiveUserId)
+    }
+    if (newValue) {
+        executeRoundRobin(true)
+    }
+  }
+
   const handleCampaignAssign = async () => {
-    if (!batchCampaign || !batchAgentId) return alert("Select both Campaign and Agent")
+    if (!batchCampaign || batchAgentIds.length === 0) return alert("Select both Campaign and at least one Agent")
     setIsAssigning(true)
     try {
-        const leadsToAssign = leads.filter(l => (l.ad_name === batchCampaign || l.campaign_name === batchCampaign))
-        if (leadsToAssign.length === 0) {
-            alert("No leads found for this campaign.")
-            return
+        const effectiveUserId = targetUserId || userId;
+        if (autoAssignFuture && effectiveUserId) {
+            const ruleTitle = `Campaign-Assignment: ${batchCampaign}`;
+            await supabase.from('automations').delete().eq('user_id', effectiveUserId).eq('title', ruleTitle);
+            await supabase.from('automations').insert({
+                user_id: effectiveUserId,
+                title: ruleTitle,
+                description: JSON.stringify(batchAgentIds),
+                is_active: true
+            });
         }
 
-        const leadIds = leadsToAssign.map(l => l.id)
-        const { error } = await supabase.from('leads').update({ assigned_to: batchAgentId }).in('id', leadIds)
-        
-        if (error) throw error
+        const leadsToAssign = leads.filter(l => !l.assigned_to && (l.ad_name === batchCampaign || l.campaign_name === batchCampaign))
+        if (leadsToAssign.length > 0) {
+            let idx = 0;
+            const notifiedAgents = new Set();
+            for (const lead of leadsToAssign) {
+                const agentId = batchAgentIds[idx];
+                await supabase.from('leads').update({ assigned_to: agentId }).eq('id', lead.id)
+                
+                if (!notifiedAgents.has(agentId)) {
+                    notifiedAgents.add(agentId);
+                    fetch('/api/crm/notify-assignment', {
+                        method: 'POST',
+                        body: JSON.stringify({ agentId, title: 'Campaign Leads Assigned', message: `You received leads from ${batchCampaign}.`, url: `/dashboard/crm` })
+                    }).catch(() => {})
+                }
+                
+                idx = (idx + 1) % batchAgentIds.length
+            }
+        }
         
         await fetchLeads(true)
-        alert(`Successfully assigned ${leadsToAssign.length} leads from "${batchCampaign}" to the selected agent.`)
+        alert(`Successfully setup assignments for "${batchCampaign}". Processed ${leadsToAssign.length} existing leads.`)
         setIsCampaignAssignModalOpen(false)
     } catch (e: any) {
         alert(e.message)
@@ -438,9 +520,9 @@ END:VCARD\n`
             <div className="flex gap-2.5 flex-wrap w-full md:w-auto">
                 {isAdminLike && role !== 'agent' && (
                     <>
-                        <button onClick={executeRoundRobin} disabled={isAssigning} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-violet-200 bg-violet-50 text-violet-600 hover:bg-violet-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
+                        <button onClick={toggleGlobalDistribution} disabled={isAssigning} className={`flex-1 md:flex-none p-3 rounded-2xl shadow-sm border active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 ${enableDistribution ? 'bg-violet-600 border-violet-600 text-white hover:bg-violet-700' : 'bg-violet-50 border-violet-200 text-violet-600 hover:bg-violet-100'}`}>
                             {isAssigning ? <Loader2 size={16} className="animate-spin" /> : <Shuffle size={16} />}
-                            <span className="font-bold text-[10px] sm:text-sm">Distribute</span>
+                            <span className="font-bold text-[10px] sm:text-sm">{enableDistribution ? 'Auto Distribute: ON' : 'Auto Distribute: OFF'}</span>
                         </button>
                         <button onClick={() => setIsCampaignAssignModalOpen(true)} disabled={isAssigning} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
                             <Tag size={16} />
@@ -548,23 +630,25 @@ END:VCARD\n`
             </div>
         ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-                {filteredLeads.map(lead => (
+                {filteredLeads.map(lead => {
+                    const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
+                    return (
                     <div key={lead.id} onClick={() => handleLeadClick(lead)} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-200/60 cursor-pointer hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-300 flex flex-col h-full group">
                         
                         {/* ROW 1: Name and Actions */}
                         <div className="flex justify-between items-start mb-3">
                             <div className="flex-1 min-w-0 pr-4 mt-1">
                                 <h3 className="font-extrabold text-slate-900 text-lg truncate group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
-                                <p className="text-[11px] font-bold text-slate-500 mt-0.5">{lead.phone || 'No phone number'}</p>
+                                <p className="text-[11px] font-bold text-slate-500 mt-0.5">{displayPhone || 'No phone number'}</p>
                             </div>
                             <div className="flex gap-2 shrink-0">
-                                {lead.phone && (
+                                {displayPhone && (
                                     <>
                                         <button 
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 const vcfName = lead.name || 'Lead';
-                                                const vcfPhone = lead.phone || '';
+                                                const vcfPhone = displayPhone || '';
                                                 const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${vcfName}\nTEL;TYPE=CELL:${vcfPhone}\nEMAIL:${lead.email || ''}\nEND:VCARD`;
                                                 const blob = new Blob([vcard], { type: 'text/vcard' });
                                                 const url = window.URL.createObjectURL(blob);
@@ -581,8 +665,8 @@ END:VCARD\n`
                                         >
                                             <UserPlus size={16} />
                                         </button>
-                                        <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} onClick={e => e.stopPropagation()} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-slate-50 text-slate-600 hover:bg-[#25D366] hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><MessageCircle size={16} /></a>
-                                        <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Phone size={16} /></a>
+                                        <a href={`https://wa.me/${displayPhone.replace(/[^0-9]/g, '')}`} onClick={e => e.stopPropagation()} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-slate-50 text-slate-600 hover:bg-[#25D366] hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><MessageCircle size={16} /></a>
+                                        <a href={`tel:${displayPhone}`} onClick={e => e.stopPropagation()} className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Phone size={16} /></a>
                                     </>
                                 )}
                                 {role !== 'agent' && (
@@ -682,7 +766,8 @@ END:VCARD\n`
                             )}
                         </div>
                     </div>
-                ))}
+                    )
+                })}
             </div>
         )}
 
@@ -795,29 +880,38 @@ END:VCARD\n`
                       </div>
 
                       <div>
-                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 ml-1">Step 2: Assign To Agent</label>
-                          <div className="relative">
-                              <select 
-                                  value={batchAgentId} 
-                                  onChange={(e) => setBatchAgentId(e.target.value)}
-                                  className="w-full appearance-none bg-slate-50 border border-slate-100 py-4 px-6 rounded-2xl text-sm font-bold text-slate-900 focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 outline-none transition-all cursor-pointer"
-                              >
-                                  <option value="">Choose Agent...</option>
-                                  {team.map(member => <option key={member.id} value={member.id}>{member.business_name || 'Agent'}</option>)}
-                              </select>
-                              <ChevronDown size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 ml-1">Step 2: Assign To Agents (Round-Robin)</label>
+                          <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">
+                              {team.map(member => (
+                                  <label key={member.id} className={`flex items-center gap-3 p-3 rounded-2xl border-2 transition-all cursor-pointer ${batchAgentIds.includes(member.id) ? 'border-orange-500 bg-orange-50' : 'border-slate-100 bg-white hover:border-slate-200'}`}>
+                                      <input 
+                                          type="checkbox" 
+                                          checked={batchAgentIds.includes(member.id)}
+                                          onChange={(e) => {
+                                              if (e.target.checked) setBatchAgentIds([...batchAgentIds, member.id]);
+                                              else setBatchAgentIds(batchAgentIds.filter(id => id !== member.id));
+                                          }}
+                                          className="w-4 h-4 rounded text-orange-600 focus:ring-orange-500 cursor-pointer"
+                                      />
+                                      <span className="text-sm font-bold text-slate-700">{member.business_name || 'Agent'}</span>
+                                  </label>
+                              ))}
                           </div>
                       </div>
 
-                      <div className="bg-orange-50 p-5 rounded-3xl border border-orange-100 mb-2">
-                          <p className="text-xs font-bold text-orange-700 leading-relaxed">
-                              This will assign all leads from the selected campaign to this agent. This action is bulk and permanent.
+                      <div className="bg-orange-50 p-5 rounded-3xl border border-orange-100 mb-2 space-y-4">
+                          <label className="flex items-center gap-3 cursor-pointer">
+                              <input type="checkbox" checked={autoAssignFuture} onChange={e => setAutoAssignFuture(e.target.checked)} className="w-4 h-4 rounded text-orange-600 focus:ring-orange-500" />
+                              <span className="text-sm font-bold text-orange-800">Auto-assign future leads</span>
+                          </label>
+                          <p className="text-xs font-bold text-orange-700 leading-relaxed opacity-80">
+                              This will assign all unassigned existing leads and optionally route new leads from this campaign to the selected agents automatically via round-robin.
                           </p>
                       </div>
 
                       <button 
                           onClick={handleCampaignAssign}
-                          disabled={isAssigning || !batchCampaign || !batchAgentId}
+                          disabled={isAssigning || !batchCampaign || batchAgentIds.length === 0}
                           className="w-full bg-slate-900 hover:bg-slate-800 text-white py-5 rounded-[2rem] text-sm font-bold shadow-xl shadow-slate-900/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                           {isAssigning ? <Loader2 className="animate-spin" size={20} /> : <><CheckCircle2 size={18} /> Confirm Bulk Assignment</>}

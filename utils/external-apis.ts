@@ -476,7 +476,7 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
                             else if (fn === 'first_name') firstName = fv
                             else if (fn === 'last_name') lastName = fv
                             else if (fn === 'email') email = fv
-                            else if (fn === 'phone_number' || fn === 'phone' || fn === 'mobile_number') phone = fv
+                            else if (fn === 'phone_number' || fn === 'phone' || fn === 'mobile_number' || fn === 'whatsapp_number') phone = fv
                             else customFields[field.name] = fv
                         })
 

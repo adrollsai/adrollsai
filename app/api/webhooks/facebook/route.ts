@@ -27,6 +27,39 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+async function getNextRoundRobinAgent(supabaseAdmin: any, agentIds: string[]) {
+    if (!agentIds || agentIds.length === 0) return null;
+    if (agentIds.length === 1) return agentIds[0];
+
+    const { data: lastLeads } = await supabaseAdmin
+        .from('leads')
+        .select('assigned_to, created_at')
+        .in('assigned_to', agentIds)
+        .order('created_at', { ascending: false })
+        .limit(200);
+        
+    const agentLastAssigned = agentIds.reduce((acc: any, id: string) => { acc[id] = 0; return acc; }, {});
+    if (lastLeads) {
+        lastLeads.forEach((l: any) => {
+            if (l.assigned_to && agentIds.includes(l.assigned_to) && agentLastAssigned[l.assigned_to] === 0) {
+                agentLastAssigned[l.assigned_to] = new Date(l.created_at).getTime();
+            }
+        });
+    }
+    
+    let selectedAgent = agentIds[0];
+    let oldestTime = Infinity;
+    for (const agentId of agentIds) {
+        const time = agentLastAssigned[agentId];
+        if (time === 0) return agentId; // Never assigned recently, pick immediately
+        if (time < oldestTime) {
+            oldestTime = time;
+            selectedAgent = agentId;
+        }
+    }
+    return selectedAgent;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -44,7 +77,7 @@ export async function POST(request: Request) {
           // Find the User based on the Page ID using Admin Client
           const { data: profile, error: profileErr } = await supabaseAdmin
             .from('profiles')
-            .select('id, selected_page_token, pixel_id')
+            .select('id, selected_page_token, pixel_id, enable_distribution')
             .eq('selected_page_id', page_id)
             .single()
 
@@ -81,7 +114,7 @@ export async function POST(request: Request) {
             else if (fieldName === 'first_name') firstName = fieldValue
             else if (fieldName === 'last_name') lastName = fieldValue
             else if (fieldName === 'email') email = fieldValue
-            else if (fieldName === 'phone_number' || fieldName === 'phone' || fieldName === 'mobile_number') phone = fieldValue
+            else if (fieldName === 'phone_number' || fieldName === 'phone' || fieldName === 'mobile_number' || fieldName === 'whatsapp_number') phone = fieldValue
             else {
               customFields[field.name] = fieldValue
             }
@@ -105,17 +138,57 @@ export async function POST(request: Request) {
 
           // Fetch Ad and Campaign Name if available
           let adCampaignString = 'Direct Lead Form'
+          let campaignName = 'Unknown Campaign'
           if (ad_id) {
             try {
                 const adRes = await fetch(`https://graph.facebook.com/v19.0/${ad_id}?fields=name,campaign{name}&access_token=${profile.selected_page_token}`)
                 const adDetails = await adRes.json()
                 if (adDetails.name) {
-                    const campName = adDetails.campaign?.name || 'Unknown Campaign'
-                    adCampaignString = `${campName} / ${adDetails.name}`
+                    campaignName = adDetails.campaign?.name || 'Unknown Campaign'
+                    adCampaignString = `${campaignName} / ${adDetails.name}`
                 }
             } catch (e) {
                 console.error("Could not fetch Ad metadata", e)
             }
+          }
+
+          // ASSIGNMENT LOGIC: Campaign Rule First, then Global Rule
+          let assignedAgentId: string | null = null;
+          
+          // 1. Campaign-Specific Assignment
+          const ruleTitle = `Campaign-Assignment: ${adCampaignString}`;
+          const ruleTitleCamp = `Campaign-Assignment: ${campaignName}`;
+          
+          const { data: automations } = await supabaseAdmin
+            .from('automations')
+            .select('description')
+            .eq('user_id', profile.id)
+            .in('title', [ruleTitle, ruleTitleCamp])
+            .eq('is_active', true)
+            .limit(1)
+
+          if (automations && automations.length > 0) {
+              try {
+                  const agentIds = JSON.parse(automations[0].description || '[]');
+                  if (agentIds && agentIds.length > 0) {
+                      assignedAgentId = await getNextRoundRobinAgent(supabaseAdmin, agentIds);
+                  }
+              } catch (e) { console.error("Error parsing campaign assignment rule", e) }
+          }
+
+          // 2. Global Distribution Fallback
+          if (!assignedAgentId && profile.enable_distribution) {
+              const { data: teamData } = await supabaseAdmin
+                  .from('profiles')
+                  .select('id')
+                  .or(`agency_id.eq.${profile.id},parent_id.eq.${profile.id}`)
+                  .in('role', ['admin', 'agent'])
+                  .neq('id', profile.id) // Exclude the owner
+                  
+              if (teamData && teamData.length > 0) {
+                  const agentIds = teamData.map(t => t.id);
+                  assignedAgentId = await getNextRoundRobinAgent(supabaseAdmin, agentIds);
+              }
           }
 
           // Save to DB using Admin Client
@@ -131,7 +204,8 @@ export async function POST(request: Request) {
             form_name: formName,
             custom_fields: customFields,
             pipeline_stage: 'New',
-            ad_name: adCampaignString
+            ad_name: adCampaignString,
+            assigned_to: assignedAgentId
           }).select().single()
 
           if (error) continue;
@@ -140,7 +214,7 @@ export async function POST(request: Request) {
           const cleanSource = adCampaignString.split(' / ')[0];
           
           await sendPushNotification(
-              profile.id,
+              assignedAgentId || profile.id,
               "🔥 New Facebook Lead!",
               `${name} • ${phone} • ${cleanSource}`,
               `/dashboard/crm/${savedLead.id}` 
