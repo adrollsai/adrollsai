@@ -50,6 +50,13 @@ export default function CRMPage() {
   const [selectedCampaign, setSelectedCampaign] = useState('')
   const [selectedForm, setSelectedForm] = useState('')
   const [showFilters, setShowFilters] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const leadsPerPage = 50
+
+  // Reset page when filters change
+  useEffect(() => {
+      setCurrentPage(1)
+  }, [activeStage, searchQuery, selectedCampaign, selectedForm])
 
   // --- MODAL STATE ---
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
@@ -149,34 +156,50 @@ export default function CRMPage() {
           setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
       }
 
-      let query = supabase.from('leads')
-        .select('*, lead_history(action_type, description, created_at)')
-        .order('facebook_created_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false })
+      const fetchAllLeads = async () => {
+          let allData: any[] = [];
+          let start = 0;
+          const step = 1000;
+          let hasMore = true;
 
-      if (currentRole === 'super_admin') {
-          // Super admin sees everything (filtered by target if impersonating)
-          if (impersonateId) query = query.eq('user_id', targetUserId)
-      } else if (currentRole === 'agency') {
-          // Agency sees their own + their clients'
-          if (impersonateId) {
-              query = query.eq('user_id', targetUserId)
-          } else {
-              const { data: clientIds } = await supabase.from('profiles').select('id').eq('agency_id', user.id)
-              const allIds = [user.id, ...(clientIds?.map(c => c.id) || [])]
-              query = query.in('user_id', allIds)
+          while (hasMore) {
+              let query = supabase.from('leads')
+                .select('*, lead_history(action_type, description, created_at)')
+                .order('facebook_created_at', { ascending: false, nullsFirst: false })
+                .order('created_at', { ascending: false })
+                .range(start, start + step - 1)
+
+              if (currentRole === 'super_admin') {
+                  query = query.eq('user_id', targetUserId)
+              } else if (currentRole === 'agency') {
+                  if (impersonateId) {
+                      query = query.eq('user_id', targetUserId)
+                  } else {
+                      const { data: clientIds } = await supabase.from('profiles').select('id').eq('agency_id', user.id)
+                      const allIds = [user.id, ...(clientIds?.map(c => c.id) || [])]
+                      query = query.in('user_id', allIds)
+                  }
+              } else if (currentRole === 'admin' || currentRole === 'client') {
+                  query = query.eq('user_id', targetUserId)
+              } else {
+                  query = query.eq('user_id', parentId).eq('assigned_to', user.id) 
+              }
+
+              const { data, error } = await query
+              if (error) throw error
+              
+              if (data && data.length > 0) {
+                  allData.push(...data)
+                  if (data.length < step) hasMore = false;
+                  else start += step;
+              } else {
+                  hasMore = false;
+              }
           }
-      } else if (currentRole === 'admin' || currentRole === 'client') {
-          // Client/Business Owner sees all their leads
-          query = query.eq('user_id', targetUserId)
-      } else {
-          // Agents see only leads assigned to them from their parent
-          query = query.eq('user_id', parentId).eq('assigned_to', user.id) 
+          return allData;
       }
 
-      const { data, error } = await query
-      
-      if (error) throw error
+      const data = await fetchAllLeads()
       
       if (data) {
           setLeads(data)
@@ -489,6 +512,9 @@ END:VCARD\n`
       return matchStage && matchSearch && matchCampaign && matchForm
   })
 
+  const totalPages = Math.ceil(filteredLeads.length / leadsPerPage)
+  const currentLeads = filteredLeads.slice((currentPage - 1) * leadsPerPage, currentPage * leadsPerPage)
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-32 pt-16 relative">
       
@@ -629,8 +655,9 @@ END:VCARD\n`
                 <p className="text-sm mt-1">Adjust filters or wait for new leads to sync.</p>
             </div>
         ) : (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-                {filteredLeads.map(lead => {
+                {currentLeads.map(lead => {
                     const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
                     return (
                     <div key={lead.id} onClick={() => handleLeadClick(lead)} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-200/60 cursor-pointer hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-300 flex flex-col h-full group">
@@ -769,6 +796,35 @@ END:VCARD\n`
                     )
                 })}
             </div>
+
+            {totalPages > 1 && (
+                <div className="mt-8 flex justify-center items-center gap-4">
+                    <button 
+                        onClick={() => {
+                            setCurrentPage(Math.max(1, currentPage - 1))
+                            window.scrollTo({ top: 0, behavior: 'smooth' })
+                        }}
+                        disabled={currentPage === 1}
+                        className="px-5 py-2.5 rounded-2xl bg-white border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                    >
+                        Previous
+                    </button>
+                    <span className="text-sm font-bold text-slate-500">
+                        Page {currentPage} of {totalPages}
+                    </span>
+                    <button 
+                        onClick={() => {
+                            setCurrentPage(Math.min(totalPages, currentPage + 1))
+                            window.scrollTo({ top: 0, behavior: 'smooth' })
+                        }}
+                        disabled={currentPage === totalPages}
+                        className="px-5 py-2.5 rounded-2xl bg-white border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                    >
+                        Next
+                    </button>
+                </div>
+            )}
+            </>
         )}
 
       {/* ADD MODAL */}
