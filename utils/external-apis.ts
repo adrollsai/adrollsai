@@ -287,55 +287,25 @@ export async function postToLinkedin(accessToken: string, linkedinId: string, as
 }
 
 /**
- * 4. Kie.ai Chat API (Upgraded for Multimodal Vision)
+ * 4. Kie.ai Chat API (Upgraded for Multimodal Vision) - Redirected to Official Gemini
  */
-export async function generateKieChat(prompt: string, model: string = "gemini-3-flash", imageUrl?: string): Promise<string> {
-    if (!KIE_API_KEY) throw new Error("KIE_API_KEY is not configured for Chat API.");
-    const endpoint = `https://api.kie.ai/${model}/v1/chat/completions`;
-    
-    let messageContent: any = prompt;
-    
-    if (imageUrl) {
-        messageContent = [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: imageUrl } }
-        ];
-    }
-    
-    const response = await fetchWithRetry(endpoint, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${KIE_API_KEY}`
-        },
-        body: JSON.stringify({
-            model: model,
-            messages: [{ role: "user", content: messageContent }]
-        })
-    });
-    const data = await response.json();
-    
-    if (!response.ok || !data.choices?.[0]?.message?.content) {
-        console.error("Kie.ai Error Detail:", JSON.stringify(data, null, 2));
-        throw new Error(`Kie.ai Chat API Error: ${data.error?.message || response.statusText || 'Unknown Error'}`);
-    }
-
-    return data.choices[0].message.content;
+export async function generateKieChat(prompt: string, model: string = "gemini-3-flash-preview", imageUrl?: string): Promise<string> {
+    return callGemini(prompt, imageUrl ? [imageUrl] : undefined);
 }
 
 /**
  * 5. Gemini Content Generation (Official Google Gemini API via SDK)
- * Upgraded to support multimodal vision (images)
+ * Upgraded to support multimodal vision (images) and standard models
  */
 import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export async function callGemini(prompt: string, imageUrls?: string[]): Promise<string> {
-    const fileManager = new GoogleAIFileManager(GEMINI_API_KEY!);
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY!);
+    const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
     
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" }); 
+        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });  
         
         const contents: any[] = [prompt];
         

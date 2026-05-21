@@ -15,6 +15,10 @@ type Message = {
   mediaUrl?: string
   mediaType?: 'image' | 'video'
   steps?: string[]
+  concepts?: any[]
+  script?: any
+  refImages?: string[]
+  imageDescriptions?: string[]
 }
 
 type Property = { 
@@ -50,6 +54,22 @@ const ALLOWED_VIDEO_USERS = [
   'bc63c065-9bcc-4793-bedc-f0960406425b',
   '2f62a259-f23b-48ee-a920-c436f36eaa4b'
 ]
+
+const renderVisualsWithBadges = (visualsText: string) => {
+  if (!visualsText) return "";
+  const parts = visualsText.split(/(@Image \d)/g);
+  return parts.map((part, index) => {
+    if (part.match(/@Image \d/)) {
+      const imgNum = part.split(' ')[1];
+      return (
+        <span key={index} className="inline-flex items-center gap-0.5 bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded text-[10px] font-extrabold mx-0.5">
+          <ImageIcon size={10} className="w-2.5 h-2.5" /> Image {imgNum}
+        </span>
+      );
+    }
+    return part;
+  });
+};
 
 export default function CreationPage() {
   const router = useRouter()
@@ -107,13 +127,6 @@ export default function CreationPage() {
   
   // NEW: Creation Mode Toggle
   const [creationMode, setCreationMode] = useState<'image' | 'video'>('image')
-  
-  // NEW: Script Review State
-  const [scriptReview, setScriptReview] = useState<{
-    title: string;
-    scenes: { prompt: string; dialogue: string }[];
-    finalCaption: string;
-  } | null>(null);
   
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -332,6 +345,144 @@ export default function CreationPage() {
     }
   }
 
+  // --- CLIENT INTERACTIVE VIDEO HANDLERS ---
+  const handleSelectConcept = async (concept: any, refImages: string[], imageDescriptions?: string[]) => {
+    if (isThinking) return
+    setIsThinking(true)
+    setCurrentStep('AI Creative Director is writing your 30s Hinglish script...')
+
+    try {
+        const scriptResponse = await fetch('/api/video/script', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                propertyId: selectedPropId || null,
+                concept,
+                userInstructions: '', // None yet during selection
+                images: refImages,
+                imageDescriptions
+            })
+        });
+
+        const scriptData = await scriptResponse.json();
+        if (scriptData.error) throw new Error(scriptData.error);
+
+        const aiMsg: Message = {
+            id: Date.now(),
+            role: 'ai',
+            text: `Here is the drafted script for **${scriptData.title}**! 🎬\n\nReview the dialogue, visuals, and final caption below.`,
+            script: {
+                title: scriptData.title,
+                dialogue: scriptData.dialogue,
+                visuals: scriptData.visuals,
+                scenes: scriptData.scenes,
+                finalCaption: scriptData.finalCaption,
+                concept
+            },
+            refImages: scriptData.refImages || refImages,
+            imageDescriptions: scriptData.imageDescriptions || imageDescriptions
+        };
+        setMessages(prev => [...prev, aiMsg]);
+    } catch (error: any) {
+        toast.error("Failed to generate script: " + error.message);
+        const errorMsg: Message = { id: Date.now(), role: 'ai', text: "Error: " + error.message }
+        setMessages(prev => [...prev, errorMsg])
+    } finally {
+        setIsThinking(false)
+        setCurrentStep('')
+    }
+  }
+
+  const handleGenerateScriptVariation = async (concept: any, refImages: string[], messageId: number, imageDescriptions?: string[]) => {
+    if (isThinking) return
+    setIsThinking(true)
+    setCurrentStep('Re-scripting and generating a new variation...')
+
+    try {
+        const scriptResponse = await fetch('/api/video/script', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                propertyId: selectedPropId || null,
+                concept,
+                userInstructions: '',
+                images: refImages,
+                imageDescriptions,
+                variation: true
+            })
+        });
+
+        const scriptData = await scriptResponse.json();
+        if (scriptData.error) throw new Error(scriptData.error);
+
+        setMessages(prev => prev.map(m => {
+            if (m.id === messageId) {
+                return {
+                    ...m,
+                    text: `Here is a fresh variation for **${scriptData.title}**! 🎬\n\nReview the dialogue, visuals, and final caption below.`,
+                    script: {
+                        title: scriptData.title,
+                        dialogue: scriptData.dialogue,
+                        visuals: scriptData.visuals,
+                        scenes: scriptData.scenes,
+                        finalCaption: scriptData.finalCaption,
+                        concept
+                    },
+                    refImages: scriptData.refImages || refImages,
+                    imageDescriptions: scriptData.imageDescriptions || imageDescriptions
+                }
+            }
+            return m
+        }))
+        toast.success("Script variation generated! ✨");
+    } catch (error: any) {
+        toast.error("Failed to generate variation: " + error.message);
+    } finally {
+        setIsThinking(false)
+        setCurrentStep('')
+    }
+  }
+
+  const handleApproveVideo = async (script: any, refImages: string[], imageDescriptions?: string[]) => {
+    if (isThinking) return
+    setIsThinking(true)
+    setCurrentStep('Starting Bytedance Seedance 2.0 Fast video task...')
+
+    try {
+        const response = await fetch('/api/video/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                propertyId: selectedPropId || null,
+                script,
+                images: refImages,
+                imageDescriptions
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+
+        toast.success("Video Production Started! 🎬", {
+            description: "Your 15s Bytedance Seedance 2.0 Fast video is rendering."
+        });
+
+        const aiMsg: Message = {
+            id: Date.now(),
+            role: 'ai',
+            text: "Video production has been launched in the background! 🎬\n\nA placeholder with a spinning preview card has been created in your **Assets** tab. It will take about 2-3 minutes. I'll send you a push notification as soon as the final video is processed!"
+        };
+        setMessages(prev => [...prev, aiMsg]);
+    } catch (error: any) {
+        toast.error("Failed to start video generation: " + error.message);
+        const errorMsg: Message = { id: Date.now(), role: 'ai', text: "Error starting video: " + error.message }
+        setMessages(prev => [...prev, errorMsg])
+    } finally {
+        setIsThinking(false)
+        setCurrentStep('')
+    }
+  }
+
   // 3. Handle Send
   const handleSend = async () => {
     if (isThinking) return
@@ -348,63 +499,46 @@ export default function CreationPage() {
     
     setInput('')
     setIsThinking(true)
-    setCurrentStep(creationMode === 'image' ? 'Initializing Design Engine...' : 'Scripting Video Content...')
+    setCurrentStep(creationMode === 'image' ? 'Initializing Design Engine...' : 'Analyzing images & generating concepts...')
 
     try {
-        if (creationMode === 'video' && !scriptReview) {
-            // --- STEP 1: SCRIPTING ---
-            setCurrentStep('AI Creative Director is scripting your video...');
-            const scriptResponse = await fetch('/api/video/script', {
+        if (creationMode === 'video') {
+            // --- STEP 1: CONCEPTS ---
+            setCurrentStep('AI Creative Director is analyzing your images & generating 5 ad concepts...');
+            
+            // Gather reference images (up to 4)
+            const prop = properties.find(p => p.id === selectedPropId)
+            let propImages: string[] = []
+            if (prop) {
+                if (prop.images && prop.images.length > 0) propImages = prop.images.slice(0, 4)
+                else if (prop.image_url) propImages = [prop.image_url]
+            }
+            const refImages = [...propImages, ...chatAttachments].slice(0, 4)
+
+            const conceptsResponse = await fetch('/api/video/concepts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    propertyId: selectedPropId,
-                    userInstructions: userText
+                    propertyId: selectedPropId || null,
+                    userInstructions: userText,
+                    images: refImages
                 })
             });
 
-            const scriptData = await scriptResponse.json();
-            if (scriptData.error) throw new Error(scriptData.error);
+            setChatAttachments([]) // Clear attachments after sending
 
-            setScriptReview(scriptData);
-            
+            const conceptsData = await conceptsResponse.json();
+            if (conceptsData.error) throw new Error(conceptsData.error);
+
             const aiMsg: Message = {
                 id: Date.now() + 1,
                 role: 'ai',
-                text: `I've prepared a script for your 30-second UGC video! 🎬\n\n**Title:** ${scriptData.title}\n\nPlease review the scenes below and click "Approve & Generate" to start the process.`
+                text: `I've analyzed your product and custom instructions. Here are 5 high-converting 15-second ad concepts for your UGC video. Select one to generate a script:`,
+                concepts: conceptsData.concepts || [],
+                refImages: conceptsData.refImages || refImages,
+                imageDescriptions: conceptsData.imageDescriptions || []
             };
             setMessages(prev => [...prev, aiMsg]);
-            setIsThinking(false);
-            return;
-        }
-
-        if (creationMode === 'video' && scriptReview) {
-            // --- STEP 2: APPROVED GENERATION ---
-            setCurrentStep('Approved! Starting 4-part video generation...');
-            const videoResponse = await fetch('/api/video/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    propertyId: selectedPropId,
-                    prompts: scriptReview.scenes.map(s => s.prompt),
-                    aspectRatio: selectedRatio
-                })
-            });
-
-            const videoData = await videoResponse.json();
-            if (videoData.error) throw new Error(videoData.error);
-
-            toast.success("Video Production Started! 🎬", {
-                description: "Generating 4 sequential clips. Check your Assets in ~5 mins."
-            });
-
-            const aiMsg: Message = {
-                id: Date.now() + 2,
-                role: 'ai',
-                text: "Video production is now running in the background! 🎬\n\nYou'll see a placeholder in your **Assets** tab. I'll notify you as soon as the final 30-second video is ready."
-            };
-            setMessages(prev => [...prev, aiMsg]);
-            setScriptReview(null); // Reset review state
             setIsThinking(false);
             return;
         }
@@ -730,36 +864,166 @@ export default function CreationPage() {
                   </div>
                 )}
 
+                {/* 5 CONCEPTS LIST UI */}
+                {msg.concepts && msg.concepts.length > 0 && (
+                  <div className="grid grid-cols-1 gap-3.5 mt-3 max-w-xl animate-in fade-in slide-in-from-top-3">
+                    {msg.concepts.map((concept, idx) => (
+                      <button
+                        key={concept.id || idx}
+                        onClick={() => handleSelectConcept(concept, msg.refImages || [], msg.imageDescriptions)}
+                        disabled={isThinking}
+                        className="w-full text-left bg-white hover:bg-slate-50/50 border border-slate-200 hover:border-blue-500 rounded-[1.5rem] p-5 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col gap-2 group active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Concept {idx + 1}</span>
+                          <span className="text-[9px] font-extrabold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full uppercase tracking-wide">
+                            {concept.title.includes(':') ? concept.title.split(':')[0] : 'UGC AD'}
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-800 group-hover:text-blue-600 transition-colors">
+                          {concept.title.includes(':') ? concept.title.split(':').slice(1).join(':').trim() : concept.title}
+                        </h4>
+                        <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-100 flex flex-col gap-1 w-full">
+                          <p className="text-[9px] font-extrabold text-blue-500 uppercase tracking-widest">3S Hook</p>
+                          <p className="text-xs text-slate-600 italic font-medium leading-relaxed">
+                            {concept.hook}
+                          </p>
+                        </div>
+                        <p className="text-xs text-slate-500 leading-relaxed font-normal">
+                          {concept.description}
+                        </p>
+                        <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider">
+                          <Sparkles size={11} className="text-blue-500" />
+                          <span>{concept.visualConcept || concept.visual_concept}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* SCRIPT REVIEW UI */}
-                {scriptReview && msg.id === messages[messages.length - 1]?.id && (
-                    <div className="bg-white border border-blue-100 rounded-[1.5rem] p-4 mt-3 shadow-sm max-w-md animate-in slide-in-from-top-2">
-                        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
-                            <Bot size={16} className="text-blue-500" /> Video Script Preview
-                        </h3>
-                        <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-                            {scriptReview.scenes.map((scene, idx) => (
-                                <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                    <p className="text-[10px] font-black text-blue-600 uppercase mb-1">Scene {idx + 1} (7.5s)</p>
-                                    <p className="text-[11px] text-slate-700 italic leading-relaxed">"{scene.dialogue}"</p>
-                                </div>
-                            ))}
+                {msg.script && (
+                  <div className="bg-white border border-slate-200 rounded-[2rem] p-5 shadow-md max-w-xl flex flex-col gap-4 animate-in fade-in slide-in-from-top-3 mt-2">
+                    
+                    {/* Header */}
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-blue-50 rounded-lg text-blue-500">
+                          <VideoIcon size={16} />
                         </div>
-                        <div className="mt-4 flex gap-2">
-                            <button 
-                                onClick={() => handleSend()} // Trigger step 2
-                                disabled={isThinking}
-                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-95"
-                            >
-                                <Sparkles size={14} /> Approve & Generate
-                            </button>
-                            <button 
-                                onClick={() => setScriptReview(null)}
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-500 px-4 py-3 rounded-xl text-xs font-bold"
-                            >
-                                Cancel
-                            </button>
+                        <div>
+                          <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">UGC Script Draft</h4>
+                          <h3 className="text-sm font-extrabold text-slate-800">{msg.script.title}</h3>
                         </div>
+                      </div>
+                      <span className="text-[9px] font-black bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        {msg.script.scenes && msg.script.scenes.length > 1 ? `${msg.script.scenes.length * 15} Seconds (${msg.script.scenes.length}x 15s clips)` : '15 Seconds'}
+                      </span>
                     </div>
+
+                    {msg.script.scenes && Array.isArray(msg.script.scenes) ? (
+                      <div className="flex flex-col gap-3.5">
+                        {msg.script.scenes.map((scene: any, idx: number) => (
+                          <div key={idx} className="bg-slate-50/60 rounded-[1.5rem] p-4 border border-slate-100 flex flex-col gap-3 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 bg-blue-500 text-white text-[9px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-wider">
+                              Scene {idx + 1} (15s)
+                            </div>
+                            
+                            {/* Visual Scene Description */}
+                            <div className="flex flex-col gap-1 mt-1">
+                              <span className="text-[9px] font-extrabold text-blue-500 uppercase tracking-wider flex items-center gap-1">
+                                <ImageIcon size={10} /> Visuals
+                              </span>
+                              <div className="text-xs text-slate-700 leading-relaxed font-medium pl-1">
+                                {renderVisualsWithBadges(scene.visuals)}
+                              </div>
+                            </div>
+
+                            {/* Dialogue/Voiceover */}
+                            <div className="flex flex-col gap-1 border-t border-slate-200/40 pt-2.5">
+                              <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                                <User size={10} /> Dialogue (Hinglish)
+                              </span>
+                              <div className="text-xs text-slate-800 leading-relaxed font-serif italic pl-2 border-l-2 border-indigo-200/50">
+                                "{scene.dialogue}"
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <>
+                        {/* Visual Scene Description */}
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[9px] font-extrabold text-blue-500 uppercase tracking-wider flex items-center gap-1">
+                            <ImageIcon size={12} /> Visual Action Sequence (9:16 UGC)
+                          </span>
+                          <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-100 text-xs text-slate-700 leading-relaxed font-medium">
+                            {renderVisualsWithBadges(msg.script.visuals)}
+                          </div>
+                        </div>
+
+                        {/* Dialogue/Voiceover */}
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                            <User size={12} /> Conversational Audio/Dialogue (Hinglish)
+                          </span>
+                          <div className="bg-indigo-50/30 rounded-xl p-3.5 border border-indigo-100/50 text-xs text-slate-800 leading-relaxed font-semibold italic relative">
+                            <span className="absolute -top-2 left-2 text-3xl text-indigo-200/50 select-none">“</span>
+                            <p className="pl-3 pr-2 font-serif">"{msg.script.dialogue}"</p>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Suggested Caption */}
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                        <Layout size={12} /> Social Media Ad Caption
+                      </span>
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-xs text-slate-600 leading-relaxed font-normal whitespace-pre-wrap">
+                        {msg.script.finalCaption}
+                      </div>
+                    </div>
+
+                    {/* Reference Images Row */}
+                    {msg.refImages && msg.refImages.length > 0 && (
+                      <div className="flex flex-col gap-1.5 border-t border-slate-100 pt-3">
+                        <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Reference Images</span>
+                        <div className="flex gap-2 flex-wrap">
+                          {msg.refImages.map((url: string, i: number) => (
+                            <div key={i} className="relative group w-10 h-10 rounded-lg overflow-hidden border border-slate-200 shadow-sm flex-shrink-0">
+                              <img src={url} className="w-full h-full object-cover" alt="ref" />
+                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                <span className="text-[8px] font-black text-white">IMG {i+1}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Interactive Action Buttons */}
+                    {msg.id === messages[messages.length - 1]?.id && (
+                      <div className="flex gap-2 mt-2 border-t border-slate-100 pt-3">
+                        <button
+                          onClick={() => handleApproveVideo(msg.script, msg.refImages || [], msg.imageDescriptions)}
+                          disabled={isThinking}
+                          className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-500/10 active:scale-95 transition-all disabled:opacity-50"
+                        >
+                          <Sparkles size={14} /> Approve & Generate Video 🎬
+                        </button>
+                        <button
+                          onClick={() => handleGenerateScriptVariation(msg.script.concept, msg.refImages || [], msg.id, msg.imageDescriptions)}
+                          disabled={isThinking}
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+                        >
+                          <RefreshCw size={14} className={isThinking ? 'animate-spin' : ''} /> Generate Again 🔄
+                        </button>
+                      </div>
+                    )}
+
+                  </div>
                 )}
               </div>
             </div>

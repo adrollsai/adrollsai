@@ -6,7 +6,6 @@ import { createClient } from '@/utils/supabase/client'
 import BottomNav from '@/components/BottomNav'
 import PushManager from '@/components/PushManager'
 import { Loader2, XCircle } from 'lucide-react'
-import { Toaster } from 'sonner'
 
 function ImpersonationBanner() {
     const searchParams = useSearchParams()
@@ -104,7 +103,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <PushManager variant="banner" />
 
       {children}
-      <Toaster position="top-center" richColors />
 
       {/* Hide the navigation bar if they are trapped on the billing page */}
       {pathname !== '/dashboard/billing' && <BottomNav />}

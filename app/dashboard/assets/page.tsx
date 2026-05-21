@@ -145,6 +145,24 @@ export default function AssetsPage() {
         fetchAssets()
     }, [supabase])
 
+    // Background polling for assets that are still in "Processing" state
+    useEffect(() => {
+        const hasProcessing = assets.some(asset => asset.status === 'Processing')
+        if (!hasProcessing) return
+
+        const interval = setInterval(async () => {
+            try {
+                // Proactively trigger self-healing sync in case webhook callback failed (e.g. ngrok tunnel down)
+                await fetch('/api/video/sync', { method: 'POST' });
+            } catch (err) {
+                console.error("[Assets Polling] Active video tasks sync failed:", err);
+            }
+            fetchAssets(true) // force refresh in background
+        }, 15000) // Poll every 15 seconds
+
+        return () => clearInterval(interval)
+    }, [assets])
+
     // 2. Handle Post to Facebook
     const handlePostFacebook = async () => {
         if (!selectedAsset) return
@@ -1192,44 +1210,49 @@ export default function AssetsPage() {
             {/* FLOATING BATCH ACTION BAR */}
             <AnimatePresence mode="wait">
                 {selectedIds.size > 0 && (
-                    <motion.div 
-                        initial={{ y: 100, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        exit={{ y: 100, opacity: 0 }}
-                        className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[140] w-[95%] max-w-2xl"
-                    >
-                        <div className="bg-slate-900/95 backdrop-blur-2xl border border-slate-700/50 rounded-[2rem] p-4 shadow-2xl flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-4 ml-2">
-                                <div className="bg-blue-500 text-white w-10 h-10 rounded-2xl flex items-center justify-center font-bold shadow-lg shadow-blue-500/20">
-                                    {selectedIds.size}
+                    <div className="fixed bottom-[calc(6.8rem+env(safe-area-inset-bottom))] sm:bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-0 right-0 z-[140] flex justify-center pointer-events-none px-4">
+                        <motion.div 
+                            initial={{ y: 100, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            exit={{ y: 100, opacity: 0 }}
+                            className="w-full max-w-2xl pointer-events-auto"
+                        >
+                            <div className="bg-slate-900/95 backdrop-blur-2xl border border-slate-700/50 rounded-[1.5rem] sm:rounded-[2rem] p-2.5 sm:p-4 shadow-2xl flex items-center justify-between gap-2 sm:gap-4">
+                                <div className="flex items-center gap-2 sm:gap-4 ml-1 sm:ml-2">
+                                    <div className="bg-blue-500 text-white w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center font-bold text-sm sm:text-base shadow-lg shadow-blue-500/20 shrink-0">
+                                        {selectedIds.size}
+                                    </div>
+                                    <div className="hidden sm:block">
+                                        <p className="text-white font-bold text-sm">Assets Selected</p>
+                                        <button onClick={clearSelection} className="text-slate-400 hover:text-white text-[11px] font-bold uppercase tracking-wider transition-colors">
+                                            Clear Selection
+                                        </button>
+                                    </div>
+                                    <div className="sm:hidden flex flex-col">
+                                        <p className="text-white font-bold text-xs leading-none">Selected</p>
+                                    </div>
                                 </div>
-                                <div className="hidden sm:block">
-                                    <p className="text-white font-bold text-sm">Assets Selected</p>
-                                    <button onClick={clearSelection} className="text-slate-400 hover:text-white text-[11px] font-bold uppercase tracking-wider transition-colors">
-                                        Clear Selection
+
+                                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                                    <button
+                                        onClick={clearSelection}
+                                        className="sm:hidden bg-slate-800 text-slate-300 p-2.5 rounded-xl hover:bg-slate-700 transition-all shrink-0"
+                                        title="Clear Selection"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                    <button
+                                        onClick={handleDownloadSelected}
+                                        disabled={isZipping}
+                                        className="bg-white text-slate-900 px-4 py-2.5 sm:px-6 sm:py-3.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold flex items-center gap-1.5 sm:gap-2 hover:bg-blue-50 hover:text-blue-600 transition-all active:scale-95 disabled:opacity-50 shrink-0"
+                                    >
+                                        {isZipping ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                                        <span>Download ZIP</span>
                                     </button>
                                 </div>
                             </div>
-
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={clearSelection}
-                                    className="sm:hidden bg-slate-800 text-slate-300 p-3 rounded-2xl hover:bg-slate-700 transition-all"
-                                    title="Clear Selection"
-                                >
-                                    <X size={20} />
-                                </button>
-                                <button
-                                    onClick={handleDownloadSelected}
-                                    disabled={isZipping}
-                                    className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl text-sm font-bold flex items-center gap-2 hover:bg-blue-50 hover:text-blue-600 transition-all active:scale-95 disabled:opacity-50"
-                                >
-                                    {isZipping ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
-                                    <span>Download ZIP</span>
-                                </button>
-                            </div>
-                        </div>
-                    </motion.div>
+                        </motion.div>
+                    </div>
                 )}
             </AnimatePresence>
 
