@@ -16,7 +16,11 @@ import {
   Menu,
   X,
   Sparkles,
-  Send
+  Send,
+  Phone,
+  Mail,
+  MessageSquare,
+  Loader2
 } from 'lucide-react'
 import Link from 'next/link'
 import { motion, useScroll, AnimatePresence } from 'framer-motion'
@@ -117,6 +121,50 @@ export default function LandingPage() {
   const [partnerLoginUrl, setPartnerLoginUrl] = useState('https://app.adrolls.in')
   const [currency, setCurrency] = useState<'INR' | 'USD'>('INR')
 
+  // Contact Form State
+  const [contactName, setContactName] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
+  const [contactMessage, setContactMessage] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitSuccess, setSubmitSuccess] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+
+  const handleContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+    setSubmitError('')
+    setSubmitSuccess(false)
+
+    try {
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: contactName,
+          email: contactEmail,
+          phone: contactPhone,
+          message: contactMessage
+        })
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to submit query.')
+      }
+
+      setSubmitSuccess(true)
+      setContactName('')
+      setContactEmail('')
+      setContactPhone('')
+      setContactMessage('')
+    } catch (err: any) {
+      setSubmitError(err.message || 'Something went wrong. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   useEffect(() => {
     try {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -190,6 +238,7 @@ export default function LandingPage() {
             <a href="#features" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Features</a>
             <a href="#ads" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Meta Ads</a>
             <a href="#pricing" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Pricing</a>
+            <a href="#contact" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Contact</a>
           </div>
 
           {/* Desktop Call to Action */}
@@ -226,6 +275,7 @@ export default function LandingPage() {
                <a href="#features" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F]">Features</a>
                <a href="#ads" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F]">Meta Ads</a>
                <a href="#pricing" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F]">Pricing</a>
+               <a href="#contact" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F]">Contact</a>
                <div className="h-px w-full bg-slate-100 my-2" />
                <Link href={partnerLoginUrl} className="text-[#B22B31]">Signup/Login</Link>
             </motion.div>
@@ -637,12 +687,12 @@ export default function LandingPage() {
                        ))}
                     </ul>
                  </div>
-                 <Link 
-                    href={partnerLoginUrl}
+                 <a 
+                    href="#contact"
                     className="block w-full py-5 bg-slate-900 hover:bg-slate-800 text-white text-center rounded-2xl font-black text-lg transition-all shadow-md active:scale-95 mt-auto"
                  >
                     Contact Sales
-                 </Link>
+                 </a>
               </div>
 
            </div>
@@ -678,7 +728,7 @@ export default function LandingPage() {
                  <div className="relative mt-6 bg-[#003D6F] text-white p-6 rounded-2xl border border-white/20 shadow-xl max-w-sm">
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full w-0 h-0 border-x-8 border-x-transparent border-b-8 border-b-[#003D6F]"></div>
                     <p className="font-extrabold text-sm leading-relaxed">
-                       "Woof! AdRolls saves you over {currency === 'INR' ? '₹1,35,000' : '$1,550'} every single month! That's enough to buy a lifetime of premium treats and squeaky toys! 🦴🐶"
+                       "Woof! AdRolls saves you over {currency === 'INR' ? '₹3,15,000' : '$11,600'} every single month! That's enough to buy a lifetime of premium treats and squeaky toys! 🦴🐶"
                     </p>
                  </div>
               </div>
@@ -699,28 +749,58 @@ export default function LandingPage() {
                        <tbody className="divide-y divide-slate-100 font-bold text-slate-700 text-sm">
                           {[
                             {
-                              service: "Graphic Design & Creatives",
-                              traditional: currency === 'INR' ? "₹25,000/mo" : "$300/mo",
+                              service: "SEO",
+                              traditional: currency === 'INR' ? "₹30,000/mo" : "$1,200/mo",
                               adrolls: "Included"
                             },
                             {
-                              service: "SEO Articles & Copywriting",
-                              traditional: currency === 'INR' ? "₹35,000/mo" : "$450/mo",
+                              service: "Ads Management",
+                              traditional: currency === 'INR' ? "₹40,000/mo" : "$1,500/mo",
                               adrolls: "Included"
                             },
                             {
-                              service: "Social Media Scheduler",
-                              traditional: currency === 'INR' ? "₹15,000/mo" : "$150/mo",
+                              service: "Remarketing Campaign",
+                              traditional: currency === 'INR' ? "₹20,000/mo" : "$800/mo",
                               adrolls: "Included"
                             },
                             {
-                              service: "Landing Page Hosting",
-                              traditional: currency === 'INR' ? "₹20,000/mo" : "$250/mo",
+                              service: "Video Production",
+                              traditional: currency === 'INR' ? "₹50,000/mo" : "$2,000/mo",
                               adrolls: "Included"
                             },
                             {
-                              service: "Meta Ads & CAPI Agency Setup",
-                              traditional: currency === 'INR' ? "₹50,000/mo" : "$600/mo",
+                              service: "Graphics Designing",
+                              traditional: currency === 'INR' ? "₹25,000/mo" : "$1,000/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "CRM",
+                              traditional: currency === 'INR' ? "₹15,000/mo" : "$300/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Social Media Management",
+                              traditional: currency === 'INR' ? "₹25,000/mo" : "$800/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Inventory Management",
+                              traditional: currency === 'INR' ? "₹15,000/mo" : "$400/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Landing Page",
+                              traditional: currency === 'INR' ? "₹20,000/mo" : "$600/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Hosting",
+                              traditional: currency === 'INR' ? "₹10,000/mo" : "$200/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "White Labelled App",
+                              traditional: currency === 'INR' ? "₹75,000/mo" : "$3,000/mo",
                               adrolls: "Included"
                             }
                           ].map((row, i) => (
@@ -736,7 +816,7 @@ export default function LandingPage() {
                           <tr className="bg-slate-50/80 rounded-2xl">
                              <td className="py-6 px-4 text-lg text-[#003D6F] font-black uppercase">Total Monthly Value</td>
                              <td className="py-6 text-slate-500 text-lg line-through font-extrabold decoration-[#B22B31] decoration-2">
-                                {currency === 'INR' ? "₹1,45,000" : "$1,750"}
+                                {currency === 'INR' ? "₹3,25,000" : "$11,800"}
                              </td>
                              <td className="py-6 text-green-600 text-xl font-black flex items-center gap-2 bg-green-50 px-4 rounded-xl border border-green-100">
                                 <Sparkles className="w-5 h-5 text-[#F4B429]" /> Just {currency === 'INR' ? "₹9,999" : "$199"}
@@ -771,6 +851,165 @@ export default function LandingPage() {
         </div>
       </section>
       
+      {/* --- CONTACT FORM SECTION --- */}
+      <section id="contact" className="py-24 bg-white relative border-t border-slate-200 z-10 overflow-hidden">
+        {/* Abstract floating blur elements */}
+        <div className="absolute top-0 left-0 w-[30vw] h-[30vw] bg-[#003D6F]/5 blur-[80px] rounded-full pointer-events-none -translate-x-1/2 -translate-y-1/2" />
+        <div className="absolute bottom-0 right-0 w-[40vw] h-[40vw] bg-[#F4B429]/5 blur-[100px] rounded-full pointer-events-none translate-x-1/3 translate-y-1/3" />
+        
+        <div className="max-w-[1400px] mx-auto px-6 relative z-10">
+           <div className="text-center max-w-2xl mx-auto mb-16">
+              <span className="text-[#B22B31] font-bold tracking-wider uppercase text-sm bg-red-50 px-3 py-1 rounded-full border border-red-100">
+                 Connect With Experts
+              </span>
+              <h2 className="text-4xl md:text-5xl font-black text-[#003D6F] mt-4">
+                 Get In Touch With Sales
+              </h2>
+              <p className="text-slate-600 text-lg mt-2 font-medium">
+                 Have a specific query or want a custom demo? Fill out the form and our team will get back to you within 2 hours.
+              </p>
+           </div>
+
+           <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-8 bg-gradient-to-br from-slate-50 to-white border-2 border-slate-200 rounded-[2.5rem] shadow-2xl p-6 sm:p-10 relative overflow-hidden">
+              {/* Glassmorphic left info pane */}
+              <div className="md:col-span-5 bg-[#003D6F] rounded-[1.75rem] p-8 text-white relative overflow-hidden flex flex-col justify-between shadow-xl min-h-[300px]">
+                 <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-xl" />
+                 <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-[#B22B31]/10 rounded-full blur-2xl" />
+                 
+                 <div className="relative z-10">
+                    <span className="inline-block px-3 py-1 bg-white/10 rounded-full text-xs font-black uppercase tracking-wider mb-6">Contact Info</span>
+                    <h3 className="text-2xl font-black mb-4">AdRolls Intelligence</h3>
+                    <p className="text-blue-100 text-sm leading-relaxed mb-8">
+                       Reach out to our agents to schedule an interactive video mapping of your current ad setup.
+                    </p>
+                    
+                    <div className="space-y-6">
+                       <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/10 shadow-sm shrink-0">
+                             <Phone size={18} className="text-[#F4B429]" />
+                          </div>
+                          <div>
+                             <p className="text-xs text-blue-200 font-bold uppercase tracking-wider">Call or WhatsApp</p>
+                             <p className="text-sm font-bold text-white">+91 98101 23456</p>
+                          </div>
+                       </div>
+                       
+                       <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/10 shadow-sm shrink-0">
+                             <Mail size={18} className="text-[#F4B429]" />
+                          </div>
+                          <div>
+                             <p className="text-xs text-blue-200 font-bold uppercase tracking-wider">Email Us</p>
+                             <p className="text-sm font-bold text-white">adrollsai@gmail.com</p>
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+
+                 <div className="relative z-10 pt-8 border-t border-white/10 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-500/20 border border-green-500/30 flex items-center justify-center shrink-0">
+                       <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse" />
+                    </div>
+                    <p className="text-xs text-green-300 font-bold">Agents online • Fast Response</p>
+                 </div>
+              </div>
+
+              {/* Right Input Form pane */}
+              <form onSubmit={handleContactSubmit} className="md:col-span-7 space-y-6 flex flex-col justify-center">
+                 {submitSuccess ? (
+                    <motion.div 
+                       initial={{ opacity: 0, scale: 0.95 }}
+                       animate={{ opacity: 1, scale: 1 }}
+                       className="bg-green-50 border border-green-200 rounded-2xl p-8 text-center"
+                    >
+                       <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-200 text-green-600">
+                          <CheckCircle2 size={32} />
+                       </div>
+                       <h4 className="text-2xl font-black text-[#003D6F] mb-2">Message Sent!</h4>
+                       <p className="text-slate-600 font-bold text-sm leading-relaxed">
+                          Woof! Thank you for contacting us. We've received your query and routed it directly to our sales agent CRM. An agent will get in touch with you shortly!
+                       </p>
+                    </motion.div>
+                 ) : (
+                    <>
+                       {submitError && (
+                          <div className="p-4 bg-red-50 border-2 border-red-200 text-red-700 rounded-xl text-sm font-bold flex items-center gap-2">
+                             <span className="w-2 h-2 bg-red-500 rounded-full shrink-0" />
+                             {submitError}
+                          </div>
+                       )}
+
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                             <label className="text-xs text-slate-500 font-black uppercase tracking-wider">Full Name</label>
+                             <input 
+                                type="text"
+                                required
+                                value={contactName}
+                                onChange={(e) => setContactName(e.target.value)}
+                                placeholder="Your Name"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-[#003D6F] placeholder:text-slate-400 focus:outline-none focus:border-[#003D6F] focus:ring-1 focus:ring-[#003D6F] transition-all"
+                             />
+                          </div>
+                          <div className="space-y-2">
+                             <label className="text-xs text-slate-500 font-black uppercase tracking-wider">Phone Number</label>
+                             <input 
+                                type="tel"
+                                required
+                                value={contactPhone}
+                                onChange={(e) => setContactPhone(e.target.value)}
+                                placeholder="e.g. +91 99999 99999"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-[#003D6F] placeholder:text-slate-400 focus:outline-none focus:border-[#003D6F] focus:ring-1 focus:ring-[#003D6F] transition-all"
+                             />
+                          </div>
+                       </div>
+
+                       <div className="space-y-2">
+                          <label className="text-xs text-slate-500 font-black uppercase tracking-wider">Email Address</label>
+                          <input 
+                             type="email"
+                             required
+                             value={contactEmail}
+                             onChange={(e) => setContactEmail(e.target.value)}
+                             placeholder="email@example.com"
+                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-[#003D6F] placeholder:text-slate-400 focus:outline-none focus:border-[#003D6F] focus:ring-1 focus:ring-[#003D6F] transition-all"
+                          />
+                       </div>
+
+                       <div className="space-y-2">
+                          <label className="text-xs text-slate-500 font-black uppercase tracking-wider">Your Message</label>
+                          <textarea 
+                             required
+                             rows={4}
+                             value={contactMessage}
+                             onChange={(e) => setContactMessage(e.target.value)}
+                             placeholder="How can we help your business grow?"
+                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-[#003D6F] placeholder:text-slate-400 focus:outline-none focus:border-[#003D6F] focus:ring-1 focus:ring-[#003D6F] transition-all resize-none"
+                          />
+                       </div>
+
+                       <button 
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="w-full py-4 bg-[#B22B31] hover:bg-[#902227] disabled:bg-slate-400 text-white rounded-xl font-black text-lg transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                       >
+                          {isSubmitting ? (
+                             <>
+                                <Loader2 className="w-5 h-5 animate-spin" /> Submitting...
+                             </>
+                          ) : (
+                             <>
+                                Send Query <Send size={18} />
+                             </>
+                          )}
+                       </button>
+                    </>
+                 )}
+              </form>
+           </div>
+        </div>
+      </section>
+
       {/* Dynamic Navigation Footer */}
       <footer className="bg-[#003D6F] py-16 border-t border-[#00284d] text-white relative z-10">
          <div className="max-w-[1400px] mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8">
