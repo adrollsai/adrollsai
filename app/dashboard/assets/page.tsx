@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Filter, Download, Facebook, Instagram, Linkedin, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2, Check, Trash2, Upload } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, Linkedin, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2, Check, Trash2, Upload, Copy } from 'lucide-react'
 import JSZip from 'jszip'
 import { analyzeMediaAction } from './actions'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -51,6 +51,59 @@ export default function AssetsPage() {
 
     // Single Tap Download State
     const [isDownloading, setIsDownloading] = useState(false)
+
+    // AI Captions State for Share Modal
+    const [headline, setHeadline] = useState('')
+    const [primaryText, setPrimaryText] = useState('')
+    const [isGeneratingCaptions, setIsGeneratingCaptions] = useState(false)
+
+    useEffect(() => {
+        if (!selectedAsset) {
+            setHeadline('');
+            setPrimaryText('');
+        }
+    }, [selectedAsset])
+
+    const handleGenerateAICaptions = async () => {
+        if (!selectedAsset) return;
+        setIsGeneratingCaptions(true);
+
+        const generatePromise = async () => {
+            try {
+                const response = await fetch('/api/assets/generate-caption', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: selectedAsset.url,
+                        type: selectedAsset.type
+                    })
+                });
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || "Failed to generate captions.");
+
+                if (data.success && data.captions) {
+                    setCaption(data.captions.social_post_description || '');
+                    setHeadline(data.captions.headline || '');
+                    setPrimaryText(data.captions.primary_text || '');
+                    return "AI Captions generated successfully!";
+                } else {
+                    throw new Error("No captions returned from AI.");
+                }
+            } catch (err: any) {
+                console.error("AI Caption generation failed:", err);
+                throw err;
+            } finally {
+                setIsGeneratingCaptions(false);
+            }
+        };
+
+        toast.promise(generatePromise(), {
+            loading: 'AI is analyzing your media to write copy...',
+            success: (msg) => msg,
+            error: (err) => `Failed: ${err.message}`
+        });
+    };
 
     // Image Preview Modal
     const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string, type?: 'image' | 'video' }>({ isOpen: false, url: '', title: '', type: 'image' })
@@ -320,29 +373,38 @@ export default function AssetsPage() {
                 const publicUrl = await uploadToR2(file, 'library');
 
                 // 3. Insert into assets table
-                const { error: insertError } = await supabase.from('assets').insert({
-                    user_id: targetUserId,
-                    type: file.type.startsWith('video') ? 'video' : 'image',
-                    url: publicUrl,
-                    status: 'Ready',
-                    caption: `Uploaded: ${file.name}`
-                });
+                const { data: insertedAsset, error: insertError } = await supabase
+                    .from('assets')
+                    .insert({
+                        user_id: targetUserId,
+                        type: file.type.startsWith('video') ? 'video' : 'image',
+                        url: publicUrl,
+                        status: 'Ready',
+                        caption: `Uploaded: ${file.name}`
+                    })
+                    .select()
+                    .single();
 
                 if (insertError) throw insertError;
-                return true;
+                return insertedAsset as Asset;
             } catch (err: any) {
                 console.error("Upload error:", err);
                 toast.error(`Failed to upload ${file.name}: ${err.message}`);
-                return false;
+                return null;
             }
         });
 
         const results = await Promise.all(uploadPromises);
-        const successCount = results.filter(Boolean).length;
+        const uploadedAssets = results.filter((item): item is Asset => !!item);
         
-        if (successCount > 0) {
-            toast.success(`Successfully uploaded ${successCount} assets!`);
-            fetchAssets(true); // Refresh library
+        if (uploadedAssets.length > 0) {
+            toast.success(`Successfully uploaded ${uploadedAssets.length} assets!`);
+            await fetchAssets(true); // Refresh library
+            
+            // Automatically open sharing modal for the first newly uploaded asset
+            const newAsset = uploadedAssets[0];
+            setSelectedAsset(newAsset);
+            setCaption(newAsset.caption || '');
         }
         
         setIsUploading(false);
@@ -799,19 +861,6 @@ export default function AssetsPage() {
                                 {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
                                 {isUploading ? 'Uploading...' : 'Upload Assets'}
                             </button>
-                            <button
-                                onClick={() => setDirectPostData({
-                                    file: null,
-                                    previewUrl: null,
-                                    caption: "",
-                                    headline: "",
-                                    selectedPlatforms: ['facebook']
-                                })}
-                                className="bg-blue-600 text-white px-6 py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-95"
-                            >
-                                {isAnalyzing ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                                {isAnalyzing ? 'AI Analyzing...' : 'Post Content'}
-                            </button>
                         </div>
                     )}
                     
@@ -1125,7 +1174,18 @@ export default function AssetsPage() {
 
                                 {/* Caption Area */}
                                 <div className="mb-6">
-                                    <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">Asset Caption</label>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="text-xs font-bold text-slate-500 ml-2 block uppercase tracking-wider">Asset Caption</label>
+                                        <button
+                                            type="button"
+                                            onClick={handleGenerateAICaptions}
+                                            disabled={isGeneratingCaptions || isPosting}
+                                            className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/80 px-3 py-1.5 rounded-xl transition-all active:scale-95 disabled:opacity-50"
+                                        >
+                                            {isGeneratingCaptions ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                                            {isGeneratingCaptions ? 'Generating...' : 'Generate AI Captions'}
+                                        </button>
+                                    </div>
                                     <textarea
                                         value={caption}
                                         onChange={(e) => setCaption(e.target.value)}
@@ -1134,6 +1194,58 @@ export default function AssetsPage() {
                                         rows={4}
                                     />
                                 </div>
+
+                                {/* AI Generated Ad Fields (Headline & Primary Text) */}
+                                {(headline || primaryText) && (
+                                    <div className="mb-6 space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-200/60 animate-in fade-in duration-300">
+                                        <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-600 uppercase tracking-widest">
+                                            <Sparkles size={14} className="text-blue-500" />
+                                            <span>AI Ad Copy (Headline & Primary Text)</span>
+                                        </div>
+                                        
+                                        {/* Headline Field */}
+                                        {headline && (
+                                            <div className="space-y-1.5">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Headline</span>
+                                                    <button
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(headline);
+                                                            toast.success("Headline copied to clipboard!");
+                                                        }}
+                                                        className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-all"
+                                                    >
+                                                        <Copy size={12} /> Copy
+                                                    </button>
+                                                </div>
+                                                <div className="bg-white border border-slate-200 px-4 py-3 rounded-xl text-sm font-semibold text-slate-800 select-all">
+                                                    {headline}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Primary Text Field */}
+                                        {primaryText && (
+                                            <div className="space-y-1.5">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Primary Text</span>
+                                                    <button
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(primaryText);
+                                                            toast.success("Primary Text copied to clipboard!");
+                                                        }}
+                                                        className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-all"
+                                                    >
+                                                        <Copy size={12} /> Copy
+                                                    </button>
+                                                </div>
+                                                <div className="bg-white border border-slate-200 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 select-all">
+                                                    {primaryText}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Actions Grid */}
                                 <div className="flex flex-col gap-3">
@@ -1211,7 +1323,7 @@ export default function AssetsPage() {
                                             className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all mt-2 active:scale-95"
                                         >
                                             <Sparkles size={18} />
-                                            <span>AI Video Editor</span>
+                                            <span>AI Video Edit</span>
                                         </button>
                                     )}
 

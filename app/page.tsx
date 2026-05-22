@@ -644,7 +644,8 @@ export default function LandingPage() {
                          "Social Media Management",
                          "Landing Page",
                          "White Labelled App",
-                         "30 Sec Video Ad"
+                         "1 AI Video Editing / mo",
+                         "3 AI Caption Generations / mo"
                        ].map((feature, i) => (
                          <li key={i} className="flex items-center gap-3 text-slate-700 font-bold text-sm">
                             <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current shrink-0" />
@@ -728,7 +729,7 @@ export default function LandingPage() {
                  <div className="relative mt-6 bg-[#003D6F] text-white p-6 rounded-2xl border border-white/20 shadow-xl max-w-sm">
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full w-0 h-0 border-x-8 border-x-transparent border-b-8 border-b-[#003D6F]"></div>
                     <p className="font-extrabold text-sm leading-relaxed">
-                       "Woof! AdRolls saves you over {currency === 'INR' ? '₹3,15,000' : '$11,600'} every single month! That's enough to buy a lifetime of premium treats and squeaky toys! 🦴🐶"
+                       "Woof! AdRolls saves you over {currency === 'INR' ? '₹3,60,000' : '$13,100'} every single month! That's enough to buy a lifetime of premium treats and squeaky toys! 🦴🐶"
                     </p>
                  </div>
               </div>
@@ -766,6 +767,11 @@ export default function LandingPage() {
                             {
                               service: "Video Production",
                               traditional: currency === 'INR' ? "₹50,000/mo" : "$2,000/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "AI Video Editing",
+                              traditional: currency === 'INR' ? "₹45,000/mo" : "$1,500/mo",
                               adrolls: "Included"
                             },
                             {
@@ -816,7 +822,7 @@ export default function LandingPage() {
                           <tr className="bg-slate-50/80 rounded-2xl">
                              <td className="py-6 px-4 text-lg text-[#003D6F] font-black uppercase">Total Monthly Value</td>
                              <td className="py-6 text-slate-500 text-lg line-through font-extrabold decoration-[#B22B31] decoration-2">
-                                {currency === 'INR' ? "₹3,25,000" : "$11,800"}
+                                {currency === 'INR' ? "₹3,70,000" : "$13,300"}
                              </td>
                              <td className="py-6 text-green-600 text-xl font-black flex items-center gap-2 bg-green-50 px-4 rounded-xl border border-green-100">
                                 <Sparkles className="w-5 h-5 text-[#F4B429]" /> Just {currency === 'INR' ? "₹9,999" : "$199"}
