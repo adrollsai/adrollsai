@@ -104,8 +104,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {children}
 
-      {/* Hide the navigation bar if they are trapped on the billing page */}
-      {pathname !== '/dashboard/billing' && <BottomNav />}
+      {/* Hide the navigation bar if they are on the billing page or the video editor page */}
+      {pathname !== '/dashboard/billing' && !pathname?.includes('/dashboard/video-editor') && <BottomNav />}
     </div>
   )
 }

@@ -115,6 +115,20 @@ const ChatMascot = () => {
 export default function LandingPage() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [partnerLoginUrl, setPartnerLoginUrl] = useState('https://app.adrolls.in')
+  const [currency, setCurrency] = useState<'INR' | 'USD'>('INR')
+
+  useEffect(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz && (tz.includes('Calcutta') || tz.includes('Kolkata') || tz.includes('Asia/Kolkata') || tz.includes('Asia/Calcutta') || tz.includes('Delhi') || tz.includes('India'))) {
+        setCurrency('INR')
+      } else {
+        setCurrency('USD')
+      }
+    } catch (e) {
+      setCurrency('INR')
+    }
+  }, [])
 
   /**
    * DYNAMIC ENVIRONMENT DETECTION
@@ -493,49 +507,244 @@ export default function LandingPage() {
       {/* --- PRICING SECTION --- */}
       <section id="pricing" className="py-32 bg-white relative border-t border-slate-200 z-10">
         <div className="max-w-[1400px] mx-auto px-6">
-           <div className="text-center mb-20">
+           <div className="text-center mb-12">
               <h2 className="text-4xl md:text-6xl font-black text-[#003D6F] mb-6">Simple, Transparent Pricing</h2>
-              <p className="text-slate-600 text-xl font-medium">Everything you need to grow your business, at a price that makes sense.</p>
+              <p className="text-slate-600 text-xl font-medium mb-10">Everything you need to grow your business, at a price that makes sense.</p>
            </div>
 
-           <div className="max-w-xl mx-auto bg-white border-2 border-slate-200 rounded-[3rem] overflow-hidden shadow-2xl shadow-[#003D6F]/10 relative hover:border-[#F4B429] transition-all duration-300 group">
-              <div className="absolute top-0 inset-x-0 h-4 bg-gradient-to-r from-[#003D6F] via-[#B22B31] to-[#F4B429]"></div>
-              
-              <div className="p-12 text-center border-b border-slate-100">
-                 <h3 className="text-xl font-extrabold text-[#003D6F] uppercase tracking-widest mb-4">Starter Plan</h3>
-                 <div className="flex items-baseline justify-center gap-2 mb-6">
-                    <span className="text-lg text-slate-500 font-medium">Starting at</span>
-                    <span className="text-7xl font-black text-[#B22B31]">₹9,999</span>
-                    <span className="text-slate-500 font-medium">/mo</span>
-                 </div>
-                 <p className="text-slate-500 text-lg font-medium">Perfect for small businesses and solo entrepreneurs.</p>
-              </div>
+           {/* Dynamic Currency Switcher */}
+           <div className="flex items-center justify-center gap-4 mb-16">
+              <span className={`text-lg font-black transition-colors ${currency === 'INR' ? 'text-[#B22B31]' : 'text-slate-400'}`}>Rupees (₹)</span>
+              <button 
+                onClick={() => setCurrency(currency === 'INR' ? 'USD' : 'INR')}
+                className="w-16 h-8 bg-slate-200 rounded-full p-1 relative transition-colors duration-300 focus:outline-none shadow-inner"
+              >
+                <div className={`w-6 h-6 bg-[#003D6F] rounded-full absolute top-1 transition-all duration-300 ${currency === 'USD' ? 'left-9' : 'left-1'}`} />
+              </button>
+              <span className={`text-lg font-black transition-colors ${currency === 'USD' ? 'text-[#B22B31]' : 'text-slate-400'}`}>Dollars ($)</span>
+           </div>
 
-              <div className="p-12 bg-slate-50/50">
-                 <ul className="space-y-6 mb-10">
-                    {[
-                      "AI Social Media Content & Posting",
-                      "Product & Service Management",
-                      "Basic CRM Functionality",
-                      "Meta Ads Manager (Self-Serve)",
-                      "High-Conversion Landing Page"
-                    ].map((feature, i) => (
-                      <li key={i} className="flex items-center gap-4 text-slate-700 text-lg font-bold">
-                         <div className="w-6 h-6 rounded-full bg-[#F4B429]/20 flex items-center justify-center text-[#B22B31] shrink-0">
-                           <CheckCircle2 className="w-4 h-4" />
-                         </div>
-                         {feature}
-                      </li>
-                    ))}
-                 </ul>
-                 
+           {/* 3 Pricing Cards Grid */}
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch mb-24">
+              
+              {/* Plan 1: Starter */}
+              <div className="bg-white border-2 border-slate-200 rounded-[3.5rem] overflow-hidden shadow-xl hover:border-[#003D6F]/40 hover:shadow-2xl transition-all duration-300 flex flex-col justify-between p-10 relative">
+                 <div>
+                    <h3 className="text-2xl font-black text-[#003D6F] uppercase tracking-wider mb-2">Starter</h3>
+                    <p className="text-slate-400 text-sm font-bold mb-8">For small businesses getting started</p>
+                    <div className="flex items-baseline gap-2 mb-8">
+                       <span className="text-6xl font-black text-[#B22B31]">
+                          {currency === 'INR' ? '₹4,999' : '$49'}
+                       </span>
+                       <span className="text-slate-500 font-bold">/mo</span>
+                    </div>
+                    <div className="h-px bg-slate-100 mb-8" />
+                    <ul className="space-y-4 mb-10">
+                       {[
+                         "30 Image Gen",
+                         "3 Team Members",
+                         "15 SEO Articles",
+                         "10 Inventory Items",
+                         "3 Campaign Launches",
+                         "3 Campaigns",
+                         "3 Optimizations",
+                         "1 GB of Storage",
+                         "Social Media Handling"
+                       ].map((feature, i) => (
+                         <li key={i} className="flex items-center gap-3 text-slate-600 font-bold text-sm">
+                            <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current shrink-0" />
+                            <span>{feature}</span>
+                         </li>
+                       ))}
+                    </ul>
+                 </div>
                  <Link 
                     href={partnerLoginUrl}
-                    className="block w-full py-6 bg-[#003D6F] hover:bg-[#00284d] text-white text-center rounded-2xl font-bold text-xl transition-all shadow-xl shadow-[#003D6F]/20 hover:scale-[1.02]"
+                    className="block w-full py-5 bg-[#003D6F] hover:bg-[#00284d] text-white text-center rounded-2xl font-black text-lg transition-all shadow-md active:scale-95 mt-auto"
                  >
-                    Get Started Now
+                    Get Started Free
                  </Link>
-                 <p className="text-center text-sm text-slate-400 mt-6 font-medium">No credit card required for demo.</p>
+              </div>
+
+              {/* Plan 2: Pro (Best Value - Highlighted) */}
+              <div className="bg-white border-4 border-[#003D6F] rounded-[3.5rem] overflow-hidden shadow-2xl relative flex flex-col justify-between p-10 lg:scale-[1.05] z-10">
+                 <div className="absolute top-0 right-10 bg-[#B22B31] text-white px-5 py-2 rounded-b-xl text-xs font-black uppercase tracking-widest">
+                    Best Value
+                 </div>
+                 <div>
+                    <h3 className="text-2xl font-black text-[#003D6F] uppercase tracking-wider mb-2">Pro</h3>
+                    <p className="text-slate-400 text-sm font-bold mb-8">Ultimate automated growth engine</p>
+                    <div className="flex items-baseline gap-2 mb-8">
+                       <span className="text-6xl font-black text-[#B22B31]">
+                          {currency === 'INR' ? '₹9,999' : '$199'}
+                       </span>
+                       <span className="text-slate-500 font-bold">/mo</span>
+                    </div>
+                    <div className="h-px bg-slate-100 mb-8" />
+                    <ul className="space-y-4 mb-10">
+                       {[
+                         "80 Images",
+                         "Unlimited Team Members",
+                         "10 Campaign Launches",
+                         "10 Optimization Requests",
+                         "10 Remarketing Requests",
+                         "30 SEO Articles",
+                         "Daily Graphic Automation",
+                         "5 GB of Storage",
+                         "Social Media Management",
+                         "Landing Page",
+                         "White Labelled App",
+                         "30 Sec Video Ad"
+                       ].map((feature, i) => (
+                         <li key={i} className="flex items-center gap-3 text-slate-700 font-bold text-sm">
+                            <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current shrink-0" />
+                            <span>{feature}</span>
+                         </li>
+                       ))}
+                    </ul>
+                 </div>
+                 <Link 
+                    href={partnerLoginUrl}
+                    className="block w-full py-5 bg-[#B22B31] hover:bg-[#902227] text-white text-center rounded-2xl font-black text-lg transition-all shadow-lg active:scale-95 shadow-[#B22B31]/30 mt-auto"
+                 >
+                    Start Growing Now
+                 </Link>
+              </div>
+
+              {/* Plan 3: Ultra */}
+              <div className="bg-white border-2 border-slate-200 rounded-[3.5rem] overflow-hidden shadow-xl hover:border-[#003D6F]/40 hover:shadow-2xl transition-all duration-300 flex flex-col justify-between p-10 relative">
+                 <div>
+                    <h3 className="text-2xl font-black text-[#003D6F] uppercase tracking-wider mb-2">Ultra</h3>
+                    <p className="text-slate-400 text-sm font-bold mb-8">100% Done-For-You by experts</p>
+                    <div className="flex items-baseline gap-2 mb-8">
+                       <span className="text-6xl font-black text-[#B22B31]">
+                          {currency === 'INR' ? '₹99,999' : '$1,999'}
+                       </span>
+                       <span className="text-slate-500 font-bold">/mo</span>
+                    </div>
+                    <div className="h-px bg-slate-100 mb-8" />
+                    <ul className="space-y-4 mb-10">
+                       {[
+                         "All Done-For-You",
+                         "We handle ads, ads creation, etc.",
+                         "Unlimited AdRolls features",
+                         "* AI charges to be born by the customer"
+                       ].map((feature, i) => (
+                         <li key={i} className="flex items-center gap-3 text-slate-600 font-bold text-sm">
+                            <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current shrink-0" />
+                            <span>{feature}</span>
+                         </li>
+                       ))}
+                    </ul>
+                 </div>
+                 <Link 
+                    href={partnerLoginUrl}
+                    className="block w-full py-5 bg-slate-900 hover:bg-slate-800 text-white text-center rounded-2xl font-black text-lg transition-all shadow-md active:scale-95 mt-auto"
+                 >
+                    Contact Sales
+                 </Link>
+              </div>
+
+           </div>
+        </div>
+      </section>
+
+      {/* --- VALUE COMPARISON SECTION --- */}
+      <section className="py-24 bg-slate-50 relative border-t border-slate-100 z-10">
+        <div className="max-w-[1400px] mx-auto px-6">
+           <div className="text-center mb-16">
+              <span className="text-[#B22B31] font-bold tracking-wider uppercase text-sm bg-red-50 px-3 py-1 rounded-full border border-red-100">
+                 IMMENSE SAVINGS
+              </span>
+              <h2 className="text-4xl md:text-5xl font-black text-[#003D6F] mt-4">
+                 AdRolls vs. Traditional Marketing
+              </h2>
+              <p className="text-slate-600 text-lg mt-2 font-medium">
+                 See how much you save every single month by switching to our agentic AI workflow.
+              </p>
+           </div>
+
+           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+              {/* Fluffy Pup mascot + Speech Bubble */}
+              <div className="lg:col-span-4 flex flex-col items-center justify-center text-center relative order-2 lg:order-1">
+                 <div className="relative w-64 h-64 md:w-80 md:h-80 filter drop-shadow-2xl">
+                    <img 
+                      src="/shihtzu.png" 
+                      alt="Rolls the Pup" 
+                      className="w-full h-full object-contain hover:scale-105 transition-transform duration-300"
+                    />
+                 </div>
+                 {/* Speech Bubble */}
+                 <div className="relative mt-6 bg-[#003D6F] text-white p-6 rounded-2xl border border-white/20 shadow-xl max-w-sm">
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full w-0 h-0 border-x-8 border-x-transparent border-b-8 border-b-[#003D6F]"></div>
+                    <p className="font-extrabold text-sm leading-relaxed">
+                       "Woof! AdRolls saves you over {currency === 'INR' ? '₹1,35,000' : '$1,550'} every single month! That's enough to buy a lifetime of premium treats and squeaky toys! 🦴🐶"
+                    </p>
+                 </div>
+              </div>
+
+              {/* Comparison Table */}
+              <div className="lg:col-span-8 bg-white border-2 border-slate-200 rounded-[2.5rem] shadow-2xl p-6 sm:p-10 order-1 lg:order-2 overflow-hidden relative">
+                 <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                       <thead>
+                          <tr className="border-b border-slate-100">
+                             <th className="pb-6 font-black text-slate-400 text-xs uppercase tracking-wider">Services Required</th>
+                             <th className="pb-6 font-black text-slate-400 text-xs uppercase tracking-wider">Traditional Cost</th>
+                             <th className="pb-6 font-black text-[#B22B31] text-xs uppercase tracking-wider flex items-center gap-1.5">
+                                <Sparkles className="w-4 h-4 text-[#F4B429]" /> AdRolls AI
+                             </th>
+                          </tr>
+                       </thead>
+                       <tbody className="divide-y divide-slate-100 font-bold text-slate-700 text-sm">
+                          {[
+                            {
+                              service: "Graphic Design & Creatives",
+                              traditional: currency === 'INR' ? "₹25,000/mo" : "$300/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "SEO Articles & Copywriting",
+                              traditional: currency === 'INR' ? "₹35,000/mo" : "$450/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Social Media Scheduler",
+                              traditional: currency === 'INR' ? "₹15,000/mo" : "$150/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Landing Page Hosting",
+                              traditional: currency === 'INR' ? "₹20,000/mo" : "$250/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Meta Ads & CAPI Agency Setup",
+                              traditional: currency === 'INR' ? "₹50,000/mo" : "$600/mo",
+                              adrolls: "Included"
+                            }
+                          ].map((row, i) => (
+                            <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                               <td className="py-5 pr-4 text-base text-[#003D6F] font-black">{row.service}</td>
+                               <td className="py-5 text-slate-500 text-base line-through decoration-[#B22B31] decoration-2">{row.traditional}</td>
+                               <td className="py-5 text-[#B22B31] text-lg font-black flex items-center gap-2">
+                                  <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current shrink-0" /> {row.adrolls}
+                               </td>
+                            </tr>
+                          ))}
+                          {/* Total Calculation Row */}
+                          <tr className="bg-slate-50/80 rounded-2xl">
+                             <td className="py-6 px-4 text-lg text-[#003D6F] font-black uppercase">Total Monthly Value</td>
+                             <td className="py-6 text-slate-500 text-lg line-through font-extrabold decoration-[#B22B31] decoration-2">
+                                {currency === 'INR' ? "₹1,45,000" : "$1,750"}
+                             </td>
+                             <td className="py-6 text-green-600 text-xl font-black flex items-center gap-2 bg-green-50 px-4 rounded-xl border border-green-100">
+                                <Sparkles className="w-5 h-5 text-[#F4B429]" /> Just {currency === 'INR' ? "₹9,999" : "$199"}
+                             </td>
+                          </tr>
+                       </tbody>
+                    </table>
+                 </div>
               </div>
            </div>
         </div>

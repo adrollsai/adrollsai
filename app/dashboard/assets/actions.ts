@@ -4,6 +4,7 @@ import { createClient } from '@/utils/supabase/server';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { r2, R2_BUCKET } from '@/utils/r2';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { generateContentWithFallback } from '@/utils/gemini-fallback';
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
 
@@ -43,8 +44,6 @@ export async function analyzeMediaAction(url?: string, file?: File) {
         // Fetch business context
         const { data: profile } = await supabase.from('profiles').select('business_name, contact_number').eq('id', user.id).single();
 
-        const targetModel = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" }); 
-
         const prompt = `You are a world-class Direct Response Copywriter. 
 Analyze the provided ${mimeType.startsWith('video') ? 'video' : 'image'} and write a high-converting Meta ad caption.
 
@@ -68,7 +67,12 @@ RULES:
             }
         };
 
-        const result = await targetModel.generateContent([prompt, part]);
+        const result = await generateContentWithFallback(
+            genAI,
+            [prompt, part],
+            "gemini-3-flash-preview",
+            "gemini-1.5-flash"
+        );
         const text = result.response.text();
 
         const jsonMatch = text.match(/\{[\s\S]*\}/);

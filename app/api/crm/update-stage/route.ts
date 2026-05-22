@@ -27,11 +27,14 @@ export async function POST(request: Request) {
     // 2. Trigger CAPI if stage warrants it
     const { data: profile } = await supabase
         .from('profiles')
-        .select('selected_page_token, facebook_pixel_id')
+        .select('facebook_token, selected_page_token, pixel_id')
         .eq('id', user.id)
         .single()
 
-    if (profile?.selected_page_token && profile?.facebook_pixel_id) {
+    const accessToken = profile?.facebook_token || profile?.selected_page_token;
+    const pixelId = profile?.pixel_id;
+
+    if (accessToken && pixelId) {
         let eventName = '';
         if (newStage === 'Qualified') eventName = 'Lead';
         if (newStage === 'Appointment booked') eventName = 'Schedule';
@@ -44,9 +47,17 @@ export async function POST(request: Request) {
             const firstName = nameParts[0] || '';
             const lastName = nameParts.slice(1).join(' ') || '';
 
+            // Extract client environment details for rich Event Match Quality (EMQ)
+            const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || request.headers.get('x-real-ip') || '127.0.0.1';
+            const clientUa = request.headers.get('user-agent') || '';
+            const referer = request.headers.get('referer') || '';
+            const host = request.headers.get('host') || 'adrolls.in';
+            const protocol = host.includes('localhost') || host.includes('ngrok') ? 'http' : 'https';
+            const sourceUrl = referer || `${protocol}://${host}/shared/${user.id}`;
+
             await sendCAPIEvent(
-                profile.selected_page_token, 
-                profile.facebook_pixel_id, 
+                accessToken, 
+                pixelId, 
                 eventName, 
                 { 
                     email: lead.email, 
@@ -55,7 +66,10 @@ export async function POST(request: Request) {
                     lastName,
                     externalId: lead.id
                 },
-                newStage === 'Closed' ? 50000 : 0 // Assigning a default value for Closed leads
+                newStage === 'Closed' ? 50000 : 0, // Assigning a default value for Closed leads
+                clientIp,
+                clientUa,
+                sourceUrl
             );
         }
     }

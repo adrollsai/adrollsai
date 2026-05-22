@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Filter, Download, Facebook, Instagram, Linkedin, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2, Check, Trash2, Upload } from 'lucide-react'
 import JSZip from 'jszip'
 import { analyzeMediaAction } from './actions'
@@ -30,6 +31,7 @@ const filters = ['All', 'image', 'video', 'Campaign Ready']
 
 export default function AssetsPage() {
     const supabase = createClient()
+    const router = useRouter()
 
     // --- STATE ---
     const [assets, setAssets] = useState<Asset[]>([])
@@ -122,7 +124,20 @@ export default function AssetsPage() {
             if (assetData) {
                 // Filter out distributed assets to keep the library clean
                 const cleanAssets = assetData.filter(asset => asset.status !== 'Distributed')
-                setAssets(cleanAssets)
+                
+                // Sort active 'Processing' or 'Rendering' tasks to the very top, preserving created_at order for the rest
+                const sortedAssets = [...cleanAssets].sort((a, b) => {
+                    const aActive = ['Processing', 'Rendering'].includes(a.status);
+                    const bActive = ['Processing', 'Rendering'].includes(b.status);
+                    
+                    if (aActive && !bActive) return -1;
+                    if (!aActive && bActive) return 1;
+                    
+                    // If both are active or both are inactive, maintain original order (chronological desc by created_at)
+                    return 0;
+                });
+                
+                setAssets(sortedAssets)
             }
 
             if (propData) {
@@ -145,10 +160,10 @@ export default function AssetsPage() {
         fetchAssets()
     }, [supabase])
 
-    // Background polling for assets that are still in "Processing" state
+    // Background polling for assets that are still in "Processing" or "Rendering" state
     useEffect(() => {
-        const hasProcessing = assets.some(asset => asset.status === 'Processing')
-        if (!hasProcessing) return
+        const hasActiveTasks = assets.some(asset => ['Processing', 'Rendering'].includes(asset.status))
+        if (!hasActiveTasks) return
 
         const interval = setInterval(async () => {
             try {
@@ -158,7 +173,7 @@ export default function AssetsPage() {
                 console.error("[Assets Polling] Active video tasks sync failed:", err);
             }
             fetchAssets(true) // force refresh in background
-        }, 15000) // Poll every 15 seconds
+        }, 8000) // Poll every 8 seconds for active rendering/processing
 
         return () => clearInterval(interval)
     }, [assets])
@@ -966,20 +981,26 @@ export default function AssetsPage() {
                                     {selectedIds.has(asset.id) && <Check size={16} className="text-white" strokeWidth={4} />}
                                 </div>
 
-                                {asset.status === 'Processing' ? (
+                                {['Processing', 'Rendering'].includes(asset.status) ? (
                                     <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center p-4 text-center">
                                         <div className="relative">
-                                            <Loader2 size={28} className="animate-spin text-purple-500" />
+                                            <Loader2 size={28} className={`animate-spin ${asset.status === 'Rendering' ? 'text-blue-500' : 'text-purple-500'}`} />
                                             <Sparkles size={12} className="absolute -top-1 -right-1 text-amber-400 animate-pulse" />
                                         </div>
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-3">AI Designing...</p>
-                                        <p className="text-[9px] text-slate-400 font-medium mt-1">Check back in a bit</p>
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }}
-                                            className="mt-3 text-[9px] font-bold text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest"
-                                        >
-                                            Cancel
-                                        </button>
+                                        <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] mt-3">
+                                            {asset.status === 'Rendering' ? 'AI EDITING...' : 'AI Designing...'}
+                                        </p>
+                                        <p className="text-[9px] text-slate-400 font-medium mt-1">
+                                            {asset.status === 'Rendering' ? 'Compiling subtitles & outro' : 'Check back in a bit'}
+                                        </p>
+                                        {asset.status !== 'Rendering' && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }}
+                                                className="mt-3 text-[9px] font-bold text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest"
+                                            >
+                                                Cancel
+                                            </button>
+                                        )}
                                     </div>
                                 ) : asset.status === 'Failed' ? (
                                     <div className="w-full h-full bg-red-50 flex flex-col items-center justify-center p-4 text-center relative">
@@ -1049,8 +1070,8 @@ export default function AssetsPage() {
 
                                 {/* Status Badge */}
                                 <div className="absolute top-4 right-4 shadow-md z-10">
-                                    {asset.status === 'Processing' ? (
-                                        <div className="bg-purple-500 text-white p-1.5 rounded-full border-2 border-white animate-pulse">
+                                    {['Processing', 'Rendering'].includes(asset.status) ? (
+                                        <div className={`text-white p-1.5 rounded-full border-2 border-white animate-pulse ${asset.status === 'Rendering' ? 'bg-blue-500' : 'bg-purple-500'}`} title={asset.status}>
                                             <Sparkles size={14} />
                                         </div>
                                     ) : asset.status === 'Published' ? (
@@ -1182,6 +1203,17 @@ export default function AssetsPage() {
                                             </>
                                         )}
                                     </button>
+
+                                    {/* AI Video Editor Action */}
+                                    {selectedAsset.type === 'video' && (
+                                        <button
+                                            onClick={() => router.push(`/dashboard/video-editor/${selectedAsset.id}`)}
+                                            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all mt-2 active:scale-95"
+                                        >
+                                            <Sparkles size={18} />
+                                            <span>AI Video Editor</span>
+                                        </button>
+                                    )}
 
                                     {/* Download Action */}
                                     <button

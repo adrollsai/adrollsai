@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+build
+.git
+.gitignore
+*.log
+*.js.map
+*.tsbuildinfo
+tsc-errors.txt
+image_gen_debug.log
+agent_chat_debug.log
+meta_ads_debug.txt

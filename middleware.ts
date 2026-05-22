@@ -19,11 +19,10 @@ export async function middleware(request: NextRequest) {
 
   // If it's a custom domain...
   if (!isPlatformDomain) {
-    // CRITICAL PWA FIX: Let API routes and service worker files pass through normally!
-    // Without this, PWA installation and notifications on custom domains will 404.
     const isStaticPwaFile = url.pathname.endsWith('.js') || url.pathname.endsWith('.webmanifest') || url.pathname.endsWith('.json');
+    const isRobotsOrSitemap = url.pathname === '/robots.txt' || url.pathname === '/sitemap.xml';
     
-    if (url.pathname.startsWith('/api/') || isStaticPwaFile) {
+    if (url.pathname.startsWith('/api/') || isStaticPwaFile || isRobotsOrSitemap) {
         // Do nothing, let it fall through
     } else {
         // Rewrite all other frontend paths to the shared profile route

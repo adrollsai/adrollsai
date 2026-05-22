@@ -299,13 +299,13 @@ export async function generateKieChat(prompt: string, model: string = "gemini-3-
  */
 import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { generateContentWithFallback } from "./gemini-fallback";
 
 export async function callGemini(prompt: string, imageUrls?: string[]): Promise<string> {
     const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
     
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });  
         
         const contents: any[] = [prompt];
         
@@ -381,7 +381,12 @@ export async function callGemini(prompt: string, imageUrls?: string[]): Promise<
             }
         }
 
-        const result = await model.generateContent(contents);
+        const result = await generateContentWithFallback(
+            genAI,
+            contents,
+            "gemini-3-flash-preview",
+            "gemini-1.5-flash"
+        );
         const response = await result.response;
         return response.text();
 
@@ -493,7 +498,10 @@ export async function sendCAPIEvent(
         lastName?: string,
         externalId?: string
     }, 
-    value?: number
+    value?: number,
+    clientIp?: string,
+    clientUa?: string,
+    sourceUrl?: string
 ) {
     if (!pixelId) return;
     const hashData = (data: string) => crypto.createHash('sha256').update(data.trim().toLowerCase()).digest('hex');
@@ -503,13 +511,16 @@ export async function sendCAPIEvent(
         data: [{
             event_name: eventName,
             event_time: Math.floor(Date.now() / 1000),
-            action_source: 'other', 
+            action_source: 'website', 
+            event_source_url: sourceUrl || undefined,
             user_data: {
                 em: userData.email ? [hashData(userData.email)] : [],
                 ph: userData.phone ? [hashData(cleanPhone(userData.phone))] : [],
                 fn: userData.firstName ? [hashData(userData.firstName)] : [],
                 ln: userData.lastName ? [hashData(userData.lastName)] : [],
-                external_id: userData.externalId ? [hashData(userData.externalId)] : [],
+                external_id: userData.externalId ? [userData.externalId] : [], // Unhashed standard unique CRM ID
+                client_ip_address: clientIp || undefined,
+                client_user_agent: clientUa || undefined
             },
             custom_data: {
                 currency: 'INR',
