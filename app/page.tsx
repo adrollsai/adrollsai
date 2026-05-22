@@ -729,7 +729,7 @@ export default function LandingPage() {
                  <div className="relative mt-6 bg-[#003D6F] text-white p-6 rounded-2xl border border-white/20 shadow-xl max-w-sm">
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full w-0 h-0 border-x-8 border-x-transparent border-b-8 border-b-[#003D6F]"></div>
                     <p className="font-extrabold text-sm leading-relaxed">
-                       "Woof! AdRolls saves you over {currency === 'INR' ? '₹3,60,000' : '$13,100'} every single month! That's enough to buy a lifetime of premium treats and squeaky toys! 🦴🐶"
+                       "Woof! AdRolls saves you over {currency === 'INR' ? '₹1,39,000' : '$4,350'} every single month! That's enough to buy a lifetime of premium treats and squeaky toys! 🦴🐶"
                     </p>
                  </div>
               </div>
@@ -751,62 +751,62 @@ export default function LandingPage() {
                           {[
                             {
                               service: "SEO",
-                              traditional: currency === 'INR' ? "₹30,000/mo" : "$1,200/mo",
+                              traditional: currency === 'INR' ? "₹15,000/mo" : "$500/mo",
                               adrolls: "Included"
                             },
                             {
                               service: "Ads Management",
-                              traditional: currency === 'INR' ? "₹40,000/mo" : "$1,500/mo",
-                              adrolls: "Included"
-                            },
-                            {
-                              service: "Remarketing Campaign",
-                              traditional: currency === 'INR' ? "₹20,000/mo" : "$800/mo",
-                              adrolls: "Included"
-                            },
-                            {
-                              service: "Video Production",
-                              traditional: currency === 'INR' ? "₹50,000/mo" : "$2,000/mo",
-                              adrolls: "Included"
-                            },
-                            {
-                              service: "AI Video Editing",
-                              traditional: currency === 'INR' ? "₹45,000/mo" : "$1,500/mo",
-                              adrolls: "Included"
-                            },
-                            {
-                              service: "Graphics Designing",
-                              traditional: currency === 'INR' ? "₹25,000/mo" : "$1,000/mo",
-                              adrolls: "Included"
-                            },
-                            {
-                              service: "CRM",
-                              traditional: currency === 'INR' ? "₹15,000/mo" : "$300/mo",
-                              adrolls: "Included"
-                            },
-                            {
-                              service: "Social Media Management",
-                              traditional: currency === 'INR' ? "₹25,000/mo" : "$800/mo",
-                              adrolls: "Included"
-                            },
-                            {
-                              service: "Inventory Management",
-                              traditional: currency === 'INR' ? "₹15,000/mo" : "$400/mo",
-                              adrolls: "Included"
-                            },
-                            {
-                              service: "Landing Page",
                               traditional: currency === 'INR' ? "₹20,000/mo" : "$600/mo",
                               adrolls: "Included"
                             },
                             {
+                              service: "Remarketing Campaign",
+                              traditional: currency === 'INR' ? "₹10,000/mo" : "$300/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Video Production",
+                              traditional: currency === 'INR' ? "₹20,000/mo" : "$600/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "AI Video Editing",
+                              traditional: currency === 'INR' ? "₹15,000/mo" : "$400/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Graphics Designing",
+                              traditional: currency === 'INR' ? "₹12,000/mo" : "$400/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "CRM",
+                              traditional: currency === 'INR' ? "₹5,000/mo" : "$150/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Social Media Management",
+                              traditional: currency === 'INR' ? "₹15,000/mo" : "$500/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Inventory Management",
+                              traditional: currency === 'INR' ? "₹5,000/mo" : "$150/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Landing Page",
+                              traditional: currency === 'INR' ? "₹10,000/mo" : "$300/mo",
+                              adrolls: "Included"
+                            },
+                            {
                               service: "Hosting",
-                              traditional: currency === 'INR' ? "₹10,000/mo" : "$200/mo",
+                              traditional: currency === 'INR' ? "₹2,000/mo" : "$50/mo",
                               adrolls: "Included"
                             },
                             {
                               service: "White Labelled App",
-                              traditional: currency === 'INR' ? "₹75,000/mo" : "$3,000/mo",
+                              traditional: currency === 'INR' ? "₹20,000/mo" : "$600/mo",
                               adrolls: "Included"
                             }
                           ].map((row, i) => (
@@ -822,7 +822,7 @@ export default function LandingPage() {
                           <tr className="bg-slate-50/80 rounded-2xl">
                              <td className="py-6 px-4 text-lg text-[#003D6F] font-black uppercase">Total Monthly Value</td>
                              <td className="py-6 text-slate-500 text-lg line-through font-extrabold decoration-[#B22B31] decoration-2">
-                                {currency === 'INR' ? "₹3,70,000" : "$13,300"}
+                                {currency === 'INR' ? "₹1,49,000" : "$4,550"}
                              </td>
                              <td className="py-6 text-green-600 text-xl font-black flex items-center gap-2 bg-green-50 px-4 rounded-xl border border-green-100">
                                 <Sparkles className="w-5 h-5 text-[#F4B429]" /> Just {currency === 'INR' ? "₹9,999" : "$199"}
@@ -896,7 +896,7 @@ export default function LandingPage() {
                           </div>
                           <div>
                              <p className="text-xs text-blue-200 font-bold uppercase tracking-wider">Call or WhatsApp</p>
-                             <p className="text-sm font-bold text-white">+91 98101 23456</p>
+                             <p className="text-sm font-bold text-white">+91 82888 35235</p>
                           </div>
                        </div>
                        
