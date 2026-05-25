@@ -35,6 +35,43 @@ export default function AdsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [remarketSourceCampaign, setRemarketSourceCampaign] = useState<Campaign | null>(null)
+  const [activeExplorerCampaign, setActiveExplorerCampaign] = useState<Campaign | null>(null)
+  const [explorerData, setExplorerData] = useState<any>(null)
+  const [loadingExplorer, setLoadingExplorer] = useState(false)
+  const [expandedAdSets, setExpandedAdSets] = useState<string[]>([])
+  const [editingNode, setEditingNode] = useState<{
+    id: string;
+    type: 'campaign' | 'adset' | 'ad';
+    name: string;
+    budget?: number;
+    budgetType?: string;
+    creative?: {
+      id?: string;
+      imageHash?: string;
+      imageUrl?: string;
+      primaryText?: string;
+      headline?: string;
+      description?: string;
+      linkUrl?: string;
+      leadFormId?: string;
+      pageId?: string;
+    };
+    targeting?: {
+      locations: {
+        key: string;
+        name: string;
+        type: string;
+        radius?: number;
+        country_code?: string;
+      }[];
+    };
+  } | null>(null)
+  const [explorerAssetSelectorTarget, setExplorerAssetSelectorTarget] = useState<string | null>(null)
+  const [adsetSearchText, setAdsetSearchText] = useState('')
+  const [adsetSearchResults, setAdsetSearchResults] = useState<LocationOption[]>([])
+  const [isSearchingAdsetLocation, setIsSearchingAdsetLocation] = useState(false)
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
   const [selectedCreatives, setSelectedCreatives] = useState<SelectedCreative[]>([])
   const [showAssetSelector, setShowAssetSelector] = useState<{isOpen: boolean, type: 'library' | 'batch'}>({isOpen: false, type: 'library'})
   const [assetFilter, setAssetFilter] = useState<string>('All')
@@ -338,6 +375,21 @@ export default function AdsPage() {
     }, 500)
     return () => clearTimeout(delayDebounceFn)
   }, [locationSearchText, facebookToken])
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(async () => {
+        if (adsetSearchText.length > 2 && facebookToken) {
+            setIsSearchingAdsetLocation(true)
+            const res = await fetch(`/api/meta-ads/search-locations?q=${adsetSearchText}&token=${facebookToken}`)
+            const data = await res.json()
+            setAdsetSearchResults(data.data || [])
+            setIsSearchingAdsetLocation(false)
+        } else {
+            setAdsetSearchResults([])
+        }
+    }, 500)
+    return () => clearTimeout(delayDebounceFn)
+  }, [adsetSearchText, facebookToken])
   
   const handleToggleStatus = async (id: string, currentStatus: string) => {
       const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
@@ -465,41 +517,195 @@ export default function AdsPage() {
     }
   }
 
-  const handleRemarketing = async (campaign: Campaign) => {
-      setOrchestrator({
-          isOpen: true,
-          mode: 'remarketing',
-          campaign,
-          status: 'analyzing',
-          step: 1,
-          logs: [{ id: Date.now(), text: `Analyzing 100+ leads for ${campaign.name}...`, type: 'system' }],
-          variations: [],
-          selectedVariations: [],
-          winningImageUrls: [],
-          insight: '',
-          leadFormId: null,
-          batchId: null,
-          generationCount: 5,
-          style: 'hyper',
-          customInstructions: ''
-      });
-      try {
-          const res = await fetch('/api/meta-ads/remarketing-strategy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId: campaign.id, campaignName: campaign.name }) });
-          const data = await res.json();
-          if (data.status === 'success') {
-              setOrchestrator(prev => ({
-                  ...prev,
-                  status: 'presenting',
-                  insight: data.insight,
-                  variations: data.variations || [],
-                  logs: [...prev.logs, { id: Date.now(), text: data.insight, type: 'ai' }, { id: Date.now()+1, text: "I've prepared 3 retargeting strategies. Ready to generate assets?", type: 'system' }]
-              }));
-          } else {
-               setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: data.message || "Failed to analyze.", type: 'system' }]}));
-          }
-      } catch (e) {
-          setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: "Network error occurred.", type: 'system' }]}));
+  const handleRemarketing = (campaign: Campaign) => {
+      setRemarketSourceCampaign(campaign);
+      setIsModalOpen(true);
+  }
+
+  const handleOpenExplorer = async (campaign: Campaign) => {
+    setActiveExplorerCampaign(campaign)
+    setLoadingExplorer(true)
+    setExplorerData(null)
+    setEditingNode(null)
+    
+    const urlParams = new URLSearchParams(window.location.search)
+    const impersonateId = urlParams.get('impersonate')
+    
+    try {
+      const res = await fetch(`/api/meta-ads/campaign-details?campaignId=${campaign.id}${impersonateId ? `&impersonate=${impersonateId}` : ''}`)
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setExplorerData(data)
+        if (data.adsets?.length > 0) {
+          setExpandedAdSets([data.adsets[0].id])
+        }
+      } else {
+        toast.error(data.error || 'Failed to fetch campaign details.')
+        setActiveExplorerCampaign(null)
       }
+    } catch (e: any) {
+      toast.error('Failed to load campaign data: ' + e.message)
+      setActiveExplorerCampaign(null)
+    } finally {
+      setLoadingExplorer(false)
+    }
+  }
+
+  const handleToggleNodeStatus = async (nodeId: string, currentStatus: string, type: 'campaign' | 'adset' | 'ad') => {
+    const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE'
+    
+    setExplorerData((prev: any) => {
+      if (!prev) return prev
+      if (type === 'campaign') {
+        return { ...prev, campaign: { ...prev.campaign, status: newStatus } }
+      }
+      if (type === 'adset') {
+        const updatedAdsets = prev.adsets.map((as: any) => as.id === nodeId ? { ...as, status: newStatus } : as)
+        return { ...prev, adsets: updatedAdsets }
+      }
+      if (type === 'ad') {
+        const updatedAdsets = prev.adsets.map((as: any) => {
+          const updatedAds = as.ads.map((ad: any) => ad.id === nodeId ? { ...ad, status: newStatus } : ad)
+          return { ...as, ads: updatedAds }
+        })
+        return { ...prev, adsets: updatedAdsets }
+      }
+      return prev
+    })
+
+    const urlParams = new URLSearchParams(window.location.search)
+    const impersonateId = urlParams.get('impersonate')
+
+    try {
+      const res = await fetch(`/api/meta-ads/update-campaign-node${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nodeId, type, fields: { status: newStatus } })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast.success(`${type.toUpperCase()} status updated to ${newStatus}`)
+      
+      if (type === 'campaign') {
+        setCampaigns(prev => prev.map(c => c.id === nodeId ? { ...c, status: newStatus } : c))
+      }
+    } catch (e: any) {
+      toast.error('Failed to toggle status: ' + e.message)
+      setExplorerData((prev: any) => {
+        if (!prev) return prev
+        if (type === 'campaign') {
+          return { ...prev, campaign: { ...prev.campaign, status: currentStatus } }
+        }
+        if (type === 'adset') {
+          const updatedAdsets = prev.adsets.map((as: any) => as.id === nodeId ? { ...as, status: currentStatus } : as)
+          return { ...prev, adsets: updatedAdsets }
+        }
+        if (type === 'ad') {
+          const updatedAdsets = prev.adsets.map((as: any) => {
+            const updatedAds = as.ads.map((ad: any) => ad.id === nodeId ? { ...ad, status: currentStatus } : ad)
+            return { ...as, ads: updatedAds }
+          })
+          return { ...prev, adsets: updatedAdsets }
+        }
+        return prev
+      })
+    }
+  }
+
+  const handleSaveNodeEdit = async () => {
+    if (!editingNode || isSavingEdit) return
+    setIsSavingEdit(true)
+    
+    const urlParams = new URLSearchParams(window.location.search)
+    const impersonateId = urlParams.get('impersonate')
+
+    const fields: any = { name: editingNode.name }
+    if (editingNode.budget !== undefined) {
+      fields.budget = editingNode.budget
+      fields.budgetType = editingNode.budgetType
+    }
+    if (editingNode.type === 'ad' && editingNode.creative) {
+      fields.creative = editingNode.creative
+    }
+    if (editingNode.type === 'adset' && editingNode.targeting?.locations) {
+      const geo: any = { countries: [] };
+      editingNode.targeting.locations.forEach((loc: any) => {
+        if (loc.type === 'city') {
+          if (!geo.cities) geo.cities = [];
+          geo.cities.push({ key: loc.key, radius: loc.radius || 20, distance_unit: 'kilometer' });
+        } else if (loc.type === 'region') {
+          if (!geo.regions) geo.regions = [];
+          geo.regions.push({ key: loc.key });
+        } else if (loc.type === 'country') {
+          geo.countries.push(loc.country_code || loc.key);
+        } else if (loc.type === 'zip') {
+          if (!geo.zips) geo.zips = [];
+          geo.zips.push({ key: loc.key });
+        }
+      });
+      if (geo.countries.length === 0) delete geo.countries;
+      fields.targeting = { geo_locations: geo };
+    }
+
+    try {
+      const res = await fetch(`/api/meta-ads/update-campaign-node${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nodeId: editingNode.id, type: editingNode.type, fields })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      
+      toast.success('Edits saved successfully!')
+      
+      setExplorerData((prev: any) => {
+        if (!prev) return prev
+        if (editingNode.type === 'campaign') {
+          return { ...prev, campaign: { ...prev.campaign, name: editingNode.name, budget: editingNode.budget ?? prev.campaign.budget } }
+        }
+        if (editingNode.type === 'adset') {
+          const updatedAdsets = prev.adsets.map((as: any) => as.id === editingNode.id ? { 
+            ...as, 
+            name: editingNode.name, 
+            budget: editingNode.budget ?? as.budget,
+            targeting: editingNode.targeting ? {
+              geo_locations: {
+                cities: editingNode.targeting.locations.filter((l: any) => l.type === 'city').map((l: any) => ({ key: l.key, name: l.name, radius: l.radius || 20 })),
+                regions: editingNode.targeting.locations.filter((l: any) => l.type === 'region').map((l: any) => ({ key: l.key, name: l.name })),
+                countries: editingNode.targeting.locations.filter((l: any) => l.type === 'country').map((l: any) => l.country_code || l.key),
+                zips: editingNode.targeting.locations.filter((l: any) => l.type === 'zip').map((l: any) => ({ key: l.key }))
+              }
+            } : as.targeting
+          } : as)
+          return { ...prev, adsets: updatedAdsets }
+        }
+        if (editingNode.type === 'ad') {
+          const updatedAdsets = prev.adsets.map((as: any) => {
+            const updatedAds = as.ads.map((ad: any) => ad.id === editingNode.id ? { 
+              ...ad, 
+              name: editingNode.name,
+              creative: {
+                ...ad.creative,
+                ...(editingNode.creative || {})
+              }
+            } : ad)
+            return { ...as, ads: updatedAds }
+          })
+          return { ...prev, adsets: updatedAdsets }
+        }
+        return prev
+      })
+
+      if (editingNode.type === 'campaign') {
+        setCampaigns(prev => prev.map(c => c.id === editingNode.id ? { ...c, name: editingNode.name } : c))
+      }
+
+      setEditingNode(null)
+    } catch (e: any) {
+      toast.error('Failed to save edits: ' + e.message)
+    } finally {
+      setIsSavingEdit(false)
+    }
   }
 
   const handleRegenerateVariation = async (index: number) => {
@@ -691,6 +897,11 @@ export default function AdsPage() {
     formPayload.append('optimizeForConversions', adForm.optimizeForConversions.toString());
     formPayload.append('customQuestions', JSON.stringify(formQuestions));
 
+    if (remarketSourceCampaign) {
+      formPayload.append('sourceCampaignId', remarketSourceCampaign.id);
+      formPayload.append('sourceCampaignName', remarketSourceCampaign.name);
+    }
+
     let localFileIndex = 0;
     selectedCreatives.forEach((c) => {
       if (c.sourceType === 'inventory') formPayload.append('inventoryIds', c.id!);
@@ -702,11 +913,16 @@ export default function AdsPage() {
     });
     
     try {
-      const res = await fetch(`/api/meta-ads/launch-campaign${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { method: 'POST', body: formPayload })
+      const endpoint = remarketSourceCampaign 
+        ? `/api/meta-ads/launch-remarketing${impersonateId ? `?impersonate=${impersonateId}` : ''}`
+        : `/api/meta-ads/launch-campaign${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
+
+      const res = await fetch(endpoint, { method: 'POST', body: formPayload })
       const data = await res.json()
       if (res.ok) {
         alert(`${data.message}`);
         setIsModalOpen(false)
+        setRemarketSourceCampaign(null);
         setAdForm(prev => ({ ...prev, metaLocations: [], dailyBudgetINR: 500 })) 
         setSelectedCreatives([]);
         setFormQuestions([]);
@@ -751,7 +967,7 @@ export default function AdsPage() {
                     campaigns.map(campaign => (
                         <div key={campaign.id} className="bg-white p-6 rounded-[1.5rem] xs:rounded-[2rem] shadow-sm border border-slate-200/60 transition-all hover:shadow-lg hover:border-blue-200 flex flex-col h-full group">
                             <div className="flex justify-between items-start mb-4">
-                                <div className="max-w-[70%]"><h3 className="text-base font-bold text-slate-800 truncate leading-tight group-hover:text-blue-600 transition-colors">{campaign.name}</h3><div className="flex items-center gap-1.5 mt-2"><span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${campaign.status === 'ACTIVE' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>{campaign.status === 'ACTIVE' ? <PlayCircle size={10}/> : <PauseCircle size={10}/>} {campaign.status}</span></div></div>
+                                <div onClick={() => handleOpenExplorer(campaign)} className="max-w-[70%] cursor-pointer"><h3 className="text-base font-bold text-slate-800 truncate leading-tight group-hover:text-blue-600 transition-colors flex items-center gap-2">{campaign.name} <ExternalLink size={12} className="text-slate-300 group-hover:text-blue-400 transition-colors" /></h3><div className="flex items-center gap-1.5 mt-2"><span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${campaign.status === 'ACTIVE' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>{campaign.status === 'ACTIVE' ? <PlayCircle size={10}/> : <PauseCircle size={10}/>} {campaign.status}</span></div></div>
                                 <div className="flex items-center gap-2">{togglingId === campaign.id && <Loader2 size={14} className="animate-spin text-slate-400" />}<button onClick={() => handleToggleStatus(campaign.id, campaign.status)} className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${campaign.status === 'ACTIVE' ? 'bg-green-500 focus:ring-green-500' : 'bg-slate-200 focus:ring-slate-400'}`}><div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'}`} /></button></div>
                             </div>
                             <div className="flex-grow"></div>
@@ -771,7 +987,7 @@ export default function AdsPage() {
         )}
       </div>
         {orchestrator.isOpen && (
-          <div className="fixed inset-0 z-[90] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-300">
+          <div className="fixed inset-0 z-[999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-300">
               <div className="bg-white w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-2xl rounded-[2.5rem] p-6 sm:p-10 shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-8 overflow-hidden flex flex-col relative">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-purple-100 to-transparent rounded-bl-full opacity-50 pointer-events-none" />
                   <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100 relative z-10 shrink-0">
@@ -1232,8 +1448,601 @@ export default function AdsPage() {
           </div>
       )}
 
+      {activeExplorerCampaign && (
+        <div className="fixed inset-0 z-[999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-4xl h-[90vh] rounded-[2.5rem] p-6 sm:p-10 shadow-2xl flex flex-col overflow-hidden relative animate-in zoom-in-95 slide-in-from-bottom-8">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-blue-50 to-transparent rounded-bl-full opacity-50 pointer-events-none" />
+            
+            <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100 shrink-0 relative z-10">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <LayoutGrid className="text-blue-600 animate-pulse" /> Campaign Explorer & Editor
+                </h2>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
+                  Facebook Meta Integration
+                </p>
+              </div>
+              <button 
+                onClick={() => { setActiveExplorerCampaign(null); setExplorerData(null); }} 
+                className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {loadingExplorer ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-400">
+                <Loader2 size={36} className="animate-spin text-blue-600" />
+                <p className="text-sm font-black animate-pulse">Syncing campaign hierarchy from Meta...</p>
+              </div>
+            ) : explorerData ? (
+              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-6 relative z-10">
+                
+                {/* 1. Campaign Settings / Edit */}
+                <div className="bg-slate-50 border border-slate-200/60 p-6 rounded-[2rem] space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div className="flex-1">
+                      {editingNode && editingNode.id === explorerData.campaign.id ? (
+                        <div className="flex gap-2 items-center flex-wrap">
+                          <input 
+                            type="text" 
+                            value={editingNode.name} 
+                            onChange={(e) => setEditingNode({ ...editingNode, name: e.target.value })} 
+                            className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold w-full max-w-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                          />
+                          {explorerData.campaign.budgetType !== 'none' && (
+                            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl shadow-inner">
+                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Budget:</span>
+                              <input 
+                                type="number" 
+                                value={editingNode.budget || 0} 
+                                onChange={(e) => setEditingNode({ ...editingNode, budget: parseFloat(e.target.value) || 0 })} 
+                                className="bg-transparent border-0 outline-none text-xs font-bold w-24"
+                              />
+                            </div>
+                          )}
+                          <button 
+                            onClick={handleSaveNodeEdit} 
+                            disabled={isSavingEdit}
+                            className="bg-green-600 hover:bg-green-700 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center gap-1 shadow-sm disabled:opacity-50"
+                          >
+                            {isSavingEdit ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save
+                          </button>
+                          <button 
+                            onClick={() => setEditingNode(null)} 
+                            className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-500 text-xs font-bold py-2 px-4 rounded-xl"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-lg font-black text-slate-900">{explorerData.campaign.name}</h3>
+                          <button 
+                            onClick={() => setEditingNode({ id: explorerData.campaign.id, type: 'campaign', name: explorerData.campaign.name, budget: explorerData.campaign.budget, budgetType: explorerData.campaign.budgetType })} 
+                            className="text-slate-400 hover:text-blue-600 p-1"
+                          >
+                            <Settings2 size={14} />
+                          </button>
+                        </div>
+                      )}
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">Campaign ID: {explorerData.campaign.id}</p>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      {/* Budget */}
+                      {explorerData.campaign.budgetType !== 'none' && (
+                        <div className="text-right">
+                          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Advantage+ Budget</div>
+                          <div className="text-sm font-black text-slate-800">
+                            {currency === 'INR' ? '₹' : '$'}{explorerData.campaign.budget} / day
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Status */}
+                      <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200/80 shadow-sm">
+                        <span className={`text-[10px] uppercase font-black px-2 py-0.5 rounded-md ${explorerData.campaign.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {explorerData.campaign.status}
+                        </span>
+                        <button 
+                          onClick={() => handleToggleNodeStatus(explorerData.campaign.id, explorerData.campaign.status, 'campaign')}
+                          className={`w-10 h-6 rounded-full p-0.5 transition-colors duration-200 ease-in-out ${explorerData.campaign.status === 'ACTIVE' ? 'bg-green-500' : 'bg-slate-200'}`}
+                        >
+                          <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-200 ${explorerData.campaign.status === 'ACTIVE' ? 'translate-x-4' : 'translate-x-0'}`} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Metrics Summary */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100 flex flex-col justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><CreditCard size={14} className="text-slate-400" /> Spend</span>
+                    <span className="text-xl font-black text-slate-800">{currency === 'INR' ? '₹' : '$'}{explorerData.campaign.metrics.spend.toFixed(2)}</span>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100 flex flex-col justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Eye size={14} className="text-slate-400" /> Impressions</span>
+                    <span className="text-xl font-black text-slate-800">{explorerData.campaign.metrics.impressions.toLocaleString()}</span>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100 flex flex-col justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><MousePointerClick size={14} className="text-slate-400" /> Clicks</span>
+                    <span className="text-xl font-black text-slate-800">{explorerData.campaign.metrics.clicks.toLocaleString()} <span className="text-[10px] text-slate-400 font-semibold ml-1">({explorerData.campaign.metrics.ctr.toFixed(2)}% CTR)</span></span>
+                  </div>
+                  <div className="bg-blue-50 p-4 rounded-[1.5rem] border border-blue-100 shadow-sm flex flex-col justify-between">
+                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14} className="text-blue-400" /> Leads</span>
+                    <div>
+                      <span className="text-2xl font-black text-blue-700">{explorerData.campaign.metrics.leads}</span>
+                      {explorerData.campaign.metrics.leads > 0 && (
+                        <div className="text-[10px] text-blue-500 font-bold mt-1">
+                          {currency === 'INR' ? '₹' : '$'}{explorerData.campaign.metrics.cpl.toFixed(2)} / lead
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Hierarchy Section */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest px-1">Ad Sets & Ads Hierarchy</h4>
+                  
+                  {explorerData.adsets.length === 0 ? (
+                    <div className="text-center py-10 text-slate-400 bg-slate-50 rounded-2xl border border-slate-200 border-dashed">
+                      No Ad Sets found under this campaign.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {explorerData.adsets.map((adset: any) => {
+                        const isExpanded = expandedAdSets.includes(adset.id);
+                        return (
+                          <div key={adset.id} className="bg-white border border-slate-200/60 rounded-[2rem] p-4 sm:p-6 shadow-sm space-y-4">
+                            {/* Adset Row Header */}
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                              <div className="flex-1">
+                                {editingNode && editingNode.id === adset.id ? (
+                                  <div className="w-full bg-slate-50 border border-slate-200 rounded-[1.5rem] p-5 space-y-4 shadow-inner">
+                                    <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                                      <h6 className="text-xs font-black text-slate-800">Edit Ad Set Settings</h6>
+                                      <div className="flex gap-2">
+                                        <button 
+                                          onClick={handleSaveNodeEdit} 
+                                          disabled={isSavingEdit}
+                                          className="bg-green-600 hover:bg-green-700 text-white font-bold text-[10px] py-1.5 px-4 rounded-lg flex items-center gap-1 shadow-sm disabled:opacity-50"
+                                        >
+                                          {isSavingEdit ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Save Changes
+                                        </button>
+                                        <button 
+                                          onClick={() => { setEditingNode(null); setAdsetSearchText(''); setAdsetSearchResults([]); }} 
+                                          className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-500 text-[10px] font-bold py-1.5 px-4 rounded-lg"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                                      {/* Col 1: Name and Budget */}
+                                      <div className="space-y-3">
+                                        <div>
+                                          <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Ad Set Name</label>
+                                          <input 
+                                            type="text" 
+                                            value={editingNode.name} 
+                                            onChange={(e) => setEditingNode({ ...editingNode, name: e.target.value })} 
+                                            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold w-full outline-none focus:ring-2 focus:ring-blue-500/20"
+                                          />
+                                        </div>
+
+                                        {adset.budgetType !== 'none' && (
+                                          <div>
+                                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Daily Budget ({currency === 'INR' ? '₹' : '$'})</label>
+                                            <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-xl">
+                                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Budget:</span>
+                                              <input 
+                                                type="number" 
+                                                value={editingNode.budget || 0} 
+                                                onChange={(e) => setEditingNode({ ...editingNode, budget: parseFloat(e.target.value) || 0 })} 
+                                                className="bg-transparent border-0 outline-none text-xs font-bold w-full"
+                                              />
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* Col 2: Locations Targeting */}
+                                      <div className="space-y-3">
+                                        <div>
+                                          <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Target Locations</label>
+                                          {/* Render list of active editing locations */}
+                                          <div className="flex flex-wrap gap-1.5 mb-2 max-h-24 overflow-y-auto custom-scrollbar p-1 bg-white border border-slate-100 rounded-xl">
+                                            {(editingNode.targeting?.locations || []).length === 0 ? (
+                                              <span className="text-[10px] text-slate-400 italic p-1">No custom locations (Meta defaults)</span>
+                                            ) : (
+                                              editingNode.targeting?.locations.map((loc: any, idx: number) => (
+                                                <div key={idx} className="bg-blue-50/50 py-1 px-2.5 rounded-lg border border-blue-150 flex items-center gap-1 text-[10px]">
+                                                  <span className="font-bold text-blue-900 truncate max-w-[120px]">{loc.name}</span>
+                                                  <button 
+                                                    onClick={() => setEditingNode({
+                                                      ...editingNode,
+                                                      targeting: {
+                                                        locations: (editingNode.targeting?.locations || []).filter((_, i) => i !== idx)
+                                                      }
+                                                    })}
+                                                    className="hover:text-red-500 text-slate-400 p-0.5"
+                                                  >
+                                                    <X size={10} />
+                                                  </button>
+                                                </div>
+                                              ))
+                                            )}
+                                          </div>
+
+                                          {/* Search Locations box inside editingNode */}
+                                          <div className="relative">
+                                            <input 
+                                              type="text" 
+                                              value={adsetSearchText}
+                                              onChange={(e) => setAdsetSearchText(e.target.value)}
+                                              className="w-full bg-white hover:bg-slate-50 py-2 pl-8 pr-8 rounded-xl text-xs outline-none border border-slate-200 transition-all" 
+                                              placeholder="Search city to target..." 
+                                            />
+                                            <MapPin size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                            {isSearchingAdsetLocation && <Loader2 size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-blue-500" />}
+                                            
+                                            {adsetSearchResults.length > 0 && (
+                                              <div className="absolute z-[1010] w-full bg-white mt-1 rounded-xl shadow-xl border border-slate-100 max-h-40 overflow-y-auto custom-scrollbar">
+                                                {adsetSearchResults.map(loc => (
+                                                  <div 
+                                                    key={loc.key} 
+                                                    onClick={() => { 
+                                                      const currentList = editingNode.targeting?.locations || [];
+                                                      if (!currentList.some(l => l.key === loc.key)) {
+                                                        setEditingNode({
+                                                          ...editingNode,
+                                                          targeting: {
+                                                            locations: [...currentList, { key: loc.key, name: loc.name, type: loc.type, radius: 20, country_code: loc.country_code }]
+                                                          }
+                                                        });
+                                                      }
+                                                      setAdsetSearchText(''); 
+                                                      setAdsetSearchResults([]); 
+                                                    }} 
+                                                    className="p-2.5 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 text-left"
+                                                  >
+                                                    <div className="text-xs font-bold text-slate-800">{loc.name}</div>
+                                                    <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider mt-0.5">{loc.region ? `${loc.region}, ` : ''}{loc.country_code} ({loc.type})</div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h5 
+                                      onClick={() => {
+                                        setExpandedAdSets(prev => 
+                                          isExpanded ? prev.filter(id => id !== adset.id) : [...prev, adset.id]
+                                        );
+                                      }}
+                                      className="text-sm font-bold text-slate-800 cursor-pointer hover:text-blue-600 transition-colors flex items-center gap-1.5"
+                                    >
+                                      {adset.name}
+                                      <span className="text-[10px] text-slate-400 font-bold transition-transform duration-200">
+                                        {isExpanded ? '▲' : '▼'}
+                                      </span>
+                                    </h5>
+                                    <button 
+                                      onClick={() => {
+                                        const parsedLocations: any[] = [];
+                                        const geo = adset.targeting?.geo_locations;
+                                        if (geo) {
+                                          if (geo.cities) {
+                                            geo.cities.forEach((c: any) => {
+                                              parsedLocations.push({
+                                                key: c.key,
+                                                name: c.name || `City (Key: ${c.key})`,
+                                                type: 'city',
+                                                radius: c.radius || 20
+                                              });
+                                            });
+                                          }
+                                          if (geo.regions) {
+                                            geo.regions.forEach((r: any) => {
+                                              parsedLocations.push({
+                                                key: r.key,
+                                                name: r.name || `Region (Key: ${r.key})`,
+                                                type: 'region'
+                                              });
+                                            });
+                                          }
+                                          if (geo.countries) {
+                                            geo.countries.forEach((code: string) => {
+                                              parsedLocations.push({
+                                                key: code,
+                                                name: code === 'IN' ? 'India' : code,
+                                                type: 'country',
+                                                country_code: code
+                                              });
+                                            });
+                                          }
+                                          if (geo.zips) {
+                                            geo.zips.forEach((z: any) => {
+                                              parsedLocations.push({
+                                                key: z.key,
+                                                name: `ZIP Code ${z.key}`,
+                                                type: 'zip'
+                                              });
+                                            });
+                                          }
+                                        }
+                                        
+                                        setEditingNode({ 
+                                          id: adset.id, 
+                                          type: 'adset', 
+                                          name: adset.name, 
+                                          budget: adset.budget, 
+                                          budgetType: adset.budgetType,
+                                          targeting: { locations: parsedLocations }
+                                        });
+                                      }} 
+                                      className="text-slate-400 hover:text-blue-600 p-0.5"
+                                    >
+                                      <Settings2 size={12} />
+                                    </button>
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-3 mt-1.5">
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Ad Set ID: {adset.id}</span>
+                                  <span className="text-[9px] text-slate-300">•</span>
+                                  <span className="text-[9px] text-purple-600 font-bold uppercase tracking-wider">{adset.optimization_goal} ({adset.billing_event})</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-4 flex-wrap">
+                                {/* Budget */}
+                                {adset.budgetType !== 'none' && (
+                                  <div className="text-right">
+                                    <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Adset Budget</div>
+                                    <div className="text-xs font-black text-slate-700">
+                                      {currency === 'INR' ? '₹' : '$'}{adset.budget} / day
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Status */}
+                                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-xl border border-slate-100 shadow-inner">
+                                  <span className={`text-[9px] uppercase font-black px-1.5 py-0.5 rounded ${adset.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                                    {adset.status}
+                                  </span>
+                                  <button 
+                                    onClick={() => handleToggleNodeStatus(adset.id, adset.status, 'adset')}
+                                    className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 ease-in-out ${adset.status === 'ACTIVE' ? 'bg-green-500' : 'bg-slate-200'}`}
+                                  >
+                                    <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform duration-200 ${adset.status === 'ACTIVE' ? 'translate-x-4' : 'translate-x-0'}`} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Adset Metrics */}
+                            <div className="grid grid-cols-4 gap-2 bg-slate-50/50 p-3.5 rounded-[1.5rem] border border-slate-100 text-center">
+                              <div><div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Spend</div><div className="text-xs font-bold text-slate-700">{currency === 'INR' ? '₹' : '$'}{adset.metrics.spend.toFixed(1)}</div></div>
+                              <div><div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Clicks</div><div className="text-xs font-bold text-slate-700">{adset.metrics.clicks} <span className="text-[8px] text-slate-400">({adset.metrics.ctr.toFixed(1)}%)</span></div></div>
+                              <div><div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Leads</div><div className="text-xs font-bold text-blue-600">{adset.metrics.leads}</div></div>
+                              <div><div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">CPL</div><div className="text-xs font-bold text-slate-700">{adset.metrics.leads > 0 ? `${currency === 'INR' ? '₹' : '$'}${adset.metrics.cpl.toFixed(1)}` : '—'}</div></div>
+                            </div>
+
+                            {/* Expandable Ads Section */}
+                            {isExpanded && (
+                              <div className="pt-2 pl-2 sm:pl-4 border-l-2 border-slate-100 space-y-3 animate-in slide-in-from-top-2 duration-300">
+                                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Ads under this set ({adset.ads.length})</div>
+                                
+                                {adset.ads.length === 0 ? (
+                                  <div className="text-center py-4 text-xs text-slate-400 bg-slate-50/30 rounded-xl border border-dashed border-slate-200">
+                                    No ads found in this set.
+                                  </div>
+                                ) : (
+                                  adset.ads.map((ad: any) => (
+                                    <div key={ad.id} className="bg-slate-50/30 border border-slate-200/40 rounded-2xl p-4 hover:bg-slate-50 transition-colors">
+                                      {editingNode && editingNode.id === ad.id ? (
+                                        <div className="w-full space-y-4 py-2">
+                                          <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                                            <h6 className="text-xs font-black text-slate-800">Edit Ad Creative</h6>
+                                            <div className="flex gap-2">
+                                              <button 
+                                                onClick={handleSaveNodeEdit} 
+                                                disabled={isSavingEdit}
+                                                className="bg-green-600 hover:bg-green-700 text-white font-bold text-[10px] py-1.5 px-4 rounded-lg flex items-center gap-1 shadow-sm disabled:opacity-50"
+                                              >
+                                                {isSavingEdit ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Save Changes
+                                              </button>
+                                              <button 
+                                                onClick={() => setEditingNode(null)} 
+                                                className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-500 text-[10px] font-bold py-1.5 px-4 rounded-lg"
+                                              >
+                                                Cancel
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            {/* Column 1: Copy/Details */}
+                                            <div className="md:col-span-2 space-y-3">
+                                              <div>
+                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Ad Name</label>
+                                                <input 
+                                                  type="text" 
+                                                  value={editingNode.name} 
+                                                  onChange={(e) => setEditingNode({ ...editingNode, name: e.target.value })} 
+                                                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold w-full outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                />
+                                              </div>
+
+                                              <div>
+                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Headline</label>
+                                                <input 
+                                                  type="text" 
+                                                  value={editingNode.creative?.headline || ''} 
+                                                  onChange={(e) => setEditingNode({ 
+                                                    ...editingNode, 
+                                                    creative: { ...(editingNode.creative || {}), headline: e.target.value } 
+                                                  })} 
+                                                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold w-full outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                  placeholder="E.g. Call to Action headline"
+                                                />
+                                              </div>
+
+                                              <div>
+                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Primary Text (Ad Copy)</label>
+                                                <textarea 
+                                                  value={editingNode.creative?.primaryText || ''} 
+                                                  onChange={(e) => setEditingNode({ 
+                                                    ...editingNode, 
+                                                    creative: { ...(editingNode.creative || {}), primaryText: e.target.value } 
+                                                  })} 
+                                                  rows={3}
+                                                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold w-full outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+                                                  placeholder="Write compelling ad copy here..."
+                                                />
+                                              </div>
+
+                                              <div>
+                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Description (Optional)</label>
+                                                <input 
+                                                  type="text" 
+                                                  value={editingNode.creative?.description || ''} 
+                                                  onChange={(e) => setEditingNode({ 
+                                                    ...editingNode, 
+                                                    creative: { ...(editingNode.creative || {}), description: e.target.value } 
+                                                  })} 
+                                                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold w-full outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                  placeholder="E.g. Subtle additional context"
+                                                />
+                                              </div>
+                                            </div>
+
+                                            {/* Column 2: Creative Image */}
+                                            <div className="flex flex-col items-center justify-center bg-slate-50 border border-slate-200/60 rounded-2xl p-4 space-y-3">
+                                              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Creative Preview</div>
+                                              <div className="relative w-24 h-24 rounded-xl overflow-hidden border border-slate-200 shadow-inner bg-white flex items-center justify-center">
+                                                {editingNode.creative?.imageUrl ? (
+                                                  <img src={fixR2Url(editingNode.creative.imageUrl)} className="w-full h-full object-cover" />
+                                                ) : (
+                                                  <span className="text-[10px] text-slate-400 text-center px-1">No Image Selected</span>
+                                                )}
+                                              </div>
+                                              <div className="flex gap-2 flex-wrap justify-center">
+                                                <button 
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setExplorerAssetSelectorTarget(ad.id);
+                                                    setShowAssetSelector({ isOpen: true, type: 'library' });
+                                                  }}
+                                                  className="bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-[10px] py-1.5 px-3 rounded-lg border border-blue-100 transition-colors flex items-center gap-1"
+                                                >
+                                                  <ImageIcon size={10} /> Change Image
+                                                </button>
+                                                {editingNode.creative?.imageUrl && (
+                                                  <button 
+                                                    type="button"
+                                                    onClick={() => setPreviewImage({ isOpen: true, url: editingNode.creative!.imageUrl || '', title: editingNode.name })}
+                                                    className="bg-slate-150 hover:bg-slate-200 text-slate-700 font-bold text-[10px] py-1.5 px-3 rounded-lg border border-slate-200 transition-colors flex items-center gap-1"
+                                                  >
+                                                    <Maximize2 size={10} /> Large Preview
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-xs font-bold text-slate-700">{ad.name}</span>
+                                              <button 
+                                                onClick={() => setEditingNode({ 
+                                                  id: ad.id, 
+                                                  type: 'ad', 
+                                                  name: ad.name,
+                                                  creative: {
+                                                    id: ad.creative?.id || '',
+                                                    imageHash: ad.creative?.imageHash || '',
+                                                    imageUrl: ad.creative?.imageUrl || '',
+                                                    primaryText: ad.creative?.primaryText || '',
+                                                    headline: ad.creative?.headline || '',
+                                                    description: ad.creative?.description || '',
+                                                    linkUrl: ad.creative?.linkUrl || '',
+                                                    leadFormId: ad.creative?.leadFormId || '',
+                                                    pageId: ad.creative?.pageId || ''
+                                                  }
+                                                })} 
+                                                className="text-slate-400 hover:text-blue-600 p-0.5"
+                                              >
+                                                <Settings2 size={10} />
+                                              </button>
+                                            </div>
+                                            <div className="text-[8px] text-slate-400 font-bold uppercase tracking-wider mt-1">Ad ID: {ad.id}</div>
+                                          </div>
+
+                                          <div className="flex items-center gap-4 flex-wrap">
+                                            {/* Ad metrics */}
+                                            <div className="flex items-center gap-3 bg-white px-2.5 py-1 rounded-xl border border-slate-150 text-[9px] font-semibold text-slate-500">
+                                              <span>Spend: {currency === 'INR' ? '₹' : '$'}{ad.metrics.spend.toFixed(0)}</span>
+                                              <span className="text-slate-200">|</span>
+                                              <span>Leads: <b className="text-blue-600">{ad.metrics.leads}</b></span>
+                                            </div>
+
+                                            {/* Status */}
+                                            <div className="flex items-center gap-1.5 bg-white px-2 py-0.5 rounded-lg border border-slate-150 shadow-sm">
+                                              <span className={`text-[8px] uppercase font-black px-1 rounded ${ad.status === 'ACTIVE' ? 'bg-green-50 text-green-600' : 'bg-slate-150 text-slate-500'}`}>
+                                                {ad.status}
+                                              </span>
+                                              <button 
+                                                onClick={() => handleToggleNodeStatus(ad.id, ad.status, 'ad')}
+                                                className={`w-8 h-4.5 rounded-full p-0.5 transition-colors duration-205 ease-in-out ${ad.status === 'ACTIVE' ? 'bg-green-500' : 'bg-slate-200'}`}
+                                              >
+                                                <div className={`w-3.5 h-3.5 bg-white rounded-full shadow transform transition-transform duration-200 ${ad.status === 'ACTIVE' ? 'translate-x-3.5' : 'translate-x-0'}`} />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-10 text-sm text-slate-400">Failed to load campaign structure.</div>
+            )}
+
+            <div className="pt-4 border-t border-slate-100 shrink-0 flex justify-end relative z-10">
+              <button 
+                onClick={() => { setActiveExplorerCampaign(null); setExplorerData(null); }} 
+                className="bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-8 rounded-2xl shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1.5"
+              >
+                <CheckCircle size={14} /> Submit Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {statsModal.isOpen && statsModal.campaign && (
-          <div className="fixed inset-0 z-[90] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-[999] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
               <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95">
                   <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
                       <div>
@@ -1262,11 +2071,33 @@ export default function AdsPage() {
       )}
       
       {isModalOpen && (
-        <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[999] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-2xl rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 max-h-[90vh] flex flex-col overflow-hidden">
-            <div className="flex justify-between items-center p-6 bg-white border-b border-slate-100 flex-shrink-0"><h2 className="text-xl font-bold text-slate-900">AI Launchpad</h2><button onClick={() => setIsModalOpen(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button></div>
+            <div className="flex justify-between items-center p-6 bg-white border-b border-slate-100 flex-shrink-0">
+              <h2 className="text-xl font-bold text-slate-900">
+                {remarketSourceCampaign ? 'AI Retargeting Launchpad' : 'AI Launchpad'}
+              </h2>
+              <button 
+                onClick={() => { setIsModalOpen(false); setRemarketSourceCampaign(null); }} 
+                className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
             <div className="p-6 overflow-y-auto custom-scrollbar space-y-8">
               
+              {remarketSourceCampaign && (
+                <div className="bg-blue-50 border border-blue-100 p-5 rounded-[2rem] flex items-start gap-3">
+                  <Sparkles size={20} className="text-blue-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className="text-xs font-bold text-blue-900">Retargeting CRM Qualified Leads</h3>
+                    <p className="text-[11px] text-blue-700 mt-1 font-medium">
+                      This campaign will retarget all leads in your CRM at the Qualified, Appointment Booked, Appointment Done, or Closed stages.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-4"><ImageIcon size={16} /> Mix & Match Creatives</label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
@@ -1333,13 +2164,30 @@ export default function AdsPage() {
 
             </div>
 
-            <div className="p-6 bg-white border-t border-slate-100 flex-shrink-0"><button onClick={handleLaunchCampaign} disabled={isSubmitting || adForm.metaLocations.length === 0 || selectedCreatives.length === 0} className="w-full bg-slate-900 text-white py-4 sm:py-5 rounded-[1.5rem] text-sm sm:text-base font-bold flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 shadow-lg shadow-slate-900/20 hover:bg-slate-800">{isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Zap size={20} className="text-yellow-400" />} {isSubmitting ? 'AI Optimizing & Launching...' : 'Launch Smart Campaign'}</button></div>
+            <div className="p-6 bg-white border-t border-slate-100 flex-shrink-0">
+              <button 
+                onClick={handleLaunchCampaign} 
+                disabled={isSubmitting || adForm.metaLocations.length === 0 || selectedCreatives.length === 0} 
+                className="w-full bg-slate-900 text-white py-4 sm:py-5 rounded-[1.5rem] text-sm sm:text-base font-bold flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 shadow-lg shadow-slate-900/20 hover:bg-slate-800"
+              >
+                {isSubmitting ? (
+                  <Loader2 size={20} className="animate-spin" />
+                ) : (
+                  <Zap size={20} className="text-yellow-400" />
+                )}
+                {isSubmitting 
+                  ? 'AI Optimizing & Launching...' 
+                  : remarketSourceCampaign 
+                    ? 'Launch Retargeting Campaign' 
+                    : 'Launch Smart Campaign'}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {showAssetSelector.isOpen && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-4xl rounded-[2rem] shadow-2xl flex flex-col h-[80vh] overflow-hidden animate-in zoom-in-95 duration-300">
                 <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white"><h2 className="text-xl font-bold">Select Assets</h2><button onClick={() => setShowAssetSelector({isOpen: false, type: 'library'})} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={20} /></button></div>
                 <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/50">
@@ -1356,7 +2204,26 @@ export default function AdsPage() {
                                 {assets.filter(a => !a.master_creative_id && (assetFilter === 'All' || a.property_id === assetFilter)).map(a => {
                                     const isSelected = selectedCreatives.some(c => c.id === a.id);
                                     return (
-                                        <div key={a.id} onClick={() => { if (isSelected) removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid); else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Library' }]); }} className={`relative aspect-square rounded-[1.5rem] overflow-hidden border-[3px] transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}>
+                                        <div key={a.id} onClick={() => {
+                                            if (explorerAssetSelectorTarget) {
+                                                setEditingNode((prev: any) => {
+                                                    if (!prev || prev.id !== explorerAssetSelectorTarget) return prev;
+                                                    return {
+                                                        ...prev,
+                                                        creative: {
+                                                            ...(prev.creative || {}),
+                                                            imageUrl: a.url,
+                                                            imageHash: '' // clear imageHash so backend fetches it from URL
+                                                        }
+                                                    };
+                                                });
+                                                setShowAssetSelector({ isOpen: false, type: 'library' });
+                                                setExplorerAssetSelectorTarget(null);
+                                                return;
+                                            }
+                                            if (isSelected) removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid); 
+                                            else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Library' }]); 
+                                        }} className={`relative aspect-square rounded-[1.5rem] overflow-hidden border-[3px] transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}>
                                             <img src={fixR2Url(a.url)} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
                                             {isSelected && <div className="absolute top-3 right-3 bg-blue-500 text-white p-1 rounded-full shadow-md"><CheckCircle size={16} /></div>}
                                         </div>
@@ -1375,7 +2242,26 @@ export default function AdsPage() {
                                             {batchAssets.map(a => {
                                                 const isSelected = selectedCreatives.some(c => c.id === a.id);
                                                 return (
-                                                    <div key={a.id} onClick={() => { if (isSelected) removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid); else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Batch Asset' }]); }} className={`relative aspect-square rounded-xl overflow-hidden border-[3px] transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}>
+                                                    <div key={a.id} onClick={() => {
+                                                        if (explorerAssetSelectorTarget) {
+                                                            setEditingNode((prev: any) => {
+                                                                if (!prev || prev.id !== explorerAssetSelectorTarget) return prev;
+                                                                return {
+                                                                    ...prev,
+                                                                    creative: {
+                                                                        ...(prev.creative || {}),
+                                                                        imageUrl: a.url,
+                                                                        imageHash: '' // clear imageHash so backend fetches it from URL
+                                                                    }
+                                                                };
+                                                            });
+                                                            setShowAssetSelector({ isOpen: false, type: 'library' });
+                                                            setExplorerAssetSelectorTarget(null);
+                                                            return;
+                                                        }
+                                                        if (isSelected) removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid); 
+                                                        else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Batch Asset' }]); 
+                                                    }} className={`relative aspect-square rounded-xl overflow-hidden border-[3px] transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}>
                                                         <img src={fixR2Url(a.url)} className="w-full h-full object-cover" />
                                                         {isSelected && <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full"><CheckCircle size={12} /></div>}
                                                     </div>

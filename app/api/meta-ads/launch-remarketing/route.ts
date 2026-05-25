@@ -48,7 +48,7 @@ export async function POST(request: Request) {
         }
     }
 
-    // --- SUBSCRIPTION CHECK (Always deduct from the authenticated user, i.e., the agency) ---
+    // --- SUBSCRIPTION CHECK (Always deduct from the authenticated user) ---
     try {
         await checkLimitAndIncrement(user.id, 'campaign_launches');
     } catch (limitErr: any) {
@@ -74,6 +74,8 @@ export async function POST(request: Request) {
         data.customQuestions = formData.get('customQuestions')?.toString();
         data.inventoryIds = formData.getAll('inventoryIds').map(String);
         data.assetIds = formData.getAll('assetIds').map(String);
+        data.sourceCampaignId = formData.get('sourceCampaignId')?.toString();
+        data.sourceCampaignName = formData.get('sourceCampaignName')?.toString();
         
         data.creativeFiles = [];
         formData.forEach((value, key) => {
@@ -111,7 +113,9 @@ export async function POST(request: Request) {
         customQuestions: customQuestionsStr,
         inventoryIds = [],
         assetIds = [],
-        creativeFiles = []
+        creativeFiles = [],
+        sourceCampaignId,
+        sourceCampaignName = 'Campaign'
     } = data;
     
     const currency = targetProfile?.currency || 'INR';
@@ -128,41 +132,112 @@ export async function POST(request: Request) {
         );
     }
 
-    logToFile("=== STARTING AI CAMPAIGN LAUNCH (MULTI-CREATIVE) ===");
+    logToFile("=== STARTING AI RETARGETING CAMPAIGN LAUNCH ===");
 
-    // --- PRE-FLIGHT: CHECK AD ACCOUNT STATUS ---
-    try {
-        logToFile("--- 0. CHECKING AD ACCOUNT STATUS ---");
-        const accCheckRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}?fields=account_status,disable_reason,balance,currency`, {
-            headers: { 'Authorization': `Bearer ${facebookToken}` }
-        });
-        const accStatus = await accCheckRes.json();
-        
-        if (accStatus.error) {
-            logToFile("Ad Account Check Failed:", accStatus.error);
-        } else {
-            logToFile("Ad Account Status:", accStatus);
-            // account_status 1 = ACTIVE, 2 = DISABLED, 3 = UNSETTLED, 7 = PENDING_RISK_REVIEW, 8 = PENDING_SETTLEMENT
-            if (accStatus.account_status !== 1) {
-                const reasons: Record<number, string> = {
-                    2: "DISABLED (Check Meta Ads Manager for policy violations)",
-                    3: "UNSETTLED (There is an outstanding balance to be paid)",
-                    7: "PENDING_RISK_REVIEW (Meta is reviewing your account security)",
-                    8: "PENDING_SETTLEMENT (Waiting for last payment to clear)",
-                    101: "PENDING_CLOSURE",
-                    102: "CLOSED"
-                };
-                const reasonStr = reasons[accStatus.account_status as number] || `Status Code: ${accStatus.account_status}`;
-                logToFile(`⚠️ Ad Account is not Active: ${reasonStr}`);
-                
-                if (accStatus.account_status === 3) {
-                    logToFile("💡 Suggestion: Pay the outstanding balance in Meta Ads Manager.");
-                }
-            }
-        }
-    } catch (e) {
-        logToFile("Ad Account Pre-flight Error:", e);
+    // --- Step 0. Fetch Qualified CRM Leads ---
+    logToFile("--- 0a. FETCHING CRM LEADS ---");
+    const { data: qualifiedLeads, error: leadsErr } = await supabase
+        .from('leads')
+        .select('email, phone')
+        .eq('user_id', targetUserId)
+        .in('pipeline_stage', ['Qualified', 'Appointment booked', 'Appointment done', 'Closed']);
+
+    if (leadsErr) {
+        logToFile(`LEADS FETCH ERROR: ${leadsErr.message}`);
+        await refundLimit(user.id, 'campaign_launches');
+        return NextResponse.json({ error: `Failed to fetch qualified CRM leads: ${leadsErr.message}` }, { status: 500 });
     }
+
+    if (!qualifiedLeads || qualifiedLeads.length === 0) {
+        await refundLimit(user.id, 'campaign_launches');
+        return NextResponse.json({ 
+            error: "No qualified CRM leads found. You must have at least one lead in 'Qualified', 'Appointment booked', 'Appointment done', or 'Closed' stages to launch a retargeting campaign." 
+        }, { status: 400 });
+    }
+
+    logToFile(`Found ${qualifiedLeads.length} qualified CRM leads.`);
+
+    // --- Step 0b. Create Meta Custom Audience ---
+    logToFile("--- 0b. CREATING CUSTOM AUDIENCE ---");
+    const customAudienceName = `CRM Qualified Leads - ${sourceCampaignName} - ${new Date().toISOString().slice(0, 10)}`;
+    const customAudiencePayload = {
+        name: customAudienceName,
+        subtype: "CUSTOM",
+        customer_file_source: "USER_PROVIDED_ONLY",
+        description: `Dynamic retargeting audience of qualified leads from CRM for source campaign: ${sourceCampaignName}.`,
+        access_token: facebookToken
+    };
+
+    const audienceRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/customaudiences`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customAudiencePayload)
+    });
+
+    const audienceData = await audienceRes.json();
+    if (!audienceRes.ok) {
+        logToFile("❌ Custom Audience Creation Failed:", audienceData);
+        await refundLimit(user.id, 'campaign_launches');
+        const metaErr = audienceData.error?.message || "Unknown error";
+        return NextResponse.json({ error: `Meta Custom Audience Error: ${metaErr}` }, { status: 400 });
+    }
+
+    const customAudienceId = audienceData.id;
+    logToFile(`✅ Custom Audience Created: ${customAudienceId}`);
+
+    // --- Step 0c. Hash and Upload Contacts ---
+    logToFile("--- 0c. HASHING AND UPLOADING CONTACTS ---");
+    const crypto = await import('crypto');
+    const dataRows: string[][] = [];
+
+    const cleanAndHashPhone = (phoneStr: string) => {
+        const digits = phoneStr.replace(/[^0-9]/g, '');
+        if (!digits) return '';
+        return crypto.createHash('sha256').update(digits).digest('hex');
+    };
+
+    const hashEmail = (emailStr: string) => {
+        const clean = emailStr.trim().toLowerCase();
+        if (!clean) return '';
+        return crypto.createHash('sha256').update(clean).digest('hex');
+    };
+
+    for (const lead of qualifiedLeads) {
+        const emailHash = lead.email ? hashEmail(lead.email) : '';
+        const phoneHash = lead.phone ? cleanAndHashPhone(lead.phone) : '';
+        if (emailHash || phoneHash) {
+            dataRows.push([emailHash, phoneHash]);
+        }
+    }
+
+    if (dataRows.length === 0) {
+        await refundLimit(user.id, 'campaign_launches');
+        return NextResponse.json({ error: "None of the qualified CRM leads have a valid email or phone number to retarget." }, { status: 400 });
+    }
+
+    const uploadPayload = {
+        payload: {
+            schema: ["EMAIL", "PHONE"],
+            data: dataRows
+        },
+        access_token: facebookToken
+    };
+
+    const uploadRes = await fetch(`${FB_MARKETING_URL}/${customAudienceId}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(uploadPayload)
+    });
+
+    const uploadData = await uploadRes.json();
+    if (!uploadRes.ok) {
+        logToFile("❌ Custom Audience Leads Upload Failed:", uploadData);
+        await refundLimit(user.id, 'campaign_launches');
+        const metaErr = uploadData.error?.message || "Unknown error";
+        return NextResponse.json({ error: `Meta Leads Upload Error: ${metaErr}` }, { status: 400 });
+    }
+
+    logToFile(`✅ Uploaded ${uploadData.num_received} contacts to custom audience.`);
 
     try {
         // --- Step A: Get Source Data & Context ---
@@ -221,10 +296,6 @@ export async function POST(request: Request) {
                     const label = q.label.trim();
                     const lowerLabel = label.toLowerCase();
                     
-                    // NEW: Smart mapping to avoid SAQ (Short Answer Question) PII violations
-                    // Meta forbids custom short-answer questions for PII (like Company Name, City, etc.)
-                    // We map these to official pre-fill types if they look like standard info.
-                    
                     if (q.type !== 'MULTIPLE_CHOICE') {
                         if (lowerLabel.includes('company') || lowerLabel.includes('business name')) {
                             return { type: 'COMPANY_NAME', key: 'company_name' };
@@ -260,7 +331,6 @@ export async function POST(request: Request) {
                     return metaQ;
                 });
 
-                // Deduplicate questions (don't add COMPANY_NAME twice if it's already there)
                 const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
                 metaCustomQuestions = metaCustomQuestions.filter(q => {
                     if (q.type === 'CUSTOM') return true;
@@ -274,8 +344,9 @@ export async function POST(request: Request) {
             }
         }
 
-        const finalFollowUpUrl = linkUrl || "https://adrolls.in"; // Fallback to prevent API crash
+        const finalFollowUpUrl = linkUrl || "https://adrolls.in";
 
+        // Dynamic and Distinguishable Lead Form name based on custom questions
         const businessName = data.business_name || "Our Business";
         const questionLabels = metaCustomQuestions
             .map(q => q.label || q.type)
@@ -283,13 +354,13 @@ export async function POST(request: Request) {
             .map(label => label.replace(/[?:]/g, '').trim())
             .join(', ');
 
-        const formName = `Form - ${businessName} - (Name, Email, Phone${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
+        const formName = `Form - Retargeting - ${businessName} - (Name, Email, Phone${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
 
         const leadFormPayload: any = {
             name: formName,
             follow_up_action_url: finalFollowUpUrl, 
-            question_page_custom_headline: `Get Pricing & Details`,
-            question_page_custom_text: "Confirm details to view pricing.",
+            question_page_custom_headline: `Welcome Back! Get Premium Access`,
+            question_page_custom_text: "Confirm your details to get priority scheduling & exclusive pricing.",
             privacy_policy: { 
                 url: (privacyPolicyUrl && !privacyPolicyUrl.includes('localhost')) ? privacyPolicyUrl : "https://adrolls.in/privacy", 
                 link_text: "Privacy Policy" 
@@ -303,7 +374,7 @@ export async function POST(request: Request) {
             access_token: facebookToken
         };
 
-        logToFile("--- 2b. LEAD FORM PAYLOAD ---", leadFormPayload);
+        logToFile("--- 2b. RETARGETING LEAD FORM PAYLOAD ---", leadFormPayload);
 
         const formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
             method: 'POST',
@@ -316,7 +387,7 @@ export async function POST(request: Request) {
         const formCreateData = await formCreateRes.json();
 
         if (!formCreateRes.ok) {
-            logToFile("❌ Lead Form Creation Failed:", formCreateData);
+            logToFile("❌ Retargeting Lead Form Creation Failed:", formCreateData);
             const metaErrorMsg = formCreateData.error?.error_user_msg || formCreateData.error?.message || "Unknown Error";
             throw new Error(`Meta Lead Form Error: ${metaErrorMsg}`);
         }
@@ -344,7 +415,6 @@ export async function POST(request: Request) {
         } 
         
         if (initialImageUrls.length > 0) {
-            // Deduplicate URLs
             const uniqueUrls = Array.from(new Set(initialImageUrls));
             for (const url of uniqueUrls) {
                 const imageFetch = await fetch(url);
@@ -376,13 +446,11 @@ export async function POST(request: Request) {
         }
         logToFile(`✅ Uploaded ${metaCreativeHashes.length} creatives to Meta.`);
 
-        // --- Step D: AI Copywriting (Batch Processing) ---
-        logToFile("--- 4. AI COPYWRITING (BATCHING) ---");
+        // --- Step D: Retargeting AI Copywriting ---
+        logToFile("--- 4. RETARGETING AI COPYWRITING ---");
         
-        // Prepare Vision Inputs (Multimodal)
         const visionInputs: string[] = [];
         
-        // Add public URLs from inventory/assets (Converted to Base64 for reliability)
         if (inventoryIds.length > 0) {
              const { data: props } = await supabase.from('properties').select('image_url').in('id', inventoryIds);
              for (const p of (props || [])) {
@@ -413,13 +481,17 @@ export async function POST(request: Request) {
                  }
              }
         }
-        // Add Local files as Base64
         for (const file of creativeFiles) {
              const arr = await file.arrayBuffer();
              visionInputs.push(`data:${file.type};base64,${Buffer.from(arr).toString('base64')}`);
         }
 
         const contactInfo = data.contact_number || "";
+        const retargetingContext = `
+        This is a REMARKETING/RETARGETING campaign targeting qualified CRM leads who have previously interacted, shown interest, or requested details, but have not fully completed their transaction or scheduled their final appointment. 
+        Original Campaign Name: ${sourceCampaignName}. 
+        Use an extremely warm, trust-building, premium tone, referencing their existing interest, addressing potential friction/objections, and offering high-value follow-ups, priority access, or exclusive VIP tours/consultations.
+        `;
         
         let allCopyVariations: any[] = [];
         const BATCH_SIZE = 10;
@@ -431,18 +503,20 @@ export async function POST(request: Request) {
             const batchCount = batchEnd - batchStart;
 
             const batchPrompt = `
-            Act as a Senior Ad Creative Director. Craft exactly ${batchCount} distinct, highly persuasive ad copy variations for the ${batchCount} images provided in this batch.
+            Act as a Senior Ad Creative Director. Craft exactly ${batchCount} distinct, highly persuasive retargeting ad copy variations for the ${batchCount} images provided in this batch.
             
             Business Context:
             Name: ${businessName}
             Contact: ${contactInfo}
+            Retargeting Context: ${retargetingContext}
             Mission: ${combinedContext || "Quality services and products."}
             
             CRITICAL RULES:
             1. MANDATORY: INCLUDE BUSINESS NAME (${businessName}) AND CONTACT (${contactInfo}) IN EVERY VARIATION.
             2. DO NOT include URLs or hashtags.
             3. LENGTH: Moderate (max 400 chars).
-            4. FORMAT: Return ONLY a valid JSON array of objects.
+            4. TONE: Warm, objection-handling, trust-building. Focus on social proof or exclusive access.
+            5. FORMAT: Return ONLY a valid JSON array of objects.
             
             JSON Structure:
             [
@@ -470,48 +544,34 @@ export async function POST(request: Request) {
                 }
             } catch (e: any) {
                 logToFile(`❌ Batch ${batchStart / BATCH_SIZE + 1} Failed:`, e.message || e);
-                // Fallback for this batch
                 for (let k = 0; k < batchCount; k++) {
                     allCopyVariations.push({ 
-                        primary_text: "Exclusive Property Deal. Contact us for details.", 
-                        headline: "Limited Time Offer",
-                        description: "View details and pricing now."
+                        primary_text: `Welcome back to ${businessName}. As a qualified client, contact us to get priority pricing and scheduled viewings today!`, 
+                        headline: "Priority Premium Access",
+                        description: "Exclusive details for our registered clients."
                     });
                 }
             }
         }
 
         const copyVariations = allCopyVariations.length > 0 ? allCopyVariations : [
-            { primary_text: "Exclusive Property Deal. View pricing & details now.", headline: "View Details", description: "Special offer available today." }
+            { primary_text: `Welcome back to ${businessName}. Contact us today to receive registered client premium benefits.`, headline: "Exclusive Client Access", description: "View details and pricing now." }
         ];
 
         // --- Step E: Campaign ---
-        logToFile("--- 5. CAMPAIGN ---");
+        logToFile("--- 5. RETARGETING CAMPAIGN ---");
         
-        let propertyTitle = "";
-        if (inventoryIds.length > 0) {
-            try {
-                const { data: prop } = await supabase
-                    .from('properties')
-                    .select('title')
-                    .eq('id', inventoryIds[0])
-                    .single();
-                if (prop?.title) {
-                    propertyTitle = prop.title;
-                }
-            } catch (e) {}
-        }
-        
-        const campaignName = `${businessName} - ${propertyTitle || "AI Smart Campaign"} - ${new Date().toISOString().slice(0, 10)}`;
+        // Distinguishable Campaign Naming
+        const campaignName = `${businessName} - Retargeting - CRM Qualified Leads - ${sourceCampaignName} - ${new Date().toISOString().slice(0, 10)}`;
 
         const campaignPayload = {
             name: campaignName,
             objective: 'OUTCOME_LEADS', 
             status: 'ACTIVE', 
             buying_type: 'AUCTION',
-            daily_budget: Math.round(dailyBudget * 100), // Budget in smallest unit (Cents/Paise)
+            daily_budget: Math.round(dailyBudget * 100), 
             bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-            special_ad_categories: [], // Removed HOUSING category constraint
+            special_ad_categories: [], 
             access_token: facebookToken,
         };
 
@@ -566,17 +626,20 @@ export async function POST(request: Request) {
             }
         }
 
-        // --- Step F: Ad Set ---
+        // --- Step F: Ad Set targeting custom audience ---
         logToFile("--- 6. AD SET ---");
         const startTime = new Date(Date.now() + 30 * 60 * 1000).toISOString(); 
 
         const adSetPayload: any = {
-            name: `Smart AdSet - AI Audiences`,
+            name: `Retargeting AdSet - CRM Qualified Leads`,
             campaign_id: campaignId,
             destination_type: 'ON_AD', 
             optimization_goal: optimizeForConversions ? 'QUALITY_LEAD' : 'LEAD_GENERATION', 
             billing_event: 'IMPRESSIONS', 
-            targeting: targetingConfig,
+            targeting: {
+                ...targetingConfig,
+                custom_audiences: [{ id: customAudienceId }]
+            },
             promoted_object: { page_id: pageId },
             start_time: startTime, 
             status: 'ACTIVE',
@@ -614,22 +677,20 @@ export async function POST(request: Request) {
         let successfulAds = 0;
         let lastDraftError = null;
 
-        // Ensure we create exactly as many ads as selected creatives
         const totalAdsToCreate = metaCreativeHashes.length;
         
         for (let i = 0; i < totalAdsToCreate; i++) {
-            // Cycle through unique assets and unique copy
             const hash = metaCreativeHashes[i % metaCreativeHashes.length];
             const copy = copyVariations[i % copyVariations.length];
 
             // Create Creative
             const creativePayload = {
-                name: `Creative ${i + 1} - ${Date.now()}`,
+                name: `Retargeting Creative ${i + 1} - ${Date.now()}`,
                 object_story_spec: {
                     page_id: pageId, 
                     link_data: {
-                        message: copy.primary_text || "View our latest property.", 
-                        name: copy.headline || "View Details", 
+                        message: copy.primary_text || "Welcome back! View our exclusive client details.", 
+                        name: copy.headline || "VIP Premium Access", 
                         description: copy.description || "",
                         link: linkUrl, 
                         image_hash: hash, 
@@ -648,13 +709,10 @@ export async function POST(request: Request) {
             
             if (!creativeRes.ok) {
                 logToFile(`❌ Creative ${i+1} Failed:`, creativeData);
-                continue; // Skip to next if creative fails
+                continue; 
             }
 
-            // NEW: Persist generated copy back to assets table for future Strategist use
             try {
-                // Try to find the asset id for this hash
-                // Note: This is an approximation if multiple assets have same image
                 const assetId = assetIds[i % assetIds.length];
                 if (assetId) {
                     const fullCaption = `${copy.headline}\n\n${copy.primary_text}${copy.description ? `\n\n${copy.description}` : ''}`;
@@ -666,7 +724,7 @@ export async function POST(request: Request) {
 
             // Create Ad
             const adPayload = {
-                name: `AI Ad Variation ${i + 1}`,
+                name: `Retargeting AI Ad Variation ${i + 1}`,
                 adset_id: adSetId,
                 creative: { creative_id: creativeData.id },
                 status: 'ACTIVE', 
@@ -694,20 +752,19 @@ export async function POST(request: Request) {
              return NextResponse.json({ 
                 success: true, 
                 campaignId: campaignId, 
-                message: "Campaign DRAFTED! \n\n⚠️ Payment Method Missing: Saved in Ads Manager." 
+                message: "Retargeting Campaign DRAFTED! \n\n⚠️ Payment Method Missing: Saved in Ads Manager." 
             });
         }
 
         return NextResponse.json({ 
             success: true, 
             campaignId: campaignId, 
-            message: `Campaign Launched Successfully with ${successfulAds} AI Optimized Ads!` 
+            message: `Retargeting Campaign Launched Successfully with ${successfulAds} AI Optimized Ads!` 
         });
 
     } catch (error: any) {
         logToFile("!!! API CRASH !!!", error.message);
         
-        // REFUND: Give back the campaign launch credit if the process failed
         if (user?.id) {
             await refundLimit(user.id, 'campaign_launches');
         }
