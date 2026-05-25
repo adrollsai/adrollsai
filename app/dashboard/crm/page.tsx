@@ -213,10 +213,31 @@ export default function CRMPage() {
     }
   }
 
-  // Trigger initial fetch
+  // Trigger initial fetch & silent background auto-sync of Facebook leads
   useEffect(() => { 
-    fetchLeads()
-    checkPushSubscription()
+    const initCRM = async () => {
+      await fetchLeads()
+      checkPushSubscription()
+      
+      // Auto-sync leads from Facebook in the background silently
+      try {
+        const urlParams = new URLSearchParams(window.location.search)
+        const impersonateId = urlParams.get('impersonate')
+        const syncRes = await fetch(`/api/crm/sync${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        const syncData = await syncRes.json()
+        if (syncData.success && syncData.count > 0) {
+          // Silent refresh since new leads were imported & distributed
+          fetchLeads(true)
+        }
+      } catch (err) {
+        console.error("[CRM] Background auto-sync failed:", err)
+      }
+    }
+    
+    initCRM()
   }, [])
 
   // 2. SUPABASE REAL-TIME (Listen for Webhook Insertions)

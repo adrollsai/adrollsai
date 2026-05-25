@@ -82,6 +82,11 @@ export default function BottomNav() {
       return ['super_admin', 'agency'].includes(role)
     }
 
+    // Hide Distribute from admin accounts
+    if (item.name === 'Distribute') {
+      return ['super_admin', 'agency'].includes(role)
+    }
+
     // Team visibility
     if (item.name === 'Team') {
       return ['super_admin', 'agency', 'admin'].includes(role)

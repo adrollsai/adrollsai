@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('selected_page_token, selected_page_id')
+      .select('selected_page_token, selected_page_id, enable_distribution')
       .eq('id', targetUserId)
       .single()
 
@@ -52,33 +52,89 @@ export async function POST(request: Request) {
     );
     console.log(`Retrieved ${leads.length} leads from Meta API`);
 
-    let newCount = 0;
-    // Batch Upsert for Performance (200 at a time)
-    const BATCH_SIZE = 200;
-    for (let i = 0; i < leads.length; i += BATCH_SIZE) {
-        const chunk = leads.slice(i, i + BATCH_SIZE).map(lead => ({
-            user_id: targetUserId,
-            name: lead.name,
-            email: lead.email,
-            phone: lead.phone,
-            source: 'Facebook',
-            form_id: lead.form_id,
-            form_name: lead.form_name,
-            custom_fields: lead.custom_fields,
-            ad_name: lead.ad_name,
-            facebook_lead_id: lead.facebook_lead_id,
-            facebook_created_at: lead.facebook_created_at,
-            status: 'New', 
-            pipeline_stage: 'New'
-        }));
+    // 1. Fetch existing facebook_lead_ids to filter out duplicates in advance
+    const incomingLeadIds = leads.map(l => l.facebook_lead_id).filter(Boolean);
+    let trulyNewLeads = [...leads];
+    
+    if (incomingLeadIds.length > 0) {
+        const { data: existingLeads } = await supabase
+            .from('leads')
+            .select('facebook_lead_id')
+            .eq('user_id', targetUserId)
+            .in('facebook_lead_id', incomingLeadIds);
+            
+        const existingSet = new Set(existingLeads?.map(l => l.facebook_lead_id) || []);
+        trulyNewLeads = leads.filter(l => !existingSet.has(l.facebook_lead_id));
+    }
 
-        const { error } = await supabase.from('leads').upsert(chunk, { 
-            onConflict: 'facebook_lead_id',
-            ignoreDuplicates: true 
+    console.log(`Filtered out duplicates. Truly new leads to sync: ${trulyNewLeads.length}`);
+
+    // 2. Setup round robin pool and start index if distribution is enabled
+    let agentIds: string[] = [];
+    let currentAgentIndex = 0;
+
+    if (profile?.enable_distribution && trulyNewLeads.length > 0) {
+        const { data: teamData } = await supabase
+            .from('profiles')
+            .select('id')
+            .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
+            .in('role', ['admin', 'agent'])
+            .neq('id', targetUserId); // Exclude the owner
+
+        if (teamData && teamData.length > 0) {
+            agentIds = teamData.map(t => t.id);
+
+            // Find the last assigned agent to continue the sequence
+            const { data: lastAssignedLead } = await supabase
+                .from('leads')
+                .select('assigned_to')
+                .in('assigned_to', agentIds)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            const lastAssignedId = lastAssignedLead?.assigned_to;
+            if (lastAssignedId) {
+                const lastIdx = agentIds.indexOf(lastAssignedId);
+                if (lastIdx !== -1) {
+                    currentAgentIndex = (lastIdx + 1) % agentIds.length;
+                }
+            }
+        }
+    }
+
+    let newCount = 0;
+    // Batch Insert for Performance (200 at a time)
+    const BATCH_SIZE = 200;
+    for (let i = 0; i < trulyNewLeads.length; i += BATCH_SIZE) {
+        const chunk = trulyNewLeads.slice(i, i + BATCH_SIZE).map(lead => {
+            let assignedTo: string | null = null;
+            if (agentIds.length > 0) {
+                assignedTo = agentIds[currentAgentIndex];
+                currentAgentIndex = (currentAgentIndex + 1) % agentIds.length;
+            }
+            return {
+                user_id: targetUserId,
+                name: lead.name,
+                email: lead.email,
+                phone: lead.phone,
+                source: 'Facebook',
+                form_id: lead.form_id,
+                form_name: lead.form_name,
+                custom_fields: lead.custom_fields,
+                ad_name: lead.ad_name,
+                facebook_lead_id: lead.facebook_lead_id,
+                facebook_created_at: lead.facebook_created_at,
+                status: 'New', 
+                pipeline_stage: 'New',
+                assigned_to: assignedTo
+            };
         });
 
+        const { error } = await supabase.from('leads').insert(chunk);
+
         if (error) {
-            console.error(`Batch upsert error at index ${i}:`, error);
+            console.error(`Batch insert error at index ${i}:`, error);
         } else {
             newCount += chunk.length;
         }

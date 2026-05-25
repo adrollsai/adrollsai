@@ -75,6 +75,46 @@ export async function POST(request: Request) {
 
     let leadId = '';
     if (targetUserId) {
+      // Check if global distribution is enabled
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('enable_distribution')
+        .eq('id', targetUserId)
+        .single();
+
+      let assignedAgentId: string | null = null;
+      if (profile?.enable_distribution) {
+        const { data: teamData } = await supabaseAdmin
+          .from('profiles')
+          .select('id')
+          .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
+          .in('role', ['admin', 'agent'])
+          .neq('id', targetUserId); // Exclude the owner
+
+        if (teamData && teamData.length > 0) {
+          const agentIds = teamData.map(t => t.id);
+          
+          // Find the last assigned agent to continue round robin
+          const { data: lastAssignedLead } = await supabaseAdmin
+            .from('leads')
+            .select('assigned_to')
+            .in('assigned_to', agentIds)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const lastAssignedId = lastAssignedLead?.assigned_to;
+          let nextIndex = 0;
+          if (lastAssignedId) {
+            const lastIdx = agentIds.indexOf(lastAssignedId);
+            if (lastIdx !== -1) {
+              nextIndex = (lastIdx + 1) % agentIds.length;
+            }
+          }
+          assignedAgentId = agentIds[nextIndex];
+        }
+      }
+
       // 2. Insert Lead directly into the CRM database
       const { data: lead, error: leadError } = await supabaseAdmin
         .from('leads')
@@ -85,7 +125,8 @@ export async function POST(request: Request) {
           phone,
           notes: message,
           source: 'Landing Page Contact',
-          pipeline_stage: 'New'
+          pipeline_stage: 'New',
+          assigned_to: assignedAgentId
         })
         .select()
         .single();
@@ -94,12 +135,12 @@ export async function POST(request: Request) {
         console.error("[CONTACT API] Supabase CRM lead insert error:", leadError)
       } else if (lead) {
         leadId = lead.id;
-        console.log(`[CONTACT API] Lead created successfully: ${lead.id} assigned to ${targetUserId}`);
+        console.log(`[CONTACT API] Lead created successfully: ${lead.id} assigned to ${assignedAgentId || targetUserId}`);
         
-        // 3. Dispatch web push notification to target user
+        // 3. Dispatch web push notification to the assigned agent or workspace owner
         try {
           await sendPushNotification(
-            targetUserId,
+            assignedAgentId || targetUserId,
             "🔥 New Landing Page Query!",
             `${name} • ${phone} • Landing Page`,
             `/dashboard/crm/${lead.id}`
