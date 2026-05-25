@@ -55,6 +55,15 @@ export async function POST(request: Request) {
       caption
     );
     
+    // Log successful post in database
+    await supabase.from('posts').insert({
+      user_id: targetUserId,
+      title: 'Social Post',
+      content: caption || '',
+      image_url: imageUrl || null,
+      status: 'social_published'
+    })
+    
     return NextResponse.json({ success: true, postId: result.id })
 
   } catch (error: any) {

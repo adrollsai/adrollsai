@@ -11,6 +11,26 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Resolve Target User ID
+  const url = new URL(request.url);
+  const impersonateId = url.searchParams.get('impersonate');
+  const { data: ownProfile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
+  let targetUserId = user.id;
+
+  if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
+      targetUserId = (ownProfile?.parent_id || ownProfile?.agency_id) as string;
+  }
+
+  if (impersonateId && ['super_admin', 'agency', 'admin'].includes(ownProfile?.role || '')) {
+      if (ownProfile?.role !== 'super_admin') {
+          const { data: subAccount } = await supabase.from('profiles').select('id').eq('id', impersonateId).eq('agency_id', user.id).single();
+          if (subAccount) targetUserId = impersonateId;
+          else return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+      } else {
+          targetUserId = impersonateId;
+      }
+  }
+
   const body = await request.json()
   const { imageUrl, caption, type, platforms } = body
 
@@ -18,7 +38,7 @@ export async function POST(request: Request) {
   const { data: profile } = await supabase
     .from('profiles')
     .select('selected_page_token, selected_page_id, linkedin_token, linkedin_id')
-    .eq('id', user.id)
+    .eq('id', targetUserId)
     .single()
 
   if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
@@ -81,6 +101,18 @@ export async function POST(request: Request) {
   }
 
   await Promise.all(promises)
+
+  // Log successful post log if at least one platform dispatch succeeded
+  const hasSuccess = Object.values(results).some(val => val === 'success');
+  if (hasSuccess) {
+    await supabase.from('posts').insert({
+      user_id: targetUserId,
+      title: 'Social Post',
+      content: caption || '',
+      image_url: imageUrl || null,
+      status: 'social_published'
+    })
+  }
 
   return NextResponse.json({ 
     success: true, 
