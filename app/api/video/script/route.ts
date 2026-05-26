@@ -60,7 +60,7 @@ export async function POST(request: Request) {
 
         const { data: targetProfile } = await supabase
             .from('profiles')
-            .select('business_name, mission_statement, custom_prompt')
+            .select('business_name, mission_statement, custom_prompt, character_description')
             .eq('id', targetUserId)
             .single();
 
@@ -119,7 +119,7 @@ ${descriptionsText || 'No image descriptions provided.'}
 CONSTRAINTS & RULES:
 1. Duration: STRICTLY 30 seconds total, split into exactly TWO sequential 15-second clips (Scene 1: 0:00-0:15 and Scene 2: 0:15-0:30). High-energy, ultra-hooky, zero filler.
 2. Dialogue language: ${languageInstruction}
-3. Speaker Character: The speaker in both scenes MUST be a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion (unless the custom user instructions explicitly request a different profile or ethnicity) speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy. Her appearance must be identical and consistent across both scenes.
+3. Speaker Character: The speaker in both scenes MUST be ${profile?.character_description || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion"} (speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy). Their appearance must be identical and consistent across both scenes.
 4. Spoken Dialogue Tone: Make the dialogue extremely engaging, interactive, highly energetic, and trendy, matching the tone of viral TikTok/Reels UGC ads.
 5. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue. If the product info or call-to-action implies a phone number, the creator must ONLY say "get in touch" (or natural Hinglish equivalents like "humein contact karein" or "get in touch ho jao") instead. Under no circumstances should the spoken dialogue contain any digits, numbers, or spoken phone numbers.
 6. STRICT ENVIRONMENT CONSTRAINT (Prevents Hallucinations): Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images. Do NOT invent, assume, or hallucinate rooms, structures, product features, or details that are not shown in the reference photos. This must work generically for all businesses (e.g. if a real estate listing photo only shows a bedroom, only show the bedroom; if an e-commerce product photo only shows a bottle on a table, only show that bottle on a table).

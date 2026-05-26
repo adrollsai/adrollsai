@@ -862,6 +862,7 @@ export type Database = {
           linkedin_url: string | null
           linkedin_urn: string | null
           character_url: string | null
+          character_description: string | null
           logo_url: string | null
           mission_statement: string | null
           organization_id: string | null
@@ -918,6 +919,7 @@ export type Database = {
           linkedin_url?: string | null
           linkedin_urn?: string | null
           character_url?: string | null
+          character_description?: string | null
           logo_url?: string | null
           mission_statement?: string | null
           organization_id?: string | null
@@ -974,6 +976,7 @@ export type Database = {
           linkedin_url?: string | null
           linkedin_urn?: string | null
           character_url?: string | null
+          character_description?: string | null
           logo_url?: string | null
           mission_statement?: string | null
           organization_id?: string | null

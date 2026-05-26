@@ -85,7 +85,7 @@ export async function POST(request: Request) {
 
         const { data: targetProfile } = await supabase
             .from('profiles')
-            .select('business_name, mission_statement, custom_prompt, character_url')
+            .select('business_name, mission_statement, custom_prompt, character_url, character_description')
             .eq('id', targetUserId)
             .single();
 
@@ -121,7 +121,8 @@ export async function POST(request: Request) {
             console.log(`[Video Generate] Using custom uploaded character avatar from profile: ${avatarUrl}`);
         } else {
             try {
-                const avatarPrompt = "Professional chest-up studio headshot of a highly attractive, charismatic, and gorgeous young Indian female UGC creator with a fair complexion, smiling warmly. Wearing elegant smart casual clothes, sleek dark hair, bright clean minimalist background, professional studio lighting, natural photorealistic texture, cinematic look.";
+                const basePrompt = profile?.character_description || "a highly attractive, charismatic, and gorgeous young Indian female UGC creator with a fair complexion, smiling warmly";
+                const avatarPrompt = `Professional chest-up studio headshot of ${basePrompt}. Wearing elegant smart casual clothes, sleek hair, bright clean minimalist background, professional studio lighting, natural photorealistic texture, cinematic look.`;
                 const imgPayload = {
                     model: "gpt-image-2-text-to-image",
                     input: {
@@ -176,6 +177,18 @@ export async function POST(request: Request) {
         const prompts: string[] = [];
         const scenes = script.scenes || [{ dialogue: script.dialogue, visuals: script.visuals }];
         
+        const creatorAvatarDescription = profile?.character_description 
+            ? `Stunning close-up studio portrait of the custom character: ${profile.character_description}`
+            : "Stunning close-up studio portrait of a supermodel-like Indian female UGC creator with a fair complexion, smiling warmly.";
+
+        const characterConstraint = profile?.character_description
+            ? `The video MUST feature the exact same custom character described in Reference Image 1: ${profile.character_description}. They must speak directly to the camera with highly warm, expressive, and friendly gestures. Face, gender, hair, and style must perfectly match Reference Image 1.`
+            : "The video MUST feature the Indian female UGC creator shown in Reference Image 1. She must speak directly to the camera with highly warm, expressive, and friendly gestures. Her face, appearance, hair, and style must perfectly match Reference Image 1.";
+
+        const promptCharacterLine = profile?.character_description
+            ? `The exact same custom character (${profile.character_description}) from Reference Image 1 speaking directly to camera.`
+            : "The exact same stunning Indian female UGC creator from Reference Image 1 speaking directly to camera.";
+
         for (let i = 0; i < scenes.length; i++) {
             const scene = scenes[i];
             const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
@@ -190,20 +203,20 @@ User's brand style: "${brandGuidelines}"
 Custom instructions: "${customInstructions || 'None'}"
 
 Reference Image Descriptions:
-- Reference Image 1 (Creator Avatar): "Stunning close-up studio portrait of a supermodel-like Indian female UGC creator with a fair complexion, smiling warmly."
+- Reference Image 1 (Creator Avatar): "${creatorAvatarDescription}"
 ${descriptionsText.replace(/Reference Image (\d+)/g, (m: string, n: string) => `Reference Image ${parseInt(n) + 1}`)}
 
 YOUR INSTRUCTIONS:
 1. Generate a single highly detailed video prompt following the structure of the provided example exactly.
 2. The video MUST look super natural, organic, and have a UGC look (direct UGC look, shallow depth of field, handheld camera motion) by default.
-3. The video MUST feature the Indian female UGC creator shown in Reference Image 1. She must speak directly to the camera with highly warm, expressive, and friendly gestures. Her face, appearance, hair, and style must perfectly match Reference Image 1.
+3. ${characterConstraint}
 4. STRICT ENVIRONMENT CONSTRAINT (Prevents Hallucinations): Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images (Reference Image 2, 3, etc.). Do NOT invent, assume, or hallucinate rooms, structures, product features, or details that are not shown in the reference photos. For example, if the photos only show a bedroom, only show the bedroom; if the photos show a cosmetics bottle, only showcase that cosmetics bottle. This constraint is critical to prevent hallucinations across different business niches.
 5. Make the scene highly dynamic: constantly moving, featuring dynamic shot changes, handheld camera motion, fluid panning, and different angles narrating dialogues along the way in a highly expressive way. Every shot must feature camera movement and expressive physical storytelling.
 6. NO PHONE NUMBERS: Under no circumstances should the dialogue contain any digits or spoken phone numbers. Replace any phone numbers or digit blocks in the dialogue with the phrase "get in touch".
 7. DO NOT use abstract image placeholders like "@Image 1", "@Image 2", "Image 1", or "Image 2" in the prompt. Instead, replace them by describing the actual visual content of the corresponding image description.
 8. The video is a strict 15-second clip, so split the [Action Sequence] into SHOTs from 0:00 to 0:15 (e.g. SHOT 1 (0:00-0:03) ...).
 9. The dialogue from the script MUST be mapped precisely to the dialogue in the SHOTs in the [Action Sequence] as spoken words by the creator.
-10. CRITICAL: NEVER instruct in the prompt to display any text overlay, subtitles, captions, words, letters, watermarks, or logos on screen. Keep the entire frame completely clean of all graphic text.
+10. CRITICAL: NEVER instruct in the prompt to display any text overlay, subtitles, captions, watermarks, or logos on screen. Keep the entire frame completely clean of all graphic text.
 11. The [Negative Prompt] section MUST explicitly list negative text descriptors: "text, logo, watermark, subtitles, captions, words, signature, letters, overlay".
 
 OUTPUT FORMAT:
@@ -212,7 +225,7 @@ Provide the prompt output in the exact format shown below, starting with "[Aesth
 Example structure:
 [Aesthetic] UGC style. Naturalistic warm lighting, handheld camera movement.
 [Storyline] Part of an ad for ${businessName} demonstrating the product benefits.
-[Characters] The exact same stunning Indian female UGC creator from Reference Image 1 speaking directly to camera.
+[Characters] ${promptCharacterLine}
 [Environment] Modern clean setting showing [insert relevant image description here].
 [Action Sequence]
 SHOT 1 (0:00-0:03) Creator holding the product, pointing at the [insert image description here], panning in close. DIALOGUE: "..."
@@ -235,7 +248,7 @@ SHOT 4 (0:11-0:15) Creator smiling warmly, waving, camera panning back out. DIAL
                 const firstImageDesc = (imageDescriptions || script.imageDescriptions || [])[0] || 'the product';
                 finalPrompt = `[Aesthetic] UGC style.
 [Storyline] Product ad for ${businessName}.
-[Characters] The exact same stunning Indian female UGC creator from Reference Image 1 speaking directly to camera.
+[Characters] ${promptCharacterLine}
 [Environment] Modern clean setting showing ${firstImageDesc}.
 [Action Sequence]
 SHOT 1 (0:00-0:15) Beautiful charismatic Indian creator holding the product and talking directly to camera, handheld moving shots. DIALOGUE: "${scene.dialogue}"

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export async function POST(request: Request) {
   try {
@@ -74,6 +75,56 @@ export async function POST(request: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
+
+    // Check if character_url has changed and needs analysis
+    if (updates.character_url !== undefined) {
+      try {
+        const { data: existingProfile } = await supabaseAdmin
+          .from('profiles')
+          .select('character_url, character_description')
+          .eq('id', targetUserId)
+          .single()
+
+        if (!existingProfile || existingProfile.character_url !== updates.character_url) {
+          console.log(`[Profile Update API] Character URL changed from "${existingProfile?.character_url || ''}" to "${updates.character_url}". Starting Gemini Vision analysis...`)
+          if (updates.character_url) {
+            const imageRes = await fetch(updates.character_url)
+            if (imageRes.ok) {
+              const buffer = Buffer.from(await imageRes.arrayBuffer())
+              const mimeType = imageRes.headers.get('content-type') || 'image/jpeg'
+
+              const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!)
+              const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" })
+
+              const prompt = "You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata."
+
+              const result = await model.generateContent([
+                prompt,
+                {
+                  inlineData: {
+                    data: buffer.toString('base64'),
+                    mimeType
+                  }
+                }
+              ])
+
+              const desc = result.response.text()?.trim()
+              if (desc) {
+                console.log(`[Profile Update API] Character analyzed successfully: ${desc}`)
+                allowedUpdates.character_description = desc
+              }
+            } else {
+              console.error(`[Profile Update API] Failed to fetch character image from ${updates.character_url}`)
+            }
+          } else {
+            // If character_url was set to null/empty, clear the description too
+            allowedUpdates.character_description = null
+          }
+        }
+      } catch (analysisError) {
+        console.error("[Profile Update API] Character image analysis failed:", analysisError)
+      }
+    }
 
     const { data, error } = await supabaseAdmin
       .from('profiles')
