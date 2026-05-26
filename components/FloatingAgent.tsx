@@ -252,7 +252,11 @@ export default function FloatingAgent() {
 
       if (!endpoint) throw new Error(`No endpoint defined for tool: ${toolName}`)
 
-      const response = await fetch(endpoint, {
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      const targetUrl = impersonateId ? `${endpoint}?impersonate=${impersonateId}` : endpoint
+
+      const response = await fetch(targetUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(args)

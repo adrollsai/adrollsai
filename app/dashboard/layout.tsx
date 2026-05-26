@@ -20,15 +20,18 @@ function ImpersonationBanner() {
     }
 
     return (
-        <div className="fixed top-0 left-0 right-0 z-[100] bg-slate-900 text-white px-4 py-2 flex items-center justify-center gap-4 shadow-xl animate-in slide-in-from-top duration-300">
-            <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Viewing Client Account</span>
-            <button 
-                onClick={handleExit}
-                className="bg-white text-slate-900 px-3 py-1 rounded-full text-[10px] font-black hover:bg-slate-200 transition-colors flex items-center gap-1.5"
-            >
-                <XCircle size={14} /> Exit
-            </button>
-        </div>
+        <>
+            <div className="fixed top-0 left-0 right-0 z-[100] bg-slate-900 text-white px-4 py-2 flex items-center justify-center gap-4 shadow-xl animate-in slide-in-from-top duration-300">
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Viewing Client Account</span>
+                <button 
+                    onClick={handleExit}
+                    className="bg-white text-slate-900 px-3 py-1 rounded-full text-[10px] font-black hover:bg-slate-200 transition-colors flex items-center gap-1.5"
+                >
+                    <XCircle size={14} /> Exit
+                </button>
+            </div>
+            <div className="h-[38px] flex-shrink-0" />
+        </>
     )
 }
 

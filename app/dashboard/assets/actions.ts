@@ -71,7 +71,7 @@ RULES:
             genAI,
             [prompt, part],
             "gemini-3-flash-preview",
-            "gemini-1.5-flash"
+            null
         );
         const text = result.response.text();
 

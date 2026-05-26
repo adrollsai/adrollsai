@@ -12,8 +12,33 @@ const ffmpeg = require('fluent-ffmpeg');
 // Load environment variables for local development
 require('dotenv').config({ path: path.resolve(__dirname, '../.env.local') });
 
+const { fork } = require('child_process');
 const app = express();
 app.use(express.json());
+
+const renderTempDir = path.join(os.tmpdir(), 'adrolls_temp_renders');
+if (!fs.existsSync(renderTempDir)) {
+    fs.mkdirSync(renderTempDir, { recursive: true });
+}
+
+// Spawn separate static server child process to prevent single-process event loop blocking during renders
+console.log(`[Renderer] Spawning separate static file server on port 8081...`);
+const staticServerProcess = fork(path.resolve(__dirname, 'static-server.js'), [], {
+    stdio: 'inherit'
+});
+
+// Clean up static server child process when main process exits
+process.on('exit', () => {
+    staticServerProcess.kill();
+});
+process.on('SIGINT', () => {
+    staticServerProcess.kill();
+    process.exit();
+});
+process.on('SIGTERM', () => {
+    staticServerProcess.kill();
+    process.exit();
+});
 
 const PORT = process.env.PORT || 8080;
 
@@ -85,15 +110,56 @@ async function sendPushNotification(userId, title, body, url = '/dashboard/asset
     }
 }
 
-// Helper to probe video duration
-const getVideoDuration = (url) => {
-    return new Promise((resolve, reject) => {
-        ffmpeg.ffprobe(url, (err, metadata) => {
-            if (err) return reject(err);
-            resolve(metadata.format.duration);
-        });
-    });
-};
+function getMp4Duration(filePath) {
+    const fd = fs.openSync(filePath, 'r');
+    const stats = fs.statSync(filePath);
+    try {
+        let buffer = Buffer.alloc(Math.min(256 * 1024, stats.size));
+        fs.readSync(fd, buffer, 0, buffer.length, 0);
+        
+        let duration = parseMp4Buffer(buffer);
+        if (duration !== null) return duration;
+        
+        if (stats.size > buffer.length) {
+            const readSize = Math.min(512 * 1024, stats.size - buffer.length);
+            buffer = Buffer.alloc(readSize);
+            fs.readSync(fd, buffer, 0, buffer.length, stats.size - readSize);
+            duration = parseMp4Buffer(buffer);
+            if (duration !== null) return duration;
+        }
+    } catch (e) {
+        console.error("Failed to parse MP4 duration:", e);
+    } finally {
+        fs.closeSync(fd);
+    }
+    return null;
+}
+
+function parseMp4Buffer(buffer) {
+    let offset = 0;
+    while (offset < buffer.length - 8) {
+        const type = buffer.toString('ascii', offset + 4, offset + 8);
+        if (type === 'mvhd') {
+            const version = buffer.readUInt8(offset + 8);
+            let timescaleOffset = offset + 8 + 4;
+            if (version === 1) {
+                timescaleOffset += 16;
+                const timescale = buffer.readUInt32BE(timescaleOffset);
+                const durationHigh = buffer.readUInt32BE(timescaleOffset + 4);
+                const durationLow = buffer.readUInt32BE(timescaleOffset + 8);
+                const duration = (durationHigh * 4294967296) + durationLow;
+                return duration / timescale;
+            } else {
+                timescaleOffset += 8;
+                const timescale = buffer.readUInt32BE(timescaleOffset);
+                const duration = buffer.readUInt32BE(timescaleOffset + 4);
+                return duration / timescale;
+            }
+        }
+        offset += 1;
+    }
+    return null;
+}
 
 // Health Check
 app.get('/health', (req, res) => {
@@ -142,31 +208,64 @@ app.post('/render', async (req, res) => {
 
             console.log(`[Renderer] Asset status updated to 'Rendering' for: ${assetId}`);
 
-            // 2.5 Download remote videoUrl locally to prevent network seeking stutter during render
+            // 2.5 Download remote videoUrl locally
             console.log(`[Renderer] Downloading remote video to local storage: ${videoUrl}`);
-            tempSourcePath = path.join(os.tmpdir(), `source_${assetId}_${Date.now()}.mp4`);
+            const rawTempPath = path.join(renderTempDir, `raw_${assetId}_${Date.now()}.mp4`);
             const fetchRes = await fetch(videoUrl);
             if (!fetchRes.ok) {
                 throw new Error(`Failed to download remote source video. HTTP status: ${fetchRes.status}`);
             }
             const buffer = await fetchRes.arrayBuffer();
-            fs.writeFileSync(tempSourcePath, Buffer.from(buffer));
-            console.log(`[Renderer] Video downloaded successfully to local path: ${tempSourcePath}`);
+            fs.writeFileSync(rawTempPath, Buffer.from(buffer));
+            console.log(`[Renderer] Video downloaded successfully to local raw path: ${rawTempPath}`);
 
-            // Format local path for headless Chromium compatibility
-            const isWindows = process.platform === 'win32';
-            const localVideoUrl = isWindows 
-                ? `file:///${tempSourcePath.replace(/\\/g, '/')}` 
-                : `file://${tempSourcePath}`;
-            console.log(`[Renderer] Local video file URL for Chromium: ${localVideoUrl}`);
+            // Transcode the video using ffmpeg to make every frame a keyframe (GOP = 1)
+            // This ensures frame-accurate, instantaneous seeks inside Chromium and completely resolves video stuttering/glitching!
+            tempSourcePath = path.join(renderTempDir, `source_${assetId}_${Date.now()}.mp4`);
+            console.log(`[Renderer] Transcoding video to intra-frame-only (GOP=1) to prevent seek stutter...`);
+            
+            const ffmpegPath = require('ffmpeg-static');
+            const transcodeCmd = `"${ffmpegPath}" -y -fflags +genpts -i "${rawTempPath}" -vf "settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p" -af "asetpts=PTS-STARTPTS" -c:v libx264 -r 30 -g 30 -c:a aac -preset superfast -crf 18 "${tempSourcePath}"`;
+            
+            console.log(`[Renderer] Running transcode command: ${transcodeCmd}`);
+            
+            await new Promise((resolveTranscode, rejectTranscode) => {
+                const { exec } = require('child_process');
+                exec(transcodeCmd, (err, stdout, stderr) => {
+                    if (err) {
+                        console.error(`[Renderer] Transcode failed:`, err);
+                        console.error(`[Renderer] Transcode stderr:`, stderr);
+                        rejectTranscode(err);
+                    } else {
+                        console.log(`[Renderer] Transcode completed successfully!`);
+                        resolveTranscode();
+                    }
+                });
+            });
+
+            // Clean up the raw download file
+            try {
+                if (fs.existsSync(rawTempPath)) {
+                    fs.unlinkSync(rawTempPath);
+                }
+            } catch (e) {}
+
+            // Format local path as a 127.0.0.1 HTTP URL for headless Chromium compatibility to bypass CORS / same-origin restrictions on file:// resources
+            const localVideoUrl = `http://127.0.0.1:8081/static/${path.basename(tempSourcePath)}`;
+            console.log(`[Renderer] Local video HTTP URL for Chromium: ${localVideoUrl}`);
 
             // 3. Detect Video Duration using local file path
             let duration = 30; // fallback
             try {
-                duration = await getVideoDuration(tempSourcePath);
-                console.log(`[Renderer] Probe succeeded on local file. Duration: ${duration} seconds.`);
+                const parsedDuration = getMp4Duration(tempSourcePath);
+                if (parsedDuration !== null) {
+                    duration = parsedDuration;
+                    console.log(`[Renderer] Binary header probe succeeded on local file. Duration: ${duration} seconds.`);
+                } else {
+                    console.warn(`[Renderer] Binary header probe returned null. Using fallback 30s.`);
+                }
             } catch (probeErr) {
-                console.warn(`[Renderer] Probe failed on local file. Using fallback 30s.`, probeErr.message);
+                console.warn(`[Renderer] Binary header probe failed. Using fallback 30s.`, probeErr.message);
             }
 
             // 4. Bundle composition
@@ -205,10 +304,16 @@ app.post('/render', async (req, res) => {
                 codec: "h264",
                 outputLocation,
                 inputProps: { videoUrl: localVideoUrl, captions, effects, theme, profile },
+                concurrency: 1, // Force serial rendering to prevent system OOM / Puppeteer process crashes on Windows
                 chromiumOptions: {
                     gl: 'angle',
                     ignoreDefaultArgs: ['--mute-audio'],
-                    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+                    args: [
+                        '--no-sandbox', 
+                        '--disable-setuid-sandbox', 
+                        '--disable-dev-shm-usage',
+                        '--allow-file-access-from-files'
+                    ],
                 },
                 onProgress: ({ progress }) => {
                     console.log(`[Renderer] Render progress: ${Math.round(progress * 100)}%`);

@@ -1,4 +1,4 @@
-import { AbsoluteFill, Video, useVideoConfig, useCurrentFrame, interpolate, spring } from 'remotion';
+import { AbsoluteFill, OffthreadVideo, useVideoConfig, useCurrentFrame, interpolate, spring } from 'remotion';
 import React from 'react';
 import { loadFont } from "@remotion/google-fonts/Montserrat";
 
@@ -106,7 +106,7 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                 position: 'absolute',
                 inset: 0,
             }}>
-                <Video src={videoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <OffthreadVideo src={videoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
 
             {/* Glowing Neon Vignette Border */}
@@ -253,7 +253,35 @@ const RemotionOutro: React.FC<{
     frame: number;
     fps: number;
 }> = ({ profile, theme, frame, fps }) => {
-    const brandColor = profile?.brand_color || '#3b82f6';
+    // Helper to check luminance of brand color
+    const getLuminance = (hex: string) => {
+        try {
+            const color = hex.replace('#', '');
+            if (color.length !== 6) return 0.5;
+            const r = parseInt(color.substring(0, 2), 16) / 255;
+            const g = parseInt(color.substring(2, 4), 16) / 255;
+            const b = parseInt(color.substring(4, 6), 16) / 255;
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        } catch (e) {
+            return 0.5;
+        }
+    };
+
+    // Helper to darken a color for high contrast readability on white background
+    const darkenColor = (hex: string, factor = 0.5) => {
+        try {
+            const color = hex.replace('#', '');
+            if (color.length !== 6) return '#1e3a8a';
+            const r = Math.max(0, Math.floor(parseInt(color.substring(0, 2), 16) * factor));
+            const g = Math.max(0, Math.floor(parseInt(color.substring(2, 4), 16) * factor));
+            const b = Math.max(0, Math.floor(parseInt(color.substring(4, 6), 16) * factor));
+            return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+        } catch (e) {
+            return '#1e3a8a';
+        }
+    };
+
+    const displayBrandColor = profile?.brand_color || '#3b82f6';
     
     const opacity = spring({
         frame,
@@ -272,27 +300,70 @@ const RemotionOutro: React.FC<{
     const contactNumber = profile?.contact_number;
     const address = profile?.address;
 
+    // Dynamically retrieve subtitle from profile mission statement
+    const missionStatement = profile?.mission_statement;
+    const firstLineOfMission = missionStatement ? missionStatement.split('\n')[0].trim() : '';
+    
+    // Check if subtitle is redundant or doesn't make sense (e.g. contains 'about' or business name)
+    const isRedundant = firstLineOfMission.toLowerCase().includes('about') || 
+                        firstLineOfMission.toLowerCase().includes(businessName.toLowerCase()) || 
+                        firstLineOfMission.toLowerCase() === 'mission statement';
+                        
+    const subtitle = isRedundant ? "" : firstLineOfMission;
+
+    // Frame-based mathematics for floating dynamic background orbs
+    const orb1X = Math.sin(frame * 0.02) * 80;
+    const orb1Y = Math.cos(frame * 0.015) * 60;
+    const orb2X = Math.cos(frame * 0.025) * 90;
+    const orb2Y = Math.sin(frame * 0.02) * 70;
+    const orb3X = Math.sin(frame * 0.018) * 110;
+    const orb3Y = Math.cos(frame * 0.022) * 80;
+
     return (
         <AbsoluteFill style={{
-            backgroundColor: '#FFFFFF',
+            backgroundColor: '#F8FAFC', // Premium light off-white background
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#111827',
+            color: '#0F172A', // Dark high-contrast slate text
             fontFamily: 'Outfit, sans-serif',
-            padding: '60px 40px',
+            padding: '80px 60px',
             opacity,
+            overflow: 'hidden',
         }}>
+            {/* Dynamic Moving Orbs in the background */}
+            <div style={{
+                position: 'absolute',
+                width: '750px',
+                height: '750px',
+                borderRadius: '50%',
+                background: `radial-gradient(circle, ${displayBrandColor}28 0%, rgba(255,255,255,0) 70%)`,
+                top: `calc(20% + ${orb1Y}px)`,
+                left: `calc(15% + ${orb1X}px)`,
+                filter: 'blur(40px)',
+                zIndex: 0,
+            }} />
+            <div style={{
+                position: 'absolute',
+                width: '850px',
+                height: '850px',
+                borderRadius: '50%',
+                background: `radial-gradient(circle, ${displayBrandColor}18 0%, rgba(255,255,255,0) 70%)`,
+                top: `calc(55% + ${orb2Y}px)`,
+                left: `calc(65% + ${orb2X}px)`,
+                filter: 'blur(50px)',
+                zIndex: 0,
+            }} />
             <div style={{
                 position: 'absolute',
                 width: '650px',
                 height: '650px',
                 borderRadius: '50%',
-                background: `radial-gradient(circle, ${brandColor}15 0%, rgba(255,255,255,0) 70%)`,
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
+                background: `radial-gradient(circle, #FFE60012 0%, rgba(255,255,255,0) 70%)`,
+                top: `calc(80% + ${orb3Y}px)`,
+                left: `calc(30% + ${orb3X}px)`,
+                filter: 'blur(30px)',
                 zIndex: 0,
             }} />
 
@@ -308,29 +379,29 @@ const RemotionOutro: React.FC<{
                     <img 
                         src={logoUrl} 
                         style={{
-                            width: '190px',
-                            height: '190px',
-                            borderRadius: '36px',
+                            width: '270px',
+                            height: '270px',
+                            borderRadius: '54px',
                             objectFit: 'cover',
-                            marginBottom: '35px',
-                            boxShadow: `0 20px 45px ${brandColor}44`,
-                            border: `4px solid ${brandColor}`,
+                            marginBottom: '45px',
+                            boxShadow: `0 30px 60px ${displayBrandColor}22`,
+                            border: `5px solid ${displayBrandColor}`,
                         }} 
                     />
                 ) : (
                     <div style={{
-                        width: '190px',
-                        height: '190px',
-                        borderRadius: '36px',
-                        background: `linear-gradient(135deg, ${brandColor} 0%, #1f2937 100%)`,
+                        width: '270px',
+                        height: '270px',
+                        borderRadius: '54px',
+                        background: `linear-gradient(135deg, ${displayBrandColor} 0%, #1f2937 100%)`,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '76px',
+                        fontSize: '110px',
                         fontWeight: 'black',
-                        marginBottom: '35px',
-                        boxShadow: `0 20px 45px ${brandColor}33`,
-                        border: '4px solid rgba(0,0,0,0.06)',
+                        marginBottom: '45px',
+                        boxShadow: `0 30px 60px ${displayBrandColor}22`,
+                        border: '5px solid rgba(0,0,0,0.05)',
                         color: 'white',
                     }}>
                         {businessName.charAt(0).toUpperCase()}
@@ -338,61 +409,63 @@ const RemotionOutro: React.FC<{
                 )}
 
                 <h1 style={{
-                    fontSize: '66px',
-                    fontWeight: 900,
-                    marginBottom: '15px',
+                    fontSize: '85px',
+                    fontWeight: 950,
+                    marginBottom: '20px',
                     letterSpacing: '-0.04em',
                     textTransform: 'uppercase',
-                    background: `linear-gradient(to right, #111827, ${brandColor})`,
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
+                    color: '#0F172A', // Solid, high-contrast deep dark slate
                     lineHeight: 1.1,
                 }}>
                     {businessName}
                 </h1>
 
-                <p style={{
-                    fontSize: '26px',
-                    color: '#4b5563',
-                    fontWeight: 600,
-                    marginBottom: '45px',
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                }}>
-                    Creative Marketing Partner
-                </p>
+                {subtitle && (
+                    <p style={{
+                        fontSize: '36px',
+                        color: '#1E293B', // High contrast slate-800
+                        fontWeight: 800,
+                        marginBottom: '55px',
+                        letterSpacing: '0.08em',
+                        textTransform: 'uppercase',
+                    }}>
+                        {subtitle}
+                    </p>
+                )}
 
                 <div style={{
-                    width: '130px',
-                    height: '5px',
-                    background: brandColor,
-                    borderRadius: '3px',
-                    marginBottom: '45px',
+                    width: '200px',
+                    height: '6px',
+                    background: '#1E293B', // Darker solid line for strong separator contrast
+                    borderRadius: '4px',
+                    marginBottom: '55px',
                 }} />
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '22px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', alignItems: 'center' }}>
                     {contactNumber && (
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '12px',
-                            fontSize: '44px',
-                            fontWeight: 800,
-                            color: '#1f2937',
+                            gap: '16px',
+                            fontSize: '60px',
+                            fontWeight: 950, // Extra bold
+                            color: '#0F172A',
+                            textShadow: '0 2px 4px rgba(0,0,0,0.05)',
                         }}>
-                            📞 <span style={{ color: brandColor }}>{contactNumber}</span>
+                            📞 <span style={{ color: '#0F172A' }}>{contactNumber}</span>
                         </div>
                     )}
                     {address && (
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '12px',
-                            fontSize: '28px',
-                            fontWeight: 500,
-                            color: '#4b5563',
-                            maxWidth: '680px',
+                            gap: '14px',
+                            fontSize: '36px',
+                            fontWeight: 700,
+                            color: '#1E293B', // Very bold and dark for readability
+                            maxWidth: '820px',
                             lineHeight: 1.4,
+                            textShadow: '0 1px 2px rgba(0,0,0,0.02)',
                         }}>
                             📍 {address}
                         </div>

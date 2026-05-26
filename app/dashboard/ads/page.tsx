@@ -397,7 +397,9 @@ export default function AdsPage() {
       const updatedCampaigns = campaigns.map(c => c.id === id ? { ...c, status: newStatus } : c);
       setCampaigns(updatedCampaigns);
       try {
-          const res = await fetch('/api/meta-ads/update-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId: id, newStatus }) });
+          const urlParams = new URLSearchParams(window.location.search)
+          const impersonateId = urlParams.get('impersonate')
+          const res = await fetch(`/api/meta-ads/update-status${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId: id, newStatus }) });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
       } catch (error: any) {

@@ -26,11 +26,45 @@ export async function POST(request: Request) {
             property = data;
         }
 
-        const { data: profile } = await supabase
+        const url = new URL(request.url)
+        const impersonateId = url.searchParams.get('impersonate')
+
+        const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+        let targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
+          ? (currentProfile.agency_id || currentProfile.parent_id) 
+          : user.id
+
+        if (impersonateId) {
+            if (['super_admin', 'agency', 'admin'].includes(currentProfile?.role || '')) {
+                if (currentProfile?.role !== 'super_admin') {
+                    const isParent = (currentProfile?.agency_id === impersonateId || currentProfile?.parent_id === impersonateId);
+                    const { data: subAccount } = await supabase
+                      .from('profiles')
+                      .select('id')
+                      .eq('id', impersonateId)
+                      .eq('agency_id', currentProfile?.agency_id || user.id)
+                      .single()
+
+                    if (isParent || subAccount) {
+                        targetUserId = impersonateId
+                    } else {
+                        return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
+                    }
+                } else {
+                    targetUserId = impersonateId
+                }
+            } else {
+                return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
+            }
+        }
+
+        const { data: targetProfile } = await supabase
             .from('profiles')
             .select('business_name, mission_statement, custom_prompt')
-            .eq('id', user.id)
+            .eq('id', targetUserId)
             .single();
+
+        const profile = targetProfile;
 
         const productInfo = property ? `Product: ${property.title}. Description: ${property.description}` : 'Generic product promotion';
         const businessName = profile?.business_name || 'Your Business';
@@ -50,11 +84,11 @@ export async function POST(request: Request) {
 
         // Determine if Hinglish should be used (default to true, unless user instructions explicitly request English/another language)
         const userText = (userInstructions || '').toLowerCase();
-        let languageInstruction = "The script dialogue MUST be written in conversational hybrid language (e.g., Hinglish/Hindi-English or Punglish/Punjabi-English as appropriate). To ensure perfect text-to-speech pronunciation, write ONLY the language-specific words in their local transliterated form and keep the rest of the sentence structure in clear English so the natural English flow is maintained (e.g., 'If you are searching for Mohali's most exclusive address, toh bas, your search ends here!'). Ensure semantics and emotional hooks are perfectly natural.";
+        let languageInstruction = "The script dialogue MUST be written in conversational hybrid language (e.g., Hindi-English / Hinglish). To ensure correct and authentic text-to-speech native pronunciation, write any Hindi words or phrases in the native Hindi language using actual DEVANAGARI script (e.g., 'क्या आप अभी भी rent दे रहे हैं? toh bas, your search ends here!'). Keep all English words in standard English script. This ensures the voiceover speech engine reads the Hindi words with correct native Hindi pronunciation while keeping English words pronounced naturally.";
         if (userText.includes('in english') || userText.includes('only english') || userText.includes('english language')) {
             languageInstruction = "The script dialogue MUST be written in ENGLISH as explicitly requested.";
         } else if (userText.includes('in hindi') || userText.includes('only hindi')) {
-            languageInstruction = "The script dialogue MUST be written in pure HINDI (written in Latin script).";
+            languageInstruction = "The script dialogue MUST be written in pure HINDI (written in Devanagari script).";
         }
 
         const variationInstruction = variation 
@@ -113,6 +147,11 @@ Output format must be a single, valid JSON object:
 }
 
 Output ONLY valid JSON. Do not include markdown code block tags around JSON.`;
+
+        console.log("\n===============================================================================");
+        console.log("=== GEMINI VIDEO SCRIPT GENERATION PROMPT ===");
+        console.log(masterPrompt);
+        console.log("===============================================================================\n");
 
         const { text: scriptJson } = await generateText({
             model: google('gemini-3-flash-preview'),

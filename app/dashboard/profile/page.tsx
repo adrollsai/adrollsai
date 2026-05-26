@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Copy,
   Linkedin,
+  User,
   BarChart3
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -311,6 +312,7 @@ export default function ProfilePage() {
     contact: '',
     address: '',
     logoUrl: '',
+    characterUrl: '',
     facebookUrl: '',
     instagramUrl: '',
     customPrompt: '',
@@ -429,11 +431,23 @@ export default function ProfilePage() {
     setSelectedPageId(pageId)
 
     // 1. Save to DB
-    await supabase.from('profiles').update({
-      selected_page_id: page.id,
-      selected_page_name: page.name,
-      selected_page_token: page.access_token
-    }).eq('id', effectiveUserId)
+    const res = await fetch('/api/profile/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targetUserId: effectiveUserId,
+        updates: {
+          selected_page_id: page.id,
+          selected_page_name: page.name,
+          selected_page_token: page.access_token
+        }
+      })
+    })
+    const resData = await res.json()
+    if (resData.error) {
+      toast.error(`Failed to save page selection: ${resData.error}`)
+      return
+    }
 
     // 2. TRIGGER WEBHOOK SUBSCRIPTION (Fixes "No app associated" error)
     try {
@@ -460,9 +474,21 @@ export default function ProfilePage() {
     if (!effectiveUserId) return
 
     setSelectedAdAccountId(adAccountId)
-    await supabase.from('profiles').update({
-      ad_account_id: adAccountId,
-    }).eq('id', effectiveUserId)
+    const res = await fetch('/api/profile/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targetUserId: effectiveUserId,
+        updates: {
+          ad_account_id: adAccountId,
+        }
+      })
+    })
+    const resData = await res.json()
+    if (resData.error) {
+      toast.error(`Failed to save ad account: ${resData.error}`)
+      return
+    }
 
     updateLocalCache({ ad_account_id: adAccountId })
     fetchPixels(adAccountId)
@@ -472,7 +498,21 @@ export default function ProfilePage() {
     const effectiveUserId = targetUserId || userId;
     if (!effectiveUserId) return
     setSelectedPixelId(pixelId)
-    await supabase.from('profiles').update({ pixel_id: pixelId }).eq('id', effectiveUserId)
+    const res = await fetch('/api/profile/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targetUserId: effectiveUserId,
+        updates: {
+          pixel_id: pixelId,
+        }
+      })
+    })
+    const resData = await res.json()
+    if (resData.error) {
+      toast.error(`Failed to save pixel: ${resData.error}`)
+      return
+    }
     updateLocalCache({ pixel_id: pixelId })
   }
 
@@ -553,6 +593,7 @@ export default function ProfilePage() {
           contact: profileData.contact_number || '',
           address: profileData.address || '',
           logoUrl: profileData.logo_url || '',
+          characterUrl: profileData.character_url || '',
           facebookUrl: profileData.facebook_url || '',
           instagramUrl: profileData.instagram_url || '',
           customPrompt: profileData.custom_prompt || '',
@@ -711,13 +752,66 @@ export default function ProfilePage() {
       const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
 
       setFormData(prev => ({ ...prev, logoUrl: publicUrl }))
-      await supabase.from('profiles').update({ logo_url: publicUrl }).eq('id', effectiveUserId)
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId: effectiveUserId,
+          updates: {
+            logo_url: publicUrl,
+          }
+        })
+      })
+      const resData = await res.json()
+      if (resData.error) throw new Error(resData.error)
       updateLocalCache({ logo_url: publicUrl })
 
     } catch (error) {
       alert('Error uploading logo')
     } finally {
       setUploadingLogo(false)
+    }
+  }
+
+  const [uploadingCharacter, setUploadingCharacter] = useState(false)
+  const characterInputRef = useRef<HTMLInputElement>(null)
+
+  const handleCharacterUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      if (!event.target.files || !event.target.files.length) return
+      setUploadingCharacter(true)
+      const effectiveUserId = targetUserId || userId;
+      if (!effectiveUserId) return
+
+      const file = event.target.files[0]
+      const fileExt = file.name.split('.').pop()
+      const fileName = `character-${effectiveUserId}-${Date.now()}.${fileExt}`
+
+      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
+
+      setFormData(prev => ({ ...prev, characterUrl: publicUrl }))
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId: effectiveUserId,
+          updates: {
+            character_url: publicUrl,
+          }
+        })
+      })
+      const resData = await res.json()
+      if (resData.error) throw new Error(resData.error)
+      updateLocalCache({ character_url: publicUrl })
+      toast.success("Character avatar uploaded successfully!")
+
+    } catch (error) {
+      alert('Error uploading character avatar')
+    } finally {
+      setUploadingCharacter(false)
     }
   }
 
@@ -733,16 +827,25 @@ export default function ProfilePage() {
       contact_number: formData.contact,
       address: formData.address,
       logo_url: formData.logoUrl,
+      character_url: formData.characterUrl,
       facebook_url: isAdminLike ? formData.facebookUrl : undefined,
       instagram_url: isAdminLike ? formData.instagramUrl : undefined,
       custom_prompt: formData.customPrompt,
       currency: formData.currency
     }
 
-    const { error } = await supabase.from('profiles').update(updates).eq('id', effectiveUserId)
+    const res = await fetch('/api/profile/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targetUserId: effectiveUserId,
+        updates
+      })
+    })
+    const resData = await res.json()
 
-    if (error) {
-      alert(`Error saving: ${error.message}`)
+    if (resData.error) {
+      alert(`Error saving: ${resData.error}`)
     } else {
       toast.success("Profile Information Saved!")
       updateLocalCache(updates)
@@ -784,26 +887,54 @@ export default function ProfilePage() {
 
             {/* Header Identity Card */}
             <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-200/60 flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left transition-all hover:shadow-md">
-              <div
-                onClick={() => !uploadingLogo && fileInputRef.current?.click()}
-                className="w-28 h-28 bg-slate-50/80 rounded-full flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 transition-all shadow-sm"
-              >
-                {uploadingLogo ? (
-                  <Loader2 className="animate-spin text-slate-400" size={28} />
-                ) : formData.logoUrl ? (
-                  <>
-                    <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Upload size={24} className="text-slate-800 drop-shadow-md" />
+              <div className="flex flex-col sm:flex-row gap-4 shrink-0 items-center">
+                {/* Logo Upload */}
+                <div
+                  onClick={() => !uploadingLogo && fileInputRef.current?.click()}
+                  className="w-24 h-24 bg-slate-50/80 rounded-full flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 transition-all shadow-sm"
+                  title="Upload Brand Logo"
+                >
+                  {uploadingLogo ? (
+                    <Loader2 className="animate-spin text-slate-400" size={24} />
+                  ) : formData.logoUrl ? (
+                    <>
+                      <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-blue-500 transition-colors">
+                      <Upload size={20} />
+                      <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Logo</span>
                     </div>
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center gap-1.5 text-slate-400 group-hover:text-blue-500 transition-colors">
-                    <Upload size={24} />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">Logo</span>
-                  </div>
-                )}
-                <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
+                  )}
+                  <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
+                </div>
+
+                {/* Character Upload */}
+                <div
+                  onClick={() => !uploadingCharacter && characterInputRef.current?.click()}
+                  className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-purple-500 hover:bg-purple-50 transition-all shadow-sm"
+                  title="Upload Custom Video Character"
+                >
+                  {uploadingCharacter ? (
+                    <Loader2 className="animate-spin text-slate-400" size={24} />
+                  ) : formData.characterUrl ? (
+                    <>
+                      <img src={formData.characterUrl} alt="Character" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-purple-500 transition-colors">
+                      <User size={20} />
+                      <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Avatar</span>
+                    </div>
+                  )}
+                  <input type="file" ref={characterInputRef} onChange={handleCharacterUpload} accept="image/*" className="hidden" />
+                </div>
               </div>
               <div className="flex-1 mt-2">
                 <h2 className="text-2xl font-bold text-slate-900 mb-2">

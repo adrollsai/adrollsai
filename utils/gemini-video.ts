@@ -53,7 +53,7 @@ export async function transcribeVideoWithGemini(videoUrl: string) {
                 { text: "Generate a precise transcript of this video. For every segment of speech, provide the start time, end time, and text. Return the result in a clean JSON format like this: { \"segments\": [ { \"start\": 0.2, \"end\": 2.5, \"text\": \"Hello world\" } ] }. Only return the JSON." },
             ],
             "gemini-3-flash-preview",
-            "gemini-1.5-flash"
+            null
         );
 
         const transcriptText = result.response.text();

@@ -33,9 +33,41 @@ export async function POST(request: Request) {
             script.dialogue = script.dialogue.replace(/\b\d{4,}\b/g, 'get in touch');
         }
 
+        const url = new URL(request.url)
+        const impersonateId = url.searchParams.get('impersonate')
+
+        const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+        let targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
+          ? (currentProfile.agency_id || currentProfile.parent_id) 
+          : user.id
+
+        if (impersonateId) {
+            if (['super_admin', 'agency', 'admin'].includes(currentProfile?.role || '')) {
+                if (currentProfile?.role !== 'super_admin') {
+                    const isParent = (currentProfile?.agency_id === impersonateId || currentProfile?.parent_id === impersonateId);
+                    const { data: subAccount } = await supabase
+                      .from('profiles')
+                      .select('id')
+                      .eq('id', impersonateId)
+                      .eq('agency_id', currentProfile?.agency_id || user.id)
+                      .single()
+
+                    if (isParent || subAccount) {
+                        targetUserId = impersonateId
+                    } else {
+                        return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
+                    }
+                } else {
+                    targetUserId = impersonateId
+                }
+            } else {
+                return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
+            }
+        }
+
         // --- QUOTA CHECK ---
         try {
-            await checkLimitAndIncrement(user.id, 'ai_creatives');
+            await checkLimitAndIncrement(targetUserId, 'ai_creatives');
         } catch (limitErr: any) {
             return NextResponse.json({ error: limitErr.message }, { status: 403 });
         }
@@ -51,11 +83,13 @@ export async function POST(request: Request) {
             property = data;
         }
 
-        const { data: profile } = await supabase
+        const { data: targetProfile } = await supabase
             .from('profiles')
-            .select('business_name, mission_statement, custom_prompt')
-            .eq('id', user.id)
+            .select('business_name, mission_statement, custom_prompt, character_url')
+            .eq('id', targetUserId)
             .single();
+
+        const profile = targetProfile;
 
         const productInfo = property ? `Product: ${property.title}. Description: ${property.description}` : 'Generic product promotion';
         const businessName = profile?.business_name || 'Your Business';
@@ -80,54 +114,59 @@ export async function POST(request: Request) {
             .map((desc: string, i: number) => `- Reference Image ${i + 1} description: "${desc}"`)
             .join('\n') || 'No detailed image descriptions provided. Describe the images based on standard product expectations.';
 
-        // 2. Generate Consistent Character Avatar Image using KIE GPT-Image-2 text-to-image
+        // 2. Generate Consistent Character Avatar Image or use uploaded profile avatar
         let avatarUrl = "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=640"; // Premium fallback URL
-        try {
-            const avatarPrompt = "Professional chest-up studio headshot of a highly attractive, charismatic, and gorgeous young Indian female UGC creator with a fair complexion, smiling warmly. Wearing elegant smart casual clothes, sleek dark hair, bright clean minimalist background, professional studio lighting, natural photorealistic texture, cinematic look.";
-            const imgPayload = {
-                model: "gpt-image-2-text-to-image",
-                input: {
-                    prompt: avatarPrompt,
-                    aspect_ratio: "1:1",
-                    resolution: "1K",
-                    output_format: "png"
-                }
-            };
-            
-            console.log("[Video Generate] Initiating KIE avatar image generation...");
-            const { taskId: imgTaskId, error: imgError } = await createKieTask(imgPayload);
-            
-            if (imgTaskId) {
-                console.log(`[Video Generate] Started character avatar generation task: ${imgTaskId}. Polling status synchronously...`);
-                // Poll up to 10 times, waiting 1.5 seconds each (15s total)
-                for (let attempt = 0; attempt < 10; attempt++) {
-                    await new Promise(resolve => setTimeout(resolve, 1500));
-                    const checkRes = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${imgTaskId}`, {
-                        method: 'GET',
-                        headers: { 'Authorization': `Bearer ${process.env.KIE_API_KEY}` }
-                    });
-                    if (checkRes.ok) {
-                        const checkData = await checkRes.json();
-                        const status = checkData.status || checkData.data?.status || checkData.data?.state;
-                        if (status === 'succeeded' || status === 'completed' || status === 'success') {
-                            const result = checkData.result || checkData.data?.result || checkData.data;
-                            const url = result?.image_url || result?.imageUrl || result?.url || result?.outputUrl || result?.output_url;
-                            if (url && typeof url === 'string' && url.startsWith('http')) {
-                                avatarUrl = url;
-                                console.log(`[Video Generate] Avatar image generation succeeded: ${avatarUrl}`);
+        if (profile?.character_url) {
+            avatarUrl = profile.character_url;
+            console.log(`[Video Generate] Using custom uploaded character avatar from profile: ${avatarUrl}`);
+        } else {
+            try {
+                const avatarPrompt = "Professional chest-up studio headshot of a highly attractive, charismatic, and gorgeous young Indian female UGC creator with a fair complexion, smiling warmly. Wearing elegant smart casual clothes, sleek dark hair, bright clean minimalist background, professional studio lighting, natural photorealistic texture, cinematic look.";
+                const imgPayload = {
+                    model: "gpt-image-2-text-to-image",
+                    input: {
+                        prompt: avatarPrompt,
+                        aspect_ratio: "1:1",
+                        resolution: "1K",
+                        output_format: "png"
+                    }
+                };
+                
+                console.log("[Video Generate] Initiating KIE avatar image generation...");
+                const { taskId: imgTaskId, error: imgError } = await createKieTask(imgPayload);
+                
+                if (imgTaskId) {
+                    console.log(`[Video Generate] Started character avatar generation task: ${imgTaskId}. Polling status synchronously...`);
+                    // Poll up to 10 times, waiting 1.5 seconds each (15s total)
+                    for (let attempt = 0; attempt < 10; attempt++) {
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                        const checkRes = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${imgTaskId}`, {
+                            method: 'GET',
+                            headers: { 'Authorization': `Bearer ${process.env.KIE_API_KEY}` }
+                        });
+                        if (checkRes.ok) {
+                            const checkData = await checkRes.json();
+                            const status = checkData.status || checkData.data?.status || checkData.data?.state;
+                            if (status === 'succeeded' || status === 'completed' || status === 'success') {
+                                const result = checkData.result || checkData.data?.result || checkData.data;
+                                const url = result?.image_url || result?.imageUrl || result?.url || result?.outputUrl || result?.output_url;
+                                if (url && typeof url === 'string' && url.startsWith('http')) {
+                                    avatarUrl = url;
+                                    console.log(`[Video Generate] Avatar image generation succeeded: ${avatarUrl}`);
+                                    break;
+                                }
+                            } else if (status === 'failed' || status === 'error') {
+                                console.error(`[Video Generate] Avatar image generation failed: ${checkData.failMsg || checkData.msg}`);
                                 break;
                             }
-                        } else if (status === 'failed' || status === 'error') {
-                            console.error(`[Video Generate] Avatar image generation failed: ${checkData.failMsg || checkData.msg}`);
-                            break;
                         }
                     }
+                } else {
+                    console.error(`[Video Generate] Failed to start avatar image generation: ${imgError}`);
                 }
-            } else {
-                console.error(`[Video Generate] Failed to start avatar image generation: ${imgError}`);
+            } catch (avatarErr) {
+                console.error(`[Video Generate] Error during avatar image generation:`, avatarErr);
             }
-        } catch (avatarErr) {
-            console.error(`[Video Generate] Error during avatar image generation:`, avatarErr);
         }
 
         // Prepend the generated avatar to the reference images
@@ -210,7 +249,7 @@ SHOT 1 (0:00-0:15) Beautiful charismatic Indian creator holding the product and 
         const { data: newAsset, error: newAssetError } = await supabase
             .from('assets')
             .insert({
-                user_id: user.id,
+                user_id: targetUserId,
                 property_id: propertyId || null,
                 type: 'video',
                 status: 'Processing',
@@ -222,7 +261,7 @@ SHOT 1 (0:00-0:15) Beautiful charismatic Indian creator holding the product and 
 
         if (newAssetError || !newAsset) {
             console.error("Placeholder creation failed:", newAssetError);
-            await refundLimit(user.id, 'ai_creatives');
+            await refundLimit(targetUserId, 'ai_creatives');
             return NextResponse.json({ error: "Failed to initialize video asset" }, { status: 500 });
         }
 
@@ -283,7 +322,7 @@ SHOT 1 (0:00-0:15) Beautiful charismatic Indian creator holding the product and 
         if (launchErrors.length > 0 || taskIds.filter(Boolean).length !== prompts.length) {
             // Delete placeholder and refund credit if any task failed to start
             await supabase.from('assets').delete().eq('id', newAsset.id);
-            await refundLimit(user.id, 'ai_creatives');
+            await refundLimit(targetUserId, 'ai_creatives');
             return NextResponse.json({ error: launchErrors.join(', ') || "Failed to start parallel video generations" }, { status: 500 });
         }
 
@@ -293,7 +332,7 @@ SHOT 1 (0:00-0:15) Beautiful charismatic Indian creator holding the product and 
                 .from('video_tasks')
                 .insert({
                     id: crypto.randomUUID(),
-                    user_id: user.id,
+                    user_id: targetUserId,
                     property_id: propertyId || null,
                     asset_id: newAsset.id,
                     prompts: prompts, // Store the prompts array

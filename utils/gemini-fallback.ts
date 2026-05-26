@@ -9,7 +9,7 @@ export async function generateContentWithFallback(
     genAI: GoogleGenerativeAI,
     contents: any,
     primaryModel = "gemini-3-flash-preview",
-    fallbackModel = "gemini-1.5-flash",
+    fallbackModel = null,
     maxRetries = 4,
     initialDelay = 2000
 ) {

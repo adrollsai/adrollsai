@@ -163,7 +163,10 @@ export async function POST(request: Request) {
             // If we reach here, all retries failed or max retries reached
             await supabaseAdmin.from('video_tasks').update({ status: 'Failed', last_error: msg }).eq('id', videoTask.id);
             if (videoTask.asset_id) {
-                await supabaseAdmin.from('assets').update({ status: 'Failed' }).eq('id', videoTask.asset_id);
+                await supabaseAdmin.from('assets').update({ 
+                    status: 'Failed',
+                    metadata: { error: msg || "AI video generation failed after maximum retries." }
+                }).eq('id', videoTask.asset_id);
                 // Clean up all video tasks sharing this asset_id
                 await supabaseAdmin.from('video_tasks').delete().eq('asset_id', videoTask.asset_id);
             }

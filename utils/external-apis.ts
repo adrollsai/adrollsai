@@ -385,7 +385,7 @@ export async function callGemini(prompt: string, imageUrls?: string[]): Promise<
             genAI,
             contents,
             "gemini-3-flash-preview",
-            "gemini-1.5-flash"
+            null
         );
         const response = await result.response;
         return response.text();

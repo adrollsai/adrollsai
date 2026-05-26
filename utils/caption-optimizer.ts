@@ -55,7 +55,7 @@ export async function optimizeCaptionsForRetention(segments: { start: number, en
             genAI,
             prompt,
             "gemini-3-flash-preview",
-            "gemini-1.5-flash"
+            null
         );
         const text = result.response.text();
         const jsonMatch = text.match(/\{[\s\S]*\}/);

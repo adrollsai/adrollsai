@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { generateText } from 'ai';
+import { generateObject } from 'ai';
 import { google } from '@ai-sdk/google';
+import { z } from 'zod';
 
 export async function POST(request: Request) {
     try {
@@ -26,11 +27,45 @@ export async function POST(request: Request) {
             property = data;
         }
 
-        const { data: profile } = await supabase
+        const url = new URL(request.url)
+        const impersonateId = url.searchParams.get('impersonate')
+
+        const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+        let targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
+          ? (currentProfile.agency_id || currentProfile.parent_id) 
+          : user.id
+
+        if (impersonateId) {
+            if (['super_admin', 'agency', 'admin'].includes(currentProfile?.role || '')) {
+                if (currentProfile?.role !== 'super_admin') {
+                    const isParent = (currentProfile?.agency_id === impersonateId || currentProfile?.parent_id === impersonateId);
+                    const { data: subAccount } = await supabase
+                      .from('profiles')
+                      .select('id')
+                      .eq('id', impersonateId)
+                      .eq('agency_id', currentProfile?.agency_id || user.id)
+                      .single()
+
+                    if (isParent || subAccount) {
+                        targetUserId = impersonateId
+                    } else {
+                        return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
+                    }
+                } else {
+                    targetUserId = impersonateId
+                }
+            } else {
+                return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
+            }
+        }
+
+        const { data: targetProfile } = await supabase
             .from('profiles')
             .select('business_name, mission_statement, custom_prompt')
-            .eq('id', user.id)
+            .eq('id', targetUserId)
             .single();
+
+        const profile = targetProfile;
 
         // Determine reference images (max 4)
         let refImages: string[] = [];
@@ -72,7 +107,8 @@ INSTRUCTIONS:
 5. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue or visual captions. If the product info or call-to-action implies a phone number, use the exact phrase "get in touch" (or Hinglish equivalent like "humein contact karein") instead. Under no circumstances should the dialogue contain digits or spoken phone numbers.
 6. NEVER instruct to display any text overlay, subtitles, captions, watermarks, or logos on screen in any visual instruction, as the video AI generates garbled text and distorted logos. Keep the visual space completely clean of text.
 7. In the visual concepts, instead of referencing abstract placeholders like "@Image 1", write natural visual descriptions of what is shown in the image (e.g., "showcasing the cozy modern bedroom shown in the bedroom photo").
-8. Output EXACTLY a JSON object with keys: "concepts", "analyzedImageSummary", and "imageDescriptions". "imageDescriptions" must be an array of strings, where each string is a detailed visual description of the corresponding reference image in order (Image 1, Image 2, etc.).
+8. Language: Write any Hindi words/phrases inside the hook dialogue using native Devanagari script (e.g., 'क्या आप अभी भी rent de rahe hain?') to represent perfect native Hindi pronunciation while keeping English words pronounced naturally.
+9. Output EXACTLY a JSON object with keys: "concepts", "analyzedImageSummary", and "imageDescriptions". "imageDescriptions" must be an array of strings, where each string is a detailed visual description of the corresponding reference image in order (Image 1, Image 2, etc.).
 
 JSON SCHEMA:
 {
@@ -117,25 +153,34 @@ JSON SCHEMA:
             messages.push({ role: 'user', content: conceptPrompt });
         }
 
-        const { text: resultText } = await generateText({
+        console.log("\n===============================================================================");
+        console.log("=== GEMINI VIDEO CONCEPTS GENERATION PROMPT ===");
+        console.log(conceptPrompt);
+        console.log("===============================================================================\n");
+
+        const { object: result } = await generateObject({
             model: google('gemini-3-flash-preview'),
+            schema: z.object({
+                concepts: z.array(z.object({
+                    id: z.string(),
+                    title: z.string(),
+                    hook: z.string(),
+                    description: z.string(),
+                    visualConcept: z.string(),
+                })),
+                analyzedImageSummary: z.string(),
+                imageDescriptions: z.array(z.string()),
+            }),
             messages,
         });
 
-        try {
-            const cleanText = resultText.replace(/```json|```/g, '').trim();
-            const result = JSON.parse(cleanText);
-            return NextResponse.json({
-                success: true,
-                concepts: result.concepts || [],
-                analyzedImageSummary: result.analyzedImageSummary || "Product assets",
-                imageDescriptions: result.imageDescriptions || [],
-                refImages
-            });
-        } catch (e) {
-            console.error("Failed to parse concepts JSON:", resultText);
-            return NextResponse.json({ error: "Failed to parse generated concepts." }, { status: 500 });
-        }
+        return NextResponse.json({
+            success: true,
+            concepts: result.concepts || [],
+            analyzedImageSummary: result.analyzedImageSummary || "Product assets",
+            imageDescriptions: result.imageDescriptions || [],
+            refImages
+        });
 
     } catch (error: any) {
         console.error("Video Concepts Error:", error);

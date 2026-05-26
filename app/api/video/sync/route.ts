@@ -4,6 +4,10 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { sendPushNotification } from '@/utils/notification-helper';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { exec } from 'child_process';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -164,7 +168,7 @@ export async function POST(request: Request) {
                     try {
                         const videoRes = await fetch(videoUrl);
                         const buffer = Buffer.from(await videoRes.arrayBuffer());
-                        const fileName = `generated/${task.user_id}/video_${Date.now()}.mp4`;
+                        const fileName = `generated/${task.user_id}/scene_${task.current_index}_${Date.now()}.mp4`;
                         
                         await r2.send(new PutObjectCommand({
                             Bucket: R2_BUCKET,
@@ -174,41 +178,161 @@ export async function POST(request: Request) {
                         }));
                         
                         persistedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${fileName}`;
-                        console.log(`[Sync Endpoint] Successfully uploaded video to R2: ${persistedUrl}`);
+                        console.log(`[Sync Endpoint] Successfully uploaded scene to R2: ${persistedUrl}`);
                     } catch (r2Error) {
                         console.error("[Sync Endpoint] R2 upload failed. Falling back to direct Kie URL.", r2Error);
                     }
 
-                    // B. Update Asset in Supabase to 'Draft'
-                    if (task.asset_id) {
-                        const { error: assetError } = await supabaseAdmin
-                            .from('assets')
-                            .update({
-                                url: persistedUrl,
-                                status: 'Draft'
-                            })
-                            .eq('id', task.asset_id);
+                    // B. Update this task record in video_tasks to Completed
+                    await supabaseAdmin
+                        .from('video_tasks')
+                        .update({
+                            status: 'Completed',
+                            last_successful_task_id: persistedUrl
+                        })
+                        .eq('id', task.id);
 
-                        if (assetError) {
-                            console.error(`[Sync Endpoint] Failed to update asset status for ID ${task.asset_id}:`, assetError);
-                        } else {
-                            console.log(`[Sync Endpoint] Asset ID ${task.asset_id} updated successfully.`);
+                    // C. Check if all sibling tasks sharing the same asset_id are complete
+                    const { data: siblings, error: siblingsError } = await supabaseAdmin
+                        .from('video_tasks')
+                        .select('*')
+                        .eq('asset_id', task.asset_id);
+
+                    if (siblingsError) {
+                        console.error("[Sync Endpoint] Error fetching sibling tasks:", siblingsError);
+                        continue;
+                    }
+
+                    const allCompleted = siblings && siblings.length > 0 && siblings.every(s => s.status === 'Completed');
+
+                    if (!allCompleted) {
+                        console.log(`[Sync Endpoint] Scene ${task.current_index + 1} completed via Sync. Waiting for other scene(s) to complete...`);
+                        syncedResults.push({ taskId, assetId: task.asset_id, status: 'scene_completed_waiting' });
+                        continue;
+                    }
+
+                    // All scenes completed! Stitch them!
+                    siblings.sort((a, b) => a.current_index - b.current_index);
+                    console.log(`[Sync Endpoint] All ${siblings.length} scenes completed. Initiating stitching...`);
+
+                    const stitcherWorkerUrl = process.env.STITCHER_WORKER_URL;
+                    if (stitcherWorkerUrl) {
+                        console.log(`[Sync Endpoint] Offloading stitching to Cloud Run worker at ${stitcherWorkerUrl}...`);
+                        try {
+                            await fetch(`${stitcherWorkerUrl.replace(/\/$/, '')}/stitch`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    siblings: siblings.map(s => ({
+                                        current_index: s.current_index,
+                                        last_successful_task_id: s.last_successful_task_id
+                                    })),
+                                    videoTask: {
+                                        asset_id: task.asset_id,
+                                        user_id: task.user_id
+                                    }
+                                })
+                            });
+                            syncedResults.push({ taskId, assetId: task.asset_id, status: 'offloaded_stitch' });
+                            continue;
+                        } catch (err: any) {
+                            console.error("[Sync Endpoint] Cloud Run worker dispatch failed, falling back to local:", err);
                         }
                     }
 
-                    // C. Delete the synchronized video task
-                    await supabaseAdmin.from('video_tasks').delete().eq('id', task.id);
+                    // Local Stitching Fallback
+                    const tempDir = path.join(os.tmpdir(), `stitch_${task.asset_id}`);
+                    try {
+                        if (!fs.existsSync(tempDir)) {
+                            fs.mkdirSync(tempDir, { recursive: true });
+                        }
 
-                    // D. Send Push Notification
-                    await sendPushNotification(
-                        task.user_id, 
-                        "🎬 Video Creative Ready!", 
-                        "Your 15-second AI video has been synchronized and is ready for use.", 
-                        "/dashboard/assets", 
-                        "asset_ready"
-                    ).catch(notifErr => console.error("[Sync Endpoint] Notification error:", notifErr));
+                        const localFiles: string[] = [];
+                        for (let idx = 0; idx < siblings.length; idx++) {
+                            const sib = siblings[idx];
+                            const clipUrl = sib.last_successful_task_id;
+                            if (!clipUrl || !clipUrl.startsWith('http')) {
+                                throw new Error(`Invalid or missing video URL for scene index ${idx}`);
+                            }
+                            const localPath = path.join(tempDir, `scene_${idx}.mp4`);
+                            const res = await fetch(clipUrl);
+                            if (!res.ok) {
+                                throw new Error(`Failed to download scene ${idx} from ${clipUrl}`);
+                            }
+                            const buffer = Buffer.from(await res.arrayBuffer());
+                            fs.writeFileSync(localPath, buffer);
+                            localFiles.push(localPath);
+                        }
 
-                    syncedResults.push({ taskId, assetId: task.asset_id, status: 'succeeded' });
+                        // Generate concat.txt
+                        const concatContent = localFiles.map(file => `file '${file.replace(/\\/g, '/')}'`).join('\n');
+                        const concatTxtPath = path.join(tempDir, 'concat.txt');
+                        fs.writeFileSync(concatTxtPath, concatContent);
+
+                        const outputPath = path.join(tempDir, 'stitched.mp4');
+                        const ffmpegBinary = path.join(
+                            process.cwd(), 
+                            'node_modules', 
+                            'ffmpeg-static', 
+                            os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+                        );
+                        const cmd = `"${ffmpegBinary}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy "${outputPath}"`;
+
+                        await new Promise<void>((resolvePromise, rejectPromise) => {
+                            exec(cmd, (execErr: any, stdout: any, stderr: any) => {
+                                if (execErr) rejectPromise(execErr);
+                                else resolvePromise();
+                            });
+                        });
+
+                        const stitchedBuffer = fs.readFileSync(outputPath);
+                        const finalFileName = `generated/${task.user_id}/stitched_${Date.now()}.mp4`;
+                        await r2.send(new PutObjectCommand({
+                            Bucket: R2_BUCKET,
+                            Key: finalFileName,
+                            Body: stitchedBuffer,
+                            ContentType: 'video/mp4'
+                        }));
+                        const persistedStitchedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${finalFileName}`;
+                        console.log(`[Sync Endpoint] Stitched video uploaded to R2: ${persistedStitchedUrl}`);
+
+                        if (task.asset_id) {
+                            await supabaseAdmin.from('assets').update({
+                                url: persistedStitchedUrl,
+                                status: 'Draft'
+                            }).eq('id', task.asset_id);
+                        }
+
+                        // Clean up tasks
+                        await supabaseAdmin.from('video_tasks').delete().eq('asset_id', task.asset_id);
+
+                        await sendPushNotification(
+                            task.user_id, 
+                            "🎬 30s Video Creative Ready!", 
+                            "Your 30-second stitched AI video ad has been generated successfully.", 
+                            "/dashboard/assets", 
+                            "asset_ready"
+                        ).catch(() => {});
+
+                        syncedResults.push({ taskId, assetId: task.asset_id, status: 'succeeded' });
+
+                    } catch (stitchErr: any) {
+                        console.error("[Sync Endpoint] Local stitching failed:", stitchErr);
+                        if (task.asset_id) {
+                            await supabaseAdmin.from('assets').update({ 
+                                status: 'Failed',
+                                metadata: { error: `Stitching failed: ${stitchErr.message}` }
+                            }).eq('id', task.asset_id);
+                            await supabaseAdmin.from('video_tasks').delete().eq('asset_id', task.asset_id);
+                        }
+                        syncedResults.push({ taskId, assetId: task.asset_id, status: 'failed', error: stitchErr.message });
+                    } finally {
+                        try {
+                            if (fs.existsSync(tempDir)) {
+                                fs.rmSync(tempDir, { recursive: true, force: true });
+                            }
+                        } catch (e) {}
+                    }
 
                 } else if (status === 'failed' || status === 'error') {
                     const failReason = checkData.failMsg || checkData.error || checkData.msg || "Unknown Kie.ai Error";
@@ -220,13 +344,13 @@ export async function POST(request: Request) {
                             .from('assets')
                             .update({ 
                                 status: 'Failed',
-                                caption: `Failed during sync: ${failReason}` 
+                                metadata: { error: failReason }
                             })
                             .eq('id', task.asset_id);
                     }
 
-                    // B. Delete video task
-                    await supabaseAdmin.from('video_tasks').delete().eq('id', task.id);
+                    // B. Delete all sibling video tasks sharing this asset_id
+                    await supabaseAdmin.from('video_tasks').delete().eq('asset_id', task.asset_id);
 
                     syncedResults.push({ taskId, assetId: task.asset_id, status: 'failed', error: failReason });
                 } else {

@@ -320,14 +320,23 @@ export default function ProductsPage() {
       const finalImages = [...existingImages, ...uploadedUrls]
       const finalMainImage = finalImages.length > 0 ? finalImages[0] : `https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(editProp.title)}`
 
-      const { error } = await supabase.from('properties').update({
-          title: editProp.title, 
-          description: editProp.description, 
-          image_url: finalMainImage, 
-          images: finalImages
-      }).eq('id', editProp.id)
+      const apiRes = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          propertyId: editProp.id,
+          propertyData: {
+            title: editProp.title,
+            description: editProp.description,
+            image_url: finalMainImage,
+            images: finalImages
+          }
+        })
+      })
 
-      if (error) throw error
+      const apiData = await apiRes.json()
+      if (!apiRes.ok) throw new Error(apiData.error || 'Failed to update product')
 
       // Update Local State Optimistically
       const updatedProps = properties.map(p => p.id === editProp.id ? {
@@ -357,12 +366,17 @@ export default function ProductsPage() {
       setIsDeleting(true);
 
       try {
-          const { error } = await supabase
-              .from('properties')
-              .delete()
-              .eq('id', propertyToDelete.id);
+          const apiRes = await fetch('/api/inventory', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  action: 'delete',
+                  propertyId: propertyToDelete.id
+              })
+          });
 
-          if (error) throw error;
+          const apiData = await apiRes.json();
+          if (!apiRes.ok) throw new Error(apiData.error || 'Failed to delete product');
 
           // Optimistic UI Update & Cache Update
           const updatedProps = properties.filter(p => p.id !== propertyToDelete.id);
@@ -438,8 +452,18 @@ export default function ProductsPage() {
     const newStatus = !currentStatus
 
     try {
-      const { error } = await supabase.from('properties').update({ auto_generate: newStatus }).eq('id', propId)
-      if (error) throw error
+      const apiRes = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'toggle-auto-generate',
+          propertyId: propId,
+          autoGenerate: newStatus
+        })
+      })
+
+      const apiData = await apiRes.json()
+      if (!apiRes.ok) throw new Error(apiData.error || 'Failed to update auto-generation status')
       
       const updated = properties.map(p => p.id === propId ? { ...p, auto_generate: newStatus } : p)
       setProperties(updated)
@@ -491,27 +515,36 @@ export default function ProductsPage() {
           uploadedUrls.push(`https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newProp.title)}`)
       }
 
-      // Resolve correct attribution ID
-      let finalOwnerId = user.id
-      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
-      if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
-          finalOwnerId = (profile?.parent_id || profile?.agency_id) as string
+      // Resolve correct attribution ID (use ownerId state if active, otherwise check profiles relationship or fallback to user.id)
+      let finalOwnerId = ownerId || user.id
+      if (!ownerId) {
+        const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
+        if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+            finalOwnerId = (profile?.parent_id || profile?.agency_id) as string
+        }
       }
 
-      const { error } = await supabase.from('properties').insert({
-          user_id: finalOwnerId, 
-          title: newProp.title, 
-          description: newProp.description, 
-          address: '', 
-          price: '', 
-          property_type: 'Generic', 
-          status: 'Active', 
-          image_url: uploadedUrls[0], 
-          images: uploadedUrls, 
-          auto_generate: false 
+      const apiRes = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'insert',
+          targetUserId: finalOwnerId,
+          propertyData: {
+            title: newProp.title,
+            description: newProp.description,
+            address: '',
+            price: '',
+            property_type: 'Generic',
+            status: 'Active',
+            image_url: uploadedUrls[0],
+            images: uploadedUrls
+          }
         })
+      })
 
-      if (error) throw error
+      const apiData = await apiRes.json()
+      if (!apiRes.ok) throw new Error(apiData.error || 'Failed to add product')
 
       await fetchProperties(true)
       setShowAddModal(false)

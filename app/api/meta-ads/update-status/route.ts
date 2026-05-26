@@ -12,21 +12,54 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const url = new URL(request.url)
+  const impersonateId = url.searchParams.get('impersonate')
+
   const { campaignId, newStatus } = await request.json()
 
   if (!campaignId || !newStatus) {
       return NextResponse.json({ error: 'Missing campaignId or status' }, { status: 400 })
   }
 
-  // 2. Get Credentials
-  const { data: profile } = await supabase
+  // 2. Get credentials (supporting impersonation)
+  const { data: profile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+  
+  let targetUserId = (['admin', 'agent'].includes(profile?.role || '') && (profile?.agency_id || profile?.parent_id)) 
+    ? (profile.agency_id || profile.parent_id) 
+    : user.id
+
+  if (impersonateId) {
+      if (['super_admin', 'agency', 'admin'].includes(profile?.role || '')) {
+          if (profile?.role !== 'super_admin') {
+              const isParent = (profile?.agency_id === impersonateId || profile?.parent_id === impersonateId);
+              const { data: subAccount } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('id', impersonateId)
+                .eq('agency_id', profile?.agency_id || user.id)
+                .single()
+
+              if (isParent || subAccount) {
+                  targetUserId = impersonateId
+              } else {
+                  return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
+              }
+          } else {
+              targetUserId = impersonateId
+          }
+      } else {
+          return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
+      }
+  }
+
+  const { data: targetProfile } = await supabase
     .from('profiles')
     .select('facebook_token')
-    .eq('id', user.id)
+    .eq('id', targetUserId)
     .single()
 
-  if (!profile?.facebook_token) {
-    return NextResponse.json({ error: 'No Facebook token found' }, { status: 400 })
+  if (!targetProfile?.facebook_token) {
+    return NextResponse.json({ error: 'No Facebook token found for this account' }, { status: 400 })
   }
 
   try {
@@ -36,7 +69,7 @@ export async function POST(request: Request) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             status: newStatus, // 'ACTIVE' or 'PAUSED'
-            access_token: profile.facebook_token
+            access_token: targetProfile.facebook_token
         })
     });
 

@@ -82,6 +82,7 @@ export default function CreationPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [targetUserId, setTargetUserId] = useState<string | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
   const [selectedPropId, setSelectedPropId] = useState<string>('')
   
   // Chat State
@@ -148,6 +149,7 @@ export default function CreationPage() {
       // Fetch CURRENT user profile to check role
       const { data: currentUserProfile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
       const currentRole = currentUserProfile?.role || 'admin'
+      setCurrentUserRole(currentRole)
       
       if (currentRole === 'agent') {
           router.push('/dashboard')
@@ -352,7 +354,9 @@ export default function CreationPage() {
     setCurrentStep('AI Creative Director is writing your 30s Hinglish script...')
 
     try {
-        const scriptResponse = await fetch('/api/video/script', {
+        const urlParams = new URLSearchParams(window.location.search)
+        const impersonateId = urlParams.get('impersonate')
+        const scriptResponse = await fetch(`/api/video/script${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -399,7 +403,9 @@ export default function CreationPage() {
     setCurrentStep('Re-scripting and generating a new variation...')
 
     try {
-        const scriptResponse = await fetch('/api/video/script', {
+        const urlParams = new URLSearchParams(window.location.search)
+        const impersonateId = urlParams.get('impersonate')
+        const scriptResponse = await fetch(`/api/video/script${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -449,7 +455,9 @@ export default function CreationPage() {
     setCurrentStep('Starting Bytedance Seedance 2.0 Fast video task...')
 
     try {
-        const response = await fetch('/api/video/generate', {
+        const urlParams = new URLSearchParams(window.location.search)
+        const impersonateId = urlParams.get('impersonate')
+        const response = await fetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -515,7 +523,9 @@ export default function CreationPage() {
             }
             const refImages = [...propImages, ...chatAttachments].slice(0, 4)
 
-            const conceptsResponse = await fetch('/api/video/concepts', {
+            const urlParams = new URLSearchParams(window.location.search)
+            const impersonateId = urlParams.get('impersonate')
+            const conceptsResponse = await fetch(`/api/video/concepts${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -713,7 +723,7 @@ export default function CreationPage() {
         */}
         <div className="px-4 mb-3 grid grid-cols-2 md:grid-cols-3 gap-2">
             
-            {ALLOWED_VIDEO_USERS.includes(userId || '') && (
+            {currentUserRole === 'super_admin' && (
                 <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full">
                     <button 
                         onClick={() => setCreationMode('image')}

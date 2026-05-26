@@ -16,36 +16,55 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Missing required parameters: assetId, videoUrl, captions, and theme are required.' }, { status: 400 });
         }
 
-        console.log(`[Render Route] Preparing rendering delegation for Asset: ${assetId}`);
+        // 1. Retrieve original asset context details
+        const { data: originalAsset, error: fetchErr } = await supabase
+            .from('assets')
+            .select('*')
+            .eq('id', assetId)
+            .single();
 
-        // 1. Retrieve User Profile Details for the Outro screen
+        if (fetchErr || !originalAsset) {
+            return NextResponse.json({ error: 'Original video asset not found.' }, { status: 404 });
+        }
+
+        // 1.5. Create a NEW Asset placeholder in Supabase for the rendered video,
+        // so that the original unedited video is NOT overwritten!
+        const { data: newAsset, error: newAssetError } = await supabase
+            .from('assets')
+            .insert({
+                user_id: originalAsset.user_id,
+                property_id: originalAsset.property_id || null,
+                type: 'video',
+                status: 'Rendering',
+                url: originalAsset.url, // Point temporarily to original source video URL
+                caption: `${originalAsset.caption || ''} (AI Edited)`
+            })
+            .select()
+            .single();
+
+        if (newAssetError || !newAsset) {
+            return NextResponse.json({ error: `Failed to initialize edited asset placeholder: ${newAssetError?.message}` }, { status: 500 });
+        }
+
+        console.log(`[Render Route] Preparing rendering delegation. Original: ${assetId}, New: ${newAsset.id}`);
+
+        // 2. Retrieve User Profile Details for the Outro screen (respecting asset owner / impersonation)
         const { data: profile } = await supabase
             .from('profiles')
             .select('*')
-            .eq('id', user.id)
+            .eq('id', originalAsset.user_id)
             .single();
 
-        // 2. Retrieve Visual Effects (fallback to client effects or db metadata)
+        // 3. Retrieve Visual Effects (fallback to client effects or db metadata)
         let effects = clientEffects || [];
         if (!effects || effects.length === 0) {
-            const { data: assetData } = await supabase
-                .from('assets')
-                .select('metadata')
-                .eq('id', assetId)
-                .single();
-            if (assetData?.metadata?.effects) {
-                effects = assetData.metadata.effects;
+            if (originalAsset?.metadata?.effects) {
+                effects = originalAsset.metadata.effects;
             }
         }
 
-        // 3. Update Asset Status to 'Rendering' in database
-        await supabase
-            .from('assets')
-            .update({ status: 'Rendering' })
-            .eq('id', assetId);
-
         // 4. Send Asynchronous Render Request to Google Cloud Run Worker
-        const rendererUrl = process.env.REMOTION_RENDERER_URL || 'http://localhost:8080';
+        const rendererUrl = process.env.REMOTION_RENDERER_URL || 'http://127.0.0.1:8080';
         console.log(`[Render Route] Dispatching payload to Cloud Run at: ${rendererUrl}/render`);
 
         try {
@@ -53,7 +72,7 @@ export async function POST(request: Request) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    assetId,
+                    assetId: newAsset.id, // PASS THE NEW ASSET ID!
                     videoUrl,
                     captions,
                     effects,
@@ -77,11 +96,11 @@ export async function POST(request: Request) {
         } catch (workerError: any) {
             console.error(`[Render Route] Worker delegation failed:`, workerError);
 
-            // Revert asset status back to 'Failed'
+            // Revert new asset status back to 'Failed'
             await supabase
                 .from('assets')
                 .update({ status: 'Failed' })
-                .eq('id', assetId);
+                .eq('id', newAsset.id);
 
             return NextResponse.json({
                 success: false,

@@ -20,6 +20,7 @@ type Asset = {
     master_creative_id?: string
     caption?: string
     created_at?: string
+    metadata?: any
 }
 
 type Property = {
@@ -1053,14 +1054,19 @@ export default function AssetsPage() {
                                     </div>
                                 ) : asset.status === 'Failed' ? (
                                     <div className="w-full h-full bg-red-50 flex flex-col items-center justify-center p-4 text-center relative">
-                                        <div className="bg-red-100 p-3 rounded-full mb-3">
+                                        <div className="bg-red-100 p-3 rounded-full mb-2">
                                             <X className="text-red-500" size={24} />
                                         </div>
                                         <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">Failed</p>
-                                        <p className="text-[9px] text-red-400 font-medium mt-1">AI generation failed</p>
+                                        <p 
+                                            className="text-[9px] text-red-400 font-medium mt-1 max-w-[120px] line-clamp-2"
+                                            title={asset.metadata?.error || "AI generation failed"}
+                                        >
+                                            {asset.metadata?.error || "AI generation failed"}
+                                        </p>
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }}
-                                            className="mt-4 bg-red-500 text-white px-4 py-1.5 rounded-full text-[10px] font-bold hover:bg-red-600 transition-all shadow-sm"
+                                            className="mt-3 bg-red-500 text-white px-4 py-1.5 rounded-full text-[10px] font-bold hover:bg-red-600 transition-all shadow-sm"
                                         >
                                             Remove
                                         </button>
@@ -1317,9 +1323,17 @@ export default function AssetsPage() {
                                     </button>
 
                                     {/* AI Video Editor Action */}
-                                    {selectedAsset.type === 'video' && (
+                                    {selectedAsset.type === 'video' && userRole === 'super_admin' && (
                                         <button
-                                            onClick={() => router.push(`/dashboard/video-editor/${selectedAsset.id}`)}
+                                            onClick={() => {
+                                                const urlParams = new URLSearchParams(window.location.search);
+                                                const impersonateId = urlParams.get('impersonate');
+                                                if (impersonateId) {
+                                                    router.push(`/dashboard/video-editor/${selectedAsset.id}?impersonate=${impersonateId}`);
+                                                } else {
+                                                    router.push(`/dashboard/video-editor/${selectedAsset.id}`);
+                                                }
+                                            }}
                                             className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all mt-2 active:scale-95"
                                         >
                                             <Sparkles size={18} />

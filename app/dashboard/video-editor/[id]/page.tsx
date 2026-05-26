@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Player } from '@remotion/player'
 import { CaptionsComposition, Caption, Effect, Theme } from '@/remotion/CaptionsComposition'
 import { SUBTITLE_THEMES } from '@/remotion/Constants'
@@ -26,6 +26,8 @@ import { toast } from 'sonner'
 export default function VideoEditorPage() {
     const { id } = useParams()
     const router = useRouter()
+    const searchParams = useSearchParams()
+    const impersonate = searchParams?.get('impersonate')
     const supabase = createClient()
 
     const [loading, setLoading] = useState(true)
@@ -66,18 +68,15 @@ export default function VideoEditorPage() {
                 setEffects(assetData.metadata.effects)
             }
 
-            // 2. Fetch Profile
-            const { data: { user } } = await supabase.auth.getUser()
-            if (user) {
-                const { data: profileData } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', user.id)
-                    .single()
-                
-                if (profileData) {
-                    setProfile(profileData)
-                }
+            // 2. Fetch Profile (respecting asset owner / impersonation)
+            const { data: profileData } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', assetData.user_id)
+                .single()
+            
+            if (profileData) {
+                setProfile(profileData)
             }
 
             // 3. Load Video Duration dynamically in browser
@@ -137,7 +136,11 @@ export default function VideoEditorPage() {
             const data = await res.json()
             if (data.success) {
                 toast.success("Rendering started! Check your assets library in a few minutes.")
-                router.push('/dashboard/assets')
+                if (impersonate) {
+                    router.push(`/dashboard/assets?impersonate=${impersonate}`)
+                } else {
+                    router.push('/dashboard/assets')
+                }
             } else {
                 throw new Error(data.error)
             }
