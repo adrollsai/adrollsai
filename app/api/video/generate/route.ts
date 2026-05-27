@@ -89,7 +89,56 @@ export async function POST(request: Request) {
             .eq('id', targetUserId)
             .single();
 
-        const profile = targetProfile;
+        let profile = targetProfile;
+
+        // Self-heal: If character_url is present but character_description is null, analyze it on-the-fly!
+        if (profile?.character_url && !profile.character_description) {
+            try {
+                console.log(`[Self-Healing] Character URL is present but description is null. Performing on-the-fly vision analysis for: ${profile.character_url}`);
+                const imageRes = await fetch(profile.character_url);
+                if (imageRes.ok) {
+                    const buffer = Buffer.from(await imageRes.arrayBuffer());
+                    const mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
+                    
+                    const { GoogleGenerativeAI } = require('@google/generative-ai');
+                    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY!);
+                    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+                    
+                    const visionPrompt = "You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata.";
+                    
+                    const result = await model.generateContent([
+                        visionPrompt,
+                        {
+                            inlineData: {
+                                data: buffer.toString('base64'),
+                                mimeType
+                            }
+                        }
+                    ]);
+                    
+                    const desc = result.response.text()?.trim();
+                    if (desc) {
+                        console.log(`[Self-Healing] On-the-fly vision analysis success: "${desc}"`);
+                        
+                        // Update Supabase using a service role client to bypass client RLS rules
+                        const { createClient: createAdminClient } = require('@supabase/supabase-js');
+                        const supabaseAdmin = createAdminClient(
+                            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                            process.env.SUPABASE_SERVICE_ROLE_KEY!
+                        );
+                        await supabaseAdmin
+                            .from('profiles')
+                            .update({ character_description: desc })
+                            .eq('id', targetUserId);
+                        
+                        // Update current object in memory
+                        profile.character_description = desc;
+                    }
+                }
+            } catch (visionErr) {
+                console.error("[Self-Healing] Vision analysis failed:", visionErr);
+            }
+        }
 
         const productInfo = property ? `Product: ${property.title}. Description: ${property.description}` : 'Generic product promotion';
         const businessName = profile?.business_name || 'Your Business';
@@ -177,26 +226,62 @@ export async function POST(request: Request) {
         const prompts: string[] = [];
         const scenes = script.scenes || [{ dialogue: script.dialogue, visuals: script.visuals }];
         
+        // Mapped Gender Helpers based on analyzed character profile description
+        const isMale = /male|man|boy|gentleman|he\b/i.test(profile?.character_description || "");
+        const voiceGender = isMale ? "male" : "female";
+        const subjectPronoun = isMale ? "he" : "she";
+        const possessivePronoun = isMale ? "his" : "her";
+        const characterNoun = isMale ? "man" : "woman";
+        const characterAdjective = isMale ? "charismatic handsome" : "gorgeous beautiful";
+
         const creatorAvatarDescription = profile?.character_description 
             ? `Stunning close-up studio portrait of the custom character: ${profile.character_description}`
             : "Stunning close-up studio portrait of a supermodel-like Indian female UGC creator with a fair complexion, smiling warmly.";
 
         const characterConstraint = profile?.character_description
-            ? `The video MUST feature the exact same custom character described in Reference Image 1: ${profile.character_description}. They must speak directly to the camera with highly warm, expressive, and friendly gestures. Face, gender, hair, and style must perfectly match Reference Image 1.`
+            ? `The video MUST feature the exact same custom character described in Reference Image 1: ${profile.character_description}. Face, gender, hair, and style must perfectly match Reference Image 1.`
             : "The video MUST feature the Indian female UGC creator shown in Reference Image 1. She must speak directly to the camera with highly warm, expressive, and friendly gestures. Her face, appearance, hair, and style must perfectly match Reference Image 1.";
 
         const promptCharacterLine = profile?.character_description
-            ? `The exact same custom character (${profile.character_description}) from Reference Image 1 speaking directly to camera.`
-            : "The exact same stunning Indian female UGC creator from Reference Image 1 speaking directly to camera.";
+            ? `The exact same custom character (${profile.character_description}) from Reference Image 1 speaking directly to camera with a clear, natural, professional ${voiceGender} voice.`
+            : "The exact same stunning Indian female UGC creator from Reference Image 1 speaking directly to camera with a clear, natural, professional female voice.";
 
         for (let i = 0; i < scenes.length; i++) {
             const scene = scenes[i];
+
+            // Pre-process visuals to align perfectly with the target profile character's parsed gender.
+            // This prevents Gemini from receiving contradictory gender cues from older default scripts!
+            let visualText = scene.visuals || "";
+            if (isMale) {
+                visualText = visualText
+                    .replace(/\bfemale\b/gi, 'male')
+                    .replace(/\bwoman\b/gi, 'man')
+                    .replace(/\bwomen\b/gi, 'men')
+                    .replace(/\bgirl\b/gi, 'boy')
+                    .replace(/\bgirls\b/gi, 'boys')
+                    .replace(/\bshe\b/gi, 'he')
+                    .replace(/\bher\b/gi, 'his')
+                    .replace(/\bgorgeous\b/gi, 'handsome')
+                    .replace(/\bbeautiful\b/gi, 'handsome');
+            } else {
+                visualText = visualText
+                    .replace(/\bmale\b/gi, 'female')
+                    .replace(/\bman\b/gi, 'woman')
+                    .replace(/\bmen\b/gi, 'women')
+                    .replace(/\bboy\b/gi, 'girl')
+                    .replace(/\bboys\b/gi, 'girls')
+                    .replace(/\bhe\b/gi, 'she')
+                    .replace(/\bhim\b/gi, 'her')
+                    .replace(/\bhis\b/gi, 'her')
+                    .replace(/\bhandsome\b/gi, 'beautiful');
+            }
+
             const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
 Translate the following specific scene from a script into a highly structured generative prompt for Bytedance Seedance 2.0.
 
 Scene Number: ${i + 1} of ${scenes.length}
 Scene Dialogue: "${scene.dialogue}"
-Scene Visuals: "${scene.visuals}"
+Scene Visuals: "${visualText}"
 Business name: "${businessName}"
 Product context: "${productInfo}"
 User's brand style: "${brandGuidelines}"
@@ -210,14 +295,18 @@ YOUR INSTRUCTIONS:
 1. Generate a single highly detailed video prompt following the structure of the provided example exactly.
 2. The video MUST look super natural, organic, and have a UGC look (direct UGC look, shallow depth of field, handheld camera motion) by default.
 3. ${characterConstraint}
+   - CRITICAL PRONOUN AND GENDER RULE: The character is ${voiceGender}. In the generated video prompt under [Action Sequence], you MUST describe all visual movements and physical details of the character strictly matching this gender.
+   - If male: describe the creator as "the handsome male creator", "he", "his", "him" throughout all SHOT descriptions. NEVER use words like "female", "woman", "she", or "her" anywhere in your output.
+   - If female: describe the creator as "the beautiful female creator", "she", "her" throughout all SHOT descriptions. NEVER use words like "male", "man", "he", or "his" anywhere in your output.
+    - In every SHOT where the creator is speaking, explicitly write that he/she is speaking with a clear, professional ${voiceGender} voice, audio-only speech with NO on-screen subtitles or captions overlay (e.g. "...speaking directly to camera with a clear, natural, professional ${voiceGender} voice, audio-only speech, absolutely no on-screen text or subtitles overlay...").
 4. STRICT ENVIRONMENT CONSTRAINT (Prevents Hallucinations): Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images (Reference Image 2, 3, etc.). Do NOT invent, assume, or hallucinate rooms, structures, product features, or details that are not shown in the reference photos. For example, if the photos only show a bedroom, only show the bedroom; if the photos show a cosmetics bottle, only showcase that cosmetics bottle. This constraint is critical to prevent hallucinations across different business niches.
 5. Make the scene highly dynamic: constantly moving, featuring dynamic shot changes, handheld camera motion, fluid panning, and different angles narrating dialogues along the way in a highly expressive way. Every shot must feature camera movement and expressive physical storytelling.
 6. NO PHONE NUMBERS: Under no circumstances should the dialogue contain any digits or spoken phone numbers. Replace any phone numbers or digit blocks in the dialogue with the phrase "get in touch".
 7. DO NOT use abstract image placeholders like "@Image 1", "@Image 2", "Image 1", or "Image 2" in the prompt. Instead, replace them by describing the actual visual content of the corresponding image description.
 8. The video is a strict 15-second clip, so split the [Action Sequence] into SHOTs from 0:00 to 0:15 (e.g. SHOT 1 (0:00-0:03) ...).
 9. The dialogue from the script MUST be mapped precisely to the dialogue in the SHOTs in the [Action Sequence] as spoken words by the creator.
-10. CRITICAL: NEVER instruct in the prompt to display any text overlay, subtitles, captions, watermarks, or logos on screen. Keep the entire frame completely clean of all graphic text.
-11. The [Negative Prompt] section MUST explicitly list negative text descriptors: "text, logo, watermark, subtitles, captions, words, signature, letters, overlay".
+10. CRITICAL: Keep the frame completely 100% clean of all visual text, subtitles, captions, watermarks, lower thirds, or logos on screen. The creator is speaking, but do NOT overlay any text of what is said on the video. The generated video must be audio-only speech. Ensure the negative prompt lists negative text descriptors.
+11. The [Negative Prompt] section MUST explicitly list negative text descriptors: "text, logo, watermark, subtitles, captions, words, signature, letters, overlay, on-screen text, burned-in subtitles, gibberish text, lower-third titles".
 
 OUTPUT FORMAT:
 Provide the prompt output in the exact format shown below, starting with "[Aesthetic]" and concluding with the "[Negative Prompt]" section. Do not add any conversational text or formatting wrappers like markdown code blocks.
@@ -228,12 +317,12 @@ Example structure:
 [Characters] ${promptCharacterLine}
 [Environment] Modern clean setting showing [insert relevant image description here].
 [Action Sequence]
-SHOT 1 (0:00-0:03) Creator holding the product, pointing at the [insert image description here], panning in close. DIALOGUE: "..."
-SHOT 2 (0:03-0:07) Close up on the creator demonstrating the product [insert image description here], handheld camera tilting. DIALOGUE: "..."
-SHOT 3 (0:07-0:11) Creator showcasing the [insert image description here] with enthusiastic hand gestures, dynamic track left movement. DIALOGUE: "..."
-SHOT 4 (0:11-0:15) Creator smiling warmly, waving, camera panning back out. DIALOGUE: "..."
+SHOT 1 (0:00-0:03) The charismatic ${characterAdjective} ${characterNoun} creator holding the product, pointing at the [insert image description here], speaking directly to camera in a clear professional ${voiceGender} voice, audio-only speech, absolutely no on-screen text or subtitles overlay. DIALOGUE: "..."
+SHOT 2 (0:03-0:07) Close up on ${subjectPronoun} demonstrating the product [insert image description here], handheld camera tilting, ${subjectPronoun} speaking in a clear professional ${voiceGender} voice, audio-only speech with no text overlay. DIALOGUE: "..."
+SHOT 3 (0:07-0:11) The creator showcasing the [insert image description here] with enthusiastic hand gestures, dynamic track left movement, speaking in a clear professional ${voiceGender} voice, audio-only speech, no burned-in text. DIALOGUE: "..."
+SHOT 4 (0:11-0:15) The ${characterNoun} creator smiling warmly, waving, camera panning back out, speaking in a clear professional ${voiceGender} voice, audio-only speech, pristine screen. DIALOGUE: "..."
 [Production Brief] Shallow depth of field, subject sharp, UGC handheld shake, 4k, realistic texture.
-[Negative Prompt] text, logo, watermark, subtitles, captions, words, signature, letters, overlay, low quality.`;
+[Negative Prompt] text, logo, watermark, subtitles, captions, words, signature, letters, overlay, on-screen text, burned-in subtitles, gibberish text, lower-third titles, low quality.`;
 
             let finalPrompt = "";
             try {
@@ -251,7 +340,7 @@ SHOT 4 (0:11-0:15) Creator smiling warmly, waving, camera panning back out. DIAL
 [Characters] ${promptCharacterLine}
 [Environment] Modern clean setting showing ${firstImageDesc}.
 [Action Sequence]
-SHOT 1 (0:00-0:15) Beautiful charismatic Indian creator holding the product and talking directly to camera, handheld moving shots. DIALOGUE: "${scene.dialogue}"
+SHOT 1 (0:00-0:15) Charismatic ${characterNoun} creator matching Reference Image 1 holding the product and talking directly to camera, speaking in a clear professional ${voiceGender} voice, handheld moving shots. DIALOGUE: "${scene.dialogue}"
 [Production Brief] Shallow depth of field, subject sharp, UGC handheld shake.
 [Negative Prompt] text, logo, watermark, subtitles, captions, words, signature, letters, overlay.`;
             }

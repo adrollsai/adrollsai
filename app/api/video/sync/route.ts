@@ -103,11 +103,46 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // 2. Fetch processing video tasks for the user
+        // Parse impersonate ID from request URL
+        const url = new URL(request.url);
+        const impersonateId = url.searchParams.get('impersonate');
+
+        const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single();
+        let targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
+          ? (currentProfile.agency_id || currentProfile.parent_id) 
+          : user.id;
+
+        if (impersonateId) {
+            if (['super_admin', 'agency', 'admin'].includes(currentProfile?.role || '')) {
+                if (currentProfile?.role !== 'super_admin') {
+                    const isParent = (currentProfile?.agency_id === impersonateId || currentProfile?.parent_id === impersonateId);
+                    const { data: subAccount } = await supabase
+                      .from('profiles')
+                      .select('id')
+                      .eq('id', impersonateId)
+                      .eq('agency_id', currentProfile?.agency_id || user.id)
+                      .single();
+
+                    if (isParent || subAccount) {
+                        targetUserId = impersonateId;
+                    } else {
+                        return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+                    }
+                } else {
+                    targetUserId = impersonateId;
+                }
+            } else {
+                return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+            }
+        }
+
+        console.log(`[Sync Endpoint] Querying tasks for target user: ${targetUserId} (impersonated: ${!!impersonateId})`);
+
+        // 2. Fetch processing video tasks for the target user
         const { data: activeTasks, error: fetchError } = await supabaseAdmin
             .from('video_tasks')
             .select('*')
-            .eq('user_id', user.id)
+            .eq('user_id', targetUserId)
             .eq('status', 'Processing');
 
         if (fetchError) {

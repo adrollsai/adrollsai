@@ -221,8 +221,12 @@ export default function AssetsPage() {
 
         const interval = setInterval(async () => {
             try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const impersonateId = urlParams.get('impersonate');
+                const syncUrl = impersonateId ? `/api/video/sync?impersonate=${impersonateId}` : '/api/video/sync';
+
                 // Proactively trigger self-healing sync in case webhook callback failed (e.g. ngrok tunnel down)
-                await fetch('/api/video/sync', { method: 'POST' });
+                await fetch(syncUrl, { method: 'POST' });
             } catch (err) {
                 console.error("[Assets Polling] Active video tasks sync failed:", err);
             }
