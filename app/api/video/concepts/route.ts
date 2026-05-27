@@ -94,6 +94,9 @@ export async function POST(request: Request) {
         const brandGuidelines = profile?.custom_prompt || 'UGC style, engaging';
 
         // Build prompt for analysis and concept generation
+        const characterDescription = profile?.character_description 
+            || "a stunningly beautiful, highly attractive, charismatic Indian female UGC content creator with a fair complexion, smiling warmly";
+
         const conceptPrompt = `You are a world-class Ad Creative Director specializing in hyper-engaging, high-converting Meta and TikTok video ads.
 Your task is to analyze the provided business details, product details, user guidelines, and any referenced image descriptions, then create 5 unique, ultra-hooky, 15-second ad concepts.
 
@@ -106,6 +109,10 @@ Product/Service Info:
 - Context: ${productInfo}
 - Custom Instructions: ${userInstructions || 'None'}
 
+Creator Character (the person who will appear in the video):
+"${characterDescription}"
+All concept visuals and descriptions must be written for THIS specific creator character. Use their correct gender naturally in all visual descriptions and hooks.
+
 Reference Images available:
 ${refImages.map((img, i) => `- Image Image_${i + 1}: ${img}`).join('\n')}
 
@@ -113,7 +120,7 @@ INSTRUCTIONS:
 0. CRITICAL CUSTOM INSTRUCTIONS PRIORITIZATION RULE: You MUST strictly prioritize and adhere to the user's Custom Instructions: "${userInstructions || 'None'}". Every single concept angle, visual storyline, hook, and psychological positioning MUST be custom-tailored to follow these instructions first and foremost. Do not ignore them or generate generic real estate/e-commerce templates that do not reflect what the user has requested here.
 1. Since the videos will run as Facebook/Instagram/TikTok UGC Ads, they must be warm, authentic, natural, and deeply emotional. Capture the viewer's heart from the first few seconds with a deeply human, relatable statement or aspiration rather than high-hype direct response hooks. ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or pushy marketing hooks. Every concept must be centered around warm, authentic, emotional storytelling that generates real feelings of comfort, trust, pride, or security.
 2. The ad concepts should be designed for a strict 15-second video clip in 9:16 dimension.
-3. Incorporate a super attractive, highly charismatic, charming, and appealing Indian model UGC-style creator speaking directly to the camera and showcasing/talking about the product/service in the concept with warm, friendly expressions, unless the user explicitly requested a different profile/ethnicity.
+3. The creator character described above will speak directly to the camera and showcase/talk about the product/service. Their voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging. Their body language must be highly natural and dynamic — real hand gestures, subtle head tilts, natural eye contact, relaxed movements. They should feel like a real person, not stiff or robotic.
 4. Make the scenes highly dynamic: constantly moving, featuring dynamic shot changes, handheld camera motion, fluid panning, and different angles (close-ups, medium shots) narrating dialogues along the way in a highly expressive way. Avoid static single shots.
 5. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue or visual captions. If the product info or call-to-action implies a phone number, use the exact phrase "get in touch" (or Hinglish equivalent like "humein contact karein") instead. Under no circumstances should the dialogue contain digits or spoken phone numbers.
 6. NEVER instruct to display any text overlay, subtitles, captions, watermarks, or logos on screen in any visual instruction, as the video AI generates garbled text and distorted logos. Keep the visual space completely clean of text.

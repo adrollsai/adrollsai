@@ -190,91 +190,47 @@ export async function POST(request: Request) {
         const prompts: string[] = [];
         const scenes = script.scenes || [{ dialogue: script.dialogue, visuals: script.visuals }];
         
-        // Mapped Gender Helpers based on analyzed character profile description
-        // IMPORTANT: Check female FIRST — "female" contains "male" as a substring!
-        const desc = profile?.character_description || "";
-        const isFemale = /\bfemale\b|\bwoman\b|\bgirl\b|\blady\b|\bshe\b|\bher\b/i.test(desc);
-        const isMale = !isFemale && /\bmale\b|\bman\b|\bboy\b|\bgentleman\b|\bhe\b/i.test(desc);
-        const voiceGender = isMale ? "male" : "female";
-        const subjectPronoun = isMale ? "he" : "she";
-        const possessivePronoun = isMale ? "his" : "her";
-        const characterNoun = isMale ? "man" : "woman";
-        const characterAdjective = isMale ? "charismatic handsome" : "gorgeous beautiful";
-
-        const creatorAvatarDescription = profile?.character_description 
-            ? `Stunning close-up studio portrait of the custom character: ${profile.character_description}`
-            : "Stunning close-up studio portrait of a supermodel-like Indian female UGC creator with a fair complexion, smiling warmly.";
-
-        const characterConstraint = profile?.character_description
-            ? `The video MUST feature the exact same custom character described in Reference Image 1: ${profile.character_description}. Face, gender, hair, and style must perfectly match Reference Image 1.`
-            : "The video MUST feature the Indian female UGC creator shown in Reference Image 1. She must speak directly to the camera with highly warm, expressive, and friendly gestures. Her face, appearance, hair, and style must perfectly match Reference Image 1.";
-
-        const promptCharacterLine = profile?.character_description
-            ? `The exact same custom character (${profile.character_description}) from Reference Image 1 speaking directly to camera with a clear, natural, professional ${voiceGender} voice.`
-            : "The exact same stunning Indian female UGC creator from Reference Image 1 speaking directly to camera with a clear, natural, professional female voice.";
+        // Character description — fed directly to Gemini, no regex gender detection needed
+        const characterDescription = profile?.character_description 
+            || "a stunningly beautiful, highly attractive, charismatic Indian female UGC content creator with a fair complexion, smiling warmly";
 
         for (let i = 0; i < scenes.length; i++) {
             const scene = scenes[i];
-
-            // Pre-process visuals to align perfectly with the target profile character's parsed gender.
-            // This prevents Gemini from receiving contradictory gender cues from older default scripts!
-            let visualText = scene.visuals || "";
-            if (isMale) {
-                visualText = visualText
-                    .replace(/\bfemale\b/gi, 'male')
-                    .replace(/\bwoman\b/gi, 'man')
-                    .replace(/\bwomen\b/gi, 'men')
-                    .replace(/\bgirl\b/gi, 'boy')
-                    .replace(/\bgirls\b/gi, 'boys')
-                    .replace(/\bshe\b/gi, 'he')
-                    .replace(/\bher\b/gi, 'his')
-                    .replace(/\bgorgeous\b/gi, 'handsome')
-                    .replace(/\bbeautiful\b/gi, 'handsome');
-            } else {
-                visualText = visualText
-                    .replace(/\bmale\b/gi, 'female')
-                    .replace(/\bman\b/gi, 'woman')
-                    .replace(/\bmen\b/gi, 'women')
-                    .replace(/\bboy\b/gi, 'girl')
-                    .replace(/\bboys\b/gi, 'girls')
-                    .replace(/\bhe\b/gi, 'she')
-                    .replace(/\bhim\b/gi, 'her')
-                    .replace(/\bhis\b/gi, 'her')
-                    .replace(/\bhandsome\b/gi, 'beautiful');
-            }
 
             const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
 Translate the following specific scene from a script into a highly structured generative prompt for Bytedance Seedance 2.0.
 
 Scene Number: ${i + 1} of ${scenes.length}
 Scene Dialogue: "${scene.dialogue}"
-Scene Visuals: "${visualText}"
+Scene Visuals: "${scene.visuals || ''}"
 Business name: "${businessName}"
 Product context: "${productInfo}"
 User's brand style: "${brandGuidelines}"
 Custom instructions: "${customInstructions || 'None'}"
 
+CREATOR CHARACTER (Reference Image 1):
+"${characterDescription}"
+This is the exact person who must appear in the video. Study this description carefully — their gender, appearance, ethnicity, hair, clothing, and style must be matched EXACTLY in every shot. Use the correct pronouns and gendered language that match this character naturally.
+
 Reference Image Descriptions:
-- Reference Image 1 (Creator Avatar): "${creatorAvatarDescription}"
+- Reference Image 1 (Creator Avatar): "${characterDescription}"
 ${descriptionsText.replace(/Reference Image (\d+)/g, (m: string, n: string) => `Reference Image ${parseInt(n) + 1}`)}
 
 YOUR INSTRUCTIONS:
 0. CRITICAL CUSTOM INSTRUCTIONS PRIORITIZATION RULE: You MUST strictly prioritize and adhere to the user's Custom Instructions: "${customInstructions || 'None'}". The generated prompt's action sequences, character visual presentation, expressions, and overall scene context must align perfectly with and follow these custom instructions first and foremost. Do not ignore them or generate default actions that do not reflect what the user has requested.
 1. Generate a single highly detailed video prompt following the structure of the provided example exactly.
-2. The video MUST look super natural, organic, and have a UGC look (direct UGC look, shallow depth of field, handheld camera motion) by default.
-3. ${characterConstraint}
-   - CRITICAL PRONOUN AND GENDER RULE: The character is ${voiceGender}. In the generated video prompt under [Action Sequence], you MUST describe all visual movements and physical details of the character strictly matching this gender.
-   - If male: describe the creator as "the handsome male creator", "he", "his", "him" throughout all SHOT descriptions. NEVER use words like "female", "woman", "she", or "her" anywhere in your output.
-   - If female: describe the creator as "the beautiful female creator", "she", "her" throughout all SHOT descriptions. NEVER use words like "male", "man", "he", or "his" anywhere in your output.
-    - In every SHOT where the creator is speaking, explicitly write that he/she is speaking with a clear, professional ${voiceGender} voice, audio-only speech with NO on-screen subtitles or captions overlay (e.g. "...speaking directly to camera with a clear, natural, professional ${voiceGender} voice, audio-only speech, absolutely no on-screen text or subtitles overlay...").
-4. STRICT ENVIRONMENT CONSTRAINT (Prevents Hallucinations): Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images (Reference Image 2, 3, etc.). Do NOT invent, assume, or hallucinate rooms, structures, product features, or details that are not shown in the reference photos. For example, if the photos only show a bedroom, only show the bedroom; if the photos show a cosmetics bottle, only showcase that cosmetics bottle. This constraint is critical to prevent hallucinations across different business niches.
-5. Make the scene highly dynamic: constantly moving, featuring dynamic shot changes, handheld camera motion, fluid panning, and different angles narrating dialogues along the way in a highly expressive way. Every shot must feature camera movement and expressive physical storytelling.
-6. NO PHONE NUMBERS: Under no circumstances should the dialogue contain any digits or spoken phone numbers. Replace any phone numbers or digit blocks in the dialogue with the phrase "get in touch".
-7. DO NOT use abstract image placeholders like "@Image 1", "@Image 2", "Image 1", or "Image 2" in the prompt. Instead, replace them by describing the actual visual content of the corresponding image description.
-8. The video is a strict 15-second clip, so split the [Action Sequence] into SHOTs from 0:00 to 0:15 (e.g. SHOT 1 (0:00-0:03) ...).
-9. The dialogue from the script MUST be mapped precisely to the dialogue in the SHOTs in the [Action Sequence] as spoken words by the creator.
-10. CRITICAL: Keep the frame completely 100% clean of all visual text, subtitles, captions, watermarks, lower thirds, or logos on screen. The creator is speaking, but do NOT overlay any text of what is said on the video. The generated video must be audio-only speech. Ensure the negative prompt lists negative text descriptors.
-11. The [Negative Prompt] section MUST explicitly list negative text descriptors: "text, logo, watermark, subtitles, captions, words, signature, letters, overlay, on-screen text, burned-in subtitles, gibberish text, lower-third titles".
+2. The video MUST look super natural, organic, and have a raw UGC look (direct UGC look, shallow depth of field, handheld camera motion, like a real person filmed it on their phone) by default.
+3. CHARACTER IDENTITY RULE: The video MUST feature the exact same person described in the CREATOR CHARACTER section above (Reference Image 1). Their face, gender, build, hair, clothing, and overall appearance must perfectly match Reference Image 1. Use the correct pronouns (he/him/his or she/her) that match this character's gender naturally based on the description. Do NOT mismatch the gender — if the character is described as female, use she/her; if male, use he/him.
+4. VOICE QUALITY RULE: The character's spoken voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging — like a real influencer or content creator talking to their audience. The voice must match the character's gender. It should NOT sound robotic, monotone, or synthetic. Think of a warm, friendly, confident creator voice with natural cadence and subtle emotional inflections.
+5. NATURAL BODY LANGUAGE & GESTURES: The character must have highly natural, dynamic, and expressive body language throughout the video — real hand gestures while talking, subtle head tilts, natural eye contact shifts, relaxed posture changes, genuine smiling, leaning in/out, touching/pointing at products naturally. Their movements should feel organic and alive like a real person, NOT stiff, static, or robotic. Every shot must show the character actively moving and gesturing naturally.
+6. STRICT ENVIRONMENT CONSTRAINT (Prevents Hallucinations): Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images (Reference Image 2, 3, etc.). Do NOT invent, assume, or hallucinate rooms, structures, product features, or details that are not shown in the reference photos.
+7. Make the scene highly dynamic: constantly moving, featuring dynamic shot changes, handheld camera motion, fluid panning, and different angles narrating dialogues along the way in a highly expressive way. Every shot must feature camera movement and expressive physical storytelling.
+8. NO PHONE NUMBERS: Under no circumstances should the dialogue contain any digits or spoken phone numbers. Replace any phone numbers or digit blocks in the dialogue with the phrase "get in touch".
+9. DO NOT use abstract image placeholders like "@Image 1", "@Image 2", "Image 1", or "Image 2" in the prompt. Instead, replace them by describing the actual visual content of the corresponding image description.
+10. The video is a strict 15-second clip, so split the [Action Sequence] into SHOTs from 0:00 to 0:15 (e.g. SHOT 1 (0:00-0:03) ...).
+11. The dialogue from the script MUST be mapped precisely to the dialogue in the SHOTs in the [Action Sequence] as spoken words by the creator.
+12. CRITICAL: Keep the frame completely 100% clean of all visual text, subtitles, captions, watermarks, lower thirds, or logos on screen. The creator is speaking, but do NOT overlay any text of what is said on the video. The generated video must be audio-only speech. Ensure the negative prompt lists negative text descriptors.
+13. The [Negative Prompt] section MUST explicitly list negative text descriptors: "text, logo, watermark, subtitles, captions, words, signature, letters, overlay, on-screen text, burned-in subtitles, gibberish text, lower-third titles".
 
 OUTPUT FORMAT:
 Provide the prompt output in the exact format shown below, starting with "[Aesthetic]" and concluding with the "[Negative Prompt]" section. Do not add any conversational text or formatting wrappers like markdown code blocks.
@@ -282,15 +238,15 @@ Provide the prompt output in the exact format shown below, starting with "[Aesth
 Example structure:
 [Aesthetic] UGC style. Naturalistic warm lighting, handheld camera movement.
 [Storyline] Part of an ad for ${businessName} demonstrating the product benefits.
-[Characters] ${promptCharacterLine}
+[Characters] The exact same creator from Reference Image 1 (${characterDescription}), speaking directly to camera with a warm, smooth, pleasing, natural voice. Voice must match their gender perfectly.
 [Environment] Modern clean setting showing [insert relevant image description here].
 [Action Sequence]
-SHOT 1 (0:00-0:03) The charismatic ${characterAdjective} ${characterNoun} creator holding the product, pointing at the [insert image description here], speaking directly to camera in a clear professional ${voiceGender} voice, audio-only speech, absolutely no on-screen text or subtitles overlay. DIALOGUE: "..."
-SHOT 2 (0:03-0:07) Close up on ${subjectPronoun} demonstrating the product [insert image description here], handheld camera tilting, ${subjectPronoun} speaking in a clear professional ${voiceGender} voice, audio-only speech with no text overlay. DIALOGUE: "..."
-SHOT 3 (0:07-0:11) The creator showcasing the [insert image description here] with enthusiastic hand gestures, dynamic track left movement, speaking in a clear professional ${voiceGender} voice, audio-only speech, no burned-in text. DIALOGUE: "..."
-SHOT 4 (0:11-0:15) The ${characterNoun} creator smiling warmly, waving, camera panning back out, speaking in a clear professional ${voiceGender} voice, audio-only speech, pristine screen. DIALOGUE: "..."
+SHOT 1 (0:00-0:03) The creator from Reference Image 1 holding the product, pointing naturally with relaxed hand gestures at the [insert image description here], speaking directly to camera with a warm, smooth, pleasing voice, audio-only speech, absolutely no on-screen text or subtitles overlay. DIALOGUE: "..."
+SHOT 2 (0:03-0:07) Close up of the creator demonstrating the product [insert image description here], natural head tilts and expressive hand movements, handheld camera tilting, speaking with a warm, engaging voice, audio-only speech with no text overlay. DIALOGUE: "..."
+SHOT 3 (0:07-0:11) The creator showcasing the [insert image description here] with enthusiastic natural hand gestures, leaning in with genuine excitement, dynamic track left movement, speaking with a warm, pleasing voice, audio-only speech, no burned-in text. DIALOGUE: "..."
+SHOT 4 (0:11-0:15) The creator smiling warmly and naturally, waving, relaxed posture, camera panning back out, speaking with a warm, smooth voice, audio-only speech, pristine screen. DIALOGUE: "..."
 [Production Brief] Shallow depth of field, subject sharp, UGC handheld shake, 4k, realistic texture.
-[Negative Prompt] text, logo, watermark, subtitles, captions, words, signature, letters, overlay, on-screen text, burned-in subtitles, gibberish text, lower-third titles, low quality.`;
+[Negative Prompt] text, logo, watermark, subtitles, captions, words, signature, letters, overlay, on-screen text, burned-in subtitles, gibberish text, lower-third titles, low quality, robotic motion, stiff posture.`;
 
             let finalPrompt = "";
             try {
@@ -305,12 +261,12 @@ SHOT 4 (0:11-0:15) The ${characterNoun} creator smiling warmly, waving, camera p
                 const firstImageDesc = (imageDescriptions || script.imageDescriptions || [])[0] || 'the product';
                 finalPrompt = `[Aesthetic] UGC style.
 [Storyline] Product ad for ${businessName}.
-[Characters] ${promptCharacterLine}
+[Characters] The exact same creator from Reference Image 1 (${characterDescription}), speaking directly to camera with a warm, smooth, pleasing, natural voice.
 [Environment] Modern clean setting showing ${firstImageDesc}.
 [Action Sequence]
-SHOT 1 (0:00-0:15) Charismatic ${characterNoun} creator matching Reference Image 1 holding the product and talking directly to camera, speaking in a clear professional ${voiceGender} voice, handheld moving shots. DIALOGUE: "${scene.dialogue}"
+SHOT 1 (0:00-0:15) The creator from Reference Image 1 holding the product and talking directly to camera with warm natural gestures, speaking with a smooth pleasing voice, handheld moving shots. DIALOGUE: "${scene.dialogue}"
 [Production Brief] Shallow depth of field, subject sharp, UGC handheld shake.
-[Negative Prompt] text, logo, watermark, subtitles, captions, words, signature, letters, overlay.`;
+[Negative Prompt] text, logo, watermark, subtitles, captions, words, signature, letters, overlay, robotic motion, stiff posture.`;
             }
             prompts.push(finalPrompt);
         }
