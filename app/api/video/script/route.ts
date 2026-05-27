@@ -148,8 +148,8 @@ export async function POST(request: Request) {
             .map((desc: string, i: number) => `- Image ${i + 1} Visual Description: "${desc}"`)
             .join('\n');
 
-        const masterPrompt = `You are a world-class Ad Copywriter and UGC Creative Director specializing in TikTok, Instagram Reels, and Meta UGC ads, trained in the exact copywriting secrets of Alex Hormozi.
-Your goal is to write a highly hooky, extremely high-converting 30-second ad script split into EXACTLY two sequential 15-second scenes, using the Alex Hormozi short-form UGC ad framework.
+        const masterPrompt = `You are a world-class Ad Copywriter and UGC Creative Director specializing in TikTok, Instagram Reels, and Meta UGC ads.
+Your goal is to write a deeply emotional, highly engaging, and highly converting 30-second ad script split into EXACTLY two sequential 15-second scenes, using the Emotional Storytelling UGC Framework.
 
 Business Name: ${businessName}
 Mission: ${profile?.mission_statement || 'N/A'}
@@ -165,16 +165,16 @@ Custom Instructions from User: ${userInstructions || 'None'}
 Reference Images and their visual content descriptions to use instead of generic text placeholders:
 ${descriptionsText || 'No image descriptions provided.'}
 
-ALEX HORMOZI UGC AD FRAMEWORK:
-1. THE HOOK (Scene 1: 0:00 - 0:05): Grab attention in the first 3 seconds! Use a powerful pattern-interrupt, address a specific sophisticated pain point or opportunity, or state a polarizing/exciting fact. Keep the hook ultra-engaging, direct, and high-energy.
-2. THE RETAIN & REWARD (Scene 1 & 2: 0:05 - 0:25): Bridge the hook by showing the immediate value and pleasure of the solution. Present the "No-Brainer Offer" or the high-value opportunity. Focus on why this is a steal, highlighting the speed, ease, or prestige of the solution. Keep the value proposition massive.
-3. THE CALL TO ACTION (Scene 2: 0:25 - 0:30): Clear, low-friction, high-urgency instruction to take action. (E.g. "कॉल करें या direct message करें!"). Make it feel like a risk-free next step.
+EMOTIONAL STORYTELLING UGC FRAMEWORK:
+1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:05): Grab attention with a warm, deeply human, emotionally resonant statement or relatable aspiration (e.g. *"क्या आप भी अपने परिवार के लिए एक ऐसे घर का सपना देखते हैं जहाँ सुकून हो?"* or *"Imagine a life where luxury meets absolute peace..."*). Speak directly to the viewer's heart.
+2. THE EMOTIONAL CONNECTION (Scene 1 & 2: 0:05 - 0:25): Bridge the hook by showing the feeling of comfort, pride, success, peace of mind, or belonging. Highlight the human value—how this product or space makes their life beautiful, secure, and complete. Focus on generating feelings of warmth, security, and aspiration.
+3. THE WARM CALL TO ACTION (Scene 2: 0:25 - 0:30): A friendly, welcoming, and low-friction invitation to take the next step (e.g. *"आइए, इस सपने को मिलकर सच करते हैं। हमसे अभी संपर्क करें।"*). Make it feel like connecting with a trusted friend.
 
 CONSTRAINTS & RULES:
-1. Duration: STRICTLY 30 seconds total, split into exactly TWO sequential 15-second clips (Scene 1: 0:00-0:15 and Scene 2: 0:15-0:30). High-energy, ultra-hooky, zero filler.
+1. Duration: STRICTLY 30 seconds total, split into exactly TWO sequential 15-second clips (Scene 1: 0:00-0:15 and Scene 2: 0:15-0:30). Deeply emotional, slow-paced, warm, and natural.
 2. Dialogue language: ${languageInstruction}
 3. Speaker Character: The speaker in both scenes MUST be ${profile?.character_description || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion"} (speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy). Their appearance must be identical and consistent across both scenes.
-4. Spoken Dialogue Tone: High-energy, fast-paced, direct-to-audience, empathetic, conversational, and highly persuasive, modeled exactly on Alex Hormozi's presentation style.
+4. Spoken Dialogue Tone: Warm, friendly, authentic, empathetic, deeply emotional, conversational, and completely natural. Speak slowly with genuine warmth, producing real feelings of trust, comfort, pride, and peace of mind in the viewer. ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or fast-talking hooks. The dialogue must flow like a warm, natural conversation from a real person who genuinely cares. Avoid robotic-sounding short fragments. Write complete, smooth, conversational sentences that produce feelings of warmth, family comfort, safety, and deep emotional resonance.
 5. STRICT NO-CTA IN SCENE 1 RULE: Under no circumstances should Scene 1 contain any call to action, phone number, contact prompt, social handle reference, or request to purchase/visit. Scene 1 must focus exclusively on the scroll-stopping hook and problem bridge. The Call to Action (CTA) to contact, buy, or get in touch must ONLY appear at the very end of Scene 2 (25s-30s).
 6. DYNAMIC AUDIENCE & NICHING ALIGNMENT: Analyze the product context and target buyer carefully. Tailor the hook and pain points exactly to the product's value tier. Do NOT use mismatched defaults (e.g. do NOT talk about 'renting vs buying' or 'saving rent money' if the product is a luxury 1.6 Cr home, commercial estate, or high-end service; instead, focus on exclusive lifestyle, status, growth, smart wealth investment, and ROI). Keep it fully generic so that the copywriting angle naturally scales from premium commercial/residential buyers to budget-conscious daily e-commerce shoppers based on the product description provided.
 7. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue. If the product info or call-to-action implies a phone number, the creator must ONLY say "get in touch" (or natural Hinglish equivalents like "humein contact karein" or "get in touch ho jao") instead. Under no circumstances should the spoken dialogue contain any digits, numbers, or spoken phone numbers.

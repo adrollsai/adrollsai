@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { createKieTask } from '@/utils/external-apis';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 import crypto from 'crypto';
+
+const supabaseAdmin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(request: Request) {
     try {
@@ -348,7 +354,7 @@ SHOT 1 (0:00-0:15) Charismatic ${characterNoun} creator matching Reference Image
         }
 
         // 4. Create Placeholder Asset (Spinning Card) in Supabase
-        const { data: newAsset, error: newAssetError } = await supabase
+        const { data: newAsset, error: newAssetError } = await supabaseAdmin
             .from('assets')
             .insert({
                 user_id: targetUserId,
@@ -423,14 +429,14 @@ SHOT 1 (0:00-0:15) Charismatic ${characterNoun} creator matching Reference Image
         
         if (launchErrors.length > 0 || taskIds.filter(Boolean).length !== prompts.length) {
             // Delete placeholder and refund credit if any task failed to start
-            await supabase.from('assets').delete().eq('id', newAsset.id);
+            await supabaseAdmin.from('assets').delete().eq('id', newAsset.id);
             await refundLimit(targetUserId, 'ai_creatives');
             return NextResponse.json({ error: launchErrors.join(', ') || "Failed to start parallel video generations" }, { status: 500 });
         }
 
         // 6. Record state in video_tasks (parallel records sharing the same asset_id)
         const insertPromises = taskIds.map((taskId, index) => {
-            return supabase
+            return supabaseAdmin
                 .from('video_tasks')
                 .insert({
                     id: crypto.randomUUID(),

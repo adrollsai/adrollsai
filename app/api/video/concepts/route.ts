@@ -100,7 +100,7 @@ Reference Images available:
 ${refImages.map((img, i) => `- Image Image_${i + 1}: ${img}`).join('\n')}
 
 INSTRUCTIONS:
-1. Since the videos will run as Facebook/Instagram/TikTok UGC Ads, they must be ultra-hooky (first 3 seconds are critical), engaging, natural, and feel organic.
+1. Since the videos will run as Facebook/Instagram/TikTok UGC Ads, they must be warm, authentic, natural, and deeply emotional. Capture the viewer's heart from the first few seconds with a deeply human, relatable statement or aspiration rather than high-hype direct response hooks. ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or pushy marketing hooks. Every concept must be centered around warm, authentic, emotional storytelling that generates real feelings of comfort, trust, pride, or security.
 2. The ad concepts should be designed for a strict 15-second video clip in 9:16 dimension.
 3. Incorporate a super attractive, highly charismatic, charming, and appealing Indian model UGC-style creator speaking directly to the camera and showcasing/talking about the product/service in the concept with warm, friendly expressions, unless the user explicitly requested a different profile/ethnicity.
 4. Make the scenes highly dynamic: constantly moving, featuring dynamic shot changes, handheld camera motion, fluid panning, and different angles (close-ups, medium shots) narrating dialogues along the way in a highly expressive way. Avoid static single shots.
