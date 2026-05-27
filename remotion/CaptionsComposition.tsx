@@ -82,13 +82,9 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
         });
     }
 
-    // 2. Shake Transform (translation)
+    // 2. Shake Transform (translation) - DISABLED to keep video stable and stable
     let translateX = 0;
     let translateY = 0;
-    if (activeShake) {
-        translateX = Math.sin(frame * 1.6) * 10;
-        translateY = Math.cos(frame * 1.9) * 10;
-    }
 
     // 3. Glowing Neon Vignette border opacity
     let borderOpacity = 0;

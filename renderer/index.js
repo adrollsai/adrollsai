@@ -251,8 +251,9 @@ app.post('/render', async (req, res) => {
             } catch (e) {}
 
             // Format local path as a 127.0.0.1 HTTP URL for headless Chromium compatibility to bypass CORS / same-origin restrictions on file:// resources
-            const localVideoUrl = `http://127.0.0.1:8081/static/${path.basename(tempSourcePath)}`;
-            console.log(`[Renderer] Local video HTTP URL for Chromium: ${localVideoUrl}`);
+            const isCloudRun = !!process.env.K_SERVICE;
+            const finalInputVideoUrl = isCloudRun ? videoUrl : `http://127.0.0.1:8081/static/${path.basename(tempSourcePath)}`;
+            console.log(`[Renderer] Selected video URL for Remotion Chromium (Cloud Run: ${isCloudRun}): ${finalInputVideoUrl}`);
 
             // 3. Detect Video Duration using local file path
             let duration = 30; // fallback
@@ -278,7 +279,7 @@ app.post('/render', async (req, res) => {
             // 5. Query Composition and override duration
             console.log(`[Renderer] Retrieving composition configurations...`);
             const comps = await getCompositions(bundleLocation, {
-                inputProps: { videoUrl: localVideoUrl, captions, effects, theme, profile },
+                inputProps: { videoUrl: finalInputVideoUrl, captions, effects, theme, profile },
             });
 
             const composition = comps.find((c) => c.id === "CaptionsComposition");
@@ -303,7 +304,7 @@ app.post('/render', async (req, res) => {
                 serveUrl: bundleLocation,
                 codec: "h264",
                 outputLocation,
-                inputProps: { videoUrl: localVideoUrl, captions, effects, theme, profile },
+                inputProps: { videoUrl: finalInputVideoUrl, captions, effects, theme, profile },
                 concurrency: 1, // Force serial rendering to prevent system OOM / Puppeteer process crashes on Windows
                 chromiumOptions: {
                     gl: 'angle',
