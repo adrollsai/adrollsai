@@ -133,7 +133,7 @@ export async function POST(request: Request) {
 
         // Determine if Hinglish should be used (default to true, unless user instructions explicitly request English/another language)
         const userText = (userInstructions || '').toLowerCase();
-        let languageInstruction = "The script dialogue MUST be written in conversational hybrid language (e.g., Hindi-English / Hinglish). To ensure correct and authentic text-to-speech native pronunciation, write any Hindi words or phrases in the native Hindi language using actual DEVANAGARI script (e.g., 'क्या आप अभी भी rent दे रहे हैं? toh bas, your search ends here!'). Keep all English words in standard English script. This ensures the voiceover speech engine reads the Hindi words with correct native Hindi pronunciation while keeping English words pronounced naturally.";
+        let languageInstruction = "The script dialogue MUST be written in conversational hybrid language (e.g., Hindi-English / Hinglish). To ensure correct and authentic text-to-speech native pronunciation, write ALL words that belong to the Hindi or Indian context (including city names like 'जीरकपुर', 'मोहाली', 'चंडीगढ़', 'दिल्ली', and common Indian terms like 'घर', 'पैसे', 'बिज़नेस', 'प्रॉपर्टी', 'मार्केट') in the actual Hindi (Devanagari) script. Do NOT write Hindi/Indian words or Indian city names in English script. ONLY keep standard global English terms (like 'rent', 'location', 'search', 'investment', 'luxury') in the standard English script. This is critical: if a word is Hindi or refers to an Indian context/location, it MUST be written in Devanagari script!";
         if (userText.includes('in english') || userText.includes('only english') || userText.includes('english language')) {
             languageInstruction = "The script dialogue MUST be written in ENGLISH as explicitly requested.";
         } else if (userText.includes('in hindi') || userText.includes('only hindi')) {
@@ -148,8 +148,8 @@ export async function POST(request: Request) {
             .map((desc: string, i: number) => `- Image ${i + 1} Visual Description: "${desc}"`)
             .join('\n');
 
-        const masterPrompt = `You are a world-class Ad Copywriter and UGC Creative Director specializing in TikTok, Instagram Reels, and Meta UGC ads.
-Your goal is to write a highly hooky, high-converting 30-second ad script split into EXACTLY two sequential 15-second scenes.
+        const masterPrompt = `You are a world-class Ad Copywriter and UGC Creative Director specializing in TikTok, Instagram Reels, and Meta UGC ads, trained in the exact copywriting secrets of Alex Hormozi.
+Your goal is to write a highly hooky, extremely high-converting 30-second ad script split into EXACTLY two sequential 15-second scenes, using the Alex Hormozi short-form UGC ad framework.
 
 Business Name: ${businessName}
 Mission: ${profile?.mission_statement || 'N/A'}
@@ -165,17 +165,24 @@ Custom Instructions from User: ${userInstructions || 'None'}
 Reference Images and their visual content descriptions to use instead of generic text placeholders:
 ${descriptionsText || 'No image descriptions provided.'}
 
+ALEX HORMOZI UGC AD FRAMEWORK:
+1. THE HOOK (Scene 1: 0:00 - 0:05): Grab attention in the first 3 seconds! Use a powerful pattern-interrupt, address a specific sophisticated pain point or opportunity, or state a polarizing/exciting fact. Keep the hook ultra-engaging, direct, and high-energy.
+2. THE RETAIN & REWARD (Scene 1 & 2: 0:05 - 0:25): Bridge the hook by showing the immediate value and pleasure of the solution. Present the "No-Brainer Offer" or the high-value opportunity. Focus on why this is a steal, highlighting the speed, ease, or prestige of the solution. Keep the value proposition massive.
+3. THE CALL TO ACTION (Scene 2: 0:25 - 0:30): Clear, low-friction, high-urgency instruction to take action. (E.g. "कॉल करें या direct message करें!"). Make it feel like a risk-free next step.
+
 CONSTRAINTS & RULES:
 1. Duration: STRICTLY 30 seconds total, split into exactly TWO sequential 15-second clips (Scene 1: 0:00-0:15 and Scene 2: 0:15-0:30). High-energy, ultra-hooky, zero filler.
 2. Dialogue language: ${languageInstruction}
 3. Speaker Character: The speaker in both scenes MUST be ${profile?.character_description || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion"} (speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy). Their appearance must be identical and consistent across both scenes.
-4. Spoken Dialogue Tone: Make the dialogue extremely engaging, interactive, highly energetic, and trendy, matching the tone of viral TikTok/Reels UGC ads.
-5. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue. If the product info or call-to-action implies a phone number, the creator must ONLY say "get in touch" (or natural Hinglish equivalents like "humein contact karein" or "get in touch ho jao") instead. Under no circumstances should the spoken dialogue contain any digits, numbers, or spoken phone numbers.
-6. STRICT ENVIRONMENT CONSTRAINT (Prevents Hallucinations): Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images. Do NOT invent, assume, or hallucinate rooms, structures, product features, or details that are not shown in the reference photos. This must work generically for all businesses (e.g. if a real estate listing photo only shows a bedroom, only show the bedroom; if an e-commerce product photo only shows a bottle on a table, only show that bottle on a table).
-7. Visual scene descriptions: Refer to the reference images by their actual visual descriptions naturally so the video generator knows exactly which image is used in each scene. Do NOT use abstract placeholders like "@Image 1", "@Image 2", "Image 1", or "Image 2" in the script or visual description.
-8. NEVER instruct to display any text overlay, subtitles, captions, watermarks, or logos on screen in any script or visuals section, as the video AI generates garbled text and distorted logos.
-9. Speech length: Keep the dialogue for EACH scene under 45 words so it can be comfortably spoken in 15 seconds.
-10. ${variationInstruction}
+4. Spoken Dialogue Tone: High-energy, fast-paced, direct-to-audience, empathetic, conversational, and highly persuasive, modeled exactly on Alex Hormozi's presentation style.
+5. STRICT NO-CTA IN SCENE 1 RULE: Under no circumstances should Scene 1 contain any call to action, phone number, contact prompt, social handle reference, or request to purchase/visit. Scene 1 must focus exclusively on the scroll-stopping hook and problem bridge. The Call to Action (CTA) to contact, buy, or get in touch must ONLY appear at the very end of Scene 2 (25s-30s).
+6. DYNAMIC AUDIENCE & NICHING ALIGNMENT: Analyze the product context and target buyer carefully. Tailor the hook and pain points exactly to the product's value tier. Do NOT use mismatched defaults (e.g. do NOT talk about 'renting vs buying' or 'saving rent money' if the product is a luxury 1.6 Cr home, commercial estate, or high-end service; instead, focus on exclusive lifestyle, status, growth, smart wealth investment, and ROI). Keep it fully generic so that the copywriting angle naturally scales from premium commercial/residential buyers to budget-conscious daily e-commerce shoppers based on the product description provided.
+7. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue. If the product info or call-to-action implies a phone number, the creator must ONLY say "get in touch" (or natural Hinglish equivalents like "humein contact karein" or "get in touch ho jao") instead. Under no circumstances should the spoken dialogue contain any digits, numbers, or spoken phone numbers.
+8. STRICT ENVIRONMENT CONSTRAINT (Prevents Hallucinations): Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images. Do NOT invent, assume, or hallucinate rooms, structures, product features, or details that are not shown in the reference photos.
+9. Visual scene descriptions: Refer to the reference images by their actual visual descriptions naturally so the video generator knows exactly which image is used in each scene. Do NOT use abstract placeholders like "@Image 1", "@Image 2", "Image 1", or "Image 2" in the script or visual description.
+10. NEVER instruct to display any text overlay, subtitles, captions, watermarks, or logos on screen in any script or visuals section, as the video AI generates garbled text and distorted logos.
+11. Speech length: Keep the dialogue for EACH scene under 45 words so it can be comfortably spoken in 15 seconds.
+12. ${variationInstruction}
 
 Output format must be a single, valid JSON object:
 {
