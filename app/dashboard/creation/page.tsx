@@ -546,7 +546,7 @@ export default function CreationPage() {
                 else if (prop.image_url) propImages = [prop.image_url];
             }
             
-            const filteredPropImages = propImages.filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && img !== 'null' && img !== 'undefined');
+            const filteredPropImages = propImages.filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined');
             const refImages = [...filteredPropImages, ...localRefImages, ...chatAttachments].slice(0, 4)
 
             const urlParams = new URLSearchParams(window.location.search)
@@ -834,7 +834,7 @@ export default function CreationPage() {
                         if (prop.images && prop.images.length > 0) propImages = prop.images;
                         else if (prop.image_url) propImages = [prop.image_url];
                     }
-                    const filteredPropImages = propImages.filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && img !== 'null' && img !== 'undefined');
+                    const filteredPropImages = propImages.filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined');
 
                     return filteredPropImages.map((url, i) => (
                         <div key={i} className="relative w-16 h-16 rounded-[1.25rem] border border-slate-200 overflow-hidden flex-shrink-0 bg-white shadow-sm">

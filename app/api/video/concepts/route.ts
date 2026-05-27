@@ -86,7 +86,7 @@ export async function POST(request: Request) {
         }
 
         const refImages = rawImages
-            .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && img !== 'null' && img !== 'undefined')
+            .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined')
             .slice(0, 4);
 
         const productInfo = property ? `Product: ${property.title}. Description: ${property.description}` : 'Generic product promotion';
