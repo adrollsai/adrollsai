@@ -172,7 +172,7 @@ export async function POST(request: Request) {
 
         const refImages = rawImages
             .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined')
-            .slice(0, 4);
+            .slice(0, 8);
 
         // Prepare physical image descriptions
         const descriptionsText = (imageDescriptions || script.imageDescriptions || [])
@@ -325,7 +325,7 @@ SHOT 1 (0:00-0:15) The creator from Reference Image 1 holding the product and ta
                 callBackUrl: callbackUrl,
                 input: {
                     prompt: promptText,
-                    reference_image_urls: combinedRefImages.slice(0, 4), // Send the avatar + property photos (up to 4)
+                    reference_image_urls: combinedRefImages.slice(0, 9), // Send the avatar + property/uploaded reference photos (up to 9 total)
                     aspect_ratio: "9:16",
                     duration: 15,
                     generate_audio: true,

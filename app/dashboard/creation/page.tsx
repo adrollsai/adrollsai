@@ -106,7 +106,7 @@ export default function CreationPage() {
     try {
       const uploadPromises = Array.from(files).map(file => uploadToR2(file, 'product-references'))
       const urls = await Promise.all(uploadPromises)
-      setLocalRefImages(prev => [...prev, ...urls].slice(0, 3))
+      setLocalRefImages(prev => [...prev, ...urls].slice(0, 2))
       toast.success("Product reference image uploaded! 📸")
     } catch (error) {
       console.error("Local reference upload failed:", error)
@@ -547,7 +547,9 @@ export default function CreationPage() {
             }
             
             const filteredPropImages = propImages.filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined');
-            const refImages = [...filteredPropImages, ...localRefImages, ...chatAttachments].slice(0, 4)
+            const limitedCatalogImages = filteredPropImages.slice(0, 6);
+            const limitedLocalRefImages = [...localRefImages, ...chatAttachments].slice(0, 2);
+            const refImages = [...limitedCatalogImages, ...limitedLocalRefImages];
 
             const urlParams = new URLSearchParams(window.location.search)
             const impersonateId = urlParams.get('impersonate')
@@ -834,7 +836,7 @@ export default function CreationPage() {
                         if (prop.images && prop.images.length > 0) propImages = prop.images;
                         else if (prop.image_url) propImages = [prop.image_url];
                     }
-                    const filteredPropImages = propImages.filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined');
+                    const filteredPropImages = propImages.filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined').slice(0, 6);
 
                     return filteredPropImages.map((url, i) => (
                         <div key={i} className="relative w-16 h-16 rounded-[1.25rem] border border-slate-200 overflow-hidden flex-shrink-0 bg-white shadow-sm">
@@ -865,12 +867,12 @@ export default function CreationPage() {
                 {/* 4. Local Product Reference Upload Button */}
                 <button 
                     onClick={() => localRefFileInputRef.current?.click()}
-                    disabled={isUploadingLocalRef || localRefImages.length >= 3}
-                    className={`w-16 h-16 rounded-[1.25rem] border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all flex-shrink-0 ${localRefImages.length >= 3 ? 'border-slate-100 text-slate-300 cursor-not-allowed bg-slate-50' : 'border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/5'}`}
+                    disabled={isUploadingLocalRef || localRefImages.length >= 2}
+                    className={`w-16 h-16 rounded-[1.25rem] border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all flex-shrink-0 ${localRefImages.length >= 2 ? 'border-slate-100 text-slate-300 cursor-not-allowed bg-slate-50' : 'border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/5'}`}
                 >
                     {isUploadingLocalRef ? <Loader2 size={16} className="animate-spin text-blue-500" /> : <Upload size={16} />}
                     <span className="text-[8px] font-bold text-center px-1 leading-tight uppercase">
-                        {localRefImages.length >= 3 ? 'Max Limit' : 'Upload Ref'}
+                        {localRefImages.length >= 2 ? 'Max Limit' : 'Upload Ref'}
                     </span>
                 </button>
                 <input type="file" ref={localRefFileInputRef} onChange={handleLocalRefUpload} className="hidden" accept="image/*" multiple />

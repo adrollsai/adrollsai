@@ -61,7 +61,7 @@ export async function POST(request: Request) {
 
         const { data: targetProfile } = await supabase
             .from('profiles')
-            .select('business_name, mission_statement, custom_prompt, character_url')
+            .select('business_name, mission_statement, custom_prompt, character_url, character_description')
             .eq('id', targetUserId)
             .single();
 
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
 
         const refImages = rawImages
             .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined')
-            .slice(0, 4);
+            .slice(0, 8);
 
         const productInfo = property ? `Product: ${property.title}. Description: ${property.description}` : 'Generic product promotion';
         const businessName = profile?.business_name || 'Your Business';

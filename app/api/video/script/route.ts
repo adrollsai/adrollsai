@@ -139,7 +139,7 @@ export async function POST(request: Request) {
 
         const refImages = rawImages
             .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined')
-            .slice(0, 4);
+            .slice(0, 8);
 
         // Determine if Hinglish should be used (default to true, unless user instructions explicitly request English/another language)
         const userText = (userInstructions || '').toLowerCase();
