@@ -369,13 +369,13 @@ export async function POST(request: Request) {
                 'ffmpeg-static', 
                 os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
             );
-            const cmd = `"${ffmpegBinary}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy "${outputPath}"`;
+            const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy "${outputPath}"`;
 
             
             console.log(`[Video Callback] Running FFmpeg command: ${cmd}`);
             
             await new Promise<void>((resolvePromise, rejectPromise) => {
-                exec(cmd, (execErr, stdout, stderr) => {
+                exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
                     if (execErr) {
                         console.error(`[Video Callback] FFmpeg error:`, execErr);
                         console.error(`[Video Callback] FFmpeg stderr:`, stderr);

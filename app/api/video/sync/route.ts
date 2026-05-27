@@ -311,10 +311,10 @@ export async function POST(request: Request) {
                             'ffmpeg-static', 
                             os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
                         );
-                        const cmd = `"${ffmpegBinary}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy "${outputPath}"`;
+                        const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy "${outputPath}"`;
 
                         await new Promise<void>((resolvePromise, rejectPromise) => {
-                            exec(cmd, (execErr: any, stdout: any, stderr: any) => {
+                            exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr: any, stdout: any, stderr: any) => {
                                 if (execErr) rejectPromise(execErr);
                                 else resolvePromise();
                             });

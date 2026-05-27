@@ -8,7 +8,7 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-    const ids = ["5049ca13-bd60-4c40-af90-4fff1d02fb0a", "96ba7f32-99bd-43e5-9ff2-14249d1a2718"];
+    const ids = ["33fb42c1-9015-4217-b9d9-b0e70893ee29", "edbe022d-854c-444b-93d0-09e300cb8cfd"];
     console.log("=== SEARCHING FOR ASSETS ===");
     for (const id of ids) {
         const { data: asset, error } = await supabaseAdmin

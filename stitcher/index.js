@@ -121,13 +121,13 @@ app.post('/stitch', async (req, res) => {
 
         // Run system FFmpeg cleanly
         const outputPath = path.join(tempDir, 'stitched.mp4');
-        const cmd = `ffmpeg -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy "${outputPath}"`;
+        const cmd = `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy "${outputPath}"`;
 
         
         console.log(`[Stitcher] Executing FFmpeg: ${cmd}`);
         
         await new Promise((resolvePromise, rejectPromise) => {
-            exec(cmd, (execErr, stdout, stderr) => {
+            exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
                 if (execErr) {
                     console.error(`[Stitcher] FFmpeg error:`, execErr);
                     console.error(`[Stitcher] FFmpeg stderr:`, stderr);

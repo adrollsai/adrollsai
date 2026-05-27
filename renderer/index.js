@@ -224,14 +224,23 @@ app.post('/render', async (req, res) => {
             tempSourcePath = path.join(renderTempDir, `source_${assetId}_${Date.now()}.mp4`);
             console.log(`[Renderer] Transcoding video to intra-frame-only (GOP=1) to prevent seek stutter...`);
             
-            const ffmpegPath = require('ffmpeg-static');
-            const transcodeCmd = `"${ffmpegPath}" -y -fflags +genpts -i "${rawTempPath}" -vf "settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p" -af "asetpts=PTS-STARTPTS" -c:v libx264 -r 30 -g 30 -c:a aac -preset superfast -crf 18 "${tempSourcePath}"`;
+            let ffmpegPath = 'ffmpeg';
+            try {
+                const ffmpegStatic = require('ffmpeg-static');
+                if (ffmpegStatic && (process.platform === 'win32' || !fs.existsSync('/usr/bin/ffmpeg'))) {
+                    ffmpegPath = ffmpegStatic;
+                }
+            } catch (e) {
+                console.log("[Renderer] ffmpeg-static fallback failed, using default 'ffmpeg' path");
+            }
+            
+            const transcodeCmd = `"${ffmpegPath}" -y -loglevel error -fflags +genpts -i "${rawTempPath}" -vf "settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p" -af "asetpts=PTS-STARTPTS" -c:v libx264 -r 30 -g 30 -c:a aac -preset superfast -crf 18 "${tempSourcePath}"`;
             
             console.log(`[Renderer] Running transcode command: ${transcodeCmd}`);
             
             await new Promise((resolveTranscode, rejectTranscode) => {
                 const { exec } = require('child_process');
-                exec(transcodeCmd, (err, stdout, stderr) => {
+                exec(transcodeCmd, { maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
                     if (err) {
                         console.error(`[Renderer] Transcode failed:`, err);
                         console.error(`[Renderer] Transcode stderr:`, stderr);
