@@ -1044,9 +1044,18 @@ export default function CreationPage() {
                               <span className="text-[9px] font-extrabold text-blue-500 uppercase tracking-wider flex items-center gap-1">
                                 <ImageIcon size={10} /> Visuals
                               </span>
-                              <div className="text-xs text-slate-700 leading-relaxed font-medium pl-1">
-                                {renderVisualsWithBadges(scene.visuals)}
-                              </div>
+                              <textarea
+                                value={scene.visuals}
+                                onChange={(e) => {
+                                  const updatedScenes = [...msg.script.scenes];
+                                  updatedScenes[idx] = { ...scene, visuals: e.target.value };
+                                  setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                    ...m,
+                                    script: { ...m.script, scenes: updatedScenes }
+                                  } : m));
+                                }}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 font-medium focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all resize-none h-16"
+                              />
                             </div>
 
                             {/* Dialogue/Voiceover */}
@@ -1054,9 +1063,22 @@ export default function CreationPage() {
                               <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
                                 <User size={10} /> Dialogue (Hinglish)
                               </span>
-                              <div className="text-xs text-slate-800 leading-relaxed font-serif italic pl-2 border-l-2 border-indigo-200/50">
-                                "{scene.dialogue}"
-                              </div>
+                              <textarea
+                                value={scene.dialogue}
+                                onChange={(e) => {
+                                  const updatedScenes = [...msg.script.scenes];
+                                  updatedScenes[idx] = { ...scene, dialogue: e.target.value };
+                                  setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                    ...m,
+                                    script: { 
+                                      ...m.script, 
+                                      scenes: updatedScenes,
+                                      dialogue: updatedScenes.map(s => s.dialogue).join(" ")
+                                    }
+                                  } : m));
+                                }}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 font-medium italic focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all resize-none h-20"
+                              />
                             </div>
                           </div>
                         ))}
@@ -1068,9 +1090,16 @@ export default function CreationPage() {
                           <span className="text-[9px] font-extrabold text-blue-500 uppercase tracking-wider flex items-center gap-1">
                             <ImageIcon size={12} /> Visual Action Sequence (9:16 UGC)
                           </span>
-                          <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-100 text-xs text-slate-700 leading-relaxed font-medium">
-                            {renderVisualsWithBadges(msg.script.visuals)}
-                          </div>
+                          <textarea
+                            value={msg.script.visuals}
+                            onChange={(e) => {
+                              setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                ...m,
+                                script: { ...m.script, visuals: e.target.value }
+                              } : m));
+                            }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-700 font-medium outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all h-24"
+                          />
                         </div>
 
                         {/* Dialogue/Voiceover */}
@@ -1078,10 +1107,16 @@ export default function CreationPage() {
                           <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
                             <User size={12} /> Conversational Audio/Dialogue (Hinglish)
                           </span>
-                          <div className="bg-indigo-50/30 rounded-xl p-3.5 border border-indigo-100/50 text-xs text-slate-800 leading-relaxed font-semibold italic relative">
-                            <span className="absolute -top-2 left-2 text-3xl text-indigo-200/50 select-none">“</span>
-                            <p className="pl-3 pr-2 font-serif">"{msg.script.dialogue}"</p>
-                          </div>
+                          <textarea
+                            value={msg.script.dialogue}
+                            onChange={(e) => {
+                              setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                ...m,
+                                script: { ...m.script, dialogue: e.target.value }
+                              } : m));
+                            }}
+                            className="w-full bg-indigo-50/30 border border-indigo-100/50 rounded-xl p-3.5 text-xs text-slate-800 font-semibold italic outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all h-24"
+                          />
                         </div>
                       </>
                     )}
@@ -1091,9 +1126,16 @@ export default function CreationPage() {
                       <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1">
                         <Layout size={12} /> Social Media Ad Caption
                       </span>
-                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-xs text-slate-600 leading-relaxed font-normal whitespace-pre-wrap">
-                        {msg.script.finalCaption}
-                      </div>
+                      <textarea
+                        value={msg.script.finalCaption}
+                        onChange={(e) => {
+                          setMessages(prev => prev.map(m => m.id === msg.id ? {
+                            ...m,
+                            script: { ...m.script, finalCaption: e.target.value }
+                          } : m));
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 leading-relaxed outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all h-28"
+                      />
                     </div>
 
                     {/* Reference Images Row */}

@@ -160,12 +160,10 @@ export default function AssetsPage() {
                 }
             }
 
-            // 2. Fetch assets for the organization (Admin's user_id)
-            const { data: assetData, error: assetError } = await supabase
-                .from('assets')
-                .select('*')
-                .eq('user_id', targetUserId)
-                .order('created_at', { ascending: false })
+            // 2. Fetch assets for the organization securely via server API
+            const response = await fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+            const assetData = await response.json()
+            if (assetData.error) throw new Error(assetData.error)
 
             const { data: propData } = await supabase
                 .from('properties')
@@ -173,11 +171,9 @@ export default function AssetsPage() {
                 .eq('user_id', targetUserId)
                 .order('created_at', { ascending: false })
 
-            if (assetError) throw assetError
-
-            if (assetData) {
+            if (assetData && Array.isArray(assetData)) {
                 // Filter out distributed assets to keep the library clean
-                const cleanAssets = assetData.filter(asset => asset.status !== 'Distributed')
+                const cleanAssets = (assetData as Asset[]).filter((asset: Asset) => asset.status !== 'Distributed')
                 
                 // Sort active 'Processing' or 'Rendering' tasks to the very top, preserving created_at order for the rest
                 const sortedAssets = [...cleanAssets].sort((a, b) => {
