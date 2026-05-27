@@ -95,6 +95,12 @@ export async function POST(request: Request) {
             .eq('id', targetUserId)
             .single();
 
+        if (!targetProfile || !targetProfile.character_url) {
+            return NextResponse.json({ 
+                error: 'Please upload a character photo in your profile settings first before generating videos.' 
+            }, { status: 400 });
+        }
+
         let profile = targetProfile;
 
         // Self-heal: If character_url is present but character_description is null, analyze it on-the-fly!
@@ -150,82 +156,34 @@ export async function POST(request: Request) {
         const businessName = profile?.business_name || 'Your Business';
         const brandGuidelines = profile?.custom_prompt || 'Natural UGC style';
 
-        // Extract reference images (max 4)
-        let refImages: string[] = [];
+        // Extract reference images (max 4) - Filter out invalid placeholders/empty strings
+        let rawImages: string[] = [];
         if (images && Array.isArray(images) && images.length > 0) {
-            refImages = images.slice(0, 4);
+            rawImages = images;
         } else if (script.refImages && Array.isArray(script.refImages) && script.refImages.length > 0) {
-            refImages = script.refImages.slice(0, 4);
+            rawImages = script.refImages;
         } else if (property) {
             if (property.images && Array.isArray(property.images) && property.images.length > 0) {
-                refImages = property.images.slice(0, 4);
+                rawImages = property.images;
             } else if (property.image_url) {
-                refImages = [property.image_url];
+                rawImages = [property.image_url];
             }
         }
+
+        const refImages = rawImages
+            .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && img !== 'null' && img !== 'undefined')
+            .slice(0, 4);
 
         // Prepare physical image descriptions
         const descriptionsText = (imageDescriptions || script.imageDescriptions || [])
             .map((desc: string, i: number) => `- Reference Image ${i + 1} description: "${desc}"`)
             .join('\n') || 'No detailed image descriptions provided. Describe the images based on standard product expectations.';
 
-        // 2. Generate Consistent Character Avatar Image or use uploaded profile avatar
-        let avatarUrl = "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=640"; // Premium fallback URL
-        if (profile?.character_url) {
-            avatarUrl = profile.character_url;
-            console.log(`[Video Generate] Using custom uploaded character avatar from profile: ${avatarUrl}`);
-        } else {
-            try {
-                const basePrompt = profile?.character_description || "a highly attractive, charismatic, and gorgeous young Indian female UGC creator with a fair complexion, smiling warmly";
-                const avatarPrompt = `Professional chest-up studio headshot of ${basePrompt}. Wearing elegant smart casual clothes, sleek hair, bright clean minimalist background, professional studio lighting, natural photorealistic texture, cinematic look.`;
-                const imgPayload = {
-                    model: "gpt-image-2-text-to-image",
-                    input: {
-                        prompt: avatarPrompt,
-                        aspect_ratio: "1:1",
-                        resolution: "1K",
-                        output_format: "png"
-                    }
-                };
-                
-                console.log("[Video Generate] Initiating KIE avatar image generation...");
-                const { taskId: imgTaskId, error: imgError } = await createKieTask(imgPayload);
-                
-                if (imgTaskId) {
-                    console.log(`[Video Generate] Started character avatar generation task: ${imgTaskId}. Polling status synchronously...`);
-                    // Poll up to 10 times, waiting 1.5 seconds each (15s total)
-                    for (let attempt = 0; attempt < 10; attempt++) {
-                        await new Promise(resolve => setTimeout(resolve, 1500));
-                        const checkRes = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${imgTaskId}`, {
-                            method: 'GET',
-                            headers: { 'Authorization': `Bearer ${process.env.KIE_API_KEY}` }
-                        });
-                        if (checkRes.ok) {
-                            const checkData = await checkRes.json();
-                            const status = checkData.status || checkData.data?.status || checkData.data?.state;
-                            if (status === 'succeeded' || status === 'completed' || status === 'success') {
-                                const result = checkData.result || checkData.data?.result || checkData.data;
-                                const url = result?.image_url || result?.imageUrl || result?.url || result?.outputUrl || result?.output_url;
-                                if (url && typeof url === 'string' && url.startsWith('http')) {
-                                    avatarUrl = url;
-                                    console.log(`[Video Generate] Avatar image generation succeeded: ${avatarUrl}`);
-                                    break;
-                                }
-                            } else if (status === 'failed' || status === 'error') {
-                                console.error(`[Video Generate] Avatar image generation failed: ${checkData.failMsg || checkData.msg}`);
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    console.error(`[Video Generate] Failed to start avatar image generation: ${imgError}`);
-                }
-            } catch (avatarErr) {
-                console.error(`[Video Generate] Error during avatar image generation:`, avatarErr);
-            }
-        }
+        // 2. Use custom uploaded profile avatar (checked and guaranteed to exist)
+        const avatarUrl = profile.character_url;
+        console.log(`[Video Generate] Using custom uploaded character avatar from profile: ${avatarUrl}`);
 
-        // Prepend the generated avatar to the reference images
+        // Prepend the custom character avatar to the reference images
         const combinedRefImages = [avatarUrl, ...refImages];
 
         // 3. Synthesize structured prompts for each scene using Gemini
@@ -298,6 +256,7 @@ Reference Image Descriptions:
 ${descriptionsText.replace(/Reference Image (\d+)/g, (m: string, n: string) => `Reference Image ${parseInt(n) + 1}`)}
 
 YOUR INSTRUCTIONS:
+0. CRITICAL CUSTOM INSTRUCTIONS PRIORITIZATION RULE: You MUST strictly prioritize and adhere to the user's Custom Instructions: "${customInstructions || 'None'}". The generated prompt's action sequences, character visual presentation, expressions, and overall scene context must align perfectly with and follow these custom instructions first and foremost. Do not ignore them or generate default actions that do not reflect what the user has requested.
 1. Generate a single highly detailed video prompt following the structure of the provided example exactly.
 2. The video MUST look super natural, organic, and have a UGC look (direct UGC look, shallow depth of field, handheld camera motion) by default.
 3. ${characterConstraint}

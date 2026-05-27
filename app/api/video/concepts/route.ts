@@ -61,23 +61,33 @@ export async function POST(request: Request) {
 
         const { data: targetProfile } = await supabase
             .from('profiles')
-            .select('business_name, mission_statement, custom_prompt')
+            .select('business_name, mission_statement, custom_prompt, character_url')
             .eq('id', targetUserId)
             .single();
 
+        if (!targetProfile || !targetProfile.character_url) {
+            return NextResponse.json({ 
+                error: 'Please upload a character photo in your profile settings first before generating video concepts.' 
+            }, { status: 400 });
+        }
+
         const profile = targetProfile;
 
-        // Determine reference images (max 4)
-        let refImages: string[] = [];
+        // Determine reference images (max 4) - Filter out invalid placeholders/empty strings
+        let rawImages: string[] = [];
         if (customImages && Array.isArray(customImages) && customImages.length > 0) {
-            refImages = customImages.slice(0, 4);
+            rawImages = customImages;
         } else if (property) {
             if (property.images && Array.isArray(property.images) && property.images.length > 0) {
-                refImages = property.images.slice(0, 4);
+                rawImages = property.images;
             } else if (property.image_url) {
-                refImages = [property.image_url];
+                rawImages = [property.image_url];
             }
         }
+
+        const refImages = rawImages
+            .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && img !== 'null' && img !== 'undefined')
+            .slice(0, 4);
 
         const productInfo = property ? `Product: ${property.title}. Description: ${property.description}` : 'Generic product promotion';
         const businessName = profile?.business_name || 'Your Business';
@@ -100,6 +110,7 @@ Reference Images available:
 ${refImages.map((img, i) => `- Image Image_${i + 1}: ${img}`).join('\n')}
 
 INSTRUCTIONS:
+0. CRITICAL CUSTOM INSTRUCTIONS PRIORITIZATION RULE: You MUST strictly prioritize and adhere to the user's Custom Instructions: "${userInstructions || 'None'}". Every single concept angle, visual storyline, hook, and psychological positioning MUST be custom-tailored to follow these instructions first and foremost. Do not ignore them or generate generic real estate/e-commerce templates that do not reflect what the user has requested here.
 1. Since the videos will run as Facebook/Instagram/TikTok UGC Ads, they must be warm, authentic, natural, and deeply emotional. Capture the viewer's heart from the first few seconds with a deeply human, relatable statement or aspiration rather than high-hype direct response hooks. ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or pushy marketing hooks. Every concept must be centered around warm, authentic, emotional storytelling that generates real feelings of comfort, trust, pride, or security.
 2. The ad concepts should be designed for a strict 15-second video clip in 9:16 dimension.
 3. Incorporate a super attractive, highly charismatic, charming, and appealing Indian model UGC-style creator speaking directly to the camera and showcasing/talking about the product/service in the concept with warm, friendly expressions, unless the user explicitly requested a different profile/ethnicity.

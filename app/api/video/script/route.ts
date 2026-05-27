@@ -64,6 +64,12 @@ export async function POST(request: Request) {
             .eq('id', targetUserId)
             .single();
 
+        if (!targetProfile || !targetProfile.character_url) {
+            return NextResponse.json({ 
+                error: 'Please upload a character photo in your profile settings first before generating video scripts.' 
+            }, { status: 400 });
+        }
+
         let profile = targetProfile;
 
         // Self-heal: If character_url is present but character_description is null, analyze it on-the-fly!
@@ -119,17 +125,21 @@ export async function POST(request: Request) {
         const businessName = profile?.business_name || 'Your Business';
         const brandGuidelines = profile?.custom_prompt || '';
 
-        // Extract reference images (max 4)
-        let refImages: string[] = [];
+        // Extract reference images (max 4) - Filter out invalid placeholders/empty strings
+        let rawImages: string[] = [];
         if (images && Array.isArray(images) && images.length > 0) {
-            refImages = images.slice(0, 4);
+            rawImages = images;
         } else if (property) {
             if (property.images && Array.isArray(property.images) && property.images.length > 0) {
-                refImages = property.images.slice(0, 4);
+                rawImages = property.images;
             } else if (property.image_url) {
-                refImages = [property.image_url];
+                rawImages = [property.image_url];
             }
         }
+
+        const refImages = rawImages
+            .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && img !== 'null' && img !== 'undefined')
+            .slice(0, 4);
 
         // Determine if Hinglish should be used (default to true, unless user instructions explicitly request English/another language)
         const userText = (userInstructions || '').toLowerCase();
@@ -171,6 +181,7 @@ EMOTIONAL STORYTELLING UGC FRAMEWORK:
 3. THE WARM CALL TO ACTION (Scene 2: 0:25 - 0:30): A friendly, welcoming, and low-friction invitation to take the next step (e.g. *"आइए, इस सपने को मिलकर सच करते हैं। हमसे अभी संपर्क करें।"*). Make it feel like connecting with a trusted friend.
 
 CONSTRAINTS & RULES:
+0. CRITICAL CUSTOM INSTRUCTIONS PRIORITIZATION RULE: You MUST strictly prioritize and adhere to the user's Custom Instructions: "${userInstructions || 'None'}". Every aspect of the generated script—including dialogue, tone, hook, environment details, actions, and scene visual descriptions—must be designed and written specifically to follow these instructions first and foremost. Do not ignore them or generate generic default templates that do not reflect what the user has requested.
 1. Duration: STRICTLY 30 seconds total, split into exactly TWO sequential 15-second clips (Scene 1: 0:00-0:15 and Scene 2: 0:15-0:30). Deeply emotional, slow-paced, warm, and natural.
 2. Dialogue language: ${languageInstruction}
 3. Speaker Character: The speaker in both scenes MUST be ${profile?.character_description || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion"} (speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy). Their appearance must be identical and consistent across both scenes.
