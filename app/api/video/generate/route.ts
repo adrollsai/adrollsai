@@ -191,7 +191,10 @@ export async function POST(request: Request) {
         const scenes = script.scenes || [{ dialogue: script.dialogue, visuals: script.visuals }];
         
         // Mapped Gender Helpers based on analyzed character profile description
-        const isMale = /male|man|boy|gentleman|he\b/i.test(profile?.character_description || "");
+        // IMPORTANT: Check female FIRST — "female" contains "male" as a substring!
+        const desc = profile?.character_description || "";
+        const isFemale = /\bfemale\b|\bwoman\b|\bgirl\b|\blady\b|\bshe\b|\bher\b/i.test(desc);
+        const isMale = !isFemale && /\bmale\b|\bman\b|\bboy\b|\bgentleman\b|\bhe\b/i.test(desc);
         const voiceGender = isMale ? "male" : "female";
         const subjectPronoun = isMale ? "he" : "she";
         const possessivePronoun = isMale ? "his" : "her";

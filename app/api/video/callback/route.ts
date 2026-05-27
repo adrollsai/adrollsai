@@ -14,6 +14,72 @@ const supabaseAdmin = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+/**
+ * Bulletproof helper to extract video URL from Kie.ai callback/recordInfo JSON response.
+ * Safely handles format changes, fallbacks, and nested data structures.
+ * Kie.ai sends `resultJson` as a STRINGIFIED JSON, not a nested object!
+ */
+function extractVideoUrl(checkData: any): string | null {
+    if (!checkData) return null;
+    
+    const result = checkData.result || checkData.data?.result || checkData.data;
+    
+    if (result) {
+        // 1. Direct URL fields
+        const url = result.video_url || 
+                    result.videoUrl || 
+                    result.output_url || 
+                    result.outputUrl || 
+                    result.url || 
+                    result.imageUrl || 
+                    result.image_url;
+
+        if (url && typeof url === 'string' && url.startsWith('http')) {
+            return url;
+        }
+
+        // 2. Prioritized callback formats (Arrays of URLs)
+        const urls = result.videoUrls || 
+                     result.resultUrls || 
+                     result.result_urls || 
+                     result.fullResultUrls || 
+                     result.full_result_urls;
+                     
+        if (Array.isArray(urls) && urls.length > 0 && typeof urls[0] === 'string' && urls[0].startsWith('http')) {
+            return urls[0];
+        }
+    }
+
+    // 3. Fallback to resultJson field (THIS IS THE KEY FIX - Kie sends resultJson as a string!)
+    const resultJson = checkData.resultJson || checkData.data?.resultJson;
+    if (resultJson) {
+        try {
+            const parsed = JSON.parse(resultJson);
+            const parsedUrls = parsed.resultUrls || parsed.result_urls || parsed.fullResultUrls || parsed.full_result_urls || [parsed.url];
+            const firstUrl = Array.isArray(parsedUrls) ? parsedUrls[0] : parsedUrls;
+            if (firstUrl && typeof firstUrl === 'string' && firstUrl.startsWith('http')) {
+                return firstUrl;
+            }
+        } catch (e) {
+            console.error("[Video Callback] Error parsing resultJson:", e);
+        }
+    }
+
+    // 4. Recursive search fallback: Find the first substring that looks like a video URL
+    try {
+        const jsonStr = JSON.stringify(checkData);
+        const matches = jsonStr.match(/"(https?:\/\/[^"]+\.(mp4|mov|avi|webm)[^"]*)"/i);
+        if (matches && matches.length > 1) {
+            console.log(`[Video Callback] Regex-matched video URL: ${matches[1]}`);
+            return matches[1];
+        }
+    } catch (e) {
+        console.error("[Video Callback] Regex URL extraction error:", e);
+    }
+
+    return null;
+}
+
 export async function POST(request: Request) {
     console.log(`[Video Callback] Incoming Request: ${request.method} ${request.url}`);
     
@@ -173,22 +239,9 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true });
         }
 
-        const info = data?.info;
-        
         // Robust result URL extraction for Kie.ai callbacks (Seedance 2.0 Fast etc.)
-        let resultUrls = info?.fullResultUrls || info?.full_result_urls || info?.resultUrls || info?.result_urls || data?.resultUrls || data?.result_urls;
-        let resultUrl = data?.result || data?.videoUrl || data?.video_url || data?.outputUrl || data?.output_url || info?.result;
-        
-        if (Array.isArray(resultUrls)) {
-            resultUrl = resultUrl || resultUrls[0];
-        } else if (resultUrls && typeof resultUrls === 'string') {
-            resultUrl = resultUrl || resultUrls;
-        }
-
-        // If still no URL found, check recursively in checking JSON data or default to callback data object fields
-        if (!resultUrl && data) {
-            resultUrl = data.url || data.imageUrl || data.image_url;
-        }
+        // Kie.ai sends `resultJson` as a STRINGIFIED JSON, not a nested object!
+        const resultUrl = extractVideoUrl(data);
 
         console.log(`[Video Callback] Extracted result URL: ${resultUrl}`);
 
@@ -197,21 +250,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid result URL in callback payload" }, { status: 400 });
         }
 
-        if (Array.isArray(resultUrls) && resultUrls.length > 1) {
-            console.log(`[Video Callback] Multiple URLs found in prioritized field. Detecting full stitched video...`);
-            try {
-                const sizes = await Promise.all(resultUrls.map(async (url) => {
-                    const res = await fetch(url, { method: 'HEAD' });
-                    return { url, size: parseInt(res.headers.get('content-length') || '0') };
-                }));
-                
-                sizes.sort((a, b) => b.size - a.size);
-                console.log(`[Video Callback] File sizes detected:`, sizes.map(s => `${s.size} bytes`).join(', '));
-                resultUrl = sizes[0].url;
-            } catch (e) {
-                console.error("[Video Callback] Error checking file sizes, falling back to first URL:", e);
-            }
-        }
+
 
         // Persist the individual completed scene to R2
         let sceneR2Url = resultUrl;
