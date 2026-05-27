@@ -38,6 +38,7 @@ type Profile = {
   logo_url: string
   brand_color: string
   mission_statement: string
+  character_url?: string
 }
 
 
@@ -92,6 +93,29 @@ export default function CreationPage() {
   const [chatAttachments, setChatAttachments] = useState<string[]>([])
   const [isUploadingChat, setIsUploadingChat] = useState(false)
   const chatFileInputRef = useRef<HTMLInputElement>(null)
+
+  const [localRefImages, setLocalRefImages] = useState<string[]>([])
+  const [isUploadingLocalRef, setIsUploadingLocalRef] = useState(false)
+  const localRefFileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleLocalRefUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    
+    setIsUploadingLocalRef(true)
+    try {
+      const uploadPromises = Array.from(files).map(file => uploadToR2(file, 'product-references'))
+      const urls = await Promise.all(uploadPromises)
+      setLocalRefImages(prev => [...prev, ...urls].slice(0, 3))
+      toast.success("Product reference image uploaded! 📸")
+    } catch (error) {
+      console.error("Local reference upload failed:", error)
+      toast.error("Failed to upload reference image.")
+    } finally {
+      setIsUploadingLocalRef(false)
+      if (localRefFileInputRef.current) localRefFileInputRef.current.value = ''
+    }
+  }
 
   const handleChatFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -514,14 +538,16 @@ export default function CreationPage() {
             // --- STEP 1: CONCEPTS ---
             setCurrentStep('AI Creative Director is analyzing your images & generating 5 ad concepts...');
             
-            // Gather reference images (up to 4)
+            // Gather reference images (up to 4) - Filter out invalid placeholders/empty strings
             const prop = properties.find(p => p.id === selectedPropId)
             let propImages: string[] = []
             if (prop) {
-                if (prop.images && prop.images.length > 0) propImages = prop.images.slice(0, 4)
-                else if (prop.image_url) propImages = [prop.image_url]
+                if (prop.images && prop.images.length > 0) propImages = prop.images;
+                else if (prop.image_url) propImages = [prop.image_url];
             }
-            const refImages = [...propImages, ...chatAttachments].slice(0, 4)
+            
+            const filteredPropImages = propImages.filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && img !== 'null' && img !== 'undefined');
+            const refImages = [...filteredPropImages, ...localRefImages, ...chatAttachments].slice(0, 4)
 
             const urlParams = new URLSearchParams(window.location.search)
             const impersonateId = urlParams.get('impersonate')
@@ -777,58 +803,130 @@ export default function CreationPage() {
                 )}
             </div>
         </div>
-        
-        {/* ROW 2: Templates & Reference Upload (Grid Layout) */}
-        <div className="px-4 flex gap-2 w-full overflow-x-auto scrollbar-hide">
-             <button 
-                onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); }}
-                className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate === null && uploadedRefUrl === null ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
-             >
-                <Layout size={16} />
-                <span className="text-[9px] font-bold uppercase tracking-wider">Auto</span>
-             </button>
-
-             <div className="relative flex-shrink-0">
-                 <button 
-                    onClick={() => refFileInputRef.current?.click()}
-                    className={`w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${uploadedRefUrl ? 'border-blue-500 ring-2 ring-blue-100 overflow-hidden p-0' : 'border-dashed border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/30'}`}
-                 >
-                    {uploadedRefUrl ? (
-                        <img src={uploadedRefUrl} className="w-full h-full object-cover" alt="ref" />
-                    ) : (
+               {/* ROW 2: Templates & Reference Upload (Grid Layout) */}
+        {creationMode === 'video' ? (
+            <div className="px-4 flex gap-2.5 w-full overflow-x-auto scrollbar-hide py-1 animate-in fade-in duration-300">
+                {/* 1. Character Image Card (Speaker) */}
+                <div className="relative w-16 h-16 rounded-[1.25rem] border-2 border-blue-500 ring-2 ring-blue-100/50 overflow-hidden flex-shrink-0 bg-white flex flex-col items-center justify-center shadow-sm">
+                    {profile?.character_url ? (
                         <>
-                            {isUploadingRef ? <Loader2 size={16} className="animate-spin text-blue-500" /> : <Upload size={16} />}
-                            <span className="text-[8px] font-bold text-center px-1 leading-tight uppercase">Upload</span>
+                            <img src={profile.character_url} className="w-full h-full object-cover" alt="Character" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/10 to-transparent flex items-end justify-center pb-1">
+                                <span className="text-white text-[8px] font-black uppercase tracking-wider text-center w-full truncate">Speaker</span>
+                            </div>
                         </>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center text-center p-2">
+                            <User size={16} className="text-slate-400" />
+                            <span className="text-[8px] font-bold text-slate-400 leading-tight">No Character</span>
+                        </div>
                     )}
-                  </button>
-                 <input type="file" ref={refFileInputRef} onChange={handleReferenceUpload} className="hidden" accept="image/*" />
-                 
-                 {uploadedRefUrl && (
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); setUploadedRefUrl(null); }}
-                        className="absolute -top-1.5 -right-1.5 bg-slate-800 text-white rounded-full p-1 shadow-md hover:bg-slate-700 transition-colors"
-                    >
-                        <X size={10} />
-                     </button>
-                 )}
-             </div>
+                </div>
 
-             {/* Map visible templates (Limit to 3 or 4 to fit on screen without scrolling if possible) */}
-             {TEMPLATES.slice(0, 4).map(t => (
-                 <button 
-                    key={t.id}
-                    onClick={() => { setSelectedTemplate(t.id); setUploadedRefUrl(null); }}
-                    className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 relative overflow-hidden transition-all group ${selectedTemplate === t.id ? 'border-blue-500 ring-2 ring-blue-100 shadow-sm' : 'border-transparent opacity-80 hover:opacity-100'}`}
-                 >
-                    <img src={t.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="template" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-center pb-1">
-                        <span className="text-white text-[8px] font-bold truncate px-1 w-full text-center">{t.name}</span>
+                {/* Divider */}
+                <div className="w-[1px] bg-slate-200/80 h-10 my-auto flex-shrink-0" />
+
+                {/* 2. Product Catalog Images (Filtered) */}
+                {(() => {
+                    const prop = properties.find(p => p.id === selectedPropId);
+                    let propImages: string[] = [];
+                    if (prop) {
+                        if (prop.images && prop.images.length > 0) propImages = prop.images;
+                        else if (prop.image_url) propImages = [prop.image_url];
+                    }
+                    const filteredPropImages = propImages.filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && img !== 'null' && img !== 'undefined');
+
+                    return filteredPropImages.map((url, i) => (
+                        <div key={i} className="relative w-16 h-16 rounded-[1.25rem] border border-slate-200 overflow-hidden flex-shrink-0 bg-white shadow-sm">
+                            <img src={url} className="w-full h-full object-cover" alt="Product" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/10 to-transparent flex items-end justify-center pb-1">
+                                <span className="text-white text-[8px] font-black uppercase tracking-wider text-center w-full truncate">Catalog {i + 1}</span>
+                            </div>
+                        </div>
+                    ));
+                })()}
+
+                {/* 3. Locally Uploaded Product Reference Images */}
+                {localRefImages.map((url, i) => (
+                    <div key={i} className="relative w-16 h-16 rounded-[1.25rem] border border-slate-200 overflow-hidden flex-shrink-0 bg-white shadow-sm group">
+                        <img src={url} className="w-full h-full object-cover" alt="Custom Ref" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent flex items-end justify-center pb-1">
+                            <span className="text-white text-[8px] font-black uppercase tracking-wider text-center w-full truncate">Custom {i + 1}</span>
+                        </div>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setLocalRefImages(prev => prev.filter((_, idx) => idx !== i)); }}
+                            className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-0.5 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                            <X size={8} />
+                        </button>
                     </div>
-                    {selectedTemplate === t.id && <div className="absolute top-1 right-1 bg-blue-500 text-white p-0.5 rounded-full shadow-sm"><Check size={8} strokeWidth={4} /></div>}
+                ))}
+
+                {/* 4. Local Product Reference Upload Button */}
+                <button 
+                    onClick={() => localRefFileInputRef.current?.click()}
+                    disabled={isUploadingLocalRef || localRefImages.length >= 3}
+                    className={`w-16 h-16 rounded-[1.25rem] border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all flex-shrink-0 ${localRefImages.length >= 3 ? 'border-slate-100 text-slate-300 cursor-not-allowed bg-slate-50' : 'border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/5'}`}
+                >
+                    {isUploadingLocalRef ? <Loader2 size={16} className="animate-spin text-blue-500" /> : <Upload size={16} />}
+                    <span className="text-[8px] font-bold text-center px-1 leading-tight uppercase">
+                        {localRefImages.length >= 3 ? 'Max Limit' : 'Upload Ref'}
+                    </span>
+                </button>
+                <input type="file" ref={localRefFileInputRef} onChange={handleLocalRefUpload} className="hidden" accept="image/*" multiple />
+            </div>
+        ) : (
+            <div className="px-4 flex gap-2 w-full overflow-x-auto scrollbar-hide">
+                 <button 
+                    onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); }}
+                    className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate === null && uploadedRefUrl === null ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                 >
+                    <Layout size={16} />
+                    <span className="text-[9px] font-bold uppercase tracking-wider">Auto</span>
                  </button>
-             ))}
-        </div>
+     
+                 <div className="relative flex-shrink-0">
+                      <button 
+                         onClick={() => refFileInputRef.current?.click()}
+                         className={`w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${uploadedRefUrl ? 'border-blue-500 ring-2 ring-blue-100 overflow-hidden p-0' : 'border-dashed border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/30'}`}
+                      >
+                         {uploadedRefUrl ? (
+                             <img src={uploadedRefUrl} className="w-full h-full object-cover" alt="ref" />
+                         ) : (
+                             <>
+                                 {isUploadingRef ? <Loader2 size={16} className="animate-spin text-blue-500" /> : <Upload size={16} />}
+                                 <span className="text-[8px] font-bold text-center px-1 leading-tight uppercase">Upload</span>
+                             </>
+                         )}
+                       </button>
+                      <input type="file" ref={refFileInputRef} onChange={handleReferenceUpload} className="hidden" accept="image/*" />
+                      
+                      {uploadedRefUrl && (
+                         <button 
+                             onClick={(e) => { e.stopPropagation(); setUploadedRefUrl(null); }}
+                             className="absolute -top-1.5 -right-1.5 bg-slate-800 text-white rounded-full p-1 shadow-md hover:bg-slate-700 transition-colors"
+                         >
+                             <X size={10} />
+                          </button>
+                      )}
+                 </div>
+     
+                 {/* Map visible templates (Limit to 3 or 4 to fit on screen without scrolling if possible) */}
+                 {TEMPLATES.slice(0, 4).map(t => (
+                      <button 
+                         key={t.id}
+                         onClick={() => { setSelectedTemplate(t.id); setUploadedRefUrl(null); }}
+                         className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 relative overflow-hidden transition-all group ${selectedTemplate === t.id ? 'border-blue-500 ring-2 ring-blue-100 shadow-sm' : 'border-transparent opacity-80 hover:opacity-100'}`}
+                      >
+                         <img src={t.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="template" />
+                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-center pb-1">
+                             <span className="text-white text-[8px] font-bold truncate px-1 w-full text-center">{t.name}</span>
+                         </div>
+                         {selectedTemplate === t.id && <div className="absolute top-1 right-1 bg-blue-500 text-white p-0.5 rounded-full shadow-sm"><Check size={8} strokeWidth={4} /></div>}
+                      </button>
+                 ))}
+            </div>
+        )}
       </div>
 
       {/* --- CHAT AREA --- */}
