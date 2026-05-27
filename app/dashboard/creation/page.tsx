@@ -1076,7 +1076,7 @@ export default function CreationPage() {
 
         <form 
             onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-            className="flex items-center gap-2 max-w-4xl mx-auto relative shadow-lg shadow-slate-200/50 rounded-full bg-white border border-slate-200/60 transition-all focus-within:ring-4 focus-within:ring-blue-500/10 focus-within:border-blue-300"
+            className="flex items-end gap-2 max-w-4xl mx-auto relative shadow-lg shadow-slate-200/50 rounded-[1.75rem] bg-white border border-slate-200/60 transition-all focus-within:ring-4 focus-within:ring-blue-500/10 focus-within:border-blue-300 p-1.5"
         >
             <input 
               type="file" 
@@ -1090,25 +1090,33 @@ export default function CreationPage() {
               type="button"
               onClick={() => chatFileInputRef.current?.click()}
               disabled={isThinking || isUploadingChat}
-              className="ml-2 p-3 text-slate-400 hover:text-blue-600 transition-colors rounded-full"
+              className="p-3 text-slate-400 hover:text-blue-600 transition-colors rounded-full mb-0.5 ml-0.5"
             >
               {isUploadingChat ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
             </button>
 
-            <input 
-              type="text" 
+            <textarea 
               value={input} 
               onChange={(e) => setInput(e.target.value)} 
               placeholder={selectedPropId ? "Add a prompt (e.g. 'Make it luxurious')..." : "Describe what to generate..."} 
               disabled={isThinking} 
-              className="flex-1 bg-transparent py-4 pl-1 pr-16 text-sm text-slate-800 font-medium outline-none transition-all disabled:opacity-50 placeholder-slate-400" 
+              rows={1}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!isThinking && !isUploadingChat && (input.trim() || selectedPropId || chatAttachments.length > 0)) {
+                    handleSend();
+                  }
+                }
+              }}
+              className="flex-1 bg-transparent py-3 pl-1 pr-14 text-sm text-slate-800 font-medium outline-none transition-all disabled:opacity-50 placeholder-slate-400 resize-none max-h-36 overflow-y-auto custom-scrollbar min-h-[44px]" 
             />
             <button 
               type="submit" 
               disabled={isThinking || isUploadingChat || (!input.trim() && !selectedPropId && chatAttachments.length === 0)} 
-              className="absolute right-1.5 top-1.5 bottom-1.5 aspect-square bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center rounded-full transition-all duration-300 disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400 shadow-sm active:scale-90"
+              className="w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center rounded-full transition-all duration-300 disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400 shadow-sm active:scale-90 flex-shrink-0 mb-0.5 mr-0.5"
             >
-            {isThinking ? <Loader2 size={18} className="animate-spin" /> : <Send size={16} className="ml-0.5" />}
+              {isThinking ? <Loader2 size={18} className="animate-spin" /> : <Send size={16} className="ml-0.5" />}
             </button>
         </form>
       </div>
