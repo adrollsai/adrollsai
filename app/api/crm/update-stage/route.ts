@@ -10,7 +10,34 @@ export async function POST(request: Request) {
   const { leadId, newStage, notes } = await request.json()
 
   try {
-    // 1. Update DB
+    // 1. Check access: Caller must be owner, assigned agent, or staff of the owner
+    const { data: checkLead, error: checkError } = await supabase
+        .from('leads')
+        .select('user_id, assigned_to')
+        .eq('id', leadId)
+        .single()
+
+    if (checkError || !checkLead) {
+        return NextResponse.json({ error: 'Lead not found or access denied' }, { status: 404 })
+    }
+
+    const isOwner = checkLead.user_id === user.id;
+    const isAssigned = checkLead.assigned_to === user.id;
+
+    // Fetch caller's profile to verify if they are staff under the lead's owner (user_id)
+    const { data: callerProfile } = await supabase
+        .from('profiles')
+        .select('parent_id, agency_id')
+        .eq('id', user.id)
+        .single();
+
+    const isStaff = callerProfile && (callerProfile.parent_id === checkLead.user_id || callerProfile.agency_id === checkLead.user_id);
+
+    if (!isOwner && !isAssigned && !isStaff) {
+        return NextResponse.json({ error: 'Forbidden: Unauthorized lead access' }, { status: 403 })
+    }
+
+    // 2. Update DB
     const { data: lead, error } = await supabase
         .from('leads')
         .update({ 
@@ -18,7 +45,6 @@ export async function POST(request: Request) {
             notes: notes || undefined 
         })
         .eq('id', leadId)
-        .eq('user_id', user.id)
         .select()
         .single()
 

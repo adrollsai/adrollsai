@@ -161,6 +161,136 @@ function parseMp4Buffer(buffer) {
     return null;
 }
 
+/**
+ * Downloads a file from a URL to a local destination path using a streaming pipeline with timeout and redirects.
+ * Has both a per-socket idle timeout (60s) and an overall hard deadline (3 minutes).
+ */
+function downloadFile(urlStr, destPath, timeoutMs = 60000, maxRedirects = 5) {
+    const http = require('http');
+    const https = require('https');
+    const { URL } = require('url');
+
+    const HARD_DEADLINE_MS = 3 * 60 * 1000; // 3 minutes max for entire download
+
+    return new Promise((resolve, reject) => {
+        let redirectCount = 0;
+        let settled = false;
+        let activeRequest = null;
+
+        function settle(err) {
+            if (settled) return;
+            settled = true;
+            if (err) {
+                fs.unlink(destPath, () => {});
+                reject(err);
+            } else {
+                resolve();
+            }
+        }
+
+        // Hard deadline: kill everything after 3 minutes no matter what
+        const hardDeadline = setTimeout(() => {
+            console.error(`[Download] HARD DEADLINE of ${HARD_DEADLINE_MS}ms exceeded for ${urlStr}`);
+            if (activeRequest) {
+                activeRequest.destroy();
+            }
+            settle(new Error(`Download hard deadline of ${HARD_DEADLINE_MS}ms exceeded for ${urlStr}`));
+        }, HARD_DEADLINE_MS);
+        
+        function initiateDownload(currentUrl) {
+            let parsedUrl;
+            try {
+                parsedUrl = new URL(currentUrl);
+            } catch (err) {
+                clearTimeout(hardDeadline);
+                settle(new Error(`Invalid URL: ${currentUrl}`));
+                return;
+            }
+            const client = parsedUrl.protocol === 'https:' ? https : http;
+            
+            const request = client.get(currentUrl, { timeout: timeoutMs }, (response) => {
+                const statusCode = response.statusCode;
+                
+                // Handle Redirects
+                if ([301, 302, 303, 307, 308].includes(statusCode)) {
+                    const redirectUrl = response.headers.location;
+                    if (!redirectUrl) {
+                        clearTimeout(hardDeadline);
+                        settle(new Error(`Redirect status ${statusCode} returned but no Location header provided.`));
+                        return;
+                    }
+                    
+                    redirectCount++;
+                    if (redirectCount > maxRedirects) {
+                        clearTimeout(hardDeadline);
+                        settle(new Error(`Too many redirects (max: ${maxRedirects}) while downloading ${urlStr}`));
+                        return;
+                    }
+                    
+                    console.log(`[Download] Following redirect #${redirectCount} to: ${redirectUrl}`);
+                    response.resume();
+                    
+                    // Resolve relative redirect location against the current URL
+                    let resolvedUrl;
+                    try {
+                        resolvedUrl = new URL(redirectUrl, currentUrl).toString();
+                    } catch (err) {
+                        clearTimeout(hardDeadline);
+                        settle(new Error(`Failed to resolve redirect URL ${redirectUrl} relative to ${currentUrl}`));
+                        return;
+                    }
+                    initiateDownload(resolvedUrl);
+                    return;
+                }
+                
+                if (statusCode !== 200) {
+                    clearTimeout(hardDeadline);
+                    settle(new Error(`Failed to download remote file. Status: ${statusCode}`));
+                    return;
+                }
+
+                console.log(`[Download] HTTP 200 received, streaming to disk...`);
+                
+                const fileStream = fs.createWriteStream(destPath);
+                response.pipe(fileStream);
+                
+                fileStream.on('finish', () => {
+                    clearTimeout(hardDeadline);
+                    fileStream.close();
+                    settle(null);
+                });
+                
+                fileStream.on('error', (err) => {
+                    clearTimeout(hardDeadline);
+                    settle(err);
+                });
+
+                response.on('error', (err) => {
+                    clearTimeout(hardDeadline);
+                    settle(err);
+                });
+            });
+
+            activeRequest = request;
+            
+            request.on('error', (err) => {
+                clearTimeout(hardDeadline);
+                settle(err);
+            });
+            
+            request.on('timeout', () => {
+                console.error(`[Download] Socket idle timeout of ${timeoutMs}ms exceeded for ${currentUrl}`);
+                request.destroy();
+                clearTimeout(hardDeadline);
+                settle(new Error(`Socket idle timeout of ${timeoutMs}ms exceeded for ${currentUrl}`));
+            });
+        }
+        
+        initiateDownload(urlStr);
+    });
+}
+
+
 // Health Check
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'healthy', service: 'adrolls-remotion-renderer' });
@@ -189,6 +319,7 @@ app.post('/render', async (req, res) => {
         let outputLocation = null;
         try {
             // 1. Fetch Asset Record
+            console.log(`[Renderer] Step 1: Fetching asset record from Supabase for: ${assetId}`);
             const { data: asset, error: assetError } = await supabase
                 .from('assets')
                 .select('*')
@@ -196,72 +327,74 @@ app.post('/render', async (req, res) => {
                 .single();
 
             if (assetError || !asset) {
-                throw new Error(`Asset ${assetId} not found in database.`);
+                throw new Error(`Asset ${assetId} not found in database. Error: ${assetError?.message || 'No data returned'}`);
             }
             assetRecord = asset;
+            console.log(`[Renderer] Step 1 complete: Asset found, current status: ${asset.status}`);
 
             // 2. Set Status to 'Rendering'
+            console.log(`[Renderer] Step 2: Updating asset status to 'Rendering'...`);
             await supabase
                 .from('assets')
                 .update({ status: 'Rendering' })
                 .eq('id', assetId);
 
-            console.log(`[Renderer] Asset status updated to 'Rendering' for: ${assetId}`);
+            console.log(`[Renderer] Step 2 complete: Asset status updated to 'Rendering' for: ${assetId}`);
 
             // 2.5 Download remote videoUrl locally
-            console.log(`[Renderer] Downloading remote video to local storage: ${videoUrl}`);
+            console.log(`[Renderer] Step 3: Downloading remote video to local storage: ${videoUrl}`);
             const rawTempPath = path.join(renderTempDir, `raw_${assetId}_${Date.now()}.mp4`);
-            const fetchRes = await fetch(videoUrl);
-            if (!fetchRes.ok) {
-                throw new Error(`Failed to download remote source video. HTTP status: ${fetchRes.status}`);
-            }
-            const buffer = await fetchRes.arrayBuffer();
-            fs.writeFileSync(rawTempPath, Buffer.from(buffer));
-            console.log(`[Renderer] Video downloaded successfully to local raw path: ${rawTempPath}`);
+            await downloadFile(videoUrl, rawTempPath);
+            console.log(`[Renderer] Step 3 complete: Video downloaded successfully to: ${rawTempPath}`);
 
             // Transcode the video using ffmpeg to make every frame a keyframe (GOP = 1)
             // This ensures frame-accurate, instantaneous seeks inside Chromium and completely resolves video stuttering/glitching!
-            tempSourcePath = path.join(renderTempDir, `source_${assetId}_${Date.now()}.mp4`);
-            console.log(`[Renderer] Transcoding video to intra-frame-only (GOP=1) to prevent seek stutter...`);
+            const isCloudRun = !!process.env.K_SERVICE;
             
-            let ffmpegPath = 'ffmpeg';
-            try {
-                const ffmpegStatic = require('ffmpeg-static');
-                if (ffmpegStatic && (process.platform === 'win32' || !fs.existsSync('/usr/bin/ffmpeg'))) {
-                    ffmpegPath = ffmpegStatic;
-                }
-            } catch (e) {
-                console.log("[Renderer] ffmpeg-static fallback failed, using default 'ffmpeg' path");
-            }
-            
-            const transcodeCmd = `"${ffmpegPath}" -y -loglevel error -fflags +genpts -i "${rawTempPath}" -vf "settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p" -af "asetpts=PTS-STARTPTS" -c:v libx264 -r 30 -g 30 -c:a aac -preset superfast -crf 18 "${tempSourcePath}"`;
-            
-            console.log(`[Renderer] Running transcode command: ${transcodeCmd}`);
-            
-            await new Promise((resolveTranscode, rejectTranscode) => {
-                const { exec } = require('child_process');
-                exec(transcodeCmd, { maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
-                    if (err) {
-                        console.error(`[Renderer] Transcode failed:`, err);
-                        console.error(`[Renderer] Transcode stderr:`, stderr);
-                        rejectTranscode(err);
-                    } else {
-                        console.log(`[Renderer] Transcode completed successfully!`);
-                        resolveTranscode();
+            if (isCloudRun) {
+                console.log(`[Renderer] Cloud Run environment detected. Skipping transcode step and using raw downloaded video directly.`);
+                tempSourcePath = rawTempPath;
+            } else {
+                tempSourcePath = path.join(renderTempDir, `source_${assetId}_${Date.now()}.mp4`);
+                console.log(`[Renderer] Local environment detected. Transcoding video to intra-frame-only (GOP=1) to prevent seek stutter...`);
+                
+                let ffmpegPath = 'ffmpeg';
+                if (process.platform === 'win32') {
+                    try {
+                        ffmpegPath = require('ffmpeg-static');
+                    } catch (e) {
+                        console.log("[Renderer] ffmpeg-static require failed, falling back to 'ffmpeg'");
                     }
-                });
-            });
-
-            // Clean up the raw download file
-            try {
-                if (fs.existsSync(rawTempPath)) {
-                    fs.unlinkSync(rawTempPath);
                 }
-            } catch (e) {}
+                
+                const transcodeCmd = `"${ffmpegPath}" -nostdin -y -loglevel error -fflags +genpts -i "${rawTempPath}" -vf "settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p" -af "asetpts=PTS-STARTPTS" -c:v libx264 -r 30 -g 30 -c:a aac -preset superfast -crf 18 "${tempSourcePath}"`;
+                
+                console.log(`[Renderer] Running transcode command: ${transcodeCmd}`);
+                
+                await new Promise((resolveTranscode, rejectTranscode) => {
+                    const { exec } = require('child_process');
+                    exec(transcodeCmd, { maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
+                        if (err) {
+                            console.error(`[Renderer] Transcode failed:`, err);
+                            console.error(`[Renderer] Transcode stderr:`, stderr);
+                            rejectTranscode(err);
+                        } else {
+                            console.log(`[Renderer] Transcode completed successfully!`);
+                            resolveTranscode();
+                        }
+                    });
+                });
+
+                // Clean up the raw download file since we now have the transcoded version
+                try {
+                    if (fs.existsSync(rawTempPath)) {
+                        fs.unlinkSync(rawTempPath);
+                    }
+                } catch (e) {}
+            }
 
             // Format local path as a 127.0.0.1 HTTP URL for headless Chromium compatibility to bypass CORS / same-origin restrictions on file:// resources
-            const isCloudRun = !!process.env.K_SERVICE;
-            const finalInputVideoUrl = isCloudRun ? videoUrl : `http://127.0.0.1:8081/static/${path.basename(tempSourcePath)}`;
+            const finalInputVideoUrl = `http://127.0.0.1:8081/static/${path.basename(tempSourcePath)}`;
             console.log(`[Renderer] Selected video URL for Remotion Chromium (Cloud Run: ${isCloudRun}): ${finalInputVideoUrl}`);
 
             // 3. Detect Video Duration using local file path
@@ -314,7 +447,7 @@ app.post('/render', async (req, res) => {
                 codec: "h264",
                 outputLocation,
                 inputProps: { videoUrl: finalInputVideoUrl, captions, effects, theme, profile },
-                concurrency: 1, // Force serial rendering to prevent system OOM / Puppeteer process crashes on Windows
+                concurrency: isCloudRun ? 2 : 1, // Use 2 parallel workers on Cloud Run to utilize both CPUs; 1 on local dev to avoid OOM
                 chromiumOptions: {
                     gl: 'angle',
                     ignoreDefaultArgs: ['--mute-audio'],

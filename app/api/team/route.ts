@@ -32,17 +32,29 @@ export async function POST(req: Request) {
       email: email // We'll try to store this in profiles for easier lookup next time
     }
 
-    const { data: adminProfile } = await supabaseAdmin.from('profiles').select('agency_id, role').eq('id', adminId).single()
+    const { data: adminProfile } = await supabaseAdmin.from('profiles').select('agency_id, parent_id, role').eq('id', adminId).single()
+    
+    // Resolve the root parent ID (workspace owner)
+    const rootParentId = adminProfile?.parent_id || adminId;
+    
+    // Resolve the agency ID
+    let rootAgencyId = null;
+    if (adminProfile?.agency_id) {
+        rootAgencyId = adminProfile.agency_id;
+    } else if (adminProfile?.role === 'agency' || adminProfile?.role === 'admin') {
+        if (!adminProfile.parent_id) {
+            rootAgencyId = adminId;
+        } else {
+            const { data: parentProfile } = await supabaseAdmin.from('profiles').select('agency_id, role').eq('id', adminProfile.parent_id).single();
+            rootAgencyId = parentProfile?.agency_id || (parentProfile?.role === 'agency' || parentProfile?.role === 'admin' ? adminProfile.parent_id : null);
+        }
+    }
     
     if (role === 'client') {
-        profileUpdates.agency_id = adminId
+        profileUpdates.agency_id = rootParentId
     } else {
-        profileUpdates.parent_id = adminId
-        if (adminProfile?.role === 'agency') {
-            profileUpdates.agency_id = adminId
-        } else if (adminProfile?.agency_id) {
-            profileUpdates.agency_id = adminProfile.agency_id
-        }
+        profileUpdates.parent_id = rootParentId
+        profileUpdates.agency_id = rootAgencyId
     }
 
     // 1. Helper to find user by email across all pages (Fixes pagination bug)

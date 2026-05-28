@@ -8,40 +8,40 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-    const stuckAssetId = '33fb42c1-9015-4217-b9d9-b0e70893ee29';
-    console.log(`=== RECOVERING STUCK ASSET: ${stuckAssetId} ===`);
+    console.log("=== SCANNING FOR ALL STUCK 'Rendering' ASSETS ===");
     
-    // Check if asset exists and current status
-    const { data: asset, error: fetchError } = await supabaseAdmin
+    const { data: stuckAssets, error: fetchError } = await supabaseAdmin
         .from('assets')
         .select('*')
-        .eq('id', stuckAssetId)
-        .single();
+        .eq('status', 'Rendering');
         
-    if (fetchError || !asset) {
-        console.error("Asset not found:", fetchError?.message || "Not found");
+    if (fetchError) {
+        console.error("Failed to query stuck assets:", fetchError.message);
         return;
     }
     
-    console.log(`Current status: ${asset.status}`);
+    if (!stuckAssets || stuckAssets.length === 0) {
+        console.log("No stuck assets in 'Rendering' status found! DB is clean.");
+        return;
+    }
     
-    if (asset.status === 'Rendering') {
-        console.log("Updating status to 'Failed' so the user can re-trigger it...");
-        const { data: updated, error: updateError } = await supabaseAdmin
+    console.log(`Found ${stuckAssets.length} stuck asset(s). Updating all to 'Failed'...`);
+    
+    for (const asset of stuckAssets) {
+        console.log(`Recovering Asset: ${asset.id} (User: ${asset.user_id})`);
+        const { error: updateError } = await supabaseAdmin
             .from('assets')
             .update({ status: 'Failed' })
-            .eq('id', stuckAssetId)
-            .select()
-            .single();
+            .eq('id', asset.id);
             
         if (updateError) {
-            console.error("Update failed:", updateError.message);
+            console.error(`Failed to update asset ${asset.id}:`, updateError.message);
         } else {
-            console.log("Asset recovered successfully! New status:", updated.status);
+            console.log(`Asset ${asset.id} successfully updated to 'Failed'.`);
         }
-    } else {
-        console.log("Asset is not in 'Rendering' status. No recovery needed.");
     }
+    
+    console.log("=== DB RECOVERY COMPLETED ===");
 }
 
 run().catch(console.error);

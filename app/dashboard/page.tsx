@@ -755,7 +755,7 @@ export default function ProductsPage() {
                   
                   {/* Action Buttons Row */}
                   <div className="flex items-center gap-2 shrink-0">
-                      {isAdminLike && (
+                      {isAdminLike && role !== 'agent' && (
                         <button 
                             onClick={(e) => handleBackgroundGeneration(e, prop)} 
                             disabled={generatingProps.includes(prop.id)}
