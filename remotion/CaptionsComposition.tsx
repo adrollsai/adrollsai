@@ -404,37 +404,13 @@ const RemotionOutro: React.FC<{
                     </div>
                 )}
 
-                <h1 style={{
-                    fontSize: '85px',
-                    fontWeight: 950,
-                    marginBottom: '20px',
-                    letterSpacing: '-0.04em',
-                    textTransform: 'uppercase',
-                    color: '#0F172A', // Solid, high-contrast deep dark slate
-                    lineHeight: 1.1,
-                }}>
-                    {businessName}
-                </h1>
-
-                {subtitle && (
-                    <p style={{
-                        fontSize: '36px',
-                        color: '#1E293B', // High contrast slate-800
-                        fontWeight: 800,
-                        marginBottom: '55px',
-                        letterSpacing: '0.08em',
-                        textTransform: 'uppercase',
-                    }}>
-                        {subtitle}
-                    </p>
-                )}
-
                 <div style={{
                     width: '200px',
                     height: '6px',
                     background: '#1E293B', // Darker solid line for strong separator contrast
                     borderRadius: '4px',
                     marginBottom: '55px',
+                    marginTop: '25px',
                 }} />
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', alignItems: 'center' }}>

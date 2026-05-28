@@ -205,16 +205,15 @@ export async function POST(request: Request) {
             ? (profile?.character_description || "a stunningly beautiful, highly attractive, charismatic Indian female UGC content creator with a fair complexion, smiling warmly")
             : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera";
 
-        // Strict character video preservation instructions (only when using a video reference)
-        const characterVideoConstraint = isCharacterVideo
-            ? `\n\nCRITICAL CHARACTER VIDEO REFERENCE CONSTRAINT: A reference video of the creator character has been provided. This video serves TWO critical purposes:\n1. VOICE CLONING: You MUST clone and replicate the EXACT voice from the reference video — the same tone, pitch, accent, pace, cadence, emotional warmth, and natural delivery style. The generated video's spoken voice must sound IDENTICAL to the person speaking in the reference video. Do NOT use a generic or different voice — match it precisely.\n2. APPEARANCE PRESERVATION: Extract and preserve the character's exact physical looks (facial features, bodily build, skin tone, hair) from the reference video. The character must appear IDENTICAL in the generated video.\n\nDO NOT reuse, paste, or replay the reference video's actual frames, movements, actions, or background in the generated video. Only clone the voice and appearance. You SHOULD adjust their clothing/attire to look highly professional, presentable, and well-dressed for the specific ad scene context and product being advertised.`
-            : '';
-
         for (let i = 0; i < scenes.length; i++) {
             const scene = scenes[i];
 
+            const characterInstruction = isCharacterVideo
+                ? "Use the provided reference video for the character’s looks and voice only. Do not recreate the original video itself. Preserve the exact facial features, expressions, speaking style, and especially the exact same voice from the reference video."
+                : "Use the provided photo (Reference Image 1) for the character’s looks only. Preserve the exact facial features, expressions, speaking style, and attire from the reference photo. Voice must sound warm, smooth, natural, and highly professional, matching their gender perfectly.";
+
             const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
-Translate the following specific scene from a script into a highly structured generative prompt for Bytedance Seedance 2.0.
+Translate the following specific scene from a script into a simple, high-performing generative prompt for Bytedance Seedance 2.0.
 
 Scene Number: ${i + 1} of ${scenes.length}
 Scene Dialogue: "${scene.dialogue}"
@@ -222,48 +221,36 @@ Scene Visuals: "${scene.visuals || ''}"
 Business name: "${businessName}"
 Product context: "${productInfo}"
 User's brand style: "${brandGuidelines}"
-Custom instructions: "${customInstructions || 'None'}"${characterVideoConstraint}
+Custom instructions: "${customInstructions || 'None'}"
 
-CREATOR CHARACTER (${isCharacterVideo ? 'Reference Video' : 'Reference Image 1'}):
-"${characterDescription}"
-This is the exact person who must appear in the video. Study this description carefully — their gender, appearance, ethnicity, hair, clothing, and style must be matched EXACTLY in every shot. Use the correct pronouns and gendered language that match this character naturally.
+CREATOR CHARACTER:
+- Description: "${characterDescription}"
+- Reference Video Available: ${isCharacterVideo ? 'Yes (Reference Video is provided)' : 'No (Reference Photo Image 1 is provided)'}
 
 Reference Image Descriptions:
 - Reference Image 1 (Creator Avatar): "${characterDescription}"
 ${descriptionsText.replace(/Reference Image (\d+)/g, (m: string, n: string) => `Reference Image ${parseInt(n) + 1}`)}
 
 YOUR INSTRUCTIONS:
-0. CRITICAL CUSTOM INSTRUCTIONS PRIORITIZATION RULE: You MUST strictly prioritize and adhere to the user's Custom Instructions: "${customInstructions || 'None'}". The generated prompt's action sequences, character visual presentation, expressions, and overall scene context must align perfectly with and follow these custom instructions first and foremost. Do not ignore them or generate default actions that do not reflect what the user has requested.
-1. Generate a single highly detailed video prompt following the structure of the provided example exactly.
-2. The video MUST look super natural, organic, and have a raw UGC look (direct UGC look, shallow depth of field, handheld camera motion, like a real person filmed it on their phone) by default.
-3. CHARACTER IDENTITY RULE: The video MUST feature the exact same person described in the CREATOR CHARACTER section above (Reference Image 1). Their face, gender, build, hair, clothing, and overall appearance must perfectly match Reference Image 1. Use the correct pronouns (he/him/his or she/her) that match this character's gender naturally based on the description. Do NOT mismatch the gender — if the character is described as female, use she/her; if male, use he/him.
-4. VOICE CLONING & QUALITY RULE: ${isCharacterVideo ? 'A reference video has been provided. You MUST clone the EXACT voice from the reference video — replicate the identical tone, pitch, accent, pace, cadence, emotional delivery, and speaking style. The generated voice must be indistinguishable from the voice in the reference video. Do NOT use a different or generic AI voice.' : 'The character\'s spoken voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging.'} The voice must sound like a real UGC influencer or content creator having a genuine, casual conversation with their audience — warm, friendly, confident, with natural cadence and subtle emotional inflections. It should NOT sound robotic, monotone, synthetic, or overly polished. Think of a real person filming a casual Instagram Reel or TikTok in their room, talking naturally and passionately about something they love. The voice must match the character's gender perfectly.
-5. NATURAL BODY LANGUAGE & GESTURES: The character must have highly natural, dynamic, and expressive body language throughout the video — real hand gestures while talking, subtle head tilts, natural eye contact shifts, relaxed posture changes, genuine smiling, leaning in/out, touching/pointing at products naturally. Their movements should feel organic and alive like a real person, NOT stiff, static, or robotic. Every shot must show the character actively moving and gesturing naturally.
-5.1. CLOSE-UP CHARACTER SHOT CONSTRAINT (Prevents Face Mutation): Wherever the creator character is visible in a shot, you MUST strictly specify a close-up shot (e.g. "detailed close-up of the character's face", "close-up of the speaker"). Avoid medium, long, or wide shots of the character, as wider camera distances mutate or distort character features in AI video generation. Keep the focus close-up on the character's upper torso and face to ensure consistent, premium character features.
-6. STRICT ENVIRONMENT CONSTRAINT (Prevents Hallucinations): Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images (Reference Image 2, 3, etc.). Do NOT invent, assume, or hallucinate rooms, structures, product features, or details that are not shown in the reference photos.
-7. Make the scene highly dynamic: constantly moving, featuring dynamic shot changes, handheld camera motion, fluid panning, and different angles narrating dialogues along the way in a highly expressive way. Every shot must feature camera movement and expressive physical storytelling.
-8. NO PHONE NUMBERS: Under no circumstances should the dialogue contain any digits or spoken phone numbers. Replace any phone numbers or digit blocks in the dialogue with the phrase "get in touch".
-9. DO NOT use abstract image placeholders like "@Image 1", "@Image 2", "Image 1", or "Image 2" in the prompt. Instead, replace them by describing the actual visual content of the corresponding image description.
-10. The video is a strict 15-second clip, so split the [Action Sequence] into SHOTs from 0:00 to 0:15 (e.g. SHOT 1 (0:00-0:03) ...).
-11. The dialogue from the script MUST be mapped precisely to the dialogue in the SHOTs in the [Action Sequence] as spoken words by the creator.
-12. CRITICAL ZERO TEXT ON SCREEN RULE: The generated video frame must contain ABSOLUTELY ZERO visual text of any kind — no subtitles, no captions, no watermarks, no logos, no lower thirds, no title cards, no on-screen words, no burned-in text, no floating text overlays, no speech-to-text transcription overlays, NOTHING. The screen must be 100% pristine and clean with only the visual scene and character visible. The creator speaks with audio-only — their dialogue is heard but NEVER displayed as text on screen. This is the single most important visual constraint.
-13. The [Negative Prompt] section MUST explicitly list ALL of these negative text descriptors without exception: "text, logo, watermark, subtitles, captions, words, signature, letters, overlay, on-screen text, burned-in subtitles, gibberish text, lower-third titles, title card, speech-to-text, transcription, floating text, text overlay, any form of written words on screen".
+1. Generate a simple, natural, and direct generative video prompt. Do NOT use complex markdown headers, brackets, or structured blocks like "[Aesthetic]", "[Characters]", "[Environment]", "[Action Sequence]", etc.
+2. Follow this exact simplified natural language structure:
 
-OUTPUT FORMAT:
-Provide the prompt output in the exact format shown below, starting with "[Aesthetic]" and concluding with the "[Negative Prompt]" section. Do not add any conversational text or formatting wrappers like markdown code blocks.
+${characterInstruction}
 
-Example structure:
-[Aesthetic] UGC style. Naturalistic warm lighting, handheld camera movement.
-[Storyline] Part of an ad for ${businessName} demonstrating the product benefits.
-[Characters] The exact same creator from ${isCharacterVideo ? 'the Reference Video' : 'Reference Image 1'} (${characterDescription}), speaking directly to camera. ${isCharacterVideo ? 'Voice MUST be cloned exactly from the reference video — same tone, pitch, accent, pace, and natural delivery. ' : ''}Warm, natural, smooth, pleasing UGC creator voice. The character speaks like a real person filming a casual Instagram Reel — genuine, passionate, conversational. Voice must match their gender perfectly. ABSOLUTELY NO text, subtitles, captions, or any written words visible anywhere on screen at any point.
-[Environment] Modern clean setting showing [insert relevant image description here].
-[Action Sequence]
-SHOT 1 (0:00-0:03) The creator from Reference Image 1 holding the product, pointing naturally with relaxed hand gestures at the [insert image description here], speaking directly to camera with a warm, smooth, pleasing voice, audio-only speech, absolutely no on-screen text or subtitles overlay. DIALOGUE: "..."
-SHOT 2 (0:03-0:07) Close up of the creator demonstrating the product [insert image description here], natural head tilts and expressive hand movements, handheld camera tilting, speaking with a warm, engaging voice, audio-only speech with no text overlay. DIALOGUE: "..."
-SHOT 3 (0:07-0:11) The creator showcasing the [insert image description here] with enthusiastic natural hand gestures, leaning in with genuine excitement, dynamic track left movement, speaking with a warm, pleasing voice, audio-only speech, no burned-in text. DIALOGUE: "..."
-SHOT 4 (0:11-0:15) The creator smiling warmly and naturally, waving, relaxed posture, camera panning back out, speaking with a warm, smooth voice, audio-only speech, pristine screen. DIALOGUE: "..."
-[Production Brief] Shallow depth of field, subject sharp, UGC handheld shake, 4k, realistic texture. Absolutely zero text, subtitles, captions, or any form of written words on screen.
-[Negative Prompt] text, logo, watermark, subtitles, captions, words, signature, letters, overlay, on-screen text, burned-in subtitles, gibberish text, lower-third titles, title card, speech-to-text, transcription, floating text, text overlay, any form of written words on screen, low quality, robotic motion, stiff posture.`;
+The dialogue delivery should feel highly natural, organic, emotional, and energetic — like a real confident creator filming a high-performing Reel. Maintain strong vocal emphasis, realistic pauses, proper stress on important words, dynamic tone variation, and expressive Hinglish delivery. Avoid robotic pacing or flat narration.
+
+Natural UGC style vertical video with realistic handheld camera movement and a modern professional background. A UGC presenter [Describe character physical appearance cleanly based on CREATOR CHARACTER e.g. "young Indian man with short black hair" or "young Indian woman with long dark hair"] wears [Describe their professional attire e.g. "a black blazer over a white t-shirt" or "a professional suit"] and speaks directly to the camera with confident energy, natural hand gestures, and strong eye contact. [Describe the background environment cleanly, referencing product photos if available in a simple way].
+
+Realistic expressions, fluid gestures, authentic lip sync, shallow depth of field, blurred background, cinematic smartphone look.
+
+No text, subtitles, logos, captions, or watermarks.
+
+Dialogue:
+"[Precise scene dialogue to be spoken]"
+
+3. Prioritize user's custom instructions: "${customInstructions || 'None'}".
+4. Make sure the dialogue matches the scene dialogue precisely.
+5. Do NOT include any code block formatting wrappers (like \`\`\` or \`\`\`text) or conversational text outside of the prompt content itself. Output only the prompt text.`;
 
             let finalPrompt = "";
             try {
@@ -274,16 +261,19 @@ SHOT 4 (0:11-0:15) The creator smiling warmly and naturally, waving, relaxed pos
                 finalPrompt = text.trim();
             } catch (e: any) {
                 console.error(`Gemini prompt synthesis failed for scene ${i + 1}:`, e);
-                // Fallback prompt
-                const firstImageDesc = (imageDescriptions || script.imageDescriptions || [])[0] || 'the product';
-                finalPrompt = `[Aesthetic] UGC style. Naturalistic warm lighting, handheld camera movement.
-[Storyline] Product ad for ${businessName}.
-[Characters] The exact same creator from ${isCharacterVideo ? 'the Reference Video' : 'Reference Image 1'} (${characterDescription}), speaking directly to camera. ${isCharacterVideo ? 'Voice MUST be cloned exactly from the reference video — same tone, pitch, accent, pace, and natural delivery. ' : ''}Warm, natural, smooth, pleasing UGC creator voice like a real person filming a casual Instagram Reel. ABSOLUTELY NO text, subtitles, or captions on screen.
-[Environment] Modern clean setting showing ${firstImageDesc}.
-[Action Sequence]
-SHOT 1 (0:00-0:15) The creator holding the product and talking directly to camera with warm natural gestures, speaking with a smooth pleasing voice${isCharacterVideo ? ' cloned from reference video' : ''}, handheld moving shots, audio-only speech, absolutely zero text on screen. DIALOGUE: \"${scene.dialogue}\"
-[Production Brief] Shallow depth of field, subject sharp, UGC handheld shake. Absolutely zero text on screen.
-[Negative Prompt] text, logo, watermark, subtitles, captions, words, signature, letters, overlay, on-screen text, burned-in subtitles, gibberish text, lower-third titles, title card, speech-to-text, transcription, floating text, text overlay, any form of written words on screen, robotic motion, stiff posture.`;
+                // Fallback prompt using exact working simplified structure
+                finalPrompt = `${characterInstruction}
+
+The dialogue delivery should feel highly natural, organic, emotional, and energetic — like a real confident creator filming a high-performing Reel. Maintain strong vocal emphasis, realistic pauses, proper stress on important words, dynamic tone variation, and expressive Hinglish delivery. Avoid robotic pacing or flat narration.
+
+Natural UGC style vertical video with realistic handheld camera movement and a modern professional background. A presenter (${characterDescription}) speaks directly to the camera with confident energy, natural hand gestures, and strong eye contact.
+
+Realistic expressions, fluid gestures, authentic lip sync, shallow depth of field, blurred background, cinematic smartphone look.
+
+No text, subtitles, logos, captions, or watermarks.
+
+Dialogue:
+"${scene.dialogue}"`;
             }
             prompts.push(finalPrompt);
         }

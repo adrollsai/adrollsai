@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon } from 'lucide-react'
+import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon, Clock } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { toast } from 'sonner'
@@ -155,6 +155,9 @@ export default function CreationPage() {
   
   // Character speaker video/reference toggle
   const [useCharacterVideo, setUseCharacterVideo] = useState(true)
+
+  // Dynamic Video Duration State (15s, 30s, 45s, 60s)
+  const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 45 | 60>(30)
   
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -378,7 +381,7 @@ export default function CreationPage() {
   const handleSelectConcept = async (concept: any, refImages: string[], imageDescriptions?: string[]) => {
     if (isThinking) return
     setIsThinking(true)
-    setCurrentStep('AI Creative Director is writing your 30s Hinglish script...')
+    setCurrentStep(`AI Creative Director is writing your ${selectedDuration}s Hinglish script...`)
 
     try {
         const urlParams = new URLSearchParams(window.location.search)
@@ -392,7 +395,8 @@ export default function CreationPage() {
                 userInstructions: '', // None yet during selection
                 images: refImages,
                 imageDescriptions,
-                useCharacterVideo
+                useCharacterVideo,
+                duration: selectedDuration
             })
         });
 
@@ -443,7 +447,8 @@ export default function CreationPage() {
                 images: refImages,
                 imageDescriptions,
                 variation: true,
-                useCharacterVideo
+                useCharacterVideo,
+                duration: selectedDuration
             })
         });
 
@@ -501,8 +506,9 @@ export default function CreationPage() {
         const data = await response.json();
         if (data.error) throw new Error(data.error);
 
+        const totalDuration = (script.scenes?.length || 1) * 15;
         toast.success("Video Production Started! 🎬", {
-            description: "Your 15s Bytedance Seedance 2.0 Fast video is rendering."
+            description: `Your ${totalDuration}s Bytedance Seedance 2.0 Fast video is rendering.`
         });
 
         const aiMsg: Message = {
@@ -566,7 +572,8 @@ export default function CreationPage() {
                     propertyId: selectedPropId || null,
                     userInstructions: userText,
                     images: refImages,
-                    useCharacterVideo
+                    useCharacterVideo,
+                    duration: selectedDuration
                 })
             });
 
@@ -578,7 +585,7 @@ export default function CreationPage() {
             const aiMsg: Message = {
                 id: Date.now() + 1,
                 role: 'ai',
-                text: `I've analyzed your product and custom instructions. Here are 5 high-converting 15-second ad concepts for your UGC video. Select one to generate a script:`,
+                text: `I've analyzed your product and custom instructions. Here are 5 high-converting ${selectedDuration}-second ad concepts for your UGC video. Select one to generate a script:`,
                 concepts: conceptsData.concepts || [],
                 refImages: conceptsData.refImages || refImages,
                 imageDescriptions: conceptsData.imageDescriptions || []
@@ -775,21 +782,36 @@ export default function CreationPage() {
                 </div>
             )}
 
-            {/* Ratio Selector Pill */}
-            <div className={`flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full transition-opacity ${creationMode === 'video' ? 'opacity-50 pointer-events-none' : ''}`}>
-                {ASPECT_RATIOS.map(ratio => {
-                    const Icon = ratio.icon
-                    return (
+            {/* Ratio or Duration Selector Pill */}
+            {creationMode === 'video' ? (
+                <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full animate-in fade-in duration-200">
+                    {([15, 30, 45, 60] as const).map(dur => (
                         <button 
-                            key={ratio.value}
-                            onClick={() => setSelectedRatio(ratio.value)}
-                            className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-1 ${selectedRatio === ratio.value ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                            key={dur}
+                            type="button"
+                            onClick={() => setSelectedDuration(dur)}
+                            className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition-all duration-300 flex items-center justify-center gap-1 ${selectedDuration === dur ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
                         >
-                            <Icon size={12} className="hidden sm:block" /> {ratio.label}
+                            <Clock size={12} className="hidden sm:block" /> {dur === 60 ? '1m' : `${dur}s`}
                         </button>
-                    )
-                })}
-            </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full">
+                    {ASPECT_RATIOS.map(ratio => {
+                        const Icon = ratio.icon
+                        return (
+                            <button 
+                                key={ratio.value}
+                                onClick={() => setSelectedRatio(ratio.value)}
+                                className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-1 ${selectedRatio === ratio.value ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <Icon size={12} className="hidden sm:block" /> {ratio.label}
+                            </button>
+                        )
+                    })}
+                </div>
+            )}
 
             {/* Product Selector Pill (Full width on mobile, 1/3 on desktop) */}
             <div className="relative w-full">

@@ -13,7 +13,7 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { propertyId, concept, userInstructions, images, imageDescriptions, variation = false, useCharacterVideo = true } = body;
+        const { propertyId, concept, userInstructions, images, imageDescriptions, variation = false, useCharacterVideo = true, duration = 30 } = body;
 
         // 1. Fetch Context
         let property: any = null;
@@ -158,8 +158,34 @@ export async function POST(request: Request) {
             .map((desc: string, i: number) => `- Image ${i + 1} Visual Description: "${desc}"`)
             .join('\n');
 
+        const numClips = Math.ceil(duration / 15);
+        let scenesSchema = "";
+        for (let i = 1; i <= numClips; i++) {
+            scenesSchema += `    {
+      "dialogue": "Plain text of the Hinglish/English speech for Scene ${i} (comfortably spoken in 15 seconds, under 45 words)",
+      "visuals": "Highly detailed visual instructions describing Scene ${i} (15s), referencing reference images naturally and strictly limiting details to what is visible in the photos."
+    }${i < numClips ? ',\n' : ''}`;
+        }
+
+        let frameworkPrompt = "";
+        if (numClips === 1) {
+            frameworkPrompt = `1. THE EMOTIONAL HOOK & CTA (Scene 1: 0:00 - 0:15): Grab attention with a warm, deeply human, emotionally resonant hook statement, immediately connect it to the product, and conclude with a warm, low-friction invitation to take the next step.`;
+        } else if (numClips === 2) {
+            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Grab attention with a warm, deeply human, emotionally resonant hook statement and establish the core value.
+2. THE WARM CALL TO ACTION & CONNECTION (Scene 2: 0:15 - 0:30): Highlight the emotional comfort/belonging and end with a friendly, welcoming, and low-friction invitation to contact, buy, or get in touch.`;
+        } else if (numClips === 3) {
+            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Grab attention with a warm, deeply human, emotionally resonant statement or relatable aspiration.
+2. THE EMOTIONAL CONNECTION (Scene 2: 0:15 - 0:30): Bridge the hook by showing the product, how it works, and how it brings comfort, security, or success.
+3. THE WARM CALL TO ACTION (Scene 3: 0:30 - 0:45): Conclude with a friendly, welcoming, and low-friction invitation to take the next step.`;
+        } else {
+            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Grab attention with a warm, deeply human, emotionally resonant statement or relatable aspiration.
+2. THE EMOTIONAL CONNECTION (Scene 2: 0:15 - 0:30): Bridge the hook by outlining the viewer's core challenge or aspiration.
+3. THE SOLUTION (Scene 3: 0:30 - 0:45): Introduce the product/service and demonstrate how it solves the pain points beautifully.
+4. THE WARM CALL TO ACTION (Scene 4: 0:45 - 1:00): Conclude with a friendly, welcoming, and low-friction invitation to take the next step.`;
+        }
+
         const masterPrompt = `You are a world-class Ad Copywriter and UGC Creative Director specializing in TikTok, Instagram Reels, and Meta UGC ads.
-Your goal is to write a deeply emotional, highly engaging, and highly converting 30-second ad script split into EXACTLY two sequential 15-second scenes, using the Emotional Storytelling UGC Framework.
+Your goal is to write a deeply emotional, highly engaging, and highly converting ${duration}-second ad script split into EXACTLY ${numClips} sequential 15-second scenes, using the Emotional Storytelling UGC Framework.
 
 Business Name: ${businessName}
 Mission: ${profile?.mission_statement || 'N/A'}
@@ -176,10 +202,8 @@ Reference Images and their visual content descriptions to use instead of generic
 ${descriptionsText || 'No image descriptions provided.'}
 
 EMOTIONAL STORYTELLING UGC FRAMEWORK:
-1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:05): Grab attention with a warm, deeply human, emotionally resonant statement or relatable aspiration (e.g. *"kya aap bhi apne parivar ke liye ek aise ghar ka sapna dekhte hain jahan sukoon ho?"* or *"Imagine a life where luxury meets absolute peace..."*). Speak directly to the viewer's heart.
-2. THE EMOTIONAL CONNECTION (Scene 1 & 2: 0:05 - 0:25): Bridge the hook by showing the feeling of comfort, pride, success, peace of mind, or belonging. Highlight the human value—how this product or space makes their life beautiful, secure, and complete. Focus on generating feelings of warmth, security, and aspiration.
-3. THE WARM CALL TO ACTION (Scene 2: 0:25 - 0:30): A friendly, welcoming, and low-friction invitation to take the next step (e.g. *"aaiye, is sapne ko milkar sach karte hain. humse abhi contact karein."*). Make it feel like connecting with a trusted friend.
-(Note: The real estate examples above are strictly illustrative. The generated script MUST follow the hook, visual style, and narrative angle defined in the Selected Concept below rather than copying these real-estate examples verbatim.)
+${frameworkPrompt}
+(Note: The examples above are strictly illustrative. The generated script MUST follow the hook, visual style, and narrative angle defined in the Selected Concept below rather than copying these illustrative examples verbatim.)
 
 CONSTRAINTS & RULES:
 0. CRITICAL CUSTOM INSTRUCTIONS PRIORITIZATION RULE: You MUST strictly prioritize and adhere to the user's Custom Instructions: "${userInstructions || 'None'}". Every aspect of the generated script—including dialogue, tone, hook, environment details, actions, and scene visual descriptions—must be designed and written specifically to follow these instructions first and foremost. Do not ignore them or generate generic default templates that do not reflect what the user has requested.
@@ -187,12 +211,12 @@ CONSTRAINTS & RULES:
    - The dialogue in Scene 1 MUST start with or heavily incorporate the specific opening hook dialogue: "${concept?.hook || 'N/A'}".
    - The visual flow in both Scene 1 and Scene 2 MUST strictly implement the visual scene instructions and style described in the Selected Concept's Visual Angle: "${concept?.visualConcept || 'N/A'}".
    - Do NOT ignore the Selected Concept! Do NOT output generic business stress, tools/agencies, or pet Shih Tzu dog details unless they are explicitly written in the Selected Concept or requested in the User's Custom Instructions. Cohesion between the chosen concept/angle and the generated script is the single most important rule.
-1. Duration: STRICTLY 30 seconds total, split into exactly TWO sequential 15-second clips (Scene 1: 0:00-0:15 and Scene 2: 0:15-0:30). Deeply emotional, slow-paced, warm, and natural.
+1. Duration: STRICTLY ${duration} seconds total, split into exactly ${numClips} sequential 15-second clips (Scene 1 to Scene ${numClips}). Deeply emotional, slow-paced, warm, and natural.
 2. Dialogue language: ${languageInstruction}
-3. Speaker Character: The speaker in both scenes MUST be ${useCharacterVideo !== false ? (profile?.character_description || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion") : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera"} (speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy). Their appearance must be identical and consistent across both scenes. Use the correct gender pronouns naturally based on this character description. Wherever the character is shown, you MUST specify a close-up shot (e.g. "detailed close-up of the character's face", "close-up of the speaker") in the visual instructions to preserve and not mutate their facial features. Medium or wide shots of the character are strictly prohibited.
+3. Speaker Character: The speaker in all scenes MUST be ${useCharacterVideo !== false ? (profile?.character_description || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion") : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera"} (speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy). Their appearance must be identical and consistent across all scenes. Use the correct gender pronouns naturally based on this character description. Wherever the character is shown, you MUST specify a close-up shot (e.g. "detailed close-up of the character's face", "close-up of the speaker") in the visual instructions to preserve and not mutate their facial features. Medium or wide shots of the character are strictly prohibited.
 4. Spoken Dialogue Tone & Voice Quality: The voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging — like a real influencer or content creator having a genuine conversation with their audience. Natural cadence with subtle emotional inflections. ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or fast-talking hooks. The dialogue must flow like a warm, natural conversation from a real person who genuinely cares. Avoid robotic-sounding short fragments. Write complete, smooth, conversational sentences that produce feelings of warmth, family comfort, safety, and deep emotional resonance.
 4.1. NATURAL BODY LANGUAGE & GESTURES: In all visual instructions, the character must have highly natural, dynamic, and expressive body language — real hand gestures while talking, subtle head tilts, natural eye contact shifts, relaxed posture changes, genuine smiling, leaning in/out, touching/pointing at products naturally. Their movements should feel organic and alive like a real UGC creator, NOT stiff, static, or robotic.
-5. STRICT NO-CTA IN SCENE 1 RULE: Under no circumstances should Scene 1 contain any call to action, phone number, contact prompt, social handle reference, or request to purchase/visit. Scene 1 must focus exclusively on the scroll-stopping hook and problem bridge. The Call to Action (CTA) to contact, buy, or get in touch must ONLY appear at the very end of Scene 2 (25s-30s).
+5. STRICT NO-CTA IN EARLY SCENES RULE: Under no circumstances should early scenes contain any call to action, phone number, contact prompt, social handle reference, or request to purchase/visit. Early scenes must focus exclusively on the scroll-stopping hook and problem bridge. The Call to Action (CTA) to contact, buy, or get in touch must ONLY appear at the very end of the final Scene ${numClips} (the last 5 seconds).
 6. DYNAMIC AUDIENCE & NICHING ALIGNMENT: Analyze the product context and target buyer carefully. Tailor the hook and pain points exactly to the product's value tier. Do NOT use mismatched defaults (e.g. do NOT talk about 'renting vs buying' or 'saving rent money' if the product is a luxury 1.6 Cr home, commercial estate, or high-end service; instead, focus on exclusive lifestyle, status, growth, smart wealth investment, and ROI). Keep it fully generic so that the copywriting angle naturally scales from premium commercial/residential buyers to budget-conscious daily e-commerce shoppers based on the product description provided.
 7. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue. If the product info or call-to-action implies a phone number, the creator must ONLY say "get in touch" (or natural Hinglish equivalents like "humein contact karein" or "get in touch ho jao") instead. Under no circumstances should the spoken dialogue contain any digits, numbers, or spoken phone numbers.
 8. STRICT ENVIRONMENT CONSTRAINT (Prevents Hallucinations): Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images. Do NOT invent, assume, or hallucinate rooms, structures, product features, or details that are not shown in the reference photos.
@@ -204,17 +228,10 @@ CONSTRAINTS & RULES:
 Output format must be a single, valid JSON object:
 {
   "title": "Short catchy title",
-  "dialogue": "Plain text of the dialogue combined for both Scene 1 and Scene 2 (for backward compatibility)",
-  "visuals": "Highly detailed visual instructions combined for both Scene 1 and Scene 2 (for backward compatibility)",
+  "dialogue": "Plain text of the dialogue combined for all scenes (for backward compatibility)",
+  "visuals": "Highly detailed visual instructions combined for all scenes (for backward compatibility)",
   "scenes": [
-    {
-      "dialogue": "Plain text of the Hinglish/English speech for Scene 1 (comfortably spoken in 15 seconds, under 45 words)",
-      "visuals": "Highly detailed visual instructions describing Scene 1 (15s), referencing reference images naturally and strictly limiting details to what is visible in the photos."
-    },
-    {
-      "dialogue": "Plain text of the Hinglish/English speech for Scene 2 (comfortably spoken in 15 seconds, under 45 words)",
-      "visuals": "Highly detailed visual instructions describing Scene 2 (15s), referencing reference images naturally and strictly limiting details to what is visible in the photos."
-    }
+${scenesSchema}
   ],
   "finalCaption": "Compelling, high-converting FB ad caption copy (include emojis, call to action, but NO hashtags, NO bold markdown)."
 }
@@ -235,14 +252,26 @@ Output ONLY valid JSON. Do not include markdown code block tags around JSON.`;
             const cleanJson = scriptJson.replace(/```json|```/g, '').trim();
             const script = JSON.parse(cleanJson);
             
-            // Backward compatibility checks
+            // Dynamic clip count validation and padding/truncating
             if (!script.scenes || !Array.isArray(script.scenes) || script.scenes.length === 0) {
-                script.scenes = [
-                    { dialogue: script.dialogue || "", visuals: script.visuals || "" },
-                    { dialogue: "get in touch today", visuals: "Creator waving and smiling at camera." }
-                ];
-            } else if (script.scenes.length === 1) {
-                script.scenes.push({ dialogue: "get in touch today", visuals: "Creator waving and smiling at camera." });
+                script.scenes = [];
+                for (let i = 0; i < numClips; i++) {
+                    script.scenes.push({
+                        dialogue: i === numClips - 1 ? "get in touch today" : "kya aap ready hain?",
+                        visuals: "Creator smiling and looking at the camera."
+                    });
+                }
+            } else if (script.scenes.length !== numClips) {
+                if (script.scenes.length > numClips) {
+                    script.scenes = script.scenes.slice(0, numClips);
+                } else {
+                    while (script.scenes.length < numClips) {
+                        script.scenes.push({
+                            dialogue: "get in touch today",
+                            visuals: "Creator smiling and waving at the camera."
+                        });
+                    }
+                }
             }
 
             return NextResponse.json({

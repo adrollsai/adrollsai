@@ -410,11 +410,12 @@ export async function POST(request: Request) {
             // Clean up database video_tasks records
             await supabaseAdmin.from('video_tasks').delete().eq('asset_id', videoTask.asset_id);
 
-            // Send push notification
+            // Send dynamic push notification
+            const totalDuration = siblings.length * 15;
             await sendPushNotification(
                 videoTask.user_id, 
-                "🎬 30s Video Creative Ready!", 
-                "Your 30-second stitched AI video ad has been generated successfully.", 
+                `🎬 ${totalDuration}s Video Creative Ready!`, 
+                `Your ${totalDuration}-second stitched AI video ad has been generated successfully.`, 
                 "/dashboard/assets", 
                 "asset_ready"
             );
