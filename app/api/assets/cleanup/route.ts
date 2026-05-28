@@ -9,19 +9,31 @@ const supabaseAdmin = createClient(
 export async function POST(req: Request) {
     try {
         const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+        const fortyFiveMinutesAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
 
-        // Find assets in 'Processing' state older than 10 minutes
-        const { data: stuckAssets, error: fetchError } = await supabaseAdmin
+        // Find all assets in 'Processing' state
+        const { data: activeAssets, error: fetchError } = await supabaseAdmin
             .from('assets')
-            .select('id')
-            .eq('status', 'Processing')
-            .lt('created_at', tenMinutesAgo);
+            .select('id, type, created_at')
+            .eq('status', 'Processing');
 
         if (fetchError) throw fetchError;
 
-        if (stuckAssets && stuckAssets.length > 0) {
+        // Filter for stuck assets in memory:
+        // - Images: stuck after 10 minutes
+        // - Videos: stuck after 45 minutes (to allow parallel scene generations + stitching)
+        const stuckAssets = activeAssets?.filter(asset => {
+            const createdAtTime = new Date(asset.created_at).getTime();
+            if (asset.type === 'video') {
+                return createdAtTime < new Date(fortyFiveMinutesAgo).getTime();
+            } else {
+                return createdAtTime < new Date(tenMinutesAgo).getTime();
+            }
+        }) || [];
+
+        if (stuckAssets.length > 0) {
             const ids = stuckAssets.map(a => a.id);
-            console.log(`[Cleanup] Marking ${ids.length} stuck assets as Failed.`);
+            console.log(`[Cleanup] Marking ${ids.length} stuck assets as Failed. Stuck ids:`, ids);
             
             const { error: updateError } = await supabaseAdmin
                 .from('assets')

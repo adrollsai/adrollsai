@@ -143,16 +143,11 @@ export async function POST(request: Request) {
 
         // Determine if Hinglish should be used (default to true, unless user instructions explicitly request English/another language)
         const userText = (userInstructions || '').toLowerCase();
-        let languageInstruction = `The script dialogue MUST be written in conversational Hinglish (hybrid Hindi-English) using a MIXED script format: Hindi words MUST be written in Devanagari script (Hindi characters like 'और सुकून', 'लाया है आपके लिए', 'घर', 'चैन मिले', 'ढूंढ रहे हैं'), while English words and phrases MUST be written in standard English/Roman letters (e.g., 'Security', 'space', 'perfect balance', 'safe'). 
-
-Example:
-"Security, space, और सुकून. Sector 115 Mohali में Nova Nexus लाया है आपके लिए perfect balance. हर कोई चाहता है एक ऐसा घर जहाँ उनका परिवार safe हो और दिल को चैन मिले"
-
-Strictly write every Hindi word in Devanagari Hindi script and every English word in English Roman script. This is extremely important.`;
+        let languageInstruction = "The script dialogue MUST be written in conversational Hinglish (hybrid Hindi-English) using ONLY standard English letters/alphabets (Roman script). For example: 'Security, space, aur sukoon. Sector 115 Mohali mein Nova Nexus laya hai aapke liye perfect balance. Har koi chahta hai ek aisa ghar jahan unka parivar safe ho aur dil ko chain mile'. ABSOLUTELY DO NOT write any words in Devanagari script (Hindi characters like 'घर', 'पैसे', 'मोहाली'). Write all Hindi words phonetically in English characters (e.g., 'ghar', 'paise', 'zirakpur', 'mohali'). This is critical: the speech generator requires English alphabet letters to read Hinglish naturally.";
         if (userText.includes('in english') || userText.includes('only english') || userText.includes('english language')) {
             languageInstruction = "The script dialogue MUST be written in ENGLISH using standard English letters.";
         } else if (userText.includes('in hindi') || userText.includes('only hindi')) {
-            languageInstruction = "The script dialogue MUST be written ENTIRELY in HINDI using only Devanagari script (Hindi characters).";
+            languageInstruction = "The script dialogue MUST be written in HINDI but phonetically written using ONLY standard English letters (Roman script, e.g., 'namaste dosto'). Do NOT use Devanagari script.";
         }
 
         const variationInstruction = variation 
@@ -217,8 +212,8 @@ CONSTRAINTS & RULES:
    - The visual flow in both Scene 1 and Scene 2 MUST strictly implement the visual scene instructions and style described in the Selected Concept's Visual Angle: "${concept?.visualConcept || 'N/A'}".
    - Do NOT ignore the Selected Concept! Do NOT output generic business stress, tools/agencies, or pet Shih Tzu dog details unless they are explicitly written in the Selected Concept or requested in the User's Custom Instructions. Cohesion between the chosen concept/angle and the generated script is the single most important rule.
 0.2. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT & VISUAL HOOK RULE:
-   - The very first scene's dialogue (first 2 seconds of Scene 1) MUST contain a visual hook and IMMEDIATELY call out the target audience explicitly (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like "चंडीगढ़ या मोहाली में अपना perfect home ढूंढ रहे हैं?").
-   - If the dialogue contains any Indian city or location names (such as Mohali, Zirakpur, Chandigarh, Panchkula, Mumbai, Delhi, Gurgaon, Bangalore, etc.), they MUST be written in Devanagari Hindi script (e.g., write 'मोहाली' instead of 'Mohali', 'जीरकपुर' instead of 'Zirakpur', 'चंडीगढ़' instead of 'Chandigarh', 'पंचकुला' instead of 'Panchkula', 'मुंबई' instead of 'Mumbai', etc.).
+   - The very first scene's dialogue (first 2 seconds of Scene 1) MUST contain a visual hook and IMMEDIATELY call out the target audience explicitly (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like "Chandigarh ya Mohali mein apna perfect home dhoond rahe hain?").
+   - Any Indian city or location names (such as Mohali, Zirakpur, Chandigarh, Panchkula, Mumbai, Delhi, Gurgaon, Bangalore, etc.) MUST be written phonetically in standard English letters (e.g. write 'Mohali', 'Zirakpur', 'Chandigarh', 'Panchkula', 'Mumbai').
    - Scene 1 visuals MUST open with an instant, scroll-stopping visual hook.
 1. Duration: STRICTLY ${duration} seconds total, split into exactly ${numClips} sequential 15-second clips (Scene 1 to Scene ${numClips}). Deeply emotional, slow-paced, warm, and natural.
 2. Dialogue language: ${languageInstruction}
@@ -227,8 +222,8 @@ CONSTRAINTS & RULES:
 4.1. NATURAL BODY LANGUAGE & GESTURES: In all visual instructions, the character must have highly natural, dynamic, and expressive body language — real hand gestures while talking, subtle head tilts, natural eye contact shifts, relaxed posture changes, genuine smiling, leaning in/out, touching/pointing at products naturally. Their movements should feel organic and alive like a real UGC creator, NOT stiff, static, or robotic.
 4.2. PRONUNCIATION WORKAROUND (STRICTLY AVOID COMPLEX HINDI WORDS):
    - The AI speech synthesizer frequently stumbles or produces errors when trying to pronounce complex, formal, or Sanskritized Hindi words.
-   - To guarantee flawless natural pronunciation, you MUST strictly avoid complex, bookish, or heavy Hindi vocabulary (e.g. absolutely DO NOT write words like 'सुसज्जित', 'आलिशान', 'वास्तुकला', 'प्रतिष्ठित', 'सुविधाजनक', 'वातानुकूलित', 'आकांक्षा', 'प्रतिष्ठा', 'सुरक्षित', 'परिकल्पना', 'कीमत').
-   - Instead, ALWAYS use extremely simple, clear, conversational, everyday spoken Hindi words (e.g. 'ghar' / 'घर' instead of complex synonyms, 'chayan' / 'चैन', 'sukun' / 'सुकून', 'khushi' / 'खुशी', 'aasan' / 'आसान', 'budget' / 'बजट', 'best').
+   - To guarantee flawless natural pronunciation, you MUST strictly avoid complex, bookish, or heavy Hindi vocabulary (e.g. absolutely DO NOT write words phonetically like 'susajjit', 'aalishan', 'vastukala', 'pratishthit', 'suvidhajanak', 'vatankoolit', 'aakanksha', 'pratishtha', 'surakshit', 'parikalpana', 'keemat').
+   - Instead, ALWAYS use extremely simple, clear, conversational, everyday spoken Hindi words phonetically (e.g. 'ghar' instead of complex synonyms, 'chain', 'sukoon', 'khushi', 'aasan', 'budget', 'best').
    - Everyday English loanwords (like 'luxury', 'location', 'perfect', 'amenities', 'living', 'security', 'space', 'safe', 'family', 'balance') are highly preferred and pronounced perfectly by the voice model. Use them to make the Hinglish feel natural and premium.
 5. STRICT NO-CTA IN EARLY SCENES RULE: Under no circumstances should early scenes contain any call to action, phone number, contact prompt, social handle reference, or request to purchase/visit. Early scenes must focus exclusively on the scroll-stopping hook and problem bridge. The Call to Action (CTA) to contact, buy, or get in touch must ONLY appear at the very end of the final Scene ${numClips} (the last 5 seconds).
 6. DYNAMIC AUDIENCE & NICHING ALIGNMENT: Analyze the product context and target buyer carefully. Tailor the hook and pain points exactly to the product's value tier. Do NOT use mismatched defaults (e.g. do NOT talk about 'renting vs buying' or 'saving rent money' if the product is a luxury 1.6 Cr home, commercial estate, or high-end service; instead, focus on exclusive lifestyle, status, growth, smart wealth investment, and ROI). Keep it fully generic so that the copywriting angle naturally scales from premium commercial/residential buyers to budget-conscious daily e-commerce shoppers based on the product description provided.
