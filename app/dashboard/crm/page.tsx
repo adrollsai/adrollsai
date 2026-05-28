@@ -300,7 +300,9 @@ export default function CRMPage() {
 
   const handleLeadClick = (lead: any) => {
       sessionStorage.setItem('crm_scroll', window.scrollY.toString())
-      router.push(`/dashboard/crm/${lead.id}`)
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      router.push(`/dashboard/crm/${lead.id}${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
   }
 
   // --- ACTIONS ---

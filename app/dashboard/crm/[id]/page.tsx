@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
@@ -10,6 +10,8 @@ const STAGES = ['New', 'Qualified', 'Appointment booked', 'Appointment done', 'C
 export default function LeadProfilePage() {
   const { id } = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const impersonateId = searchParams.get('impersonate')
   const supabase = createClient()
 
   const [lead, setLead] = useState<any>(null)
@@ -138,7 +140,7 @@ END:VCARD`
     <div className="max-w-7xl mx-auto min-h-screen bg-[#F8FAFC] flex flex-col pb-safe pb-32">
         {/* Header */}
         <div className="p-5 bg-white border-b border-slate-200 flex items-center gap-3 sticky top-0 z-10">
-            <button onClick={() => router.push('/dashboard/crm')} className="p-2 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
+            <button onClick={() => router.push(impersonateId ? `/dashboard/crm?impersonate=${impersonateId}` : '/dashboard/crm')} className="p-2 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
                 <ArrowLeft size={18} />
             </button>
             <div className="min-w-0 flex-1">

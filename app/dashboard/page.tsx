@@ -76,7 +76,7 @@ export default function ProductsPage() {
   const [isLoadingAssets, setIsLoadingAssets] = useState(false)
   
   // Image Preview Modal
-  const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string }>({ isOpen: false, url: '', title: '' })
+  const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string, type?: 'image' | 'video' }>({ isOpen: false, url: '', title: '' })
   
   // Add Form State
   const [newProp, setNewProp] = useState({ title: '', description: '' })
@@ -1072,7 +1072,7 @@ export default function ProductsPage() {
                                                <button 
                                                    onClick={(e) => {
                                                        e.stopPropagation();
-                                                       setPreviewImage({ isOpen: true, url: asset.url, title: selectedProperty.title || 'Asset Preview' });
+                                                       setPreviewImage({ isOpen: true, url: asset.url, title: selectedProperty.title || 'Asset Preview', type: asset.type });
                                                    }}
                                                    className="bg-white/90 backdrop-blur-sm p-2 rounded-full text-slate-900 shadow-xl hover:bg-white transition-all"
                                                >
@@ -1096,6 +1096,7 @@ export default function ProductsPage() {
           onClose={() => setPreviewImage(prev => ({ ...prev, isOpen: false }))} 
           imageUrl={previewImage.url} 
           title={previewImage.title} 
+          type={previewImage.type}
       />
     </div>
   )

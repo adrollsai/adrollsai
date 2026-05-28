@@ -65,7 +65,7 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="fixed inset-0 z-[110] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 overflow-hidden"
+                    className="fixed inset-0 z-[20000] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 overflow-hidden"
                     onWheel={handleWheel}
                 >
                     {/* Header Controls */}
@@ -105,7 +105,13 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
                             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                             className="relative max-w-full max-h-full flex items-center justify-center"
                         >
-                            {type === 'video' || imageUrl.toLowerCase().endsWith('.mp4') ? (
+                            {(type === 'video' || (imageUrl && (
+                                /\.(mp4|webm|mov|ogg|m4v|3gp)/i.test(imageUrl.split('?')[0]) ||
+                                imageUrl.toLowerCase().includes('.mp4') ||
+                                imageUrl.toLowerCase().includes('.webm') ||
+                                imageUrl.toLowerCase().includes('.mov') ||
+                                imageUrl.toLowerCase().includes('video')
+                            ))) ? (
                                 <video 
                                     src={imageUrl} 
                                     controls 

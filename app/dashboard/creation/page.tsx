@@ -153,6 +153,9 @@ export default function CreationPage() {
   // NEW: Creation Mode Toggle
   const [creationMode, setCreationMode] = useState<'image' | 'video'>('image')
   
+  // Character speaker video/reference toggle
+  const [useCharacterVideo, setUseCharacterVideo] = useState(true)
+  
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   // 1. SAFE FETCH WITH LOCAL CACHING
@@ -388,7 +391,8 @@ export default function CreationPage() {
                 concept,
                 userInstructions: '', // None yet during selection
                 images: refImages,
-                imageDescriptions
+                imageDescriptions,
+                useCharacterVideo
             })
         });
 
@@ -438,7 +442,8 @@ export default function CreationPage() {
                 userInstructions: '',
                 images: refImages,
                 imageDescriptions,
-                variation: true
+                variation: true,
+                useCharacterVideo
             })
         });
 
@@ -488,7 +493,8 @@ export default function CreationPage() {
                 propertyId: selectedPropId || null,
                 script,
                 images: refImages,
-                imageDescriptions
+                imageDescriptions,
+                useCharacterVideo
             })
         });
 
@@ -559,7 +565,8 @@ export default function CreationPage() {
                 body: JSON.stringify({
                     propertyId: selectedPropId || null,
                     userInstructions: userText,
-                    images: refImages
+                    images: refImages,
+                    useCharacterVideo
                 })
             });
 
@@ -809,13 +816,37 @@ export default function CreationPage() {
         {creationMode === 'video' ? (
             <div className="px-4 flex gap-2.5 w-full overflow-x-auto scrollbar-hide py-1 animate-in fade-in duration-300">
                 {/* 1. Character Image Card (Speaker) */}
-                <div className="relative w-16 h-16 rounded-[1.25rem] border-2 border-blue-500 ring-2 ring-blue-100/50 overflow-hidden flex-shrink-0 bg-white flex flex-col items-center justify-center shadow-sm">
+                <div 
+                    onClick={() => {
+                        if (profile?.character_url) {
+                            setUseCharacterVideo(prev => !prev);
+                        } else {
+                            toast.info("Upload a character photo or video in Profile settings first!");
+                        }
+                    }}
+                    className={`relative w-16 h-16 rounded-[1.25rem] overflow-hidden flex-shrink-0 bg-white flex flex-col items-center justify-center shadow-sm cursor-pointer transition-all duration-300 ${
+                        useCharacterVideo 
+                            ? 'border-2 border-blue-500 ring-2 ring-blue-100/50 scale-100' 
+                            : 'border border-slate-200 opacity-40 grayscale hover:opacity-75 scale-95'
+                    }`}
+                >
                     {profile?.character_url ? (
                         <>
-                            <img src={profile.character_url} className="w-full h-full object-cover" alt="Character" />
+                            {(/\.(mp4|webm)/i.test(profile.character_url) || profile.character_url.includes('video')) ? (
+                                <video src={profile.character_url} muted loop playsInline autoPlay className="w-full h-full object-cover" />
+                            ) : (
+                                <img src={profile.character_url} className="w-full h-full object-cover" alt="Character" />
+                            )}
                             <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/10 to-transparent flex items-end justify-center pb-1">
-                                <span className="text-white text-[8px] font-black uppercase tracking-wider text-center w-full truncate">Speaker</span>
+                                <span className="text-white text-[8px] font-black uppercase tracking-wider text-center w-full truncate">
+                                    {useCharacterVideo ? 'Speaker ON' : 'Speaker OFF'}
+                                </span>
                             </div>
+                            {useCharacterVideo && (
+                                <div className="absolute top-1 right-1 bg-blue-500 text-white rounded-full p-0.5 shadow-md flex items-center justify-center z-10 animate-in zoom-in duration-200">
+                                    <Check size={8} strokeWidth={4} />
+                                </div>
+                            )}
                         </>
                     ) : (
                         <div className="flex flex-col items-center justify-center text-center p-2">

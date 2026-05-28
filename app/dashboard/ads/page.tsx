@@ -20,6 +20,7 @@ type SelectedCreative = {
   file?: File;
   previewUrl: string;
   name: string;
+  type?: 'image' | 'video';
 }
 
 const GENDERS = ['All', 'Male', 'Female']
@@ -237,7 +238,7 @@ export default function AdsPage() {
 
   const isVideoFile = (file: File) => file.type.startsWith('video/');
 
-  const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string }>({ isOpen: false, url: '', title: '' })
+  const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string, type?: 'image' | 'video' }>({ isOpen: false, url: '', title: '' })
 
   const checkAccountStatus = async (accountId: string) => {
       try {
@@ -852,7 +853,7 @@ export default function AdsPage() {
   const handleLocalFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     if(e.target.files) {
       const files = Array.from(e.target.files)
-      const newCreatives = files.map(file => ({ uid: Math.random().toString(36).substr(2, 9), sourceType: 'local' as const, file: file, previewUrl: URL.createObjectURL(file), name: file.name }))
+      const newCreatives = files.map(file => ({ uid: Math.random().toString(36).substr(2, 9), sourceType: 'local' as const, file: file, previewUrl: URL.createObjectURL(file), name: file.name, type: file.type.startsWith('video/') ? 'video' as const : 'image' as const }))
       setSelectedCreatives(prev => [...prev, ...newCreatives])
     }
   }
@@ -1933,7 +1934,11 @@ export default function AdsPage() {
                                               <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Creative Preview</div>
                                               <div className="relative w-24 h-24 rounded-xl overflow-hidden border border-slate-200 shadow-inner bg-white flex items-center justify-center">
                                                 {editingNode.creative?.imageUrl ? (
-                                                  <img src={fixR2Url(editingNode.creative.imageUrl)} className="w-full h-full object-cover" />
+                                                  (/\.(mp4|webm|mov|ogg|m4v|3gp)/i.test((editingNode.creative.imageUrl || '').split('?')[0]) || (editingNode.creative.imageUrl || '').toLowerCase().includes('video')) ? (
+                                                    <video src={fixR2Url(editingNode.creative.imageUrl)} className="w-full h-full object-cover" muted playsInline />
+                                                  ) : (
+                                                    <img src={fixR2Url(editingNode.creative.imageUrl)} className="w-full h-full object-cover" />
+                                                  )
                                                 ) : (
                                                   <span className="text-[10px] text-slate-400 text-center px-1">No Image Selected</span>
                                                 )}
@@ -1952,7 +1957,10 @@ export default function AdsPage() {
                                                 {editingNode.creative?.imageUrl && (
                                                   <button 
                                                     type="button"
-                                                    onClick={() => setPreviewImage({ isOpen: true, url: editingNode.creative!.imageUrl || '', title: editingNode.name })}
+                                                    onClick={() => {
+                                                      const isVid = /\.(mp4|webm|mov|ogg|m4v|3gp)/i.test((editingNode.creative!.imageUrl || '').split('?')[0]) || (editingNode.creative!.imageUrl || '').toLowerCase().includes('video');
+                                                      setPreviewImage({ isOpen: true, url: editingNode.creative!.imageUrl || '', title: editingNode.name, type: isVid ? 'video' : 'image' });
+                                                    }}
                                                     className="bg-slate-150 hover:bg-slate-200 text-slate-700 font-bold text-[10px] py-1.5 px-3 rounded-lg border border-slate-200 transition-colors flex items-center gap-1"
                                                   >
                                                     <Maximize2 size={10} /> Large Preview
@@ -2108,7 +2116,32 @@ export default function AdsPage() {
                 </div>
                 <input type="file" ref={fileInputRef} onChange={handleLocalFiles} accept="image/*,video/*" className="hidden" multiple />
                 <button onClick={() => fileInputRef.current?.click()} className="w-full mb-4 py-3.5 border-2 border-dashed border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50 rounded-2xl text-sm font-bold text-slate-500 hover:text-blue-600 flex items-center justify-center gap-2 transition-all"><Upload size={18} /> Upload Custom Files</button>
-                {selectedCreatives.length > 0 && (<div className="flex gap-3 overflow-x-auto pb-2 pt-2 custom-scrollbar">{selectedCreatives.map((c) => (<div key={c.uid} className="relative w-20 h-20 rounded-[1.25rem] flex-shrink-0 bg-white shadow-sm border border-slate-200 group cursor-pointer" onClick={() => setPreviewImage({ isOpen: true, url: c.previewUrl, title: c.name })}>{c.sourceType === 'local' && c.file && isVideoFile(c.file) ? (<video src={c.previewUrl} className="w-full h-full object-cover rounded-[1.25rem]" />) : (<img src={c.previewUrl} className="w-full h-full object-cover rounded-[1.25rem]" />)}<div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-[1.25rem]"><Maximize2 size={16} className="text-white"/></div><button onClick={(e) => { e.stopPropagation(); removeCreative(c.uid); }} className="absolute -top-2 -right-2 bg-white rounded-full p-1 text-red-500 shadow-md border border-slate-100 hover:bg-red-50 transition-colors z-10"><X size={14}/></button></div>))}</div>)}
+                {selectedCreatives.length > 0 && (
+                  <div className="flex gap-3 overflow-x-auto pb-2 pt-2 custom-scrollbar">
+                    {selectedCreatives.map((c) => (
+                      <div 
+                        key={c.uid} 
+                        className="relative w-20 h-20 rounded-[1.25rem] flex-shrink-0 bg-white shadow-sm border border-slate-200 group cursor-pointer" 
+                        onClick={() => setPreviewImage({ isOpen: true, url: c.previewUrl, title: c.name, type: (c.sourceType === 'local' && c.file && isVideoFile(c.file)) || c.type === 'video' ? 'video' : 'image' })}
+                      >
+                        {c.sourceType === 'local' && c.file && isVideoFile(c.file) ? (
+                          <video src={c.previewUrl} className="w-full h-full object-cover rounded-[1.25rem]" />
+                        ) : (
+                          <img src={c.previewUrl} className="w-full h-full object-cover rounded-[1.25rem]" />
+                        )}
+                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-[1.25rem]">
+                          <Maximize2 size={16} className="text-white"/>
+                        </div>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); removeCreative(c.uid); }} 
+                          className="absolute -top-2 -right-2 bg-white rounded-full p-1 text-red-500 shadow-md border border-slate-100 hover:bg-red-50 transition-colors z-10"
+                        >
+                          <X size={14}/>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -2224,7 +2257,7 @@ export default function AdsPage() {
                                                 return;
                                             }
                                             if (isSelected) removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid); 
-                                            else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Library' }]); 
+                                            else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Library', type: a.type }]); 
                                         }} className={`relative aspect-square rounded-[1.5rem] overflow-hidden border-[3px] transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}>
                                             <img src={fixR2Url(a.url)} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
                                             {isSelected && <div className="absolute top-3 right-3 bg-blue-500 text-white p-1 rounded-full shadow-md"><CheckCircle size={16} /></div>}
@@ -2253,7 +2286,7 @@ export default function AdsPage() {
                                                                     creative: {
                                                                         ...(prev.creative || {}),
                                                                         imageUrl: a.url,
-                                                                        imageHash: '' // clear imageHash so backend fetches it from URL
+                                                                        imageHash: ''
                                                                     }
                                                                 };
                                                             });
@@ -2262,7 +2295,7 @@ export default function AdsPage() {
                                                             return;
                                                         }
                                                         if (isSelected) removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid); 
-                                                        else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Batch Asset' }]); 
+                                                        else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Batch Asset', type: a.type }]); 
                                                     }} className={`relative aspect-square rounded-xl overflow-hidden border-[3px] transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}>
                                                         <img src={fixR2Url(a.url)} className="w-full h-full object-cover" />
                                                         {isSelected && <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full"><CheckCircle size={12} /></div>}
@@ -2286,6 +2319,7 @@ export default function AdsPage() {
         onClose={() => setPreviewImage(prev => ({ ...prev, isOpen: false }))} 
         imageUrl={previewImage.url} 
         title={previewImage.title} 
+        type={previewImage.type}
       />
     </div>
   )

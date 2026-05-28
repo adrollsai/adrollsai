@@ -14,7 +14,7 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { propertyId, userInstructions, images: customImages } = body;
+        const { propertyId, userInstructions, images: customImages, useCharacterVideo = true } = body;
 
         // 1. Fetch Context
         let property: any = null;
@@ -65,13 +65,13 @@ export async function POST(request: Request) {
             .eq('id', targetUserId)
             .single();
 
-        if (!targetProfile || !targetProfile.character_url) {
+        if (useCharacterVideo !== false && (!targetProfile || !targetProfile.character_url)) {
             return NextResponse.json({ 
                 error: 'Please upload a character photo in your profile settings first before generating video concepts.' 
             }, { status: 400 });
         }
 
-        const profile = targetProfile;
+        const profile = targetProfile || {} as any;
 
         // Determine reference images (max 4) - Filter out invalid placeholders/empty strings
         let rawImages: string[] = [];
@@ -94,8 +94,9 @@ export async function POST(request: Request) {
         const brandGuidelines = profile?.custom_prompt || 'UGC style, engaging';
 
         // Build prompt for analysis and concept generation
-        const characterDescription = profile?.character_description 
-            || "a stunningly beautiful, highly attractive, charismatic Indian female UGC content creator with a fair complexion, smiling warmly";
+        const characterDescription = useCharacterVideo !== false
+            ? (profile?.character_description || "a stunningly beautiful, highly attractive, charismatic Indian female UGC content creator with a fair complexion, smiling warmly")
+            : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera";
 
         const conceptPrompt = `You are a world-class Ad Creative Director specializing in hyper-engaging, high-converting Meta and TikTok video ads.
 Your task is to analyze the provided business details, product details, user guidelines, and any referenced image descriptions, then create 5 unique, ultra-hooky, 15-second ad concepts.

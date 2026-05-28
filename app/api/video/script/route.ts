@@ -13,7 +13,7 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { propertyId, concept, userInstructions, images, imageDescriptions, variation = false } = body;
+        const { propertyId, concept, userInstructions, images, imageDescriptions, variation = false, useCharacterVideo = true } = body;
 
         // 1. Fetch Context
         let property: any = null;
@@ -64,16 +64,16 @@ export async function POST(request: Request) {
             .eq('id', targetUserId)
             .single();
 
-        if (!targetProfile || !targetProfile.character_url) {
+        if (useCharacterVideo !== false && (!targetProfile || !targetProfile.character_url)) {
             return NextResponse.json({ 
                 error: 'Please upload a character photo in your profile settings first before generating video scripts.' 
             }, { status: 400 });
         }
 
-        let profile = targetProfile;
+        let profile: any = targetProfile || {};
 
         // Self-heal: If character_url is present but character_description is null, analyze it on-the-fly!
-        if (profile?.character_url && !profile.character_description) {
+        if (useCharacterVideo !== false && profile?.character_url && !profile.character_description) {
             try {
                 console.log(`[Self-Healing Script] Character URL is present but description is null. Performing vision analysis for: ${profile.character_url}`);
                 const imageRes = await fetch(profile.character_url);
@@ -189,7 +189,7 @@ CONSTRAINTS & RULES:
    - Do NOT ignore the Selected Concept! Do NOT output generic business stress, tools/agencies, or pet Shih Tzu dog details unless they are explicitly written in the Selected Concept or requested in the User's Custom Instructions. Cohesion between the chosen concept/angle and the generated script is the single most important rule.
 1. Duration: STRICTLY 30 seconds total, split into exactly TWO sequential 15-second clips (Scene 1: 0:00-0:15 and Scene 2: 0:15-0:30). Deeply emotional, slow-paced, warm, and natural.
 2. Dialogue language: ${languageInstruction}
-3. Speaker Character: The speaker in both scenes MUST be ${profile?.character_description || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion"} (speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy). Their appearance must be identical and consistent across both scenes. Use the correct gender pronouns naturally based on this character description. Wherever the character is shown, you MUST specify a close-up shot (e.g. "detailed close-up of the character's face", "close-up of the speaker") in the visual instructions to preserve and not mutate their facial features. Medium or wide shots of the character are strictly prohibited.
+3. Speaker Character: The speaker in both scenes MUST be ${useCharacterVideo !== false ? (profile?.character_description || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion") : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera"} (speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy). Their appearance must be identical and consistent across both scenes. Use the correct gender pronouns naturally based on this character description. Wherever the character is shown, you MUST specify a close-up shot (e.g. "detailed close-up of the character's face", "close-up of the speaker") in the visual instructions to preserve and not mutate their facial features. Medium or wide shots of the character are strictly prohibited.
 4. Spoken Dialogue Tone & Voice Quality: The voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging — like a real influencer or content creator having a genuine conversation with their audience. Natural cadence with subtle emotional inflections. ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or fast-talking hooks. The dialogue must flow like a warm, natural conversation from a real person who genuinely cares. Avoid robotic-sounding short fragments. Write complete, smooth, conversational sentences that produce feelings of warmth, family comfort, safety, and deep emotional resonance.
 4.1. NATURAL BODY LANGUAGE & GESTURES: In all visual instructions, the character must have highly natural, dynamic, and expressive body language — real hand gestures while talking, subtle head tilts, natural eye contact shifts, relaxed posture changes, genuine smiling, leaning in/out, touching/pointing at products naturally. Their movements should feel organic and alive like a real UGC creator, NOT stiff, static, or robotic.
 5. STRICT NO-CTA IN SCENE 1 RULE: Under no circumstances should Scene 1 contain any call to action, phone number, contact prompt, social handle reference, or request to purchase/visit. Scene 1 must focus exclusively on the scroll-stopping hook and problem bridge. The Call to Action (CTA) to contact, buy, or get in touch must ONLY appear at the very end of Scene 2 (25s-30s).

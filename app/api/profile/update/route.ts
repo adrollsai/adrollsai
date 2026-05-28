@@ -88,15 +88,20 @@ export async function POST(request: Request) {
         if (!existingProfile || existingProfile.character_url !== updates.character_url) {
           console.log(`[Profile Update API] Character URL changed from "${existingProfile?.character_url || ''}" to "${updates.character_url}". Starting Gemini Vision analysis...`)
           if (updates.character_url) {
-            const imageRes = await fetch(updates.character_url)
-            if (imageRes.ok) {
-              const buffer = Buffer.from(await imageRes.arrayBuffer())
-              const mimeType = imageRes.headers.get('content-type') || 'image/jpeg'
+            const mediaRes = await fetch(updates.character_url)
+            if (mediaRes.ok) {
+              const buffer = Buffer.from(await mediaRes.arrayBuffer())
+              const detectedMimeType = mediaRes.headers.get('content-type') || 'image/jpeg'
+              // Detect if this is a video based on URL pattern or mimeType
+              const isVideo = detectedMimeType.startsWith('video/') || /\.(mp4|webm|mov)/i.test(updates.character_url) || updates.character_url.includes('video')
+              const mimeType = isVideo ? (detectedMimeType.startsWith('video/') ? detectedMimeType : 'video/mp4') : detectedMimeType
+
+              console.log(`[Profile Update API] Detected media type: ${mimeType} (isVideo: ${isVideo})`)
 
               const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!)
               const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" })
 
-              const prompt = "You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata."
+              const prompt = `You are a casting director. Analyze this profile character ${isVideo ? 'video' : 'photo'} and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata.`
 
               const result = await model.generateContent([
                 prompt,
@@ -114,7 +119,7 @@ export async function POST(request: Request) {
                 allowedUpdates.character_description = desc
               }
             } else {
-              console.error(`[Profile Update API] Failed to fetch character image from ${updates.character_url}`)
+              console.error(`[Profile Update API] Failed to fetch character media from ${updates.character_url}`)
             }
           } else {
             // If character_url was set to null/empty, clear the description too
@@ -122,7 +127,7 @@ export async function POST(request: Request) {
           }
         }
       } catch (analysisError) {
-        console.error("[Profile Update API] Character image analysis failed:", analysisError)
+        console.error("[Profile Update API] Character media analysis failed:", analysisError)
       }
     }
 
