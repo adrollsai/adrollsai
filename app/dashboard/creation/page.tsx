@@ -501,6 +501,7 @@ export default function CreationPage() {
                 images: refImages,
                 imageDescriptions,
                 useCharacterVideo,
+                customInstructions: script.concept?.description || script.concept?.visualConcept || '',
                 prompts
             })
         });
@@ -546,6 +547,7 @@ export default function CreationPage() {
                 images: refImages,
                 imageDescriptions,
                 useCharacterVideo,
+                customInstructions: script.concept?.description || script.concept?.visualConcept || '',
                 preview: true
             })
         });

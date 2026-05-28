@@ -103,9 +103,11 @@ export async function POST(request: Request) {
             script, // The Hinglish script object { title, dialogue, visuals, finalCaption, refImages }
             images, // Reference images (up to 4)
             imageDescriptions,
-            customInstructions,
             useCharacterVideo = true
         } = body;
+
+        // Auto-extract and propagate custom instructions to all scene generations
+        const customInstructions = body.customInstructions || script.concept?.description || script.concept?.visualConcept || 'None';
 
         if (!script || !script.dialogue) {
             return NextResponse.json({ error: 'Invalid script provided' }, { status: 400 });
@@ -294,8 +296,8 @@ export async function POST(request: Request) {
                 const scene = scenes[i];
 
                 const characterInstruction = isCharacterVideo
-                    ? "Use the provided reference video for the character’s looks and voice only. Do not recreate the original video itself. Preserve the exact facial features, expressions, speaking style, and especially the exact same voice from the reference video."
-                    : "Use the provided photo (Reference Image 1) for the character’s looks only. Preserve the exact facial features, expressions, speaking style, and attire from the reference photo. Voice must sound warm, smooth, natural, and highly professional, matching their gender perfectly.";
+                    ? "Use the provided reference video for the character’s looks and voice only. Do not recreate the original video itself. Preserve the exact facial features, expressions, speaking style, and especially the exact same voice from the reference video. The audio output MUST be completely dry, clear, and close-up; remove any reverb, echo, room acoustics, or background hollow sounds completely from the voice."
+                    : "Use the provided photo (Reference Image 1) for the character’s looks only. Preserve the exact facial features, expressions, speaking style, and attire from the reference photo. Voice must sound warm, smooth, natural, and highly professional, matching their gender perfectly. The audio output MUST be completely dry, clear, and close-up; remove any reverb, echo, room acoustics, or background hollow sounds completely from the voice.";
 
                 const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
 Translate the following specific scene from a script into a simple, high-performing generative prompt for Bytedance Seedance 2.0.
@@ -322,9 +324,9 @@ YOUR INSTRUCTIONS:
 
 ${characterInstruction}
 
-The dialogue delivery should feel highly natural, organic, emotional, and energetic — like a real confident creator filming a high-performing Reel. Maintain strong vocal emphasis, realistic pauses, proper stress on important words, dynamic tone variation, and expressive Hinglish delivery. Avoid robotic pacing or flat narration.
+The dialogue delivery should feel highly natural, organic, emotional, and energetic — like a real confident creator filming a high-performing Reel. Maintain strong vocal emphasis, realistic pauses, proper stress on important words, dynamic tone variation, and expressive Hinglish delivery. Avoid robotic pacing or flat narration. Voice must be pristine dry close-up studio quality, with zero reverb, room acoustics, echo, or background hollow distortion.
 
-Natural UGC style vertical video with realistic handheld camera movement and a modern professional background. A UGC presenter [Describe character physical appearance cleanly based on CREATOR CHARACTER e.g. "young Indian man with short black hair" or "young Indian woman with long dark hair"] wears [Describe their professional attire e.g. "a black blazer over a white t-shirt" or "a professional suit"] and speaks directly to the camera with confident energy, natural hand gestures, and strong eye contact. [Describe the background environment cleanly, referencing product photos if available in a simple way].
+Natural UGC style vertical video with realistic handheld camera movement and a modern professional background. A UGC presenter [Describe character physical appearance cleanly based on CREATOR CHARACTER e.g. "young Indian man with short black hair" or "young Indian woman with long dark hair"] wears [Describe their professional attire e.g. "a black blazer over a white t-shirt" or "a professional suit"] and speaks directly to the camera with confident energy, natural hand gestures, and strong eye contact. [Describe the background environment cleanly. You MUST instruct the generative model to use and incorporate the provided reference photos (Reference Image 2, Reference Image 3, etc.) for the background, product details, or environment exactly as they are and where they fit well, blending them seamlessly].
 
 Realistic expressions, fluid gestures, authentic lip sync, shallow depth of field, blurred background, cinematic smartphone look.
 
@@ -333,7 +335,7 @@ No text, subtitles, logos, captions, or watermarks.
 Dialogue:
 "[Precise scene dialogue to be spoken]"
 
-3. Prioritize user's custom instructions: "${customInstructions || 'None'}".
+3. Prioritize user's custom instructions: "${customInstructions || 'None'}". Ensure custom instructions (such as environment/luxury lounge setting) are applied consistently.
 4. Make sure the dialogue matches the scene dialogue precisely.
 5. Do NOT include any code block formatting wrappers (like \`\`\` or \`\`\`text) or conversational text outside of the prompt content itself. Output only the prompt text.`;
 
@@ -349,9 +351,9 @@ Dialogue:
                     // Fallback prompt using exact working simplified structure
                     finalPrompt = `${characterInstruction}
 
-The dialogue delivery should feel highly natural, organic, emotional, and energetic — like a real confident creator filming a high-performing Reel. Maintain strong vocal emphasis, realistic pauses, proper stress on important words, dynamic tone variation, and expressive Hinglish delivery. Avoid robotic pacing or flat narration.
+The dialogue delivery should feel highly natural, organic, emotional, and energetic — like a real confident creator filming a high-performing Reel. Maintain strong vocal emphasis, realistic pauses, proper stress on important words, dynamic tone variation, and expressive Hinglish delivery. Avoid robotic pacing or flat narration. Voice must be pristine dry close-up studio quality, with zero reverb, room acoustics, echo, or background hollow distortion.
 
-Natural UGC style vertical video with realistic handheld camera movement and a modern professional background. A presenter (${characterDescription}) speaks directly to the camera with confident energy, natural hand gestures, and strong eye contact.
+Natural UGC style vertical video with realistic handheld camera movement and a modern professional background. A presenter (${characterDescription}) speaks directly to the camera with confident energy, natural hand gestures, and strong eye contact. The video incorporates and visualizes the provided product reference photos (Reference Image 2, Reference Image 3, etc.) in the background where they fit well.
 
 Realistic expressions, fluid gestures, authentic lip sync, shallow depth of field, blurred background, cinematic smartphone look.
 
