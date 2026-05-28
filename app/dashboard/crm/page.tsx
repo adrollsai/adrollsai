@@ -514,26 +514,42 @@ END:VCARD\n`
 
   // --- DYNAMIC FILTER EXTRACTION ---
   const uniqueCampaigns = useMemo(() => {
-    const campaigns = leads.map(l => l.ad_name || l.campaign_name).filter(Boolean)
+    const campaigns = leads
+      .map(l => l.ad_name || l.campaign_name)
+      .filter(c => c && c !== 'null' && c !== 'undefined' && typeof c === 'string')
     return [...new Set(campaigns)] as string[]
   }, [leads])
 
   const uniqueForms = useMemo(() => {
-    const formNames = leads.map(l => l.form_name || l.source).filter(Boolean)
+    const formNames = leads
+      .map(l => l.form_name || l.source)
+      .filter(f => f && f !== 'null' && f !== 'undefined' && typeof f === 'string')
     return [...new Set(formNames)] as string[]
   }, [leads])
 
   // --- ADVANCED FILTERING ---
-  const filteredLeads = leads.filter(l => {
-      const matchStage = (l.pipeline_stage || 'New') === activeStage
-      const matchSearch = l.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  // 1. Leads matching search, campaign, and form filters (but NOT pipeline stage)
+  const leadsMatchingFilters = useMemo(() => {
+    return leads.filter(l => {
+      const matchSearch = !searchQuery || 
+                          l.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           l.phone?.includes(searchQuery) || 
                           l.email?.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchCampaign = selectedCampaign === '' || (l.ad_name === selectedCampaign || l.campaign_name === selectedCampaign)
-      const matchForm = selectedForm === '' || (l.form_name === selectedForm || l.source === selectedForm)
+      const matchCampaign = selectedCampaign === '' || 
+                            l.ad_name?.trim() === selectedCampaign.trim() || 
+                            l.campaign_name?.trim() === selectedCampaign.trim()
+      const matchForm = selectedForm === '' || 
+                        l.form_name?.trim() === selectedForm.trim() || 
+                        l.source?.trim() === selectedForm.trim()
       
-      return matchStage && matchSearch && matchCampaign && matchForm
-  })
+      return matchSearch && matchCampaign && matchForm
+    })
+  }, [leads, searchQuery, selectedCampaign, selectedForm])
+
+  // 2. Final filtered list including pipeline stage matching
+  const filteredLeads = useMemo(() => {
+    return leadsMatchingFilters.filter(l => (l.pipeline_stage || 'New') === activeStage)
+  }, [leadsMatchingFilters, activeStage])
 
   const totalPages = Math.ceil(filteredLeads.length / leadsPerPage)
   const currentLeads = filteredLeads.slice((currentPage - 1) * leadsPerPage, currentPage * leadsPerPage)
@@ -658,7 +674,7 @@ END:VCARD\n`
                     >
                         {stage} 
                         <span className={`px-2 py-0.5 rounded-lg text-xs ${activeStage === stage ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                            {leads.filter(l => (l.pipeline_stage || 'New') === stage).length}
+                            {leadsMatchingFilters.filter(l => (l.pipeline_stage || 'New') === stage).length}
                         </span>
                     </button>
                 ))}

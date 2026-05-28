@@ -6,11 +6,87 @@ import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 import crypto from 'crypto';
+import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
+import { HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { exec } from 'child_process';
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Promise<string> {
+    const cacheKey = `generated/${userId}/trimmed_ref_${crypto.createHash('md5').update(avatarUrl).digest('hex')}.mp4`;
+    const cachedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${cacheKey}`;
+    
+    try {
+        await r2.send(new HeadObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: cacheKey
+        }));
+        console.log(`[Trim Video Cache] Found cached trimmed reference video: ${cachedUrl}`);
+        return cachedUrl;
+    } catch (e) {
+        console.log(`[Trim Video Cache] No cache found. Starting download and trim for: ${avatarUrl}`);
+    }
+
+    const tempDir = path.join(os.tmpdir(), `trim_${userId}_${Date.now()}`);
+    try {
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+        }
+        
+        const inputPath = path.join(tempDir, 'input.mp4');
+        const outputPath = path.join(tempDir, 'output.mp4');
+        
+        // 1. Download
+        const res = await fetch(avatarUrl);
+        if (!res.ok) throw new Error(`Failed to download reference video: ${res.statusText}`);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        fs.writeFileSync(inputPath, buffer);
+        
+        // 2. Trim with FFmpeg
+        const ffmpegBinary = path.join(
+            process.cwd(), 
+            'node_modules', 
+            'ffmpeg-static', 
+            os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+        );
+        const cmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 15 -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${outputPath}"`;
+        
+        await new Promise<void>((resolve, reject) => {
+            exec(cmd, (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+        
+        // 3. Upload to R2
+        const trimmedBuffer = fs.readFileSync(outputPath);
+        await r2.send(new PutObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: cacheKey,
+            Body: trimmedBuffer,
+            ContentType: 'video/mp4'
+        }));
+        
+        console.log(`[Trim Video] Reference video successfully trimmed and uploaded: ${cachedUrl}`);
+        return cachedUrl;
+    } catch (err: any) {
+        console.error("[Trim Video Error] Failed to trim, falling back to original URL:", err);
+        return avatarUrl;
+    } finally {
+        // Clean up
+        try {
+            if (fs.existsSync(tempDir)) {
+                fs.rmSync(tempDir, { recursive: true, force: true });
+            }
+        } catch (err) {}
+    }
+}
 
 export async function POST(request: Request) {
     try {
@@ -181,11 +257,16 @@ export async function POST(request: Request) {
             .join('\n') || 'No detailed image descriptions provided. Describe the images based on standard product expectations.';
 
         // 2. Use custom uploaded profile avatar (checked and guaranteed to exist when useCharacterVideo is true)
-        const avatarUrl = useCharacterVideo !== false ? profile.character_url : null;
-        const isCharacterVideo = avatarUrl && (/\.(mp4|webm)/i.test(avatarUrl) || avatarUrl.includes('video'));
+        let avatarUrl = useCharacterVideo !== false ? profile.character_url : null;
+        let isCharacterVideo = avatarUrl && (/\.(mp4|webm|mov|avi|wmv)/i.test(avatarUrl) || avatarUrl.includes('video'));
         
         if (avatarUrl) {
             console.log(`[Video Generate] Using custom uploaded character ${isCharacterVideo ? 'video' : 'photo'} from profile: ${avatarUrl}`);
+            if (isCharacterVideo) {
+                console.log(`[Video Generate] Reference video detected. Invoking getTrimmedReferenceVideo...`);
+                avatarUrl = await getTrimmedReferenceVideo(avatarUrl, targetUserId);
+                console.log(`[Video Generate] Using trimmed reference video URL: ${avatarUrl}`);
+            }
         } else {
             console.log(`[Video Generate] Speaker reference is disabled (useCharacterVideo=false). Using generic presenter.`);
         }
@@ -196,23 +277,27 @@ export async function POST(request: Request) {
         // If the character is a video, build the reference_video_urls array for Kie.ai Seedance 2.0
         const referenceVideoUrls = (avatarUrl && isCharacterVideo) ? [avatarUrl] : [];
 
-        // 3. Synthesize structured prompts for each scene using Gemini
-        const prompts: string[] = [];
+        // 3. Synthesize structured prompts for each scene using Gemini or use provided prompts
+        let prompts: string[] = [];
         const scenes = script.scenes || [{ dialogue: script.dialogue, visuals: script.visuals }];
         
-        // Character description — fed directly to Gemini, no regex gender detection needed
-        const characterDescription = useCharacterVideo !== false
-            ? (profile?.character_description || "a stunningly beautiful, highly attractive, charismatic Indian female UGC content creator with a fair complexion, smiling warmly")
-            : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera";
+        if (body.prompts && Array.isArray(body.prompts) && body.prompts.length > 0) {
+            console.log(`[Video Generate] Using user-provided custom prompts (length: ${body.prompts.length})`);
+            prompts = body.prompts;
+        } else {
+            // Character description — fed directly to Gemini, no regex gender detection needed
+            const characterDescription = useCharacterVideo !== false
+                ? (profile?.character_description || "a stunningly beautiful, highly attractive, charismatic Indian female UGC content creator with a fair complexion, smiling warmly")
+                : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera";
 
-        for (let i = 0; i < scenes.length; i++) {
-            const scene = scenes[i];
+            for (let i = 0; i < scenes.length; i++) {
+                const scene = scenes[i];
 
-            const characterInstruction = isCharacterVideo
-                ? "Use the provided reference video for the character’s looks and voice only. Do not recreate the original video itself. Preserve the exact facial features, expressions, speaking style, and especially the exact same voice from the reference video."
-                : "Use the provided photo (Reference Image 1) for the character’s looks only. Preserve the exact facial features, expressions, speaking style, and attire from the reference photo. Voice must sound warm, smooth, natural, and highly professional, matching their gender perfectly.";
+                const characterInstruction = isCharacterVideo
+                    ? "Use the provided reference video for the character’s looks and voice only. Do not recreate the original video itself. Preserve the exact facial features, expressions, speaking style, and especially the exact same voice from the reference video."
+                    : "Use the provided photo (Reference Image 1) for the character’s looks only. Preserve the exact facial features, expressions, speaking style, and attire from the reference photo. Voice must sound warm, smooth, natural, and highly professional, matching their gender perfectly.";
 
-            const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
+                const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
 Translate the following specific scene from a script into a simple, high-performing generative prompt for Bytedance Seedance 2.0.
 
 Scene Number: ${i + 1} of ${scenes.length}
@@ -252,17 +337,17 @@ Dialogue:
 4. Make sure the dialogue matches the scene dialogue precisely.
 5. Do NOT include any code block formatting wrappers (like \`\`\` or \`\`\`text) or conversational text outside of the prompt content itself. Output only the prompt text.`;
 
-            let finalPrompt = "";
-            try {
-                const { text } = await generateText({
-                    model: google('gemini-3-flash-preview'),
-                    prompt: synthesisPrompt,
-                });
-                finalPrompt = text.trim();
-            } catch (e: any) {
-                console.error(`Gemini prompt synthesis failed for scene ${i + 1}:`, e);
-                // Fallback prompt using exact working simplified structure
-                finalPrompt = `${characterInstruction}
+                let finalPrompt = "";
+                try {
+                    const { text } = await generateText({
+                        model: google('gemini-3-flash-preview'),
+                        prompt: synthesisPrompt,
+                    });
+                    finalPrompt = text.trim();
+                } catch (e: any) {
+                    console.error(`Gemini prompt synthesis failed for scene ${i + 1}:`, e);
+                    // Fallback prompt using exact working simplified structure
+                    finalPrompt = `${characterInstruction}
 
 The dialogue delivery should feel highly natural, organic, emotional, and energetic — like a real confident creator filming a high-performing Reel. Maintain strong vocal emphasis, realistic pauses, proper stress on important words, dynamic tone variation, and expressive Hinglish delivery. Avoid robotic pacing or flat narration.
 
@@ -274,8 +359,18 @@ No text, subtitles, logos, captions, or watermarks.
 
 Dialogue:
 "${scene.dialogue}"`;
+                }
+                prompts.push(finalPrompt);
             }
-            prompts.push(finalPrompt);
+        }
+
+        // Return early if preview mode is requested
+        if (body.preview === true) {
+            console.log(`[Video Generate] Preview mode. Returning synthesized prompts without starting tasks.`);
+            return NextResponse.json({
+                success: true,
+                prompts
+            });
         }
 
         // 4. Create Placeholder Asset (Spinning Card) in Supabase

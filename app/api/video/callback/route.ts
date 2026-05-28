@@ -181,7 +181,9 @@ export async function POST(request: Request) {
 
                 let refImages: string[] = [];
                 const avatarUrl = videoTask.last_successful_task_id;
-                if (avatarUrl && avatarUrl.startsWith('http')) {
+                const isCharacterVideo = avatarUrl && (/\.(mp4|webm|mov|avi|wmv)/i.test(avatarUrl) || avatarUrl.includes('video'));
+                
+                if (avatarUrl && avatarUrl.startsWith('http') && !isCharacterVideo) {
                     refImages.push(avatarUrl);
                 }
 
@@ -197,18 +199,25 @@ export async function POST(request: Request) {
                     }
                 }
 
-                const retryPayload = {
+                const retryPayload: any = {
                     model: "bytedance/seedance-2-fast",
                     callBackUrl: callbackUrl,
                     input: {
                         prompt: currentPrompt,
-                        reference_image_urls: refImages.slice(0, 4),
+                        reference_image_urls: refImages.slice(0, 9),
                         aspect_ratio: "9:16",
                         duration: 15,
                         generate_audio: true,
                         resolution: "480p"
                     }
                 };
+
+                if (avatarUrl && isCharacterVideo) {
+                    const referenceVideoUrls = [avatarUrl];
+                    retryPayload.input.reference_video_urls = referenceVideoUrls;
+                    retryPayload.input['reference_video_urls '] = referenceVideoUrls;
+                    console.log(`[Video Callback Retry] Passing character video reference: ${avatarUrl}`);
+                }
 
                 const { taskId: retryTaskId, error: retryError } = await createKieTask(retryPayload);
                 nextTaskId = retryTaskId;

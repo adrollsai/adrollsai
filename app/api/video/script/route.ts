@@ -143,11 +143,16 @@ export async function POST(request: Request) {
 
         // Determine if Hinglish should be used (default to true, unless user instructions explicitly request English/another language)
         const userText = (userInstructions || '').toLowerCase();
-        let languageInstruction = "The script dialogue MUST be written in conversational Hinglish (hybrid Hindi-English) using ONLY standard English letters/alphabets (Roman script). For example: 'kya aap abhi bhi rent de rahe hain? stop doing that' or 'vintage greens mein aapko milegi luxury'. ABSOLUTELY DO NOT write any words in Devanagari script (Hindi characters like 'घर', 'पैसे', 'जीरकपुर'). Write all Hindi words phonetically in English characters (e.g., 'ghar', 'paise', 'zirakpur', 'mohali'). This is critical: the speech generator requires English alphabet letters to read Hinglish naturally.";
+        let languageInstruction = `The script dialogue MUST be written in conversational Hinglish (hybrid Hindi-English) using a MIXED script format: Hindi words MUST be written in Devanagari script (Hindi characters like 'और सुकून', 'लाया है आपके लिए', 'घर', 'चैन मिले', 'ढूंढ रहे हैं'), while English words and phrases MUST be written in standard English/Roman letters (e.g., 'Security', 'space', 'perfect balance', 'safe'). 
+
+Example:
+"Security, space, और सुकून. Sector 115 Mohali में Nova Nexus लाया है आपके लिए perfect balance. हर कोई चाहता है एक ऐसा घर जहाँ उनका परिवार safe हो और दिल को चैन मिले"
+
+Strictly write every Hindi word in Devanagari Hindi script and every English word in English Roman script. This is extremely important.`;
         if (userText.includes('in english') || userText.includes('only english') || userText.includes('english language')) {
             languageInstruction = "The script dialogue MUST be written in ENGLISH using standard English letters.";
         } else if (userText.includes('in hindi') || userText.includes('only hindi')) {
-            languageInstruction = "The script dialogue MUST be written in HINDI but phonetically written using ONLY standard English letters (Roman script, e.g., 'namaste dosto'). Do NOT use Devanagari script.";
+            languageInstruction = "The script dialogue MUST be written ENTIRELY in HINDI using only Devanagari script (Hindi characters).";
         }
 
         const variationInstruction = variation 
@@ -169,16 +174,16 @@ export async function POST(request: Request) {
 
         let frameworkPrompt = "";
         if (numClips === 1) {
-            frameworkPrompt = `1. THE EMOTIONAL HOOK & CTA (Scene 1: 0:00 - 0:15): Grab attention with a warm, deeply human, emotionally resonant hook statement, immediately connect it to the product, and conclude with a warm, low-friction invitation to take the next step.`;
+            frameworkPrompt = `1. THE EMOTIONAL HOOK & CTA (Scene 1: 0:00 - 0:15): Open with an instant visual hook in the first 2 seconds, and IMMEDIATELY call out the target audience in the very first line of spoken dialogue (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like "मोहाली में अपना perfect home ढूंढ रहे हैं?"). Grab attention with a warm, deeply human, emotionally resonant hook statement, connect it to the product, and conclude with a warm, low-friction invitation to take the next step.`;
         } else if (numClips === 2) {
-            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Grab attention with a warm, deeply human, emotionally resonant hook statement and establish the core value.
+            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Open with an instant visual hook in the first 2 seconds, and IMMEDIATELY call out the target audience in the very first line of spoken dialogue (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like "मोहाली में अपना perfect home ढूंढ रहे हैं?"). Grab attention with a warm, deeply human, emotionally resonant hook statement and establish the core value.
 2. THE WARM CALL TO ACTION & CONNECTION (Scene 2: 0:15 - 0:30): Highlight the emotional comfort/belonging and end with a friendly, welcoming, and low-friction invitation to contact, buy, or get in touch.`;
         } else if (numClips === 3) {
-            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Grab attention with a warm, deeply human, emotionally resonant statement or relatable aspiration.
+            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Open with an instant visual hook in the first 2 seconds, and IMMEDIATELY call out the target audience in the very first line of spoken dialogue (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like "मोहाली में अपना perfect home ढूंढ रहे हैं?"). Grab attention with a warm, deeply human, emotionally resonant statement or relatable aspiration.
 2. THE EMOTIONAL CONNECTION (Scene 2: 0:15 - 0:30): Bridge the hook by showing the product, how it works, and how it brings comfort, security, or success.
 3. THE WARM CALL TO ACTION (Scene 3: 0:30 - 0:45): Conclude with a friendly, welcoming, and low-friction invitation to take the next step.`;
         } else {
-            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Grab attention with a warm, deeply human, emotionally resonant statement or relatable aspiration.
+            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Open with an instant visual hook in the first 2 seconds, and IMMEDIATELY call out the target audience in the very first line of spoken dialogue (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like "मोहाली में अपना perfect home ढूंढ रहे हैं?"). Grab attention with a warm, deeply human, emotionally resonant statement or relatable aspiration.
 2. THE EMOTIONAL CONNECTION (Scene 2: 0:15 - 0:30): Bridge the hook by outlining the viewer's core challenge or aspiration.
 3. THE SOLUTION (Scene 3: 0:30 - 0:45): Introduce the product/service and demonstrate how it solves the pain points beautifully.
 4. THE WARM CALL TO ACTION (Scene 4: 0:45 - 1:00): Conclude with a friendly, welcoming, and low-friction invitation to take the next step.`;
@@ -211,6 +216,10 @@ CONSTRAINTS & RULES:
    - The dialogue in Scene 1 MUST start with or heavily incorporate the specific opening hook dialogue: "${concept?.hook || 'N/A'}".
    - The visual flow in both Scene 1 and Scene 2 MUST strictly implement the visual scene instructions and style described in the Selected Concept's Visual Angle: "${concept?.visualConcept || 'N/A'}".
    - Do NOT ignore the Selected Concept! Do NOT output generic business stress, tools/agencies, or pet Shih Tzu dog details unless they are explicitly written in the Selected Concept or requested in the User's Custom Instructions. Cohesion between the chosen concept/angle and the generated script is the single most important rule.
+0.2. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT & VISUAL HOOK RULE:
+   - The very first scene's dialogue (first 2 seconds of Scene 1) MUST contain a visual hook and IMMEDIATELY call out the target audience explicitly (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like "चंडीगढ़ या मोहाली में अपना perfect home ढूंढ रहे हैं?").
+   - If the dialogue contains any Indian city or location names (such as Mohali, Zirakpur, Chandigarh, Panchkula, Mumbai, Delhi, Gurgaon, Bangalore, etc.), they MUST be written in Devanagari Hindi script (e.g., write 'मोहाली' instead of 'Mohali', 'जीरकपुर' instead of 'Zirakpur', 'चंडीगढ़' instead of 'Chandigarh', 'पंचकुला' instead of 'Panchkula', 'मुंबई' instead of 'Mumbai', etc.).
+   - Scene 1 visuals MUST open with an instant, scroll-stopping visual hook.
 1. Duration: STRICTLY ${duration} seconds total, split into exactly ${numClips} sequential 15-second clips (Scene 1 to Scene ${numClips}). Deeply emotional, slow-paced, warm, and natural.
 2. Dialogue language: ${languageInstruction}
 3. Speaker Character: The speaker in all scenes MUST be ${useCharacterVideo !== false ? (profile?.character_description || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion") : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera"} (speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy). Their appearance must be identical and consistent across all scenes. Use the correct gender pronouns naturally based on this character description. Wherever the character is shown, you MUST specify a close-up shot (e.g. "detailed close-up of the character's face", "close-up of the speaker") in the visual instructions to preserve and not mutate their facial features. Medium or wide shots of the character are strictly prohibited.

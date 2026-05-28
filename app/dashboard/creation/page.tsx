@@ -19,6 +19,7 @@ type Message = {
   script?: any
   refImages?: string[]
   imageDescriptions?: string[]
+  prompts?: string[]
 }
 
 type Property = { 
@@ -483,7 +484,7 @@ export default function CreationPage() {
     }
   }
 
-  const handleApproveVideo = async (script: any, refImages: string[], imageDescriptions?: string[]) => {
+  const handleApproveVideo = async (script: any, refImages: string[], imageDescriptions?: string[], prompts?: string[]) => {
     if (isThinking) return
     setIsThinking(true)
     setCurrentStep('Starting Bytedance Seedance 2.0 Fast video task...')
@@ -499,7 +500,8 @@ export default function CreationPage() {
                 script,
                 images: refImages,
                 imageDescriptions,
-                useCharacterVideo
+                useCharacterVideo,
+                prompts
             })
         });
 
@@ -521,6 +523,48 @@ export default function CreationPage() {
         toast.error("Failed to start video generation: " + error.message);
         const errorMsg: Message = { id: Date.now(), role: 'ai', text: "Error starting video: " + error.message }
         setMessages(prev => [...prev, errorMsg])
+    } finally {
+        setIsThinking(false)
+        setCurrentStep('')
+    }
+  }
+
+  const handlePreviewPrompts = async (script: any, refImages: string[], imageDescriptions: string[] | undefined, messageId: number) => {
+    if (isThinking) return
+    setIsThinking(true)
+    setCurrentStep('AI Creative Director is generating physical scenes prompts for review...')
+
+    try {
+        const urlParams = new URLSearchParams(window.location.search)
+        const impersonateId = urlParams.get('impersonate')
+        const response = await fetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                propertyId: selectedPropId || null,
+                script,
+                images: refImages,
+                imageDescriptions,
+                useCharacterVideo,
+                preview: true
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+
+        setMessages(prev => prev.map(m => {
+            if (m.id === messageId) {
+                return {
+                    ...m,
+                    prompts: data.prompts
+                }
+            }
+            return m
+        }))
+        toast.success("Final prompts generated! You can now review, edit and launch 👁️");
+    } catch (error: any) {
+        toast.error("Failed to generate preview prompts: " + error.message);
     } finally {
         setIsThinking(false)
         setCurrentStep('')
@@ -1191,6 +1235,36 @@ export default function CreationPage() {
                       />
                     </div>
 
+                    {/* Prompt Review and Edit Section */}
+                    {msg.prompts && msg.prompts.length > 0 && (
+                      <div className="flex flex-col gap-3.5 border-t border-slate-100 pt-4 animate-in fade-in slide-in-from-top-3">
+                        <div className="bg-blue-50/50 p-4 rounded-[1.5rem] border border-blue-100/50">
+                          <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest block mb-1">
+                            ✨ Review & Edit AI Prompts
+                          </span>
+                          <span className="text-[11px] text-slate-500 font-medium">
+                            The AI generated these physical scenes prompts for Bytedance Seedance. You can customize them before generating.
+                          </span>
+                        </div>
+                        {msg.prompts.map((promptText: string, pIdx: number) => (
+                          <div key={pIdx} className="flex flex-col gap-1.5 bg-slate-50/60 p-3 rounded-xl border border-slate-100">
+                            <span className="text-[9px] font-extrabold text-blue-500 uppercase tracking-wider">
+                              Scene {pIdx + 1} Prompt
+                            </span>
+                            <textarea
+                              value={promptText}
+                              onChange={(e) => {
+                                const updatedPrompts = [...(msg.prompts || [])];
+                                updatedPrompts[pIdx] = e.target.value;
+                                setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, prompts: updatedPrompts } : m));
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 font-semibold focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all resize-none h-28"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Reference Images Row */}
                     {msg.refImages && msg.refImages.length > 0 && (
                       <div className="flex flex-col gap-1.5 border-t border-slate-100 pt-3">
@@ -1211,13 +1285,23 @@ export default function CreationPage() {
                     {/* Interactive Action Buttons */}
                     {msg.id === messages[messages.length - 1]?.id && (
                       <div className="flex gap-2 mt-2 border-t border-slate-100 pt-3">
-                        <button
-                          onClick={() => handleApproveVideo(msg.script, msg.refImages || [], msg.imageDescriptions)}
-                          disabled={isThinking}
-                          className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-500/10 active:scale-95 transition-all disabled:opacity-50"
-                        >
-                          <Sparkles size={14} /> Approve & Generate Video 🎬
-                        </button>
+                        {msg.prompts ? (
+                          <button
+                            onClick={() => handleApproveVideo(msg.script, msg.refImages || [], msg.imageDescriptions, msg.prompts)}
+                            disabled={isThinking}
+                            className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-500/10 active:scale-95 transition-all disabled:opacity-50"
+                          >
+                            <Sparkles size={14} /> Confirm & Launch Video Task 🚀
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handlePreviewPrompts(msg.script, msg.refImages || [], msg.imageDescriptions, msg.id)}
+                            disabled={isThinking}
+                            className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-500/10 active:scale-95 transition-all disabled:opacity-50"
+                          >
+                            <Sparkles size={14} /> Review Final Prompts 👁️
+                          </button>
+                        )}
                         <button
                           onClick={() => handleGenerateScriptVariation(msg.script.concept, msg.refImages || [], msg.id, msg.imageDescriptions)}
                           disabled={isThinking}
