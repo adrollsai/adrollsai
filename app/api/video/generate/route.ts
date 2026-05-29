@@ -329,8 +329,8 @@ export async function POST(request: Request) {
                 const scene = scenes[i];
 
                 const characterInstruction = isCharacterVideo
-                    ? "Use the provided reference video for the character’s looks and voice only. Do not recreate the original video itself. Preserve the exact facial features, expressions, speaking style, and especially the exact same voice from the reference video."
-                    : "Use the provided photo (Reference Image 1) for the character’s looks only. Preserve the exact facial features, expressions, speaking style, and attire from the reference photo. Voice must sound warm, smooth, natural, and highly professional, matching their gender perfectly.";
+                    ? "Use the reference video only for the character's appearance and voice. Keep the same face and the same voice without the reverb and echo."
+                    : "Use the reference photo only for the character's appearance. Voice must sound warm, smooth, natural, and highly professional, matching their gender perfectly without the reverb and echo.";
 
                 const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
 Translate the following specific scene from a script into a simple, high-performing generative prompt for Bytedance Seedance 2.0.
@@ -354,28 +354,25 @@ ${descriptionsText.replace(/Reference Image (\d+)/g, (m: string, n: string) => `
 YOUR INSTRUCTIONS:
 1. Generate a simple, natural, and direct generative video prompt. Do NOT use complex markdown headers, brackets, or structured blocks like "[Aesthetic]", "[Characters]", "[Environment]", "[Action Sequence]", etc.
 2. You MUST strictly apply and integrate the custom instructions: "${customInstructions || 'None'}" (e.g. the environment, setting, style, or "she should be in a luxury lounge") into the setting and background of the generated prompt for THIS scene. The setting/environment specified in the custom instructions MUST be consistently present in all generated scene prompts, overriding or augmenting the scene visuals where necessary.
-3. You MUST output the final prompt structured into EXACTLY 6 distinct paragraphs separated by double newlines (\\n\\n), following this exact template format:
+3. You MUST output the final prompt structured into EXACTLY 5 distinct paragraphs separated by double newlines (\\n\\n), following this exact template format:
 
 [Paragraph 1 - Character & Voice Reference]
 ${characterInstruction}
 
-[Paragraph 2 - Dialogue Delivery Style]
-The dialogue delivery should feel highly natural, organic, emotional, and energetic — like a real confident creator filming a high-performing Reel. Maintain strong vocal emphasis, realistic pauses, proper stress on important words, dynamic tone variation, and expressive Hinglish delivery. Avoid robotic pacing or flat narration. Voice must be pristine dry close-up studio quality, with zero reverb, room acoustics, echo, or background hollow distortion.
+[Paragraph 2 - Reference Images Preference]
+also use the reference images where ever suitable
 
-[Paragraph 3 - Video Style & Environment Description]
-Natural UGC style vertical video with realistic handheld camera movement and a [Describe setting/environment cleanly, incorporating custom instructions e.g. 'luxury lounge' or 'modern corporate office background']. A [Describe presenter physical appearance cleanly based on CREATOR CHARACTER and custom instructions, e.g. 'young Indian man with short black hair and a groomed beard' or 'young Indian woman with long dark hair'] wears [Describe suitable attire e.g. 'a black blazer over a white t-shirt', 'a professional suit', or a suitable outfit matching the scene environment and user custom instructions] and speaks directly to the camera with confident energy and strong eye contact. [Describe the environment/background cleanly, explaining how the reference photos are used in a suitable way].
+[Paragraph 3 - Video Style, Action & Environment Description]
+Make [him/her] give a property tour and narrate this in a natural ugc style tik tok video. [Describe setting/environment cleanly, incorporating custom instructions e.g. 'luxury lounge' or 'modern corporate office background']. [Describe the presenter, physical appearance, gender, and appropriate attire cleanly based on CREATOR CHARACTER and custom instructions, e.g. 'A young Indian man with short black hair and a groomed beard wearing a black blazer over a white t-shirt' or 'A beautiful young Indian woman wearing elegant attire']. [Ensure shallow depth of field and blurred background elements].
 
-[Paragraph 4 - Camera Specs & Gestures]
-Realistic expressions, fluid gestures, authentic lip sync, shallow depth of field, [Describe specific background blur elements e.g. 'blurred office employees in the background' or 'blurred elegant lounge elements'], cinematic smartphone look.
-
-[Paragraph 5 - Text Suppression]
-No text, subtitles, logos, captions, or watermarks.
-
-[Paragraph 6 - Dialogue Block]
+[Paragraph 4 - Dialogue Block]
 Dialogue:
 "[Precise scene dialogue to be spoken]"
 
-1.5. DYNAMIC ATTIRE & CHARACTER OVERRIDE RULE: In Paragraph 3 and 4, you MUST describe a suitable attire for the character that makes perfect sense for the kind of video being made and the scene setting/background environment (e.g. activewear for gym setting, luxury/casual outfits for a lounge, clean professional attire for a modern office, cozy indoor wear for a home bedroom, etc.). If the user's Custom Instructions: "${customInstructions || 'None'}" contain any specific instructions about what the character looks like, their gender, hair style, ethnicity, or what they should wear/attire, you MUST strictly override all defaults and use their custom character/attire descriptions instead.
+[Paragraph 5 - Text Suppression Rule]
+DO NOT ADD ANY TEXT ELEMENTS IN THE GENERATED VIDEO
+
+3.5. PRONOUN & ATTIRE DETERMINATION: In Paragraph 3, detect if the character is male or female and write "Make him give a property tour..." or "Make her give a property tour..." accordingly. You MUST also describe a suitable attire for the character that makes perfect sense for the kind of video being made and the scene setting/background environment (e.g. activewear for gym setting, luxury/casual outfits for a lounge, clean professional attire for a modern office, cozy indoor wear for a home bedroom, etc.). If the user's Custom Instructions: "${customInstructions || 'None'}" contain any specific instructions about what the character looks like, their gender, hair style, ethnicity, or what they should wear/attire, you MUST strictly override all defaults and use their custom character/attire descriptions instead.
 4. Prioritize and strictly enforce user's custom instructions: "${customInstructions || 'None'}" in all scenes consistently.
 5. Make sure the dialogue matches the scene dialogue precisely.
 6. Do NOT include any code block formatting wrappers (like \`\`\` or \`\`\`text) or conversational text outside of the prompt content itself. Output only the prompt text.`;
@@ -398,19 +395,20 @@ Dialogue:
                         finalPrompt = text.trim();
                     } catch (fallbackErr: any) {
                         console.error(`[Generate API] Fallback prompt synthesis also failed for scene ${i + 1}:`, fallbackErr);
-                        // Fallback prompt using exact working simplified structure
+                        // Fallback prompt using exact working 5-paragraph structure
+                        const isMale = /male|man|boy|gentleman/i.test(characterDescription);
+                        const pronoun = isMale ? "him" : "her";
+                        
                         finalPrompt = `${characterInstruction}
 
-The dialogue delivery should feel highly natural, organic, emotional, and energetic — like a real confident creator filming a high-performing Reel. Maintain strong vocal emphasis, realistic pauses, proper stress on important words, dynamic tone variation, and expressive Hinglish delivery. Avoid robotic pacing or flat narration. Voice must be pristine dry close-up studio quality, with zero reverb, room acoustics, echo, or background hollow distortion.
+also use the reference images where ever suitable
 
-Natural UGC style vertical video with realistic handheld camera movement and a modern professional background. A presenter (${characterDescription}) speaks directly to the camera with confident energy and strong eye contact. The video uses the provided reference images in a suitable way wherever possible in all the scenes in a natural flow of the video.
-
-Realistic expressions, fluid gestures, authentic lip sync, shallow depth of field, blurred background, cinematic smartphone look.
-
-No text, subtitles, logos, captions, or watermarks.
+Make ${pronoun} give a property tour and narrate this in a natural ugc style tik tok video. Natural UGC style vertical video with realistic handheld camera movement and a modern professional background. A presenter (${characterDescription}) wears suitable clothing and speaks directly to the camera with confident energy and strong eye contact. Shallow depth of field with a beautifully blurred background.
 
 Dialogue:
-"${scene.dialogue}"`;
+"${scene.dialogue}"
+
+DO NOT ADD ANY TEXT ELEMENTS IN THE GENERATED VIDEO`;
                     }
                 }
                 prompts.push(finalPrompt);
