@@ -20,6 +20,8 @@ type Message = {
   refImages?: string[]
   imageDescriptions?: string[]
   prompts?: string[]
+  isError?: boolean
+  failedConcept?: any
 }
 
 type Property = { 
@@ -379,10 +381,13 @@ export default function CreationPage() {
   }
 
   // --- CLIENT INTERACTIVE VIDEO HANDLERS ---
-  const handleSelectConcept = async (concept: any, refImages: string[], imageDescriptions?: string[]) => {
+  // --- CLIENT INTERACTIVE VIDEO HANDLERS ---
+  const handleSelectConcept = async (concept: any, refImages: string[], imageDescriptions?: string[], msgIdToReplace?: number) => {
     if (isThinking) return
     setIsThinking(true)
     setCurrentStep(`AI Creative Director is writing your ${selectedDuration}s Hinglish script...`)
+
+    const activeMsgId = msgIdToReplace || Date.now()
 
     try {
         const urlParams = new URLSearchParams(window.location.search)
@@ -405,7 +410,7 @@ export default function CreationPage() {
         if (scriptData.error) throw new Error(scriptData.error);
 
         const aiMsg: Message = {
-            id: Date.now(),
+            id: activeMsgId,
             role: 'ai',
             text: `Here is the drafted script for **${scriptData.title}**! 🎬\n\nReview the dialogue, visuals, and final caption below.`,
             script: {
@@ -419,11 +424,28 @@ export default function CreationPage() {
             refImages: scriptData.refImages || refImages,
             imageDescriptions: scriptData.imageDescriptions || imageDescriptions
         };
-        setMessages(prev => [...prev, aiMsg]);
+
+        if (msgIdToReplace) {
+            setMessages(prev => prev.map(m => m.id === msgIdToReplace ? aiMsg : m));
+        } else {
+            setMessages(prev => [...prev, aiMsg]);
+        }
     } catch (error: any) {
         toast.error("Failed to generate script: " + error.message);
-        const errorMsg: Message = { id: Date.now(), role: 'ai', text: "Error: " + error.message }
-        setMessages(prev => [...prev, errorMsg])
+        const errorMsg: Message = { 
+            id: activeMsgId, 
+            role: 'ai', 
+            text: "Error: " + error.message,
+            isError: true,
+            failedConcept: concept,
+            refImages,
+            imageDescriptions
+        };
+        if (msgIdToReplace) {
+            setMessages(prev => prev.map(m => m.id === msgIdToReplace ? errorMsg : m));
+        } else {
+            setMessages(prev => [...prev, errorMsg]);
+        }
     } finally {
         setIsThinking(false)
         setCurrentStep('')
@@ -461,6 +483,8 @@ export default function CreationPage() {
                 return {
                     ...m,
                     text: `Here is a fresh variation for **${scriptData.title}**! 🎬\n\nReview the dialogue, visuals, and final caption below.`,
+                    isError: false,
+                    failedConcept: undefined,
                     script: {
                         title: scriptData.title,
                         dialogue: scriptData.dialogue,
@@ -478,6 +502,16 @@ export default function CreationPage() {
         toast.success("Script variation generated! ✨");
     } catch (error: any) {
         toast.error("Failed to generate variation: " + error.message);
+        const errorMsg: Message = {
+            id: messageId,
+            role: 'ai',
+            text: "Error: " + error.message,
+            isError: true,
+            failedConcept: concept,
+            refImages,
+            imageDescriptions
+        };
+        setMessages(prev => prev.map(m => m.id === messageId ? errorMsg : m));
     } finally {
         setIsThinking(false)
         setCurrentStep('')
@@ -1107,6 +1141,25 @@ export default function CreationPage() {
                         </div>
                       </button>
                     ))}
+                  </div>
+                )}
+
+                {/* SCRIPT GENERATION RETRY UI */}
+                {msg.isError && msg.failedConcept && (
+                  <div className="bg-red-50/50 border border-red-200 rounded-[2rem] p-5 shadow-sm max-w-xl flex flex-col gap-3 animate-in fade-in slide-in-from-top-3 mt-2">
+                    <div className="flex items-center gap-2 text-red-600 font-extrabold text-xs uppercase tracking-wider">
+                      <X className="text-red-500" size={16} /> Script Generation Failed
+                    </div>
+                    <p className="text-xs text-slate-600 leading-relaxed font-normal">
+                      The AI Creative Director couldn't complete the script generation due to high API demand. Don't worry, your custom instructions and concept details are fully saved. You can retry safely.
+                    </p>
+                    <button
+                      onClick={() => handleSelectConcept(msg.failedConcept, msg.refImages || [], msg.imageDescriptions, msg.id)}
+                      disabled={isThinking}
+                      className="bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-all shadow-md shadow-red-500/10 disabled:opacity-50"
+                    >
+                      <RefreshCw size={14} className={isThinking ? 'animate-spin' : ''} /> Retry Script Generation 🔄
+                    </button>
                   </div>
                 )}
 
