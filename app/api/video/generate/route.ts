@@ -382,15 +382,24 @@ Dialogue:
 
                 let finalPrompt = "";
                 try {
+                    console.log(`[Generate API] Generating prompt for scene ${i + 1} with primary model: gemini-3.5-flash`);
                     const { text } = await generateText({
-                        model: google('gemini-3-flash-preview'),
+                        model: google('gemini-3.5-flash'),
                         prompt: synthesisPrompt,
                     });
                     finalPrompt = text.trim();
                 } catch (e: any) {
-                    console.error(`Gemini prompt synthesis failed for scene ${i + 1}:`, e);
-                    // Fallback prompt using exact working simplified structure
-                    finalPrompt = `${characterInstruction}
+                    console.warn(`[Generate API] Primary prompt synthesis failed for scene ${i + 1}, trying gemini-3-flash-preview fallback:`, e.message);
+                    try {
+                        const { text } = await generateText({
+                            model: google('gemini-3-flash-preview'),
+                            prompt: synthesisPrompt,
+                        });
+                        finalPrompt = text.trim();
+                    } catch (fallbackErr: any) {
+                        console.error(`[Generate API] Fallback prompt synthesis also failed for scene ${i + 1}:`, fallbackErr);
+                        // Fallback prompt using exact working simplified structure
+                        finalPrompt = `${characterInstruction}
 
 The dialogue delivery should feel highly natural, organic, emotional, and energetic — like a real confident creator filming a high-performing Reel. Maintain strong vocal emphasis, realistic pauses, proper stress on important words, dynamic tone variation, and expressive Hinglish delivery. Avoid robotic pacing or flat narration. Voice must be pristine dry close-up studio quality, with zero reverb, room acoustics, echo, or background hollow distortion.
 
@@ -402,6 +411,7 @@ No text, subtitles, logos, captions, or watermarks.
 
 Dialogue:
 "${scene.dialogue}"`;
+                    }
                 }
                 prompts.push(finalPrompt);
             }
