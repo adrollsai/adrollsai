@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon, Clock } from 'lucide-react'
+import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon, Clock, Trash2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { toast } from 'sonner'
@@ -1268,21 +1268,73 @@ export default function CreationPage() {
                     )}
 
                     {/* Reference Images Row */}
-                    {msg.refImages && msg.refImages.length > 0 && (
-                      <div className="flex flex-col gap-1.5 border-t border-slate-100 pt-3">
-                        <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Reference Images</span>
-                        <div className="flex gap-2 flex-wrap">
-                          {msg.refImages.map((url: string, i: number) => (
-                            <div key={i} className="relative group w-10 h-10 rounded-lg overflow-hidden border border-slate-200 shadow-sm flex-shrink-0">
-                              <img src={url} className="w-full h-full object-cover" alt="ref" />
-                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                                <span className="text-[8px] font-black text-white">IMG {i+1}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                    <div className="flex flex-col gap-1.5 border-t border-slate-100 pt-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider">Reference Images</span>
+                        <span className="text-[9px] text-slate-400 font-medium">Use these photos in video background/scene</span>
                       </div>
-                    )}
+                      <div className="flex gap-2 flex-wrap items-center">
+                        {msg.refImages && msg.refImages.map((url: string, i: number) => (
+                          <div key={i} className="relative group w-12 h-12 rounded-xl overflow-hidden border border-slate-200 shadow-sm flex-shrink-0 transition-all hover:scale-105">
+                            <img src={url} className="w-full h-full object-cover" alt="ref" />
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-100 group-hover:opacity-0 transition-opacity">
+                              <span className="text-[8px] font-black text-white">IMG {i+1}</span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                  ...m,
+                                  refImages: m.refImages?.filter((_, idx) => idx !== i)
+                                } : m));
+                              }}
+                              className="absolute inset-0 bg-red-600/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer duration-150"
+                              title="Delete Image"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ))}
+                        
+                        {/* Add Reference Image Button */}
+                        <label className="w-12 h-12 rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-500 flex flex-col items-center justify-center cursor-pointer transition-colors hover:bg-blue-50/30 flex-shrink-0">
+                          {isUploadingRef ? (
+                            <Loader2 size={14} className="text-blue-500 animate-spin" />
+                          ) : (
+                            <>
+                              <Plus size={14} className="text-slate-400 hover:text-blue-500" />
+                              <span className="text-[7px] text-slate-400 font-extrabold mt-0.5">ADD</span>
+                            </>
+                          )}
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept="image/*"
+                            disabled={isUploadingRef}
+                            onChange={async (e) => {
+                              if (!e.target.files || e.target.files.length === 0) return;
+                              setIsUploadingRef(true);
+                              try {
+                                const file = e.target.files[0];
+                                const fileExt = file.name.split('.').pop();
+                                const newFileName = `ref-addition-${Date.now()}.${fileExt}`;
+                                const renamedFile = new File([file], newFileName, { type: file.type });
+                                const publicUrl = await uploadToR2(renamedFile, 'references');
+                                
+                                setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                  ...m,
+                                  refImages: [...(m.refImages || []), publicUrl]
+                                } : m));
+                                toast.success("Reference image added! 📸");
+                              } catch (uploadErr: any) {
+                                toast.error("Failed to upload reference image: " + uploadErr.message);
+                              } finally {
+                                setIsUploadingRef(false);
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
 
                     {/* Interactive Action Buttons */}
                     {msg.id === messages[messages.length - 1]?.id && (

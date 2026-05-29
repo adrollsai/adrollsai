@@ -88,6 +88,36 @@ async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Prom
     }
 }
 
+function extrapolateEthnicity(profile: any, property: any, customInstructions?: string): string {
+    const textToSearch = [
+        profile?.business_name,
+        profile?.mission_statement,
+        profile?.business_info,
+        profile?.custom_prompt,
+        property?.title,
+        property?.description,
+        property?.address,
+        customInstructions
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    if (textToSearch.includes('india') || textToSearch.includes('mohali') || textToSearch.includes('chandigarh') || textToSearch.includes('zirakpur') || textToSearch.includes('delhi') || textToSearch.includes('mumbai') || textToSearch.includes('bangalore') || textToSearch.includes('gurgaon') || textToSearch.includes('punjab') || textToSearch.includes('panchkula')) {
+        return "Indian";
+    }
+    if (textToSearch.includes('dubai') || textToSearch.includes('uae') || textToSearch.includes('abudhabi') || textToSearch.includes('middle east') || textToSearch.includes('saudi') || textToSearch.includes('qatar') || textToSearch.includes('sharjah') || textToSearch.includes('marina') || textToSearch.includes('downtown')) {
+        return "Arab/Middle Eastern";
+    }
+    if (textToSearch.includes('singapore') || textToSearch.includes('malaysia') || textToSearch.includes('china') || textToSearch.includes('japan') || textToSearch.includes('asia') || textToSearch.includes('hong kong')) {
+        return "East Asian";
+    }
+    if (textToSearch.includes('spain') || textToSearch.includes('mexico') || textToSearch.includes('colombia') || textToSearch.includes('latam') || textToSearch.includes('brazil') || textToSearch.includes('spanish') || textToSearch.includes('argentina') || textToSearch.includes('chile')) {
+        return "Hispanic/Latina";
+    }
+    if (textToSearch.includes('usa') || textToSearch.includes('america') || textToSearch.includes('uk') || textToSearch.includes('london') || textToSearch.includes('canada') || textToSearch.includes('australia') || textToSearch.includes('europe')) {
+        return "Caucasian";
+    }
+    return "Indian";
+}
+
 export async function POST(request: Request) {
     try {
         const supabase = await createClient();
@@ -287,17 +317,20 @@ export async function POST(request: Request) {
             console.log(`[Video Generate] Using user-provided custom prompts (length: ${body.prompts.length})`);
             prompts = body.prompts;
         } else {
-            // Character description — fed directly to Gemini, no regex gender detection needed
-            const characterDescription = useCharacterVideo !== false
-                ? (profile?.character_description || "a stunningly beautiful, highly attractive, charismatic Indian female UGC content creator with a fair complexion, smiling warmly")
-                : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera";
+            // Extrapolate ethnicity based on where the business is based
+            const extrapolatedEthnicity = extrapolateEthnicity(profile, property, customInstructions);
+            
+            // Character description — fed directly to Gemini
+            const characterDescription = (useCharacterVideo !== false && profile?.character_url)
+                ? (profile?.character_description || `a stunningly beautiful, highly attractive, charismatic ${extrapolatedEthnicity} female UGC content creator with a fair complexion, smiling warmly`)
+                : `a stunningly beautiful, highly charismatic ${extrapolatedEthnicity} female UGC content creator, smiling warmly and speaking directly to the camera`;
 
             for (let i = 0; i < scenes.length; i++) {
                 const scene = scenes[i];
 
                 const characterInstruction = isCharacterVideo
-                    ? "Use the provided reference video for the character’s looks and voice only. Do not recreate the original video itself. Preserve the exact facial features, expressions, speaking style, and especially the exact same voice from the reference video. The audio output MUST be completely dry, clear, and close-up; remove any reverb, echo, room acoustics, or background hollow sounds completely from the voice."
-                    : "Use the provided photo (Reference Image 1) for the character’s looks only. Preserve the exact facial features, expressions, speaking style, and attire from the reference photo. Voice must sound warm, smooth, natural, and highly professional, matching their gender perfectly. The audio output MUST be completely dry, clear, and close-up; remove any reverb, echo, room acoustics, or background hollow sounds completely from the voice.";
+                    ? "Use the provided reference video for the character’s looks and voice only. Do not recreate the original video itself. Preserve the exact facial features, expressions, speaking style, and especially the exact same voice from the reference video."
+                    : "Use the provided photo (Reference Image 1) for the character’s looks only. Preserve the exact facial features, expressions, speaking style, and attire from the reference photo. Voice must sound warm, smooth, natural, and highly professional, matching their gender perfectly.";
 
                 const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
 Translate the following specific scene from a script into a simple, high-performing generative prompt for Bytedance Seedance 2.0.
@@ -321,21 +354,28 @@ ${descriptionsText.replace(/Reference Image (\d+)/g, (m: string, n: string) => `
 YOUR INSTRUCTIONS:
 1. Generate a simple, natural, and direct generative video prompt. Do NOT use complex markdown headers, brackets, or structured blocks like "[Aesthetic]", "[Characters]", "[Environment]", "[Action Sequence]", etc.
 2. You MUST strictly apply and integrate the custom instructions: "${customInstructions || 'None'}" (e.g. the environment, setting, style, or "she should be in a luxury lounge") into the setting and background of the generated prompt for THIS scene. The setting/environment specified in the custom instructions MUST be consistently present in all generated scene prompts, overriding or augmenting the scene visuals where necessary.
-3. Follow this exact simplified natural language structure:
+3. You MUST output the final prompt structured into EXACTLY 6 distinct paragraphs separated by double newlines (\\n\\n), following this exact template format:
 
+[Paragraph 1 - Character & Voice Reference]
 ${characterInstruction}
 
+[Paragraph 2 - Dialogue Delivery Style]
 The dialogue delivery should feel highly natural, organic, emotional, and energetic — like a real confident creator filming a high-performing Reel. Maintain strong vocal emphasis, realistic pauses, proper stress on important words, dynamic tone variation, and expressive Hinglish delivery. Avoid robotic pacing or flat narration. Voice must be pristine dry close-up studio quality, with zero reverb, room acoustics, echo, or background hollow distortion.
 
-Natural UGC style vertical video with realistic handheld camera movement and a modern professional background. A UGC presenter [Describe character physical appearance cleanly based on CREATOR CHARACTER e.g. "young Indian man with short black hair" or "young Indian woman with long dark hair"] wears [Describe their professional attire e.g. "a black blazer over a white t-shirt" or "a professional suit"] and speaks directly to the camera with confident energy, natural hand gestures, and strong eye contact. [Describe the background environment cleanly. You MUST instruct the generative model to use the provided reference images in a suitable way wherever possible in the video in all the scene prompts in a natural flow of the video].
+[Paragraph 3 - Video Style & Environment Description]
+Natural UGC style vertical video with realistic handheld camera movement and a [Describe setting/environment cleanly, incorporating custom instructions e.g. 'luxury lounge' or 'modern corporate office background']. A [Describe presenter physical appearance cleanly based on CREATOR CHARACTER and custom instructions, e.g. 'young Indian man with short black hair and a groomed beard' or 'young Indian woman with long dark hair'] wears [Describe suitable attire e.g. 'a black blazer over a white t-shirt', 'a professional suit', or a suitable outfit matching the scene environment and user custom instructions] and speaks directly to the camera with confident energy and strong eye contact. [Describe the environment/background cleanly, explaining how the reference photos are used in a suitable way].
 
-Realistic expressions, fluid gestures, authentic lip sync, shallow depth of field, blurred background, cinematic smartphone look.
+[Paragraph 4 - Camera Specs & Gestures]
+Realistic expressions, fluid gestures, authentic lip sync, shallow depth of field, [Describe specific background blur elements e.g. 'blurred office employees in the background' or 'blurred elegant lounge elements'], cinematic smartphone look.
 
-Clean video frame with absolutely zero text, zero subtitles, zero captions, zero watermarks, and zero logos on screen. The video MUST be completely clean of any written words, lettering, or overlay subtitles. Subtitles or on-screen captions are strictly forbidden.
+[Paragraph 5 - Text Suppression]
+No text, subtitles, logos, captions, or watermarks.
 
+[Paragraph 6 - Dialogue Block]
 Dialogue:
 "[Precise scene dialogue to be spoken]"
 
+1.5. DYNAMIC ATTIRE & CHARACTER OVERRIDE RULE: In Paragraph 3 and 4, you MUST describe a suitable attire for the character that makes perfect sense for the kind of video being made and the scene setting/background environment (e.g. activewear for gym setting, luxury/casual outfits for a lounge, clean professional attire for a modern office, cozy indoor wear for a home bedroom, etc.). If the user's Custom Instructions: "${customInstructions || 'None'}" contain any specific instructions about what the character looks like, their gender, hair style, ethnicity, or what they should wear/attire, you MUST strictly override all defaults and use their custom character/attire descriptions instead.
 4. Prioritize and strictly enforce user's custom instructions: "${customInstructions || 'None'}" in all scenes consistently.
 5. Make sure the dialogue matches the scene dialogue precisely.
 6. Do NOT include any code block formatting wrappers (like \`\`\` or \`\`\`text) or conversational text outside of the prompt content itself. Output only the prompt text.`;
@@ -354,11 +394,11 @@ Dialogue:
 
 The dialogue delivery should feel highly natural, organic, emotional, and energetic — like a real confident creator filming a high-performing Reel. Maintain strong vocal emphasis, realistic pauses, proper stress on important words, dynamic tone variation, and expressive Hinglish delivery. Avoid robotic pacing or flat narration. Voice must be pristine dry close-up studio quality, with zero reverb, room acoustics, echo, or background hollow distortion.
 
-Natural UGC style vertical video with realistic handheld camera movement and a modern professional background. A presenter (${characterDescription}) speaks directly to the camera with confident energy, natural hand gestures, and strong eye contact. The video uses the provided reference images in a suitable way wherever possible in all the scenes in a natural flow of the video.
+Natural UGC style vertical video with realistic handheld camera movement and a modern professional background. A presenter (${characterDescription}) speaks directly to the camera with confident energy and strong eye contact. The video uses the provided reference images in a suitable way wherever possible in all the scenes in a natural flow of the video.
 
 Realistic expressions, fluid gestures, authentic lip sync, shallow depth of field, blurred background, cinematic smartphone look.
 
-Clean video frame with absolutely zero text, zero subtitles, zero captions, zero watermarks, and zero logos on screen. The video MUST be completely clean of any written words, lettering, or overlay subtitles. Subtitles or on-screen captions are strictly forbidden.
+No text, subtitles, logos, captions, or watermarks.
 
 Dialogue:
 "${scene.dialogue}"`;
