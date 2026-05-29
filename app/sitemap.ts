@@ -1,5 +1,6 @@
 import { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
+import { createClient } from '@supabase/supabase-js'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const headersList = await headers()
@@ -16,7 +17,73 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = `${protocol}://${host}`
 
   if (!isPlatform) {
-    // Custom tenant domain - index catalog home only
+    try {
+      // 1. Initialize Supabase Admin client to securely fetch client profiles and items
+      const supabaseAdmin = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      )
+
+      // 2. Resolve target profile associated with this custom domain
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('custom_domain', host)
+        .maybeSingle()
+
+      if (profile) {
+        // 3. Fetch active properties and published posts
+        const { data: properties } = await supabaseAdmin
+          .from('properties')
+          .select('id, updated_at')
+          .eq('user_id', profile.id)
+          .neq('status', 'Archived')
+          .neq('status', 'Sold')
+
+        const { data: posts } = await supabaseAdmin
+          .from('posts')
+          .select('id, updated_at')
+          .eq('user_id', profile.id)
+          .eq('status', 'published')
+
+        const urls: MetadataRoute.Sitemap = [
+          {
+            url: baseUrl,
+            lastModified: new Date(),
+            changeFrequency: 'daily',
+            priority: 1.0,
+          }
+        ]
+
+        if (properties) {
+          properties.forEach(p => {
+            urls.push({
+              url: `${baseUrl}?property=${p.id}`,
+              lastModified: p.updated_at ? new Date(p.updated_at) : new Date(),
+              changeFrequency: 'weekly',
+              priority: 0.8,
+            })
+          })
+        }
+
+        if (posts) {
+          posts.forEach(p => {
+            urls.push({
+              url: `${baseUrl}?post=${p.id}`,
+              lastModified: p.updated_at ? new Date(p.updated_at) : new Date(),
+              changeFrequency: 'weekly',
+              priority: 0.7,
+            })
+          })
+        }
+
+        return urls
+      }
+    } catch (e) {
+      console.error("[Sitemap API] Failed to build custom domain sitemap:", e)
+    }
+
+    // Tenant fallback
     return [
       {
         url: baseUrl,

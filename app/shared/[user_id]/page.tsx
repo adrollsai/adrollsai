@@ -22,6 +22,8 @@ type Profile = {
   linkedin_url?: string
   youtube_url?: string
   address?: string
+  pixel_id?: string | null
+  currency?: string | null
 }
 
 type Property = {
@@ -172,6 +174,111 @@ export default function SharedCataloguePage() {
     }
   }
 
+  // --- 4. META PIXEL & CAPI TRACKING ---
+  useEffect(() => {
+    if (!profile?.pixel_id) return
+
+    const pixelId = profile.pixel_id
+    const f = window as any
+
+    // Standard Facebook Pixel integration snippet
+    if (!f.fbq) {
+      f.fbq = function () {
+        f.fbq.callMethod ? f.fbq.callMethod.apply(f.fbq, arguments) : f.fbq.queue.push(arguments)
+      }
+      if (!f._fbq) f._fbq = f.fbq
+      f.fbq.push = f.fbq
+      f.fbq.loaded = true
+      f.fbq.version = '2.0'
+      f.fbq.queue = []
+      
+      const t = document.createElement('script')
+      t.async = true
+      t.src = 'https://connect.facebook.net/en_US/fbevents.js'
+      const s = document.getElementsByTagName('script')[0]
+      s.parentNode?.insertBefore(t, s)
+    }
+
+    f.fbq('init', pixelId)
+
+    // Helper to generate dynamic matching event_id
+    const generateEventId = () => `evt_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
+
+    // Expose a global tracking function so it can be called anywhere in the component
+    f.__trackAdrollsEvent = (eventName: string, eventData: any = {}) => {
+      const eventID = generateEventId()
+      
+      // 1. Browser-side fire
+      f.fbq('track', eventName, eventData, { eventID })
+
+      // 2. Server-side CAPI proxy call
+      fetch('/api/shared/capi-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: profile.id,
+          eventName,
+          eventID,
+          eventData,
+          sourceUrl: window.location.href
+        })
+      }).catch(err => console.error('[CAPI Proxy Error]', err))
+    }
+
+    // Fire initial PageView tracking on load
+    f.__trackAdrollsEvent('PageView')
+
+  }, [profile?.id, profile?.pixel_id])
+
+  // --- 5. DEEP LINKING LISTENERS ---
+  useEffect(() => {
+    if (loading) return
+    
+    const propId = searchParams.get('property')
+    if (propId && properties.length > 0) {
+      const match = properties.find(p => p.id === propId)
+      if (match) {
+        setSelectedProperty(match)
+        setCurrentImageIndex(0)
+      }
+    }
+
+    const postId = searchParams.get('post')
+    if (postId && posts.length > 0) {
+      const match = posts.find(p => p.id === postId)
+      if (match) {
+        setSelectedPost(match)
+      }
+    }
+  }, [loading, properties.length, posts.length])
+
+  // --- 6. SYNC MODAL TO URL ROUTING PARAMS ---
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (selectedProperty) {
+      params.set('property', selectedProperty.id)
+      params.delete('post')
+    } else {
+      params.delete('property')
+    }
+    const newQuery = params.toString()
+    const newUrl = newQuery ? `?${newQuery}` : window.location.pathname
+    window.history.replaceState(null, '', newUrl)
+  }, [selectedProperty])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (selectedPost) {
+      params.set('post', selectedPost.id)
+      params.delete('property')
+    } else {
+      params.delete('post')
+    }
+    const newQuery = params.toString()
+    const newUrl = newQuery ? `?${newQuery}` : window.location.pathname
+    window.history.replaceState(null, '', newUrl)
+  }, [selectedPost])
+
   useEffect(() => {
     // Init filters from URL
     const urlMin = searchParams.get('min'); if(urlMin) setMinPrice(urlMin)
@@ -250,25 +357,67 @@ export default function SharedCataloguePage() {
     }
   }
 
-  // --- 5. CONTACT HELPERS ---
+  // --- 7. CONTACT HELPERS ---
   const handleWhatsApp = (e: React.MouseEvent, propTitle: string) => {
     e.stopPropagation()
     if (!profile?.contact_number) return
     const text = `Hi! I'm interested in the "${propTitle}" I saw in your catalog.`
     const phone = profile.contact_number.replace(/[^0-9]/g, '')
+    
+    // Track Contact / WhatsApp event
+    const f = window as any
+    if (f.__trackAdrollsEvent) {
+      f.__trackAdrollsEvent('Contact', { content_name: `WhatsApp Inquire: ${propTitle}` })
+    }
+    
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank')
   }
 
   const handleCall = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (!profile?.contact_number) return
+    
+    // Track Contact / Call event
+    const f = window as any
+    if (f.__trackAdrollsEvent) {
+      f.__trackAdrollsEvent('Contact', { content_name: 'Call Catalog' })
+    }
+    
     window.open(`tel:${profile.contact_number}`, '_self')
   }
 
-  // --- 6. MODAL NAVIGATION ---
+  // --- 8. MODAL NAVIGATION ---
   const openModal = (prop: Property) => {
     setSelectedProperty(prop)
     setCurrentImageIndex(0)
+    
+    // Track ViewContent event
+    const priceVal = parsePrice(prop.price)
+    const trackData = {
+      content_name: prop.title,
+      content_ids: [prop.id],
+      content_type: 'product',
+      value: priceVal,
+      currency: profile?.currency || 'INR'
+    }
+    const f = window as any
+    if (f.__trackAdrollsEvent) {
+      f.__trackAdrollsEvent('ViewContent', trackData)
+    }
+  }
+
+  const openPostModal = (post: Post) => {
+    setSelectedPost(post)
+    
+    // Track ViewContent event for feed updates
+    const f = window as any
+    if (f.__trackAdrollsEvent) {
+      f.__trackAdrollsEvent('ViewContent', {
+        content_name: post.title,
+        content_ids: [post.id],
+        content_type: 'news'
+      })
+    }
   }
 
   const handleNextImage = (e: React.MouseEvent) => {
@@ -323,16 +472,14 @@ export default function SharedCataloguePage() {
             {/* CALL BUTTON */}
             {profile?.contact_number && (
               <div className="flex items-center gap-2">
-                  <a 
-                    href={`https://wa.me/${profile.contact_number.replace(/[^0-9]/g, '')}`} 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
+                  <button 
+                    onClick={(e) => handleWhatsApp(e, 'Header Icon')} 
                     className="bg-[#25D366]/10 hover:bg-[#25D366] text-[#25D366] hover:text-white p-2.5 sm:p-3 rounded-full shadow-sm transition-all flex items-center justify-center active:scale-95 shrink-0"
                   >
                     <MessageCircle size={20} />
-                  </a>
+                  </button>
                   <button 
-                    onClick={() => window.location.href = `tel:${profile.contact_number}`}
+                    onClick={handleCall}
                     className="bg-slate-900 hover:bg-slate-800 text-white px-4 sm:px-6 py-2 sm:py-2.5 rounded-full shadow-md shadow-slate-900/20 transition-all flex items-center gap-2 active:scale-95 shrink-0 group"
                   >
                     <Phone size={16} className="text-white group-hover:rotate-12 transition-transform" /> 
@@ -573,7 +720,7 @@ export default function SharedCataloguePage() {
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
                         {posts.map((post) => (
-                            <div key={post.id} onClick={() => setSelectedPost(post)} className="bg-white p-3 sm:p-4 rounded-2xl sm:rounded-[2rem] shadow-sm hover:shadow-xl cursor-pointer transition-all duration-300 group flex flex-col h-full border border-slate-200/60 sm:hover:-translate-y-1">
+                            <div key={post.id} onClick={() => openPostModal(post)} className="bg-white p-3 sm:p-4 rounded-2xl sm:rounded-[2rem] shadow-sm hover:shadow-xl cursor-pointer transition-all duration-300 group flex flex-col h-full border border-slate-200/60 sm:hover:-translate-y-1">
                                 {post.image_url ? (
                                     <div className="aspect-video sm:h-56 w-full rounded-xl sm:rounded-[1.5rem] overflow-hidden mb-4 sm:mb-5 bg-slate-100 relative shrink-0">
                                         <img src={post.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Feed cover" />

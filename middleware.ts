@@ -19,10 +19,11 @@ export async function middleware(request: NextRequest) {
 
   // If it's a custom domain...
   if (!isPlatformDomain) {
-    const isStaticPwaFile = url.pathname.endsWith('.js') || url.pathname.endsWith('.webmanifest') || url.pathname.endsWith('.json');
-    const isRobotsOrSitemap = url.pathname === '/robots.txt' || url.pathname === '/sitemap.xml';
+    // Match common static assets (images, icons, fonts, stylesheets, documents, audio/video files) to let them fall through.
+    // This prevents them from being rewritten to /shared/... and throwing 404s.
+    const isStaticAsset = /\.(png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|css|js|webmanifest|json|txt|xml|mp4|webm)$/i.test(url.pathname);
     
-    if (url.pathname.startsWith('/api/') || isStaticPwaFile || isRobotsOrSitemap) {
+    if (url.pathname.startsWith('/api/') || isStaticAsset) {
         // Do nothing, let it fall through
     } else {
         // Rewrite all other frontend paths to the shared profile route

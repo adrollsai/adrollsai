@@ -51,11 +51,18 @@ export async function POST(request: Request) {
     if (error) throw error;
 
     // 2. Trigger CAPI if stage warrants it
-    const { data: profile } = await supabase
+    // We use the admin client to bypass any potential RLS restrictions on reading the lead owner's tokens.
+    const { createClient: createAdminClient } = await import('@supabase/supabase-js');
+    const supabaseAdmin = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const { data: profile } = await supabaseAdmin
         .from('profiles')
         .select('facebook_token, selected_page_token, pixel_id')
-        .eq('id', user.id)
-        .single()
+        .eq('id', checkLead.user_id)
+        .single();
 
     const accessToken = profile?.facebook_token || profile?.selected_page_token;
     const pixelId = profile?.pixel_id;
