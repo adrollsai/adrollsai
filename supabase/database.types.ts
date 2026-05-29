@@ -834,14 +834,19 @@ export type Database = {
           ad_account_id: string | null
           ad_credits: number | null
           address: string | null
+          agency_id: string | null
           ai_ad_optimizations_used: number | null
           ai_creatives_used: number | null
           badges: string[] | null
           brand_color: string | null
+          business_info: string | null
           business_name: string | null
           campaign_launches_used: number | null
+          character_description: string | null
+          character_url: string | null
           contact_number: string | null
           created_at: string
+          currency: string | null
           current_streak: number | null
           custom_domain: string | null
           custom_prompt: string | null
@@ -858,11 +863,11 @@ export type Database = {
           instagram_url: string | null
           last_activity_date: string | null
           level: number | null
+          linkedin_id: string | null
+          linkedin_name: string | null
           linkedin_token: string | null
           linkedin_url: string | null
           linkedin_urn: string | null
-          character_url: string | null
-          character_description: string | null
           logo_url: string | null
           mission_statement: string | null
           organization_id: string | null
@@ -883,6 +888,9 @@ export type Database = {
           whatsapp_access_token: string | null
           whatsapp_business_account_id: string | null
           whatsapp_phone_number_id: string | null
+          whitelabel_domain: string | null
+          whitelabel_verify_status: string | null
+          whitelabel_verify_token: string | null
           youtube_refresh_token: string | null
           youtube_token: string | null
           youtube_url: string | null
@@ -891,14 +899,19 @@ export type Database = {
           ad_account_id?: string | null
           ad_credits?: number | null
           address?: string | null
+          agency_id?: string | null
           ai_ad_optimizations_used?: number | null
           ai_creatives_used?: number | null
           badges?: string[] | null
           brand_color?: string | null
+          business_info?: string | null
           business_name?: string | null
           campaign_launches_used?: number | null
+          character_description?: string | null
+          character_url?: string | null
           contact_number?: string | null
           created_at?: string
+          currency?: string | null
           current_streak?: number | null
           custom_domain?: string | null
           custom_prompt?: string | null
@@ -915,11 +928,11 @@ export type Database = {
           instagram_url?: string | null
           last_activity_date?: string | null
           level?: number | null
+          linkedin_id?: string | null
+          linkedin_name?: string | null
           linkedin_token?: string | null
           linkedin_url?: string | null
           linkedin_urn?: string | null
-          character_url?: string | null
-          character_description?: string | null
           logo_url?: string | null
           mission_statement?: string | null
           organization_id?: string | null
@@ -940,6 +953,9 @@ export type Database = {
           whatsapp_access_token?: string | null
           whatsapp_business_account_id?: string | null
           whatsapp_phone_number_id?: string | null
+          whitelabel_domain?: string | null
+          whitelabel_verify_status?: string | null
+          whitelabel_verify_token?: string | null
           youtube_refresh_token?: string | null
           youtube_token?: string | null
           youtube_url?: string | null
@@ -948,14 +964,19 @@ export type Database = {
           ad_account_id?: string | null
           ad_credits?: number | null
           address?: string | null
+          agency_id?: string | null
           ai_ad_optimizations_used?: number | null
           ai_creatives_used?: number | null
           badges?: string[] | null
           brand_color?: string | null
+          business_info?: string | null
           business_name?: string | null
           campaign_launches_used?: number | null
+          character_description?: string | null
+          character_url?: string | null
           contact_number?: string | null
           created_at?: string
+          currency?: string | null
           current_streak?: number | null
           custom_domain?: string | null
           custom_prompt?: string | null
@@ -972,11 +993,11 @@ export type Database = {
           instagram_url?: string | null
           last_activity_date?: string | null
           level?: number | null
+          linkedin_id?: string | null
+          linkedin_name?: string | null
           linkedin_token?: string | null
           linkedin_url?: string | null
           linkedin_urn?: string | null
-          character_url?: string | null
-          character_description?: string | null
           logo_url?: string | null
           mission_statement?: string | null
           organization_id?: string | null
@@ -997,11 +1018,21 @@ export type Database = {
           whatsapp_access_token?: string | null
           whatsapp_business_account_id?: string | null
           whatsapp_phone_number_id?: string | null
+          whitelabel_domain?: string | null
+          whitelabel_verify_status?: string | null
+          whitelabel_verify_token?: string | null
           youtube_refresh_token?: string | null
           youtube_token?: string | null
           youtube_url?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "profiles_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "profiles_organization_id_fkey"
             columns: ["organization_id"]

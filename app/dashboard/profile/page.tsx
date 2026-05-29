@@ -442,6 +442,7 @@ export default function ProfilePage() {
   const [formData, setFormData] = useState({
     businessName: '',
     mission: '',
+    businessInfo: '',
     color: '#D0E8FF',
     contact: '',
     address: '',
@@ -723,6 +724,7 @@ export default function ProfilePage() {
         setFormData({
           businessName: profileData.business_name || '',
           mission: profileData.mission_statement || '',
+          businessInfo: profileData.business_info || '',
           color: profileData.brand_color || '#D0E8FF',
           contact: profileData.contact_number || '',
           address: profileData.address || '',
@@ -980,6 +982,7 @@ export default function ProfilePage() {
     const updates = {
       business_name: formData.businessName,
       mission_statement: formData.mission,
+      business_info: formData.businessInfo,
       brand_color: formData.color,
       contact_number: formData.contact,
       address: formData.address,
@@ -1212,14 +1215,30 @@ export default function ProfilePage() {
                 )}
 
                 <div>
-                  <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 mt-2 uppercase tracking-wider">Mission Statement</label>
+                  <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 mt-2 uppercase tracking-wider">Business Description (Shown on Catalogue Page)</label>
                   <textarea
                     rows={3}
                     value={formData.mission}
                     onChange={(e) => setFormData({ ...formData, mission: e.target.value })}
                     className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-4 px-5 rounded-3xl text-slate-800 text-sm font-medium resize-none focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all"
-                    placeholder="What does your business do? What are you trying to achieve?"
+                    placeholder="Provide a description about your business to showcase on your public catalog..."
                   />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-purple-600 ml-2 block mb-2 mt-2 uppercase tracking-wider flex items-center gap-2">
+                    <Target size={14} /> Business Info (AI Context)
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={formData.businessInfo}
+                    onChange={(e) => setFormData({ ...formData, businessInfo: e.target.value })}
+                    className="w-full bg-purple-50/30 hover:bg-purple-50/50 focus:bg-white py-4 px-5 rounded-3xl text-slate-800 text-sm font-medium resize-none focus:ring-4 focus:ring-blue-500/20 outline-none border border-purple-200 focus:border-blue-400 transition-all"
+                    placeholder="Provide full context about your business, target audience, pricing models, and key selling propositions. This information is fetched by the LLMs to write highly relevant ad scripts."
+                  />
+                  <p className="text-[10px] text-slate-400 mt-2 ml-3 font-medium">
+                    This private context is exclusively used by AI models to write personalized concepts and dialogue scripts.
+                  </p>
                 </div>
 
                 <div>

@@ -61,7 +61,7 @@ export async function POST(request: Request) {
 
         const { data: targetProfile } = await supabase
             .from('profiles')
-            .select('business_name, mission_statement, custom_prompt, character_url, character_description')
+            .select('business_name, mission_statement, business_info, custom_prompt, character_url, character_description')
             .eq('id', targetUserId)
             .single();
 
@@ -106,7 +106,8 @@ Your task is to analyze the provided business details, product details, user gui
 
 Business Info:
 - Name: ${businessName}
-- Mission: ${profile?.mission_statement || 'N/A'}
+- Showcase Details: ${profile?.mission_statement || 'N/A'}
+- AI Context / Background: ${profile?.business_info || 'N/A'}
 - Guidelines: ${brandGuidelines}
 
 Product/Service Info:
@@ -122,14 +123,15 @@ ${refImages.map((img, i) => `- Image Image_${i + 1}: ${img}`).join('\n')}
 
 INSTRUCTIONS:
 0. CRITICAL CUSTOM INSTRUCTIONS PRIORITIZATION RULE: You MUST strictly prioritize and adhere to the user's Custom Instructions: "${userInstructions || 'None'}". Every single concept angle, visual storyline, hook, and psychological positioning MUST be custom-tailored to follow these instructions first and foremost. Do not ignore them or generate generic real estate/e-commerce templates that do not reflect what the user has requested here.
-1. Since the videos will run as Facebook/Instagram/TikTok UGC Ads, they must be warm, authentic, natural, and deeply emotional. Capture the viewer's heart from the first few seconds with a deeply human, relatable statement or aspiration rather than high-hype direct response hooks. ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or pushy marketing hooks. Every concept must be centered around warm, authentic, emotional storytelling that generates real feelings of comfort, trust, pride, or security.
+1. Since the videos will run as Facebook/Instagram/TikTok UGC Ads, they must be warm, authentic, natural, and deeply emotional. ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or pushy marketing hooks. Every concept must be centered around warm, authentic, emotional storytelling that generates real feelings of comfort, trust, pride, or security. You must dig deep into the psychological pain points of the target audience (e.g., escaping rent anxiety, security for parents/children, fear of delayed projects, wanting luxury/status, high return on investment) and position the business/product directly as the perfect solution to their deep-seated desire or pain. Avoid surface-level feature listicles; write concepts with emotional depth.
+1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN HINGLISH: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST start in conversational Roman Hinglish (NOT in English) and MUST explicitly call out the target audience of the business. For example, if selling premium flats in Mohali to home buyers, the hook dialogue must start exactly like: "Mohali mein apna dream home dhoond rahe ho par budget aur space ka perfect balance nahi mil raha?" or "Chandigarh ya Mohali mein home search kar rahe ho?". ABSOLUTELY DO NOT start with English words/greetings like "Hey everyone!", "Stop scrolling!", "Are you looking for...?", or "Did you know...?". It must be a direct, deep Hinglish hook calling out the target audience from the very first word.
 2. The ad concepts should be designed for a strict ${duration}-second video clip in 9:16 dimension ${numClips > 1 ? `consisting of exactly ${numClips} sequential 15-second scenes/clips` : '(a single 15-second scene)'}.
 3. The creator character described above will speak directly to the camera and showcase/talk about the product/service. Wherever the creator character is shown, you MUST strictly specify a close-up shot (e.g. "detailed close-up of the character's face", "close-up of the speaker") in the visual instructions to preserve and not distort their facial features. Medium or wide shots of the character are strictly prohibited. Their voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging. Their body language must be highly natural and dynamic — real hand gestures, subtle head tilts, natural eye contact, relaxed movements. They should feel like a real person, not stiff or robotic.
 4. Make the scenes highly dynamic: constantly moving, featuring dynamic shot changes, handheld camera motion, fluid panning, and different angles (close-ups, medium shots) narrating dialogues along the way in a highly expressive way. Avoid static single shots.
 5. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue or visual captions. If the product info or call-to-action implies a phone number, use the exact phrase "get in touch" (or Hinglish equivalent like "humein contact karein") instead. Under no circumstances should the dialogue contain digits or spoken phone numbers.
 6. NEVER instruct to display any text overlay, subtitles, captions, watermarks, or logos on screen in any visual instruction, as the video AI generates garbled text and distorted logos. Keep the visual space completely clean of text.
 7. In the visual concepts, instead of referencing abstract placeholders like "@Image 1", write natural visual descriptions of what is shown in the image (e.g., "showcasing the cozy modern bedroom shown in the bedroom photo").
-8. Language: Write any Hindi words/phrases inside the hook dialogue using ONLY standard English letters (Roman script, e.g., 'kya aap abhi bhi rent de rahe hain?'). ABSOLUTELY DO NOT write in native Devanagari script (Hindi characters).
+8. Language & Script: The hook dialogue MUST be written entirely in conversational Roman Hinglish (standard English letters/alphabets only). Do NOT use Devanagari script (Hindi characters). Ensure that all Hindi words are spelled phonetically in English characters (e.g., 'ghar', 'sukoon', 'parivar', 'safalta', 'paise'). Every starting line/hook dialogue must be strictly in Hinglish, avoiding any starting English lines.
 9. Output EXACTLY a JSON object with keys: "concepts", "analyzedImageSummary", and "imageDescriptions". "imageDescriptions" must be an array of strings, where each string is a detailed visual description of the corresponding reference image in order (Image 1, Image 2, etc.).
 
 JSON SCHEMA:
@@ -138,7 +140,7 @@ JSON SCHEMA:
     {
       "id": "concept_1",
       "title": "Short Catchy Concept Title (e.g., The Pain-Point Callout)",
-      "hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'If you are still doing X, stop.')",
+      "hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'Mohali mein apna dream home dhoond rahe ho par bad construction quality se pareshan ho?')",
       "description": "Short explanation of the concept's psychological angle & why it converts.",
       "visualConcept": "Brief visual flow description referencing the images by their content naturally (e.g. 'creator points to the luxurious marble kitchen shown in the kitchen photo')"
     }

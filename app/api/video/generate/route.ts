@@ -331,7 +331,7 @@ Natural UGC style vertical video with realistic handheld camera movement and a m
 
 Realistic expressions, fluid gestures, authentic lip sync, shallow depth of field, blurred background, cinematic smartphone look.
 
-No text, subtitles, logos, captions, or watermarks.
+Clean video frame with absolutely zero text, zero subtitles, zero captions, zero watermarks, and zero logos on screen. The video MUST be completely clean of any written words, lettering, or overlay subtitles. Subtitles or on-screen captions are strictly forbidden.
 
 Dialogue:
 "[Precise scene dialogue to be spoken]"
@@ -358,7 +358,7 @@ Natural UGC style vertical video with realistic handheld camera movement and a m
 
 Realistic expressions, fluid gestures, authentic lip sync, shallow depth of field, blurred background, cinematic smartphone look.
 
-No text, subtitles, logos, captions, or watermarks.
+Clean video frame with absolutely zero text, zero subtitles, zero captions, zero watermarks, and zero logos on screen. The video MUST be completely clean of any written words, lettering, or overlay subtitles. Subtitles or on-screen captions are strictly forbidden.
 
 Dialogue:
 "${scene.dialogue}"`;
