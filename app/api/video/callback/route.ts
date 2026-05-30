@@ -339,6 +339,33 @@ export async function POST(request: Request) {
         // All scenes are completed! Stitch them together
         siblings.sort((a, b) => a.current_index - b.current_index);
 
+        // If there is only 1 scene, bypass the stitcher and finalize the asset immediately on Vercel!
+        if (siblings.length === 1) {
+            const finalUrl = siblings[0].last_successful_task_id;
+            console.log(`[Video Callback] Single-clip video detected (15s). Finalizing asset immediately: ${finalUrl}`);
+            
+            if (videoTask.asset_id) {
+                await supabaseAdmin.from('assets').update({
+                    url: finalUrl,
+                    status: 'Draft'
+                }).eq('id', videoTask.asset_id);
+            }
+            
+            // Clean up DB tasks
+            await supabaseAdmin.from('video_tasks').delete().eq('asset_id', videoTask.asset_id);
+            
+            // Send push notification
+            await sendPushNotification(
+                videoTask.user_id, 
+                `🎬 15s Video Creative Ready!`, 
+                `Your 15-second AI video ad has been generated successfully.`, 
+                "/dashboard/assets", 
+                "asset_ready"
+            );
+            
+            return NextResponse.json({ success: true, message: "Single scene video finalized successfully." });
+        }
+
         const stitcherWorkerUrl = process.env.STITCHER_WORKER_URL;
         if (stitcherWorkerUrl) {
             console.log(`[Video Callback] Offloading stitching to Cloud Run worker at ${stitcherWorkerUrl}...`);
