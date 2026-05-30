@@ -1,52 +1,41 @@
-const { createClient } = require('@supabase/supabase-js')
-// Loaded via --env-file
+require('dotenv').config({ path: '.env.local' });
+require('dotenv').config();
+const { createClient } = require('@supabase/supabase-js');
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-const supabase = createClient(supabaseUrl, supabaseKey)
-
-const TASK_1 = "7a7cacfa21eb77f146cc56cccf7bf3ac"
-const TASK_2 = "e1f2eadf9e83f584490016f3b6b19de5"
-
-async function findTasks() {
+async function checkRecentTasks() {
     try {
-        console.log(`Searching for Task 1: ${TASK_1}...`)
-        const { data: t1, error: err1 } = await supabase
+        console.log("Fetching recent tasks...");
+        const { data: tasks, error } = await supabase
             .from('video_tasks')
             .select('*')
-            .eq('last_task_id', TASK_1)
+            .order('created_at', { ascending: false })
+            .limit(5);
 
-        if (err1) {
-            console.log(`Task 1 error: ${err1.message}`)
-        } else if (t1 && t1.length > 0) {
-            t1.forEach(t => {
-                console.log(`Found Task 1! ID: ${t.id} | Asset ID: ${t.asset_id} | User ID: ${t.user_id} | Index: ${t.current_index} | Status: ${t.status}`)
-            })
-        } else {
-            console.log("Task 1: No matching records found.")
+        if (error) {
+            console.error("Supabase Error:", error);
+            return;
         }
 
-        console.log(`\nSearching for Task 2: ${TASK_2}...`)
-        const { data: t2, error: err2 } = await supabase
-            .from('video_tasks')
-            .select('*')
-            .eq('last_task_id', TASK_2)
-
-        if (err2) {
-            console.log(`Task 2 error: ${err2.message}`)
-        } else if (t2 && t2.length > 0) {
-            t2.forEach(t => {
-                console.log(`Found Task 2! ID: ${t.id} | Asset ID: ${t.asset_id} | User ID: ${t.user_id} | Index: ${t.current_index} | Status: ${t.status}`)
-            })
-        } else {
-            console.log("Task 2: No matching records found.")
-        }
-
-
+        console.log(`Found ${tasks.length} recent tasks.`);
+        tasks.forEach(t => {
+            console.log("=========================================");
+            console.log(`Task ID: ${t.id}`);
+            console.log(`Asset ID: ${t.asset_id}`);
+            console.log(`Status: ${t.status}`);
+            console.log(`Last Task ID (kie.ai): ${t.last_task_id}`);
+            console.log(`Last Successful Task ID (avatar): ${t.last_successful_task_id}`);
+            console.log(`Prompts:`, JSON.stringify(t.prompts, null, 2));
+            console.log(`Created At: ${t.created_at}`);
+            console.log(`Updated At: ${t.updated_at}`);
+        });
     } catch (e) {
-        console.error("Error searching:", e)
+        console.error("Error:", e);
     }
 }
 
-findTasks()
+checkRecentTasks();

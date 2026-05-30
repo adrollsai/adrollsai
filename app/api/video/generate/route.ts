@@ -366,13 +366,42 @@ export async function POST(request: Request) {
         if (avatarUrl) {
             console.log(`[Video Generate] Using custom uploaded character ${isCharacterVideo ? 'video' : 'photo'} from profile: ${avatarUrl}`);
             if (isCharacterVideo) {
-                console.log(`[Video Generate] Reference video detected. Invoking getTrimmedReferenceVideo...`);
-                avatarUrl = await getTrimmedReferenceVideo(avatarUrl, targetUserId);
-                console.log(`[Video Generate] Using trimmed reference video URL: ${avatarUrl}`);
-                
-                console.log(`[Video Generate] Extracting audio from reference video...`);
-                referenceAudioUrl = await extractReferenceAudio(avatarUrl, targetUserId);
-                console.log(`[Video Generate] Using extracted reference audio URL: ${referenceAudioUrl}`);
+                try {
+                    const rendererUrl = process.env.REMOTION_RENDERER_URL || 'http://127.0.0.1:8080';
+                    console.log(`[Video Generate] Delegating avatar processing to Cloud Run: ${rendererUrl}/process-avatar`);
+                    const response = await fetch(`${rendererUrl.replace(/\/$/, '')}/process-avatar`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            avatarUrl,
+                            userId: targetUserId
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        const resData = await response.json();
+                        if (resData.success && resData.videoUrl && resData.audioUrl) {
+                            avatarUrl = resData.videoUrl;
+                            referenceAudioUrl = resData.audioUrl;
+                            console.log(`[Video Generate] Cloud Run delegation success! Video: ${avatarUrl}, Audio: ${referenceAudioUrl}`);
+                        } else {
+                            throw new Error("Cloud Run returned incomplete data");
+                        }
+                    } else {
+                        const errText = await response.text();
+                        throw new Error(`Cloud Run returned status ${response.status}: ${errText}`);
+                    }
+                } catch (delegateErr: any) {
+                    console.warn(`[Video Generate] Cloud Run delegation failed, falling back to local Vercel execution:`, delegateErr.message);
+                    
+                    console.log(`[Video Generate] Reference video detected. Invoking getTrimmedReferenceVideo...`);
+                    avatarUrl = await getTrimmedReferenceVideo(avatarUrl, targetUserId);
+                    console.log(`[Video Generate] Using trimmed reference video URL: ${avatarUrl}`);
+                    
+                    console.log(`[Video Generate] Extracting audio from reference video...`);
+                    referenceAudioUrl = await extractReferenceAudio(avatarUrl, targetUserId);
+                    console.log(`[Video Generate] Using extracted reference audio URL: ${referenceAudioUrl}`);
+                }
             }
         } else {
             console.log(`[Video Generate] Speaker reference is disabled (useCharacterVideo=false). Using generic presenter.`);
@@ -561,10 +590,11 @@ Dialogue:
                 console.log(`[Video Generate] Passing character video reference: ${referenceVideoUrls[0]}`);
             }
 
-            // If reference audio is extracted, pass it via reference_audio_urls
-            if (referenceAudioUrl) {
-                payload.input.reference_audio_urls = [referenceAudioUrl];
-                console.log(`[Video Generate] Passing character audio reference: ${referenceAudioUrl}`);
+            // Pass the extracted reference audio URL. If extraction failed (e.g. on Vercel serverless), fall back to the reference video URL itself.
+            const audioUrlToPass = referenceAudioUrl || (referenceVideoUrls.length > 0 ? referenceVideoUrls[0] : null);
+            if (audioUrlToPass) {
+                payload.input.reference_audio_urls = [audioUrlToPass];
+                console.log(`[Video Generate] Passing character audio reference: ${audioUrlToPass}`);
             }
             
             console.log(`[Video Generate] Launching Kie task for Scene ${index + 1}...`);

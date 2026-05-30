@@ -296,6 +296,103 @@ app.get('/health', (req, res) => {
     res.status(200).json({ status: 'healthy', service: 'adrolls-remotion-renderer' });
 });
 
+// Process avatar video (trim & extract audio)
+app.post('/process-avatar', async (req, res) => {
+    const { avatarUrl, userId } = req.body;
+    
+    if (!avatarUrl || !userId) {
+        return res.status(400).json({ error: 'Missing avatarUrl or userId' });
+    }
+    
+    const crypto = require('crypto');
+    const hash = crypto.createHash('md5').update(avatarUrl).digest('hex');
+    const videoKey = `generated/${userId}/trimmed_ref_${hash}.mp4`;
+    const audioKey = `generated/${userId}/ref_audio_${hash}.mp3`;
+    
+    const videoUrl = `${R2_PUBLIC_URL}/adrolls-storage/${videoKey}`;
+    const audioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${audioKey}`;
+    
+    const { HeadObjectCommand } = require('@aws-sdk/client-s3');
+    
+    // Check R2 cache
+    try {
+        await r2.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: videoKey }));
+        await r2.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: audioKey }));
+        console.log(`[Process Avatar] Cache hit for user ${userId}: video and audio found.`);
+        return res.status(200).json({ success: true, videoUrl, audioUrl });
+    } catch (e) {
+        console.log(`[Process Avatar] Cache miss for user ${userId}. Processing video and audio...`);
+    }
+    
+    const tempDir = path.join(os.tmpdir(), `avatar_proc_${userId}_${Date.now()}`);
+    try {
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+        }
+        
+        const inputPath = path.join(tempDir, 'input.mp4');
+        const trimmedPath = path.join(tempDir, 'output.mp4');
+        const audioPath = path.join(tempDir, 'output.mp3');
+        
+        // 1. Download original video
+        console.log(`[Process Avatar] Downloading: ${avatarUrl}`);
+        await downloadFile(avatarUrl, inputPath);
+        
+        // 2. FFmpeg trim video & extract audio
+        const { exec } = require('child_process');
+        
+        // Command to trim first 15 seconds
+        const trimCmd = `ffmpeg -y -i "${inputPath}" -t 15 -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${trimmedPath}"`;
+        console.log(`[Process Avatar] Trimming video...`);
+        await new Promise((resolve, reject) => {
+            exec(trimCmd, (err, stdout, stderr) => {
+                if (err) reject(new Error(`Video trim failed: ${stderr}`));
+                else resolve();
+            });
+        });
+        
+        // Command to extract high-quality audio
+        const audioCmd = `ffmpeg -y -i "${trimmedPath}" -vn -c:a libmp3lame -q:a 2 "${audioPath}"`;
+        console.log(`[Process Avatar] Extracting audio...`);
+        await new Promise((resolve, reject) => {
+            exec(audioCmd, (err, stdout, stderr) => {
+                if (err) reject(new Error(`Audio extraction failed: ${stderr}`));
+                else resolve();
+            });
+        });
+        
+        // 3. Upload to R2
+        console.log(`[Process Avatar] Uploading trimmed video to R2...`);
+        await r2.send(new PutObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: videoKey,
+            Body: fs.readFileSync(trimmedPath),
+            ContentType: 'video/mp4'
+        }));
+        
+        console.log(`[Process Avatar] Uploading audio to R2...`);
+        await r2.send(new PutObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: audioKey,
+            Body: fs.readFileSync(audioPath),
+            ContentType: 'audio/mpeg'
+        }));
+        
+        console.log(`[Process Avatar] Successfully processed and cached!`);
+        return res.status(200).json({ success: true, videoUrl, audioUrl });
+        
+    } catch (err) {
+        console.error(`[Process Avatar] Processing failed:`, err);
+        return res.status(500).json({ error: `Avatar processing failed: ${err.message}` });
+    } finally {
+        try {
+            if (fs.existsSync(tempDir)) {
+                fs.rmSync(tempDir, { recursive: true, force: true });
+            }
+        } catch (cleanupErr) {}
+    }
+});
+
 // Primary asynchronous render route
 app.post('/render', async (req, res) => {
     const { assetId, videoUrl, captions, effects = [], theme, profile = {} } = req.body;

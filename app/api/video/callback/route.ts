@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { extendVeoTask, createVeoTask, callGemini, createKieTask } from '@/utils/external-apis';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { sendPushNotification } from '@/utils/notification-helper';
 import { exec } from 'child_process';
 import path from 'path';
@@ -181,7 +181,7 @@ export async function POST(request: Request) {
                 const callbackUrl = `${baseUrl}/api/video/callback`;
 
                 let refImages: string[] = [];
-                const avatarUrl = videoTask.last_successful_task_id;
+                let avatarUrl = videoTask.last_successful_task_id;
                 const isCharacterVideo = avatarUrl && (/\.(mp4|webm|mov|avi|wmv)/i.test(avatarUrl) || avatarUrl.includes('video'));
                 
                 if (avatarUrl && avatarUrl.startsWith('http') && !isCharacterVideo) {
@@ -219,12 +219,49 @@ export async function POST(request: Request) {
                 }
 
                 if (avatarUrl && isCharacterVideo) {
-                    const referenceVideoUrls = [avatarUrl];
+                    let referenceVideoUrls = [avatarUrl];
                     retryPayload.input.reference_video_urls = referenceVideoUrls;
                     console.log(`[Video Callback Retry] Passing character video reference: ${avatarUrl}`);
 
+                    let referenceAudioUrl = avatarUrl;
                     const audioCacheKey = `generated/${videoTask.user_id}/ref_audio_${crypto.createHash('md5').update(avatarUrl).digest('hex')}.mp3`;
-                    const referenceAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${audioCacheKey}`;
+                    const testAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${audioCacheKey}`;
+                    
+                    try {
+                        await r2.send(new HeadObjectCommand({
+                            Bucket: R2_BUCKET,
+                            Key: audioCacheKey
+                        }));
+                        referenceAudioUrl = testAudioUrl;
+                        console.log(`[Video Callback Retry] Found cached reference audio on R2: ${referenceAudioUrl}`);
+                    } catch (e) {
+                        console.log(`[Video Callback Retry] Cached reference audio not found on R2. Requesting Cloud Run recovery...`);
+                        try {
+                            const rendererUrl = process.env.REMOTION_RENDERER_URL || 'http://127.0.0.1:8080';
+                            const response = await fetch(`${rendererUrl.replace(/\/$/, '')}/process-avatar`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    avatarUrl,
+                                    userId: videoTask.user_id
+                                })
+                            });
+                            
+                            if (response.ok) {
+                                const resData = await response.json();
+                                if (resData.success && resData.videoUrl && resData.audioUrl) {
+                                    avatarUrl = resData.videoUrl;
+                                    referenceAudioUrl = resData.audioUrl;
+                                    referenceVideoUrls = [avatarUrl];
+                                    retryPayload.input.reference_video_urls = referenceVideoUrls;
+                                    console.log(`[Video Callback Retry] Cloud Run recovery success! Video: ${avatarUrl}, Audio: ${referenceAudioUrl}`);
+                                }
+                            }
+                        } catch (recErr: any) {
+                            console.warn(`[Video Callback Retry] Cloud Run recovery failed, falling back to video URL:`, recErr.message);
+                        }
+                    }
+                    
                     retryPayload.input.reference_audio_urls = [referenceAudioUrl];
                     console.log(`[Video Callback Retry] Passing character audio reference: ${referenceAudioUrl}`);
                 }
