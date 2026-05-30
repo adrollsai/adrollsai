@@ -161,6 +161,9 @@ export default function CreationPage() {
 
   // Dynamic Video Duration State (15s, 30s, 45s, 60s)
   const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 45 | 60>(30)
+
+  // Deselected catalog images state
+  const [deselectedCatalogImages, setDeselectedCatalogImages] = useState<string[]>([])
   
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -638,7 +641,7 @@ export default function CreationPage() {
                 else if (prop.image_url) propImages = [prop.image_url];
             }
             
-            const filteredPropImages = propImages.filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined');
+            const filteredPropImages = propImages.filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined' && !deselectedCatalogImages.includes(img));
             const limitedCatalogImages = filteredPropImages.slice(0, 6);
             const limitedLocalRefImages = [...localRefImages, ...chatAttachments].slice(0, 2);
             const refImages = [...limitedCatalogImages, ...limitedLocalRefImages];
@@ -898,7 +901,10 @@ export default function CreationPage() {
                 <Package size={14} className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${isLoadingProperties ? 'text-slate-400' : 'text-blue-500'}`} />
                 <select 
                     value={selectedPropId}
-                    onChange={(e) => setSelectedPropId(e.target.value)}
+                    onChange={(e) => {
+                        setSelectedPropId(e.target.value);
+                        setDeselectedCatalogImages([]);
+                    }}
                     disabled={isLoadingProperties}
                     className="w-full bg-blue-50/50 hover:bg-blue-100/50 border border-blue-100 text-blue-900 text-[11px] font-bold rounded-[1rem] py-2.5 pl-9 pr-8 appearance-none outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer h-full disabled:opacity-70 disabled:cursor-not-allowed"
                 >
@@ -961,7 +967,7 @@ export default function CreationPage() {
                 {/* Divider */}
                 <div className="w-[1px] bg-slate-200/80 h-10 my-auto flex-shrink-0" />
 
-                {/* 2. Product Catalog Images (Filtered) */}
+                {/* 2. Product Catalog Images (Filtered with Toggle selection capability) */}
                 {(() => {
                     const prop = properties.find(p => p.id === selectedPropId);
                     let propImages: string[] = [];
@@ -971,14 +977,36 @@ export default function CreationPage() {
                     }
                     const filteredPropImages = propImages.filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined').slice(0, 6);
 
-                    return filteredPropImages.map((url, i) => (
-                        <div key={i} className="relative w-16 h-16 rounded-[1.25rem] border border-slate-200 overflow-hidden flex-shrink-0 bg-white shadow-sm">
-                            <img src={url} className="w-full h-full object-cover" alt="Product" />
-                            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/10 to-transparent flex items-end justify-center pb-1">
-                                <span className="text-white text-[8px] font-black uppercase tracking-wider text-center w-full truncate">Catalog {i + 1}</span>
+                    return filteredPropImages.map((url, i) => {
+                        const isDeselected = deselectedCatalogImages.includes(url);
+                        return (
+                            <div 
+                                key={i} 
+                                onClick={() => {
+                                    if (isDeselected) {
+                                        setDeselectedCatalogImages(prev => prev.filter(x => x !== url));
+                                    } else {
+                                        setDeselectedCatalogImages(prev => [...prev, url]);
+                                    }
+                                }}
+                                className={`relative w-16 h-16 rounded-[1.25rem] overflow-hidden flex-shrink-0 bg-white flex flex-col items-center justify-center shadow-sm cursor-pointer transition-all duration-300 ${
+                                    !isDeselected 
+                                        ? 'border-2 border-blue-500 ring-2 ring-blue-100/50 scale-100' 
+                                        : 'border border-slate-200 opacity-40 grayscale hover:opacity-75 scale-95'
+                                }`}
+                            >
+                                <img src={url} className="w-full h-full object-cover" alt="Product" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/10 to-transparent flex items-end justify-center pb-1">
+                                    <span className="text-white text-[8px] font-black uppercase tracking-wider text-center w-full truncate">Catalog {i + 1}</span>
+                                </div>
+                                {!isDeselected && (
+                                    <div className="absolute top-1 right-1 bg-blue-500 text-white rounded-full p-0.5 shadow-md flex items-center justify-center z-10 animate-in zoom-in duration-200">
+                                        <Check size={8} strokeWidth={4} />
+                                    </div>
+                                )}
                             </div>
-                        </div>
-                    ));
+                        );
+                    });
                 })()}
 
                 {/* 3. Locally Uploaded Product Reference Images */}
