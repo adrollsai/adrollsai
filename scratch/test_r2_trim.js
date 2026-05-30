@@ -19,7 +19,7 @@ const r2 = new S3Client({
   },
 });
 
-const avatarUrl = "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/character-bc63c065-9bcc-4793-bedc-f0960406425b-1780131564353.mp4";
+const avatarUrl = "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/character-bc63c065-9bcc-4793-bedc-f0960406425b-1780133072249.mp4";
 const targetUserId = "bc63c065-9bcc-4793-bedc-f0960406425b";
 
 async function getTrimmedReferenceVideo(avatarUrl, userId) {
@@ -62,8 +62,8 @@ async function getTrimmedReferenceVideo(avatarUrl, userId) {
         const cmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 15 -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${outputPath}"`;
         
         await new Promise((resolve, reject) => {
-            exec(cmd, (err) => {
-                if (err) reject(err);
+            exec(cmd, (err, stdout, stderr) => {
+                if (err) reject(new Error(`${err.message}\nStderr: ${stderr}`));
                 else resolve();
             });
         });
@@ -92,83 +92,10 @@ async function getTrimmedReferenceVideo(avatarUrl, userId) {
     }
 }
 
-async function extractReferenceAudio(videoUrl, userId) {
-    const cacheKey = `generated/${userId}/ref_audio_${crypto.createHash('md5').update(videoUrl).digest('hex')}.mp3`;
-    const cachedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${cacheKey}`;
-    
-    try {
-        await r2.send(new HeadObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: cacheKey
-        }));
-        console.log(`[Extract Audio Cache] Found cached reference audio: ${cachedUrl}`);
-        return cachedUrl;
-    } catch (e) {
-        console.log(`[Extract Audio Cache] No cache found. Starting download and audio extraction for: ${videoUrl}`);
-    }
-
-    const tempDir = path.join(os.tmpdir(), `audio_ext_${userId}_${Date.now()}`);
-    try {
-        if (!fs.existsSync(tempDir)) {
-            fs.mkdirSync(tempDir, { recursive: true });
-        }
-        
-        const inputPath = path.join(tempDir, 'input.mp4');
-        const outputPath = path.join(tempDir, 'output.mp3');
-        
-        // 1. Download
-        const res = await fetch(videoUrl);
-        if (!res.ok) throw new Error(`Failed to download video: ${res.statusText}`);
-        const buffer = Buffer.from(await res.arrayBuffer());
-        fs.writeFileSync(inputPath, buffer);
-        
-        // 2. Extract audio with FFmpeg
-        const ffmpegBinary = path.join(
-            process.cwd(), 
-            'node_modules', 
-            'ffmpeg-static', 
-            os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-        );
-        const cmd = `"${ffmpegBinary}" -y -i "${inputPath}" -vn -c:a libmp3lame -q:a 2 "${outputPath}"`;
-        
-        await new Promise((resolve, reject) => {
-            exec(cmd, (err) => {
-                if (err) reject(err);
-                else resolve();
-            });
-        });
-        
-        // 3. Upload to R2
-        const audioBuffer = fs.readFileSync(outputPath);
-        await r2.send(new PutObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: cacheKey,
-            Body: audioBuffer,
-            ContentType: 'audio/mpeg'
-        }));
-        
-        console.log(`[Extract Audio] Reference audio successfully extracted and uploaded: ${cachedUrl}`);
-        return cachedUrl;
-    } catch (err) {
-        console.error("[Extract Audio Error] Failed to extract audio, returning empty string:", err);
-        return "";
-    } finally {
-        // Clean up
-        try {
-            if (fs.existsSync(tempDir)) {
-                fs.rmSync(tempDir, { recursive: true, force: true });
-            }
-        } catch (err) {}
-    }
-}
-
 async function run() {
-    console.log("Starting test run...");
+    console.log("Starting test run for NEW video...");
     const trimmedVideo = await getTrimmedReferenceVideo(avatarUrl, targetUserId);
     console.log("Trimmed Video result:", trimmedVideo);
-    
-    const audioUrl = await extractReferenceAudio(trimmedVideo, targetUserId);
-    console.log("Audio URL result:", audioUrl);
 }
 
 run();

@@ -305,7 +305,18 @@ app.post('/process-avatar', async (req, res) => {
     }
     
     const crypto = require('crypto');
-    const hash = crypto.createHash('md5').update(avatarUrl).digest('hex');
+    let hash = crypto.createHash('md5').update(avatarUrl).digest('hex');
+    try {
+        const headRes = await fetch(avatarUrl, { method: 'HEAD' });
+        const contentLength = headRes.headers.get('content-length') || '';
+        const lastModified = headRes.headers.get('last-modified') || '';
+        const eTag = headRes.headers.get('etag') || '';
+        hash = crypto.createHash('md5').update(`${avatarUrl}_${contentLength}_${lastModified}_${eTag}`).digest('hex');
+        console.log(`[Process Avatar] Dynamic cache hash generated from HEAD headers: ${hash}`);
+    } catch (e) {
+        console.warn(`[Process Avatar] HEAD request failed, using fallback hash for URL string: ${hash}`);
+    }
+    
     const videoKey = `generated/${userId}/trimmed_ref_${hash}.mp4`;
     const audioKey = `generated/${userId}/ref_audio_${hash}.mp3`;
     
@@ -346,8 +357,16 @@ app.post('/process-avatar', async (req, res) => {
         console.log(`[Process Avatar] Trimming video...`);
         await new Promise((resolve, reject) => {
             exec(trimCmd, (err, stdout, stderr) => {
-                if (err) reject(new Error(`Video trim failed: ${stderr}`));
-                else resolve();
+                if (err) {
+                    console.warn(`[Process Avatar] Standard trim failed (likely due to corrupt audio stream). Retrying with silent video (-an)...`);
+                    const silentCmd = `ffmpeg -y -i "${inputPath}" -t 15 -c:v libx264 -an -preset superfast -movflags +faststart "${trimmedPath}"`;
+                    exec(silentCmd, (silentErr, silentStdout, silentStderr) => {
+                        if (silentErr) reject(new Error(`Silent video trim also failed: ${silentStderr}`));
+                        else resolve();
+                    });
+                } else {
+                    resolve();
+                }
             });
         });
         
@@ -356,8 +375,16 @@ app.post('/process-avatar', async (req, res) => {
         console.log(`[Process Avatar] Extracting audio...`);
         await new Promise((resolve, reject) => {
             exec(audioCmd, (err, stdout, stderr) => {
-                if (err) reject(new Error(`Audio extraction failed: ${stderr}`));
-                else resolve();
+                if (err) {
+                    console.warn(`[Process Avatar] Audio extraction failed (likely no audio track). Generating silent MP3 fallback...`);
+                    const silentAudioCmd = `ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 15 -c:a libmp3lame -q:a 2 "${audioPath}"`;
+                    exec(silentAudioCmd, (silentErr, silentStdout, silentStderr) => {
+                        if (silentErr) reject(new Error(`Silent audio generation failed: ${silentStderr}`));
+                        else resolve();
+                    });
+                } else {
+                    resolve();
+                }
             });
         });
         

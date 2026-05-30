@@ -19,7 +19,19 @@ const supabaseAdmin = createAdminClient(
 );
 
 async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Promise<string> {
-    const cacheKey = `generated/${userId}/trimmed_ref_${crypto.createHash('md5').update(avatarUrl).digest('hex')}.mp4`;
+    let hash = crypto.createHash('md5').update(avatarUrl).digest('hex');
+    try {
+        const headRes = await fetch(avatarUrl, { method: 'HEAD' });
+        const contentLength = headRes.headers.get('content-length') || '';
+        const lastModified = headRes.headers.get('last-modified') || '';
+        const eTag = headRes.headers.get('etag') || '';
+        hash = crypto.createHash('md5').update(`${avatarUrl}_${contentLength}_${lastModified}_${eTag}`).digest('hex');
+        console.log(`[Trim Video] Dynamic cache hash generated from HEAD headers: ${hash}`);
+    } catch (e) {
+        console.warn(`[Trim Video] HEAD request failed, using fallback hash for URL string: ${hash}`);
+    }
+    
+    const cacheKey = `generated/${userId}/trimmed_ref_${hash}.mp4`;
     const cachedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${cacheKey}`;
     
     try {
@@ -59,8 +71,16 @@ async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Prom
         
         await new Promise<void>((resolve, reject) => {
             exec(cmd, (err) => {
-                if (err) reject(err);
-                else resolve();
+                if (err) {
+                    console.warn(`[Trim Video] Standard trim failed (likely due to corrupt audio stream). Retrying with silent video (-an)...`);
+                    const silentCmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 15 -c:v libx264 -an -preset superfast -movflags +faststart "${outputPath}"`;
+                    exec(silentCmd, (silentErr) => {
+                        if (silentErr) reject(silentErr);
+                        else resolve();
+                    });
+                } else {
+                    resolve();
+                }
             });
         });
         
@@ -129,8 +149,16 @@ async function extractReferenceAudio(videoUrl: string, userId: string): Promise<
         
         await new Promise<void>((resolve, reject) => {
             exec(cmd, (err) => {
-                if (err) reject(err);
-                else resolve();
+                if (err) {
+                    console.warn(`[Extract Audio] Audio extraction failed (likely no audio track). Generating silent MP3 fallback...`);
+                    const silentAudioCmd = `"${ffmpegBinary}" -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 15 -c:a libmp3lame -q:a 2 "${outputPath}"`;
+                    exec(silentAudioCmd, (silentErr) => {
+                        if (silentErr) reject(silentErr);
+                        else resolve();
+                    });
+                } else {
+                    resolve();
+                }
             });
         });
         
