@@ -223,7 +223,7 @@ export async function POST(request: Request) {
                     retryPayload.input.reference_video_urls = referenceVideoUrls;
                     console.log(`[Video Callback Retry] Passing character video reference: ${avatarUrl}`);
 
-                    let referenceAudioUrl = avatarUrl;
+                    let referenceAudioUrl = "";
                     const audioCacheKey = `generated/${videoTask.user_id}/ref_audio_${crypto.createHash('md5').update(avatarUrl).digest('hex')}.mp3`;
                     const testAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${audioCacheKey}`;
                     
@@ -258,12 +258,17 @@ export async function POST(request: Request) {
                                 }
                             }
                         } catch (recErr: any) {
-                            console.warn(`[Video Callback Retry] Cloud Run recovery failed, falling back to video URL:`, recErr.message);
+                            console.warn(`[Video Callback Retry] Cloud Run recovery failed:`, recErr.message);
                         }
                     }
                     
-                    retryPayload.input.reference_audio_urls = [referenceAudioUrl];
-                    console.log(`[Video Callback Retry] Passing character audio reference: ${referenceAudioUrl}`);
+                    if (referenceAudioUrl) {
+                        retryPayload.input.reference_audio_urls = [referenceAudioUrl];
+                        console.log(`[Video Callback Retry] Passing character audio reference: ${referenceAudioUrl}`);
+                    } else {
+                        console.error(`[Video Callback Retry] ERROR: No valid extracted reference audio available for retry. Voice cloning cannot proceed.`);
+                        throw new Error("Cannot retry video task without a valid extracted reference audio file.");
+                    }
                 }
 
                 const { taskId: retryTaskId, error: retryError } = await createKieTask(retryPayload);

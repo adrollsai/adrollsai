@@ -618,11 +618,14 @@ Dialogue:
                 console.log(`[Video Generate] Passing character video reference: ${referenceVideoUrls[0]}`);
             }
 
-            // Pass the extracted reference audio URL. If extraction failed (e.g. on Vercel serverless), fall back to the reference video URL itself.
-            const audioUrlToPass = referenceAudioUrl || (referenceVideoUrls.length > 0 ? referenceVideoUrls[0] : null);
-            if (audioUrlToPass) {
-                payload.input.reference_audio_urls = [audioUrlToPass];
-                console.log(`[Video Generate] Passing character audio reference: ${audioUrlToPass}`);
+            // Pass the extracted reference audio URL.
+            // DO NOT fall back to passing the .mp4 video URL as the audio URL, as this breaks voice cloning.
+            if (isCharacterVideo) {
+                if (!referenceAudioUrl) {
+                    throw new Error("Reference audio extraction failed. Please ensure your Cloud Run service is deployed and running, and that your uploaded profile video has a valid, audible sound track.");
+                }
+                payload.input.reference_audio_urls = [referenceAudioUrl];
+                console.log(`[Video Generate] Passing character audio reference: ${referenceAudioUrl}`);
             }
             
             console.log(`[Video Generate] Launching Kie task for Scene ${index + 1}...`);
