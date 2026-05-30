@@ -67,13 +67,13 @@ async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Prom
             'ffmpeg-static', 
             os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
         );
-        const cmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 15 -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${outputPath}"`;
+        const cmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 14 -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${outputPath}"`;
         
         await new Promise<void>((resolve, reject) => {
             exec(cmd, (err) => {
                 if (err) {
                     console.warn(`[Trim Video] Standard trim failed (likely due to corrupt audio stream). Retrying with silent video (-an)...`);
-                    const silentCmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 15 -c:v libx264 -an -preset superfast -movflags +faststart "${outputPath}"`;
+                    const silentCmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 14 -c:v libx264 -an -preset superfast -movflags +faststart "${outputPath}"`;
                     exec(silentCmd, (silentErr) => {
                         if (silentErr) reject(silentErr);
                         else resolve();
@@ -151,7 +151,7 @@ async function extractReferenceAudio(videoUrl: string, userId: string): Promise<
             exec(cmd, (err) => {
                 if (err) {
                     console.warn(`[Extract Audio] Audio extraction failed (likely no audio track). Generating silent MP3 fallback...`);
-                    const silentAudioCmd = `"${ffmpegBinary}" -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 15 -c:a libmp3lame -q:a 2 "${outputPath}"`;
+                    const silentAudioCmd = `"${ffmpegBinary}" -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 14 -c:a libmp3lame -q:a 2 "${outputPath}"`;
                     exec(silentAudioCmd, (silentErr) => {
                         if (silentErr) reject(silentErr);
                         else resolve();

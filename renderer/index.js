@@ -353,13 +353,13 @@ app.post('/process-avatar', async (req, res) => {
         const { exec } = require('child_process');
         
         // Command to trim first 15 seconds
-        const trimCmd = `ffmpeg -y -i "${inputPath}" -t 15 -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${trimmedPath}"`;
+        const trimCmd = `ffmpeg -y -i "${inputPath}" -t 14 -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${trimmedPath}"`;
         console.log(`[Process Avatar] Trimming video...`);
         await new Promise((resolve, reject) => {
             exec(trimCmd, (err, stdout, stderr) => {
                 if (err) {
                     console.warn(`[Process Avatar] Standard trim failed (likely due to corrupt audio stream). Retrying with silent video (-an)...`);
-                    const silentCmd = `ffmpeg -y -i "${inputPath}" -t 15 -c:v libx264 -an -preset superfast -movflags +faststart "${trimmedPath}"`;
+                    const silentCmd = `ffmpeg -y -i "${inputPath}" -t 14 -c:v libx264 -an -preset superfast -movflags +faststart "${trimmedPath}"`;
                     exec(silentCmd, (silentErr, silentStdout, silentStderr) => {
                         if (silentErr) reject(new Error(`Silent video trim also failed: ${silentStderr}`));
                         else resolve();
@@ -377,7 +377,7 @@ app.post('/process-avatar', async (req, res) => {
             exec(audioCmd, (err, stdout, stderr) => {
                 if (err) {
                     console.warn(`[Process Avatar] Audio extraction failed (likely no audio track). Generating silent MP3 fallback...`);
-                    const silentAudioCmd = `ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 15 -c:a libmp3lame -q:a 2 "${audioPath}"`;
+                    const silentAudioCmd = `ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 14 -c:a libmp3lame -q:a 2 "${audioPath}"`;
                     exec(silentAudioCmd, (silentErr, silentStdout, silentStderr) => {
                         if (silentErr) reject(new Error(`Silent audio generation failed: ${silentStderr}`));
                         else resolve();
