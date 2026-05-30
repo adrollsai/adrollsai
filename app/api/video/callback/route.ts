@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { extendVeoTask, createVeoTask, callGemini, createKieTask } from '@/utils/external-apis';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
@@ -221,6 +222,11 @@ export async function POST(request: Request) {
                     const referenceVideoUrls = [avatarUrl];
                     retryPayload.input.reference_video_urls = referenceVideoUrls;
                     console.log(`[Video Callback Retry] Passing character video reference: ${avatarUrl}`);
+
+                    const audioCacheKey = `generated/${videoTask.user_id}/ref_audio_${crypto.createHash('md5').update(avatarUrl).digest('hex')}.mp3`;
+                    const referenceAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${audioCacheKey}`;
+                    retryPayload.input.reference_audio_urls = [referenceAudioUrl];
+                    console.log(`[Video Callback Retry] Passing character audio reference: ${referenceAudioUrl}`);
                 }
 
                 const { taskId: retryTaskId, error: retryError } = await createKieTask(retryPayload);

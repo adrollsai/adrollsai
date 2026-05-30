@@ -88,6 +88,76 @@ async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Prom
     }
 }
 
+async function extractReferenceAudio(videoUrl: string, userId: string): Promise<string> {
+    const cacheKey = `generated/${userId}/ref_audio_${crypto.createHash('md5').update(videoUrl).digest('hex')}.mp3`;
+    const cachedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${cacheKey}`;
+    
+    try {
+        await r2.send(new HeadObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: cacheKey
+        }));
+        console.log(`[Extract Audio Cache] Found cached reference audio: ${cachedUrl}`);
+        return cachedUrl;
+    } catch (e) {
+        console.log(`[Extract Audio Cache] No cache found. Starting download and audio extraction for: ${videoUrl}`);
+    }
+
+    const tempDir = path.join(os.tmpdir(), `audio_ext_${userId}_${Date.now()}`);
+    try {
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+        }
+        
+        const inputPath = path.join(tempDir, 'input.mp4');
+        const outputPath = path.join(tempDir, 'output.mp3');
+        
+        // 1. Download
+        const res = await fetch(videoUrl);
+        if (!res.ok) throw new Error(`Failed to download video: ${res.statusText}`);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        fs.writeFileSync(inputPath, buffer);
+        
+        // 2. Extract audio with FFmpeg
+        const ffmpegBinary = path.join(
+            process.cwd(), 
+            'node_modules', 
+            'ffmpeg-static', 
+            os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+        );
+        const cmd = `"${ffmpegBinary}" -y -i "${inputPath}" -vn -c:a libmp3lame -q:a 2 "${outputPath}"`;
+        
+        await new Promise<void>((resolve, reject) => {
+            exec(cmd, (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+        
+        // 3. Upload to R2
+        const audioBuffer = fs.readFileSync(outputPath);
+        await r2.send(new PutObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: cacheKey,
+            Body: audioBuffer,
+            ContentType: 'audio/mpeg'
+        }));
+        
+        console.log(`[Extract Audio] Reference audio successfully extracted and uploaded: ${cachedUrl}`);
+        return cachedUrl;
+    } catch (err: any) {
+        console.error("[Extract Audio Error] Failed to extract audio, returning empty string:", err);
+        return "";
+    } finally {
+        // Clean up
+        try {
+            if (fs.existsSync(tempDir)) {
+                fs.rmSync(tempDir, { recursive: true, force: true });
+            }
+        } catch (err) {}
+    }
+}
+
 function extrapolateEthnicity(profile: any, property: any, customInstructions?: string): string {
     const textToSearch = [
         profile?.business_name,
@@ -291,6 +361,7 @@ export async function POST(request: Request) {
         // 2. Use custom uploaded profile avatar (checked and guaranteed to exist when useCharacterVideo is true)
         let avatarUrl = useCharacterVideo !== false ? profile.character_url : null;
         let isCharacterVideo = avatarUrl && (/\.(mp4|webm|mov|avi|wmv)/i.test(avatarUrl) || avatarUrl.includes('video'));
+        let referenceAudioUrl = "";
         
         if (avatarUrl) {
             console.log(`[Video Generate] Using custom uploaded character ${isCharacterVideo ? 'video' : 'photo'} from profile: ${avatarUrl}`);
@@ -298,6 +369,10 @@ export async function POST(request: Request) {
                 console.log(`[Video Generate] Reference video detected. Invoking getTrimmedReferenceVideo...`);
                 avatarUrl = await getTrimmedReferenceVideo(avatarUrl, targetUserId);
                 console.log(`[Video Generate] Using trimmed reference video URL: ${avatarUrl}`);
+                
+                console.log(`[Video Generate] Extracting audio from reference video...`);
+                referenceAudioUrl = await extractReferenceAudio(avatarUrl, targetUserId);
+                console.log(`[Video Generate] Using extracted reference audio URL: ${referenceAudioUrl}`);
             }
         } else {
             console.log(`[Video Generate] Speaker reference is disabled (useCharacterVideo=false). Using generic presenter.`);
@@ -328,6 +403,10 @@ export async function POST(request: Request) {
             for (let i = 0; i < scenes.length; i++) {
                 const scene = scenes[i];
 
+                const p1Instruction = isCharacterVideo
+                    ? "Use the reference video only for the character's appearance and use the attached reference audio for cloning the voice. Keep the same face and the same voice as in the reference video and audio respectively without the reverb and echo."
+                    : "Use the reference photo only for the character's appearance. Keep the same face and character appearance.";
+
                 const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
 Translate the following specific scene from a script into a simple, high-performing generative prompt for Bytedance Seedance 2.0.
 
@@ -348,7 +427,7 @@ YOUR INSTRUCTIONS:
 2. You MUST output the final prompt structured into EXACTLY 5 distinct paragraphs separated by double newlines (\\n\\n), following this exact template format:
 
 [Paragraph 1 - Character & Voice Reference]
-Use the reference video only for the character's appearance and voice. Keep the same face and the same voice as in the reference video without the reverb and echo.
+${p1Instruction}
 
 [Paragraph 2 - Reference Images Preference]
 also use the reference images(if there are any) where ever suitable
@@ -356,12 +435,12 @@ also use the reference images(if there are any) where ever suitable
 [Paragraph 3 - Setting, Attire & Camera Rules]
 keep the attire of the character and setting of the scene according to the video. keep the character shots closer to the camera.
 
-[Paragraph 4 - Dialogue Block]
+[Paragraph 4 - Text Suppression Rule]
+DO NOT ADD ANY TEXT, SUBTITLES, OR ON-SCREEN CAPTIONS IN THE GENERATED VIDEO. THE FRAME MUST BE COMPLETELY CLEAN OF ANY TEXT GRAPHICS.
+
+[Paragraph 5 - Dialogue Block]
 Dialogue:
 "[Precise scene dialogue to be spoken]"
-
-[Paragraph 5 - Text Suppression Rule]
-DO NOT ADD ANY TEXT ELEMENTS IN THE GENERATED VIDEO
 
 3. Do NOT include any code block formatting wrappers (like \`\`\` or \`\`\`text) or conversational text outside of the prompt content itself. Output only the prompt text.`;
 
@@ -384,16 +463,16 @@ DO NOT ADD ANY TEXT ELEMENTS IN THE GENERATED VIDEO
                     } catch (fallbackErr: any) {
                         console.error(`[Generate API] Fallback prompt synthesis also failed for scene ${i + 1}:`, fallbackErr);
                         // Fallback prompt using exact working 5-paragraph structure
-                        finalPrompt = `Use the reference video only for the character's appearance and voice. Keep the same face and the same voice as in the reference video without the reverb and echo.
+                        finalPrompt = `${p1Instruction}
 
 also use the reference images(if there are any) where ever suitable
 
 keep the attire of the character and setting of the scene according to the video. keep the character shots closer to the camera.
 
-Dialogue:
-"${scene.dialogue}"
+DO NOT ADD ANY TEXT, SUBTITLES, OR ON-SCREEN CAPTIONS IN THE GENERATED VIDEO. THE FRAME MUST BE COMPLETELY CLEAN OF ANY TEXT GRAPHICS.
 
-DO NOT ADD ANY TEXT ELEMENTS IN THE GENERATED VIDEO`;
+Dialogue:
+"${scene.dialogue}"`;
                     }
                 }
                 prompts.push(finalPrompt);
@@ -480,6 +559,12 @@ DO NOT ADD ANY TEXT ELEMENTS IN THE GENERATED VIDEO`;
             if (referenceVideoUrls.length > 0) {
                 payload.input.reference_video_urls = referenceVideoUrls;
                 console.log(`[Video Generate] Passing character video reference: ${referenceVideoUrls[0]}`);
+            }
+
+            // If reference audio is extracted, pass it via reference_audio_urls
+            if (referenceAudioUrl) {
+                payload.input.reference_audio_urls = [referenceAudioUrl];
+                console.log(`[Video Generate] Passing character audio reference: ${referenceAudioUrl}`);
             }
             
             console.log(`[Video Generate] Launching Kie task for Scene ${index + 1}...`);
