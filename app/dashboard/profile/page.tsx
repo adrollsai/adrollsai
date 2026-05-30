@@ -22,7 +22,8 @@ import {
   Linkedin,
   User,
   Video,
-  BarChart3
+  BarChart3,
+  Mic
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -448,6 +449,7 @@ export default function ProfilePage() {
     address: '',
     logoUrl: '',
     characterUrl: '',
+    characterAudioUrl: '',
     facebookUrl: '',
     instagramUrl: '',
     customPrompt: '',
@@ -730,6 +732,7 @@ export default function ProfilePage() {
           address: profileData.address || '',
           logoUrl: profileData.logo_url || '',
           characterUrl: profileData.character_url || '',
+          characterAudioUrl: profileData.character_audio_url || '',
           facebookUrl: profileData.facebook_url || '',
           instagramUrl: profileData.instagram_url || '',
           customPrompt: profileData.custom_prompt || '',
@@ -974,6 +977,56 @@ export default function ProfilePage() {
     }
   }
 
+  const [uploadingAudio, setUploadingAudio] = useState(false)
+  const audioInputRef = useRef<HTMLInputElement>(null)
+
+  const handleAudioUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      if (!event.target.files || !event.target.files.length) return
+      
+      const file = event.target.files[0]
+      if (file.size > 15 * 1024 * 1024) {
+        alert("File size exceeds 15MB limit.")
+        return
+      }
+
+      setUploadingAudio(true)
+
+      const effectiveUserId = targetUserId || userId;
+      if (!effectiveUserId) return
+
+      const fileExt = file.name.split('.').pop()
+      const fileName = `voice-sample-${effectiveUserId}-${Date.now()}.${fileExt}`
+
+      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
+
+      setFormData(prev => ({ ...prev, characterAudioUrl: publicUrl }))
+      
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId: effectiveUserId,
+          updates: {
+            character_audio_url: publicUrl,
+          }
+        })
+      })
+      const resData = await res.json()
+      if (resData.error) throw new Error(resData.error)
+      updateLocalCache({ character_audio_url: publicUrl })
+      toast.success("Voice sample uploaded successfully!")
+
+    } catch (error) {
+      alert('Error uploading voice sample')
+    } finally {
+      setUploadingAudio(false)
+    }
+  }
+
   const handleSave = async () => {
     setIsSaving(true)
     const effectiveUserId = targetUserId || userId;
@@ -988,6 +1041,7 @@ export default function ProfilePage() {
       address: formData.address,
       logo_url: formData.logoUrl,
       character_url: formData.characterUrl,
+      character_audio_url: formData.characterAudioUrl,
       facebook_url: isAdminLike ? formData.facebookUrl : undefined,
       instagram_url: isAdminLike ? formData.instagramUrl : undefined,
       custom_prompt: formData.customPrompt,
@@ -1105,6 +1159,37 @@ export default function ProfilePage() {
                     </div>
                   )}
                   <input type="file" ref={characterInputRef} onChange={handleCharacterUpload} accept="video/*" className="hidden" />
+                </div>
+
+                {/* Voice Audio Upload */}
+                <div
+                  onClick={() => !uploadingAudio && audioInputRef.current?.click()}
+                  className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 transition-all shadow-sm"
+                  title="Upload Voice Sample (Upto 15s MP3/WAV)"
+                >
+                  {uploadingAudio ? (
+                    <div className="flex flex-col items-center justify-center p-2 text-center animate-pulse">
+                      <Loader2 className="animate-spin text-emerald-600 mb-1" size={20} />
+                      <span className="text-[8px] font-black text-slate-400">Uploading...</span>
+                    </div>
+                  ) : formData.characterAudioUrl ? (
+                    <div className="flex flex-col items-center gap-1.5 p-3 text-center text-emerald-600 bg-emerald-50/30 w-full h-full justify-center">
+                      <Mic size={24} className="animate-bounce" />
+                      <span className="text-[8px] font-black uppercase tracking-wider leading-none">Voice Loaded</span>
+                      <span className="text-[7px] text-slate-400 truncate max-w-full">
+                        {formData.characterAudioUrl.split('/').pop()?.slice(-15)}
+                      </span>
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-emerald-50/80 transition-opacity">
+                        <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-emerald-500 transition-colors">
+                      <Mic size={20} />
+                      <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Voice (Audio)</span>
+                    </div>
+                  )}
+                  <input type="file" ref={audioInputRef} onChange={handleAudioUpload} accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav" className="hidden" />
                 </div>
               </div>
               <div className="flex-1 mt-2">

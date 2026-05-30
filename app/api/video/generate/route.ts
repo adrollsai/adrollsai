@@ -298,7 +298,7 @@ export async function POST(request: Request) {
 
         const { data: targetProfile } = await supabase
             .from('profiles')
-            .select('business_name, mission_statement, custom_prompt, character_url, character_description')
+            .select('business_name, mission_statement, custom_prompt, character_url, character_description, character_audio_url')
             .eq('id', targetUserId)
             .single();
 
@@ -389,14 +389,21 @@ export async function POST(request: Request) {
         // 2. Use custom uploaded profile avatar (checked and guaranteed to exist when useCharacterVideo is true)
         let avatarUrl = useCharacterVideo !== false ? profile.character_url : null;
         let isCharacterVideo = avatarUrl && (/\.(mp4|webm|mov|avi|wmv)/i.test(avatarUrl) || avatarUrl.includes('video'));
-        let referenceAudioUrl = "";
+        let referenceAudioUrl = useCharacterVideo !== false ? (profile.character_audio_url || "") : "";
         
         if (avatarUrl) {
             console.log(`[Video Generate] Using custom uploaded character ${isCharacterVideo ? 'video' : 'photo'} from profile: ${avatarUrl}`);
             if (isCharacterVideo) {
+                // Ensure they have uploaded a voice sample first
+                if (!referenceAudioUrl) {
+                    return NextResponse.json({ 
+                        error: 'Please upload a voice sample (up to 15s MP3/WAV) in your Profile Settings to enable voice cloning for your video character.' 
+                    }, { status: 400 });
+                }
+
                 try {
                     const rendererUrl = process.env.REMOTION_RENDERER_URL || 'http://127.0.0.1:8080';
-                    console.log(`[Video Generate] Delegating avatar processing to Cloud Run: ${rendererUrl}/process-avatar`);
+                    console.log(`[Video Generate] Delegating avatar trimming to Cloud Run: ${rendererUrl}/process-avatar`);
                     const response = await fetch(`${rendererUrl.replace(/\/$/, '')}/process-avatar`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -408,28 +415,17 @@ export async function POST(request: Request) {
                     
                     if (response.ok) {
                         const resData = await response.json();
-                        if (resData.success && resData.videoUrl && resData.audioUrl) {
+                        if (resData.success && resData.videoUrl) {
                             avatarUrl = resData.videoUrl;
-                            referenceAudioUrl = resData.audioUrl;
-                            console.log(`[Video Generate] Cloud Run delegation success! Video: ${avatarUrl}, Audio: ${referenceAudioUrl}`);
-                        } else {
-                            throw new Error("Cloud Run returned incomplete data");
+                            console.log(`[Video Generate] Cloud Run video trim success! Trimmed Video: ${avatarUrl}`);
                         }
-                    } else {
-                        const errText = await response.text();
-                        throw new Error(`Cloud Run returned status ${response.status}: ${errText}`);
                     }
                 } catch (delegateErr: any) {
-                    console.warn(`[Video Generate] Cloud Run delegation failed, falling back to local Vercel execution:`, delegateErr.message);
-                    
-                    console.log(`[Video Generate] Reference video detected. Invoking getTrimmedReferenceVideo...`);
+                    console.warn(`[Video Generate] Cloud Run delegation failed, falling back to local Vercel video trimming:`, delegateErr.message);
                     avatarUrl = await getTrimmedReferenceVideo(avatarUrl, targetUserId);
-                    console.log(`[Video Generate] Using trimmed reference video URL: ${avatarUrl}`);
-                    
-                    console.log(`[Video Generate] Extracting audio from reference video...`);
-                    referenceAudioUrl = await extractReferenceAudio(avatarUrl, targetUserId);
-                    console.log(`[Video Generate] Using extracted reference audio URL: ${referenceAudioUrl}`);
                 }
+                
+                console.log(`[Video Generate] Using uploaded voice sample directly: ${referenceAudioUrl}`);
             }
         } else {
             console.log(`[Video Generate] Speaker reference is disabled (useCharacterVideo=false). Using generic presenter.`);

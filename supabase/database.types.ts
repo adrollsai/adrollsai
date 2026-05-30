@@ -842,6 +842,7 @@ export type Database = {
           business_info: string | null
           business_name: string | null
           campaign_launches_used: number | null
+          character_audio_url: string | null
           character_description: string | null
           character_url: string | null
           contact_number: string | null
@@ -907,6 +908,7 @@ export type Database = {
           business_info?: string | null
           business_name?: string | null
           campaign_launches_used?: number | null
+          character_audio_url?: string | null
           character_description?: string | null
           character_url?: string | null
           contact_number?: string | null
@@ -972,6 +974,7 @@ export type Database = {
           business_info?: string | null
           business_name?: string | null
           campaign_launches_used?: number | null
+          character_audio_url?: string | null
           character_description?: string | null
           character_url?: string | null
           contact_number?: string | null

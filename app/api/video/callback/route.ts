@@ -224,50 +224,26 @@ export async function POST(request: Request) {
                     console.log(`[Video Callback Retry] Passing character video reference: ${avatarUrl}`);
 
                     let referenceAudioUrl = "";
-                    const audioCacheKey = `generated/${videoTask.user_id}/ref_audio_${crypto.createHash('md5').update(avatarUrl).digest('hex')}.mp3`;
-                    const testAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${audioCacheKey}`;
-                    
                     try {
-                        await r2.send(new HeadObjectCommand({
-                            Bucket: R2_BUCKET,
-                            Key: audioCacheKey
-                        }));
-                        referenceAudioUrl = testAudioUrl;
-                        console.log(`[Video Callback Retry] Found cached reference audio on R2: ${referenceAudioUrl}`);
-                    } catch (e) {
-                        console.log(`[Video Callback Retry] Cached reference audio not found on R2. Requesting Cloud Run recovery...`);
-                        try {
-                            const rendererUrl = process.env.REMOTION_RENDERER_URL || 'http://127.0.0.1:8080';
-                            const response = await fetch(`${rendererUrl.replace(/\/$/, '')}/process-avatar`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    avatarUrl,
-                                    userId: videoTask.user_id
-                                })
-                            });
-                            
-                            if (response.ok) {
-                                const resData = await response.json();
-                                if (resData.success && resData.videoUrl && resData.audioUrl) {
-                                    avatarUrl = resData.videoUrl;
-                                    referenceAudioUrl = resData.audioUrl;
-                                    referenceVideoUrls = [avatarUrl];
-                                    retryPayload.input.reference_video_urls = referenceVideoUrls;
-                                    console.log(`[Video Callback Retry] Cloud Run recovery success! Video: ${avatarUrl}, Audio: ${referenceAudioUrl}`);
-                                }
-                            }
-                        } catch (recErr: any) {
-                            console.warn(`[Video Callback Retry] Cloud Run recovery failed:`, recErr.message);
+                        const { data: userProfile } = await supabaseAdmin
+                            .from('profiles')
+                            .select('character_audio_url')
+                            .eq('id', videoTask.user_id)
+                            .single();
+                        if (userProfile?.character_audio_url) {
+                            referenceAudioUrl = userProfile.character_audio_url;
+                            console.log(`[Video Callback Retry] Found voice sample in user profile: ${referenceAudioUrl}`);
                         }
+                    } catch (dbErr) {
+                        console.error(`[Video Callback Retry] Failed to query user voice sample from profile:`, dbErr);
                     }
                     
                     if (referenceAudioUrl) {
                         retryPayload.input.reference_audio_urls = [referenceAudioUrl];
                         console.log(`[Video Callback Retry] Passing character audio reference: ${referenceAudioUrl}`);
                     } else {
-                        console.error(`[Video Callback Retry] ERROR: No valid extracted reference audio available for retry. Voice cloning cannot proceed.`);
-                        throw new Error("Cannot retry video task without a valid extracted reference audio file.");
+                        console.error(`[Video Callback Retry] ERROR: No valid reference audio available for retry. Voice cloning cannot proceed.`);
+                        throw new Error("Cannot retry video task without a valid voice sample in profile settings.");
                     }
                 }
 
