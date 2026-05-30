@@ -463,18 +463,22 @@ DO NOT ADD ANY TEXT ELEMENTS IN THE GENERATED VIDEO`;
                 callBackUrl: callbackUrl,
                 input: {
                     prompt: promptText,
-                    reference_image_urls: combinedRefImages.slice(0, 9), // Send the avatar (if photo) + product/uploaded reference photos (up to 9 total)
                     aspect_ratio: "9:16",
                     duration: 15,
                     generate_audio: true,
-                    resolution: "480p"
+                    resolution: "480p",
+                    nsfw_checker: true,
+                    web_search: false
                 }
             };
+            
+            if (combinedRefImages.length > 0) {
+                payload.input.reference_image_urls = combinedRefImages.slice(0, 9);
+            }
             
             // If character is a video, pass it via reference_video_urls (Seedance 2.0 spec)
             if (referenceVideoUrls.length > 0) {
                 payload.input.reference_video_urls = referenceVideoUrls;
-                payload.input['reference_video_urls '] = referenceVideoUrls; // Trailing-space variant for Kie.ai compat
                 console.log(`[Video Generate] Passing character video reference: ${referenceVideoUrls[0]}`);
             }
             

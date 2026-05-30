@@ -204,18 +204,22 @@ export async function POST(request: Request) {
                     callBackUrl: callbackUrl,
                     input: {
                         prompt: currentPrompt,
-                        reference_image_urls: refImages.slice(0, 9),
                         aspect_ratio: "9:16",
                         duration: 15,
                         generate_audio: true,
-                        resolution: "480p"
+                        resolution: "480p",
+                        nsfw_checker: true,
+                        web_search: false
                     }
                 };
+
+                if (refImages.length > 0) {
+                    retryPayload.input.reference_image_urls = refImages.slice(0, 9);
+                }
 
                 if (avatarUrl && isCharacterVideo) {
                     const referenceVideoUrls = [avatarUrl];
                     retryPayload.input.reference_video_urls = referenceVideoUrls;
-                    retryPayload.input['reference_video_urls '] = referenceVideoUrls;
                     console.log(`[Video Callback Retry] Passing character video reference: ${avatarUrl}`);
                 }
 
