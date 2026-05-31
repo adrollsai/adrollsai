@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/client'
 import BottomNav from '@/components/BottomNav'
 import PushManager from '@/components/PushManager'
 import { Loader2, XCircle } from 'lucide-react'
+import QuotaManager from '@/components/QuotaManager'
 
 function ImpersonationBanner() {
     const searchParams = useSearchParams()
@@ -104,6 +105,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* PushManager deployed as a banner. It auto-hides if enabled or dismissed */}
       <PushManager variant="banner" />
+
+      {/* Global Plan and Add-on limit checks */}
+      <QuotaManager />
 
       {children}
 

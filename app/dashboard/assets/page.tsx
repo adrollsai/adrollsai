@@ -1073,7 +1073,7 @@ export default function AssetsPage() {
                                     </div>
                                 ) : asset.type === 'video' ? (
                                     <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
-                                        <video src={asset.url} className="w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity" />
+                                        <video src={`${asset.url}#t=0.1`} preload="metadata" playsInline muted className="w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity" />
                                         <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-transparent transition-colors">
                                             <div className="bg-white/20 backdrop-blur-md p-3 rounded-full shadow-sm">
                                                 <Film className="text-white" size={24} />

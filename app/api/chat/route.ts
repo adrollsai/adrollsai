@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
     // --- SUBSCRIPTION CHECK ---
     try {
-      await checkLimitAndIncrement(user.id, 'ai_creatives');
+      await checkLimitAndIncrement(user.id, 'images');
       await checkStorageLimit(user.id);
     } catch (limitErr: any) {
       logToFile(`QUOTA ERROR: ${limitErr.message}`);
@@ -195,7 +195,7 @@ Premium design, clean layout, bold headline.`;
       logToFile(`Kie AI Task failed permanently: ${finalError}`);
       
       // REFUND: Give back the credit if task failed to start even after failover
-      await refundLimit(user.id, 'ai_creatives');
+      await refundLimit(user.id, 'images');
       
       throw new Error(`Design server error: ${finalError}`);
     }

@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     if (!campaignId) return NextResponse.json({ error: 'Missing Campaign ID' }, { status: 400 });
     // --- SUBSCRIPTION CHECK ---
     try {
-        await checkLimitAndIncrement(user.id, 'ai_ad_optimizations');
+        await checkLimitAndIncrement(user.id, 'campaign_optimizations');
     } catch (limitErr: any) {
         return NextResponse.json({ error: limitErr.message }, { status: 403 });
     }
@@ -287,7 +287,7 @@ export async function POST(request: Request) {
         
         // REFUND: Give back the optimization credit if the process failed
         if (user?.id) {
-            await refundLimit(user.id, 'ai_ad_optimizations');
+            await refundLimit(user.id, 'campaign_optimizations');
         }
 
         return NextResponse.json({ error: error.message }, { status: 500 });

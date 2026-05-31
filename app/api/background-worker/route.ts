@@ -119,7 +119,7 @@ export async function POST(req: Request) {
                 console.error(`[Worker] Generation Failed for taskId ${taskId}:`, failReason);
                 
                 // REFUND: Task failed on Kie AI's side (e.g. content policy or server error)
-                await refundLimit(userId, 'ai_creatives');
+                await refundLimit(userId, 'images');
 
                 // Update placeholder to Failed so user knows it won't finish
                 if (placeholder?.id) {

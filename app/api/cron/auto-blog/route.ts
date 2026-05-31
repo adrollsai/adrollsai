@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { generateObject } from 'ai'
 import { google } from '@ai-sdk/google'
 import { z } from 'zod'
+import { getUserLimits } from '@/utils/subscription'
 
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
@@ -56,13 +57,15 @@ async function runSeoCron(request: Request) {
             // --- SUBSCRIPTION CHECK ---
             const { data: usageProfile } = await supabaseAdmin
                 .from('profiles')
-                .select('seo_articles_used')
+                .select('*')
                 .eq('id', profile.id)
                 .single();
             
             const used = usageProfile?.seo_articles_used || 0;
-            if (used >= 30) { // PLAN_LIMITS.seo_articles is 30
-                console.log(`[SEO Cron] User ${profile.id} reached SEO limit.`);
+            const limits = getUserLimits(usageProfile);
+            const limit = limits.seo_articles;
+            if (used >= limit) {
+                console.log(`[SEO Cron] User ${profile.id} reached SEO limit of ${limit}.`);
                 return { success: false, userId: profile.id, error: "Limit reached" };
             }
 

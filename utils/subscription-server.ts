@@ -1,19 +1,41 @@
 import { createClient } from './supabase/server';
-import { PLAN_LIMITS } from './subscription';
+import { getUserLimits } from './subscription';
 
 export async function checkLimitAndIncrement(
     userId: string, 
-    type: keyof typeof PLAN_LIMITS
+    type: 'videos' | 'images' | 'seo_articles' | 'campaign_launches' | 'campaign_optimizations' | 'retargeting_campaigns'
 ) {
     const supabase = await createClient();
     
     const UNLIMITED_USERS = ['bc63c065-9bcc-4793-bedc-f0960406425b'];
     if (UNLIMITED_USERS.includes(userId)) return true;
 
-    // 1. Fetch current usage and reset date
+    // Map new types to their corresponding DB columns (for both old and new schemas)
+    const dbColumnMap: Record<string, string> = {
+        videos: 'videos_used',
+        images: 'images_used',
+        seo_articles: 'seo_articles_used',
+        campaign_launches: 'campaign_launches_used',
+        campaign_optimizations: 'campaign_optimizations_used',
+        retargeting_campaigns: 'retargeting_campaigns_used'
+    };
+
+    const legacyColumnMap: Record<string, string> = {
+        videos: 'ai_creatives_used',
+        images: 'ai_creatives_used',
+        seo_articles: 'seo_articles_used',
+        campaign_launches: 'campaign_launches_used',
+        campaign_optimizations: 'ai_ad_optimizations_used',
+        retargeting_campaigns: 'remarketing_campaigns_used'
+    };
+
+    const dbColumn = dbColumnMap[type];
+    const legacyColumn = legacyColumnMap[type];
+
+    // 1. Fetch current usage, reset date, and full subscription status
     const { data: profile, error } = await supabase
         .from('profiles')
-        .select(`id, ${type}_used, usage_reset_date, parent_id`)
+        .select(`id, subscription_plan, usage_reset_date, parent_id, addon_videos, addon_images, addon_team_members, addon_campaign_launches, addon_campaign_optimizations, addon_retargeting_campaigns, videos_used, images_used, seo_articles_used, campaign_launches_used, campaign_optimizations_used, retargeting_campaigns_used, ai_creatives_used, ai_ad_optimizations_used, remarketing_campaigns_used`)
         .eq('id', userId)
         .single();
 
@@ -24,18 +46,29 @@ export async function checkLimitAndIncrement(
     // Resolve Primary User ID (Owner of the limits)
     const primaryUserId = profile.parent_id || userId;
     
-    // If current user is an agent, we MUST re-fetch the parent's actual usage
+    // If current user is an agent, we MUST re-fetch the parent's actual profile
     let profileToUpdate = profile;
     if (profile.parent_id) {
         const { data: parentProfile } = await supabase
             .from('profiles')
-            .select(`id, ${type}_used, usage_reset_date, parent_id`)
+            .select(`id, subscription_plan, usage_reset_date, parent_id, addon_videos, addon_images, addon_team_members, addon_campaign_launches, addon_campaign_optimizations, addon_retargeting_campaigns, videos_used, images_used, seo_articles_used, campaign_launches_used, campaign_optimizations_used, retargeting_campaigns_used, ai_creatives_used, ai_ad_optimizations_used, remarketing_campaigns_used`)
             .eq('id', profile.parent_id)
             .single();
         if (parentProfile) profileToUpdate = parentProfile;
     }
 
-    let used = (profileToUpdate as any)[`${type}_used`] || 0;
+    // Resolve limits dynamically
+    const limits = getUserLimits(profileToUpdate);
+    const limit = limits[type as keyof typeof limits] || 0;
+
+    // Determine current usage value (prefer new column if present, fallback to legacy)
+    let used = 0;
+    if (dbColumn in profileToUpdate && (profileToUpdate as any)[dbColumn] !== null) {
+        used = (profileToUpdate as any)[dbColumn];
+    } else if (legacyColumn in profileToUpdate) {
+        used = (profileToUpdate as any)[legacyColumn] || 0;
+    }
+
     const resetDate = profileToUpdate.usage_reset_date;
     const now = new Date();
 
@@ -46,11 +79,16 @@ export async function checkLimitAndIncrement(
         nextReset.setMonth(nextReset.getMonth() + 1);
 
         const resetData = {
-            ai_creatives_used: 0,
+            videos_used: 0,
+            images_used: 0,
+            seo_articles_used: 0,
             campaign_launches_used: 0,
+            campaign_optimizations_used: 0,
+            retargeting_campaigns_used: 0,
+            // also reset legacy columns for safety
+            ai_creatives_used: 0,
             ai_ad_optimizations_used: 0,
             remarketing_campaigns_used: 0,
-            seo_articles_used: 0,
             usage_reset_date: nextReset.toISOString()
         };
 
@@ -58,19 +96,24 @@ export async function checkLimitAndIncrement(
         used = 0; // Reset local value for this check
     }
 
-    const limit = PLAN_LIMITS[type];
-
     // 3. Check if over limit
     if (used >= limit) {
-        throw new Error(`Monthly quota reached for ${type.replace('_', ' ')}. Please upgrade your plan.`);
+        throw new Error(`Monthly quota reached for ${type.replace('_', ' ')}. Please upgrade your plan or purchase an add-on.`);
     }
 
-    // 4. Increment
+    // 4. Increment both new and legacy columns for complete backward and forward compatibility
+    const updateData: any = {};
+    if (dbColumn in profileToUpdate) {
+        updateData[dbColumn] = used + 1;
+    }
+    if (legacyColumn in profileToUpdate) {
+        const oldVal = (profileToUpdate as any)[legacyColumn] || 0;
+        updateData[legacyColumn] = oldVal + 1;
+    }
+
     const { error: updateError } = await supabase
         .from('profiles')
-        .update({
-            [`${type}_used`]: used + 1
-        })
+        .update(updateData)
         .eq('id', primaryUserId);
 
     if (updateError) {
@@ -82,7 +125,7 @@ export async function checkLimitAndIncrement(
 
 export async function refundLimit(
     userId: string, 
-    type: keyof typeof PLAN_LIMITS
+    type: 'videos' | 'images' | 'seo_articles' | 'campaign_launches' | 'campaign_optimizations' | 'retargeting_campaigns'
 ) {
     const supabase = await createClient();
     
@@ -93,21 +136,50 @@ export async function refundLimit(
     // Fetch current usage of primary user
     const { data: profile } = await supabase
         .from('profiles')
-        .select(`${type}_used`)
+        .select('*')
         .eq('id', primaryUserId)
         .single();
 
-    const used = (profile as any)?.[`${type}_used`] || 0;
-    
-    // Decrement if possible (never go below 0)
-    if (used > 0) {
+    if (!profile) return;
+
+    const dbColumnMap: Record<string, string> = {
+        videos: 'videos_used',
+        images: 'images_used',
+        seo_articles: 'seo_articles_used',
+        campaign_launches: 'campaign_launches_used',
+        campaign_optimizations: 'campaign_optimizations_used',
+        retargeting_campaigns: 'retargeting_campaigns_used'
+    };
+
+    const legacyColumnMap: Record<string, string> = {
+        videos: 'ai_creatives_used',
+        images: 'ai_creatives_used',
+        seo_articles: 'seo_articles_used',
+        campaign_launches: 'campaign_launches_used',
+        campaign_optimizations: 'ai_ad_optimizations_used',
+        retargeting_campaigns: 'remarketing_campaigns_used'
+    };
+
+    const dbColumn = dbColumnMap[type];
+    const legacyColumn = legacyColumnMap[type];
+
+    const updateData: any = {};
+
+    if (dbColumn in profile) {
+        const used = (profile as any)[dbColumn] || 0;
+        if (used > 0) updateData[dbColumn] = used - 1;
+    }
+    if (legacyColumn in profile) {
+        const used = (profile as any)[legacyColumn] || 0;
+        if (used > 0) updateData[legacyColumn] = used - 1;
+    }
+
+    if (Object.keys(updateData).length > 0) {
         await supabase
             .from('profiles')
-            .update({
-                [`${type}_used`]: used - 1
-            })
+            .update(updateData)
             .eq('id', primaryUserId);
-        console.log(`[Subscription] Refunded 1 ${type} to user ${primaryUserId} (requested by ${userId})`);
+        console.log(`[Subscription] Refunded 1 ${type} to user ${primaryUserId}`);
     }
 }
 

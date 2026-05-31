@@ -280,7 +280,7 @@ export async function POST(request: Request) {
 
         // --- QUOTA CHECK ---
         try {
-            await checkLimitAndIncrement(targetUserId, 'ai_creatives');
+            await checkLimitAndIncrement(targetUserId, 'videos');
         } catch (limitErr: any) {
             return NextResponse.json({ error: limitErr.message }, { status: 403 });
         }
@@ -456,12 +456,12 @@ export async function POST(request: Request) {
             for (let i = 0; i < scenes.length; i++) {
                 const scene = scenes[i];
 
-                const p1Instruction = isCharacterVideo
-                    ? "Use the reference video only for the character's appearance and use the attached reference audio for cloning the voice. Keep the same face and the same voice as in the reference video and audio respectively without the reverb and echo."
-                    : "Use the reference photo only for the character's appearance. Keep the same face and character appearance.";
+                const characterAppearanceText = isCharacterVideo
+                    ? "Use reference video only for character appearance.\nUse reference audio only for voice characteristics."
+                    : "Use reference photo only for character appearance.";
 
                 const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
-Translate the following specific scene from a script into a simple, high-performing generative prompt for Bytedance Seedance 2.0.
+Translate the following specific scene from a script into a simple, high-performing generative prompt for Bytedance/Kie.ai Seedance 2.0.
 
 Scene Number: ${i + 1} of ${scenes.length}
 Scene Dialogue: "${scene.dialogue}"
@@ -473,29 +473,41 @@ Custom instructions: "${customInstructions || 'None'}"
 
 CREATOR CHARACTER:
 - Description: "${characterDescription}"
-- Reference Video Available: ${isCharacterVideo ? 'Yes (Reference Video is provided)' : 'No (Reference Photo Image 1 is provided)'}
+- Reference Video Available: ${isCharacterVideo ? 'Yes' : 'No'}
+
+REFERENCE IMAGES & DETAILS (Vision-analyzed descriptions of the reference images provided in this ad creation task):
+${descriptionsText}
 
 YOUR INSTRUCTIONS:
-1. Generate a simple, natural, and direct generative video prompt. Do NOT use complex markdown headers, brackets, or structured blocks like "[Aesthetic]", "[Characters]", "[Environment]", "[Action Sequence]", etc. Keep the description highly concise and minimal, following the exact structure below.
-2. You MUST output the final prompt structured into EXACTLY 5 distinct paragraphs separated by double newlines (\\n\\n), following this exact template format:
+1. Generate a structured generative video prompt. Do NOT use markdown headers (like #, ##) or code blocks or bracketed blocks like [Action]. Follow the exact structure shown below.
+2. Analyze the reference images description provided. See where they fit well in the video (e.g., background elements, products held in hand, or visually matching scene/product details) and prompt them accordingly in the "Action" or "Style" section of the output prompt.
+3. Determine a suitable outfit/attire and setting for the character based on the business name, product, brand guidelines, and script context (e.g., a beige blazer over a white tee in a modern corporate office, a premium casual shirt in a cozy living room, premium wear in a luxury apartment, etc.). Always explicitly describe the attire and setting.
+4. Add personality and delivery details for the dialogue to guide the voice and face generation (e.g., speech rate, facial expressions, hand gestures, posture).
+5. Output the prompt following this EXACT format (ensure correct line breaks and labels):
 
-[Paragraph 1 - Character & Voice Reference]
-${p1Instruction}
+${characterAppearanceText}
 
-[Paragraph 2 - Reference Images Preference]
-also use the reference images(if there are any) where ever suitable
+Character maintains eye contact with camera throughout. He/She is wearing [describe appropriate attire here] and is [describe appropriate location/setting here].
 
-[Paragraph 3 - Setting, Attire & Camera Rules]
-keep the attire of the character and setting of the scene according to the video. keep the character shots closer to the camera.
-
-[Paragraph 4 - Text Suppression Rule]
-DO NOT ADD ANY TEXT, SUBTITLES, OR ON-SCREEN CAPTIONS IN THE GENERATED VIDEO. THE FRAME MUST BE COMPLETELY CLEAN OF ANY TEXT GRAPHICS.
-
-[Paragraph 5 - Dialogue Block]
 Dialogue:
-"[Precise scene dialogue to be spoken]"
+"[dialogue text to be spoken]"
 
-3. Do NOT include any code block formatting wrappers (like \`\`\` or \`\`\`text) or conversational text outside of the prompt content itself. Output only the prompt text.`;
+Speech Style:
+[Describe delivery with rich personality, tone, emotion, and pace, e.g., "Natural conversation, confident salesperson, friendly tone and subtle smile."]
+
+Action:
+[Describe the precise actions the character is performing. Incorporate/fit the reference images/products if they fit, e.g., "Speaking directly to the viewer while walking slowly through the corporate office, occasionally gesturing with hands to emphasize points. In the background, reference image of the modern living room is visible."]
+
+Camera:
+[Describe the camera perspective, e.g., "Front tracking shot, keeping face centered."]
+
+Style:
+[Describe the visual aesthetics and production quality, e.g., "Premium real estate advertisement, realistic motion, professional presentation."]
+
+Avoid:
+No overlay Text, No overlay captions
+
+6. Do NOT wrap the prompt in backticks or markdown code blocks. Output the pure text prompt only.`;
 
                 let finalPrompt = "";
                 try {
@@ -515,17 +527,28 @@ Dialogue:
                         finalPrompt = text.trim();
                     } catch (fallbackErr: any) {
                         console.error(`[Generate API] Fallback prompt synthesis also failed for scene ${i + 1}:`, fallbackErr);
-                        // Fallback prompt using exact working 5-paragraph structure
-                        finalPrompt = `${p1Instruction}
+                        // Fallback prompt using the new structured template
+                        finalPrompt = `${characterAppearanceText}
 
-also use the reference images(if there are any) where ever suitable
-
-keep the attire of the character and setting of the scene according to the video. keep the character shots closer to the camera.
-
-DO NOT ADD ANY TEXT, SUBTITLES, OR ON-SCREEN CAPTIONS IN THE GENERATED VIDEO. THE FRAME MUST BE COMPLETELY CLEAN OF ANY TEXT GRAPHICS.
+Character maintains eye contact with camera throughout. The character is wearing professional business attire (a sleek blazer over a premium shirt) in a high-end corporate office setting.
 
 Dialogue:
-"${scene.dialogue}"`;
+"${scene.dialogue}"
+
+Speech Style:
+Natural conversation, confident salesperson, friendly tone and subtle smile.
+
+Action:
+Speaking directly to the viewer while standing or walking slowly, gesturing naturally with hands. Incorporate reference images where suitable.
+
+Camera:
+Front tracking shot, keeping face centered, medium close-up shot.
+
+Style:
+Premium business advertisement, realistic motion, professional presentation.
+
+Avoid:
+No overlay Text, No overlay captions`;
                     }
                 }
                 prompts.push(finalPrompt);
@@ -557,7 +580,7 @@ Dialogue:
 
         if (newAssetError || !newAsset) {
             console.error("Placeholder creation failed:", newAssetError);
-            await refundLimit(targetUserId, 'ai_creatives');
+            await refundLimit(targetUserId, 'videos');
             return NextResponse.json({ error: "Failed to initialize video asset" }, { status: 500 });
         }
 
@@ -639,7 +662,7 @@ Dialogue:
         if (launchErrors.length > 0 || taskIds.filter(Boolean).length !== prompts.length) {
             // Delete placeholder and refund credit if any task failed to start
             await supabaseAdmin.from('assets').delete().eq('id', newAsset.id);
-            await refundLimit(targetUserId, 'ai_creatives');
+            await refundLimit(targetUserId, 'videos');
             return NextResponse.json({ error: launchErrors.join(', ') || "Failed to start parallel video generations" }, { status: 500 });
         }
 

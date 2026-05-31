@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getUserLimits } from '@/utils/subscription';
 
 // We use the Service Role key to securely bypass RLS for administrative tasks
 const supabaseAdmin = createClient(
@@ -32,10 +33,36 @@ export async function POST(req: Request) {
       email: email // We'll try to store this in profiles for easier lookup next time
     }
 
-    const { data: adminProfile } = await supabaseAdmin.from('profiles').select('agency_id, parent_id, role').eq('id', adminId).single()
+    const { data: adminProfile } = await supabaseAdmin.from('profiles').select('*').eq('id', adminId).single();
     
     // Resolve the root parent ID (workspace owner)
     const rootParentId = adminProfile?.parent_id || adminId;
+    
+    // Fetch parent profile for accurate limits check if current admin is a child account
+    let parentProfile = adminProfile;
+    if (adminProfile?.parent_id) {
+        const { data: pProfile } = await supabaseAdmin.from('profiles').select('*').eq('id', adminProfile.parent_id).single();
+        if (pProfile) parentProfile = pProfile;
+    }
+
+    // Count added team members (roles admin/agent)
+    const { count: teamCount } = await supabaseAdmin
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('parent_id', rootParentId)
+        .in('role', ['admin', 'agent']);
+    
+    const teamUsed = teamCount || 0;
+
+    // Resolve plan-based limits
+    const limits = getUserLimits(parentProfile);
+    const teamLimit = limits.team_members;
+
+    if (role !== 'client' && teamUsed >= teamLimit) {
+        return NextResponse.json({ 
+            error: `Your plan limits you to a maximum of ${teamLimit} team members. Please upgrade your plan or purchase an additional team member seat.` 
+        }, { status: 403 });
+    }
     
     // Resolve the agency ID
     let rootAgencyId = null;

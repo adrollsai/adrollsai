@@ -223,32 +223,32 @@ export default function AccountsPage() {
           filteredTree.map((root) => (
             <div key={root.id} className="space-y-3">
               {/* Parent Card */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:border-blue-200 transition-all flex items-center justify-between group">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:border-blue-200 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 group-hover:scale-105 transition-transform overflow-hidden">
+                  <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 group-hover:scale-105 transition-transform shrink-0 overflow-hidden">
                     {root.logo_url ? <img src={root.logo_url} className="w-full h-full object-cover" /> : <Building2 className="text-slate-400" />}
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-bold text-slate-900">{root.business_name || 'Root Account'}</h3>
                       <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-indigo-100 text-indigo-700 tracking-tighter">
                         {root.role}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500">{root.email}</p>
+                    <p className="text-xs text-slate-500 truncate max-w-[250px] sm:max-w-md">{root.email}</p>
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start border-t border-slate-50 sm:border-0 pt-3 sm:pt-0">
                     <button 
                       onClick={() => router.push(`/dashboard/team?impersonate=${root.id}`)}
-                      className="bg-slate-50 hover:bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 transition-all flex items-center gap-1.5"
+                      className="bg-slate-50 hover:bg-slate-100 text-slate-600 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 transition-all flex items-center gap-1.5 active:scale-95 shrink-0"
                     >
                       <Users size={14} /> Team
                     </button>
                     <button 
                       onClick={() => router.push(`/dashboard?impersonate=${root.id}`)}
-                      className="bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 transition-all flex items-center gap-1.5"
+                      className="bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-700 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 transition-all flex items-center gap-1.5 active:scale-95 shrink-0"
                     >
                       <ExternalLink size={14} /> Access
                     </button>
@@ -257,29 +257,29 @@ export default function AccountsPage() {
 
               {/* Children Grid/List */}
               {root.children.length > 0 && (
-                <div className="ml-8 sm:ml-12 pl-6 border-l-2 border-slate-100 space-y-3">
+                <div className="ml-4 sm:ml-12 pl-4 sm:pl-6 border-l-2 border-slate-100 space-y-3">
                   {root.children.map((child: any) => (
-                    <div key={child.id} className="bg-white/50 border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:bg-white transition-all group">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center border border-slate-100">
+                    <div key={child.id} className="bg-white/50 border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-3 hover:bg-white transition-all group">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center border border-slate-100 shrink-0">
                           {child.logo_url ? <img src={child.logo_url} className="w-full h-full object-cover rounded-lg" /> : <UserIcon size={16} className="text-slate-400" />}
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-bold text-slate-800">{child.business_name}</h4>
-                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter ${
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-sm font-bold text-slate-800 truncate max-w-[150px] sm:max-w-xs">{child.business_name}</h4>
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter shrink-0 ${
                               child.role === 'client' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
                             }`}>
                               {child.role}
                             </span>
                           </div>
-                          <p className="text-[10px] text-slate-400 font-medium">{child.email}</p>
+                          <p className="text-[10px] text-slate-400 font-medium truncate">{child.email}</p>
                         </div>
                       </div>
 
                       <button 
                         onClick={() => router.push(`/dashboard?impersonate=${child.id}`)}
-                        className="opacity-0 group-hover:opacity-100 bg-white hover:bg-slate-50 text-slate-500 p-1.5 rounded-md border border-slate-200 transition-all"
+                        className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 bg-white hover:bg-slate-50 text-slate-500 p-2 rounded-xl border border-slate-200 transition-all active:scale-95 flex items-center justify-center shrink-0"
                         title="Impersonate"
                       >
                         <ExternalLink size={14} />

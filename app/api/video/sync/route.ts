@@ -248,6 +248,94 @@ export async function POST(request: Request) {
 
                     // All scenes completed! Stitch them!
                     siblings.sort((a, b) => a.current_index - b.current_index);
+
+                    // If there is only 1 scene, bypass the stitcher and finalize the asset immediately on Vercel!
+                    if (siblings.length === 1) {
+                        const clipUrl = siblings[0].last_successful_task_id;
+                        console.log(`[Sync Endpoint] Single-clip video detected (15s). Finalizing asset and applying faststart: ${clipUrl}`);
+                        
+                        let finalUrl = clipUrl;
+                        
+                        // Run faststart pass to fix WhatsApp thumbnail issue
+                        const tempDir = path.join(os.tmpdir(), `faststart_${task.asset_id}`);
+                        try {
+                            if (!fs.existsSync(tempDir)) {
+                                fs.mkdirSync(tempDir, { recursive: true });
+                            }
+                            const localPath = path.join(tempDir, `input.mp4`);
+                            const outputPath = path.join(tempDir, `output.mp4`);
+                            
+                            const res = await fetch(clipUrl);
+                            if (!res.ok) throw new Error(`Failed to download scene for faststart`);
+                            const buffer = Buffer.from(await res.arrayBuffer());
+                            fs.writeFileSync(localPath, buffer);
+                            
+                            const ffmpegBinary = path.join(
+                                process.cwd(), 
+                                'node_modules', 
+                                'ffmpeg-static', 
+                                os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+                            );
+                            
+                            const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
+                            console.log(`[Sync Endpoint] Running FFmpeg faststart command: ${cmd}`);
+                            
+                            await new Promise<void>((resolvePromise, rejectPromise) => {
+                                exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
+                                    if (execErr) {
+                                        rejectPromise(execErr);
+                                    } else {
+                                        resolvePromise();
+                                    }
+                                });
+                            });
+                            
+                            // Upload faststart file to R2
+                            const faststartBuffer = fs.readFileSync(outputPath);
+                            const finalFileName = `generated/${task.user_id}/faststart_${Date.now()}.mp4`;
+                            await r2.send(new PutObjectCommand({
+                                Bucket: R2_BUCKET,
+                                Key: finalFileName,
+                                Body: faststartBuffer,
+                                ContentType: 'video/mp4'
+                            }));
+                            finalUrl = `${R2_PUBLIC_URL}/adrolls-storage/${finalFileName}`;
+                            console.log(`[Sync Endpoint] Faststart single video uploaded to R2: ${finalUrl}`);
+                        } catch (faststartErr) {
+                            console.error("[Sync Endpoint] Faststart process failed, falling back to original clip URL:", faststartErr);
+                        } finally {
+                            try {
+                                if (fs.existsSync(tempDir)) {
+                                    fs.rmSync(tempDir, { recursive: true, force: true });
+                                }
+                            } catch (cleanupErr) {
+                                console.error("[Sync Endpoint] Faststart cleanup failed:", cleanupErr);
+                            }
+                        }
+
+                        if (task.asset_id) {
+                            await supabaseAdmin.from('assets').update({
+                                url: finalUrl,
+                                status: 'Draft'
+                            }).eq('id', task.asset_id);
+                        }
+                        
+                        // Clean up tasks
+                        await supabaseAdmin.from('video_tasks').delete().eq('asset_id', task.asset_id);
+                        
+                        // Send push notification
+                        await sendPushNotification(
+                            task.user_id, 
+                            `🎬 15s Video Creative Ready!`, 
+                            `Your 15-second AI video ad has been generated successfully.`, 
+                            "/dashboard/assets", 
+                            "asset_ready"
+                        ).catch(() => {});
+                        
+                        syncedResults.push({ taskId, assetId: task.asset_id, status: 'succeeded' });
+                        continue;
+                    }
+
                     console.log(`[Sync Endpoint] All ${siblings.length} scenes completed. Initiating stitching...`);
 
                     const stitcherWorkerUrl = process.env.STITCHER_WORKER_URL;
@@ -311,7 +399,7 @@ export async function POST(request: Request) {
                             'ffmpeg-static', 
                             os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
                         );
-                        const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy "${outputPath}"`;
+                        const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
 
                         await new Promise<void>((resolvePromise, rejectPromise) => {
                             exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr: any, stdout: any, stderr: any) => {

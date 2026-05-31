@@ -341,8 +341,67 @@ export async function POST(request: Request) {
 
         // If there is only 1 scene, bypass the stitcher and finalize the asset immediately on Vercel!
         if (siblings.length === 1) {
-            const finalUrl = siblings[0].last_successful_task_id;
-            console.log(`[Video Callback] Single-clip video detected (15s). Finalizing asset immediately: ${finalUrl}`);
+            const clipUrl = siblings[0].last_successful_task_id;
+            console.log(`[Video Callback] Single-clip video detected (15s). Finalizing asset and applying faststart: ${clipUrl}`);
+            
+            let finalUrl = clipUrl;
+            
+            // Run faststart pass to fix WhatsApp thumbnail issue
+            const tempDir = path.join(os.tmpdir(), `faststart_${videoTask.asset_id}`);
+            try {
+                if (!fs.existsSync(tempDir)) {
+                    fs.mkdirSync(tempDir, { recursive: true });
+                }
+                const localPath = path.join(tempDir, `input.mp4`);
+                const outputPath = path.join(tempDir, `output.mp4`);
+                
+                const res = await fetch(clipUrl);
+                if (!res.ok) throw new Error(`Failed to download scene for faststart`);
+                const buffer = Buffer.from(await res.arrayBuffer());
+                fs.writeFileSync(localPath, buffer);
+                
+                const ffmpegBinary = path.join(
+                    process.cwd(), 
+                    'node_modules', 
+                    'ffmpeg-static', 
+                    os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+                );
+                
+                const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
+                console.log(`[Video Callback] Running FFmpeg faststart command: ${cmd}`);
+                
+                await new Promise<void>((resolvePromise, rejectPromise) => {
+                    exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
+                        if (execErr) {
+                            rejectPromise(execErr);
+                        } else {
+                            resolvePromise();
+                        }
+                    });
+                });
+                
+                // Upload faststart file to R2
+                const faststartBuffer = fs.readFileSync(outputPath);
+                const finalFileName = `generated/${videoTask.user_id}/faststart_${Date.now()}.mp4`;
+                await r2.send(new PutObjectCommand({
+                    Bucket: R2_BUCKET,
+                    Key: finalFileName,
+                    Body: faststartBuffer,
+                    ContentType: 'video/mp4'
+                }));
+                finalUrl = `${R2_PUBLIC_URL}/adrolls-storage/${finalFileName}`;
+                console.log(`[Video Callback] Faststart single video uploaded to R2: ${finalUrl}`);
+            } catch (faststartErr) {
+                console.error("[Video Callback] Faststart process failed, falling back to original clip URL:", faststartErr);
+            } finally {
+                try {
+                    if (fs.existsSync(tempDir)) {
+                        fs.rmSync(tempDir, { recursive: true, force: true });
+                    }
+                } catch (cleanupErr) {
+                    console.error("[Video Callback] Faststart cleanup failed:", cleanupErr);
+                }
+            }
             
             if (videoTask.asset_id) {
                 await supabaseAdmin.from('assets').update({
@@ -433,7 +492,7 @@ export async function POST(request: Request) {
                 'ffmpeg-static', 
                 os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
             );
-            const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy "${outputPath}"`;
+            const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
 
             
             console.log(`[Video Callback] Running FFmpeg command: ${cmd}`);

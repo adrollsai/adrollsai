@@ -121,7 +121,7 @@ app.post('/stitch', async (req, res) => {
 
         // Run system FFmpeg cleanly
         const outputPath = path.join(tempDir, 'stitched.mp4');
-        const cmd = `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy "${outputPath}"`;
+        const cmd = `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
 
         
         console.log(`[Stitcher] Executing FFmpeg: ${cmd}`);

@@ -265,7 +265,7 @@ async function run() {
                     process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
                 );
 
-                const cmd = `"${ffmpegBinary}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy "${outputPath}"`;
+                const cmd = `"${ffmpegBinary}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
                 console.log(`Executing FFmpeg: ${cmd}`);
 
                 await new Promise((resolve, reject) => {
@@ -442,7 +442,7 @@ async function manualStitch(assetId, taskIds) {
             process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
         );
 
-        const cmd = `"${ffmpegBinary}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy "${outputPath}"`;
+        const cmd = `"${ffmpegBinary}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
         console.log(`Executing FFmpeg: ${cmd}`);
 
         await new Promise((resolve, reject) => {

@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@/utils/supabase/server'; 
 import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { PLANS, ADDONS } from '@/utils/subscription';
 
-// Admin client to bypass RLS for updating the profile
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -13,13 +13,11 @@ const MERCHANT_ID = (process.env.PHONEPE_MERCHANT_ID || "").replace(/['"]/g, '')
 const SALT_KEY = (process.env.PHONEPE_SALT_KEY || "").replace(/['"]/g, '').trim();
 const SALT_INDEX = (process.env.PHONEPE_SALT_INDEX || "").replace(/['"]/g, '').trim();
 
-// --- PRODUCTION STATUS URL ---
+// Production Status API Url
 const STATUS_URL = `https://api.phonepe.com/apis/hermes/pg/v1/status`;
-// Fallback for Standard PG if needed: `https://api.phonepe.com/apis/pg/pg/v1/status`;
 
 export async function POST(req: Request) {
     try {
-        // Grab the actual logged-in user securely from their active session
         const supabase = await createClient();
         const { data: { user } } = await supabase.auth.getUser();
 
@@ -27,7 +25,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const { transactionId, planId } = await req.json();
+        const { transactionId, planId, addonId } = await req.json();
         
         if (!transactionId) return NextResponse.json({ error: "Missing Transaction ID" }, { status: 400 });
 
@@ -53,14 +51,46 @@ export async function POST(req: Request) {
             const validUntil = new Date();
             validUntil.setMonth(validUntil.getMonth() + 1);
 
-            // Using the secure user.id from Supabase Auth!
-            const { error } = await supabaseAdmin.from('profiles').update({
-                subscription_plan: planId || 'professional',
-                subscription_status: 'active',
-                subscription_valid_until: validUntil.toISOString()
-            }).eq('id', user.id);
+            // 3a. Process Plan Upgrade
+            if (planId) {
+                const planKey = planId.toLowerCase();
+                const plan = PLANS[planKey as keyof typeof PLANS];
+                
+                if (plan) {
+                    const { error } = await supabaseAdmin.from('profiles').update({
+                        subscription_plan: planKey,
+                        subscription_status: 'active',
+                        subscription_valid_until: validUntil.toISOString()
+                    }).eq('id', user.id);
 
-            if (error) throw new Error("Failed to update database.");
+                    if (error) throw new Error("Failed to update plan database.");
+                    return NextResponse.json({ success: true, message: `Successfully upgraded to ${plan.name}!` });
+                }
+            }
+
+            // 3b. Process Add-on Purchase
+            if (addonId) {
+                const addon = ADDONS[addonId as keyof typeof ADDONS];
+                if (addon) {
+                    const { data: userProfile } = await supabaseAdmin
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', user.id)
+                        .single();
+
+                    if (userProfile) {
+                        const currentAddonCount = userProfile[addon.quotaKey] || 0;
+                        const increment = addon.amount || 1;
+                        
+                        const { error } = await supabaseAdmin.from('profiles').update({
+                            [addon.quotaKey]: currentAddonCount + increment
+                        }).eq('id', user.id);
+
+                        if (error) throw new Error("Failed to update add-on database.");
+                        return NextResponse.json({ success: true, message: `Successfully purchased ${addon.name}!` });
+                    }
+                }
+            }
 
             return NextResponse.json({ success: true });
         } else {

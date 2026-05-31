@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
         // --- SUBSCRIPTION CHECK ---
         try {
-            await checkLimitAndIncrement(user.id, 'remarketing_campaigns');
+            await checkLimitAndIncrement(user.id, 'retargeting_campaigns');
         } catch (limitErr: any) {
             return NextResponse.json({ error: limitErr.message }, { status: 403 });
         }
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
         // REFUND: Give back the remarketing credit if the strategy failed to generate
         const { data: { user } } = await (await createClient()).auth.getUser();
         if (user?.id) {
-            await refundLimit(user.id, 'remarketing_campaigns');
+            await refundLimit(user.id, 'retargeting_campaigns');
         }
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

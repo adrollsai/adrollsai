@@ -1,6 +1,6 @@
 import { createClient } from '@/utils/supabase/server';
 import { NextResponse } from 'next/server';
-import { PLAN_LIMITS } from '@/utils/subscription';
+import { PLANS, getUserLimits } from '@/utils/subscription';
 
 export async function GET() {
     try {
@@ -44,41 +44,74 @@ export async function GET() {
         // DB Estimation: 2KB per row
         const dbBytes = (safePropCount + safeLeadCount + safeAssetCount + safeMsgCount) * 2048;
         
-        // Media Estimation: 750KB per asset (average for high-res ad creatives)
+        // Media Estimation: 750KB per asset
         const mediaBytes = safeAssetCount * 750 * 1024;
 
         const totalBytesUsed = dbBytes + mediaBytes;
         const storageGB = totalBytesUsed / (1024 * 1024 * 1024);
-        const storageLimitGB = 10; // Early Bird Plan Limit
+        const storageLimitGB = 10;
+
+        // --- CALCULATE TEAM SIZE ---
+        // Fetch added team members linked to this parent ID
+        const { count: teamCount } = await supabase
+            .from('profiles')
+            .select('id', { count: 'exact', head: true })
+            .eq('parent_id', primaryUserId)
+            .in('role', ['admin', 'agent']);
+        const teamUsed = teamCount || 0;
+
+        // Resolve plan-based limits
+        const limits = getUserLimits(primaryProfile);
+
+        // Helper to retrieve usage from new column, falling back to legacy column
+        const getUsage = (newCol: string, oldCol: string) => {
+            if (newCol in primaryProfile && (primaryProfile as any)[newCol] !== null) {
+                return (primaryProfile as any)[newCol];
+            }
+            return (primaryProfile as any)[oldCol] || 0;
+        };
+
+        const planKey = (primaryProfile.subscription_plan || 'free').toLowerCase();
+        const activePlan = PLANS[planKey as keyof typeof PLANS] || PLANS.free;
 
         const usageData = {
-            planName: "Early Bird Plan",
+            planName: activePlan.name,
             resetDate: primaryProfile.usage_reset_date,
             limits: {
-                ai_creatives: {
-                    used: primaryProfile.ai_creatives_used || 0,
-                    limit: PLAN_LIMITS.ai_creatives,
-                    label: "AI Creatives"
+                videos: {
+                    used: getUsage('videos_used', 'ai_creatives_used'),
+                    limit: limits.videos,
+                    label: "AI Videos"
                 },
-                campaign_launches: {
-                    used: primaryProfile.campaign_launches_used || 0,
-                    limit: PLAN_LIMITS.campaign_launches,
-                    label: "Campaign Launches"
-                },
-                ai_ad_optimizations: {
-                    used: primaryProfile.ai_ad_optimizations_used || 0,
-                    limit: PLAN_LIMITS.ai_ad_optimizations,
-                    label: "AI Optimizations"
-                },
-                remarketing_campaigns: {
-                    used: primaryProfile.remarketing_campaigns_used || 0,
-                    limit: PLAN_LIMITS.remarketing_campaigns,
-                    label: "Remarketing Campaigns"
+                images: {
+                    used: getUsage('images_used', 'ai_creatives_used'),
+                    limit: limits.images,
+                    label: "AI Images"
                 },
                 seo_articles: {
                     used: primaryProfile.seo_articles_used || 0,
-                    limit: PLAN_LIMITS.seo_articles,
+                    limit: limits.seo_articles,
                     label: "SEO Articles"
+                },
+                campaign_launches: {
+                    used: primaryProfile.campaign_launches_used || 0,
+                    limit: limits.campaign_launches,
+                    label: "Campaign Launches"
+                },
+                campaign_optimizations: {
+                    used: getUsage('campaign_optimizations_used', 'ai_ad_optimizations_used'),
+                    limit: limits.campaign_optimizations,
+                    label: "Campaign Optimizations"
+                },
+                retargeting_campaigns: {
+                    used: getUsage('retargeting_campaigns_used', 'remarketing_campaigns_used'),
+                    limit: limits.retargeting_campaigns,
+                    label: "Retargeting Campaigns"
+                },
+                team_members: {
+                    used: teamUsed,
+                    limit: limits.team_members,
+                    label: "Team Members"
                 },
                 storage: {
                     used: parseFloat(storageGB.toFixed(4)),
