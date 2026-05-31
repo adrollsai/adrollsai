@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { setupSubscription } from '@/utils/phonepe-subscription';
+import { setupStandardCheckoutV2 } from '@/utils/phonepe-subscription';
 import { PLANS, ADDONS } from '@/utils/subscription';
 
 export async function POST(req: Request) {
@@ -44,32 +44,28 @@ export async function POST(req: Request) {
         const redirectUrl = `${currentOrigin}/api/payment/redirect?userId=${user.id}` +
                             (planId ? `&planId=${planId}` : `&addonId=${addonId}`);
 
-        // --- PHONEPE PAYLOAD ---
-        const livePayload = {
-            merchantOrderId: transactionId,
-            amount: amountInPaise,
-            paymentFlow: {
-                type: "PG_CHECKOUT",
-                merchantUrls: {
-                    redirectUrl: redirectUrl, 
-                    redirectMode: "GET",
-                    callbackUrl: process.env.PHONEPE_CALLBACK_URL
-                }
-            }
+        const baseCallbackUrl = (process.env.PHONEPE_CALLBACK_URL || "").replace(/['"]/g, '').trim();
+        const callbackUrl = `${baseCallbackUrl}?userId=${user.id}` +
+                            (planId ? `&planId=${planId}` : `&addonId=${addonId}`);
+
+        // --- PHONEPE STANDARD ONE-TIME PAYLOAD ---
+        const standardPayload = {
+            transactionId: transactionId,
+            userId: user.id,
+            amountInPaise: amountInPaise,
+            redirectUrl: redirectUrl,
+            callbackUrl: callbackUrl
         };
 
-        console.log(`[PhonePe Payment] Initiating for ${itemName} (₹${price}) | ${amountInPaise} Paise...`);
-        const data = await setupSubscription(livePayload, "/checkout/v2/pay");
+        console.log(`[PhonePe Payment] Initiating standard payment for ${itemName} (₹${price}) | ${amountInPaise} Paise...`);
+        const result = await setupStandardCheckoutV2(standardPayload);
 
-        const redirectUrlFromPhonePe = data.redirectUrl || data.data?.instrumentResponse?.redirectInfo?.url;
-
-        if (data.success && redirectUrlFromPhonePe) {
-            return NextResponse.json({ url: redirectUrlFromPhonePe });
+        if (result.success && result.redirectUrl) {
+            return NextResponse.json({ url: result.redirectUrl });
         } else {
-            console.error("PhonePe Initiation Error Final:", JSON.stringify(data, null, 2));
+            console.error("PhonePe Initiation Error Final:", result);
             return NextResponse.json({ 
-                error: data.message || "Payment initiation failed.",
-                details: data 
+                error: "Payment initiation failed."
             }, { status: 400 });
         }
 

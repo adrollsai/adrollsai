@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { PLANS, ADDONS } from '@/utils/subscription';
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -44,28 +45,67 @@ export async function POST(req: Request) {
         
         console.log("Webhook Decoded:", JSON.stringify(decodedResponse, null, 2));
 
-        // --- HANDLE SUBSCRIPTION SETUP SUCCESS ---
-        if (decodedResponse.code === 'SUCCESS' || decodedResponse.code === 'SUBSCRIPTION_SUCCESS' || decodedResponse.code === 'PAYMENT_SUCCESS') {
-            
-            const merchantUserId = decodedResponse.data.merchantUserId;
-            const subscriptionId = decodedResponse.data.merchantSubscriptionId;
-            const amountPaid = (decodedResponse.data.amount || 0) / 100;
-            
-            // If we have a merchantUserId, it's likely a standard PG or Auth flow
-            // If it's a UUID (has hyphens), Supabase uses it directly
+        const url = new URL(req.url);
+        const planId = url.searchParams.get('planId');
+        const addonId = url.searchParams.get('addonId');
+        const queryUserId = url.searchParams.get('userId');
+
+        const event = decodedResponse.event;
+        const payload = decodedResponse.payload || decodedResponse.data || {};
+        
+        const state = payload.state || decodedResponse.code;
+        const isSuccess = event === 'checkout.order.completed' || state === 'COMPLETED' || state === 'SUCCESS' || state === 'PAYMENT_SUCCESS' || state === 'SUBSCRIPTION_SUCCESS';
+
+        // --- HANDLE PAYMENT SUCCESS ---
+        if (isSuccess) {
+            const merchantUserId = payload.merchantUserId || decodedResponse.data?.merchantUserId || queryUserId;
+            const subscriptionId = payload.merchantSubscriptionId || decodedResponse.data?.merchantSubscriptionId || '';
             const userId = merchantUserId; 
 
             if (userId) {
                 const validUntil = new Date();
                 validUntil.setMonth(validUntil.getMonth() + 1);
 
-                await supabaseAdmin.from('profiles').update({
-                    subscription_status: 'active',
-                    subscription_id: subscriptionId,
-                    subscription_valid_until: validUntil.toISOString()
-                }).eq('id', userId);
+                if (planId) {
+                    const planKey = planId.toLowerCase();
+                    const plan = PLANS[planKey as keyof typeof PLANS];
+                    if (plan) {
+                        await supabaseAdmin.from('profiles').update({
+                            subscription_plan: planKey,
+                            subscription_status: 'active',
+                            subscription_id: subscriptionId || null,
+                            subscription_valid_until: validUntil.toISOString()
+                        }).eq('id', userId);
+                        console.log(`✅ Webhook: Plan updated to ${planKey} for user ${userId}`);
+                    }
+                } else if (addonId) {
+                    const addon = ADDONS[addonId as keyof typeof ADDONS];
+                    if (addon) {
+                        const { data: userProfile } = await supabaseAdmin
+                            .from('profiles')
+                            .select('*')
+                            .eq('id', userId)
+                            .single();
 
-                console.log(`✅ Webhook: User ${userId} updated to active with SubID: ${subscriptionId}`);
+                        if (userProfile) {
+                            const currentAddonCount = userProfile[addon.quotaKey] || 0;
+                            const increment = addon.amount || 1;
+                            
+                            await supabaseAdmin.from('profiles').update({
+                                [addon.quotaKey]: currentAddonCount + increment
+                            }).eq('id', userId);
+                            console.log(`✅ Webhook: Add-on ${addonId} purchased (+${increment}) for user ${userId}`);
+                        }
+                    }
+                } else {
+                    // Fallback default status update
+                    await supabaseAdmin.from('profiles').update({
+                        subscription_status: 'active',
+                        subscription_id: subscriptionId || null,
+                        subscription_valid_until: validUntil.toISOString()
+                    }).eq('id', userId);
+                    console.log(`✅ Webhook: Default subscription/payment activated for user ${userId}`);
+                }
             }
         }
 

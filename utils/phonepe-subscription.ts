@@ -4,11 +4,17 @@ const CLIENT_ID = (process.env.PHONEPE_CLIENT_ID || "").replace(/['"]/g, '').tri
 const CLIENT_SECRET = (process.env.PHONEPE_CLIENT_SECRET || "").replace(/['"]/g, '').trim();
 const MERCHANT_ID = (process.env.PHONEPE_MERCHANT_ID || "").replace(/['"]/g, '').trim();
 
-// --- FORCE HERMES PRODUCTION ---
-// Even if PHONEPE_BASE_URL is set to standard /pg, we must use /hermes for V2 Enterprise
-const BASE_URL = (process.env.PHONEPE_BASE_URL && process.env.PHONEPE_BASE_URL.replace(/['"]/g, '').trim().includes('hermes')) 
-    ? process.env.PHONEPE_BASE_URL.replace(/['"]/g, '').trim() 
-    : "https://api.phonepe.com/apis/hermes";
+// Determine if we are running in production/live mode
+const isLive = process.env.PHONEPE_ENV === 'production';
+
+// Endpoint URLs from the PhonePe Standard Checkout V2 Documentation
+const AUTH_URL = isLive 
+    ? "https://api.phonepe.com/apis/identity-manager/v1/oauth/token"
+    : "https://api-preprod.phonepe.com/apis/pg-sandbox/v1/oauth/token";
+
+const OTHER_BASE_URL = isLive 
+    ? "https://api.phonepe.com/apis/pg"
+    : "https://api-preprod.phonepe.com/apis/pg-sandbox";
 
 let cachedToken: { token: string; expires: number } | null = null;
 
@@ -20,16 +26,10 @@ export async function getPhonePeAuthToken() {
         return cachedToken.token;
     }
 
-    // --- CRITICAL FIX: Live vs Sandbox Auth URLs differ ---
-    const isLive = BASE_URL.includes('api.phonepe.com') && !BASE_URL.includes('preprod');
-    const authUrl = isLive 
-        ? `https://api.phonepe.com/apis/identity-manager/v1/oauth/token`
-        : `${BASE_URL}/v1/oauth/token`;
-    
-    console.log("--- PhonePe Auth ---");
+    console.log("--- PhonePe OAuth2 Auth ---");
     console.log("Merchant ID:", MERCHANT_ID);
-    console.log("Is Live:", isLive);
-    console.log("Attempting Auth at:", authUrl);
+    console.log("Environment:", isLive ? "Production (Live)" : "Sandbox / UAT");
+    console.log("Authorization URL:", AUTH_URL);
     
     // Body is x-www-form-urlencoded
     const params = new URLSearchParams();
@@ -38,7 +38,7 @@ export async function getPhonePeAuthToken() {
     params.append('grant_type', 'client_credentials');
     params.append('client_version', '1');
 
-    const response = await fetch(authUrl, {
+    const response = await fetch(AUTH_URL, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded'
@@ -49,7 +49,8 @@ export async function getPhonePeAuthToken() {
     const data = await response.json();
 
     if (!response.ok) {
-        throw new Error(`PhonePe Auth Failed: ${data.message || 'Unknown error'}`);
+        console.error("PhonePe OAuth Handshake Failure:", JSON.stringify(data, null, 2));
+        throw new Error(`PhonePe Auth Failed: ${data.message || data.error || 'Unknown auth error'}`);
     }
 
     // Cache the token (subtract 5 mins buffer)
@@ -67,7 +68,7 @@ export async function getPhonePeAuthToken() {
 export async function setupSubscription(payload: any, customPath?: string) {
     const token = await getPhonePeAuthToken();
     const path = customPath || "/subscriptions/v2/setup";
-    const url = `${BASE_URL}${path}`;
+    const url = `${OTHER_BASE_URL}${path}`;
 
     const headers: any = {
         'Authorization': `O-Bearer ${token}`,
@@ -125,7 +126,7 @@ export async function executeRecurringDebit(payload: {
     merchantSubscriptionId: string;
 }) {
     const token = await getPhonePeAuthToken();
-    const url = `${BASE_URL}/subscriptions/v2/execute`;
+    const url = `${OTHER_BASE_URL}/subscriptions/v2/execute`;
 
     const fullPayload = {
         merchantId: MERCHANT_ID,
@@ -148,11 +149,74 @@ export async function executeRecurringDebit(payload: {
 }
 
 /**
- * Checks the status of a subscription.
+ * Initiates a standard, one-time payment using PhonePe V2 website checkout pay page API.
+ * Uses OAuth client credentials to retrieve a token dynamically.
  */
-export async function getSubscriptionStatus(merchantSubscriptionId: string) {
+export async function setupStandardCheckoutV2(payload: {
+    transactionId: string;
+    userId: string;
+    amountInPaise: number;
+    redirectUrl: string;
+    callbackUrl: string;
+}) {
     const token = await getPhonePeAuthToken();
-    const url = `${BASE_URL}/subscriptions/v2/${merchantSubscriptionId}/status`;
+    const url = `${OTHER_BASE_URL}/checkout/v2/pay`;
+
+    // Standard V2 Pay Page Payload
+    const payPayload = {
+        merchantId: MERCHANT_ID,
+        merchantOrderId: payload.transactionId,
+        merchantUserId: payload.userId,
+        amount: payload.amountInPaise,
+        redirectUrl: payload.redirectUrl,
+        redirectMode: "GET",
+        callbackUrl: payload.callbackUrl,
+        paymentInstrument: {
+            type: "PAY_PAGE"
+        }
+    };
+
+    console.log(`[PhonePe V2 Standard] Initiating pay page for transaction: ${payload.transactionId}...`);
+    console.log(`[PhonePe V2 Standard] Endpoint URL: ${url}`);
+    
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Authorization': `O-Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'accept': 'application/json',
+            'X-MERCHANT-ID': MERCHANT_ID
+        },
+        body: JSON.stringify(payPayload)
+    });
+
+    const data = await response.json();
+    console.log(`[PhonePe V2 Standard] HTTP Status: ${response.status}`);
+    console.log(`[PhonePe V2 Standard] Response Body:`, JSON.stringify(data, null, 2));
+
+    const isActuallySuccessful = response.ok && (data.success || data.redirectUrl || data.state === 'PENDING' || data.code === 'PAYMENT_INITIATED');
+
+    if (!isActuallySuccessful) {
+        return { ...data, success: false };
+    }
+
+    const redirectUrl = data.redirectUrl || data.data?.instrumentResponse?.redirectInfo?.url;
+    if (!redirectUrl) {
+        throw new Error(data.message || "PhonePe V2 response did not contain a redirect checkout URL");
+    }
+
+    return { success: true, redirectUrl };
+}
+
+/**
+ * Checks the status of a V2 Checkout order using the Order Status API.
+ */
+export async function getV2OrderStatus(merchantOrderId: string) {
+    const token = await getPhonePeAuthToken();
+    const url = `${OTHER_BASE_URL}/checkout/v2/order/${merchantOrderId}/status`;
+
+    console.log(`[PhonePe V2 Status] Querying order status: ${merchantOrderId}...`);
+    console.log(`[PhonePe V2 Status] Endpoint URL: ${url}`);
 
     const response = await fetch(url, {
         method: 'GET',
@@ -165,5 +229,8 @@ export async function getSubscriptionStatus(merchantSubscriptionId: string) {
     });
 
     const data = await response.json();
+    console.log(`[PhonePe V2 Status] HTTP Status: ${response.status}`);
+    console.log(`[PhonePe V2 Status] Response Body:`, JSON.stringify(data, null, 2));
+
     return data;
 }
