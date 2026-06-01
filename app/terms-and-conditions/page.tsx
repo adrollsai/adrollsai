@@ -15,7 +15,7 @@ export default function TermsAndConditions() {
 
         <div className="space-y-8 leading-relaxed">
           <p>
-            Welcome to AdRollsAI. By accessing our website (adrolls.in) or using our mobile application (the "App"), you agree to be bound by these Terms and Conditions ("Terms"). If you disagree with any part of these terms, you may not access the Service.
+            Welcome to AdRollsAI. By accessing our website (adrolls.in) or using our mobile application (the "App", available at app.adrolls.in), you agree to be bound by these Terms and Conditions ("Terms"). If you disagree with any part of these terms, you may not access the Service.
           </p>
 
           <section>

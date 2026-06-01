@@ -15,7 +15,7 @@ export default function RefundPolicy() {
 
         <div className="space-y-8 leading-relaxed">
           <p>
-            At AdRollsAI, we strive to provide the best real estate marketing automation tools. However, we understand that circumstances change. Please read our policy carefully regarding refunds and cancellations.
+            At AdRollsAI (available at app.adrolls.in), we strive to provide the best real estate marketing automation tools. However, we understand that circumstances change. Please read our policy carefully regarding refunds and cancellations.
           </p>
 
           <section>

@@ -311,7 +311,7 @@ export default function CreationPage() {
                 logoUrl: profile?.logo_url
             };
 
-            const res = await fetch('/api/chat', {
+            const res = await fetch(`/api/chat${window.location.search}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -695,7 +695,7 @@ export default function CreationPage() {
   const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
   const activeReferenceUrl = uploadedRefUrl || templateObj?.url || null
 
-  const startResponse = await fetch('/api/chat', {
+  const startResponse = await fetch(`/api/chat${window.location.search}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 

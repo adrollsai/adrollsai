@@ -1633,6 +1633,21 @@ export default function ProfilePage() {
               </button>
             </div>
 
+            {/* Legal Links Footer for Compliance Approval */}
+            <div className="pt-8 text-center flex items-center justify-center gap-5 text-[11px] text-slate-400 font-bold border-t border-slate-200/50 mt-8">
+              <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 transition-colors">
+                Privacy Policy
+              </a>
+              <span className="text-slate-300">•</span>
+              <a href="/refund-policy" target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 transition-colors">
+                Refund Policy
+              </a>
+              <span className="text-slate-300">•</span>
+              <a href="/terms-and-conditions" target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 transition-colors">
+                Terms of Service
+              </a>
+            </div>
+
           </div>
         </div>
       </div>

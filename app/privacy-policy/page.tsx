@@ -15,7 +15,7 @@ export default function PrivacyPolicy() {
 
         <div className="space-y-8 leading-relaxed">
           <p>
-            ADROLLS AI ("we," "us," or "our") operates the AdRollsAI application (the "App") and the website adrolls.in. We are committed to protecting your privacy and ensuring you have control over your data. This Privacy Policy explains how we collect, use, and disclose information when you use our App, particularly in relation to your Facebook and Instagram data.
+            ADROLLS AI ("we," "us," or "our") operates the AdRollsAI application (the "App", available at app.adrolls.in) and the website adrolls.in. We are committed to protecting your privacy and ensuring you have control over your data. This Privacy Policy explains how we collect, use, and disclose information when you use our App, particularly in relation to your Facebook and Instagram data.
           </p>
 
           <section>

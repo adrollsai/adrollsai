@@ -246,6 +246,27 @@ export async function POST(request: Request) {
             script.dialogue = script.dialogue.replace(/\b\d{4,}\b/g, 'get in touch');
         }
 
+        // Always replace 'Mohali' (case-insensitive) with Hindi script 'मोहाली' in dialogues to prevent mispronunciation
+        const replaceMohali = (text: string) => {
+            if (!text) return text;
+            return text.replace(/\bMohali\b/gi, 'मोहाली');
+        };
+
+        if (script.dialogue) {
+            script.dialogue = replaceMohali(script.dialogue);
+        }
+        if (script.scenes && Array.isArray(script.scenes)) {
+            script.scenes = script.scenes.map((scene: any) => {
+                if (scene.dialogue) {
+                    scene.dialogue = replaceMohali(scene.dialogue);
+                }
+                if (scene.visuals) {
+                    scene.visuals = replaceMohali(scene.visuals);
+                }
+                return scene;
+            });
+        }
+
         const url = new URL(request.url)
         const impersonateId = url.searchParams.get('impersonate')
 
@@ -481,33 +502,36 @@ ${descriptionsText}
 YOUR INSTRUCTIONS:
 1. Generate a structured generative video prompt. Do NOT use markdown headers (like #, ##) or code blocks or bracketed blocks like [Action]. Follow the exact structure shown below.
 2. Analyze the reference images description provided. See where they fit well in the video (e.g., background elements, products held in hand, or visually matching scene/product details) and prompt them accordingly in the "Action" or "Style" section of the output prompt.
-3. Determine a suitable outfit/attire and setting for the character based on the business name, product, brand guidelines, and script context (e.g., a beige blazer over a white tee in a modern corporate office, a premium casual shirt in a cozy living room, premium wear in a luxury apartment, etc.). Always explicitly describe the attire and setting.
-4. Add personality and delivery details for the dialogue to guide the voice and face generation (e.g., speech rate, facial expressions, hand gestures, posture).
-5. Output the prompt following this EXACT format (ensure correct line breaks and labels):
+3. CONTEXT-AWARE ATTIRE & ENVIRONMENT: Determine a highly specific, stylish, and premium attire/outfit and environment/setting for the character based on the business name, product context, brand guidelines, and script context (e.g., a beige linen blazer over a white tee in a modern corporate office, a premium casual smart shirt in a cozy warm living room, elegant premium wear in a luxury apartment, etc.). Never output generic text or bracketed placeholders like '[describe attire]'. You MUST output a concrete, detailed description of the clothing and setting.
+4. HIGH-ENERGY & NATURAL GESTURES: Command the presenter's speech style to keep the energy exceptionally high, warm, engaging, and professional. The vocal delivery must have excellent projection and a natural UGC flow. Command the presenter's actions to use dynamic, natural hand gestures and warm, welcoming facial expressions to make it feel like a premium high-end video.
+5. STRICT IMAGE FIDELITY (NO OVER-EXTENSION): When referencing or using the provided property/product images in the video actions, ensure that the video DOES NOT over-extend or hallucinate contents beyond the visible boundaries of the original reference images. Instruct the AI model to strictly only depict the real elements and spatial layouts that are visible in the image, ensuring 100% accuracy and zero mis-representation of the physical space/product.
+6. DYNAMIC MULTI-SHOT COMPOSITION: The character shot must NOT be a continuous single-take shot. Explicitly specify a dynamic multi-shot setup where the camera cuts between different angles (e.g., medium close-up, medium shot) and includes the character in different positions, scenes, or alongside/inside different reference images to keep the pacing visually spectacular.
+7. DEVANAGARI HINDI PRONUNCIATION: If the word "Mohali" (or "mohali", "MOHALI") appears in the Dialogue text, ALWAYS write it in Hindi script as "मोहाली" in the "Dialogue:" block of the generated prompt. Never write it in English/Latin characters, as doing so leads to mispronunciation by the text-to-speech engine. Keep all other words in their original script/Hinglish representation.
+8. Output the prompt following this EXACT format (ensure correct line breaks and labels):
 
 ${characterAppearanceText}
 
-Character maintains eye contact with camera throughout. He/She is wearing [describe appropriate attire here] and is [describe appropriate location/setting here].
+Character maintains eye contact with camera throughout. He/She is wearing [describe appropriate attire here, replacing this with concrete details] in [describe appropriate location/setting here, replacing this with concrete details].
 
 Dialogue:
 "[dialogue text to be spoken]"
 
 Speech Style:
-[Describe delivery with rich personality, tone, emotion, and pace, e.g., "Natural conversation, confident salesperson, friendly tone and subtle smile."]
+[Describe delivery with rich personality, high-energy UGC style, exceptionally warm and welcoming tone, professional presentation, natural gestures, and excellent projection.]
 
 Action:
-[Describe the precise actions the character is performing. Incorporate/fit the reference images/products if they fit, e.g., "Speaking directly to the viewer while walking slowly through the corporate office, occasionally gesturing with hands to emphasize points. In the background, reference image of the modern living room is visible."]
+[Describe the precise actions the character is performing. Instruct them to keep energy high and gestures natural. Specify dynamic cuts between multiple shots/scenes and include the character in different positions, scenes, or alongside/inside different reference images. Command the model to strictly respect the visible boundaries of the reference images and never over-extend them.]
 
 Camera:
-[Describe the camera perspective, e.g., "Front tracking shot, keeping face centered."]
+[Describe the camera perspective, e.g., "Dynamic multi-shot setup, switching from a detailed close-up shot to a medium shot, keeping face centered."]
 
 Style:
-[Describe the visual aesthetics and production quality, e.g., "Premium real estate advertisement, realistic motion, professional presentation."]
+[Describe the visual aesthetics and premium production quality, e.g., "Premium UGC video advertisement, realistic motion, high-end professional presentation, warm inviting lighting."]
 
 Avoid:
 No overlay Text, No overlay captions
 
-6. Do NOT wrap the prompt in backticks or markdown code blocks. Output the pure text prompt only.`;
+9. Do NOT wrap the prompt in backticks or markdown code blocks. Output the pure text prompt only.`;
 
                 let finalPrompt = "";
                 try {
@@ -530,22 +554,22 @@ No overlay Text, No overlay captions
                         // Fallback prompt using the new structured template
                         finalPrompt = `${characterAppearanceText}
 
-Character maintains eye contact with camera throughout. The character is wearing professional business attire (a sleek blazer over a premium shirt) in a high-end corporate office setting.
+Character maintains eye contact with camera throughout. The character is wearing an elegant cream blazer over a structured premium shirt in a luxurious modern high-end setting.
 
 Dialogue:
 "${scene.dialogue}"
 
 Speech Style:
-Natural conversation, confident salesperson, friendly tone and subtle smile.
+High-energy UGC style, exceptionally warm, confident, and highly reassuring tone. Speaks at a natural, professional pace, displaying natural expressions.
 
 Action:
-Speaking directly to the viewer while standing or walking slowly, gesturing naturally with hands. Incorporate reference images where suitable.
+Speaking directly to the viewer with high energy and natural hand gestures. Dynamic multi-shot setup cutting between medium close-ups and medium shots, showing the character in different positions. The video strictly maintains fidelity to the reference images, only depicting the real parts visible in the original photos without over-extending them.
 
 Camera:
-Front tracking shot, keeping face centered, medium close-up shot.
+Dynamic multi-shot setup, switching between a detailed close-up shot and a medium tracking shot, keeping face centered.
 
 Style:
-Premium business advertisement, realistic motion, professional presentation.
+Premium UGC advertisement, realistic motion, high-end professional presentation, warm inviting lighting.
 
 Avoid:
 No overlay Text, No overlay captions`;

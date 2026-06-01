@@ -1,11 +1,25 @@
+import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js';
 import { createClient } from './supabase/server';
 import { getUserLimits } from './subscription';
+
+// Helper to create a secure service-role client bypassing RLS policies for backend quota management
+const getAdminClient = async () => {
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (serviceKey) {
+        return createSupabaseAdminClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            serviceKey
+        );
+    }
+    console.warn("[Subscription Server] WARNING: SUPABASE_SERVICE_ROLE_KEY is missing! Falling back to standard client.");
+    return await createClient();
+};
 
 export async function checkLimitAndIncrement(
     userId: string, 
     type: 'videos' | 'images' | 'seo_articles' | 'campaign_launches' | 'campaign_optimizations' | 'retargeting_campaigns'
 ) {
-    const supabase = await createClient();
+    const supabase = await getAdminClient();
     
     const UNLIMITED_USERS = ['bc63c065-9bcc-4793-bedc-f0960406425b'];
     if (UNLIMITED_USERS.includes(userId)) return true;
@@ -35,12 +49,13 @@ export async function checkLimitAndIncrement(
     // 1. Fetch current usage, reset date, and full subscription status
     const { data: profile, error } = await supabase
         .from('profiles')
-        .select(`id, subscription_plan, usage_reset_date, parent_id, addon_videos, addon_images, addon_team_members, addon_campaign_launches, addon_campaign_optimizations, addon_retargeting_campaigns, videos_used, images_used, seo_articles_used, campaign_launches_used, campaign_optimizations_used, retargeting_campaigns_used, ai_creatives_used, ai_ad_optimizations_used, remarketing_campaigns_used`)
+        .select('*')
         .eq('id', userId)
         .single();
 
     if (error || !profile) {
-        throw new Error("Could not verify account status.");
+        console.error("[Subscription Check Error]:", error);
+        throw new Error(`Could not verify account status. Details: ${error ? error.message : 'Profile record empty for target: ' + userId}`);
     }
 
     // Resolve Primary User ID (Owner of the limits)
@@ -51,7 +66,7 @@ export async function checkLimitAndIncrement(
     if (profile.parent_id) {
         const { data: parentProfile } = await supabase
             .from('profiles')
-            .select(`id, subscription_plan, usage_reset_date, parent_id, addon_videos, addon_images, addon_team_members, addon_campaign_launches, addon_campaign_optimizations, addon_retargeting_campaigns, videos_used, images_used, seo_articles_used, campaign_launches_used, campaign_optimizations_used, retargeting_campaigns_used, ai_creatives_used, ai_ad_optimizations_used, remarketing_campaigns_used`)
+            .select('*')
             .eq('id', profile.parent_id)
             .single();
         if (parentProfile) profileToUpdate = parentProfile;
@@ -127,7 +142,7 @@ export async function refundLimit(
     userId: string, 
     type: 'videos' | 'images' | 'seo_articles' | 'campaign_launches' | 'campaign_optimizations' | 'retargeting_campaigns'
 ) {
-    const supabase = await createClient();
+    const supabase = await getAdminClient();
     
     // Resolve Primary User ID
     const { data: userProfile } = await supabase.from('profiles').select('parent_id').eq('id', userId).single();
@@ -184,7 +199,7 @@ export async function refundLimit(
 }
 
 export async function trackStorageUsage(userId: string, bytes: number) {
-    const supabase = await createClient();
+    const supabase = await getAdminClient();
     
     const { data: userProfile } = await supabase.from('profiles').select('parent_id').eq('id', userId).single();
     const primaryUserId = userProfile?.parent_id || userId;
@@ -203,7 +218,7 @@ export async function trackStorageUsage(userId: string, bytes: number) {
 }
 
 export async function checkStorageLimit(userId: string) {
-    const supabase = await createClient();
+    const supabase = await getAdminClient();
     
     // Resolve Primary User ID
     const { data: userProfile } = await supabase.from('profiles').select('parent_id').eq('id', userId).single();
