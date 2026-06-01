@@ -530,23 +530,16 @@ export default function BillingPage() {
                                       Contact Sales <ArrowRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
                                   </button>
                               ) : (
-                                  <button 
-                                      onClick={() => handlePurchase({ planId: tier.id })}
-                                      disabled={isProcessing}
-                                      className={`w-full active:scale-[0.98] py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm ${
+                                  <a 
+                                      href="tel:+919872669935"
+                                      className={`w-full text-center py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm ${
                                           tier.highlight
                                               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/10'
                                               : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-50'
                                       }`}
                                   >
-                                      {isProcessing ? (
-                                          <Loader2 className="animate-spin" size={14} />
-                                      ) : (
-                                          <>
-                                              <Zap size={14} className={tier.highlight ? 'text-blue-200' : 'text-blue-500'} /> Activate
-                                          </>
-                                      )}
-                                  </button>
+                                      Contact +91-98726 69935
+                                  </a>
                               )}
                           </div>
 
@@ -583,21 +576,12 @@ export default function BillingPage() {
                                   </p>
                               </div>
 
-                              <button
-                                  onClick={() => handlePurchase({ addonId: addon.id })}
-                                  disabled={isProcessing || isDisabled}
-                                  className="w-full bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white py-3.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                              <a
+                                  href="tel:+919872669935"
+                                  className="w-full bg-slate-900 hover:bg-slate-800 text-white text-center py-3.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
                               >
-                                  {isProcessing ? (
-                                      <Loader2 className="animate-spin" size={14} />
-                                  ) : isDisabled ? (
-                                      "Included in Enterprise"
-                                  ) : (
-                                      <>
-                                          <ShoppingBag size={13} /> Secure Purchase
-                                      </>
-                                  )}
-                              </button>
+                                  Contact +91-98726 69935
+                              </a>
                           </div>
                       );
                   })}

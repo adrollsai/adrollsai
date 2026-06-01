@@ -78,7 +78,9 @@ export default function UsagePage() {
                             <ShieldCheck className="text-blue-400" size={18} />
                             <span className="text-xs font-bold uppercase tracking-widest text-blue-400">Fair Usage Active</span>
                         </div>
-                        <h2 className="text-2xl font-bold mb-1">Your limits reset on {new Date(usage.resetDate).toLocaleDateString()}</h2>
+                        <h2 className="text-2xl font-bold mb-1">
+                            Your limits reset on {usage.resetDate ? new Date(usage.resetDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Next Billing Cycle'}
+                        </h2>
                         <p className="text-slate-400 text-sm font-medium">Unused credits do not roll over to the next month.</p>
                     </div>
                     <Zap className="absolute -right-8 -bottom-8 text-white/5 w-64 h-64 rotate-12" />
@@ -110,26 +112,49 @@ export default function UsagePage() {
                         </div>
                     </div>
 
-                    {/* AI Creatives Card */}
+                    {/* AI Videos Card */}
                     <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200/60 flex flex-col justify-between group hover:shadow-md transition-all">
                         <div className="flex justify-between items-start mb-6">
                             <div className="p-4 bg-blue-50 text-blue-600 rounded-3xl group-hover:scale-110 transition-transform">
                                 <Zap size={24} />
                             </div>
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">AI Designs</span>
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">AI Videos</span>
                         </div>
                         <div>
                             <div className="flex justify-between items-end mb-2">
-                                <h3 className="text-2xl font-black text-slate-900">{usage.limits.ai_creatives.used} <span className="text-sm text-slate-400 font-bold">/ {usage.limits.ai_creatives.limit}</span></h3>
-                                <span className="text-xs font-bold text-slate-500">{Math.round((usage.limits.ai_creatives.used / usage.limits.ai_creatives.limit) * 100)}%</span>
+                                <h3 className="text-2xl font-black text-slate-900">{usage.limits.videos.used} <span className="text-sm text-slate-400 font-bold">/ {usage.limits.videos.limit}</span></h3>
+                                <span className="text-xs font-bold text-slate-500">{usage.limits.videos.limit > 0 ? Math.round((usage.limits.videos.used / usage.limits.videos.limit) * 100) : 0}%</span>
                             </div>
                             <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
                                 <div
-                                    className={`h-full transition-all duration-1000 ${getProgressColor(usage.limits.ai_creatives.used, usage.limits.ai_creatives.limit)}`}
-                                    style={{ width: `${(usage.limits.ai_creatives.used / usage.limits.ai_creatives.limit) * 100}%` }}
+                                    className={`h-full transition-all duration-1000 ${getProgressColor(usage.limits.videos.used, usage.limits.videos.limit)}`}
+                                    style={{ width: `${usage.limits.videos.limit > 0 ? (usage.limits.videos.used / usage.limits.videos.limit) * 100 : 0}%` }}
                                 />
                             </div>
-                            <p className="mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">AI Content Generation Quota</p>
+                            <p className="mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">AI Video Generation Quota</p>
+                        </div>
+                    </div>
+
+                    {/* AI Images Card */}
+                    <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200/60 flex flex-col justify-between group hover:shadow-md transition-all">
+                        <div className="flex justify-between items-start mb-6">
+                            <div className="p-4 bg-indigo-50 text-indigo-600 rounded-3xl group-hover:scale-110 transition-transform">
+                                <PieChart size={24} />
+                            </div>
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">AI Images</span>
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-end mb-2">
+                                <h3 className="text-2xl font-black text-slate-900">{usage.limits.images.used} <span className="text-sm text-slate-400 font-bold">/ {usage.limits.images.limit}</span></h3>
+                                <span className="text-xs font-bold text-slate-500">{usage.limits.images.limit > 0 ? Math.round((usage.limits.images.used / usage.limits.images.limit) * 100) : 0}%</span>
+                            </div>
+                            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                    className={`h-full transition-all duration-1000 ${getProgressColor(usage.limits.images.used, usage.limits.images.limit)}`}
+                                    style={{ width: `${usage.limits.images.limit > 0 ? (usage.limits.images.used / usage.limits.images.limit) * 100 : 0}%` }}
+                                />
+                            </div>
+                            <p className="mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">AI Image Design Quota</p>
                         </div>
                     </div>
 
@@ -139,8 +164,8 @@ export default function UsagePage() {
 
                         {[
                             { key: 'campaign_launches', icon: Rocket, color: 'text-orange-600', bg: 'bg-orange-50' },
-                            { key: 'ai_ad_optimizations', icon: ShieldCheck, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                            { key: 'remarketing_campaigns', icon: RefreshCw, color: 'text-purple-600', bg: 'bg-purple-50' },
+                            { key: 'campaign_optimizations', icon: ShieldCheck, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                            { key: 'retargeting_campaigns', icon: RefreshCw, color: 'text-purple-600', bg: 'bg-purple-50' },
                             { key: 'seo_articles', icon: Search, color: 'text-rose-600', bg: 'bg-rose-50' }
                         ].map((item) => {
                             const data = usage.limits[item.key]

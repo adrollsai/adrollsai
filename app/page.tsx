@@ -577,29 +577,30 @@ export default function LandingPage() {
            {/* 3 Pricing Cards Grid */}
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch mb-24">
               
-              {/* Plan 1: Starter */}
+              {/* Plan 1: Growth */}
               <div className="bg-white border-2 border-slate-200 rounded-[3.5rem] overflow-hidden shadow-xl hover:border-[#003D6F]/40 hover:shadow-2xl transition-all duration-300 flex flex-col justify-between p-10 relative">
                  <div>
-                    <h3 className="text-2xl font-black text-[#003D6F] uppercase tracking-wider mb-2">Starter</h3>
-                    <p className="text-slate-400 text-sm font-bold mb-8">For small businesses getting started</p>
+                    <h3 className="text-2xl font-black text-[#003D6F] uppercase tracking-wider mb-2">Growth</h3>
+                    <p className="text-slate-400 text-sm font-bold mb-8">For growing brands seeking automated scale</p>
                     <div className="flex items-baseline gap-2 mb-8">
                        <span className="text-6xl font-black text-[#B22B31]">
-                          {currency === 'INR' ? '₹4,999' : '$49'}
+                          {currency === 'INR' ? '₹9,999' : '$199'}
                        </span>
                        <span className="text-slate-500 font-bold">/mo</span>
                     </div>
                     <div className="h-px bg-slate-100 mb-8" />
                     <ul className="space-y-4 mb-10">
                        {[
-                         "30 Image Gen",
-                         "3 Team Members",
-                         "15 SEO Articles",
-                         "10 Inventory Items",
-                         "3 Campaign Launches",
-                         "3 Campaigns",
-                         "3 Optimizations",
-                         "1 GB of Storage",
-                         "Social Media Handling"
+                         "5 AI Videos / mo",
+                         "30 AI High-Res Images / mo",
+                         "30 AI SEO Blog Articles / mo",
+                         "5 Meta Campaign Launches / mo",
+                         "5 AI Campaign Optimizations / mo",
+                         "5 Team Member seats",
+                         "Full CRM Integration",
+                         "Social Media Auto-Posting",
+                         "10 GB Cloud Media Storage",
+                         "Priority Email Support"
                        ].map((feature, i) => (
                          <li key={i} className="flex items-center gap-3 text-slate-600 font-bold text-sm">
                             <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current shrink-0" />
@@ -612,7 +613,7 @@ export default function LandingPage() {
                     href={partnerLoginUrl}
                     className="block w-full py-5 bg-[#003D6F] hover:bg-[#00284d] text-white text-center rounded-2xl font-black text-lg transition-all shadow-md active:scale-95 mt-auto"
                  >
-                    Get Started Free
+                    Start Growth Plan
                  </Link>
               </div>
 
@@ -626,26 +627,24 @@ export default function LandingPage() {
                     <p className="text-slate-400 text-sm font-bold mb-8">Ultimate automated growth engine</p>
                     <div className="flex items-baseline gap-2 mb-8">
                        <span className="text-6xl font-black text-[#B22B31]">
-                          {currency === 'INR' ? '₹9,999' : '$199'}
+                          {currency === 'INR' ? '₹14,999' : '$299'}
                        </span>
                        <span className="text-slate-500 font-bold">/mo</span>
                     </div>
                     <div className="h-px bg-slate-100 mb-8" />
                     <ul className="space-y-4 mb-10">
                        {[
-                         "80 Images",
-                         "Unlimited Team Members",
-                         "10 Campaign Launches",
-                         "10 Optimization Requests",
-                         "10 Remarketing Requests",
-                         "30 SEO Articles",
-                         "Daily Graphic Automation",
-                         "5 GB of Storage",
-                         "Social Media Management",
-                         "Landing Page",
-                         "White Labelled App",
-                         "1 AI Video Editing / mo",
-                         "3 AI Caption Generations / mo"
+                         "8 AI Videos / mo",
+                         "60 AI High-Res Images / mo",
+                         "30 AI SEO Blog Articles / mo",
+                         "8 Meta Campaign Launches / mo",
+                         "8 AI Campaign Optimizations / mo",
+                         "10 Team Member seats",
+                         "Full CRM Integration",
+                         "Social Media Auto-Posting",
+                         "10 GB Cloud Media Storage",
+                         "Custom Domain Whitelabeling",
+                         "Priority WhatsApp Support"
                        ].map((feature, i) => (
                          <li key={i} className="flex items-center gap-3 text-slate-700 font-bold text-sm">
                             <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current shrink-0" />
@@ -658,28 +657,35 @@ export default function LandingPage() {
                     href={partnerLoginUrl}
                     className="block w-full py-5 bg-[#B22B31] hover:bg-[#902227] text-white text-center rounded-2xl font-black text-lg transition-all shadow-lg active:scale-95 shadow-[#B22B31]/30 mt-auto"
                  >
-                    Start Growing Now
+                    Start Pro Plan
                  </Link>
               </div>
 
-              {/* Plan 3: Ultra */}
+              {/* Plan 3: Enterprise */}
               <div className="bg-white border-2 border-slate-200 rounded-[3.5rem] overflow-hidden shadow-xl hover:border-[#003D6F]/40 hover:shadow-2xl transition-all duration-300 flex flex-col justify-between p-10 relative">
                  <div>
-                    <h3 className="text-2xl font-black text-[#003D6F] uppercase tracking-wider mb-2">Ultra</h3>
-                    <p className="text-slate-400 text-sm font-bold mb-8">100% Done-For-You by experts</p>
+                    <h3 className="text-2xl font-black text-[#003D6F] uppercase tracking-wider mb-2">Enterprise</h3>
+                    <p className="text-slate-400 text-sm font-bold mb-8">Premium massive quotas for large agencies</p>
                     <div className="flex items-baseline gap-2 mb-8">
                        <span className="text-6xl font-black text-[#B22B31]">
-                          {currency === 'INR' ? '₹99,999' : '$1,999'}
+                          {currency === 'INR' ? '₹24,999' : '$499'}
                        </span>
                        <span className="text-slate-500 font-bold">/mo</span>
                     </div>
                     <div className="h-px bg-slate-100 mb-8" />
                     <ul className="space-y-4 mb-10">
                        {[
-                         "All Done-For-You",
-                         "We handle ads, ads creation, etc.",
-                         "Unlimited AdRolls features",
-                         "* AI charges to be born by the customer"
+                         "15 AI Videos / mo",
+                         "90 AI High-Res Images / mo",
+                         "30 AI SEO Blog Articles / mo",
+                         "15 Meta Campaign Launches / mo",
+                         "15 AI Campaign Optimizations / mo",
+                         "20 Team Member seats",
+                         "Full CRM Integration",
+                         "Social Media Auto-Posting",
+                         "10 GB Cloud Media Storage",
+                         "Custom Whitelabeled Domain",
+                         "24/7 Dedicated Account Manager"
                        ].map((feature, i) => (
                          <li key={i} className="flex items-center gap-3 text-slate-600 font-bold text-sm">
                             <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current shrink-0" />
@@ -688,12 +694,12 @@ export default function LandingPage() {
                        ))}
                     </ul>
                  </div>
-                 <a 
-                    href="#contact"
+                 <Link 
+                    href={partnerLoginUrl}
                     className="block w-full py-5 bg-slate-900 hover:bg-slate-800 text-white text-center rounded-2xl font-black text-lg transition-all shadow-md active:scale-95 mt-auto"
                  >
-                    Contact Sales
-                 </a>
+                    Start Enterprise Plan
+                 </Link>
               </div>
 
            </div>

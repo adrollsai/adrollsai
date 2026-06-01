@@ -4,6 +4,8 @@ const CLIENT_ID = (process.env.PHONEPE_CLIENT_ID || "").replace(/['"]/g, '').tri
 const CLIENT_SECRET = (process.env.PHONEPE_CLIENT_SECRET || "").replace(/['"]/g, '').trim();
 const MERCHANT_ID = (process.env.PHONEPE_MERCHANT_ID || "").replace(/['"]/g, '').trim();
 
+const CLIENT_VERSION = (process.env.PHONEPE_CLIENT_VERSION || "2").replace(/['"]/g, '').trim();
+
 // Determine if we are running in production/live mode
 const isLive = process.env.PHONEPE_ENV === 'production';
 
@@ -36,7 +38,7 @@ export async function getPhonePeAuthToken() {
     params.append('client_id', CLIENT_ID);
     params.append('client_secret', CLIENT_SECRET);
     params.append('grant_type', 'client_credentials');
-    params.append('client_version', '1');
+    params.append('client_version', CLIENT_VERSION);
 
     const response = await fetch(AUTH_URL, {
         method: 'POST',
@@ -162,17 +164,20 @@ export async function setupStandardCheckoutV2(payload: {
     const token = await getPhonePeAuthToken();
     const url = `${OTHER_BASE_URL}/checkout/v2/pay`;
 
-    // Standard V2 Pay Page Payload
+    // Standard V2 Pay Page Payload (Strictly matching official PhonePe V2 specs)
     const payPayload = {
-        merchantId: MERCHANT_ID,
         merchantOrderId: payload.transactionId,
-        merchantUserId: payload.userId,
         amount: payload.amountInPaise,
-        redirectUrl: payload.redirectUrl,
-        redirectMode: "GET",
-        callbackUrl: payload.callbackUrl,
-        paymentInstrument: {
-            type: "PAY_PAGE"
+        expireAfter: 1200,
+        paymentFlow: {
+            type: "PG_CHECKOUT",
+            merchantUrls: {
+                redirectUrl: payload.redirectUrl,
+                callbackUrl: payload.callbackUrl
+            }
+        },
+        metaInfo: {
+            udf1: payload.userId
         }
     };
 
