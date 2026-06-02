@@ -307,9 +307,12 @@ export default function SharedCataloguePage() {
     const matchesType = selectedTypes.length === 0 || (rawType && selectedTypes.includes(rawType))
     const matchesPrice = priceVal >= min && priceVal <= max
     
-    const matchesSearch = !searchQuery || 
-                          p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          p.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    const query = searchQuery.trim().toLowerCase()
+    const matchesSearch = !query || 
+                          (p.title || '').toLowerCase().includes(query) || 
+                          (p.description || '').toLowerCase().includes(query) ||
+                          (p.address || '').toLowerCase().includes(query) ||
+                          (p.property_type || '').toLowerCase().includes(query)
 
     return matchesPrice && matchesType && matchesSearch
   })
