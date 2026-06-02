@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2, Rss, Shield } from 'lucide-react'
+import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -65,6 +65,7 @@ export default function BottomNav() {
 
   const allNavItems = [
     { name: 'Inventory', icon: LayoutGrid, path: '/dashboard' },
+    { name: 'Pages', icon: Globe, path: '/dashboard/pages' },
     { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
     { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
@@ -79,6 +80,11 @@ export default function BottomNav() {
   const navItems = allNavItems.filter(item => {
     // Hide Accounts from non-admin/non-agency
     if (item.name === 'Accounts') {
+      return ['super_admin', 'agency'].includes(role)
+    }
+
+    // Hide Pages from non-agency/non-super_admin
+    if (item.name === 'Pages') {
       return ['super_admin', 'agency'].includes(role)
     }
 

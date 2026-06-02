@@ -85,9 +85,28 @@ export async function POST(request: Request) {
 
     // Fetch TARGET profile for credentials and business info
     const { data: targetProfile } = await supabase.from('profiles')
-        .select('facebook_token, ad_account_id, fb_page_id, business_url, business_name, contact_number, currency')
+        .select('facebook_token, ad_account_id, fb_page_id, business_url, business_name, contact_number, currency, pixel_id')
         .eq('id', targetUserId)
         .single();
+
+    let pixelId = targetProfile?.pixel_id || null;
+    let qualifiedLeadsCount = 0;
+    try {
+        const { createClient: createAdminClient } = await import('@supabase/supabase-js');
+        const supabaseAdmin = createAdminClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+        const { count } = await supabaseAdmin
+            .from('leads')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', targetUserId)
+            .eq('pipeline_stage', 'Qualified');
+        qualifiedLeadsCount = count || 0;
+        logToFile(`Checked CRM Qualified Leads count: ${qualifiedLeadsCount}`);
+    } catch (crmErr: any) {
+        logToFile("Failed to count CRM qualified leads, defaulting to 0:", crmErr.message);
+    }
 
     if (targetProfile) {
         data.facebookToken = data.facebookToken || targetProfile.facebook_token;
@@ -570,18 +589,33 @@ export async function POST(request: Request) {
         logToFile("--- 6. AD SET ---");
         const startTime = new Date(Date.now() + 30 * 60 * 1000).toISOString(); 
 
+        const isWebsiteCampaign = optimizeForConversions && pixelId;
+        const customEventType = (qualifiedLeadsCount >= 100) ? 'QUALITY_LEAD' : 'LEAD';
+
         const adSetPayload: any = {
             name: `Smart AdSet - AI Audiences`,
             campaign_id: campaignId,
-            destination_type: 'ON_AD', 
-            optimization_goal: optimizeForConversions ? 'QUALITY_LEAD' : 'LEAD_GENERATION', 
             billing_event: 'IMPRESSIONS', 
             targeting: targetingConfig,
-            promoted_object: { page_id: pageId },
             start_time: startTime, 
             status: 'ACTIVE',
             access_token: facebookToken,
         };
+
+        if (isWebsiteCampaign) {
+            adSetPayload.destination_type = 'WEBSITE';
+            adSetPayload.optimization_goal = 'OFFSITE_CONVERSIONS';
+            adSetPayload.promoted_object = { 
+                pixel_id: pixelId, 
+                custom_event_type: customEventType 
+            };
+            logToFile(`Website conversion campaign configured. Pixel: ${pixelId}, Event: ${customEventType}`);
+        } else {
+            adSetPayload.destination_type = 'ON_AD';
+            adSetPayload.optimization_goal = optimizeForConversions ? 'QUALITY_LEAD' : 'LEAD_GENERATION';
+            adSetPayload.promoted_object = { page_id: pageId };
+            logToFile(`Instant Form lead campaign configured.`);
+        }
 
         const adSetRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adsets`, {
             method: 'POST',
@@ -622,6 +656,13 @@ export async function POST(request: Request) {
             const hash = metaCreativeHashes[i % metaCreativeHashes.length];
             const copy = copyVariations[i % copyVariations.length];
 
+            const ctaValue: any = {};
+            if (isWebsiteCampaign) {
+                ctaValue.link = linkUrl;
+            } else {
+                ctaValue.lead_gen_form_id = leadFormId;
+            }
+
             // Create Creative
             const creativePayload = {
                 name: `Creative ${i + 1} - ${Date.now()}`,
@@ -633,7 +674,7 @@ export async function POST(request: Request) {
                         description: copy.description || "",
                         link: linkUrl, 
                         image_hash: hash, 
-                        call_to_action: { type: 'LEARN_MORE', value: { lead_gen_form_id: leadFormId } }
+                        call_to_action: { type: 'LEARN_MORE', value: ctaValue }
                     }
                 },
                 access_token: facebookToken,
