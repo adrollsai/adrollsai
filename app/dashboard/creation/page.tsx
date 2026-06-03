@@ -299,11 +299,20 @@ export default function CreationPage() {
     const results: any[] = [];
     for (const angle of selected) {
         try {
+            let propImages: string[] = [];
+            if (creativeFlow.product) {
+                if (creativeFlow.product.images && creativeFlow.product.images.length > 0) {
+                    propImages = creativeFlow.product.images.slice(0, 2);
+                } else if (creativeFlow.product.image_url) {
+                    propImages = [creativeFlow.product.image_url];
+                }
+            }
+
             const payload = {
                 propertyTitle: creativeFlow.product?.title,
                 propertyDescription: (creativeFlow.product?.description || "") + "\n\nANGLE: " + angle.title + "\nCONCEPT: " + angle.visual_concept,
                 userInstructions: creativeFlow.instructions,
-                propImages: [creativeFlow.product?.image_url],
+                propImages: propImages,
                 isOrganic: creativeFlow.isOrganic,
                 aspectRatio: "4:5",
                 model: 'image-2.0',
@@ -334,9 +343,13 @@ export default function CreationPage() {
                 }).catch(err => console.error("Worker trigger failed:", err));
                 
                 results.push({ ...angle, taskId: data.taskId });
+            } else if (data.error) {
+                console.error("Batch error for angle:", angle.title, data.error);
+                toast.error(`Failed to generate "${angle.title}": ${data.error}`);
             }
-        } catch (e) {
-            console.error("Batch error for angle:", angle.title);
+        } catch (e: any) {
+            console.error("Batch error for angle:", angle.title, e);
+            toast.error(`Error generating "${angle.title}": ${e.message || e}`);
         }
     }
     setCreativeFlow(prev => ({ ...prev, generatedAssets: results, status: 'idle', step: 'final' }));
