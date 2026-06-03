@@ -21,7 +21,10 @@ export async function checkLimitAndIncrement(
 ) {
     const supabase = await getAdminClient();
     
-    const UNLIMITED_USERS = ['bc63c065-9bcc-4793-bedc-f0960406425b'];
+    const UNLIMITED_USERS = [
+        'bc63c065-9bcc-4793-bedc-f0960406425b',
+        'c890a11f-84ce-4592-ab8f-8682927b1a9d'
+    ];
     if (UNLIMITED_USERS.includes(userId)) return true;
 
     // Map new types to their corresponding DB columns (for both old and new schemas)

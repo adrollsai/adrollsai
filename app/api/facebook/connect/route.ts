@@ -2,7 +2,16 @@ import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
     const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID;
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin;
+    
+    // Resolve dynamic baseUrl from host headers to avoid misconfigured NEXT_PUBLIC_APP_URL (e.g. ngrok override in production)
+    const host = req.headers.get('host') || 'app.adrolls.in';
+    const protocol = req.headers.get('x-forwarded-proto') || 'https';
+    const currentOrigin = `${protocol}://${host}`;
+    
+    const baseUrl = (host.includes('adrolls.in') || host.includes('localhost') || host.includes('vercel.app'))
+        ? currentOrigin
+        : (process.env.NEXT_PUBLIC_APP_URL || currentOrigin);
+
     const redirectUri = `${baseUrl}/api/facebook/callback`;
     const scopes = [
         'public_profile',
