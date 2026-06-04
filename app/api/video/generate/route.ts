@@ -68,22 +68,36 @@ async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Prom
             os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
         );
         const scaleFilter = "scale='trunc(min(iw\\,iw*sqrt(2000000/(iw*ih)))/2)*2':-2";
-        const cmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 14 -vf "${scaleFilter}" -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${outputPath}"`;
+        const cmdTemplate = `FFMPEG_CMD -y -i "${inputPath}" -t 14 -vf "${scaleFilter}" -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${outputPath}"`;
         
-        await new Promise<void>((resolve, reject) => {
-            exec(cmd, (err) => {
-                if (err) {
-                    console.warn(`[Trim Video] Standard trim failed (likely due to corrupt audio stream). Retrying with silent video (-an)...`);
-                    const silentCmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 14 -vf "${scaleFilter}" -c:v libx264 -an -preset superfast -movflags +faststart "${outputPath}"`;
-                    exec(silentCmd, (silentErr) => {
-                        if (silentErr) reject(silentErr);
+        const executeFFmpegWithFallback = async (commandTemplate: string) => {
+            const primaryCmd = commandTemplate.replace("FFMPEG_CMD", `"${ffmpegBinary}"`);
+            try {
+                await new Promise<void>((resolve, reject) => {
+                    exec(primaryCmd, (err) => {
+                        if (err) reject(err);
                         else resolve();
                     });
-                } else {
-                    resolve();
-                }
-            });
-        });
+                });
+            } catch (primaryErr: any) {
+                console.warn(`[Trim Video] Primary FFmpeg command failed. Retrying with global 'ffmpeg'... Error: ${primaryErr.message}`);
+                const fallbackCmd = commandTemplate.replace("FFMPEG_CMD", "ffmpeg");
+                await new Promise<void>((resolve, reject) => {
+                    exec(fallbackCmd, (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+                });
+            }
+        };
+
+        try {
+            await executeFFmpegWithFallback(cmdTemplate);
+        } catch (err) {
+            console.warn(`[Trim Video] Standard trim failed (likely due to corrupt audio stream). Retrying with silent video (-an)...`);
+            const silentCmdTemplate = `FFMPEG_CMD -y -i "${inputPath}" -t 14 -vf "${scaleFilter}" -c:v libx264 -an -preset superfast -movflags +faststart "${outputPath}"`;
+            await executeFFmpegWithFallback(silentCmdTemplate);
+        }
         
         // 3. Upload to R2
         const trimmedBuffer = fs.readFileSync(outputPath);

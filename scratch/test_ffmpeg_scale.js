@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
-const originalUrl = "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/character-bc63c065-9bcc-4793-bedc-f0960406425b-1780133072249.mp4";
+const mp3Url = "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/voice-sample-9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1780556476936.mp3";
 
 const ffmpegBinary = path.join(
     process.cwd(), 
@@ -19,7 +19,6 @@ async function testCmd(cmd, label) {
             if (err) {
                 console.log("Result: FAILED");
                 console.log("Error:", err.message);
-                console.log("Stderr Snippet:", stderr.split('\n').slice(-5).join('\n'));
             } else {
                 console.log("Result: SUCCESS!");
             }
@@ -29,33 +28,18 @@ async function testCmd(cmd, label) {
 }
 
 async function run() {
-    const tempDir = path.join(os.tmpdir(), `ffmpeg_scale_test_${Date.now()}`);
+    const tempDir = path.join(os.tmpdir(), `mp3_probe_test_${Date.now()}`);
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
     
-    const inputPath = path.join(tempDir, 'input.mp4');
-    const out1 = path.join(tempDir, 'out1.mp4');
+    const inputPath = path.join(tempDir, 'input.mp3');
     
-    console.log("Downloading video...");
-    const res = await fetch(originalUrl);
+    console.log("Downloading MP3...");
+    const res = await fetch(mp3Url);
     const buffer = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(inputPath, buffer);
     console.log("Downloaded size:", buffer.length);
 
-    // Test 1: Math filter for scaling
-    // We want the total pixels to be <= 2073600 (1920 * 1080)
-    // Scale filter expression: scale='min(iw, iw*sqrt(2000000/(iw*ih))):-2'
-    // Comma needs to be escaped with a backslash in standard filter syntax, OR we can wrap the whole scale expression in single quotes.
-    // In node, command is a string, so we need to be careful with escaping.
-    const filter = "scale='trunc(min(iw\\,iw*sqrt(2000000/(iw*ih)))/2)*2':-2";
-    const cmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 5 -vf "${filter}" -c:v libx264 -an -preset superfast "${out1}"`;
-    
-    console.log("Command:", cmd);
-    await testCmd(cmd, "FFmpeg scale filter with math expression");
-
-    if (fs.existsSync(out1)) {
-        console.log("Output file generated. Let's probe it.");
-        await testCmd(`"${ffmpegBinary}" -i "${out1}"`, "Probe output video");
-    }
+    await testCmd(`"${ffmpegBinary}" -i "${inputPath}"`, "Probe MP3 duration");
     
     // Clean up
     try {
