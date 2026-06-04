@@ -317,8 +317,8 @@ app.post('/process-avatar', async (req, res) => {
         console.warn(`[Process Avatar] HEAD request failed, using fallback hash for URL string: ${hash}`);
     }
     
-    const videoKey = `generated/${userId}/trimmed_ref_${hash}.mp4`;
-    const audioKey = `generated/${userId}/ref_audio_${hash}.mp3`;
+    const videoKey = `generated/${userId}/trimmed_ref_v2_${hash}.mp4`;
+    const audioKey = `generated/${userId}/ref_audio_v2_${hash}.mp3`;
     
     const videoUrl = `${R2_PUBLIC_URL}/adrolls-storage/${videoKey}`;
     const audioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${audioKey}`;

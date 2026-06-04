@@ -31,7 +31,7 @@ async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Prom
         console.warn(`[Trim Video] HEAD request failed, using fallback hash for URL string: ${hash}`);
     }
     
-    const cacheKey = `generated/${userId}/trimmed_ref_${hash}.mp4`;
+    const cacheKey = `generated/${userId}/trimmed_ref_v2_${hash}.mp4`;
     const cachedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${cacheKey}`;
     
     try {
