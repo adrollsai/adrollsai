@@ -1,4 +1,10 @@
 export const uploadToR2 = async (file: File, folder: string) => {
+    let impersonateId = null;
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      impersonateId = urlParams.get('impersonate');
+    }
+
     // 1. Get Signed URL from our API
     const res = await fetch('/api/upload/sign', {
       method: 'POST',
@@ -6,7 +12,8 @@ export const uploadToR2 = async (file: File, folder: string) => {
       body: JSON.stringify({
         fileName: file.name,
         fileType: file.type,
-        folder: folder
+        folder: folder,
+        impersonateId: impersonateId || null
       })
     })
     

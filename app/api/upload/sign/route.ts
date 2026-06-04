@@ -9,12 +9,36 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { fileName, fileType, folder } = await request.json()
+  const { fileName, fileType, folder, impersonateId } = await request.json()
+
+  const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+  let targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
+    ? (currentProfile.agency_id || currentProfile.parent_id) 
+    : user.id
+
+  if (impersonateId) {
+      if (['super_admin', 'agency', 'admin', 'agent'].includes(currentProfile?.role || '')) {
+          if (currentProfile?.role !== 'super_admin') {
+              const { data: subAccount } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('id', impersonateId)
+                .eq('agency_id', currentProfile?.agency_id || user.id)
+                .single()
+
+              if (subAccount) {
+                  targetUserId = impersonateId
+              }
+          } else {
+              targetUserId = impersonateId
+          }
+      }
+  }
 
   const cleanName = fileName.replace(/[^a-zA-Z0-9.-]/g, '')
   
   // 1. CLEAN KEY for Upload (Does NOT include 'adrolls-storage' as requested)
-  const key = `${folder}/${user.id}/${Date.now()}-${cleanName}`
+  const key = `${folder}/${targetUserId}/${Date.now()}-${cleanName}`
 
   try {
     const command = new PutObjectCommand({

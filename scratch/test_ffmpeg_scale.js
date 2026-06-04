@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
-const mp3Url = "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/voice-sample-9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1780556476936.mp3";
+const originalUrl = "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/character-9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1780561506878.mp4";
 
 const ffmpegBinary = path.join(
     process.cwd(), 
@@ -19,6 +19,7 @@ async function testCmd(cmd, label) {
             if (err) {
                 console.log("Result: FAILED");
                 console.log("Error:", err.message);
+                console.log("Stderr:", stderr);
             } else {
                 console.log("Result: SUCCESS!");
             }
@@ -28,18 +29,32 @@ async function testCmd(cmd, label) {
 }
 
 async function run() {
-    const tempDir = path.join(os.tmpdir(), `mp3_probe_test_${Date.now()}`);
+    const tempDir = path.join(os.tmpdir(), `ffmpeg_trim_test_${Date.now()}`);
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
     
-    const inputPath = path.join(tempDir, 'input.mp3');
+    const inputPath = path.join(tempDir, 'input.mp4');
+    const out1 = path.join(tempDir, 'out1.mp4');
     
-    console.log("Downloading MP3...");
-    const res = await fetch(mp3Url);
+    console.log("Downloading new video...");
+    const res = await fetch(originalUrl);
     const buffer = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(inputPath, buffer);
     console.log("Downloaded size:", buffer.length);
 
-    await testCmd(`"${ffmpegBinary}" -i "${inputPath}"`, "Probe MP3 duration");
+    console.log("\nProbing input video details:");
+    await testCmd(`"${ffmpegBinary}" -i "${inputPath}"`, "Probe original video");
+
+    // Using -t 14 (exact production command)
+    const scaleFilter = "scale='trunc(min(iw\\,iw*sqrt(2000000/(iw*ih)))/2)*2':-2";
+    const cmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 14 -vf "${scaleFilter}" -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${out1}"`;
+    
+    console.log("\nCommand:", cmd);
+    await testCmd(cmd, "FFmpeg trim with -t 14 and scaleFilter");
+
+    if (fs.existsSync(out1)) {
+        console.log("\nProbing output video details:");
+        await testCmd(`"${ffmpegBinary}" -i "${out1}"`, "Probe trimmed video");
+    }
     
     // Clean up
     try {

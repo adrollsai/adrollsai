@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { renderMediaOnLambda } from '@remotion/lambda';
+import { speculateFunctionName } from '@remotion/lambda-client';
 
 export async function POST(request: Request) {
     try {
@@ -63,38 +65,63 @@ export async function POST(request: Request) {
             }
         }
 
-        // 4. Send Asynchronous Render Request to Google Cloud Run Worker
-        const rendererUrl = process.env.REMOTION_RENDERER_URL || 'http://127.0.0.1:8080';
-        console.log(`[Render Route] Dispatching payload to Cloud Run at: ${rendererUrl}/render`);
+        // 4. Send Asynchronous Render Request to AWS Lambda
+        console.log(`[Render Route] Dispatching payload to AWS Lambda...`);
 
         try {
-            const response = await fetch(`${rendererUrl.replace(/\/$/, '')}/render`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    assetId: newAsset.id, // PASS THE NEW ASSET ID!
+            const requestUrl = new URL(request.url);
+            let baseUrl = requestUrl.origin;
+            if (baseUrl.includes('localhost') && process.env.NEXT_PUBLIC_APP_URL) {
+                baseUrl = process.env.NEXT_PUBLIC_APP_URL;
+            }
+            const callbackUrl = `${baseUrl.replace(/\/$/, '')}/api/video/render/callback`;
+            console.log(`[Render Route] Using callback URL: ${callbackUrl}`);
+
+            const functionName = speculateFunctionName({
+                diskSizeInMb: 512,
+                memorySizeInMb: 2048,
+                timeoutInSeconds: 240,
+            });
+
+            const bucketName = process.env.REMOTION_AWS_BUCKET_NAME || 'remotionlambda-useast1-k8ta4ch4gl';
+            const siteName = process.env.REMOTION_AWS_SITE_NAME || '1qyt81o4fk';
+            const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
+
+            const renderResult = await renderMediaOnLambda({
+                region,
+                functionName,
+                serveUrl: `https://${bucketName}.s3.${region}.amazonaws.com/sites/${siteName}/index.html`,
+                composition: 'CaptionsComposition',
+                inputProps: {
                     videoUrl,
                     captions,
                     effects,
                     theme,
                     profile: profile || {}
-                })
+                },
+                codec: 'h264',
+                imageFormat: 'jpeg',
+                maxRetries: 2,
+                privacy: 'public',
+                webhook: {
+                    url: callbackUrl,
+                    secret: null,
+                    customData: {
+                        assetId: newAsset.id
+                    }
+                }
             });
 
-            const resData = await response.json();
-            if (!response.ok || !resData.success) {
-                throw new Error(resData.error || `Cloud Run worker returned status ${response.status}`);
-            }
-
-            console.log(`[Render Route] Successfully delegated render to Cloud Run:`, resData.message);
+            console.log(`[Render Route] Successfully delegated render to AWS Lambda:`, renderResult);
 
             return NextResponse.json({
                 success: true,
-                message: "Render successfully dispatched to cloud backend."
+                message: "Render successfully dispatched to cloud backend.",
+                renderId: renderResult.renderId
             });
 
         } catch (workerError: any) {
-            console.error(`[Render Route] Worker delegation failed:`, workerError);
+            console.error(`[Render Route] AWS Lambda delegation failed:`, workerError);
 
             // Revert new asset status back to 'Failed'
             await supabase

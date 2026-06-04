@@ -56,7 +56,7 @@ function parseBuffer(buffer) {
 }
 
 async function run() {
-    const url = "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/9bbf6e51-283e-48d1-bbb4-8dc546cc74b2/trimmed_ref_f6bfd3f76458e2243d4472da9e723855.mp4";
+    const url = "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/9bbf6e51-283e-48d1-bbb4-8dc546cc74b2/trimmed_ref_v2_b2d0b65b1c3c7614719f247dc2e52f54.mp4";
     console.log("Downloading video to test duration parsing...");
     const res = await fetch(url);
     const tempFile = path.join(__dirname, 'temp_test.mp4');
