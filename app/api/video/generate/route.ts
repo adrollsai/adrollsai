@@ -45,6 +45,30 @@ async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Prom
         console.log(`[Trim Video Cache] No cache found. Starting download and trim for: ${avatarUrl}`);
     }
 
+    // Call Cloud Run microservice first if configured
+    const rendererUrl = process.env.REMOTION_RENDERER_URL;
+    if (rendererUrl) {
+        try {
+            console.log(`[Trim Video] Calling Cloud Run renderer microservice to trim/scale: ${rendererUrl}/process-avatar`);
+            const trimRes = await fetch(`${rendererUrl.replace(/\/$/, '')}/process-avatar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ avatarUrl, userId })
+            });
+            if (trimRes.ok) {
+                const data = await trimRes.json();
+                if (data.success && data.videoUrl) {
+                    console.log(`[Trim Video] Cloud Run successfully processed video: ${data.videoUrl}`);
+                    return data.videoUrl;
+                }
+            } else {
+                console.error(`[Trim Video] Cloud Run returned non-ok status: ${trimRes.status} ${trimRes.statusText}`);
+            }
+        } catch (microserviceErr: any) {
+            console.error(`[Trim Video] Cloud Run process-avatar call failed, falling back to local:`, microserviceErr.message);
+        }
+    }
+
     const tempDir = path.join(os.tmpdir(), `trim_${userId}_${Date.now()}`);
     try {
         if (!fs.existsSync(tempDir)) {

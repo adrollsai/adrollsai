@@ -352,14 +352,14 @@ app.post('/process-avatar', async (req, res) => {
         // 2. FFmpeg trim video & extract audio
         const { exec } = require('child_process');
         
-        // Command to trim first 15 seconds
-        const trimCmd = `ffmpeg -y -i "${inputPath}" -t 14 -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${trimmedPath}"`;
+        const scaleFilter = "scale='trunc(min(iw\\,iw*sqrt(2000000/(iw*ih)))/2)*2':-2";
+        const trimCmd = `ffmpeg -y -i "${inputPath}" -t 14 -vf "${scaleFilter}" -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${trimmedPath}"`;
         console.log(`[Process Avatar] Trimming video...`);
         await new Promise((resolve, reject) => {
             exec(trimCmd, (err, stdout, stderr) => {
                 if (err) {
                     console.warn(`[Process Avatar] Standard trim failed (likely due to corrupt audio stream). Retrying with silent video (-an)...`);
-                    const silentCmd = `ffmpeg -y -i "${inputPath}" -t 14 -c:v libx264 -an -preset superfast -movflags +faststart "${trimmedPath}"`;
+                    const silentCmd = `ffmpeg -y -i "${inputPath}" -t 14 -vf "${scaleFilter}" -c:v libx264 -an -preset superfast -movflags +faststart "${trimmedPath}"`;
                     exec(silentCmd, (silentErr, silentStdout, silentStderr) => {
                         if (silentErr) reject(new Error(`Silent video trim also failed: ${silentStderr}`));
                         else resolve();
