@@ -8,7 +8,7 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-    const subId = 'c890a11f-84ce-4592-ab8f-8682927b1a9d';
+    const subId = '9bbf6e51-283e-48d1-bbb4-8dc546cc74b2';
     console.log(`=== PROFILE FOR SUBACCOUNT: ${subId} ===`);
     const { data: profile, error } = await supabaseAdmin
         .from('profiles')

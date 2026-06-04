@@ -67,13 +67,14 @@ async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Prom
             'ffmpeg-static', 
             os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
         );
-        const cmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 14 -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${outputPath}"`;
+        const scaleFilter = "scale='trunc(min(iw\\,iw*sqrt(2000000/(iw*ih)))/2)*2':-2";
+        const cmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 14 -vf "${scaleFilter}" -c:v libx264 -c:a aac -preset superfast -movflags +faststart "${outputPath}"`;
         
         await new Promise<void>((resolve, reject) => {
             exec(cmd, (err) => {
                 if (err) {
                     console.warn(`[Trim Video] Standard trim failed (likely due to corrupt audio stream). Retrying with silent video (-an)...`);
-                    const silentCmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 14 -c:v libx264 -an -preset superfast -movflags +faststart "${outputPath}"`;
+                    const silentCmd = `"${ffmpegBinary}" -y -i "${inputPath}" -t 14 -vf "${scaleFilter}" -c:v libx264 -an -preset superfast -movflags +faststart "${outputPath}"`;
                     exec(silentCmd, (silentErr) => {
                         if (silentErr) reject(silentErr);
                         else resolve();
@@ -423,27 +424,10 @@ export async function POST(request: Request) {
                 }
 
                 try {
-                    const rendererUrl = process.env.REMOTION_RENDERER_URL || 'http://127.0.0.1:8080';
-                    console.log(`[Video Generate] Delegating avatar trimming to Cloud Run: ${rendererUrl}/process-avatar`);
-                    const response = await fetch(`${rendererUrl.replace(/\/$/, '')}/process-avatar`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            avatarUrl,
-                            userId: targetUserId
-                        })
-                    });
-                    
-                    if (response.ok) {
-                        const resData = await response.json();
-                        if (resData.success && resData.videoUrl) {
-                            avatarUrl = resData.videoUrl;
-                            console.log(`[Video Generate] Cloud Run video trim success! Trimmed Video: ${avatarUrl}`);
-                        }
-                    }
-                } catch (delegateErr: any) {
-                    console.warn(`[Video Generate] Cloud Run delegation failed, falling back to local Vercel video trimming:`, delegateErr.message);
+                    // Always use local Vercel trimming to guarantee scaling down to 1080p max width (Kie.ai limit)
                     avatarUrl = await getTrimmedReferenceVideo(avatarUrl, targetUserId);
+                } catch (delegateErr: any) {
+                    console.error("[Video Generate] Local video trimming failed:", delegateErr.message);
                 }
                 
                 console.log(`[Video Generate] Using uploaded voice sample directly: ${referenceAudioUrl}`);

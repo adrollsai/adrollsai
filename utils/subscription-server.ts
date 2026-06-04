@@ -23,7 +23,8 @@ export async function checkLimitAndIncrement(
     
     const UNLIMITED_USERS = [
         'bc63c065-9bcc-4793-bedc-f0960406425b',
-        'c890a11f-84ce-4592-ab8f-8682927b1a9d'
+        'c890a11f-84ce-4592-ab8f-8682927b1a9d',
+        '9bbf6e51-283e-48d1-bbb4-8dc546cc74b2'
     ];
     if (UNLIMITED_USERS.includes(userId)) return true;
 
