@@ -16,8 +16,12 @@ export async function POST(request: Request) {
         const payload = await request.json();
         console.log(`[Lambda Callback] Payload:`, JSON.stringify(payload, null, 2));
 
-        const { success, outputUrl, customData, error: renderError } = payload;
+        const { type, outputUrl, customData, errors } = payload;
+        const renderError = errors && Array.isArray(errors) && errors.length > 0
+            ? errors.map((e: any) => e.message).join('\n')
+            : (payload.error || "AWS Lambda rendering failed.");
         const assetId = customData?.assetId;
+        const isSuccess = type === 'success';
 
         if (!assetId) {
             console.error("[Lambda Callback] Missing assetId in customData.");
@@ -37,7 +41,7 @@ export async function POST(request: Request) {
         }
 
         // 2. Handle failure
-        if (!success) {
+        if (!isSuccess) {
             console.error(`[Lambda Callback] Render failed for asset ${assetId}:`, renderError);
             
             await supabaseAdmin

@@ -69,11 +69,20 @@ export async function POST(request: Request) {
         console.log(`[Render Route] Dispatching payload to AWS Lambda...`);
 
         try {
-            const requestUrl = new URL(request.url);
-            let baseUrl = requestUrl.origin;
-            if (baseUrl.includes('localhost') && process.env.NEXT_PUBLIC_APP_URL) {
-                baseUrl = process.env.NEXT_PUBLIC_APP_URL;
+            const forwardedHost = request.headers.get('x-forwarded-host');
+            const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+            const requestOrigin = new URL(request.url).origin;
+            const publicUrl = process.env.NEXT_PUBLIC_APP_URL;
+            let baseUrl = requestOrigin;
+            
+            if (forwardedHost && !forwardedHost.includes('localhost')) {
+                baseUrl = `${forwardedProto}://${forwardedHost}`;
+            } else if (!requestOrigin.includes('localhost')) {
+                baseUrl = requestOrigin;
+            } else if (publicUrl && publicUrl.startsWith('http')) {
+                baseUrl = publicUrl;
             }
+            
             const callbackUrl = `${baseUrl.replace(/\/$/, '')}/api/video/render/callback`;
             console.log(`[Render Route] Using callback URL: ${callbackUrl}`);
 
@@ -103,6 +112,7 @@ export async function POST(request: Request) {
                 imageFormat: 'jpeg',
                 maxRetries: 2,
                 privacy: 'public',
+                framesPerLambda: 120,
                 webhook: {
                     url: callbackUrl,
                     secret: null,
