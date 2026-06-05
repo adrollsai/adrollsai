@@ -165,7 +165,6 @@ export default function CRMPage() {
           while (hasMore) {
               let query = supabase.from('leads')
                 .select('*, lead_history(action_type, description, created_at)')
-                .order('facebook_created_at', { ascending: false, nullsFirst: false })
                 .order('created_at', { ascending: false })
                 .range(start, start + step - 1)
 
@@ -546,9 +545,14 @@ END:VCARD\n`
     })
   }, [leads, searchQuery, selectedCampaign, selectedForm])
 
-  // 2. Final filtered list including pipeline stage matching
+  // 2. Final filtered list including pipeline stage matching and sorted by newest first
   const filteredLeads = useMemo(() => {
-    return leadsMatchingFilters.filter(l => (l.pipeline_stage || 'New') === activeStage)
+    const list = leadsMatchingFilters.filter(l => (l.pipeline_stage || 'New') === activeStage)
+    return list.sort((a, b) => {
+      const timeA = new Date(a.facebook_created_at || a.created_at).getTime()
+      const timeB = new Date(b.facebook_created_at || b.created_at).getTime()
+      return timeB - timeA
+    })
   }, [leadsMatchingFilters, activeStage])
 
   const totalPages = Math.ceil(filteredLeads.length / leadsPerPage)

@@ -74,6 +74,8 @@ export async function POST(request: Request) {
         data.customQuestions = formData.get('customQuestions')?.toString();
         data.inventoryIds = formData.getAll('inventoryIds').map(String);
         data.assetIds = formData.getAll('assetIds').map(String);
+        data.campaignType = formData.get('campaignType')?.toString();
+        data.pixelId = formData.get('pixelId')?.toString();
         
         data.creativeFiles = [];
         formData.forEach((value, key) => {
@@ -89,7 +91,6 @@ export async function POST(request: Request) {
         .eq('id', targetUserId)
         .single();
 
-    let pixelId = targetProfile?.pixel_id || null;
     let qualifiedLeadsCount = 0;
     try {
         const { createClient: createAdminClient } = await import('@supabase/supabase-js');
@@ -130,10 +131,25 @@ export async function POST(request: Request) {
         customQuestions: customQuestionsStr,
         inventoryIds = [],
         assetIds = [],
-        creativeFiles = []
+        creativeFiles = [],
+        campaignType = 'instant_form',
+        pixelId
     } = data;
     
     const currency = targetProfile?.currency || 'INR';
+
+    const finalPixelId = pixelId || targetProfile?.pixel_id || null;
+    const isWebsiteCampaign = campaignType === 'website_conversion';
+
+    if (isWebsiteCampaign && !finalPixelId) {
+        if (user?.id) {
+            await refundLimit(user.id, 'campaign_launches');
+        }
+        return NextResponse.json(
+            { error: 'Meta Pixel ID is required for Website Conversion campaigns. Please select a Pixel or connect one in your profile.' }, 
+            { status: 400 }
+        );
+    }
 
     if (!facebookToken || !adAccountId || !pageId) {
         const missing = [];
@@ -230,118 +246,122 @@ export async function POST(request: Request) {
         }
 
         // --- Step B: Create Lead Form with Custom Questions ---
-        logToFile("--- 2. CREATING LEAD FORM ---");
-        
-        let metaCustomQuestions: any[] = [];
-        if (customQuestionsStr && customQuestionsStr !== "[]") {
-            try {
-                const parsedQuestions = JSON.parse(customQuestionsStr);
-                metaCustomQuestions = parsedQuestions.map((q: any) => {
-                    const label = q.label.trim();
-                    const lowerLabel = label.toLowerCase();
-                    
-                    // NEW: Smart mapping to avoid SAQ (Short Answer Question) PII violations
-                    // Meta forbids custom short-answer questions for PII (like Company Name, City, etc.)
-                    // We map these to official pre-fill types if they look like standard info.
-                    
-                    if (q.type !== 'MULTIPLE_CHOICE') {
-                        if (lowerLabel.includes('company') || lowerLabel.includes('business name')) {
-                            return { type: 'COMPANY_NAME', key: 'company_name' };
-                        }
-                        if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) {
-                            return { type: 'JOB_TITLE', key: 'job_title' };
-                        }
-                        if (lowerLabel.includes('city')) {
-                            return { type: 'CITY', key: 'city' };
-                        }
-                        if (lowerLabel.includes('state')) {
-                            return { type: 'STATE', key: 'state' };
-                        }
-                    }
-
-                    const metaQ: any = { 
-                        type: 'CUSTOM', 
-                        label: label.substring(0, 200) 
-                    };
-                    
-                    if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
-                        const validOptions = q.options
-                            .filter((o: string) => o.trim() !== '')
-                            .map((opt: string) => ({ 
-                                value: opt.trim(),
-                                key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50)
-                            }));
-                            
-                        if (validOptions.length > 0) {
-                            metaQ.options = validOptions;
-                        }
-                    }
-                    return metaQ;
-                });
-
-                // Deduplicate questions (don't add COMPANY_NAME twice if it's already there)
-                const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
-                metaCustomQuestions = metaCustomQuestions.filter(q => {
-                    if (q.type === 'CUSTOM') return true;
-                    if (seenTypes.has(q.type)) return false;
-                    seenTypes.add(q.type);
-                    return true;
-                });
-
-            } catch (e) {
-                logToFile("Failed to parse custom questions", e);
-            }
-        }
-
-        const finalFollowUpUrl = linkUrl || "https://adrolls.in"; // Fallback to prevent API crash
-
         const businessName = data.business_name || "Our Business";
-        const questionLabels = metaCustomQuestions
-            .map(q => q.label || q.type)
-            .filter(Boolean)
-            .map(label => label.replace(/[?:]/g, '').trim())
-            .join(', ');
+        let leadFormId = null;
 
-        const formName = `Form - ${businessName} - (Name, Email, Phone${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
+        if (!isWebsiteCampaign) {
+            logToFile("--- 2. CREATING LEAD FORM ---");
+            
+            let metaCustomQuestions: any[] = [];
+            if (customQuestionsStr && customQuestionsStr !== "[]") {
+                try {
+                    const parsedQuestions = JSON.parse(customQuestionsStr);
+                    metaCustomQuestions = parsedQuestions.map((q: any) => {
+                        const label = q.label.trim();
+                        const lowerLabel = label.toLowerCase();
+                        
+                        // NEW: Smart mapping to avoid SAQ (Short Answer Question) PII violations
+                        // Meta forbids custom short-answer questions for PII (like Company Name, City, etc.)
+                        // We map these to official pre-fill types if they look like standard info.
+                        
+                        if (q.type !== 'MULTIPLE_CHOICE') {
+                            if (lowerLabel.includes('company') || lowerLabel.includes('business name')) {
+                                return { type: 'COMPANY_NAME', key: 'company_name' };
+                            }
+                            if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) {
+                                return { type: 'JOB_TITLE', key: 'job_title' };
+                            }
+                            if (lowerLabel.includes('city')) {
+                                return { type: 'CITY', key: 'city' };
+                            }
+                            if (lowerLabel.includes('state')) {
+                                return { type: 'STATE', key: 'state' };
+                            }
+                        }
 
-        const leadFormPayload: any = {
-            name: formName,
-            follow_up_action_url: finalFollowUpUrl, 
-            question_page_custom_headline: `Get Pricing & Details`,
-            question_page_custom_text: "Confirm details to view pricing.",
-            privacy_policy: { 
-                url: (privacyPolicyUrl && !privacyPolicyUrl.includes('localhost')) ? privacyPolicyUrl : "https://adrolls.in/privacy", 
-                link_text: "Privacy Policy" 
-            },
-            questions: [
-                { type: "FULL_NAME", key: "full_name" },
-                { type: "EMAIL", key: "email" },
-                { type: "PHONE", key: "phone_number" },
-                ...metaCustomQuestions
-            ],
-            access_token: facebookToken
-        };
+                        const metaQ: any = { 
+                            type: 'CUSTOM', 
+                            label: label.substring(0, 200) 
+                        };
+                        
+                        if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
+                            const validOptions = q.options
+                                .filter((o: string) => o.trim() !== '')
+                                .map((opt: string) => ({ 
+                                    value: opt.trim(),
+                                    key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50)
+                                }));
+                                
+                            if (validOptions.length > 0) {
+                                metaQ.options = validOptions;
+                            }
+                        }
+                        return metaQ;
+                    });
 
-        logToFile("--- 2b. LEAD FORM PAYLOAD ---", leadFormPayload);
+                    // Deduplicate questions (don't add COMPANY_NAME twice if it's already there)
+                    const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
+                    metaCustomQuestions = metaCustomQuestions.filter(q => {
+                        if (q.type === 'CUSTOM') return true;
+                        if (seenTypes.has(q.type)) return false;
+                        seenTypes.add(q.type);
+                        return true;
+                    });
 
-        const formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json; charset=utf-8' 
-            },
-            body: JSON.stringify(leadFormPayload)
-        });
-        
-        const formCreateData = await formCreateRes.json();
+                } catch (e) {
+                    logToFile("Failed to parse custom questions", e);
+                }
+            }
 
-        if (!formCreateRes.ok) {
-            logToFile("❌ Lead Form Creation Failed:", formCreateData);
-            const metaErrorMsg = formCreateData.error?.error_user_msg || formCreateData.error?.message || "Unknown Error";
-            throw new Error(`Meta Lead Form Error: ${metaErrorMsg}`);
+            const finalFollowUpUrl = linkUrl || "https://adrolls.in"; // Fallback to prevent API crash
+
+            const questionLabels = metaCustomQuestions
+                .map(q => q.label || q.type)
+                .filter(Boolean)
+                .map(label => label.replace(/[?:]/g, '').trim())
+                .join(', ');
+
+            const formName = `Form - ${businessName} - (Name, Email, Phone${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
+
+            const leadFormPayload: any = {
+                name: formName,
+                follow_up_action_url: finalFollowUpUrl, 
+                question_page_custom_headline: `Get Pricing & Details`,
+                question_page_custom_text: "Confirm details to view pricing.",
+                privacy_policy: { 
+                    url: (privacyPolicyUrl && !privacyPolicyUrl.includes('localhost')) ? privacyPolicyUrl : "https://adrolls.in/privacy", 
+                    link_text: "Privacy Policy" 
+                },
+                questions: [
+                    { type: "FULL_NAME", key: "full_name" },
+                    { type: "EMAIL", key: "email" },
+                    { type: "PHONE", key: "phone_number" },
+                    ...metaCustomQuestions
+                ],
+                access_token: facebookToken
+            };
+
+            logToFile("--- 2b. LEAD FORM PAYLOAD ---", leadFormPayload);
+
+            const formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json; charset=utf-8' 
+                },
+                body: JSON.stringify(leadFormPayload)
+            });
+            
+            const formCreateData = await formCreateRes.json();
+
+            if (!formCreateRes.ok) {
+                logToFile("❌ Lead Form Creation Failed:", formCreateData);
+                const metaErrorMsg = formCreateData.error?.error_user_msg || formCreateData.error?.message || "Unknown Error";
+                throw new Error(`Meta Lead Form Error: ${metaErrorMsg}`);
+            }
+            
+            leadFormId = formCreateData.id;
+            logToFile(`✅ Lead Form Created: ${leadFormId}`);
         }
-        
-        const leadFormId = formCreateData.id;
-        logToFile(`✅ Lead Form Created: ${leadFormId}`);
 
         // --- Step C: Upload Creatives (PROXY UPLOAD) ---
         logToFile("--- 3. UPLOADING ALL CREATIVES ---");
@@ -589,8 +609,7 @@ export async function POST(request: Request) {
         logToFile("--- 6. AD SET ---");
         const startTime = new Date(Date.now() + 30 * 60 * 1000).toISOString(); 
 
-        const isWebsiteCampaign = optimizeForConversions && pixelId;
-        const customEventType = (qualifiedLeadsCount >= 100) ? 'QUALITY_LEAD' : 'LEAD';
+        const customEventType = 'LEAD';
 
         const adSetPayload: any = {
             name: `Smart AdSet - AI Audiences`,
@@ -606,10 +625,10 @@ export async function POST(request: Request) {
             adSetPayload.destination_type = 'WEBSITE';
             adSetPayload.optimization_goal = 'OFFSITE_CONVERSIONS';
             adSetPayload.promoted_object = { 
-                pixel_id: pixelId, 
+                pixel_id: finalPixelId, 
                 custom_event_type: customEventType 
             };
-            logToFile(`Website conversion campaign configured. Pixel: ${pixelId}, Event: ${customEventType}`);
+            logToFile(`Website conversion campaign configured. Pixel: ${finalPixelId}, Event: ${customEventType}`);
         } else {
             adSetPayload.destination_type = 'ON_AD';
             adSetPayload.optimization_goal = optimizeForConversions ? 'QUALITY_LEAD' : 'LEAD_GENERATION';

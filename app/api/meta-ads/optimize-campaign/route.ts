@@ -81,10 +81,21 @@ export async function POST(request: Request) {
             }
 
             // 1b. Sort by performance (Leads > Spend) and pick top 5
+            const getLeadsCount = (actions: any[]) => {
+                if (!actions) return 0;
+                let total = 0;
+                actions.forEach((act: any) => {
+                    if (act.action_type === 'lead' || act.action_type === 'offsite_conversion.fb_pixel_lead') {
+                        total += parseInt(act.value || "0");
+                    }
+                });
+                return total;
+            };
+
             const topAdInsights = [...insightsData.data]
                 .sort((a: any, b: any) => {
-                    const leadsA = parseInt(a.actions?.find((act: any) => act.action_type === 'lead')?.value || "0");
-                    const leadsB = parseInt(b.actions?.find((act: any) => act.action_type === 'lead')?.value || "0");
+                    const leadsA = getLeadsCount(a.actions);
+                    const leadsB = getLeadsCount(b.actions);
                     if (leadsB !== leadsA) return leadsB - leadsA;
                     return parseFloat(b.spend || "0") - parseFloat(a.spend || "0");
                 })
@@ -116,7 +127,7 @@ export async function POST(request: Request) {
             const performanceSummary = insightsData.data.map((ad: any) => {
                 const creative = adsMap[ad.ad_id] || {};
                 const spend = parseFloat(ad.spend || "0");
-                const leads = parseInt(ad.actions?.find((a: any) => a.action_type === 'lead')?.value || "0");
+                const leads = getLeadsCount(ad.actions);
                 return {
                     ad_id: ad.ad_id,
                     ad_name: ad.ad_name,

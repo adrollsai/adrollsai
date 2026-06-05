@@ -478,8 +478,8 @@ export async function POST(request: Request) {
                 const scene = scenes[i];
 
                 const characterAppearanceText = isCharacterVideo
-                    ? "Use reference video only for character appearance.\nUse reference audio only for voice characteristics."
-                    : "Use reference photo only for character appearance.";
+                    ? "Use reference video ONLY for character facial appearance and identity consistency.\n\nUse reference audio ONLY for voice characteristics.\n\nDuration: 15 seconds\nAspect Ratio: 9:16"
+                    : "Use reference image ONLY for character facial appearance and identity consistency.\n\nDuration: 15 seconds\nAspect Ratio: 9:16";
 
                 const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
 Translate the following specific scene from a script into a simple, high-performing generative prompt for Bytedance/Kie.ai Seedance 2.0.
@@ -500,38 +500,71 @@ REFERENCE IMAGES & DETAILS (Vision-analyzed descriptions of the reference images
 ${descriptionsText}
 
 YOUR INSTRUCTIONS:
-1. Generate a structured generative video prompt. Do NOT use markdown headers (like #, ##) or code blocks or bracketed blocks like [Action]. Follow the exact structure shown below.
-2. Analyze the reference images description provided. See where they fit well in the video (e.g., background elements, products held in hand, or visually matching scene/product details) and prompt them accordingly in the "Action" or "Style" section of the output prompt.
-3. CONTEXT-AWARE ATTIRE & ENVIRONMENT: Determine a highly specific, stylish, and premium attire/outfit and environment/setting for the character based on the business name, product context, brand guidelines, and script context (e.g., a beige linen blazer over a white tee in a modern corporate office, a premium casual smart shirt in a cozy warm living room, elegant premium wear in a luxury apartment, etc.). Never output generic text or bracketed placeholders like '[describe attire]'. You MUST output a concrete, detailed description of the clothing and setting.
-4. HIGH-ENERGY & NATURAL GESTURES: Command the presenter's speech style to keep the energy exceptionally high, warm, engaging, and professional. The vocal delivery must have excellent projection and a natural UGC flow. Command the presenter's actions to use dynamic, natural hand gestures and warm, welcoming facial expressions to make it feel like a premium high-end video.
-5. STRICT IMAGE FIDELITY (NO OVER-EXTENSION): When referencing or using the provided property/product images in the video actions, ensure that the video DOES NOT over-extend or hallucinate contents beyond the visible boundaries of the original reference images. Instruct the AI model to strictly only depict the real elements and spatial layouts that are visible in the image, ensuring 100% accuracy and zero mis-representation of the physical space/product.
-6. DYNAMIC MULTI-SHOT COMPOSITION: The character shot must NOT be a continuous single-take shot. Explicitly specify a dynamic multi-shot setup where the camera cuts between different angles (e.g., medium close-up, medium shot) and includes the character in different positions, scenes, or alongside/inside different reference images to keep the pacing visually spectacular.
-7. DEVANAGARI HINDI PRONUNCIATION: If the word "Mohali" (or "mohali", "MOHALI") appears in the Dialogue text, ALWAYS write it in Hindi script as "मोहाली" in the "Dialogue:" block of the generated prompt. Never write it in English/Latin characters, as doing so leads to mispronunciation by the text-to-speech engine. Keep all other words in their original script/Hinglish representation.
-8. Output the prompt following this EXACT format (ensure correct line breaks and labels):
+1. Generate a structured generative video prompt. Do NOT use markdown headers (like #, ##) or code blocks or backticks. Follow the exact structure shown below.
+2. Analyze the reference images description provided. See where they fit well in the video (e.g., background elements, products held in hand, or visually matching scene/product details) and prompt them accordingly in the "B-ROLL" or "Action" section of the output prompt.
+3. Keep the template industry-agnostic. The settings, clothing description, dialogue, speech style, actions, B-roll, camera, lighting, style, and avoids must be dynamically adapted based on the business name, product context, brand guidelines, and custom instructions.
+4. Output the prompt following this EXACT format (ensure correct double newlines and exact uppercase headers):
 
 ${characterAppearanceText}
 
-Character maintains eye contact with camera throughout. He/She is wearing [describe appropriate attire here, replacing this with concrete details] in [describe appropriate location/setting here, replacing this with concrete details].
+LOCATION (IMPORTANT)
+[Write the location guidelines. Determine appropriate environment settings for the presenter. E.g. "The presenter must remain outdoors/in the office/in the kitchen whenever she appears on screen." "Interior rooms/other spaces may appear as cinematic B-roll only." "The presenter must never appear inside any interior space." or whatever is appropriate based on the product context/visuals.]
 
-Dialogue:
-"[dialogue text to be spoken]"
+CHARACTER APPEARANCE
+Use the reference video only for facial appearance and identity. (or reference image if video is not available)
+Do NOT copy clothing from the reference video/image.
+The presenter wears a premium, stylish, category-appropriate outfit suited for the business/product (e.g., elegant lifestyle dress, casual smart blazer, sporty activewear, professionally styled outfit):
+• [Attire bullet 1: specific style, colors, fabric]
+• [Attire bullet 2: flowing fabric, modern design, fit details]
+• [Attire bullet 3: minimal/appropriate jewelry, natural makeup, professionally styled hair]
+• [Attire bullet 4: warm, trustworthy, and aspirational appearance]
 
-Speech Style:
-[Describe delivery with rich personality, high-energy UGC style, exceptionally warm and welcoming tone, professional presentation, natural gestures, and excellent projection.]
+DIALOGUE
+"[dialogue text to be spoken. Keep it exactly matching the script dialogue. Remember: If the word 'Mohali' (or 'mohali', 'MOHALI') appears in the Dialogue text, ALWAYS write it in Hindi script as 'मोहाली' in this DIALOGUE block. Never write it in English/Latin characters, as doing so leads to mispronunciation by the text-to-speech engine. Keep all other words in their original script/Hinglish representation.]"
 
-Action:
-[Describe the precise actions the character is performing. Instruct them to keep energy high and gestures natural. Specify dynamic cuts between multiple shots/scenes and include the character in different positions, scenes, or alongside/inside different reference images. Command the model to strictly respect the visible boundaries of the reference images and never over-extend them.]
+SPEECH STYLE
+[Describe vocal delivery with rich personality, tone, speed, projection, etc. Add a bulleted list of 2-3 key phrases from the dialogue to emphasize strongly, like:
+Strong emphasis on:
+• "[Key Phrase 1]"
+• "[Key Phrase 2]"]
+Excellent vocal projection and warm conversational delivery.
 
-Camera:
-[Describe the camera perspective, e.g., "Dynamic multi-shot setup, switching from a detailed close-up shot to a medium shot, keeping face centered."]
+ACTION
+[Describe the precise actions the character is performing. Instruct them to keep energy high and gestures natural. E.g., "The presenter walks slowly through the lawn/office/room while speaking directly to camera. She maintains eye contact, smiles warmly, and uses natural open-handed gestures."]
 
-Style:
-[Describe the visual aesthetics and premium production quality, e.g., "Premium UGC video advertisement, realistic motion, high-end professional presentation, warm inviting lighting."]
+B-ROLL
+[If reference images are provided, map specific B-roll insertions linked to dialogue cue words. Describe the B-roll setting strictly matching the details from the reference image description to guarantee 100% accuracy and zero hallucination.
+Add constraints like:
+"When mentioning: '[Dialogue fragment]' Insert cinematic B-roll using the supplied reference image. The [room/product] must strictly match the reference image, including: • [Specific ref image detail 1] • [Specific ref image detail 2]. Do not modify the room/product. Do not extend beyond visible boundaries. Do not add elements. Voiceover continues throughout all B-roll. Return to the presenter immediately afterward."]
 
-Avoid:
-No overlay Text, No overlay captions
+CAMERA
+[Provide a numbered list of 3-5 camera shots/angles/moves, showing a dynamic multi-shot setup, e.g.:
+1. Medium tracking shot
+2. Close-up presenter
+3. B-roll shot matching reference image
+4. Presenter final CTA shot]
 
-9. Do NOT wrap the prompt in backticks or markdown code blocks. Output the pure text prompt only.`;
+LIGHTING
+[Describe the lighting aesthetic, e.g., "Warm golden-hour luxury lighting. Natural sunlight. Premium residential atmosphere. Photorealistic rendering." or studio/warm ambient lighting depending on setting.]
+
+STYLE
+[Describe the visual aesthetics and production style, e.g. "Luxury real-estate advertisement. Premium UGC presentation. Professional quality. Natural movement. Warm emotional appeal."]
+
+AVOID
+[List specific negative constraints as a bulleted list:
+• No presenter inside restricted spaces (e.g. "No presenter indoors" or "No presenter in kitchen")
+• No copied clothing from reference video/image
+• No text overlays
+• No captions
+• No logos
+• No watermarks
+• No hallucinated elements/furniture
+• No architectural or design changes to reference elements]
+
+Rules:
+- Do NOT wrap the prompt in backticks or markdown code blocks.
+- Do NOT output any intro or outro text. Output the pure text prompt starting directly with 'Use reference video/image...'
+- Output the 10 headers in exact uppercase and ensure double newlines between sections.`;
 
                 let finalPrompt = "";
                 try {
@@ -554,25 +587,52 @@ No overlay Text, No overlay captions
                         // Fallback prompt using the new structured template
                         finalPrompt = `${characterAppearanceText}
 
-Character maintains eye contact with camera throughout. The character is wearing an elegant cream blazer over a structured premium shirt in a luxurious modern high-end setting.
+LOCATION (IMPORTANT)
+The presenter remains in a premium, warm setting appropriate to the brand. Interior or alternative settings appear as B-roll only. The presenter does not enter restricted spaces.
 
-Dialogue:
+CHARACTER APPEARANCE
+Use the reference video only for facial appearance and identity. (or reference image if video is not available)
+Do NOT copy clothing from the reference video.
+The presenter wears a sophisticated premium outfit:
+• Smart-casual blazer or elegant midi dress in pastel colors
+• Refined, modern fabric and design
+• Minimal jewelry and natural makeup
+• Professionally styled, neat hair
+• Warm, trustworthy, aspirational appearance
+
+DIALOGUE
 "${scene.dialogue}"
 
-Speech Style:
-High-energy UGC style, exceptionally warm, confident, and highly reassuring tone. Speaks at a natural, professional pace, displaying natural expressions.
+SPEECH STYLE
+Natural, energetic, reassuring, and trustworthy. Speaks at a professional, conversational pace with warm vocal projection.
 
-Action:
-Speaking directly to the viewer with high energy and natural hand gestures. Dynamic multi-shot setup cutting between medium close-ups and medium shots, showing the character in different positions. The video strictly maintains fidelity to the reference images, only depicting the real parts visible in the original photos without over-extending them.
+ACTION
+The presenter speaks directly to the camera, maintaining eye contact and smiling warmly. Uses natural open-handed gestures to express key points.
 
-Camera:
-Dynamic multi-shot setup, switching between a detailed close-up shot and a medium tracking shot, keeping face centered.
+B-ROLL
+When mentioning key product features, transition to cinematic B-roll using the supplied reference images. The visual layout and details must strictly match the reference images without modifications, hallucinated additions, or extending beyond visible boundaries. Return to the presenter immediately afterward.
 
-Style:
-Premium UGC advertisement, realistic motion, high-end professional presentation, warm inviting lighting.
+CAMERA
+1. Medium shot presenter speaking to camera
+2. Close-up presenter shot
+3. B-roll close-up matching reference image
+4. Presenter final medium close-up
 
-Avoid:
-No overlay Text, No overlay captions`;
+LIGHTING
+Warm luxury lighting, natural light, professional clean presentation, photorealistic rendering.
+
+STYLE
+Premium UGC video advertisement, realistic movement, high-end commercial quality, warm engaging appeal.
+
+AVOID
+• No presenter in restricted spaces
+• No copied clothing from reference video
+• No text overlays
+• No captions
+• No logos
+• No watermarks
+• No hallucinated elements or furniture
+• No architectural or design changes to reference elements`;
                     }
                 }
                 prompts.push(finalPrompt);

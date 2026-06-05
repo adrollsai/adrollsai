@@ -74,116 +74,612 @@ export async function GET(request: Request, { params }: RouteProps) {
 
         // Construct form HTML
         let formHtml = ''
-        if (form) {
-            const customQuestions = form.custom_questions || []
+        const customQuestions = form?.custom_questions || []
 
-            formHtml = `
-                <form class="dynamic-landing-form" style="max-width: 500px; margin: 2rem auto; padding: 2rem; background: #ffffff; border-radius: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); font-family: system-ui, -apple-system, sans-serif; text-align: left;">
-                    <h3 style="margin-top: 0; margin-bottom: 1.5rem; color: #0f172a; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.025em; text-align: center;">Get Instant Details</h3>
-                    <input type="hidden" name="landing_page_id" value="${page.id}" />
-                    <input type="hidden" name="user_id" value="${profile.id}" />
-                    <input type="hidden" name="slug" value="${slug}" />
+        formHtml = `
+            <div class="qualification-trigger-card" style="max-width: 500px; margin: 2rem auto; padding: 2.5rem 2rem; background: #ffffff; border-radius: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -5px rgba(0,0,0,0.05); font-family: system-ui, -apple-system, sans-serif; text-align: center; box-sizing: border-box;">
+                <div style="width: 3.5rem; height: 3.5rem; background: #eff6ff; border-radius: 1rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>
+                </div>
+                <h3 style="margin-top: 0; margin-bottom: 0.5rem; color: #0f172a; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.025em;">Apply & Check Eligibility</h3>
+                <p style="color: #64748b; font-size: 0.875rem; margin-bottom: 1.5rem; line-height: 1.5;">Answer a few quick questions to see if you qualify and get instant details.</p>
+                <button class="open-eligibility-modal-btn" style="width: 100%; padding: 0.875rem; background: #2563eb; color: #ffffff; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);">Start Eligibility Check</button>
+            </div>
 
-                    <div class="form-group" style="margin-bottom: 1.25rem;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: #475569;">Full Name</label>
-                        <input type="text" name="name" required placeholder="John Doe" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; transition: all 0.2s;" />
+            <!-- Full-Screen Eligibility Modal Overlay -->
+            <div id="eligibility-modal-overlay" style="display: none; position: fixed; inset: 0; z-index: 999999; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(8px); align-items: center; justify-content: center; font-family: system-ui, -apple-system, sans-serif; padding: 1rem; box-sizing: border-box;">
+                <div id="eligibility-modal-card" style="position: relative; width: 100%; max-width: 500px; background: #ffffff; border-radius: 1.5rem; padding: 2.25rem 2rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; gap: 1.5rem;">
+                    <!-- Back Button -->
+                    <button id="eligibility-modal-back" style="display: none; position: absolute; top: 1.25rem; left: 1.25rem; background: #f1f5f9; border: none; border-radius: 50%; width: 2rem; height: 2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; font-weight: bold; font-size: 1.25rem; transition: background 0.2s;">←</button>
+
+                    <!-- Close Button -->
+                    <button id="eligibility-modal-close" style="position: absolute; top: 1.25rem; right: 1.25rem; background: #f1f5f9; border: none; border-radius: 50%; width: 2rem; height: 2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; font-weight: bold; font-size: 1.25rem; transition: background 0.2s;">×</button>
+                    
+                    <!-- Progress Container -->
+                    <div id="eligibility-modal-progress-container" style="display: flex; align-items: center; gap: 0.75rem; width: 100%; box-sizing: border-box; margin-bottom: 0.25rem;">
+                        <div style="flex: 1; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
+                            <div id="eligibility-modal-progress-bar" style="width: 0%; height: 100%; background: #2563eb; border-radius: 3px; transition: width 0.3s ease-out;"></div>
+                        </div>
+                        <span id="eligibility-modal-progress-text" style="font-size: 0.75rem; font-weight: 700; color: #64748b; white-space: nowrap;">Step 1 of 3</span>
                     </div>
 
-                    <div class="form-group" style="margin-bottom: 1.25rem;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: #475569;">WhatsApp Number</label>
-                        <input type="tel" name="phone" required placeholder="+91 98765 43210" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; transition: all 0.2s;" />
+                    <!-- Steps Content Container -->
+                    <div id="eligibility-modal-steps-container" style="width: 100%; box-sizing: border-box; text-align: left;">
+                        <!-- JS generated content -->
                     </div>
+                </div>
+            </div>
 
-                    <div class="form-group" style="margin-bottom: 1.25rem;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: #475569;">City</label>
-                        <input type="text" name="city" required placeholder="Mohali" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; transition: all 0.2s;" />
-                    </div>
-            `
+            <style>
+            @keyframes eligibility-scale-in {
+                from { opacity: 0; transform: scale(0.96) translateY(8px); }
+                to { opacity: 1; transform: scale(1) translateY(0); }
+            }
+            #eligibility-modal-card {
+                animation: eligibility-scale-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+            #eligibility-modal-back:hover {
+                background: #e2e8f0;
+                color: #0f172a;
+            }
+            #eligibility-modal-close:hover {
+                background: #e2e8f0;
+                color: #0f172a;
+            }
+            .eligibility-opt-btn {
+                width: 100%;
+                padding: 1rem 1.25rem;
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 0.75rem;
+                font-size: 0.875rem;
+                font-weight: 600;
+                color: #334155;
+                text-align: left;
+                cursor: pointer;
+                transition: all 0.2s;
+                box-sizing: border-box;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 0.75rem;
+            }
+            .eligibility-opt-btn:hover {
+                background: #f1f5f9;
+                border-color: #cbd5e1;
+                color: #0f172a;
+                transform: translateY(-1px);
+            }
+            .eligibility-opt-btn:active {
+                transform: translateY(0);
+            }
+            .eligibility-opt-btn-chevron {
+                color: #94a3b8;
+                font-size: 1rem;
+                font-weight: bold;
+                transition: transform 0.2s;
+            }
+            .eligibility-opt-btn:hover .eligibility-opt-btn-chevron {
+                color: #475569;
+                transform: translateX(2px);
+            }
+            .eligibility-input {
+                width: 100%;
+                padding: 0.875rem 1rem;
+                border-radius: 0.75rem;
+                border: 1px solid #cbd5e1;
+                outline: none;
+                font-size: 0.875rem;
+                box-sizing: border-box;
+                transition: all 0.2s;
+            }
+            .eligibility-input:focus {
+                border-color: #2563eb;
+                box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+            }
+            .eligibility-submit-btn {
+                width: 100%;
+                padding: 0.875rem;
+                background: #2563eb;
+                color: #ffffff;
+                border: none;
+                border-radius: 0.75rem;
+                font-size: 0.875rem;
+                font-weight: 700;
+                cursor: pointer;
+                transition: all 0.2s;
+                box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+                box-sizing: border-box;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0.5rem;
+            }
+            .eligibility-submit-btn:hover {
+                background: #1d4ed8;
+                box-shadow: 0 6px 12px -1px rgba(37, 99, 235, 0.25);
+            }
+            .eligibility-submit-btn:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+            </style>
 
-            // Inject custom questions
-            customQuestions.forEach((q: any, index: number) => {
-                const fieldName = `custom_question_${index}`
-                formHtml += `
-                    <div class="form-group" style="margin-bottom: 1.25rem;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: #475569;">${q.label}</label>
-                `
-                if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
-                    formHtml += `<select name="${fieldName}" required style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; background: #fff; transition: all 0.2s;">`
-                    q.options.forEach((opt: string) => {
-                        formHtml += `<option value="${opt}">${opt}</option>`
-                    })
-                    formHtml += `</select>`
-                } else {
-                    formHtml += `<input type="text" name="${fieldName}" required placeholder="Your answer" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; transition: all 0.2s;" />`
+            <script>
+            (function() {
+                const questions = ${JSON.stringify(customQuestions)};
+                let currentStep = 0;
+                const answers = {};
+                const contactInfo = { name: '', phone: '', city: '' };
+                
+                const overlay = document.getElementById('eligibility-modal-overlay');
+                const closeBtn = document.getElementById('eligibility-modal-close');
+                const backBtn = document.getElementById('eligibility-modal-back');
+                const progressContainer = document.getElementById('eligibility-modal-progress-container');
+                const progressBar = document.getElementById('eligibility-modal-progress-bar');
+                const progressText = document.getElementById('eligibility-modal-progress-text');
+                const stepsContainer = document.getElementById('eligibility-modal-steps-container');
+                
+                if (overlay && overlay.parentNode !== document.body) {
+                    document.body.appendChild(overlay);
                 }
-                formHtml += `</div>`
-            })
-
-            formHtml += `
-                    <button type="submit" class="submit-btn" style="width: 100%; padding: 0.875rem; background: #2563eb; color: #ffffff; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);">Submit & Continue</button>
-                    <p class="form-message" style="margin-top: 1rem; font-size: 0.875rem; font-weight: 600; text-align: center; display: none;"></p>
-                </form>
-
-                <script>
-                    document.querySelectorAll('.dynamic-landing-form').forEach(function(form) {
+                
+                function openModal() {
+                    if (!overlay) return;
+                    overlay.style.display = 'flex';
+                    currentStep = 0;
+                    for (let k in answers) delete answers[k];
+                    contactInfo.name = '';
+                    contactInfo.phone = '';
+                    contactInfo.city = '';
+                    renderStep();
+                }
+                
+                function closeModal() {
+                    if (!overlay) return;
+                    overlay.style.display = 'none';
+                }
+                
+                if (closeBtn) closeBtn.addEventListener('click', closeModal);
+                
+                if (backBtn) {
+                    backBtn.addEventListener('click', function() {
+                        if (currentStep > 0) {
+                            currentStep--;
+                            renderStep();
+                        }
+                    });
+                }
+                
+                const card = document.getElementById('eligibility-modal-card');
+                if (card) {
+                    card.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                    });
+                }
+                if (overlay) {
+                    overlay.addEventListener('click', closeModal);
+                }
+                
+                function renderStep() {
+                    stepsContainer.innerHTML = '';
+                    progressContainer.style.display = 'flex';
+                    
+                    if (backBtn) {
+                        if (currentStep > 0) {
+                            backBtn.style.display = 'flex';
+                        } else {
+                            backBtn.style.display = 'none';
+                        }
+                    }
+                    
+                    const totalSteps = questions.length + 1;
+                    const percent = Math.round((currentStep / totalSteps) * 100);
+                    if (progressBar) progressBar.style.width = percent + '%';
+                    if (progressText) progressText.style.textContent = 'Step ' + (currentStep + 1) + ' of ' + totalSteps;
+                    
+                    if (currentStep < questions.length) {
+                        const q = questions[currentStep];
+                        
+                        const wrapper = document.createElement('div');
+                        wrapper.style.display = 'flex';
+                        wrapper.style.flexDirection = 'column';
+                        wrapper.style.gap = '1.25rem';
+                        
+                        const questionLabel = document.createElement('h4');
+                        questionLabel.style.margin = '0';
+                        questionLabel.style.color = '#0f172a';
+                        questionLabel.style.fontSize = '1.25rem';
+                        questionLabel.style.fontWeight = '800';
+                        questionLabel.style.lineHeight = '1.4';
+                        questionLabel.textContent = q.label;
+                        wrapper.appendChild(questionLabel);
+                        
+                        if (q.type === 'MULTIPLE_CHOICE') {
+                            const optsContainer = document.createElement('div');
+                            optsContainer.style.display = 'flex';
+                            optsContainer.style.flexDirection = 'column';
+                            optsContainer.style.gap = '0.5rem';
+                            
+                            var displayOpts = (q.options || []).slice();
+                            if (q.disqualify_options && Array.isArray(q.disqualify_options)) {
+                                q.disqualify_options.forEach(function(disqOpt) {
+                                    var trimmed = disqOpt.trim();
+                                    var alreadyExists = false;
+                                    for (var i = 0; i < displayOpts.length; i++) {
+                                        if (displayOpts[i].trim().toLowerCase() === trimmed.toLowerCase()) {
+                                            alreadyExists = true;
+                                            break;
+                                        }
+                                    }
+                                    if (trimmed && !alreadyExists) {
+                                        displayOpts.push(trimmed);
+                                    }
+                                });
+                            }
+                            
+                            displayOpts.forEach(function(opt) {
+                                const btn = document.createElement('button');
+                                btn.className = 'eligibility-opt-btn';
+                                btn.innerHTML = '<span>' + opt + '</span><span class="eligibility-opt-btn-chevron">→</span>';
+                                btn.addEventListener('click', function() {
+                                    handleAnswer(q, opt);
+                                });
+                                optsContainer.appendChild(btn);
+                            });
+                            wrapper.appendChild(optsContainer);
+                        } else {
+                            const inputGroup = document.createElement('div');
+                            inputGroup.style.display = 'flex';
+                            inputGroup.style.flexDirection = 'column';
+                            inputGroup.style.gap = '0.75rem';
+                            
+                            const input = document.createElement('input');
+                            input.type = 'text';
+                            input.className = 'eligibility-input';
+                            input.placeholder = 'Type your answer here...';
+                            input.required = true;
+                            input.value = answers[q.label] || '';
+                            
+                            input.addEventListener('input', function() {
+                                answers[q.label] = input.value;
+                            });
+                            
+                            const nextBtn = document.createElement('button');
+                            nextBtn.className = 'eligibility-submit-btn';
+                            nextBtn.textContent = 'Next';
+                            
+                            function submitTextAnswer() {
+                                const val = input.value.trim();
+                                if (!val) {
+                                    input.style.borderColor = '#b91c1c';
+                                    return;
+                                }
+                                handleAnswer(q, val);
+                            }
+                            
+                            nextBtn.addEventListener('click', submitTextAnswer);
+                            input.addEventListener('keypress', function(e) {
+                                if (e.key === 'Enter') submitTextAnswer();
+                            });
+                            
+                            inputGroup.appendChild(input);
+                            inputGroup.appendChild(nextBtn);
+                            wrapper.appendChild(inputGroup);
+                            
+                            setTimeout(function() { input.focus(); }, 50);
+                        }
+                        
+                        stepsContainer.appendChild(wrapper);
+                    } else {
+                        const wrapper = document.createElement('div');
+                        wrapper.style.display = 'flex';
+                        wrapper.style.flexDirection = 'column';
+                        wrapper.style.gap = '1.25rem';
+                        
+                        const title = document.createElement('h4');
+                        title.style.margin = '0';
+                        title.style.color = '#0f172a';
+                        title.style.fontSize = '1.25rem';
+                        title.style.fontWeight = '800';
+                        title.style.textAlign = 'center';
+                        title.textContent = 'Almost There! Enter Details';
+                        wrapper.appendChild(title);
+                        
+                        const desc = document.createElement('p');
+                        desc.style.margin = '0';
+                        desc.style.color = '#64748b';
+                        desc.style.fontSize = '0.875rem';
+                        desc.style.textAlign = 'center';
+                        desc.style.lineHeight = '1.5';
+                        desc.textContent = 'Please fill out your contact details to complete your application.';
+                        wrapper.appendChild(desc);
+                        
+                        const form = document.createElement('form');
+                        form.style.display = 'flex';
+                        form.style.flexDirection = 'column';
+                        form.style.gap = '1rem';
+                        
+                        const nameGroup = createInputGroup('Full Name', 'text', 'name', 'John Doe');
+                        const phoneGroup = createInputGroup('WhatsApp Number', 'tel', 'phone', '+91 98765 43210');
+                        const cityGroup = createInputGroup('City', 'text', 'city', 'Mohali');
+                        
+                        nameGroup.input.value = contactInfo.name;
+                        phoneGroup.input.value = contactInfo.phone;
+                        cityGroup.input.value = contactInfo.city;
+                        
+                        nameGroup.input.addEventListener('input', function() {
+                            contactInfo.name = nameGroup.input.value;
+                        });
+                        phoneGroup.input.addEventListener('input', function() {
+                            contactInfo.phone = phoneGroup.input.value;
+                        });
+                        cityGroup.input.addEventListener('input', function() {
+                            contactInfo.city = cityGroup.input.value;
+                        });
+                        
+                        form.appendChild(nameGroup.container);
+                        form.appendChild(phoneGroup.container);
+                        form.appendChild(cityGroup.container);
+                        
+                        const submitBtn = document.createElement('button');
+                        submitBtn.type = 'submit';
+                        submitBtn.className = 'eligibility-submit-btn';
+                        submitBtn.textContent = 'Submit Details';
+                        form.appendChild(submitBtn);
+                        
+                        const errMsg = document.createElement('p');
+                        errMsg.style.margin = '0';
+                        errMsg.style.fontSize = '0.875rem';
+                        errMsg.style.color = '#b91c1c';
+                        errMsg.style.fontWeight = '600';
+                        errMsg.style.textAlign = 'center';
+                        errMsg.style.display = 'none';
+                        form.appendChild(errMsg);
+                        
                         form.addEventListener('submit', async function(e) {
                             e.preventDefault();
-                            const submitBtn = this.querySelector('.submit-btn');
-                            const messageEl = this.querySelector('.form-message');
+                            submitBtn.disabled = true;
+                            submitBtn.textContent = 'Submitting...';
+                            errMsg.style.display = 'none';
                             
-                            if (submitBtn) {
-                                submitBtn.disabled = true;
-                                submitBtn.textContent = 'Submitting...';
-                            }
-                            if (messageEl) messageEl.style.display = 'none';
-
-                            const formData = new FormData(this);
-                            const payload = {};
-                            formData.forEach((value, key) => { payload[key] = value; });
-
+                            const payload = {
+                                landing_page_id: '${page.id}',
+                                user_id: '${profile.id}',
+                                slug: '${slug}',
+                                name: nameGroup.input.value.trim(),
+                                phone: phoneGroup.input.value.trim(),
+                                city: cityGroup.input.value.trim()
+                            };
+                            
+                            questions.forEach(function(q, idx) {
+                                payload['custom_question_' + idx] = answers[q.label];
+                            });
+                            
                             try {
                                 const res = await fetch('/api/shared/landing-page/lead', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify(payload)
                                 });
-
+                                
                                 const resData = await res.json();
-                                if (resData.success) {
-                                    if (messageEl) {
-                                        messageEl.style.color = '#15803d';
-                                        messageEl.textContent = 'Thank you! Your details have been submitted.';
-                                        messageEl.style.display = 'block';
-                                    }
-                                    this.reset();
-                                    
-                                    // Trigger Meta Pixel Event
-                                    if (window.fbq) {
-                                        window.fbq('track', 'Lead', {
-                                            content_name: '${page.product_name}',
-                                            status: 'QualifiedPending'
-                                        });
-                                    }
-                                } else {
+                                if (!res.ok || !resData.success) {
                                     throw new Error(resData.error || 'Submission failed');
                                 }
+                                
+                                if (window.fbq) {
+                                    window.fbq('track', 'Lead', {
+                                        content_name: '${page.product_name.replace(/'/g, "\\'")}',
+                                        status: 'Qualified'
+                                    });
+                                }
+                                
+                                showSuccess();
                             } catch(err) {
-                                if (messageEl) {
-                                    messageEl.style.color = '#b91c1c';
-                                    messageEl.textContent = err.message || 'Something went wrong. Please try again.';
-                                    messageEl.style.display = 'block';
-                                }
-                            } finally {
-                                if (submitBtn) {
-                                    submitBtn.disabled = false;
-                                    submitBtn.textContent = 'Submit & Continue';
-                                }
+                                errMsg.textContent = err.message || 'Something went wrong. Please try again.';
+                                errMsg.style.display = 'block';
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = 'Submit Details';
                             }
                         });
+                        
+                        wrapper.appendChild(form);
+                        stepsContainer.appendChild(wrapper);
+                        
+                        setTimeout(function() { nameGroup.input.focus(); }, 50);
+                    }
+                }
+                
+                function createInputGroup(labelVal, type, name, placeholder) {
+                    const container = document.createElement('div');
+                    container.style.display = 'flex';
+                    container.style.flexDirection = 'column';
+                    container.style.gap = '0.375rem';
+                    
+                    const label = document.createElement('label');
+                    label.style.fontSize = '0.75rem';
+                    label.style.fontWeight = '700';
+                    label.style.color = '#475569';
+                    label.style.textTransform = 'uppercase';
+                    label.style.letterSpacing = '0.05em';
+                    label.textContent = labelVal;
+                    
+                    const input = document.createElement('input');
+                    input.type = type;
+                    input.name = name;
+                    input.className = 'eligibility-input';
+                    input.placeholder = placeholder;
+                    input.required = true;
+                    
+                    container.appendChild(label);
+                    container.appendChild(input);
+                    
+                    return { container: container, input: input };
+                }
+                
+                function handleAnswer(q, option) {
+                    answers[q.label] = option;
+                    
+                    if (q.type === 'MULTIPLE_CHOICE' && q.disqualify_options && Array.isArray(q.disqualify_options)) {
+                        const isDisqualified = q.disqualify_options.some(function(disqOpt) {
+                            return disqOpt.trim().toLowerCase() === option.trim().toLowerCase();
+                        });
+                        
+                        if (isDisqualified) {
+                            showDisqualified(q.disqualify_message || 'Based on your response, you do not meet the eligibility criteria.');
+                            return;
+                        }
+                    }
+                    
+                    currentStep++;
+                    renderStep();
+                }
+                
+                function showDisqualified(message) {
+                    progressContainer.style.display = 'none';
+                    if (backBtn) backBtn.style.display = 'none';
+                    stepsContainer.innerHTML = '';
+                    
+                    const wrapper = document.createElement('div');
+                    wrapper.style.display = 'flex';
+                    wrapper.style.flexDirection = 'column';
+                    wrapper.style.alignItems = 'center';
+                    wrapper.style.textAlign = 'center';
+                    wrapper.style.gap = '1.25rem';
+                    wrapper.style.padding = '1.5rem 0';
+                    
+                    const iconContainer = document.createElement('div');
+                    iconContainer.style.width = '4rem';
+                    iconContainer.style.height = '4rem';
+                    iconContainer.style.background = '#fef2f2';
+                    iconContainer.style.borderRadius = '50%';
+                    iconContainer.style.display = 'flex';
+                    iconContainer.style.alignItems = 'center';
+                    iconContainer.style.justifyContent = 'center';
+                    iconContainer.style.color = '#ef4444';
+                    iconContainer.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>';
+                    wrapper.appendChild(iconContainer);
+                    
+                    const title = document.createElement('h4');
+                    title.style.margin = '0';
+                    title.style.color = '#991b1b';
+                    title.style.fontSize = '1.5rem';
+                    title.style.fontWeight = '900';
+                    title.textContent = 'Not Eligible';
+                    wrapper.appendChild(title);
+                    
+                    const msgText = document.createElement('p');
+                    msgText.style.margin = '0';
+                    msgText.style.color = '#4b5563';
+                    msgText.style.fontSize = '0.95rem';
+                    msgText.style.lineHeight = '1.6';
+                    msgText.style.fontWeight = '600';
+                    msgText.textContent = message;
+                    wrapper.appendChild(msgText);
+                    
+                    const btnContainer = document.createElement('div');
+                    btnContainer.style.display = 'flex';
+                    btnContainer.style.width = '100%';
+                    btnContainer.style.gap = '0.75rem';
+                    btnContainer.style.marginTop = '0.5rem';
+                    
+                    const backBtnDisq = document.createElement('button');
+                    backBtnDisq.className = 'eligibility-submit-btn';
+                    backBtnDisq.style.background = '#2563eb';
+                    backBtnDisq.style.boxShadow = 'none';
+                    backBtnDisq.textContent = 'Go Back & Edit';
+                    backBtnDisq.addEventListener('click', function() {
+                        renderStep();
                     });
-                </script>
-            `
-        }
+                    btnContainer.appendChild(backBtnDisq);
+                    
+                    const closeBtn2 = document.createElement('button');
+                    closeBtn2.className = 'eligibility-submit-btn';
+                    closeBtn2.style.background = '#6b7280';
+                    closeBtn2.style.boxShadow = 'none';
+                    closeBtn2.textContent = 'Close';
+                    closeBtn2.addEventListener('click', closeModal);
+                    btnContainer.appendChild(closeBtn2);
+                    
+                    wrapper.appendChild(btnContainer);
+                    
+                    stepsContainer.appendChild(wrapper);
+                }
+                
+                function showSuccess() {
+                    progressContainer.style.display = 'none';
+                    if (backBtn) backBtn.style.display = 'none';
+                    stepsContainer.innerHTML = '';
+                    
+                    const wrapper = document.createElement('div');
+                    wrapper.style.display = 'flex';
+                    wrapper.style.flexDirection = 'column';
+                    wrapper.style.alignItems = 'center';
+                    wrapper.style.textAlign = 'center';
+                    wrapper.style.gap = '1.25rem';
+                    wrapper.style.padding = '1.5rem 0';
+                    
+                    const iconContainer = document.createElement('div');
+                    iconContainer.style.width = '4rem';
+                    iconContainer.style.height = '4rem';
+                    iconContainer.style.background = '#f0fdf4';
+                    iconContainer.style.borderRadius = '50%';
+                    iconContainer.style.display = 'flex';
+                    iconContainer.style.alignItems = 'center';
+                    iconContainer.style.justifyContent = 'center';
+                    iconContainer.style.color = '#22c55e';
+                    iconContainer.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>';
+                    wrapper.appendChild(iconContainer);
+                    
+                    const title = document.createElement('h4');
+                    title.style.margin = '0';
+                    title.style.color = '#166534';
+                    title.style.fontSize = '1.5rem';
+                    title.style.fontWeight = '900';
+                    title.textContent = 'Application Submitted!';
+                    wrapper.appendChild(title);
+                    
+                    const msgText = document.createElement('p');
+                    msgText.style.margin = '0';
+                    msgText.style.color = '#4b5563';
+                    msgText.style.fontSize = '0.95rem';
+                    msgText.style.lineHeight = '1.6';
+                    msgText.style.fontWeight = '600';
+                    msgText.textContent = 'Thank you! Your details have been submitted successfully. We will get in touch with you shortly.';
+                    wrapper.appendChild(msgText);
+                    
+                    const closeBtn2 = document.createElement('button');
+                    closeBtn2.className = 'eligibility-submit-btn';
+                    closeBtn2.style.background = '#166534';
+                    closeBtn2.style.boxShadow = 'none';
+                    closeBtn2.textContent = 'Done';
+                    closeBtn2.addEventListener('click', closeModal);
+                    wrapper.appendChild(closeBtn2);
+                    
+                    stepsContainer.appendChild(wrapper);
+                }
+                
+                document.addEventListener('click', function(e) {
+                    const target = e.target.closest('a');
+                    if (target) {
+                        const href = target.getAttribute('href') || '';
+                        if (href === '#qualification-form-container') {
+                            e.preventDefault();
+                            openModal();
+                            return;
+                        }
+                    }
+                    
+                    const btn = e.target.closest('.open-eligibility-modal-btn');
+                    if (btn) {
+                        e.preventDefault();
+                        openModal();
+                    }
+                });
+            })();
+            </script>
+        `
 
         // Meta Pixel tracking code
         let pixelScript = ''
@@ -209,7 +705,7 @@ export async function GET(request: Request, { params }: RouteProps) {
             `
         }
 
-        const containerRegex = /<div\s+[^>]*id="qualification-form-container"[^>]*><\/div>/gi
+        const containerRegex = /<div\s+[^>]*id="qualification-form-container"[^>]*>([\s\S]*?)<\/div>/gi
         if (finalHtml.match(containerRegex)) {
             finalHtml = finalHtml.replace(containerRegex, formHtml)
         }

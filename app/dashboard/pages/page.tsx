@@ -18,6 +18,8 @@ type CustomQuestion = {
     label: string
     type: 'SHORT_ANSWER' | 'MULTIPLE_CHOICE'
     options?: string[]
+    disqualify_options?: string[]
+    disqualify_message?: string
 }
 
 type QualificationForm = {
@@ -67,9 +69,12 @@ export default function PagesDashboard() {
     const [showFormModal, setShowFormModal] = useState(false)
     const [formName, setFormName] = useState('')
     const [formQuestions, setFormQuestions] = useState<CustomQuestion[]>([])
+    const [editingFormId, setEditingFormId] = useState<string | null>(null)
     const [newQuestionLabel, setNewQuestionLabel] = useState('')
     const [newQuestionType, setNewQuestionType] = useState<'SHORT_ANSWER' | 'MULTIPLE_CHOICE'>('SHORT_ANSWER')
     const [newQuestionOptions, setNewQuestionOptions] = useState('')
+    const [newDisqualifyOptions, setNewDisqualifyOptions] = useState('')
+    const [newDisqualifyMessage, setNewDisqualifyMessage] = useState('')
 
     // Page generator state
     const [showPageGenerator, setShowPageGenerator] = useState(false)
@@ -172,20 +177,57 @@ export default function PagesDashboard() {
     // --- 3. FORM BUILDER OPERATIONS ---
     const handleAddQuestion = () => {
         if (!newQuestionLabel.trim()) return
+
+        let opts = newQuestionType === 'MULTIPLE_CHOICE' 
+            ? newQuestionOptions.split(',').map(o => o.trim()).filter(Boolean) 
+            : undefined
+
+        const disq = newQuestionType === 'MULTIPLE_CHOICE'
+            ? newDisqualifyOptions.split(',').map(o => o.trim()).filter(Boolean)
+            : undefined
+
+        // Automatically merge disqualifying options into options if not already present
+        if (opts && disq) {
+            const existingSet = new Set(opts.map(o => o.toLowerCase()))
+            disq.forEach(dOpt => {
+                if (!existingSet.has(dOpt.toLowerCase())) {
+                    opts!.push(dOpt)
+                }
+            })
+        }
+
         const newQ: CustomQuestion = {
             label: newQuestionLabel.trim(),
             type: newQuestionType,
-            options: newQuestionType === 'MULTIPLE_CHOICE' 
-                ? newQuestionOptions.split(',').map(o => o.trim()).filter(Boolean) 
+            options: opts,
+            disqualify_options: disq,
+            disqualify_message: newQuestionType === 'MULTIPLE_CHOICE' && newDisqualifyMessage.trim()
+                ? newDisqualifyMessage.trim()
                 : undefined
         }
         setFormQuestions([...formQuestions, newQ])
         setNewQuestionLabel('')
         setNewQuestionOptions('')
+        setNewDisqualifyOptions('')
+        setNewDisqualifyMessage('')
     }
 
     const handleRemoveQuestion = (idx: number) => {
         setFormQuestions(formQuestions.filter((_, i) => i !== idx))
+    }
+
+    const handleEditFormClick = (form: QualificationForm) => {
+        setEditingFormId(form.id)
+        setFormName(form.name)
+        setFormQuestions(form.custom_questions || [])
+        setShowFormModal(true)
+    }
+
+    const handleOpenNewFormModal = () => {
+        setEditingFormId(null)
+        setFormName('')
+        setFormQuestions([])
+        setShowFormModal(true)
     }
 
     const handleCreateForm = async () => {
@@ -202,22 +244,34 @@ export default function PagesDashboard() {
                 { name: 'city', type: 'text', label: 'City' }
             ]
 
-            const { data, error } = await supabase
-                .from('qualification_forms')
-                .insert({
-                    user_id: targetUserId,
-                    name: formName.trim(),
-                    fields: defaultFields,
-                    custom_questions: formQuestions
-                })
-                .select()
-                .single()
+            if (editingFormId) {
+                const { error } = await supabase
+                    .from('qualification_forms')
+                    .update({
+                        name: formName.trim(),
+                        custom_questions: formQuestions
+                    })
+                    .eq('id', editingFormId)
 
-            if (error) throw error
+                if (error) throw error
+                showToast(`Form "${formName}" updated successfully!`)
+            } else {
+                const { error } = await supabase
+                    .from('qualification_forms')
+                    .insert({
+                        user_id: targetUserId,
+                        name: formName.trim(),
+                        fields: defaultFields,
+                        custom_questions: formQuestions
+                    })
 
-            showToast(`Form "${formName}" created successfully!`)
+                if (error) throw error
+                showToast(`Form "${formName}" created successfully!`)
+            }
+
             setFormName('')
             setFormQuestions([])
+            setEditingFormId(null)
             setShowFormModal(false)
             await fetchListData(targetUserId)
         } catch (e: any) {
@@ -319,6 +373,28 @@ export default function PagesDashboard() {
         }
     }
 
+    const handleUpdatePageForm = async (pageId: string, formId: string | null) => {
+        setActionLoading(true)
+        try {
+            const { error } = await supabase
+                .from('landing_pages')
+                .update({ form_id: formId })
+                .eq('id', pageId)
+            
+            if (error) throw error
+            showToast("Landing page qualification form updated successfully!")
+            await fetchListData(targetUserId)
+            
+            if (activeEditorPage && activeEditorPage.id === pageId) {
+                setActiveEditorPage(prev => prev ? { ...prev, form_id: formId } : null)
+            }
+        } catch (e: any) {
+            showToast(e.message, 'error')
+        } finally {
+            setActionLoading(false)
+        }
+    }
+
     // --- 5. CONVERSATIONAL EDIT CHAT Console ---
     const handleSendChatEdit = async () => {
         if (!chatInput.trim() || !activeEditorPage) return
@@ -397,9 +473,18 @@ export default function PagesDashboard() {
                     <div style="margin-bottom: 1.25rem;">
                         <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: #475569;">${q.label}</label>
                 `
-                if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
+                if (q.type === 'MULTIPLE_CHOICE') {
                     formHtml += `<select disabled style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; background: #fff;">`
-                    q.options.forEach((opt: string) => {
+                    const displayOpts = [...(q.options || [])]
+                    if (q.disqualify_options && Array.isArray(q.disqualify_options)) {
+                        q.disqualify_options.forEach((disqOpt: string) => {
+                            const trimmed = disqOpt.trim()
+                            if (trimmed && !displayOpts.some(o => o.trim().toLowerCase() === trimmed.toLowerCase())) {
+                                displayOpts.push(trimmed)
+                            }
+                        })
+                    }
+                    displayOpts.forEach((opt: string) => {
                         formHtml += `<option value="${opt}">${opt}</option>`
                     })
                     formHtml += `</select>`
@@ -415,7 +500,7 @@ export default function PagesDashboard() {
             </div>
         `
 
-        const containerRegex = /<div\s+[^>]*id="qualification-form-container"[^>]*><\/div>/gi
+        const containerRegex = /<div\s+[^>]*id="qualification-form-container"[^>]*>([\s\S]*?)<\/div>/gi
         if (html.match(containerRegex)) {
             html = html.replace(containerRegex, formHtml)
         } else if (html.includes('</body>')) {
@@ -460,7 +545,7 @@ export default function PagesDashboard() {
                             </button>
                         ) : (
                             <button 
-                                onClick={() => setShowFormModal(true)}
+                                onClick={handleOpenNewFormModal}
                                 className="bg-slate-900 text-white font-extrabold hover:bg-slate-800 text-sm px-6 py-3 rounded-full shadow-md shadow-slate-900/10 flex items-center gap-2 active:scale-95 transition-all"
                             >
                                 <Plus size={16} /> Custom Form
@@ -616,7 +701,7 @@ export default function PagesDashboard() {
                                             <h3 className="text-lg font-black text-slate-800 leading-tight mb-2 line-clamp-1">{page.product_name}</h3>
                                             <p className="text-xs font-semibold text-slate-400 line-clamp-2 leading-relaxed mb-4">{page.title}</p>
                                             
-                                            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex items-center justify-between mb-6 shrink-0 min-w-0 gap-3">
+                                            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex items-center justify-between mb-4 shrink-0 min-w-0 gap-3">
                                                 <span className="text-[10px] font-bold text-slate-500 truncate select-all">{`/${page.slug}`}</span>
                                                 
                                                 <button
@@ -626,6 +711,20 @@ export default function PagesDashboard() {
                                                 >
                                                     {copiedId === page.id ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
                                                 </button>
+                                            </div>
+
+                                            <div className="mb-6">
+                                                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5 ml-1">Linked Form</label>
+                                                <select 
+                                                    value={page.form_id || ''}
+                                                    onChange={(e) => handleUpdatePageForm(page.id, e.target.value || null)}
+                                                    className="w-full bg-slate-50 hover:bg-slate-100/50 p-3 rounded-xl text-xs font-bold text-slate-700 outline-none border border-slate-200/60 transition-all cursor-pointer"
+                                                >
+                                                    <option value="">Default Form (Name, WhatsApp, City)</option>
+                                                    {forms.map(f => (
+                                                        <option key={f.id} value={f.id}>{f.name}</option>
+                                                    ))}
+                                                </select>
                                             </div>
 
                                             <div className="flex gap-2 w-full pt-4 border-t border-slate-100 mt-auto">
@@ -677,7 +776,7 @@ export default function PagesDashboard() {
                                     <h3 className="text-lg font-black text-slate-800">No forms built yet</h3>
                                     <p className="text-xs font-semibold text-slate-400 mt-2 max-w-[280px] mx-auto leading-relaxed">Default fields (Name, WhatsApp, City) are automatically set up. Add custom questions for qualification.</p>
                                     <button 
-                                        onClick={() => setShowFormModal(true)}
+                                        onClick={handleOpenNewFormModal}
                                         className="mt-6 bg-slate-900 text-white font-extrabold text-xs px-5 py-3 rounded-full hover:bg-slate-800 transition-colors shadow-md shadow-slate-900/10 inline-flex items-center gap-2 active:scale-95"
                                     >
                                         <Plus size={14} /> Build First Form
@@ -703,15 +802,31 @@ export default function PagesDashboard() {
                                                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Custom Questions ({form.custom_questions.length})</div>
                                                     <div className="flex flex-col gap-1.5">
                                                         {form.custom_questions.map((q, idx) => (
-                                                            <div key={idx} className="bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs text-slate-700 font-semibold truncate">
-                                                                {q.label} <span className="text-[9px] bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded font-black ml-1.5">{q.type === 'MULTIPLE_CHOICE' ? 'Choice' : 'Text'}</span>
+                                                            <div key={idx} className="bg-slate-50 border border-slate-100 rounded-xl p-2.5 text-xs text-slate-700 font-semibold truncate flex flex-col gap-1">
+                                                                <div className="flex items-center gap-1.5 justify-between">
+                                                                    <span className="truncate">{q.label}</span>
+                                                                    <span className="text-[9px] bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded font-black shrink-0">{q.type === 'MULTIPLE_CHOICE' ? 'Choice' : 'Text'}</span>
+                                                                </div>
+                                                                {q.disqualify_options && q.disqualify_options.length > 0 && (
+                                                                    <div className="text-[9px] text-red-500 font-bold tracking-tight">
+                                                                        Disqualifies: {q.disqualify_options.join(', ')}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         ))}
                                                     </div>
                                                 </div>
                                             )}
 
-                                            <div className="flex justify-end pt-4 border-t border-slate-100 mt-auto">
+                                            <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 mt-auto">
+                                                <button 
+                                                    onClick={() => handleEditFormClick(form)}
+                                                    className="bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white p-3 rounded-xl border border-blue-100 transition-all active:scale-95"
+                                                    title="Edit Form"
+                                                >
+                                                    <Edit3 size={14} />
+                                                </button>
+                                                
                                                 <button 
                                                     onClick={() => handleDeleteForm(form.id)}
                                                     className="bg-red-50 text-red-500 hover:bg-red-500 hover:text-white p-3 rounded-xl border border-red-100 transition-all active:scale-95"
@@ -735,7 +850,7 @@ export default function PagesDashboard() {
                 <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-6 sm:p-8 shadow-2xl flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-300 overflow-y-auto custom-scrollbar">
                         <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6">
-                            <h2 className="text-xl font-black text-slate-900">Create Custom Form</h2>
+                            <h2 className="text-xl font-black text-slate-900">{editingFormId ? 'Edit Qualification Form' : 'Create Custom Form'}</h2>
                             <button onClick={() => setShowFormModal(false)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200 transition-colors">
                                 <Plus className="rotate-45" size={18} />
                             </button>
@@ -767,7 +882,14 @@ export default function PagesDashboard() {
                                         <div key={idx} className="bg-slate-50 border border-slate-200/60 rounded-2xl p-3 flex justify-between items-center">
                                             <div className="min-w-0">
                                                 <div className="text-xs font-bold text-slate-700 truncate">{q.label}</div>
-                                                <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">{q.type === 'MULTIPLE_CHOICE' ? `Choice (${q.options?.length} opts)` : 'Short Answer'}</div>
+                                                <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                                                    {q.type === 'MULTIPLE_CHOICE' ? `Choice (${q.options?.length} opts)` : 'Short Answer'}
+                                                    {q.disqualify_options && q.disqualify_options.length > 0 && (
+                                                        <span className="text-red-500 font-bold ml-1.5">
+                                                            (Disqualifies: {q.disqualify_options.join(', ')})
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                             <button onClick={() => handleRemoveQuestion(idx)} className="text-slate-400 hover:text-red-500 p-1 transition-colors">
                                                 <Trash2 size={14} />
@@ -814,14 +936,37 @@ export default function PagesDashboard() {
                                 </div>
 
                                 {newQuestionType === 'MULTIPLE_CHOICE' && (
-                                    <div>
-                                        <input 
-                                            type="text"
-                                            value={newQuestionOptions}
-                                            onChange={e => setNewQuestionOptions(e.target.value)}
-                                            placeholder="Options (comma separated, e.g. Under 50L, 50L-1Cr, 1Cr+)"
-                                            className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all"
-                                        />
+                                    <div className="space-y-3">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Answer Options</label>
+                                            <input 
+                                                type="text"
+                                                value={newQuestionOptions}
+                                                onChange={e => setNewQuestionOptions(e.target.value)}
+                                                placeholder="Options (comma separated, e.g. Under 50L, 50L-1Cr, 1Cr+)"
+                                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Disqualifying Options (Optional)</label>
+                                            <input 
+                                                type="text"
+                                                value={newDisqualifyOptions}
+                                                onChange={e => setNewDisqualifyOptions(e.target.value)}
+                                                placeholder="Disqualifying options (comma separated, e.g. Under 50L)"
+                                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Exit Reason Message (Optional)</label>
+                                            <input 
+                                                type="text"
+                                                value={newDisqualifyMessage}
+                                                onChange={e => setNewDisqualifyMessage(e.target.value)}
+                                                placeholder="Reason: e.g. We require a minimum budget of 50L to qualify."
+                                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all"
+                                            />
+                                        </div>
                                     </div>
                                 )}
                             </div>

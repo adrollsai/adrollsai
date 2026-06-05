@@ -45,27 +45,46 @@ export async function POST(request: Request) {
         const objective = campaignData.objective;
         const isLeadGen = objective === 'OUTCOME_LEADS';
 
-        const adSetsRes = await fetch(`${FB_URL}/${campaignId}/adsets?fields=id&access_token=${profile.facebook_token}`);
+        const adSetsRes = await fetch(`${FB_URL}/${campaignId}/adsets?fields=id,destination_type&access_token=${profile.facebook_token}`);
         const adSetsData = await adSetsRes.json();
-        const adSetId = adSetsData.data?.[0]?.id;
+        const adSet = adSetsData.data?.[0];
+        const adSetId = adSet?.id;
         if (!adSetId) return NextResponse.json({ error: 'No Ad Set found in campaign' }, { status: 404 });
 
+        const isWebsiteCampaign = adSet.destination_type === 'WEBSITE';
+
+        // Retrieve existing ads to inherit form and link URL
+        let activeLinkUrl = null;
         let activeLeadFormId = leadFormId;
-        if (isLeadGen && !activeLeadFormId) {
-            console.log("[Push] Objective is LEADS, searching for existing form...");
-            const adsRes = await fetch(`${FB_URL}/${campaignId}/ads?fields=creative{id,object_story_spec}&access_token=${profile.facebook_token}&limit=5`);
-            const adsData = await adsRes.json();
-            for (const ad of (adsData.data || [])) {
-                const spec = ad.creative?.object_story_spec;
+        
+        console.log("[Push] Retrieving existing campaign ads to inherit layout properties...");
+        const adsRes = await fetch(`${FB_URL}/${campaignId}/ads?fields=creative{id,object_story_spec}&access_token=${profile.facebook_token}&limit=5`);
+        const adsData = await adsRes.json();
+        
+        for (const ad of (adsData.data || [])) {
+            const spec = ad.creative?.object_story_spec;
+            
+            // Try to find a link
+            const link = spec?.link_data?.link || 
+                         spec?.video_data?.call_to_action?.value?.link ||
+                         spec?.link_data?.call_to_action?.value?.link;
+            if (!activeLinkUrl && link && typeof link === 'string' && link.startsWith('http')) {
+                activeLinkUrl = link;
+                console.log("[Push] Inherited Link URL:", activeLinkUrl);
+            }
+            
+            // Try to find a lead form
+            if (!isWebsiteCampaign && !activeLeadFormId) {
                 const formId = spec?.link_data?.call_to_action?.value?.lead_gen_form_id || 
                              spec?.video_data?.call_to_action?.value?.lead_gen_form_id;
                 if (formId) {
                     activeLeadFormId = formId;
                     console.log("[Push] Inherited Lead Form ID:", activeLeadFormId);
-                    break;
                 }
             }
         }
+        
+        const finalLinkUrl = activeLinkUrl || (profile.custom_domain ? `https://${profile.custom_domain}` : 'https://adrolls.in');
 
         let successCount = 0;
 
@@ -158,6 +177,16 @@ export async function POST(request: Request) {
                 }
             };
 
+            const ctaValue: any = {};
+            if (isWebsiteCampaign) {
+                ctaValue.link = finalLinkUrl;
+            } else {
+                if (activeLeadFormId) {
+                    ctaValue.lead_gen_form_id = activeLeadFormId;
+                }
+                ctaValue.link = finalLinkUrl;
+            }
+
             if (isVideo) {
                 creativePayload.object_story_spec.video_data = {
                     video_id: videoId,
@@ -166,19 +195,19 @@ export async function POST(request: Request) {
                     image_hash: globalThumbHash, // Meta requires a thumbnail
                     call_to_action: {
                         type: 'LEARN_MORE',
-                        value: isLeadGen ? { lead_gen_form_id: activeLeadFormId, link: profile.custom_domain ? `https://${profile.custom_domain}` : 'https://adrolls.in' } : { link: profile.custom_domain ? `https://${profile.custom_domain}` : 'https://adrolls.in' }
+                        value: ctaValue
                     }
                 };
             } else {
                 creativePayload.object_story_spec.link_data = {
                     image_hash: imgHash,
-                    link: profile.custom_domain ? `https://${profile.custom_domain}` : 'https://adrolls.in',
+                    link: finalLinkUrl,
                     message: primaryText,
                     name: headline,
                     description: description,
                     call_to_action: { 
                         type: 'LEARN_MORE',
-                        value: isLeadGen ? { lead_gen_form_id: activeLeadFormId } : {}
+                        value: ctaValue
                     }
                 };
             }

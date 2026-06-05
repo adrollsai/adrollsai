@@ -319,7 +319,7 @@ export default function SharedCataloguePage() {
     e.stopPropagation()
     try {
       setSharingId(prop.id)
-      const shareText = `Check out this property!\n\n*${prop.title}*\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description ? prop.description : ''}`
+      const shareText = `Check out this property!\n\n*${prop.title}*\n📍 ${prop.address}\n\n${prop.description ? prop.description : ''}`
 
       if (navigator.canShare) {
         const filesToShare: File[] = []
@@ -584,7 +584,7 @@ export default function SharedCataloguePage() {
                             onClick={() => setShowFilters(!showFilters)} 
                             className={`px-4 sm:px-5 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl flex justify-center items-center gap-2 text-sm font-bold transition-all shadow-sm ${showFilters ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/60'}`}
                         >
-                            <Filter size={16} /> <span>Filters</span> {(selectedTypes.length > 0 || minPrice || maxPrice) && <span className="w-2 h-2 rounded-full bg-blue-500 ml-1"></span>}
+                            <Filter size={16} /> <span>Filters</span> {(selectedTypes.length > 0) && <span className="w-2 h-2 rounded-full bg-blue-500 ml-1"></span>}
                         </button>
                     </div>
                 </div>
@@ -593,16 +593,7 @@ export default function SharedCataloguePage() {
                 {showFilters && (
                     <div className="bg-white p-5 sm:p-8 rounded-2xl sm:rounded-[2rem] shadow-sm border border-slate-200/60 mb-8 animate-in slide-in-from-top-2 duration-200">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
-                            <div className="flex flex-col sm:flex-row gap-4">
-                                <div className="flex-1">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Min Price (₹)</label>
-                                    <input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="0" className="w-full bg-slate-50 hover:bg-slate-100/50 p-3 sm:p-4 rounded-xl sm:rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all" />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Max Price (₹)</label>
-                                    <input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="Any" className="w-full bg-slate-50 hover:bg-slate-100/50 p-3 sm:p-4 rounded-xl sm:rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all" />
-                                </div>
-                            </div>
+                            {/* Pricing filters hidden */}
                             <div>
                                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Property Type</label>
                                 <div className="flex gap-2 flex-wrap">
@@ -617,9 +608,9 @@ export default function SharedCataloguePage() {
                                 </div>
                             </div>
                         </div>
-                        {(minPrice || maxPrice || selectedTypes.length > 0) && (
+                        {(selectedTypes.length > 0) && (
                             <div className="mt-6 flex justify-end pt-4 border-t border-slate-100">
-                                <button onClick={() => { setMinPrice(''); setMaxPrice(''); setSelectedTypes([]) }} className="text-xs sm:text-sm font-bold text-red-500 hover:bg-red-50 px-4 py-2 rounded-xl transition-colors">Clear Filters</button>
+                                <button onClick={() => { setSelectedTypes([]) }} className="text-xs sm:text-sm font-bold text-red-500 hover:bg-red-50 px-4 py-2 rounded-xl transition-colors">Clear Filters</button>
                             </div>
                         )}
                     </div>
@@ -648,13 +639,7 @@ export default function SharedCataloguePage() {
                                     <div className="relative aspect-[4/3] w-full rounded-[1rem] sm:rounded-[1.5rem] overflow-hidden bg-slate-100 mb-3 sm:mb-4 shrink-0">
                                         <img src={prop.image_url} alt="Property" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                                         
-                                        {prop.price && (
-                                            <div className="absolute top-3 left-3 sm:top-4 sm:left-4">
-                                                <span className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm font-black shadow-lg bg-white/95 text-slate-900 backdrop-blur-md">
-                                                    {prop.price}
-                                                </span>
-                                            </div>
-                                        )}
+                                        {/* Pricing hidden from landing page */}
                                         
                                         {renderType && (
                                             <div className="absolute top-3 right-3 sm:top-4 sm:right-4">
@@ -808,11 +793,7 @@ export default function SharedCataloguePage() {
                       {/* Details Area */}
                       <div className="p-5 sm:p-10 space-y-5 sm:space-y-6 max-w-2xl mx-auto w-full pb-8">
                           <div>
-                              {selectedProperty.price && (
-                                  <div className="inline-block bg-green-50 text-green-700 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl font-black text-lg sm:text-xl mb-3 sm:mb-4 border border-green-200/60 shadow-sm">
-                                      {selectedProperty.price}
-                                  </div>
-                              )}
+                              {/* Pricing hidden from details modal */}
                               <h1 className="text-2xl sm:text-4xl font-extrabold text-slate-900 leading-tight mb-4 sm:mb-6 tracking-tight">
                                   {selectedProperty.title}
                               </h1>

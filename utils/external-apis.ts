@@ -384,8 +384,8 @@ export async function callGemini(prompt: string, imageUrls?: string[]): Promise<
         const result = await generateContentWithFallback(
             genAI,
             contents,
-            "gemini-3-flash-preview",
-            null
+            "gemini-3.5-flash",
+            "gemini-3-flash-preview"
         );
         const response = await result.response;
         return response.text();

@@ -76,6 +76,8 @@ export async function POST(request: Request) {
         data.assetIds = formData.getAll('assetIds').map(String);
         data.sourceCampaignId = formData.get('sourceCampaignId')?.toString();
         data.sourceCampaignName = formData.get('sourceCampaignName')?.toString();
+        data.campaignType = formData.get('campaignType')?.toString();
+        data.pixelId = formData.get('pixelId')?.toString();
         
         data.creativeFiles = [];
         formData.forEach((value, key) => {
@@ -87,7 +89,7 @@ export async function POST(request: Request) {
 
     // Fetch TARGET profile for credentials and business info
     const { data: targetProfile } = await supabase.from('profiles')
-        .select('facebook_token, ad_account_id, fb_page_id, business_url, business_name, contact_number, currency')
+        .select('facebook_token, ad_account_id, fb_page_id, business_url, business_name, contact_number, currency, pixel_id')
         .eq('id', targetUserId)
         .single();
 
@@ -115,10 +117,25 @@ export async function POST(request: Request) {
         assetIds = [],
         creativeFiles = [],
         sourceCampaignId,
-        sourceCampaignName = 'Campaign'
+        sourceCampaignName = 'Campaign',
+        campaignType = 'instant_form',
+        pixelId
     } = data;
     
     const currency = targetProfile?.currency || 'INR';
+
+    const finalPixelId = pixelId || targetProfile?.pixel_id || null;
+    const isWebsiteCampaign = campaignType === 'website_conversion';
+
+    if (isWebsiteCampaign && !finalPixelId) {
+        if (user?.id) {
+            await refundLimit(user.id, 'campaign_launches');
+        }
+        return NextResponse.json(
+            { error: 'Meta Pixel ID is required for Website Conversion campaigns. Please select a Pixel or connect one in your profile.' }, 
+            { status: 400 }
+        );
+    }
 
     if (!facebookToken || !adAccountId || !pageId) {
         const missing = [];
@@ -286,114 +303,117 @@ export async function POST(request: Request) {
         }
 
         // --- Step B: Create Lead Form with Custom Questions ---
-        logToFile("--- 2. CREATING LEAD FORM ---");
-        
-        let metaCustomQuestions: any[] = [];
-        if (customQuestionsStr && customQuestionsStr !== "[]") {
-            try {
-                const parsedQuestions = JSON.parse(customQuestionsStr);
-                metaCustomQuestions = parsedQuestions.map((q: any) => {
-                    const label = q.label.trim();
-                    const lowerLabel = label.toLowerCase();
-                    
-                    if (q.type !== 'MULTIPLE_CHOICE') {
-                        if (lowerLabel.includes('company') || lowerLabel.includes('business name')) {
-                            return { type: 'COMPANY_NAME', key: 'company_name' };
-                        }
-                        if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) {
-                            return { type: 'JOB_TITLE', key: 'job_title' };
-                        }
-                        if (lowerLabel.includes('city')) {
-                            return { type: 'CITY', key: 'city' };
-                        }
-                        if (lowerLabel.includes('state')) {
-                            return { type: 'STATE', key: 'state' };
-                        }
-                    }
-
-                    const metaQ: any = { 
-                        type: 'CUSTOM', 
-                        label: label.substring(0, 200) 
-                    };
-                    
-                    if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
-                        const validOptions = q.options
-                            .filter((o: string) => o.trim() !== '')
-                            .map((opt: string) => ({ 
-                                value: opt.trim(),
-                                key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50)
-                            }));
-                            
-                        if (validOptions.length > 0) {
-                            metaQ.options = validOptions;
-                        }
-                    }
-                    return metaQ;
-                });
-
-                const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
-                metaCustomQuestions = metaCustomQuestions.filter(q => {
-                    if (q.type === 'CUSTOM') return true;
-                    if (seenTypes.has(q.type)) return false;
-                    seenTypes.add(q.type);
-                    return true;
-                });
-
-            } catch (e) {
-                logToFile("Failed to parse custom questions", e);
-            }
-        }
-
-        const finalFollowUpUrl = linkUrl || "https://adrolls.in";
-
-        // Dynamic and Distinguishable Lead Form name based on custom questions
         const businessName = data.business_name || "Our Business";
-        const questionLabels = metaCustomQuestions
-            .map(q => q.label || q.type)
-            .filter(Boolean)
-            .map(label => label.replace(/[?:]/g, '').trim())
-            .join(', ');
+        let leadFormId = null;
 
-        const formName = `Form - Retargeting - ${businessName} - (Name, Email, Phone${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
+        if (!isWebsiteCampaign) {
+            logToFile("--- 2. CREATING LEAD FORM ---");
+            
+            let metaCustomQuestions: any[] = [];
+            if (customQuestionsStr && customQuestionsStr !== "[]") {
+                try {
+                    const parsedQuestions = JSON.parse(customQuestionsStr);
+                    metaCustomQuestions = parsedQuestions.map((q: any) => {
+                        const label = q.label.trim();
+                        const lowerLabel = label.toLowerCase();
+                        
+                        if (q.type !== 'MULTIPLE_CHOICE') {
+                            if (lowerLabel.includes('company') || lowerLabel.includes('business name')) {
+                                return { type: 'COMPANY_NAME', key: 'company_name' };
+                            }
+                            if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) {
+                                return { type: 'JOB_TITLE', key: 'job_title' };
+                            }
+                            if (lowerLabel.includes('city')) {
+                                return { type: 'CITY', key: 'city' };
+                            }
+                            if (lowerLabel.includes('state')) {
+                                return { type: 'STATE', key: 'state' };
+                            }
+                        }
 
-        const leadFormPayload: any = {
-            name: formName,
-            follow_up_action_url: finalFollowUpUrl, 
-            question_page_custom_headline: `Welcome Back! Get Premium Access`,
-            question_page_custom_text: "Confirm your details to get priority scheduling & exclusive pricing.",
-            privacy_policy: { 
-                url: (privacyPolicyUrl && !privacyPolicyUrl.includes('localhost')) ? privacyPolicyUrl : "https://adrolls.in/privacy", 
-                link_text: "Privacy Policy" 
-            },
-            questions: [
-                { type: "FULL_NAME", key: "full_name" },
-                { type: "EMAIL", key: "email" },
-                { type: "PHONE", key: "phone_number" },
-                ...metaCustomQuestions
-            ],
-            access_token: facebookToken
-        };
+                        const metaQ: any = { 
+                            type: 'CUSTOM', 
+                            label: label.substring(0, 200) 
+                        };
+                        
+                        if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
+                            const validOptions = q.options
+                                .filter((o: string) => o.trim() !== '')
+                                .map((opt: string) => ({ 
+                                    value: opt.trim(),
+                                    key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50)
+                                }));
+                                
+                            if (validOptions.length > 0) {
+                                metaQ.options = validOptions;
+                            }
+                        }
+                        return metaQ;
+                    });
 
-        logToFile("--- 2b. RETARGETING LEAD FORM PAYLOAD ---", leadFormPayload);
+                    const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
+                    metaCustomQuestions = metaCustomQuestions.filter(q => {
+                        if (q.type === 'CUSTOM') return true;
+                        if (seenTypes.has(q.type)) return false;
+                        seenTypes.add(q.type);
+                        return true;
+                    });
 
-        const formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json; charset=utf-8' 
-            },
-            body: JSON.stringify(leadFormPayload)
-        });
-        
-        const formCreateData = await formCreateRes.json();
+                } catch (e) {
+                    logToFile("Failed to parse custom questions", e);
+                }
+            }
 
-        if (!formCreateRes.ok) {
-            logToFile("❌ Retargeting Lead Form Creation Failed:", formCreateData);
-            const metaErrorMsg = formCreateData.error?.error_user_msg || formCreateData.error?.message || "Unknown Error";
-            throw new Error(`Meta Lead Form Error: ${metaErrorMsg}`);
+            const finalFollowUpUrl = linkUrl || "https://adrolls.in";
+
+            const questionLabels = metaCustomQuestions
+                .map(q => q.label || q.type)
+                .filter(Boolean)
+                .map(label => label.replace(/[?:]/g, '').trim())
+                .join(', ');
+
+            const formName = `Form - Retargeting - ${businessName} - (Name, Email, Phone${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
+
+            const leadFormPayload: any = {
+                name: formName,
+                follow_up_action_url: finalFollowUpUrl, 
+                question_page_custom_headline: `Welcome Back! Get Premium Access`,
+                question_page_custom_text: "Confirm your details to get priority scheduling & exclusive pricing.",
+                privacy_policy: { 
+                    url: (privacyPolicyUrl && !privacyPolicyUrl.includes('localhost')) ? privacyPolicyUrl : "https://adrolls.in/privacy", 
+                    link_text: "Privacy Policy" 
+                },
+                questions: [
+                    { type: "FULL_NAME", key: "full_name" },
+                    { type: "EMAIL", key: "email" },
+                    { type: "PHONE", key: "phone_number" },
+                    ...metaCustomQuestions
+                ],
+                access_token: facebookToken
+            };
+
+            logToFile("--- 2b. RETARGETING LEAD FORM PAYLOAD ---", leadFormPayload);
+
+            const formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json; charset=utf-8' 
+                },
+                body: JSON.stringify(leadFormPayload)
+            });
+            
+            const formCreateData = await formCreateRes.json();
+
+            if (!formCreateRes.ok) {
+                logToFile("❌ Retargeting Lead Form Creation Failed:", formCreateData);
+                const metaErrorMsg = formCreateData.error?.error_user_msg || formCreateData.error?.message || "Unknown Error";
+                throw new Error(`Meta Lead Form Error: ${metaErrorMsg}`);
+            }
+            
+            leadFormId = formCreateData.id;
+            logToFile(`✅ Lead Form Created: ${leadFormId}`);
         }
-        
-        const leadFormId = formCreateData.id;
-        logToFile(`✅ Lead Form Created: ${leadFormId}`);
 
         // --- Step C: Upload Creatives (PROXY UPLOAD) ---
         logToFile("--- 3. UPLOADING ALL CREATIVES ---");
@@ -630,21 +650,35 @@ export async function POST(request: Request) {
         logToFile("--- 6. AD SET ---");
         const startTime = new Date(Date.now() + 30 * 60 * 1000).toISOString(); 
 
+        const customEventType = 'LEAD';
+
         const adSetPayload: any = {
             name: `Retargeting AdSet - CRM Qualified Leads`,
             campaign_id: campaignId,
-            destination_type: 'ON_AD', 
-            optimization_goal: optimizeForConversions ? 'QUALITY_LEAD' : 'LEAD_GENERATION', 
             billing_event: 'IMPRESSIONS', 
             targeting: {
                 ...targetingConfig,
                 custom_audiences: [{ id: customAudienceId }]
             },
-            promoted_object: { page_id: pageId },
             start_time: startTime, 
             status: 'ACTIVE',
             access_token: facebookToken,
         };
+
+        if (isWebsiteCampaign) {
+            adSetPayload.destination_type = 'WEBSITE';
+            adSetPayload.optimization_goal = 'OFFSITE_CONVERSIONS';
+            adSetPayload.promoted_object = { 
+                pixel_id: finalPixelId, 
+                custom_event_type: customEventType 
+            };
+            logToFile(`Website conversion campaign configured. Pixel: ${finalPixelId}, Event: ${customEventType}`);
+        } else {
+            adSetPayload.destination_type = 'ON_AD';
+            adSetPayload.optimization_goal = optimizeForConversions ? 'QUALITY_LEAD' : 'LEAD_GENERATION';
+            adSetPayload.promoted_object = { page_id: pageId };
+            logToFile(`Instant Form lead campaign configured.`);
+        }
 
         const adSetRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adsets`, {
             method: 'POST',
@@ -683,6 +717,13 @@ export async function POST(request: Request) {
             const hash = metaCreativeHashes[i % metaCreativeHashes.length];
             const copy = copyVariations[i % copyVariations.length];
 
+            const ctaValue: any = {};
+            if (isWebsiteCampaign) {
+                ctaValue.link = linkUrl;
+            } else {
+                ctaValue.lead_gen_form_id = leadFormId;
+            }
+
             // Create Creative
             const creativePayload = {
                 name: `Retargeting Creative ${i + 1} - ${Date.now()}`,
@@ -694,7 +735,7 @@ export async function POST(request: Request) {
                         description: copy.description || "",
                         link: linkUrl, 
                         image_hash: hash, 
-                        call_to_action: { type: 'LEARN_MORE', value: { lead_gen_form_id: leadFormId } }
+                        call_to_action: { type: 'LEARN_MORE', value: ctaValue }
                     }
                 },
                 access_token: facebookToken,
