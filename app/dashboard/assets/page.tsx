@@ -370,6 +370,24 @@ export default function AssetsPage() {
                     targetUserId = (profile?.parent_id || profile?.agency_id) as string;
                 }
 
+                // Impersonation Logic
+                const urlParams = new URLSearchParams(window.location.search);
+                const impersonateId = urlParams.get('impersonate');
+
+                if (impersonateId && (['super_admin', 'agency', 'admin', 'agent'].includes(profile?.role || ''))) {
+                    if (profile?.role !== 'super_admin') {
+                        const { data: subAccount } = await supabase
+                            .from('profiles')
+                            .select('id')
+                            .eq('id', impersonateId)
+                            .eq('agency_id', user.id)
+                            .single();
+                        if (subAccount) targetUserId = impersonateId;
+                    } else {
+                        targetUserId = impersonateId;
+                    }
+                }
+
                 // 2. Upload to Cloudflare R2
                 const publicUrl = await uploadToR2(file, 'library');
 
@@ -421,6 +439,9 @@ export default function AssetsPage() {
             setIsAnalyzing(true);
             try {
                 let mediaUrl = "";
+                const urlParams = new URLSearchParams(window.location.search);
+                const impersonateId = urlParams.get('impersonate');
+
                 // Direct-to-R2 Upload
                 const signRes = await fetch('/api/upload/sign', {
                     method: 'POST',
@@ -428,7 +449,8 @@ export default function AssetsPage() {
                     body: JSON.stringify({
                         fileName: file.name,
                         fileType: file.type,
-                        folder: 'temp/direct-post'
+                        folder: 'temp/direct-post',
+                        impersonateId: impersonateId || null
                     })
                 });
 

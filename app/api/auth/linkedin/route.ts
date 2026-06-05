@@ -9,7 +9,11 @@ export async function GET(req: Request) {
   
   // Always use the primary domain for the redirect URI to avoid multi-domain registration issues in LinkedIn
   // We will redirect back to the origin domain in the callback
-  const primaryDomain = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${req.headers.get('host')}`
+  const host = req.headers.get('host') || 'app.adrolls.in'
+  const currentOrigin = `${protocol}://${host}`
+  const primaryDomain = (host.includes('adrolls.in') || host.includes('localhost') || host.includes('vercel.app'))
+    ? currentOrigin
+    : (process.env.NEXT_PUBLIC_APP_URL || currentOrigin)
   const redirectUri = encodeURIComponent(`${primaryDomain}/api/auth/linkedin/callback`)
   
   const scope = encodeURIComponent('openid profile email w_member_social')

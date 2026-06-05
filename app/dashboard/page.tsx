@@ -629,7 +629,14 @@ export default function ProductsPage() {
   }
 
   const filteredProperties = properties.filter(p => {
-    return p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || p.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return true
+    return (
+      (p.title || '').toLowerCase().includes(query) ||
+      (p.description || '').toLowerCase().includes(query) ||
+      (p.address || '').toLowerCase().includes(query) ||
+      (p.property_type || '').toLowerCase().includes(query)
+    )
   })
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'agent'].includes(role)

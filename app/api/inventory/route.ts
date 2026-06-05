@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       .single()
 
     const requesterRole = requesterProfile?.role || 'admin'
-    const requesterAgencyId = requesterProfile?.agency_id || user.id
+    const requesterAgencyId = requesterProfile?.agency_id || requesterProfile?.parent_id || user.id
 
     // Setup Admin client to bypass RLS
     const supabaseAdmin = createAdminClient(
@@ -48,6 +48,8 @@ export async function POST(request: Request) {
       if (user.id === targetUserId) {
         authorized = true
       } else if (requesterRole === 'super_admin') {
+        authorized = true
+      } else if (requesterAgencyId === targetUserId) {
         authorized = true
       } else if (['agency', 'admin', 'agent'].includes(requesterRole)) {
         // Verify relationship: is targetUserId a subaccount/client of this agency/admin/agent?
@@ -84,6 +86,8 @@ export async function POST(request: Request) {
       if (user.id === resolvedOwnerId) {
         authorized = true
       } else if (requesterRole === 'super_admin') {
+        authorized = true
+      } else if (requesterAgencyId === resolvedOwnerId) {
         authorized = true
       } else if (['agency', 'admin', 'agent'].includes(requesterRole)) {
         // Verify relationship: is resolvedOwnerId a subaccount/client of this agency?

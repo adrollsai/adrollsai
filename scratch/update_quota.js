@@ -8,13 +8,13 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-    const subId = '42d2e0c5-4fe6-4738-8a9f-63f09be01f12';
+    const subId = '9bbf6e51-283e-48d1-bbb4-8dc546cc74b2';
     console.log(`=== UPDATING QUOTA FOR SUBACCOUNT: ${subId} ===`);
     
     const { data, error } = await supabaseAdmin
         .from('profiles')
         .update({
-            subscription_plan: 'pro',
+            subscription_plan: 'growth',
             ai_creatives_used: 0,
             ai_ad_optimizations_used: 0,
             remarketing_campaigns_used: 0,

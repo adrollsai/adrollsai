@@ -91,7 +91,7 @@ export default function TermsAndConditions() {
 
           <section className="border-t border-slate-800 pt-8 mt-8">
             <h2 className="text-xl font-bold text-white mb-4">9. Contact Us</h2>
-            <p>For any questions regarding these Terms, please contact us at: <a href="mailto:adrollsai@gmail.com" className="text-amber-500 hover:underline">adrollsai@gmail.com</a></p>
+            <p>For any questions regarding these Terms, please contact us at: <a href="mailto:adrollsai@gmail.com" className="text-amber-500 hover:underline">adrollsai@gmail.com</a> or by phone at <a href="tel:+919872669935" className="text-amber-500 hover:underline">+91-98726 69935</a></p>
           </section>
         </div>
       </div>

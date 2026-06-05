@@ -19,8 +19,8 @@ const r2 = new S3Client({
   },
 });
 
-const avatarUrl = "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/character-bc63c065-9bcc-4793-bedc-f0960406425b-1780133072249.mp4";
-const targetUserId = "bc63c065-9bcc-4793-bedc-f0960406425b";
+const avatarUrl = "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/character-9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1780557990018.mp4";
+const targetUserId = "9bbf6e51-283e-48d1-bbb4-8dc546cc74b2";
 
 async function getTrimmedReferenceVideo(avatarUrl, userId) {
     const cacheKey = `generated/${userId}/trimmed_ref_${crypto.createHash('md5').update(avatarUrl).digest('hex')}.mp4`;

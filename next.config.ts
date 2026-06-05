@@ -17,7 +17,15 @@ const pwa = withPWA({
 });
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['@supabase/supabase-js'],
+  serverExternalPackages: [
+    '@supabase/supabase-js',
+    '@remotion/lambda',
+    '@remotion/renderer',
+    '@remotion/bundler',
+    '@remotion/cli',
+    '@remotion/lambda-client',
+    '@remotion/serverless-client'
+  ],
   experimental: {
     serverActions: {
       bodySizeLimit: "50mb",

@@ -24,7 +24,11 @@ export async function GET(req: Request) {
 
   try {
     const protocol = req.headers.get('x-forwarded-proto') || 'https'
-    const primaryDomain = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${req.headers.get('host')}`
+    const host = req.headers.get('host') || 'app.adrolls.in'
+    const currentOrigin = `${protocol}://${host}`
+    const primaryDomain = (host.includes('adrolls.in') || host.includes('localhost') || host.includes('vercel.app'))
+      ? currentOrigin
+      : (process.env.NEXT_PUBLIC_APP_URL || currentOrigin)
     const redirectUri = `${primaryDomain}/api/auth/linkedin/callback`
 
     // 1. Exchange code for access token

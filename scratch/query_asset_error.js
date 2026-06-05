@@ -10,7 +10,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function run() {
-    const assetId = 'e10fa0af-1599-40fb-89aa-0d194e9adcef';
+    const assetId = '0100fb3c-ec96-4ed9-bef8-9bb72c2c7633';
     console.log(`Querying Asset: ${assetId}`);
 
     const { data: asset, error: assetErr } = await supabase
