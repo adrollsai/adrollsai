@@ -148,6 +148,7 @@ export async function POST(request: Request) {
 PROPERTY INVENTORY CONTEXT:
 - Title: ${property.title}
 - Description: ${property.description || "N/A"}
+- Price Range: ${property.price || "N/A"}
 - Location/Address: ${property.address || "N/A"}
 - RERA ID/Number: ${property.rera_number || "N/A"}
 - Floor Plan URL: ${property.floor_plan_url || "N/A"}
@@ -333,9 +334,6 @@ ${realEstateDetails}
 - Ensure the page body is fully scrollable and does NOT cap layout height (do NOT use height: 100vh or overflow: hidden on html/body/main elements).
 - Mobile Bottom Floating CTA Bar: Include a fixed bottom bar visible only on mobile screens with a Call Now button (tel:${profile?.contact_number || "+919872490091"}) and WhatsApp button (https://wa.me/${(profile?.contact_number || "919872490091").replace(/[^0-9]/g, "")}) for immediate touch-to-connect conversions.
 
-### NO PRICING RULE (MANDATORY):
-- ABSOLUTELY DO NOT display, mention, or reference any pricing, cost, rates, EMI, payment schedules, or financial terms anywhere on the landing page. Pricing must be completely hidden.
-
 ### OUTPUT FORMAT:
 - Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
 - ABSOLUTELY DO NOT wrap the output in markdown code blocks (e.g., do NOT start with \`\`\`html or end with \`\`\`).
@@ -351,9 +349,8 @@ ${currentHtml}
 CRITICAL RULES:
 1. Preserve the structural container '<div id="qualification-form-container"></div>' exactly as it is, so that the lead form continues to function perfectly.
 2. Retain all existing styling, layout elements, assets, and copywriting, modifying ONLY the parts requested by the user.
-3. ABSOLUTELY DO NOT display, mention, or reference any pricing, cost, rates, EMI, payment schedules, or financial terms anywhere on the landing page. If any pricing is currently present in the HTML, remove it.
-4. Return ONLY the raw, complete, valid updated HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
-5. ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output ONLY the pure raw updated HTML string. No conversational text.`
+3. Return ONLY the raw, complete, valid updated HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
+4. ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output ONLY the pure raw updated HTML string. No conversational text.`
         }
 
         console.log(`[Lander API] Calling Gemini in mode: ${mode}...`)

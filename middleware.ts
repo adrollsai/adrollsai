@@ -70,9 +70,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
-  // Rule B: Redirect to login ONLY if it's the APP subdomain or NGROK
-  // This prevents the main landing page (adrolls.in) from redirecting
-  const isAppSubdomain = hostname.startsWith('app.adrolls.in') || hostname.includes('ngrok-free.dev') || hostname.includes('localhost');
+  // Rule B: Redirect to login ONLY if it's the APP subdomain (starts with 'app.')
+  // This prevents the main landing page from redirecting on localhost or primary domains
+  const isAppSubdomain = hostname.startsWith('app.');
   
   if (!user && request.nextUrl.pathname === '/' && isAppSubdomain) {
     return NextResponse.redirect(new URL('/login', request.url))

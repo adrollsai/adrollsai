@@ -167,8 +167,8 @@ export default function BillingPage() {
     {
       id: 'growth',
       name: "Growth Plan",
-      price: "₹9,999",
-      period: "month",
+      price: "Contact for Pricing",
+      period: "custom",
       desc: "Our most sought-after plan tailored to growing real estate agencies.",
       features: [
         "Full CRM Integration",
@@ -188,8 +188,8 @@ export default function BillingPage() {
     {
       id: 'pro',
       name: "Pro Plan",
-      price: "₹14,999",
-      period: "month",
+      price: "Contact for Pricing",
+      period: "custom",
       desc: "Built for established agencies seeking premium automated growth.",
       features: [
         "Full CRM Integration",
@@ -210,8 +210,8 @@ export default function BillingPage() {
     {
       id: 'enterprise',
       name: "Enterprise Plan",
-      price: "₹24,999",
-      period: "month",
+      price: "Contact for Pricing",
+      period: "custom",
       desc: "Premium, massive quota bundles tailored for large corporate entities.",
       features: [
         "Full CRM Integration",
@@ -252,56 +252,56 @@ export default function BillingPage() {
       {
           id: 'video',
           name: "Additional AI Video",
-          price: "₹999",
+          price: "Contact Sales",
           desc: "+1 AI Video quota added immediately to your current cycle.",
           quotaKey: "videos"
       },
       {
           id: 'team_member',
           name: "Additional Team Member",
-          price: "₹299/mo",
+          price: "Contact Sales",
           desc: "+1 Team Member seat.",
           quotaKey: "team_members"
       },
       {
           id: 'campaign_launch',
           name: "Additional Campaign Launch",
-          price: "₹399",
+          price: "Contact Sales",
           desc: "+1 Meta ad campaign launch quota.",
           quotaKey: "campaign_launches"
       },
       {
           id: 'campaign_optimization',
           name: "Additional Campaign Optimization",
-          price: "₹249",
+          price: "Contact Sales",
           desc: "+1 Campaign Optimization run to refresh visual DNA.",
           quotaKey: "campaign_optimizations"
       },
       {
           id: 'retargeting_campaign',
           name: "Additional Retargeting Campaign",
-          price: "₹499",
+          price: "Contact Sales",
           desc: "+1 Retargeting Campaign quota. Retargeting is add-on only.",
           quotaKey: "retargeting_campaigns"
       },
       {
           id: 'image_small',
           name: "Small Image Pack (+10)",
-          price: "₹59",
+          price: "Contact Sales",
           desc: "+10 AI Image generations added immediately.",
           quotaKey: "images"
       },
       {
           id: 'image_medium',
           name: "Medium Image Pack (+50)",
-          price: "₹199",
+          price: "Contact Sales",
           desc: "+50 AI Image generations added immediately.",
           quotaKey: "images"
       },
       {
           id: 'image_large',
           name: "Large Image Pack (+100)",
-          price: "₹349",
+          price: "Contact Sales",
           desc: "+100 AI Image generations added immediately.",
           quotaKey: "images"
       }
