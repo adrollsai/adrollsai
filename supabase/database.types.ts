@@ -473,6 +473,57 @@ export type Database = {
           },
         ]
       }
+      landing_pages: {
+        Row: {
+          created_at: string
+          form_id: string | null
+          html_content: string
+          id: string
+          product_name: string
+          slug: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          form_id?: string | null
+          html_content: string
+          id?: string
+          product_name: string
+          slug: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          form_id?: string | null
+          html_content?: string
+          id?: string
+          product_name?: string
+          slug?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "landing_pages_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "qualification_forms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "landing_pages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_history: {
         Row: {
           action_type: string
@@ -871,6 +922,7 @@ export type Database = {
           linkedin_urn: string | null
           logo_url: string | null
           mission_statement: string | null
+          onboarding_completed: boolean | null
           organization_id: string | null
           parent_id: string | null
           pixel_id: string | null
@@ -937,6 +989,7 @@ export type Database = {
           linkedin_urn?: string | null
           logo_url?: string | null
           mission_statement?: string | null
+          onboarding_completed?: boolean | null
           organization_id?: string | null
           parent_id?: string | null
           pixel_id?: string | null
@@ -1003,6 +1056,7 @@ export type Database = {
           linkedin_urn?: string | null
           logo_url?: string | null
           mission_statement?: string | null
+          onboarding_completed?: boolean | null
           organization_id?: string | null
           parent_id?: string | null
           pixel_id?: string | null
@@ -1177,6 +1231,41 @@ export type Database = {
           {
             foreignKeyName: "push_subscriptions_catalog_owner_id_fkey"
             columns: ["catalog_owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      qualification_forms: {
+        Row: {
+          created_at: string
+          custom_questions: Json
+          fields: Json
+          id: string
+          name: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          custom_questions?: Json
+          fields?: Json
+          id?: string
+          name: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          custom_questions?: Json
+          fields?: Json
+          id?: string
+          name?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qualification_forms_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]

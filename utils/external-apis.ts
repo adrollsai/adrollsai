@@ -563,22 +563,37 @@ export async function fetchFacebookPixels(accessToken: string, adAccountId: stri
 /**
  * 10. Kie.ai Image Generator (For Auto-Optimizer)
  */
-export async function createKieImageTask(prompt: string, model: string = "flux2/flex-text-to-image"): Promise<string> {
+export async function createKieImageTask(
+    prompt: string, 
+    model: string = "gpt-image-2-text-to-image", 
+    aspectRatio: string = "1:1",
+    inputUrls?: string[]
+): Promise<string> {
     if (!KIE_API_KEY) throw new Error("KIE_API_KEY is not configured.");
+
+    const inputPayload: any = {
+        prompt: prompt,
+        aspect_ratio: aspectRatio,
+        resolution: "1K"
+    };
+
+    if (inputUrls && inputUrls.length > 0) {
+        inputPayload.input_urls = inputUrls;
+    }
+
     const response = await fetchWithRetry(KIE_CREATE_TASK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${KIE_API_KEY}` },
         body: JSON.stringify({ 
             model: model, 
-            input: { 
-                prompt: prompt,
-                aspect_ratio: "1:1",
-                resolution: "1K"
-            } 
+            input: inputPayload 
         })
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.msg || data.error || "Image task failed");
+    console.log("[createKieImageTask] API Response:", JSON.stringify(data));
+    if (!response.ok || (data.code !== 0 && data.code !== 200)) {
+        throw new Error(data.msg || data.error || `Image task creation failed with status ${response.status}`);
+    }
     if (!data.data?.taskId) throw new Error("Kie AI response missing taskId");
     return data.data.taskId;
 }

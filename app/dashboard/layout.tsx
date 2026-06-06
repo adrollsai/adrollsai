@@ -53,30 +53,70 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       // Check user's profile
       const { data: userProfile } = await supabase
         .from('profiles')
-        .select('subscription_status, role, parent_id, agency_id')
+        .select('subscription_status, role, parent_id, agency_id, onboarding_completed')
         .eq('id', session.user.id)
         .single()
 
       // Resolve Primary User for subscription check
       let subscriptionStatus = userProfile?.subscription_status?.toLowerCase() || ''
+      let onboardingCompleted = userProfile?.onboarding_completed
       const parentId = userProfile?.parent_id || userProfile?.agency_id
       if (parentId) {
           const { data: parentProfile } = await supabase
             .from('profiles')
-            .select('subscription_status')
+            .select('subscription_status, onboarding_completed')
             .eq('id', parentId)
             .single()
           subscriptionStatus = parentProfile?.subscription_status?.toLowerCase() || ''
+          onboardingCompleted = parentProfile?.onboarding_completed
       }
 
       const isPaid = subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro'
       const isBillingPage = pathname === '/dashboard/billing'
+      const isOnboardingPage = pathname === '/dashboard/onboarding'
       const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(userProfile?.role || '')
 
       // If they haven't paid, and they aren't already on the billing page, trap them!
-      // This applies to primary accounts
       if (!isPaid && !isBillingPage && isAdminLike) {
         router.push('/dashboard/billing')
+        return
+      }
+
+      // Check if they are an existing client who already has properties or assets
+      if (isPaid && !onboardingCompleted && !isBillingPage && isAdminLike) {
+        const primaryUserId = parentId || session.user.id
+        
+        // Count products/properties
+        const { count: propCount } = await supabase
+          .from('properties')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', primaryUserId)
+          
+        // Count assets
+        const { count: assetCount } = await supabase
+          .from('assets')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', primaryUserId)
+
+        if ((propCount && propCount > 0) || (assetCount && assetCount > 0)) {
+          onboardingCompleted = true
+          
+          await supabase
+            .from('profiles')
+            .update({ onboarding_completed: true })
+            .eq('id', session.user.id)
+            
+          if (parentId) {
+            await supabase
+              .from('profiles')
+              .update({ onboarding_completed: true })
+              .eq('id', parentId)
+          }
+        }
+      }
+
+      if (isPaid && !onboardingCompleted && !isOnboardingPage && !isBillingPage && isAdminLike) {
+        router.push('/dashboard/onboarding')
       } else {
         // AUTO-FIX: If they are 'agent'/'client' but have no parent_id/agency_id, they are a self-registered business owner -> Admin/Agency
         if ((userProfile?.role === 'agent' || userProfile?.role === 'client') && !userProfile?.parent_id && !userProfile?.agency_id) {
@@ -102,7 +142,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Suspense fallback={null}>
         <ImpersonationBanner />
       </Suspense>
-
+      
       {/* PushManager deployed as a banner. It auto-hides if enabled or dismissed */}
       <PushManager variant="banner" />
 
@@ -111,8 +151,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {children}
 
-      {/* Hide the navigation bar if they are on the billing page or the video editor page */}
-      {pathname !== '/dashboard/billing' && !pathname?.includes('/dashboard/video-editor') && <BottomNav />}
+      {/* Hide the navigation bar if they are on the billing page, onboarding page or the video editor page */}
+      {pathname !== '/dashboard/billing' && pathname !== '/dashboard/onboarding' && !pathname?.includes('/dashboard/video-editor') && <BottomNav />}
     </div>
   )
 }

@@ -1358,32 +1358,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                {/* DOMAIN MANAGER SECTION */}
-                {isAdminLike && authRole !== 'agent' && (
-                  <div className="pt-2 border-t border-slate-100 space-y-4">
-                    <DomainManager
-                      initialDomain={domainData.domain}
-                      verifyToken={domainData.token}
-                      verifyStatus={domainData.status}
-                      userId={userId}
-                      onDomainUpdate={fetchProfile}
-                      type="catalogue"
-                      label="Public Catalog Domain"
-                    />
-
-                    {(role === 'agency' || role === 'super_admin') && (
-                      <DomainManager
-                        initialDomain={whitelabelDomainData.domain}
-                        verifyToken={whitelabelDomainData.token}
-                        verifyStatus={whitelabelDomainData.status}
-                        userId={userId}
-                        onDomainUpdate={fetchProfile}
-                        type="platform"
-                        label="White-label Platform Domain"
-                      />
-                    )}
-                  </div>
-                )}
+                {/* DOMAIN MANAGER SECTION (Hidden) */}
               </div>
 
               <button

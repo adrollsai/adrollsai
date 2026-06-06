@@ -35,13 +35,13 @@ export async function POST(req: Request) {
         
         // Price in paise (PhonePe expects paise: 1 INR = 100 Paise)
         const amountInPaise = price * 100;
-
         const currentOrigin = req.headers.get('origin') || 
                               req.headers.get('referer')?.split('/').slice(0,3).join('/') || 
-                              (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/['"]/g, '').trim();
+                              "http://localhost:3000";
+        const appUrl = (process.env.NEXT_PUBLIC_APP_URL || currentOrigin).replace(/['"]/g, '').trim();
 
         // Pass planId/addonId and userId in the redirect URL so redirect/callback can parse it!
-        const redirectUrl = `${currentOrigin}/api/payment/redirect?userId=${user.id}` +
+        const redirectUrl = `${appUrl}/api/payment/redirect?userId=${user.id}` +
                             (planId ? `&planId=${planId}` : `&addonId=${addonId}`);
 
         const baseCallbackUrl = (process.env.PHONEPE_CALLBACK_URL || "").replace(/['"]/g, '').trim();

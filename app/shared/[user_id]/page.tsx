@@ -151,10 +151,7 @@ export default function SharedCataloguePage() {
           const activeProps = props.filter(p => p.status !== 'Archived' && p.status !== 'Sold')
           setProperties(activeProps)
           
-          // Auto-switch to feed if no inventory
-          if (activeProps.length === 0) {
-            setActiveTab('feed')
-          }
+          // Auto-switch to feed disabled
       }
 
       const { data: blogPosts } = await supabase
@@ -549,19 +546,7 @@ export default function SharedCataloguePage() {
         {/* PWA PUSH NOTIFICATION BANNER */}
         <PushManager variant="banner" ownerId={profile?.id} />
 
-        {/* PILL TABS */}
-        <div className="flex justify-center mb-8 w-full overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide">
-            <div className="bg-white p-1.5 sm:p-2 rounded-full sm:rounded-[1.5rem] shadow-sm flex gap-1 sm:gap-2 border border-slate-200/60 min-w-max">
-                {properties.length > 0 && (
-                    <button onClick={() => setActiveTab('inventory')} className={`flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3.5 rounded-full sm:rounded-xl text-xs sm:text-sm font-bold transition-all ${activeTab === 'inventory' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                        <LayoutGrid size={16} /> Inventory
-                    </button>
-                )}
-                <button onClick={() => setActiveTab('feed')} className={`flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3.5 rounded-full sm:rounded-xl text-xs sm:text-sm font-bold transition-all ${activeTab === 'feed' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                    <Rss size={16} /> Updates Feed
-                </button>
-            </div>
-        </div>
+        {/* PILL TABS (Feed Disabled) */}
 
         {/* CONTENT AREA */}
         {activeTab === 'inventory' && (

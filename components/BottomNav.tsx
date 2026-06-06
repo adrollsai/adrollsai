@@ -66,7 +66,7 @@ export default function BottomNav() {
   const allNavItems = [
     { name: 'Inventory', icon: LayoutGrid, path: '/dashboard' },
     { name: 'Pages', icon: Globe, path: '/dashboard/pages' },
-    { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
+    // { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
     { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
     { name: 'Ads', icon: Zap, path: '/dashboard/ads' },

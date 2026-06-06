@@ -78,6 +78,8 @@ export default function QuotaManager() {
     // Exhaustion modal states
     const [exhaustedQuota, setExhaustedQuota] = useState<any>(null);
 
+    return null; // Temporarily disabled as requested to hide warnings/pop-ups
+
     useEffect(() => {
         const fetchUsage = async () => {
             try {
