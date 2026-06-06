@@ -5,9 +5,9 @@ function testBillingSystems() {
 
     // 1. Test plans configuration load
     console.log(`Available Pricing Plans: ${Object.keys(PLANS).join(', ')}`);
-    console.log(`Starter Plan Cost: ₹${PLANS.starter.price} / mo`);
+    console.log(`Early Bird Plan Cost: ₹${PLANS['early bird plan'].price} / mo`);
     console.log(`Growth Plan Video Quota: ${PLANS.growth.limits.videos} Videos`);
-    console.log(`Enterprise Plan Team seats limit: ${PLANS.enterprise.limits.team_members} (Infinity represents unlimited)`);
+    console.log(`Enterprise Plan Team seats limit: ${PLANS.enterprise.limits.team_members} (Infinity/999999 represents unlimited)`);
 
     // 2. Test add-ons configuration load
     console.log(`Available Purchasable Add-ons: ${Object.keys(ADDONS).join(', ')}`);
@@ -38,23 +38,23 @@ function testBillingSystems() {
     };
     const premiumLimits = getUserLimits(premiumProfile);
     console.log(`Calculated Limits:`, JSON.stringify(premiumLimits, null, 2));
-    // Growth base: 2 videos, 50 images, 5 team members
-    // Total should be: 4 videos, 100 images, 6 team members
-    if (premiumLimits.videos === 4 && premiumLimits.images === 100 && premiumLimits.team_members === 6) {
+    // Growth base: 5 videos, 30 images, 5 team members
+    // Total should be: 7 videos, 80 images, 6 team members
+    if (premiumLimits.videos === 7 && premiumLimits.images === 80 && premiumLimits.team_members === 6) {
         console.log("✅ Scenario B limit test passed!");
     } else {
         console.error("❌ Scenario B limit test failed!");
     }
 
-    console.log("\n--- Scenario C: Enterprise Plan (Unlimited team members, 8 base videos) ---");
+    console.log("\n--- Scenario C: Enterprise Plan (20 base team members, 15 base videos) ---");
     const entProfile = {
         subscription_plan: 'enterprise',
         addon_videos: 1, // purchased 1 extra
-        addon_team_members: 5 // tries to add members (should still resolve to unlimited)
+        addon_team_members: 5 
     };
     const entLimits = getUserLimits(entProfile);
     console.log(`Calculated Limits:`, JSON.stringify(entLimits, null, 2));
-    if (entLimits.team_members === 999999 && entLimits.videos === 9) {
+    if (entLimits.team_members === 25 && entLimits.videos === 16) {
         console.log("✅ Scenario C limit test passed!");
     } else {
         console.error("❌ Scenario C limit test failed!");

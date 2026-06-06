@@ -65,7 +65,6 @@ const ADDON_MAPPING: Record<string, { id: string; name: string; price: number; e
 };
 
 export default function QuotaManager() {
-    return null;
     const router = useRouter();
     const pathname = usePathname();
     const [usage, setUsage] = useState<any>(null);

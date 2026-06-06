@@ -1,4 +1,17 @@
 export const PLANS = {
+    'early bird plan': {
+        name: "Early Bird Plan",
+        price: 1,
+        limits: {
+            videos: 1,
+            images: 10,
+            seo_articles: 2,
+            campaign_launches: 1,
+            campaign_optimizations: 1,
+            team_members: 1,
+            retargeting_campaigns: 0
+        }
+    },
     growth: {
         name: "Growth Plan",
         price: 9999,

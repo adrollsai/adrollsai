@@ -1,15 +1,131 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { 
+  Zap, 
+  Target, 
+  Megaphone, 
+  CheckCircle2, 
+  ArrowRight, 
+  Play,
+  LayoutGrid,
+  Globe,
+  Palette,
+  Users2,
+  Rocket,
+  Menu,
+  X,
+  Sparkles,
+  Send,
+  Phone,
+  Mail,
+  MessageSquare,
+  Loader2
+} from 'lucide-react'
+import Link from 'next/link'
+import { motion, useScroll, AnimatePresence } from 'framer-motion'
+import { createClient } from '@/utils/supabase/client'
 
-export default function NextLandingPage() {
-  // Contact Form State
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
-  const [project, setProject] = useState('')
-  const [role, setRole] = useState('')
+/**
+ * --- CHAT MASCOT COMPONENT ---
+ * Handles the floating AI dog mascot and its chat window.
+ */
+const ChatMascot = () => {
+  const [isOpen, setIsOpen] = useState(false);
   
+  return (
+    <>
+      {/* --- THE CHAT WINDOW --- */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className="fixed bottom-32 right-6 z-[70] w-[300px] md:w-[350px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden font-sans"
+          >
+            {/* Header */}
+            <div className="bg-[#003D6F] p-4 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-white font-bold">
+                  <span className="text-xs">AI</span>
+                </div>
+                <div>
+                  <h4 className="text-white font-bold text-sm">AdRolls Assistant</h4>
+                  <p className="text-blue-200 text-xs flex items-center gap-1">
+                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"/> Online
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setIsOpen(false)} className="text-white/80 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 h-64 bg-slate-50 overflow-y-auto flex flex-col gap-3">
+              <div className="bg-white p-3 rounded-tr-xl rounded-bl-xl rounded-br-xl shadow-sm border border-slate-100 self-start max-w-[85%]">
+                <p className="text-slate-600 text-sm">
+                  Hello! I'm Rolls. 🐶 <br/>How can I help you grow your business today?
+                </p>
+              </div>
+            </div>
+
+            {/* Input */}
+            <div className="p-3 border-t border-slate-100 bg-white flex gap-2">
+              <input 
+                type="text" 
+                placeholder="Type your question..." 
+                className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#003D6F]"
+              />
+              <button className="bg-[#003D6F] text-white p-2 rounded-lg hover:bg-[#002a4d]">
+                <Send size={16} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* --- THE DOG BUTTON --- */}
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        className="fixed bottom-6 right-6 z-[60] cursor-pointer group flex flex-col items-end"
+      >
+        <motion.div 
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="w-24 h-24 md:w-28 md:h-28 relative filter drop-shadow-xl"
+        >
+          <motion.img 
+            src="https://i.ibb.co/C50rBTBj/pixar-style.png"
+            alt="Rolls the Dog"
+            className="w-full h-full object-contain"
+            animate={{ y: [0, -6, 0] }}
+            transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+          />
+        </motion.div>
+        
+        <div className="mt-2 bg-[#003D6F] px-3 py-1 rounded-full shadow-lg border border-white/20">
+          <p className="text-white font-bold text-[10px] md:text-xs whitespace-nowrap">
+            Woof! I'm Rolls! Need help?
+          </p>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// --- MAIN PAGE ---
+export default function LandingPage() {
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [partnerLoginUrl, setPartnerLoginUrl] = useState('https://app.adrolls.in')
+  const [currency, setCurrency] = useState<'INR' | 'USD'>('INR')
+
+  // Contact Form State
+  const [contactName, setContactName] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
+  const [contactMessage, setContactMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -20,32 +136,28 @@ export default function NextLandingPage() {
     setSubmitError('')
     setSubmitSuccess(false)
 
-    // Combine extra fields into message to comply with the existing contact API schema
-    const combinedMessage = `Project Location/City: ${project} | Role: ${role}`
-
     try {
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name,
-          email,
-          phone,
-          message: combinedMessage
+          name: contactName,
+          email: contactEmail,
+          phone: contactPhone,
+          message: contactMessage
         })
       })
 
       const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to submit request.')
+        throw new Error(data.error || 'Failed to submit query.')
       }
 
       setSubmitSuccess(true)
-      setName('')
-      setPhone('')
-      setEmail('')
-      setProject('')
-      setRole('')
+      setContactName('')
+      setContactEmail('')
+      setContactPhone('')
+      setContactMessage('')
     } catch (err: any) {
       setSubmitError(err.message || 'Something went wrong. Please try again.')
     } finally {
@@ -53,913 +165,885 @@ export default function NextLandingPage() {
     }
   }
 
+  useEffect(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz && (tz.includes('Calcutta') || tz.includes('Kolkata') || tz.includes('Asia/Kolkata') || tz.includes('Asia/Calcutta') || tz.includes('Delhi') || tz.includes('India'))) {
+        setCurrency('INR')
+      } else {
+        setCurrency('USD')
+      }
+    } catch (e) {
+      setCurrency('INR')
+    }
+  }, [])
+
+  /**
+   * DYNAMIC ENVIRONMENT DETECTION
+   * Ensures that login/signup buttons point to the local instance if testing on 
+   * localhost or ngrok, preventing cross-domain session issues.
+   */
+  useEffect(() => {
+    const hostname = window.location.hostname;
+    const isDevOrTunnel = 
+      hostname === 'localhost' || 
+      hostname === '127.0.0.1' || 
+      hostname.includes('ngrok-free.dev') || 
+      hostname.includes('ngrok.io');
+
+    if (isDevOrTunnel) {
+      setPartnerLoginUrl('/login'); 
+    } else {
+      setPartnerLoginUrl('https://app.adrolls.in');
+    }
+  }, []);
+
+  const [hasSession, setHasSession] = useState(false)
+  const supabase = createClient()
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) setHasSession(true)
+    }
+    checkSession()
+  }, [supabase])
+
   return (
-    <div className="landing-body">
-      {/* Alert Banner */}
-      <div className="alert-banner">
-        <span>🚨 <strong>CRITICAL WARNING FOR BUILDERS & BROKERS:</strong> Most agencies throw away 70% of your budget on fake numbers and junk lead forms. Stop it now.</span>
+    <div className="min-h-screen bg-slate-50 text-[#003D6F] font-sans selection:bg-[#F4B429]/30 selection:text-[#003D6F] overflow-x-hidden relative">
+      
+      {/* Background Texture Overlay */}
+      <div className="fixed inset-0 z-0 opacity-[0.03] pointer-events-none" 
+           style={{ backgroundImage: 'radial-gradient(#003D6F 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
       </div>
 
-      {/* Header */}
-      <header className="main-header">
-        <div className="container header-container">
-          <div className="logo">
-            <span className="logo-red">Ad</span><span className="logo-blue">Rolls</span>
-            <span className="logo-sub">AI LEAD MACHINE</span>
-          </div>
-          <a href="#qualification-form" className="cta-header">Request Invites »</a>
-        </div>
-      </header>
+      {/* Mascot Integration - Only show static version if NOT logged in */}
+      {!hasSession && <ChatMascot />}
 
-      {/* Hero Section */}
-      <section className="hero-section">
-        <div className="container">
-          <div className="badge-warning">REAL ESTATE DEVELOPERS, BUILDERS & BROKERS:</div>
+      {/* --- NAVIGATION BAR --- */}
+      <nav className="fixed top-0 w-full z-50 border-b border-[#003D6F]/10 bg-white/95 backdrop-blur-xl transition-all duration-300">
+        <div className="max-w-[1400px] mx-auto px-6 h-32 md:h-40 flex items-center justify-between">
           
-          <h1 className="hero-title">
-            Are You Sick & Tired of Wasting Lakhs on <span className="highlight-yellow">Junk Leads</span> That Don't Even Answer Your Phone?
-          </h1>
-
-          <p className="hero-subtitle">
-            Stop calling fake numbers. AdRolls automatically qualifies property buyers, verifies their WhatsApp numbers via OTP, and targets high-intent investors directly using Meta Server-Side API (CAPI) on Autopilot.
-          </p>
-
-          {/* Trust Elements / Checkmarks */}
-          <div className="hero-features">
-            <div className="feature-item">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="icon-check"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>Zero Tech Setup</strong> Required</span>
-            </div>
-            <div className="feature-item">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" strokeLinecap="round" strokeLinejoin="round" className="icon-check"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>100% Pre-Verified</strong> WhatsApp Numbers</span>
-            </div>
-            <div className="feature-item">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" strokeLinecap="round" strokeLinejoin="round" className="icon-check"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>Direct Meta CAPI</strong> Pixel Sync</span>
-            </div>
+          {/* Brand Logo */}
+          <div className="flex items-center gap-2 shrink-0">
+            <img 
+              src="https://i.ibb.co/7dDJdPgS/bg-removed.png" 
+              alt="AdRolls" 
+              className="h-24 md:h-32 w-auto min-w-[200px] object-contain hover:scale-105 transition-transform duration-300 drop-shadow-sm"
+            />
           </div>
-
-          {/* Form Card */}
-          <div className="form-card" id="qualification-form">
-            <div className="form-header">
-              <h2>CLAIM YOUR FREE 15-MINUTE LEAD FLOW AUDIT</h2>
-              <p>We'll show you exactly how many junk leads you're currently paying for—and how to fix it in 5 days.</p>
-            </div>
-
-            {submitSuccess ? (
-              <div className="success-message">
-                🎉 <strong>Thank you!</strong> Our Lead Flow Specialist will call you within 15 minutes to initiate your free audit.
-              </div>
-            ) : (
-              <form onSubmit={handleContactSubmit}>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="name">Your Name</label>
-                    <input 
-                      type="text" 
-                      id="name" 
-                      required 
-                      placeholder="e.g. Ritesh Sharma" 
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="phone">WhatsApp Number</label>
-                    <input 
-                      type="tel" 
-                      id="phone" 
-                      required 
-                      placeholder="e.g. 9876543210" 
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="email">Business Email</label>
-                    <input 
-                      type="email" 
-                      id="email" 
-                      required 
-                      placeholder="ritesh@companyname.com" 
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="project">Active Project / City</label>
-                    <input 
-                      type="text" 
-                      id="project" 
-                      required 
-                      placeholder="e.g. Mohali, Zirakpur, Gurgaon" 
-                      value={project}
-                      onChange={(e) => setProject(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="role">Your Professional Role</label>
-                  <select 
-                    id="role" 
-                    required
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                  >
-                    <option value="">-- Select your role --</option>
-                    <option value="Builder / Developer">Real Estate Builder / Developer</option>
-                    <option value="Broker / Channel Partner">Broker / Channel Partner</option>
-                    <option value="Marketing Head">Head of Marketing / Agency</option>
-                  </select>
-                </div>
-
-                {submitError && <p className="error-text">❌ {submitError}</p>}
-
-                <button type="submit" disabled={isSubmitting} className="submit-btn animate-pulse">
-                  {isSubmitting ? 'PROCESSING...' : 'CLAIM MY FREE AUDIT & INVITE NOW »'}
-                </button>
-              </form>
-            )}
-
-            <div className="form-guarantee">
-              🔒 <strong>Double Guarantee:</strong> No cost, no obligation, and zero spam. We value your privacy.
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Clients / Social Proof */}
-      <section className="clients-section">
-        <div className="container">
-          <h2 className="section-tag">PROVEN BY TOP BRANDS IN NORTH INDIA</h2>
-          <p className="clients-desc">We build pre-qualified lead pipelines for leading real estate developers and brokers:</p>
           
-          <div className="clients-grid">
-            <span className="client-name">Blue Square Infra</span>
-            <span className="client-name">HOMCOM Realtors</span>
-            <span className="client-name">GNR Homes</span>
-            <span className="client-name">Realty Nation Mohali</span>
-            <span className="client-name">Medallion Group</span>
-            <span className="client-name">Green Lotus</span>
-            <span className="client-name">Escon Primera</span>
-            <span className="client-name italic-more">and many more</span>
+          {/* Desktop Navigation Links */}
+          <div className="hidden lg:flex items-center gap-12 text-lg font-bold text-[#003D6F]/90">
+            <a href="#features" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Features</a>
+            <a href="#ads" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Meta Ads</a>
+            <a href="#pricing" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Pricing</a>
+            <a href="#contact" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4">Contact</a>
           </div>
-        </div>
-      </section>
 
-      {/* Pain vs Solution Section */}
-      <section className="value-section">
-        <div className="container">
-          <h2 className="value-h2-big">The Cruel Truth: Why Standard Facebook Ads Are Burning Your Lakhs (And How We Force Verification)</h2>
-          
-          <div className="grid-two">
-            {/* Pain Card */}
-            <div className="pain-card">
-              <div className="card-icon bg-red-light text-red">❌</div>
-              <h3>Standard Facebook Lead Ads</h3>
-              <ul className="bullet-list text-slate">
-                <li><strong>Fake Mobile Numbers:</strong> Users fill lead forms with pre-filled, outdated, or dummy mobile numbers.</li>
-                <li><strong>Mistaken Clicks:</strong> Fast scrolling leads to accidental clicks. People submit forms without knowing what they clicked.</li>
-                <li><strong>Cookie Blockers:</strong> Apple iOS 14+ blocks your Meta Pixel from knowing which leads are actually buyers.</li>
-                <li><strong>Cold Calling Nightmares:</strong> Sales teams waste 80% of their day dialing switched-off phones and hearing "I didn't submit any form".</li>
-              </ul>
-            </div>
-
-            {/* Solution Card */}
-            <div className="solution-card">
-              <div className="card-icon bg-green-light text-green">✔</div>
-              <h3>The AdRolls AI Lead System</h3>
-              <ul className="bullet-list">
-                <li><strong>Mandatory WhatsApp Verification:</strong> Buyers must input an active, verified mobile number before submitting the form.</li>
-                <li><strong>No Accidental Forms:</strong> Custom high-converting landing pages ensure only people who read your offer submit details.</li>
-                <li><strong>Meta Conversions API (CAPI):</strong> Server-side tracking bypasses browser blockers and tracks offline visits/bookings.</li>
-                <li><strong>Hot, Pre-Qualified Calls:</strong> Your sales team only calls verified property buyers who are actively waiting for details.</li>
-              </ul>
-            </div>
+          {/* Desktop Call to Action */}
+          <div className="hidden lg:flex items-center gap-6">
+            <Link 
+              href={partnerLoginUrl} 
+              className="text-[#003D6F] hover:text-[#B22B31] font-bold text-lg px-2"
+            >
+              Signup/Login
+            </Link>
+            <Link 
+              href={partnerLoginUrl} 
+              className="bg-[#B22B31] hover:bg-[#902227] text-white px-10 py-4 rounded-full text-lg font-bold transition-all shadow-[0_10px_30px_-10px_rgba(178,43,49,0.5)] active:scale-95 flex items-center gap-2"
+            >
+              Get Started <ArrowRight size={20}/>
+            </Link>
           </div>
+
+          {/* Mobile Menu Toggle Button */}
+          <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="lg:hidden text-[#003D6F] p-2 bg-slate-100 rounded-lg">
+            {isMenuOpen ? <X size={32} /> : <Menu size={32} />}
+          </button>
         </div>
-      </section>
 
-      {/* How it works */}
-      <section className="steps-section">
-        <div className="container text-center">
-          <h2 className="value-h2-big">From Setup to Pre-Qualified Property Buyers in 3 Simple Steps</h2>
-          <p className="steps-sub">We remove the effort. You focus on site visits and closing deals.</p>
+        {/* Mobile Sidebar Navigation */}
+        <AnimatePresence>
+          {isMenuOpen && (
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              className="lg:hidden fixed top-32 md:top-40 left-0 w-full h-screen bg-white border-t border-slate-200 p-6 flex flex-col gap-6 z-50 text-xl font-bold"
+            >
+               <a href="#features" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F]">Features</a>
+               <a href="#ads" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F]">Meta Ads</a>
+               <a href="#pricing" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F]">Pricing</a>
+               <a href="#contact" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F]">Contact</a>
+               <div className="h-px w-full bg-slate-100 my-2" />
+               <Link href={partnerLoginUrl} className="text-[#B22B31]">Signup/Login</Link>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </nav>
 
-          <div className="grid-three">
-            {/* Step 1 */}
-            <div className="step-card">
-              <div className="step-num">1</div>
-              <h3>Auto-Generate Pages</h3>
-              <p>Our agentic AI instantly spins up custom landing pages tailored specifically for your project (e.g. 3 BHK, Luxury Villas, Plots) with premium real-estate copy and floor plans.</p>
+      {/* --- HERO SECTION --- */}
+      <section className="relative pt-48 pb-24 md:pt-64 md:pb-40 overflow-hidden z-10">
+        <div className="absolute top-0 right-0 w-[50vw] h-[50vw] bg-[#F4B429]/10 blur-[120px] rounded-full pointer-events-none -translate-y-1/2 translate-x-1/4" />
+        <div className="absolute bottom-0 left-0 w-[40vw] h-[40vw] bg-[#003D6F]/5 blur-[100px] rounded-full pointer-events-none translate-y-1/4 -translate-x-1/4" />
+        
+        <div className="max-w-[1400px] mx-auto px-6 relative z-10">
+          <div className="text-center max-w-6xl mx-auto mb-20">
+            <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-white border-2 border-[#003D6F]/5 text-[#003D6F] text-sm font-extrabold uppercase tracking-widest mb-10 shadow-lg cursor-default">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#B22B31] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-[#B22B31]"></span>
+              </span>
+              AI Marketing Suite for Small & Medium Businesses
             </div>
-
-            {/* Step 2 */}
-            <div className="step-card">
-              <div className="step-num">2</div>
-              <h3>Filter Junk Leads</h3>
-              <p>Our platform forces visitors to complete qualification questions (e.g. Budget, Buying Timeline) and verifies their WhatsApp number. Fake profiles are filtered out instantly.</p>
-            </div>
-
-            {/* Step 3 */}
-            <div className="step-card">
-              <div className="step-num">3</div>
-              <h3>Train Meta Algorithm</h3>
-              <p>We push verified buyer events back to Meta using server-to-server CAPI. This forces Facebook to stop targeting casual scroll-wasters and optimize for real buyers.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Testimonial Section */}
-      <section className="testimonial-section">
-        <div className="container text-center">
-          <h2 className="value-h2-big">"Our site visits grew by 3.5X while call volume dropped in half."</h2>
-          
-          <div className="testimonial-box">
-            <p className="testimonial-text">
-              "Earlier, we were getting 50 leads a day but only 2 or 3 answered our calls. The rest were fake or duplicate numbers. After switching to AdRolls' verified landing pages, we get 15 leads, but 12 of them are genuine buyers. Our sales team is happy, and our conversion rate is sky-high."
+            
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tight text-[#003D6F] leading-[1.05] mb-10 drop-shadow-sm">
+              Grow Your Business <br className="hidden md:block"/>
+              <span className="relative inline-block">
+                <span className="relative z-10 text-transparent bg-clip-text bg-gradient-to-r from-[#B22B31] via-[#D35F30] to-[#F4B429]">
+                  On Autopilot.
+                </span>
+                <svg className="absolute -bottom-2 md:-bottom-4 left-0 w-full h-4 md:h-6 text-[#F4B429]/40 -z-10" viewBox="0 0 100 10" preserveAspectRatio="none">
+                   <path d="M0 5 Q 50 15 100 5" stroke="currentColor" strokeWidth="12" fill="none" />
+                </svg>
+              </span>
+            </h1>
+            
+            <p className="text-xl md:text-2xl text-slate-600 mb-14 leading-relaxed max-w-3xl mx-auto font-medium">
+              Stop juggling 10 different tools. AdRolls uses AI to design your graphics, manage products & services, post to social, and launch ads—<span className="text-[#003D6F] font-bold bg-blue-50 px-2 py-1 rounded">all in one place.</span>
             </p>
-            <div className="testimonial-author">
-              <strong>— Real Estate Marketing Director</strong>
-              <span className="author-sub">Mohali Region Developer</span>
+            
+            <div className="flex flex-col sm:flex-row items-center gap-6 justify-center">
+              <Link href={partnerLoginUrl} className="group w-full sm:w-auto px-12 py-6 bg-[#B22B31] text-white text-xl rounded-2xl font-bold hover:bg-[#902227] transition-all flex items-center justify-center gap-3 shadow-[0_20px_40px_-15px_rgba(178,43,49,0.3)] hover:-translate-y-1">
+                Start Growing Today 
+                <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform"/>
+              </Link>
+              <Link href={partnerLoginUrl} className="w-full sm:w-auto px-12 py-6 bg-white border-2 border-[#003D6F]/10 text-[#003D6F] text-xl rounded-2xl font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-3 hover:-translate-y-1 hover:border-[#003D6F]/30 hover:shadow-lg">
+                <Play className="w-5 h-5 fill-current"/> Watch Demo
+              </Link>
+            </div>
+
+            {/* Feature Badges */}
+            <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-6 text-base text-slate-500 font-bold">
+              <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-sm">
+                <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current" /> No Design Skills Needed
+              </div>
+              <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-sm">
+                <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current" /> Automated SEO
+              </div>
+              <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-sm">
+                <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current" /> Meta CAPI Integration
+              </div>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* Final CTA Block */}
-      <section className="final-cta">
-        <div className="container text-center">
-          <h2 className="final-title">Stop Throwing Money Down the Toilet. Get Pre-Qualified Real Estate Leads Today.</h2>
-          <p className="final-sub">No card details required. Schedule your lead audit and see the platform in action.</p>
-          
-          <a href="#qualification-form" className="big-cta-btn">
-            REQUEST YOUR FREE LEAD FLOW AUDIT TODAY »
-          </a>
-          
-          <div className="cta-subtext">
-            Only taking 7 builders/brokers this week to maintain dedicated service.
+          {/* DASHBOARD MOCKUP PREVIEW */}
+          <div className="relative mx-auto max-w-[1200px]">
+             <div className="absolute -inset-1 bg-gradient-to-r from-[#B22B31] via-[#F4B429] to-[#003D6F] rounded-[2.5rem] blur-xl opacity-20"></div>
+             
+             <div className="relative rounded-[2.5rem] bg-white border-4 border-slate-100 p-4 shadow-2xl shadow-[#003D6F]/10">
+                <div className="bg-slate-50 rounded-[2rem] overflow-hidden aspect-[16/10] md:aspect-[21/9] relative flex items-center justify-center border border-slate-200">
+                   {/* Visual UI Grid Components */}
+                   <div className="absolute inset-0 grid grid-cols-12 grid-rows-6 gap-6 p-8 md:p-12">
+                      <div className="hidden md:block col-span-2 row-span-6 bg-white rounded-2xl border-2 border-slate-100 shadow-sm"></div>
+                      <div className="col-span-12 md:col-span-10 row-span-1 bg-white rounded-2xl border-2 border-slate-100 shadow-sm flex items-center px-6 gap-4">
+                         <div className="w-32 h-4 bg-slate-100 rounded-full"></div>
+                         <div className="flex-1"></div>
+                         <div className="w-10 h-10 rounded-full bg-[#B22B31]/10 border border-[#B22B31]/20"></div>
+                      </div>
+                      <div className="col-span-12 md:col-span-7 row-span-3 bg-white rounded-2xl border-2 border-slate-100 shadow-sm p-8 relative overflow-hidden group">
+                         <div className="flex justify-between items-center mb-8">
+                            <div className="h-4 w-32 bg-slate-100 rounded"></div>
+                            <div className="px-3 py-1 bg-green-100 rounded-full flex items-center justify-center text-green-700 text-sm font-bold border border-green-200">+24.5%</div>
+                         </div>
+                        <div className="flex items-end gap-3 h-32 w-full">
+                            {[40, 60, 45, 70, 50, 80, 65, 90].map((h, i) => (
+                               <div key={i} className="flex-1 bg-[#003D6F] rounded-t-lg opacity-10" style={{height: `${h}%`}}></div>
+                            ))}
+                         </div>
+                      </div>
+                      <div className="hidden md:block col-span-3 row-span-3 space-y-4">
+                         <div className="h-1/2 bg-[#B22B31] rounded-2xl shadow-xl shadow-[#B22B31]/20 p-6 text-white flex flex-col justify-between relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-4 opacity-20"><Zap size={48}/></div>
+                            <div className="text-sm font-medium opacity-80">Active Leads</div>
+                            <div className="text-4xl font-bold">1,204</div>
+                         </div>
+                         <div className="h-1/2 bg-white rounded-2xl border-2 border-slate-100 shadow-sm p-6 flex flex-col justify-center items-center">
+                            <div className="w-14 h-14 rounded-full bg-[#F4B429]/20 flex items-center justify-center text-[#F4B429] mb-3">
+                               <Megaphone size={28}/>
+                            </div>
+                            <div className="text-base font-bold text-[#003D6F]">Ad Running</div>
+                         </div>
+                      </div>
+                      <div className="col-span-12 md:col-span-10 row-span-2 grid grid-cols-3 gap-6">
+                        {[1,2,3].map(i => (
+                            <div key={i} className="bg-white rounded-2xl border-2 border-slate-100 shadow-sm p-5 flex gap-4 items-center">
+                               <div className="w-14 h-14 bg-slate-100 rounded-xl"></div>
+                               <div className="space-y-2 flex-1">
+                                  <div className="h-3 w-3/4 bg-slate-100 rounded"></div>
+                                  <div className="h-2 w-1/2 bg-slate-100 rounded"></div>
+                               </div>
+                            </div>
+                         ))}
+                      </div>
+                   </div>
+                </div>
+             </div>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="main-footer">
-        <div className="container">
-          <p className="footer-logo">AdRolls AI</p>
-          <p className="footer-address">Serving Builders and Brokers across Mohali, Zirakpur, Gurgaon, and Delhi NCR.</p>
-          <p className="footer-copy">© {new Date().getFullYear()} AdRolls. All rights reserved. adrolls.in is a SaaS platform by AdRolls Technologies.</p>
+      {/* --- FEATURES GRID --- */}
+      <section id="features" className="py-32 bg-white relative z-10">
+         <div className="max-w-[1400px] mx-auto px-6">
+            <div className="mb-20 text-center">
+               <span className="text-[#B22B31] font-bold tracking-wider uppercase text-sm bg-red-50 px-3 py-1 rounded-full border border-red-100">Everything You Need</span>
+               <h2 className="text-4xl md:text-5xl font-black text-[#003D6F] mt-4">Built for Growth</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8 auto-rows-[320px]">
+               {/* Card 1: AI Graphic Studio */}
+               <div className="md:col-span-2 lg:col-span-2 row-span-1 bg-white border-2 border-slate-200 p-10 rounded-[2.5rem] shadow-lg shadow-slate-200/50 hover:border-[#F4B429] hover:shadow-2xl hover:shadow-[#003D6F]/10 transition-all group relative overflow-hidden flex flex-col justify-between">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-[#B22B31]/5 to-transparent rounded-full -translate-y-1/2 translate-x-1/2 group-hover:scale-125 transition-transform duration-700"/>
+                  <div className="w-16 h-16 bg-[#B22B31]/10 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-[#B22B31] group-hover:text-white transition-colors duration-300">
+                     <Palette className="w-8 h-8" />
+                  </div>
+                  <div>
+                     <h3 className="text-3xl font-bold text-[#003D6F] mb-3">AI Graphic Studio</h3>
+                     <p className="text-lg text-slate-600 leading-relaxed max-w-md">
+                        Generate professional social media posts and ad creatives in seconds.
+                     </p>
+                  </div>
+               </div>
+
+               {/* Card 2: One-Click Posting */}
+               <div className="md:col-span-1 lg:col-span-1 row-span-2 bg-[#003D6F] text-white p-10 rounded-[2.5rem] shadow-xl hover:translate-y-[-5px] transition-all group relative overflow-hidden flex flex-col border-4 border-[#003D6F]">
+                  <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#00284d]"/>
+                  <div className="relative z-10 flex-1">
+                     <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-8 backdrop-blur-sm">
+                        <Megaphone className="w-8 h-8 text-[#F4B429]" />
+                     </div>
+                     <h3 className="text-3xl font-bold mb-4">One-Click Posting</h3>
+                     <p className="text-blue-200 text-lg leading-relaxed">
+                        Publish to Facebook, Instagram, LinkedIn, and Twitter simultaneously.
+                     </p>
+                  </div>
+                  <div className="relative z-10 mt-8 bg-white/10 rounded-xl p-4 backdrop-blur-md border border-white/10">
+                     <div className="flex gap-2 mb-2">
+                        <div className="w-2 h-2 rounded-full bg-red-400"/>
+                        <div className="w-2 h-2 rounded-full bg-yellow-400"/>
+                        <div className="w-2 h-2 rounded-full bg-green-400"/>
+                     </div>
+                     <div className="h-2 w-3/4 bg-white/20 rounded mb-2"/>
+                     <div className="h-2 w-1/2 bg-white/20 rounded"/>
+                  </div>
+               </div>
+
+               {/* Card 3: Syncing */}
+               <div className="md:col-span-1 lg:col-span-1 row-span-1 bg-white border-2 border-slate-200 p-10 rounded-[2.5rem] shadow-lg shadow-slate-200/50 hover:border-[#003D6F] transition-all group flex flex-col justify-between">
+                  <div className="w-14 h-14 bg-[#003D6F]/10 rounded-2xl flex items-center justify-center group-hover:bg-[#003D6F] group-hover:text-white transition-colors">
+                     <LayoutGrid className="w-7 h-7" />
+                  </div>
+                  <div>
+                     <h3 className="text-2xl font-bold text-[#003D6F] mb-2">Products & Services Sync</h3>
+                     <p className="text-slate-600 font-medium">Update listings once, sync everywhere instantly.</p>
+                  </div>
+               </div>
+
+               {/* Card 4: SEO */}
+               <div className="md:col-span-2 lg:col-span-1 row-span-1 bg-white border-2 border-slate-200 p-10 rounded-[2.5rem] shadow-lg shadow-slate-200/50 hover:border-[#003D6F] transition-all group flex flex-col justify-between">
+                  <div className="w-14 h-14 bg-[#003D6F]/10 rounded-2xl flex items-center justify-center group-hover:bg-[#003D6F] group-hover:text-white transition-colors">
+                     <Globe className="w-7 h-7" />
+                  </div>
+                  <div>
+                     <h3 className="text-2xl font-bold text-[#003D6F] mb-2">Automated SEO</h3>
+                     <p className="text-slate-600 font-medium">Rank on Google without hiring an agency.</p>
+                  </div>
+               </div>
+
+               {/* Card 5: High-Conversion Pages */}
+               <div className="md:col-span-2 lg:col-span-2 row-span-1 bg-gradient-to-br from-[#F4B429] to-[#E5A825] p-10 rounded-[2.5rem] shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between border-4 border-[#F4B429]">
+                  <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mb-6 backdrop-blur-sm text-[#003D6F]">
+                     <Sparkles className="w-8 h-8" />
+                  </div>
+                  <div className="text-[#003D6F]">
+                     <h3 className="text-3xl font-black mb-3">High Conversion Pages</h3>
+                     <p className="text-lg font-bold opacity-80 max-w-md leading-snug">
+                        Automatically generate beautiful landing pages designed to turn visitors into customers.
+                     </p>
+                  </div>
+               </div>
+
+               {/* Card 6: CRM */}
+               <div className="md:col-span-1 lg:col-span-1 row-span-1 bg-white border-2 border-slate-200 p-10 rounded-[2.5rem] shadow-lg shadow-slate-200/50 hover:border-[#B22B31] transition-all group flex flex-col justify-between">
+                  <div className="w-14 h-14 bg-[#B22B31]/10 rounded-2xl flex items-center justify-center group-hover:bg-[#B22B31] group-hover:text-white transition-colors">
+                     <Users2 className="w-7 h-7" />
+                  </div>
+                  <div>
+                     <h3 className="text-2xl font-bold text-[#003D6F] mb-2">Integrated CRM</h3>
+                     <p className="text-slate-600 font-medium">Manage leads directly inside AdRolls.</p>
+                  </div>
+               </div>
+            </div>
+         </div>
+      </section>
+
+      {/* --- DEEP DIVE: META ADS --- */}
+      <section id="ads" className="py-32 bg-slate-50 overflow-hidden relative z-10">
+        <div className="max-w-[1400px] mx-auto px-6">
+           <div className="bg-[#003D6F] rounded-[3rem] p-10 md:p-20 relative overflow-hidden shadow-2xl">
+              <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-[#B22B31] blur-[200px] opacity-30 rounded-full translate-x-1/2 -translate-y-1/2 pointer-events-none"/>
+              <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-[#F4B429] blur-[150px] opacity-10 rounded-full -translate-x-1/2 translate-y-1/2 pointer-events-none"/>
+              
+              <div className="relative z-10 flex flex-col lg:flex-row items-center gap-16 text-white">
+                <div className="flex-1">
+                  <div className="inline-block px-4 py-2 bg-[#F4B429]/20 rounded-full text-[#F4B429] text-xs font-extrabold tracking-widest uppercase mb-6 backdrop-blur-md border border-[#F4B429]/30">
+                    Premium Feature
+                  </div>
+                  <h3 className="text-4xl md:text-6xl font-black mb-8 leading-tight">
+                    Smarter Ads.<br/>Better Leads.
+                  </h3>
+                  <p className="text-slate-200 mb-10 text-xl leading-relaxed max-w-xl font-medium">
+                    Most small businesses waste money on ads that don't track results. AdRolls uses <b className="text-[#F4B429]">Meta Conversions API (CAPI)</b> to send server-side data directly to Facebook/Instagram.
+                  </p>
+                  <ul className="space-y-6 mb-12">
+                     <li className="flex items-center gap-4 text-white text-lg font-medium">
+                        <div className="w-8 h-8 bg-[#F4B429] rounded-full flex items-center justify-center text-[#003D6F] font-bold shadow-lg shadow-[#F4B429]/20">
+                           <CheckCircle2 className="w-5 h-5" />
+                        </div>
+                        <span>Bypass browser cookie blockers</span>
+                     </li>
+                     <li className="flex items-center gap-4 text-white text-lg font-medium">
+                        <div className="w-8 h-8 bg-[#F4B429] rounded-full flex items-center justify-center text-[#003D6F] font-bold shadow-lg shadow-[#F4B429]/20">
+                           <CheckCircle2 className="w-5 h-5" />
+                        </div>
+                        <span>Train AI to find high-intent buyers</span>
+                     </li>
+                  </ul>
+                  <Link href={partnerLoginUrl} className="inline-block bg-white text-[#003D6F] px-8 py-4 rounded-xl font-bold text-lg hover:bg-[#F4B429] hover:text-[#003D6F] transition-all shadow-xl hover:scale-105">
+                    Start Running AI Ads
+                  </Link>
+                </div>
+                
+                <div className="flex-1 w-full max-w-lg">
+                    <div className="bg-white/10 backdrop-blur-xl rounded-[2.5rem] border border-white/20 p-8 shadow-2xl relative">
+                      <div className="absolute -top-10 -right-10 bg-[#B22B31] p-5 rounded-2xl shadow-xl animate-bounce">
+                         <Target className="w-8 h-8 text-white"/>
+                      </div>
+
+                      <div className="flex justify-between items-center mb-8">
+                         <h4 className="font-bold text-white text-xl">Performance</h4>
+                         <span className="px-3 py-1 bg-green-500/20 text-green-300 rounded-full text-xs font-bold border border-green-500/30">+24% Growth</span>
+                      </div>
+                      <div className="space-y-6">
+                         <div className="bg-black/30 p-6 rounded-2xl flex justify-between items-center border border-white/5 backdrop-blur-md">
+                            <div className="flex items-center gap-4">
+                               <div className="bg-[#B22B31]/20 p-3 rounded-xl text-[#B22B31]"><Users2 size={24}/></div>
+                                <div>
+                                  <div className="text-sm text-slate-300 mb-1">Total Leads</div>
+                                  <div className="text-2xl font-black text-white">2,405</div>
+                                </div>
+                            </div>
+                         </div>
+                      </div>
+                   </div>
+                </div>
+              </div>
+          </div>
         </div>
+      </section>
+
+      {/* --- PRICING SECTION --- */}
+      <section id="pricing" className="py-32 bg-white relative border-t border-slate-200 z-10">
+        <div className="max-w-[1400px] mx-auto px-6">
+           <div className="text-center mb-12">
+              <h2 className="text-4xl md:text-6xl font-black text-[#003D6F] mb-6">Simple, Transparent Pricing</h2>
+              <p className="text-slate-600 text-xl font-medium mb-10">Everything you need to grow your business, at a price that makes sense.</p>
+           </div>
+
+           {/* Dynamic Currency Switcher */}
+           <div className="flex items-center justify-center gap-4 mb-16">
+              <span className={`text-lg font-black transition-colors ${currency === 'INR' ? 'text-[#B22B31]' : 'text-slate-400'}`}>Rupees (₹)</span>
+              <button 
+                onClick={() => setCurrency(currency === 'INR' ? 'USD' : 'INR')}
+                className="w-16 h-8 bg-slate-200 rounded-full p-1 relative transition-colors duration-300 focus:outline-none shadow-inner"
+              >
+                <div className={`w-6 h-6 bg-[#003D6F] rounded-full absolute top-1 transition-all duration-300 ${currency === 'USD' ? 'left-9' : 'left-1'}`} />
+              </button>
+              <span className={`text-lg font-black transition-colors ${currency === 'USD' ? 'text-[#B22B31]' : 'text-slate-400'}`}>Dollars ($)</span>
+           </div>
+
+           {/* 3 Pricing Cards Grid */}
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch mb-24">
+              
+              {/* Plan 1: Growth */}
+              <div className="bg-white border-2 border-slate-200 rounded-[3.5rem] overflow-hidden shadow-xl hover:border-[#003D6F]/40 hover:shadow-2xl transition-all duration-300 flex flex-col justify-between p-10 relative">
+                 <div>
+                    <h3 className="text-2xl font-black text-[#003D6F] uppercase tracking-wider mb-2">Growth</h3>
+                    <p className="text-slate-400 text-sm font-bold mb-8">For growing brands seeking automated scale</p>
+                    <div className="flex items-baseline gap-2 mb-8">
+                       <span className="text-6xl font-black text-[#B22B31]">
+                          {currency === 'INR' ? '₹9,999' : '$199'}
+                       </span>
+                       <span className="text-slate-500 font-bold">/mo</span>
+                    </div>
+                    <div className="h-px bg-slate-100 mb-8" />
+                    <ul className="space-y-4 mb-10">
+                       {[
+                         "5 AI Videos / mo",
+                         "30 AI High-Res Images / mo",
+                         "30 AI SEO Blog Articles / mo",
+                         "5 Meta Campaign Launches / mo",
+                         "5 AI Campaign Optimizations / mo",
+                         "5 Team Member seats",
+                         "Full CRM Integration",
+                         "Social Media Auto-Posting",
+                         "10 GB Cloud Media Storage",
+                         "Priority Email Support"
+                       ].map((feature, i) => (
+                         <li key={i} className="flex items-center gap-3 text-slate-600 font-bold text-sm">
+                            <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current shrink-0" />
+                            <span>{feature}</span>
+                         </li>
+                       ))}
+                    </ul>
+                 </div>
+                 <Link 
+                    href={partnerLoginUrl}
+                    className="block w-full py-5 bg-[#003D6F] hover:bg-[#00284d] text-white text-center rounded-2xl font-black text-lg transition-all shadow-md active:scale-95 mt-auto"
+                 >
+                    Start Growth Plan
+                 </Link>
+              </div>
+
+              {/* Plan 2: Pro (Best Value - Highlighted) */}
+              <div className="bg-white border-4 border-[#003D6F] rounded-[3.5rem] overflow-hidden shadow-2xl relative flex flex-col justify-between p-10 lg:scale-[1.05] z-10">
+                 <div className="absolute top-0 right-10 bg-[#B22B31] text-white px-5 py-2 rounded-b-xl text-xs font-black uppercase tracking-widest">
+                    Best Value
+                 </div>
+                 <div>
+                    <h3 className="text-2xl font-black text-[#003D6F] uppercase tracking-wider mb-2">Pro</h3>
+                    <p className="text-slate-400 text-sm font-bold mb-8">Ultimate automated growth engine</p>
+                    <div className="flex items-baseline gap-2 mb-8">
+                       <span className="text-6xl font-black text-[#B22B31]">
+                          {currency === 'INR' ? '₹14,999' : '$299'}
+                       </span>
+                       <span className="text-slate-500 font-bold">/mo</span>
+                    </div>
+                    <div className="h-px bg-slate-100 mb-8" />
+                    <ul className="space-y-4 mb-10">
+                       {[
+                         "8 AI Videos / mo",
+                         "60 AI High-Res Images / mo",
+                         "30 AI SEO Blog Articles / mo",
+                         "8 Meta Campaign Launches / mo",
+                         "8 AI Campaign Optimizations / mo",
+                         "10 Team Member seats",
+                         "Full CRM Integration",
+                         "Social Media Auto-Posting",
+                         "10 GB Cloud Media Storage",
+                         "Custom Domain Whitelabeling",
+                         "Priority WhatsApp Support"
+                       ].map((feature, i) => (
+                         <li key={i} className="flex items-center gap-3 text-slate-700 font-bold text-sm">
+                            <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current shrink-0" />
+                            <span>{feature}</span>
+                         </li>
+                       ))}
+                    </ul>
+                 </div>
+                 <Link 
+                    href={partnerLoginUrl}
+                    className="block w-full py-5 bg-[#B22B31] hover:bg-[#902227] text-white text-center rounded-2xl font-black text-lg transition-all shadow-lg active:scale-95 shadow-[#B22B31]/30 mt-auto"
+                 >
+                    Start Pro Plan
+                 </Link>
+              </div>
+
+              {/* Plan 3: Enterprise */}
+              <div className="bg-white border-2 border-slate-200 rounded-[3.5rem] overflow-hidden shadow-xl hover:border-[#003D6F]/40 hover:shadow-2xl transition-all duration-300 flex flex-col justify-between p-10 relative">
+                 <div>
+                    <h3 className="text-2xl font-black text-[#003D6F] uppercase tracking-wider mb-2">Enterprise</h3>
+                    <p className="text-slate-400 text-sm font-bold mb-8">Premium massive quotas for large agencies</p>
+                    <div className="flex items-baseline gap-2 mb-8">
+                       <span className="text-6xl font-black text-[#B22B31]">
+                          {currency === 'INR' ? '₹24,999' : '$499'}
+                       </span>
+                       <span className="text-slate-500 font-bold">/mo</span>
+                    </div>
+                    <div className="h-px bg-slate-100 mb-8" />
+                    <ul className="space-y-4 mb-10">
+                       {[
+                         "15 AI Videos / mo",
+                         "90 AI High-Res Images / mo",
+                         "30 AI SEO Blog Articles / mo",
+                         "15 Meta Campaign Launches / mo",
+                         "15 AI Campaign Optimizations / mo",
+                         "20 Team Member seats",
+                         "Full CRM Integration",
+                         "Social Media Auto-Posting",
+                         "10 GB Cloud Media Storage",
+                         "Custom Whitelabeled Domain",
+                         "24/7 Dedicated Account Manager"
+                       ].map((feature, i) => (
+                         <li key={i} className="flex items-center gap-3 text-slate-600 font-bold text-sm">
+                            <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current shrink-0" />
+                            <span>{feature}</span>
+                         </li>
+                       ))}
+                    </ul>
+                 </div>
+                 <Link 
+                    href={partnerLoginUrl}
+                    className="block w-full py-5 bg-slate-900 hover:bg-slate-800 text-white text-center rounded-2xl font-black text-lg transition-all shadow-md active:scale-95 mt-auto"
+                 >
+                    Start Enterprise Plan
+                 </Link>
+              </div>
+
+           </div>
+        </div>
+      </section>
+
+      {/* --- VALUE COMPARISON SECTION --- */}
+      <section className="py-24 bg-slate-50 relative border-t border-slate-100 z-10">
+        <div className="max-w-[1400px] mx-auto px-6">
+           <div className="text-center mb-16">
+              <span className="text-[#B22B31] font-bold tracking-wider uppercase text-sm bg-red-50 px-3 py-1 rounded-full border border-red-100">
+                 IMMENSE SAVINGS
+              </span>
+              <h2 className="text-4xl md:text-5xl font-black text-[#003D6F] mt-4">
+                 AdRolls vs. Traditional Marketing
+              </h2>
+              <p className="text-slate-600 text-lg mt-2 font-medium">
+                 See how much you save every single month by switching to our agentic AI workflow.
+              </p>
+           </div>
+
+           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+              {/* Fluffy Pup mascot + Speech Bubble */}
+              <div className="lg:col-span-4 flex flex-col items-center justify-center text-center relative order-2 lg:order-1">
+                 <div className="relative w-64 h-64 md:w-80 md:h-80 filter drop-shadow-2xl">
+                    <img 
+                      src="/shihtzu.png" 
+                      alt="Rolls the Pup" 
+                      className="w-full h-full object-contain hover:scale-105 transition-transform duration-300"
+                    />
+                 </div>
+                 {/* Speech Bubble */}
+                 <div className="relative mt-6 bg-[#003D6F] text-white p-6 rounded-2xl border border-white/20 shadow-xl max-w-sm">
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full w-0 h-0 border-x-8 border-x-transparent border-b-8 border-b-[#003D6F]"></div>
+                    <p className="font-extrabold text-sm leading-relaxed">
+                       "Woof! AdRolls saves you over {currency === 'INR' ? '₹1,39,000' : '$4,350'} every single month! That's enough to buy a lifetime of premium treats and squeaky toys! 🦴🐶"
+                    </p>
+                 </div>
+              </div>
+
+              {/* Comparison Table */}
+              <div className="lg:col-span-8 bg-white border-2 border-slate-200 rounded-[2.5rem] shadow-2xl p-6 sm:p-10 order-1 lg:order-2 overflow-hidden relative">
+                 <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                       <thead>
+                          <tr className="border-b border-slate-100">
+                             <th className="pb-6 font-black text-slate-400 text-xs uppercase tracking-wider">Services Required</th>
+                             <th className="pb-6 font-black text-slate-400 text-xs uppercase tracking-wider">Traditional Cost</th>
+                             <th className="pb-6 font-black text-[#B22B31] text-xs uppercase tracking-wider flex items-center gap-1.5">
+                                <Sparkles className="w-4 h-4 text-[#F4B429]" /> AdRolls AI
+                             </th>
+                          </tr>
+                       </thead>
+                       <tbody className="divide-y divide-slate-100 font-bold text-slate-700 text-sm">
+                          {[
+                            {
+                              service: "SEO",
+                              traditional: currency === 'INR' ? "₹15,000/mo" : "$500/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Ads Management",
+                              traditional: currency === 'INR' ? "₹20,000/mo" : "$600/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Remarketing Campaign",
+                              traditional: currency === 'INR' ? "₹10,000/mo" : "$300/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Video Production",
+                              traditional: currency === 'INR' ? "₹20,000/mo" : "$600/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "AI Video Editing",
+                              traditional: currency === 'INR' ? "₹15,000/mo" : "$400/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Graphics Designing",
+                              traditional: currency === 'INR' ? "₹12,000/mo" : "$400/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "CRM",
+                              traditional: currency === 'INR' ? "₹5,000/mo" : "$150/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Social Media Management",
+                              traditional: currency === 'INR' ? "₹15,000/mo" : "$500/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Inventory Management",
+                              traditional: currency === 'INR' ? "₹5,000/mo" : "$150/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Landing Page",
+                              traditional: currency === 'INR' ? "₹10,000/mo" : "$300/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "Hosting",
+                              traditional: currency === 'INR' ? "₹2,000/mo" : "$50/mo",
+                              adrolls: "Included"
+                            },
+                            {
+                              service: "White Labelled App",
+                              traditional: currency === 'INR' ? "₹20,000/mo" : "$600/mo",
+                              adrolls: "Included"
+                            }
+                          ].map((row, i) => (
+                            <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                               <td className="py-5 pr-4 text-base text-[#003D6F] font-black">{row.service}</td>
+                               <td className="py-5 text-slate-500 text-base line-through decoration-[#B22B31] decoration-2">{row.traditional}</td>
+                               <td className="py-5 text-[#B22B31] text-lg font-black flex items-center gap-2">
+                                  <CheckCircle2 className="w-5 h-5 text-[#F4B429] fill-current shrink-0" /> {row.adrolls}
+                               </td>
+                            </tr>
+                          ))}
+                          {/* Total Calculation Row */}
+                          <tr className="bg-slate-50/80 rounded-2xl">
+                             <td className="py-6 px-4 text-lg text-[#003D6F] font-black uppercase">Total Monthly Value</td>
+                             <td className="py-6 text-slate-500 text-lg line-through font-extrabold decoration-[#B22B31] decoration-2">
+                                {currency === 'INR' ? "₹1,49,000" : "$4,550"}
+                             </td>
+                             <td className="py-6 text-green-600 text-xl font-black flex items-center gap-2 bg-green-50 px-4 rounded-xl border border-green-100">
+                                <Sparkles className="w-5 h-5 text-[#F4B429]" /> Just {currency === 'INR' ? "₹9,999" : "$199"}
+                             </td>
+                          </tr>
+                       </tbody>
+                    </table>
+                 </div>
+              </div>
+           </div>
+        </div>
+      </section>
+
+      {/* --- FOOTER / CTA SECTION --- */}
+      <section className="py-32 bg-slate-50 border-t border-slate-200 z-10 relative">
+        <div className="max-w-4xl mx-auto px-6 text-center">
+          <h2 className="text-5xl md:text-7xl font-black text-[#003D6F] mb-10 tracking-tight leading-none">
+            Ready to Automate <br/><span className="text-[#B22B31]">Your Marketing?</span>
+          </h2>
+          <p className="text-slate-600 mb-12 text-xl font-medium">
+             Join hundreds of small businesses growing faster with AdRolls.
+          </p>
+          
+          <div className="flex justify-center">
+             <Link 
+               href={partnerLoginUrl}
+               className="bg-[#B22B31] hover:bg-[#902227] text-white px-12 py-5 rounded-xl font-bold text-lg transition-all shadow-lg hover:scale-105"
+             >
+                Start Free Trial
+             </Link>
+          </div>
+        </div>
+      </section>
+      
+      {/* --- CONTACT FORM SECTION --- */}
+      <section id="contact" className="py-24 bg-white relative border-t border-slate-200 z-10 overflow-hidden">
+        {/* Abstract floating blur elements */}
+        <div className="absolute top-0 left-0 w-[30vw] h-[30vw] bg-[#003D6F]/5 blur-[80px] rounded-full pointer-events-none -translate-x-1/2 -translate-y-1/2" />
+        <div className="absolute bottom-0 right-0 w-[40vw] h-[40vw] bg-[#F4B429]/5 blur-[100px] rounded-full pointer-events-none translate-x-1/3 translate-y-1/3" />
+        
+        <div className="max-w-[1400px] mx-auto px-6 relative z-10">
+           <div className="text-center max-w-2xl mx-auto mb-16">
+              <span className="text-[#B22B31] font-bold tracking-wider uppercase text-sm bg-red-50 px-3 py-1 rounded-full border border-red-100">
+                 Connect With Experts
+              </span>
+              <h2 className="text-4xl md:text-5xl font-black text-[#003D6F] mt-4">
+                 Get In Touch With Sales
+              </h2>
+              <p className="text-slate-600 text-lg mt-2 font-medium">
+                 Have a specific query or want a custom demo? Fill out the form and our team will get back to you within 2 hours.
+              </p>
+           </div>
+
+           <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-8 bg-gradient-to-br from-slate-50 to-white border-2 border-slate-200 rounded-[2.5rem] shadow-2xl p-6 sm:p-10 relative overflow-hidden">
+              {/* Glassmorphic left info pane */}
+              <div className="md:col-span-5 bg-[#003D6F] rounded-[1.75rem] p-8 text-white relative overflow-hidden flex flex-col justify-between shadow-xl min-h-[300px]">
+                 <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-xl" />
+                 <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-[#B22B31]/10 rounded-full blur-2xl" />
+                 
+                 <div className="relative z-10">
+                    <span className="inline-block px-3 py-1 bg-white/10 rounded-full text-xs font-black uppercase tracking-wider mb-6">Contact Info</span>
+                    <h3 className="text-2xl font-black mb-4">AdRolls Intelligence</h3>
+                    <p className="text-blue-100 text-sm leading-relaxed mb-8">
+                       Reach out to our agents to schedule an interactive video mapping of your current ad setup.
+                    </p>
+                    
+                    <div className="space-y-6">
+                       <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/10 shadow-sm shrink-0">
+                             <Phone size={18} className="text-[#F4B429]" />
+                          </div>
+                          <div>
+                             <p className="text-xs text-blue-200 font-bold uppercase tracking-wider">Call or WhatsApp</p>
+                             <p className="text-sm font-bold text-white">+91 82888 35235</p>
+                          </div>
+                       </div>
+                       
+                       <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/10 shadow-sm shrink-0">
+                             <Mail size={18} className="text-[#F4B429]" />
+                          </div>
+                          <div>
+                             <p className="text-xs text-blue-200 font-bold uppercase tracking-wider">Email Us</p>
+                             <p className="text-sm font-bold text-white">adrollsai@gmail.com</p>
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+
+                 <div className="relative z-10 pt-8 border-t border-white/10 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-500/20 border border-green-500/30 flex items-center justify-center shrink-0">
+                       <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse" />
+                    </div>
+                    <p className="text-xs text-green-300 font-bold">Agents online • Fast Response</p>
+                 </div>
+              </div>
+
+              {/* Right Input Form pane */}
+              <form onSubmit={handleContactSubmit} className="md:col-span-7 space-y-6 flex flex-col justify-center">
+                 {submitSuccess ? (
+                    <motion.div 
+                       initial={{ opacity: 0, scale: 0.95 }}
+                       animate={{ opacity: 1, scale: 1 }}
+                       className="bg-green-50 border border-green-200 rounded-2xl p-8 text-center"
+                    >
+                       <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-200 text-green-600">
+                          <CheckCircle2 size={32} />
+                       </div>
+                       <h4 className="text-2xl font-black text-[#003D6F] mb-2">Message Sent!</h4>
+                       <p className="text-slate-600 font-bold text-sm leading-relaxed">
+                          Woof! Thank you for contacting us. We've received your query and routed it directly to our sales agent CRM. An agent will get in touch with you shortly!
+                       </p>
+                    </motion.div>
+                 ) : (
+                    <>
+                       {submitError && (
+                          <div className="p-4 bg-red-50 border-2 border-red-200 text-red-700 rounded-xl text-sm font-bold flex items-center gap-2">
+                             <span className="w-2 h-2 bg-red-500 rounded-full shrink-0" />
+                             {submitError}
+                          </div>
+                       )}
+
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                             <label className="text-xs text-slate-500 font-black uppercase tracking-wider">Full Name</label>
+                             <input 
+                                type="text"
+                                required
+                                value={contactName}
+                                onChange={(e) => setContactName(e.target.value)}
+                                placeholder="Your Name"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-[#003D6F] placeholder:text-slate-400 focus:outline-none focus:border-[#003D6F] focus:ring-1 focus:ring-[#003D6F] transition-all"
+                             />
+                          </div>
+                          <div className="space-y-2">
+                             <label className="text-xs text-slate-500 font-black uppercase tracking-wider">Phone Number</label>
+                             <input 
+                                type="tel"
+                                required
+                                value={contactPhone}
+                                onChange={(e) => setContactPhone(e.target.value)}
+                                placeholder="e.g. +91 99999 99999"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-[#003D6F] placeholder:text-slate-400 focus:outline-none focus:border-[#003D6F] focus:ring-1 focus:ring-[#003D6F] transition-all"
+                             />
+                          </div>
+                       </div>
+
+                       <div className="space-y-2">
+                          <label className="text-xs text-slate-500 font-black uppercase tracking-wider">Email Address</label>
+                          <input 
+                             type="email"
+                             required
+                             value={contactEmail}
+                             onChange={(e) => setContactEmail(e.target.value)}
+                             placeholder="email@example.com"
+                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-[#003D6F] placeholder:text-slate-400 focus:outline-none focus:border-[#003D6F] focus:ring-1 focus:ring-[#003D6F] transition-all"
+                          />
+                       </div>
+
+                       <div className="space-y-2">
+                          <label className="text-xs text-slate-500 font-black uppercase tracking-wider">Your Message</label>
+                          <textarea 
+                             required
+                             rows={4}
+                             value={contactMessage}
+                             onChange={(e) => setContactMessage(e.target.value)}
+                             placeholder="How can we help your business grow?"
+                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-[#003D6F] placeholder:text-slate-400 focus:outline-none focus:border-[#003D6F] focus:ring-1 focus:ring-[#003D6F] transition-all resize-none"
+                          />
+                       </div>
+
+                       <button 
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="w-full py-4 bg-[#B22B31] hover:bg-[#902227] disabled:bg-slate-400 text-white rounded-xl font-black text-lg transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                       >
+                          {isSubmitting ? (
+                             <>
+                                <Loader2 className="w-5 h-5 animate-spin" /> Submitting...
+                             </>
+                          ) : (
+                             <>
+                                Send Query <Send size={18} />
+                             </>
+                          )}
+                       </button>
+                    </>
+                 )}
+              </form>
+           </div>
+        </div>
+      </section>
+
+      {/* Dynamic Navigation Footer */}
+      <footer className="bg-[#003D6F] py-16 border-t border-[#00284d] text-white relative z-10">
+         <div className="max-w-[1400px] mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                <Rocket className="text-white w-5 h-5" />
+              </div>
+              <span className="text-xl font-bold tracking-tight">AdRolls.in</span>
+            </div>
+            
+            <div className="text-slate-300 text-sm font-medium order-3 md:order-2">
+               &copy; 2024 AdRolls Intelligence Pvt Ltd. All rights reserved.
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-8 order-2 md:order-3">
+              <Link href="/privacy-policy" className="text-slate-300 hover:text-[#F4B429] font-bold transition-colors">Privacy Policy</Link>
+              <Link href="/terms-and-conditions" className="text-slate-300 hover:text-[#F4B429] font-bold transition-colors">Terms & Conditions</Link>
+              <Link href="/refund-policy" className="text-slate-300 hover:text-[#F4B429] font-bold transition-colors">Refund Policy</Link>
+            </div>
+         </div>
       </footer>
 
-      {/* Mobile Sticky Footer */}
-      <div className="mobile-sticky-footer">
-        <a href="tel:+919872490091" className="sticky-btn tel-btn">📞 Call Sales</a>
-        <a href="https://wa.me/919872490091?text=Hi,%20I'm%20interested%20in%20pre-qualified%20real%20estate%20leads%20from%20AdRolls." target="_blank" rel="noopener noreferrer" className="sticky-btn wa-btn">💬 WhatsApp Us</a>
-      </div>
-
-      {/* Scoped Stylesheet */}
-      <style>{`
-        .landing-body {
-          font-family: 'Inter', sans-serif;
-          color: #0B0F19;
-          background-color: #FFFFFF;
-          line-height: 1.5;
-          margin: 0;
-          padding: 0;
-          padding-bottom: 70px;
-        }
-
-        .landing-body h1, .landing-body h2, .landing-body h3 {
-          font-family: 'Outfit', sans-serif;
-          font-weight: 900;
-          line-height: 1.1;
-          letter-spacing: -0.02em;
-        }
-
-        .landing-body .container {
-          max-width: 1100px;
-          margin: 0 auto;
-          padding: 0 20px;
-        }
-
-        .landing-body .alert-banner {
-          background-color: #E11D48;
-          color: #FFFFFF;
-          text-align: center;
-          padding: 12px 20px;
-          font-size: 14px;
-          font-weight: 600;
-          border-bottom: 3px solid #0B0F19;
-        }
-
-        .landing-body .main-header {
-          border-bottom: 3px solid #0B0F19;
-          padding: 15px 0;
-          background-color: #FFFFFF;
-        }
-        .landing-body .header-container {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .landing-body .logo {
-          font-family: 'Outfit', sans-serif;
-          font-weight: 900;
-          font-size: 28px;
-          letter-spacing: -1px;
-          display: flex;
-          flex-direction: column;
-          line-height: 0.9;
-        }
-        .landing-body .logo-red {
-          color: #E11D48;
-        }
-        .landing-body .logo-blue {
-          color: #0B0F19;
-        }
-        .landing-body .logo-sub {
-          font-size: 9px;
-          font-family: 'Space Grotesk', sans-serif;
-          font-weight: 700;
-          letter-spacing: 2px;
-          color: #4B5563;
-          margin-top: 2px;
-        }
-        .landing-body .cta-header {
-          background-color: #0B0F19;
-          color: #FFFFFF;
-          text-decoration: none;
-          font-weight: 800;
-          font-family: 'Space Grotesk', sans-serif;
-          padding: 8px 16px;
-          border-radius: 4px;
-          border: 2px solid #0B0F19;
-          font-size: 14px;
-          transition: all 0.2s ease;
-        }
-        .landing-body .cta-header:hover {
-          background-color: #FFFFFF;
-          color: #0B0F19;
-        }
-
-        .landing-body .hero-section {
-          background-color: #F3F4F6;
-          padding: 60px 0 80px 0;
-          border-bottom: 3px solid #0B0F19;
-          text-align: center;
-        }
-        .landing-body .badge-warning {
-          background-color: #E11D48;
-          color: #FFFFFF;
-          display: inline-block;
-          padding: 6px 14px;
-          font-family: 'Space Grotesk', sans-serif;
-          font-weight: 700;
-          font-size: 14px;
-          border: 2px solid #0B0F19;
-          box-shadow: 2px 2px 0px #0B0F19;
-          margin-bottom: 25px;
-        }
-        .landing-body .hero-title {
-          font-size: 56px;
-          margin-bottom: 25px;
-          max-width: 950px;
-          margin-left: auto;
-          margin-right: auto;
-          color: #0B0F19;
-        }
-        .landing-body .highlight-yellow {
-          background-color: #FFDE00;
-          padding: 2px 10px;
-          border: 2px solid #0B0F19;
-          box-shadow: 3px 3px 0px #0B0F19;
-          display: inline-block;
-        }
-        .landing-body .hero-subtitle {
-          font-size: 20px;
-          color: #4B5563;
-          max-width: 750px;
-          margin: 0 auto 40px auto;
-          font-weight: 600;
-          line-height: 1.6;
-        }
-        .landing-body .hero-features {
-          display: flex;
-          justify-content: center;
-          gap: 30px;
-          flex-wrap: wrap;
-          margin-bottom: 50px;
-        }
-        .landing-body .feature-item {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 16px;
-          background-color: #FFFFFF;
-          padding: 10px 18px;
-          border: 2px solid #0B0F19;
-          box-shadow: 3px 3px 0px #0B0F19;
-          font-weight: 500;
-        }
-        .landing-body .icon-check {
-          color: #10B981;
-          flex-shrink: 0;
-        }
-
-        .landing-body .form-card {
-          background-color: #FFFFFF;
-          border: 3px solid #0B0F19;
-          box-shadow: 8px 8px 0px #0B0F19;
-          max-width: 650px;
-          margin: 0 auto;
-          padding: 40px;
-          text-align: left;
-          border-radius: 8px;
-        }
-        .landing-body .form-header {
-          border-bottom: 2px dashed #4B5563;
-          padding-bottom: 20px;
-          margin-bottom: 25px;
-        }
-        .landing-body .form-header h2 {
-          font-size: 24px;
-          color: #E11D48;
-          margin-bottom: 5px;
-        }
-        .landing-body .form-header p {
-          color: #4B5563;
-          font-size: 14px;
-          font-weight: 600;
-        }
-        .landing-body .form-row {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 20px;
-        }
-        .landing-body .form-group {
-          margin-bottom: 20px;
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-        .landing-body .form-group label {
-          font-family: 'Space Grotesk', sans-serif;
-          font-weight: 700;
-          font-size: 13px;
-          text-transform: uppercase;
-          color: #0B0F19;
-        }
-        .landing-body .form-group input, .landing-body .form-group select {
-          width: 100%;
-          padding: 12px 16px;
-          border: 2px solid #0B0F19;
-          border-radius: 4px;
-          font-family: 'Inter', sans-serif;
-          font-size: 15px;
-          font-weight: 600;
-          color: #0B0F19;
-          background-color: #F3F4F6;
-        }
-        .landing-body .form-group input:focus, .landing-body .form-group select:focus {
-          outline: none;
-          border-color: #E11D48;
-          background-color: #FFFFFF;
-        }
-        .landing-body .submit-btn {
-          background-color: #E11D48;
-          color: #FFFFFF;
-          width: 100%;
-          border: 2px solid #0B0F19;
-          border-radius: 4px;
-          padding: 16px;
-          font-family: 'Outfit', sans-serif;
-          font-weight: 900;
-          font-size: 18px;
-          cursor: pointer;
-          box-shadow: 4px 4px 0px #0B0F19;
-          transition: all 0.1s ease;
-          margin-top: 10px;
-        }
-        .landing-body .submit-btn:hover {
-          background-color: #BE123C;
-          transform: translate(2px, 2px);
-          box-shadow: 2px 2px 0px #0B0F19;
-        }
-        .landing-body .form-guarantee {
-          font-size: 12px;
-          color: #4B5563;
-          text-align: center;
-          margin-top: 15px;
-          font-weight: 600;
-        }
-
-        .landing-body .clients-section {
-          padding: 50px 0;
-          border-bottom: 3px solid #0B0F19;
-          text-align: center;
-          background-color: #FFDE00;
-        }
-        .landing-body .section-tag {
-          font-family: 'Space Grotesk', sans-serif;
-          font-weight: 800;
-          font-size: 15px;
-          letter-spacing: 2px;
-          color: #0B0F19;
-          margin-bottom: 15px;
-        }
-        .landing-body .clients-desc {
-          font-size: 18px;
-          font-weight: 700;
-          margin-bottom: 25px;
-        }
-        .landing-body .clients-grid {
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          gap: 30px;
-          flex-wrap: wrap;
-        }
-        .landing-body .client-name {
-          background-color: #FFFFFF;
-          color: #0B0F19;
-          font-family: 'Outfit', sans-serif;
-          font-weight: 800;
-          font-size: 18px;
-          padding: 10px 20px;
-          border: 3px solid #0B0F19;
-          box-shadow: 3px 3px 0px #0B0F19;
-        }
-        .landing-body .italic-more {
-          font-style: italic;
-          font-weight: 600;
-          background-color: transparent;
-          border: none;
-          box-shadow: none;
-          font-size: 20px;
-        }
-
-        .landing-body .value-section {
-          padding: 80px 0;
-          border-bottom: 3px solid #0B0F19;
-        }
-        .landing-body .value-h2-big {
-          font-size: 40px;
-          text-align: center;
-          max-width: 900px;
-          margin: 0 auto 50px auto;
-          color: #0B0F19;
-        }
-        .landing-body .grid-two {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 40px;
-        }
-        .landing-body .pain-card, .landing-body .solution-card {
-          border: 3px solid #0B0F19;
-          border-radius: 8px;
-          padding: 40px;
-          box-shadow: 6px 6px 0px #0B0F19;
-          position: relative;
-        }
-        .landing-body .pain-card {
-          background-color: #FFF5F5;
-        }
-        .landing-body .solution-card {
-          background-color: #F0FDF4;
-        }
-        .landing-body .card-icon {
-          position: absolute;
-          top: -20px;
-          left: 40px;
-          width: 44px;
-          height: 44px;
-          border: 3px solid #0B0F19;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-weight: 800;
-          font-size: 18px;
-          box-shadow: 2px 2px 0px #0B0F19;
-        }
-        .landing-body .pain-card h3, .landing-body .solution-card h3 {
-          font-size: 22px;
-          margin-bottom: 20px;
-        }
-        .landing-body .bullet-list {
-          list-style: none;
-          display: flex;
-          flex-direction: column;
-          gap: 15px;
-        }
-        .landing-body .bullet-list li {
-          position: relative;
-          padding-left: 20px;
-          font-size: 15px;
-          font-weight: 600;
-        }
-        .landing-body .bullet-list li::before {
-          content: "•";
-          position: absolute;
-          left: 0;
-          color: #0B0F19;
-          font-size: 20px;
-          line-height: 1;
-          top: -2px;
-        }
-
-        .landing-body .steps-section {
-          background-color: #F3F4F6;
-          padding: 80px 0;
-          border-bottom: 3px solid #0B0F19;
-        }
-        .landing-body .steps-sub {
-          font-size: 18px;
-          color: #4B5563;
-          margin-top: -30px;
-          margin-bottom: 50px;
-          font-weight: 600;
-        }
-        .landing-body .grid-three {
-          display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          gap: 30px;
-        }
-        .landing-body .step-card {
-          background-color: #FFFFFF;
-          border: 3px solid #0B0F19;
-          border-radius: 8px;
-          padding: 40px 25px;
-          box-shadow: 4px 4px 0px #0B0F19;
-          text-align: center;
-        }
-        .landing-body .step-num {
-          width: 50px;
-          height: 50px;
-          background-color: #FFDE00;
-          border: 3px solid #0B0F19;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-family: 'Outfit', sans-serif;
-          font-weight: 900;
-          font-size: 22px;
-          margin: 0 auto 20px auto;
-          box-shadow: 3px 3px 0px #0B0F19;
-        }
-        .landing-body .step-card h3 {
-          font-size: 20px;
-          margin-bottom: 15px;
-        }
-        .landing-body .step-card p {
-          color: #4B5563;
-          font-size: 14px;
-          line-height: 1.6;
-          font-weight: 500;
-        }
-
-        .landing-body .testimonial-section {
-          padding: 80px 0;
-          border-bottom: 3px solid #0B0F19;
-          background-color: #FFFFFF;
-        }
-        .landing-body .testimonial-box {
-          max-width: 800px;
-          margin: 40px auto 0 auto;
-          background-color: #F3F4F6;
-          border: 3px solid #0B0F19;
-          box-shadow: 6px 6px 0px #0B0F19;
-          padding: 40px;
-          border-radius: 8px;
-        }
-        .landing-body .testimonial-text {
-          font-size: 18px;
-          font-weight: 600;
-          line-height: 1.6;
-          margin-bottom: 25px;
-          position: relative;
-          font-style: italic;
-        }
-        .landing-body .testimonial-author {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 4px;
-        }
-        .landing-body .author-sub {
-          font-size: 13px;
-          font-weight: 700;
-          color: #4B5563;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-        }
-
-        .landing-body .final-cta {
-          background-color: #0B0F19;
-          color: #FFFFFF;
-          padding: 100px 0;
-          border-bottom: 3px solid #0B0F19;
-        }
-        .landing-body .final-title {
-          font-size: 48px;
-          margin-bottom: 25px;
-          max-width: 900px;
-          margin-left: auto;
-          margin-right: auto;
-          color: #FFFFFF;
-        }
-        .landing-body .final-sub {
-          color: #F3F4F6;
-          font-size: 20px;
-          margin-bottom: 40px;
-          font-weight: 500;
-        }
-        .landing-body .big-cta-btn {
-          display: inline-block;
-          background-color: #FFDE00;
-          color: #0B0F19;
-          text-decoration: none;
-          font-family: 'Outfit', sans-serif;
-          font-weight: 900;
-          font-size: 20px;
-          padding: 20px 40px;
-          border: 3px solid #0B0F19;
-          border-radius: 4px;
-          box-shadow: 4px 4px 0px #FFFFFF;
-          transition: all 0.1s ease;
-        }
-        .landing-body .big-cta-btn:hover {
-          background-color: #E6C800;
-          transform: translate(2px, 2px);
-          box-shadow: 2px 2px 0px #FFFFFF;
-        }
-        .landing-body .cta-subtext {
-          color: #9CA3AF;
-          font-size: 13px;
-          margin-top: 20px;
-          font-weight: 600;
-        }
-
-        .landing-body .main-footer {
-          background-color: #030712;
-          color: #9CA3AF;
-          padding: 60px 0;
-          text-align: center;
-          font-size: 13px;
-          font-weight: 500;
-        }
-        .landing-body .footer-logo {
-          font-family: 'Outfit', sans-serif;
-          font-weight: 900;
-          font-size: 24px;
-          color: #FFFFFF;
-          margin-bottom: 10px;
-        }
-        .landing-body .footer-address {
-          margin-bottom: 20px;
-          font-weight: 600;
-        }
-        .landing-body .footer-copy {
-          border-top: 1px solid #1F2937;
-          padding-top: 20px;
-          max-width: 600px;
-          margin: 0 auto;
-        }
-
-        .landing-body .mobile-sticky-footer {
-          position: fixed;
-          bottom: 0;
-          left: 0;
-          width: 100%;
-          background-color: #FFFFFF;
-          border-top: 3px solid #0B0F19;
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          z-index: 99;
-        }
-        .landing-body .sticky-btn {
-          text-align: center;
-          padding: 16px 10px;
-          font-family: 'Outfit', sans-serif;
-          font-weight: 900;
-          font-size: 16px;
-          text-decoration: none;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-        }
-        .landing-body .tel-btn {
-          background-color: #0B0F19;
-          color: #FFFFFF;
-          border-right: 1.5px solid #0B0F19;
-        }
-        .landing-body .wa-btn {
-          background-color: #10B981;
-          color: #FFFFFF;
-          border-left: 1.5px solid #0B0F19;
-        }
-
-        .landing-body .success-message {
-          background-color: #D1FAE5;
-          color: #065F46;
-          border: 2px solid #10B981;
-          padding: 20px;
-          border-radius: 6px;
-          font-weight: 600;
-          font-size: 15px;
-          text-align: center;
-        }
-        
-        .landing-body .error-text {
-          color: #E11D48;
-          font-size: 14px;
-          font-weight: 700;
-          margin-bottom: 15px;
-        }
-
-        @keyframes pulse {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.02); }
-        }
-        .landing-body .animate-pulse {
-          animation: pulse 2s infinite ease-in-out;
-        }
-
-        @media (max-width: 900px) {
-          .landing-body .hero-title {
-            font-size: 38px;
-          }
-          .landing-body .grid-two {
-            grid-template-columns: 1fr;
-            gap: 30px;
-          }
-          .landing-body .grid-three {
-            grid-template-columns: 1fr;
-            gap: 20px;
-          }
-          .landing-body .value-h2-big {
-            font-size: 30px;
-          }
-          .landing-body .final-title {
-            font-size: 32px;
-          }
-          .landing-body .big-cta-btn {
-            font-size: 16px;
-            padding: 16px 24px;
-          }
-        }
-
-        @media (max-width: 600px) {
-          .landing-body .alert-banner {
-            font-size: 12px;
-            padding: 8px;
-          }
-          .landing-body .logo {
-            font-size: 22px;
-          }
-          .landing-body .hero-section {
-            padding: 40px 0;
-          }
-          .landing-body .badge-warning {
-            font-size: 11px;
-            padding: 4px 8px;
-          }
-          .landing-body .hero-subtitle {
-            font-size: 15px;
-          }
-          .landing-body .hero-features {
-            gap: 15px;
-          }
-          .landing-body .feature-item {
-            font-size: 14px;
-            padding: 8px 12px;
-          }
-          .landing-body .form-card {
-            padding: 20px;
-          }
-          .landing-body .form-row {
-            grid-template-columns: 1fr;
-            gap: 0;
-          }
-          .landing-body .submit-btn {
-            font-size: 15px;
-            padding: 14px;
-          }
-          .landing-body .client-name {
-            font-size: 14px;
-            padding: 6px 12px;
-          }
-        }
-      `}</style>
     </div>
   )
 }

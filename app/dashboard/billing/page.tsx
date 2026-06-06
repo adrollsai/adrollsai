@@ -167,8 +167,8 @@ export default function BillingPage() {
     {
       id: 'growth',
       name: "Growth Plan",
-      price: "Contact for Pricing",
-      period: "custom",
+      price: "₹9,999",
+      period: "month",
       desc: "Our most sought-after plan tailored to growing real estate agencies.",
       features: [
         "Full CRM Integration",
@@ -188,8 +188,8 @@ export default function BillingPage() {
     {
       id: 'pro',
       name: "Pro Plan",
-      price: "Contact for Pricing",
-      period: "custom",
+      price: "₹14,999",
+      period: "month",
       desc: "Built for established agencies seeking premium automated growth.",
       features: [
         "Full CRM Integration",
@@ -210,8 +210,8 @@ export default function BillingPage() {
     {
       id: 'enterprise',
       name: "Enterprise Plan",
-      price: "Contact for Pricing",
-      period: "custom",
+      price: "₹24,999",
+      period: "month",
       desc: "Premium, massive quota bundles tailored for large corporate entities.",
       features: [
         "Full CRM Integration",
@@ -252,56 +252,56 @@ export default function BillingPage() {
       {
           id: 'video',
           name: "Additional AI Video",
-          price: "Contact Sales",
+          price: "₹999",
           desc: "+1 AI Video quota added immediately to your current cycle.",
           quotaKey: "videos"
       },
       {
           id: 'team_member',
           name: "Additional Team Member",
-          price: "Contact Sales",
+          price: "₹299",
           desc: "+1 Team Member seat.",
           quotaKey: "team_members"
       },
       {
           id: 'campaign_launch',
           name: "Additional Campaign Launch",
-          price: "Contact Sales",
+          price: "₹399",
           desc: "+1 Meta ad campaign launch quota.",
           quotaKey: "campaign_launches"
       },
       {
           id: 'campaign_optimization',
           name: "Additional Campaign Optimization",
-          price: "Contact Sales",
+          price: "₹249",
           desc: "+1 Campaign Optimization run to refresh visual DNA.",
           quotaKey: "campaign_optimizations"
       },
       {
           id: 'retargeting_campaign',
           name: "Additional Retargeting Campaign",
-          price: "Contact Sales",
+          price: "₹499",
           desc: "+1 Retargeting Campaign quota. Retargeting is add-on only.",
           quotaKey: "retargeting_campaigns"
       },
       {
           id: 'image_small',
           name: "Small Image Pack (+10)",
-          price: "Contact Sales",
+          price: "₹59",
           desc: "+10 AI Image generations added immediately.",
           quotaKey: "images"
       },
       {
           id: 'image_medium',
           name: "Medium Image Pack (+50)",
-          price: "Contact Sales",
+          price: "₹199",
           desc: "+50 AI Image generations added immediately.",
           quotaKey: "images"
       },
       {
           id: 'image_large',
           name: "Large Image Pack (+100)",
-          price: "Contact Sales",
+          price: "₹349",
           desc: "+100 AI Image generations added immediately.",
           quotaKey: "images"
       }
@@ -530,16 +530,23 @@ export default function BillingPage() {
                                       Contact Sales <ArrowRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
                                   </button>
                               ) : (
-                                  <a 
-                                      href="tel:+919872669935"
-                                      className={`w-full text-center py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm ${
+                                  <button 
+                                      onClick={() => handlePurchase({ planId: tier.id })}
+                                      disabled={isProcessing}
+                                      className={`w-full text-center py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
                                           tier.highlight
                                               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/10'
                                               : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-50'
                                       }`}
                                   >
-                                      Contact +91-98726 69935
-                                  </a>
+                                      {isProcessing ? (
+                                          <Loader2 className="animate-spin" size={14} />
+                                      ) : (
+                                          <>
+                                              <ShoppingBag size={14} /> Buy Now with PhonePe
+                                          </>
+                                      )}
+                                  </button>
                               )}
                           </div>
 
@@ -576,12 +583,21 @@ export default function BillingPage() {
                                   </p>
                               </div>
 
-                              <a
-                                  href="tel:+919872669935"
-                                  className="w-full bg-slate-900 hover:bg-slate-800 text-white text-center py-3.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                              <button
+                                  onClick={() => handlePurchase({ addonId: addon.id })}
+                                  disabled={isProcessing || isDisabled}
+                                  className="w-full bg-slate-900 hover:bg-slate-800 text-white text-center py-3.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                  Contact +91-98726 69935
-                              </a>
+                                  {isProcessing ? (
+                                      <Loader2 className="animate-spin" size={14} />
+                                  ) : isDisabled ? (
+                                      "Included in Enterprise"
+                                  ) : (
+                                      <>
+                                          <ShoppingBag size={14} /> Buy Now with PhonePe
+                                      </>
+                                  )}
+                              </button>
                           </div>
                       );
                   })}
