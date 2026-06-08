@@ -122,6 +122,7 @@ export async function POST(request: Request) {
           status: propertyData.status || 'Active',
           image_url: propertyData.image_url || '',
           images: propertyData.images || [],
+          youtube_url: propertyData.youtube_url || null,
           auto_generate: false
         })
         .select()
@@ -141,7 +142,8 @@ export async function POST(request: Request) {
           title: propertyData.title,
           description: propertyData.description,
           image_url: propertyData.image_url,
-          images: propertyData.images
+          images: propertyData.images,
+          youtube_url: propertyData.youtube_url
         })
         .eq('id', propertyId)
         .select()

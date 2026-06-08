@@ -1131,6 +1131,7 @@ export type Database = {
           template_campaign_id: string | null
           title: string
           user_id: string | null
+          youtube_url: string | null
         }
         Insert: {
           address: string
@@ -1156,6 +1157,7 @@ export type Database = {
           template_campaign_id?: string | null
           title: string
           user_id?: string | null
+          youtube_url?: string | null
         }
         Update: {
           address?: string
@@ -1181,6 +1183,7 @@ export type Database = {
           template_campaign_id?: string | null
           title?: string
           user_id?: string | null
+          youtube_url?: string | null
         }
         Relationships: [
           {

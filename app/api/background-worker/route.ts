@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createClient as createServerClient } from '@/utils/supabase/server';
 import { sendPushNotification } from '@/utils/notification-helper';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
@@ -30,8 +31,16 @@ export async function POST(req: Request) {
 
         // 1. Start the Chat Generation IF coming from the Products Tab (no taskId passed)
         if (!taskId && payload) {
-            console.log(`[Worker] Starting generation for ${propertyTitle} at ${baseUrl}/api/chat`);
-            const startResponse = await fetch(`${baseUrl}/api/chat`, {
+            const supabase = await createServerClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            const loggedInUserId = user?.id;
+
+            const urlParams = new URL(req.url).searchParams;
+            const impersonateParam = urlParams.get('impersonate') || (userId && loggedInUserId && userId !== loggedInUserId ? userId : null);
+            const chatUrl = impersonateParam ? `${baseUrl}/api/chat?impersonate=${impersonateParam}` : `${baseUrl}/api/chat`;
+
+            console.log(`[Worker] Starting generation for ${propertyTitle} at ${chatUrl}`);
+            const startResponse = await fetch(chatUrl, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',

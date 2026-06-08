@@ -119,6 +119,7 @@ export async function POST(request: Request) {
         let propertyRera = "PBRERA-SAS79-PR0777"
         let propertyFloorPlan = "https://i.ibb.co/NdSPkfxQ/3bhk.webp"
         let propertyPrice = "₹ 1.7 Cr"
+        let propertyYoutubeUrl = ""
 
         if (propertyId) {
             const { data: property } = await supabase
@@ -143,6 +144,9 @@ export async function POST(request: Request) {
                 if (property.price) {
                     propertyPrice = property.price
                 }
+                if (property.youtube_url) {
+                    propertyYoutubeUrl = property.youtube_url
+                }
 
                 propertyDataText = `
 PROPERTY INVENTORY CONTEXT:
@@ -153,6 +157,7 @@ PROPERTY INVENTORY CONTEXT:
 - RERA ID/Number: ${property.rera_number || "N/A"}
 - Floor Plan URL: ${property.floor_plan_url || "N/A"}
 - Brochure Document URL: ${property.brochure_url || "N/A"}
+- YouTube Video URL: ${property.youtube_url || "N/A"}
 - Property Images List: ${JSON.stringify(propertyImagesList)}
 `
             }
@@ -272,6 +277,28 @@ PROMPT: ${p}`,
                 console.error("[Lander API] Kie Image generation failed:", err);
             }
         }
+        let imageAnalysisResults = ""
+        if (mode === 'generate' && propertyImagesList.length > 0) {
+            console.log(`[Lander API] Performing multimodal image analysis on ${propertyImagesList.length} images...`)
+            try {
+                const analysisPrompt = `You are an expert design and marketing AI. You are given a list of image URLs associated with the product/property "${resolvedProductName}".
+Analyze these images and perform the following:
+1. Describe what each image shows.
+2. Suggest the best placement for each image in a high-converting landing page HTML code (e.g. hero banner background, features showcase, interior gallery, testimonial avatar, or section backdrop).
+3. Provide clear design guidelines on how to structure the HTML/CSS layout around these images to maximize visual appeal.
+
+Here are the image URLs for reference:
+${propertyImagesList.map((url, idx) => `Image ${idx}: ${url}`).join('\n')}
+
+Format your response as a detailed summary that a frontend developer can easily follow.`
+                
+                imageAnalysisResults = await callGemini(analysisPrompt, propertyImagesList)
+                console.log("[Lander API] Image Analysis Successful:", imageAnalysisResults)
+            } catch (e: any) {
+                console.error("[Lander API] Failed to perform image analysis:", e)
+                imageAnalysisResults = "Failed to perform automated image analysis. Place the images logically within the layout based on general best practices."
+            }
+        }
 
         let systemPrompt = ''
         if (mode === 'generate') {
@@ -288,6 +315,26 @@ REAL-ESTATE LISTING SPECIFICATIONS:
 `
             }
 
+            let imageAnalysisSection = ""
+            if (imageAnalysisResults) {
+                imageAnalysisSection = `
+### IMAGE LAYOUT & PLACEMENT ANALYSIS (CRITICAL)
+Below is the visual analysis and layout recommendations for the product images. You MUST follow these layout placement recommendations and use the specified image URLs in the corresponding sections/cards of your HTML code:
+${imageAnalysisResults}
+`
+            }
+
+            let youtubeEmbedSection = ""
+            if (propertyYoutubeUrl) {
+                youtubeEmbedSection = `
+### YOUTUBE VIDEO EMBED INSTRUCTIONS (CRITICAL)
+- YouTube Video URL: "${propertyYoutubeUrl}"
+- You MUST embed this YouTube video in a highly visible, premium section on the landing page (e.g., directly below the hero section or inside a feature showcase card/video presentation section).
+- Parse the YouTube URL to extract the 11-character video ID, and generate a responsive iframe pointing to "https://www.youtube.com/embed/<VIDEO_ID>".
+- Ensure the iframe is wrapped in a responsive Tailwind container with professional styling (e.g., class="w-full aspect-video rounded-2xl shadow-lg border border-slate-200/60 overflow-hidden").
+`
+            }
+
             systemPrompt = `You are a world-class front-end developer and elite direct-response landing page copywriter specializing in high-converting landing pages.
 Create a complete, responsive, premium single-page landing page in HTML based on the details below, strictly following Alex Hormozi's "Value Equation" conversion framework.
 
@@ -297,6 +344,8 @@ Create a complete, responsive, premium single-page landing page in HTML based on
 * Target Audience & Brand Info: 
 ${contactInfoText}
 ${propertyDataText}
+${imageAnalysisSection}
+${youtubeEmbedSection}
 
 ### CRITICAL HORMOZI CONVERSION FRAMEWORK (Apply strictly to copy and layout):
 

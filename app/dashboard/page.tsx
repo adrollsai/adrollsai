@@ -14,6 +14,15 @@ const WhatsAppIcon = ({ size = 24, className = "" }) => (
   </svg>
 )
 
+const getYoutubeEmbedUrl = (url: string): string | null => {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|shorts\/)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  if (match && match[2].length === 11) {
+    return `https://www.youtube.com/embed/${match[2]}`;
+  }
+  return null;
+};
 
 type Property = {
   id: string
@@ -27,6 +36,7 @@ type Property = {
   property_type?: string
   user_id: string 
   auto_generate?: boolean 
+  youtube_url?: string | null
 }
 
 type Asset = {
@@ -79,7 +89,7 @@ export default function ProductsPage() {
   const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string, type?: 'image' | 'video' }>({ isOpen: false, url: '', title: '' })
   
   // Add Form State
-  const [newProp, setNewProp] = useState({ title: '', description: '' })
+  const [newProp, setNewProp] = useState({ title: '', description: '', youtube_url: '' })
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
 
@@ -330,7 +340,8 @@ export default function ProductsPage() {
             title: editProp.title,
             description: editProp.description,
             image_url: finalMainImage,
-            images: finalImages
+            images: finalImages,
+            youtube_url: editProp.youtube_url || null
           }
         })
       })
@@ -344,7 +355,8 @@ export default function ProductsPage() {
           title: editProp.title,
           description: editProp.description,
           image_url: finalMainImage,
-          images: finalImages
+          images: finalImages,
+          youtube_url: editProp.youtube_url || null
       } : p)
       
       setProperties(updatedProps)
@@ -411,7 +423,8 @@ export default function ProductsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error("Unauthenticated")
 
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      const targetId = ownerId || user.id
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', targetId).single()
       let propImages = (prop.images && prop.images.length > 0) ? prop.images.slice(0, 2) : [prop.image_url]
 
       const payload = {
@@ -426,10 +439,14 @@ export default function ProductsPage() {
           model: 'google/nano-banana-2'
       }
 
-      fetch('/api/background-worker', {
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      const workerUrl = impersonateId ? `/api/background-worker?impersonate=${impersonateId}` : '/api/background-worker'
+
+      fetch(workerUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, propId: prop.id, propertyTitle: prop.title, payload })
+        body: JSON.stringify({ userId: targetId, propId: prop.id, propertyTitle: prop.title, payload })
       }).then(async (res) => {
            const data = await res.json();
            if (!res.ok) throw new Error(data.error);
@@ -538,7 +555,8 @@ export default function ProductsPage() {
             property_type: 'Generic',
             status: 'Active',
             image_url: uploadedUrls[0],
-            images: uploadedUrls
+            images: uploadedUrls,
+            youtube_url: newProp.youtube_url || null
           }
         })
       })
@@ -548,7 +566,7 @@ export default function ProductsPage() {
 
       await fetchProperties(true)
       setShowAddModal(false)
-      setNewProp({ title: '', description: '' })
+      setNewProp({ title: '', description: '', youtube_url: '' })
       setSelectedFiles([])
       setPreviews([])
 
@@ -898,6 +916,17 @@ export default function ProductsPage() {
                 />
               </div>
               
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">YouTube Video URL</label>
+                <input 
+                  type="text" 
+                  value={newProp.youtube_url || ''} 
+                  onChange={(e) => setNewProp({...newProp, youtube_url: e.target.value})} 
+                  className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-medium text-slate-905 transition-all" 
+                  placeholder="e.g. https://www.youtube.com/watch?v=..." 
+                />
+              </div>
+              
               <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center mt-4 disabled:opacity-50 disabled:scale-100">
                 {isSubmitting ? <><Loader2 size={18} className="animate-spin mr-2" /> Saving...</> : 'Save Product'}
               </button>
@@ -975,6 +1004,17 @@ export default function ProductsPage() {
                   rows={4} 
                 />
               </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">YouTube Video URL</label>
+                <input 
+                  type="text" 
+                  value={editProp.youtube_url || ''} 
+                  onChange={(e) => setEditProp({...editProp, youtube_url: e.target.value})} 
+                  className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-medium text-slate-900 transition-all" 
+                  placeholder="e.g. https://www.youtube.com/watch?v=..." 
+                />
+              </div>
               
               <button onClick={handleSaveEdit} disabled={isSubmitting} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-lg shadow-blue-600/20 active:scale-[0.98] transition-all flex items-center justify-center mt-4 disabled:opacity-50 disabled:scale-100">
                 {isSubmitting ? <><Loader2 size={18} className="animate-spin mr-2" /> Saving Changes...</> : 'Save Changes'}
@@ -1050,6 +1090,23 @@ export default function ProductsPage() {
                                  {selectedProperty.description || "No specific details provided for this item."}
                               </p>
                            </div>
+
+                           {selectedProperty.youtube_url && getYoutubeEmbedUrl(selectedProperty.youtube_url) && (
+                              <div className="bg-white p-6 sm:p-8 rounded-[2rem] shadow-sm border border-slate-100">
+                                <h3 className="font-extrabold text-lg text-slate-900 mb-4 flex items-center gap-2">
+                                  <span className="text-red-600 font-bold">▶</span> Product Video
+                                </h3>
+                                <div className="relative w-full aspect-video rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
+                                  <iframe
+                                    src={getYoutubeEmbedUrl(selectedProperty.youtube_url) || ''}
+                                    title="Product Video"
+                                    className="absolute inset-0 w-full h-full border-0"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    allowFullScreen
+                                  />
+                                </div>
+                              </div>
+                           )}
                        </div>
                    ) : (
                        <div className="p-4 sm:p-8">

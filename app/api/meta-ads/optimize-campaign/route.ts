@@ -16,19 +16,14 @@ export async function POST(request: Request) {
     console.log("[Optimize] Request Body:", JSON.stringify(body, null, 2));
     const { campaignId, step = 'analyze', variations: requestedVariations, winningImageUrls: passedWinningImages, count = 5, style = 'hyper', userInstructions = '' } = body;
     if (!campaignId) return NextResponse.json({ error: 'Missing Campaign ID' }, { status: 400 });
-    // --- SUBSCRIPTION CHECK ---
-    try {
-        await checkLimitAndIncrement(user.id, 'campaign_optimizations');
-    } catch (limitErr: any) {
-        return NextResponse.json({ error: limitErr.message }, { status: 403 });
-    }
+    let targetUserId = user.id;
 
     try {
         // --- 0. Resolve Target User ID ---
         const url = new URL(request.url);
         const impersonateId = url.searchParams.get('impersonate');
         const { data: ownProfile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
-        let targetUserId = user.id;
+        targetUserId = user.id;
 
         if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
             targetUserId = (ownProfile?.parent_id || ownProfile?.agency_id) as string;
@@ -48,6 +43,13 @@ export async function POST(request: Request) {
 
         console.log("[Optimize] Authenticated User:", user.id);
         console.log("[Optimize] Resolved Target User:", targetUserId);
+
+        // --- SUBSCRIPTION CHECK ---
+        try {
+            await checkLimitAndIncrement(targetUserId, 'campaign_optimizations');
+        } catch (limitErr: any) {
+            return NextResponse.json({ error: limitErr.message }, { status: 403 });
+        }
 
         const { data: profile, error: profileErr } = await supabase.from('profiles')
             .select('facebook_token, ad_account_id, business_name, logo_url, contact_number')
@@ -222,14 +224,16 @@ export async function POST(request: Request) {
                 // Pass winning images as reference to the first few variations
                 const referenceImages = i < 3 ? (passedWinningImages || []) : [];
 
-                fetch(`${baseUrl}/api/background-worker`, {
+                const workerUrl = impersonateId ? `${baseUrl}/api/background-worker?impersonate=${impersonateId}` : `${baseUrl}/api/background-worker`;
+
+                fetch(workerUrl, {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
                         'Cookie': cookieHeader
                     },
                     body: JSON.stringify({
-                        userId: user.id,
+                        userId: targetUserId,
                         propertyTitle: variant.title,
                         propId: realPropId,
                         batchId: batchId,
@@ -297,8 +301,8 @@ export async function POST(request: Request) {
         console.error("[Optimize] Fatal API Error:", error);
         
         // REFUND: Give back the optimization credit if the process failed
-        if (user?.id) {
-            await refundLimit(user.id, 'campaign_optimizations');
+        if (targetUserId) {
+            await refundLimit(targetUserId, 'campaign_optimizations');
         }
 
         return NextResponse.json({ error: error.message }, { status: 500 });
