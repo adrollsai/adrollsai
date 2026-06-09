@@ -46,7 +46,10 @@ export async function POST(req: Request) {
                     'Content-Type': 'application/json',
                     'Cookie': cookieHeader 
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({
+                    ...payload,
+                    impersonateId: impersonateParam
+                })
             });
             
             const startData = await startResponse.json();

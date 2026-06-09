@@ -13,7 +13,7 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { propertyId, concept, userInstructions, images, imageDescriptions, variation = false, useCharacterVideo = true, duration = 30 } = body;
+        const { propertyId, concept, userInstructions, images, imageDescriptions, variation = false, useCharacterVideo = true, duration = 30, language = 'hinglish' } = body;
 
         // 1. Fetch Context
         let property: any = null;
@@ -141,13 +141,19 @@ export async function POST(request: Request) {
             .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined')
             .slice(0, 8);
 
-        // Determine if Hinglish should be used (default to true, unless user instructions explicitly request English/another language)
+        // Determine language based on the explicit language toggle first, then fall back to instruction text parsing
+        const isEnglish = language === 'english';
         const userText = (userInstructions || '').toLowerCase();
-        let languageInstruction = "The script dialogue MUST be written in a mix of Hindi and English. Hindi words (i.e. words not in the English dictionary) MUST be written in native Devanagari script (Hindi characters like 'अगर', 'चैन', 'घर', 'देखते', 'शानदार', 'शानदार'). Only words that exist in the English dictionary should be written in English letters (e.g., 'luxury', 'comfort', 'connectivity', 'project', 'Aspire', 'Spacious', 'residences', 'deserves', 'attention'). For example: 'अगर you're looking for a home that offers luxury, comfort and great connectivity, then अनंता Aspire deserves your attention. Spacious residences, world-class amenities and a prime location come together to create a truly elevated lifestyle. आइए, देखते हैं इस शानदार project को.' Under no circumstances should Hindi words be written in English characters or phonetic Roman script (e.g., do NOT write 'ghar', 'chain', 'shandaar'); always write them in Devanagari characters.";
-        if (userText.includes('in english') || userText.includes('only english') || userText.includes('english language')) {
+        let languageInstruction: string;
+        
+        if (isEnglish) {
+            languageInstruction = "The script dialogue MUST be written entirely in ENGLISH using standard English letters. Do NOT use any Hindi, Hinglish, or Devanagari script anywhere. All dialogue must be clear, professional, and natural-sounding English.";
+        } else if (userText.includes('in english') || userText.includes('only english') || userText.includes('english language')) {
             languageInstruction = "The script dialogue MUST be written in ENGLISH using standard English letters.";
         } else if (userText.includes('in hindi') || userText.includes('only hindi')) {
             languageInstruction = "The script dialogue MUST be written in HINDI using native Devanagari script (Hindi characters).";
+        } else {
+            languageInstruction = "The script dialogue MUST be written in Devanagari script throughout — this is Hinglish written entirely in Devanagari. ALL words, including English loanwords, must be transliterated into Devanagari characters. For example: 'इस घर की हर फ्लोर पर स्पेशस टू बी-एच-के लेआउट दिया गया है। देखें ये मॉडर्न मॉड्यूलर किचन और मार्बल फ्लोरिंग वाले ब्रैंड न्यू बेडरूम्स। पार्क-फेसिंग लोकेशन और प्राइम आई-टी सिटी एड्रेस के साथ, साइट विज़िट के लिए आज ही अनमोल एम्पायर से कॉन्टैक्ट करें।' Do NOT use any English/Latin letters in the dialogue. Every single word — whether originally Hindi or English — must appear in Devanagari script. City names like Mohali should be written as 'मोहाली', luxury as 'लग्ज़री', floor as 'फ्लोर', etc.";
         }
 
         const variationInstruction = variation 
@@ -161,24 +167,32 @@ export async function POST(request: Request) {
         const numClips = Math.ceil(duration / 15);
         let scenesSchema = "";
         for (let i = 1; i <= numClips; i++) {
+            const dialogueExample = isEnglish 
+                ? `Plain text of the English speech for Scene ${i} (comfortably spoken in 15 seconds, under 45 words)`
+                : `Plain text of the Devanagari Hinglish speech for Scene ${i} (comfortably spoken in 15 seconds, under 45 words)`;
             scenesSchema += `    {
-      "dialogue": "Plain text of the Hinglish/English speech for Scene ${i} (comfortably spoken in 15 seconds, under 45 words)",
+      "dialogue": "${dialogueExample}",
       "visuals": "Highly detailed visual instructions describing Scene ${i} (15s), referencing reference images naturally and strictly limiting details to what is visible in the photos."
     }${i < numClips ? ',\n' : ''}`;
         }
 
+        // Build language-appropriate framework prompts with examples
+        const hookExampleText = isEnglish 
+            ? '"Looking for your dream home in Mohali but can\'t find the right space?"'
+            : '"Mohali mein apna dream home dhoond rahe ho par perfect space nahi mil raha?"';
+
         let frameworkPrompt = "";
         if (numClips === 1) {
-            frameworkPrompt = `1. THE EMOTIONAL HOOK & CTA (Scene 1: 0:00 - 0:15): Open with an instant visual hook in the first 2 seconds, and IMMEDIATELY call out the target audience in the very first line of spoken dialogue (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like "Mohali mein apna dream home dhoond rahe ho par perfect space nahi mil raha?"). Grab attention with a warm, deeply human, emotionally resonant hook statement, connect it to the product's deep psychological value, and conclude with a warm, low-friction invitation to take the next step.`;
+            frameworkPrompt = `1. THE EMOTIONAL HOOK & CTA (Scene 1: 0:00 - 0:15): Open with an instant visual hook in the first 2 seconds, and IMMEDIATELY call out the target audience in the very first line of spoken dialogue (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like ${hookExampleText}). Grab attention with a warm, deeply human, emotionally resonant hook statement, connect it to the product's deep psychological value, and conclude with a warm, low-friction invitation to take the next step.`;
         } else if (numClips === 2) {
-            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Open with an instant visual hook in the first 2 seconds, and IMMEDIATELY call out the target audience in the very first line of spoken dialogue (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like "Mohali mein apna dream home dhoond rahe ho par perfect space nahi mil raha?"). Grab attention with a warm, deeply human, emotionally resonant hook statement and establish the core value.
+            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Open with an instant visual hook in the first 2 seconds, and IMMEDIATELY call out the target audience in the very first line of spoken dialogue (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like ${hookExampleText}). Grab attention with a warm, deeply human, emotionally resonant hook statement and establish the core value.
 2. THE WARM CALL TO ACTION & CONNECTION (Scene 2: 0:15 - 0:30): Highlight the emotional comfort/belonging, show how it solves the psychological pain, and end with a friendly, welcoming, and low-friction invitation to contact, buy, or get in touch.`;
         } else if (numClips === 3) {
-            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Open with an instant visual hook in the first 2 seconds, and IMMEDIATELY call out the target audience in the very first line of spoken dialogue (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like "Mohali mein apna dream home dhoond rahe ho par perfect space nahi mil raha?"). Grab attention with a warm, deeply human, emotionally resonant statement or relatable aspiration.
+            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Open with an instant visual hook in the first 2 seconds, and IMMEDIATELY call out the target audience in the very first line of spoken dialogue (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like ${hookExampleText}). Grab attention with a warm, deeply human, emotionally resonant statement or relatable aspiration.
 2. THE EMOTIONAL CONNECTION (Scene 2: 0:15 - 0:30): Bridge the hook by showing the product, how it works, and how it brings comfort, security, or success.
 3. THE WARM CALL TO ACTION (Scene 3: 0:30 - 0:45): Conclude with a friendly, welcoming, and low-friction invitation to take the next step.`;
         } else {
-            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Open with an instant visual hook in the first 2 seconds, and IMMEDIATELY call out the target audience in the very first line of spoken dialogue (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like "Mohali mein apna dream home dhoond rahe ho par perfect space nahi mil raha?"). Grab attention with a warm, deeply human, emotionally resonant statement or relatable aspiration.
+            frameworkPrompt = `1. THE EMOTIONAL HOOK (Scene 1: 0:00 - 0:15): Open with an instant visual hook in the first 2 seconds, and IMMEDIATELY call out the target audience in the very first line of spoken dialogue (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like ${hookExampleText}). Grab attention with a warm, deeply human, emotionally resonant statement or relatable aspiration.
 2. THE EMOTIONAL CONNECTION (Scene 2: 0:15 - 0:30): Bridge the hook by outlining the viewer's core challenge or aspiration.
 3. THE SOLUTION (Scene 3: 0:30 - 0:45): Introduce the product/service and demonstrate how it solves the pain points beautifully.
 4. THE WARM CALL TO ACTION (Scene 4: 0:45 - 1:00): Conclude with a friendly, welcoming, and low-friction invitation to take the next step.`;
@@ -209,13 +223,13 @@ ${frameworkPrompt}
 CONSTRAINTS & RULES:
 0. CRITICAL CUSTOM INSTRUCTIONS PRIORITIZATION RULE: You MUST strictly prioritize and adhere to the user's Custom Instructions: "${userInstructions || 'None'}". Every aspect of the generated script—including dialogue, tone, hook, environment details, actions, and scene visual descriptions—must be designed and written specifically to follow these instructions first and foremost. Do not ignore them or generate generic default templates that do not reflect what the user has requested.
 0.1. CRITICAL COHESIVE SELECTED CONCEPT RULE: You MUST strictly base the entire script's hook, narrative, dialogue, and visual flow directly and cohesively on the provided Selected Concept (Title: "${concept?.title || 'N/A'}", Hook: "${concept?.hook || 'N/A'}", Description: "${concept?.description || 'N/A'}", and Visual Angle: "${concept?.visualConcept || 'N/A'}").
-   - The dialogue in Scene 1 MUST start with or heavily incorporate the specific opening hook dialogue: "${concept?.hook || 'N/A'}". If the Selected Concept's hook is written in English, you MUST translate and adapt it to conversational Hinglish (Devanagari-English mix) on the fly to match our language rules.
+   - The dialogue in Scene 1 MUST start with or heavily incorporate the specific opening hook dialogue: "${concept?.hook || 'N/A'}". If the Selected Concept's hook is written in English, you MUST translate and adapt it to the target language on the fly to match our language rules.
    - The visual flow in both Scene 1 and Scene 2 MUST strictly implement the visual scene instructions and style described in the Selected Concept's Visual Angle: "${concept?.visualConcept || 'N/A'}".
    - Do NOT ignore the Selected Concept! Cohesion between the chosen concept/angle and the generated script is a top-level rule.
 0.2. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT & VISUAL HOOK RULE:
-   - The very first line of the spoken dialogue (Scene 1, first 2 seconds) MUST call out the target audience explicitly (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, mixing Devanagari and English letters: "Mohali में अपना dream home ढूंढ रहे हो?").
-   - The script's spoken dialogue MUST start strictly in conversational Hinglish (Devanagari-English mix) from the very first word. Absolutely NO starting lines, phrases, or introductory greetings in English (such as "Hey everyone", "Stop scrolling", "Are you looking for...", or "Did you know").
-   - Any Indian city or location names (such as Mohali, Zirakpur, Chandigarh, Panchkula, Mumbai, Delhi, Gurgaon, Bangalore, etc.) MUST be written phonetically in standard English letters (e.g. write 'Mohali', 'Zirakpur', 'Chandigarh', 'Panchkula', 'Mumbai').
+   - The very first line of the spoken dialogue (Scene 1, first 2 seconds) MUST call out the target audience explicitly (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line${isEnglish ? ', like: "Looking for your dream home in Mohali?"' : ', mixing Devanagari and English letters: "Mohali \u092e\u0947\u0902 \u0905\u092a\u0928\u093e dream home \u0922\u0942\u0902\u0922 \u0930\u0939\u0947 \u0939\u094b?"'}).
+   - ${isEnglish ? 'The script\'s spoken dialogue MUST be entirely in English from the very first word. No Hindi, Hinglish, or Devanagari script.' : 'The script\'s spoken dialogue MUST be written entirely in Devanagari script from the very first word. ALL words including English loanwords must be transliterated into Devanagari characters. Absolutely NO English/Latin letters allowed in the dialogue.'}
+   - Any Indian city or location names (such as Mohali, Zirakpur, Chandigarh, Panchkula, Mumbai, Delhi, Gurgaon, Bangalore, etc.) MUST be written ${isEnglish ? 'in standard English letters' : 'in Devanagari script (e.g. \u092e\u094b\u0939\u093e\u0932\u0940, \u091c\u0940\u0930\u0915\u092a\u0941\u0930, \u091a\u0902\u0921\u0940\u0917\u0922\u093c)'}.
    - Scene 1 visuals MUST open with an instant, scroll-stopping visual hook.
 1. Duration: STRICTLY ${duration} seconds total, split into exactly ${numClips} sequential 15-second clips (Scene 1 to Scene ${numClips}). Deeply emotional, slow-paced, warm, and natural.
 2. Dialogue language: ${languageInstruction}
@@ -226,14 +240,14 @@ CONSTRAINTS & RULES:
    - Map the values of our product/service directly to these deep-seated emotional pain points. Explain exactly how our product delivers the ultimate comfort, relief, security, or wealth creation that they desire.
    - Avoid surface-level marketing listicles or generic features. Write complete, smooth, conversational sentences that produce feelings of warmth, family comfort, safety, and deep emotional resonance.
 4.1. NATURAL BODY LANGUAGE & GESTURES: In all visual instructions, the character must have highly natural, dynamic, and expressive body language — real hand gestures while talking, subtle head tilts, natural eye contact shifts, genuine smiling, leaning in/out, touching/pointing at products naturally. Their movements should feel organic and alive like a real UGC creator, NOT stiff, static, or robotic.
-4.2. PRONUNCIATION WORKAROUND (STRICTLY AVOID COMPLEX HINDI WORDS):
+${isEnglish ? `4.2. PRONUNCIATION: Use clear, standard English vocabulary. Keep the language accessible and professional. Avoid jargon or overly complex words.` : `4.2. PRONUNCIATION WORKAROUND (STRICTLY AVOID COMPLEX HINDI WORDS):
    - The AI speech synthesizer frequently stumbles or produces errors when trying to pronounce complex, formal, or Sanskritized Hindi words.
    - To guarantee flawless natural pronunciation, you MUST strictly avoid complex, bookish, or heavy Hindi vocabulary (e.g. absolutely DO NOT write words phonetically like 'susajjit', 'aalishan', 'vastukala', 'pratishthit', 'suvidhajanak', 'vatankoolit', 'aakanksha', 'pratishtha', 'surakshit', 'parikalpana', 'keemat').
    - Instead, ALWAYS use extremely simple, clear, conversational, everyday spoken Hindi words phonetically (e.g. 'ghar' instead of complex synonyms, 'chain', 'sukoon', 'khushi', 'aasan', 'budget', 'best').
-   - Everyday English loanwords (like 'luxury', 'location', 'perfect', 'amenities', 'living', 'security', 'space', 'safe', 'family', 'balance') are highly preferred and pronounced perfectly by the voice model. Use them to make the Hinglish feel natural and premium.
+   - Everyday English loanwords (like 'luxury', 'location', 'perfect', 'amenities', 'living', 'security', 'space', 'safe', 'family', 'balance') are highly preferred and pronounced perfectly by the voice model. Use them to make the Hinglish feel natural and premium.`}
 5. STRICT NO-CTA IN EARLY SCENES RULE: Under no circumstances should early scenes contain any call to action, phone number, contact prompt, social handle reference, or request to purchase/visit. Early scenes must focus exclusively on the scroll-stopping hook and problem bridge. The Call to Action (CTA) to contact, buy, or get in touch must ONLY appear at the very end of the final Scene ${numClips} (the last 5 seconds).
 6. DYNAMIC AUDIENCE & NICHING ALIGNMENT: Analyze the product context and target buyer carefully. Tailor the hook and pain points exactly to the product's value tier. Do NOT use mismatched defaults (e.g. do NOT talk about 'renting vs buying' or 'saving rent money' if the product is a luxury 1.6 Cr home, commercial estate, or high-end service; instead, focus on exclusive lifestyle, status, growth, smart wealth investment, and ROI). Keep it fully aligned so that the copywriting angle naturally scales from premium commercial/residential buyers to budget-conscious daily e-commerce shoppers based on the product description provided.
-7. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue. If the product info or call-to-action implies a phone number, the creator must ONLY say "get in touch" (or natural Hinglish equivalents like "humein contact karein" or "get in touch ho jao") instead. Under no circumstances should the spoken dialogue contain any digits, numbers, or spoken phone numbers.
+7. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue. If the product info or call-to-action implies a phone number, the creator must ONLY say ${isEnglish ? '"get in touch" or "contact us today"' : '"get in touch" (or natural Hinglish equivalents like "humein contact karein" or "get in touch ho jao")'} instead. Under no circumstances should the spoken dialogue contain any digits, numbers, or spoken phone numbers.
 8. STRICT ENVIRONMENT CONSTRAINT (Prevents Hallucinations): Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images. Do NOT invent, assume, or hallucinate rooms, structures, product features, or details that are not shown in the reference photos.
 9. Visual scene descriptions: Refer to the reference images by their actual visual descriptions naturally so the video generator knows exactly which image is used in each scene. Do NOT use abstract placeholders like "@Image 1", "@Image 2", "Image 1", or "Image 2" in the script or visual description.
 10. NEVER instruct to display any text overlay, subtitles, captions, watermarks, or logos on screen in any script or visuals section, as the video AI generates garbled text and distorted logos.

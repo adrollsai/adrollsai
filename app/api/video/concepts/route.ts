@@ -14,7 +14,7 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { propertyId, userInstructions, images: customImages, useCharacterVideo = true, duration = 30 } = body;
+        const { propertyId, userInstructions, images: customImages, useCharacterVideo = true, duration = 30, language = 'hinglish' } = body;
 
         // 1. Fetch Context
         let property: any = null;
@@ -100,6 +100,20 @@ export async function POST(request: Request) {
 
         const numClips = Math.ceil(duration / 15);
         const durationText = `${duration}-second ad concepts ${numClips > 1 ? `(intended to be split into exactly ${numClips} sequential 15-second scenes/clips)` : '(a single 15-second scene)'}`;
+        // Build language-specific prompt sections
+        const isEnglish = language === 'english';
+
+        const hookLanguageRule = isEnglish 
+            ? `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN ENGLISH: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience of the business in clear, compelling English. For example, if selling premium flats in Mohali to home buyers, the hook dialogue must start exactly like: "Looking for your dream home in Mohali?" or "Searching for the perfect home near Chandigarh?". ABSOLUTELY DO NOT start with generic greetings like "Hey everyone!", "Stop scrolling!", or filler phrases. It must be a direct, deep hook calling out the target audience from the very first word.`
+            : `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN HINGLISH: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience of the business. For example, if selling premium flats in Mohali to home buyers, the hook dialogue must start exactly like: "Mohali में अपना dream home ढूंढ रहे हो?" or "Chandigarh या Mohali में home search कर रहे हो?". It must mix Devanagari script for Hindi words and standard English letters for English dictionary words. ABSOLUTELY DO NOT start with English words/greetings like "Hey everyone!", "Stop scrolling!", "Are you looking for...?", or "Did you know...?". It must be a direct, deep hook calling out the target audience from the very first word.`;
+
+        const languageScriptRule = isEnglish
+            ? `8. Language & Script: ALL dialogue, hooks, descriptions, and concept text MUST be written entirely in English. Do NOT use any Hindi, Hinglish, or Devanagari script anywhere in the output. Write everything in standard English letters.`
+            : `8. Language & Script: The hook dialogue MUST be written in a mix of native Devanagari script for Hindi words and standard English letters for English dictionary words. Do NOT write Hindi words phonetically in English characters (e.g., do NOT write 'ghar', 'sukoon', 'parivar'). Always write Hindi words in Devanagari (e.g., 'घर', 'सुकून', 'परिवार') and English dictionary words in standard English letters (e.g., 'home', 'comfort', 'luxury', 'project').`;
+
+        const hookExample = isEnglish
+            ? `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'Looking for your dream home in Mohali but worried about construction quality?')"`
+            : `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'Mohali mein apna dream home dhoond rahe ho par bad construction quality se pareshan ho?')"`;
 
         const conceptPrompt = `You are a world-class Ad Creative Director specializing in hyper-engaging, high-converting Meta and TikTok video ads.
 Your task is to analyze the provided business details, product details, user guidelines, and any referenced image descriptions, then create 5 unique, ultra-hooky, ${durationText}.
@@ -124,14 +138,14 @@ ${refImages.map((img, i) => `- Image Image_${i + 1}: ${img}`).join('\n')}
 INSTRUCTIONS:
 0. CRITICAL CUSTOM INSTRUCTIONS PRIORITIZATION RULE: You MUST strictly prioritize and adhere to the user's Custom Instructions: "${userInstructions || 'None'}". Every single concept angle, visual storyline, hook, and psychological positioning MUST be custom-tailored to follow these instructions first and foremost. Do not ignore them or generate generic real estate/e-commerce templates that do not reflect what the user has requested here.
 1. Since the videos will run as Facebook/Instagram/TikTok UGC Ads, they must be warm, authentic, natural, and deeply emotional. ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or pushy marketing hooks. Every concept must be centered around warm, authentic, emotional storytelling that generates real feelings of comfort, trust, pride, or security. You must dig deep into the psychological pain points of the target audience (e.g., escaping rent anxiety, security for parents/children, fear of delayed projects, wanting luxury/status, high return on investment) and position the business/product directly as the perfect solution to their deep-seated desire or pain. Avoid surface-level feature listicles; write concepts with emotional depth.
-1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN HINGLISH: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience of the business. For example, if selling premium flats in Mohali to home buyers, the hook dialogue must start exactly like: "Mohali में अपना dream home ढूंढ रहे हो?" or "Chandigarh या Mohali में home search कर रहे हो?". It must mix Devanagari script for Hindi words and standard English letters for English dictionary words. ABSOLUTELY DO NOT start with English words/greetings like "Hey everyone!", "Stop scrolling!", "Are you looking for...?", or "Did you know...?". It must be a direct, deep hook calling out the target audience from the very first word.
+${hookLanguageRule}
 2. The ad concepts should be designed for a strict ${duration}-second video clip in 9:16 dimension ${numClips > 1 ? `consisting of exactly ${numClips} sequential 15-second scenes/clips` : '(a single 15-second scene)'}.
 3. The creator character described above will speak directly to the camera and showcase/talk about the product/service. Wherever the creator character is shown, you MUST strictly specify a close-up shot (e.g. "detailed close-up of the character's face", "close-up of the speaker") in the visual instructions to preserve and not distort their facial features. Medium or wide shots of the character are strictly prohibited. Their voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging. Their body language must be highly natural and dynamic — real hand gestures, subtle head tilts, natural eye contact, relaxed movements. They should feel like a real person, not stiff or robotic.
 4. Make the scenes highly dynamic: constantly moving, featuring dynamic shot changes, handheld camera motion, fluid panning, and different angles (close-ups, medium shots) narrating dialogues along the way in a highly expressive way. Avoid static single shots.
-5. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue or visual captions. If the product info or call-to-action implies a phone number, use the exact phrase "get in touch" (or Hinglish equivalent like "humein contact karein") instead. Under no circumstances should the dialogue contain digits or spoken phone numbers.
+5. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue or visual captions. If the product info or call-to-action implies a phone number, use the exact phrase "get in touch" (or ${isEnglish ? 'equivalent like "contact us today"' : 'Hinglish equivalent like "humein contact karein"'}) instead. Under no circumstances should the dialogue contain digits or spoken phone numbers.
 6. NEVER instruct to display any text overlay, subtitles, captions, watermarks, or logos on screen in any visual instruction, as the video AI generates garbled text and distorted logos. Keep the visual space completely clean of text.
 7. In the visual concepts, instead of referencing abstract placeholders like "@Image 1", write natural visual descriptions of what is shown in the image (e.g., "showcasing the cozy modern bedroom shown in the bedroom photo").
-8. Language & Script: The hook dialogue MUST be written in a mix of native Devanagari script for Hindi words and standard English letters for English dictionary words. Do NOT write Hindi words phonetically in English characters (e.g., do NOT write 'ghar', 'sukoon', 'parivar'). Always write Hindi words in Devanagari (e.g., 'घर', 'सुकून', 'परिवार') and English dictionary words in standard English letters (e.g., 'home', 'comfort', 'luxury', 'project').
+${languageScriptRule}
 9. Output EXACTLY a JSON object with keys: "concepts", "analyzedImageSummary", and "imageDescriptions". "imageDescriptions" must be an array of strings, where each string is a detailed visual description of the corresponding reference image in order (Image 1, Image 2, etc.).
 
 JSON SCHEMA:
@@ -140,7 +154,7 @@ JSON SCHEMA:
     {
       "id": "concept_1",
       "title": "Short Catchy Concept Title (e.g., The Pain-Point Callout)",
-      "hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'Mohali mein apna dream home dhoond rahe ho par bad construction quality se pareshan ho?')",
+      ${hookExample},
       "description": "Short explanation of the concept's psychological angle & why it converts.",
       "visualConcept": "Brief visual flow description referencing the images by their content naturally (e.g. 'creator points to the luxurious marble kitchen shown in the kitchen photo')"
     }

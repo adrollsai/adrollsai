@@ -267,10 +267,11 @@ export async function POST(request: Request) {
         const body = await request.json();
         const { 
             propertyId, 
-            script, // The Hinglish script object { title, dialogue, visuals, finalCaption, refImages }
+            script, // The script object { title, dialogue, visuals, finalCaption, refImages }
             images, // Reference images (up to 4)
             imageDescriptions,
-            useCharacterVideo = true
+            useCharacterVideo = true,
+            language = 'hinglish'
         } = body;
 
         // Auto-extract and propagate custom instructions to all scene generations
@@ -285,25 +286,27 @@ export async function POST(request: Request) {
             script.dialogue = script.dialogue.replace(/\b\d{4,}\b/g, 'get in touch');
         }
 
-        // Always replace 'Mohali' (case-insensitive) with Hindi script 'मोहाली' in dialogues to prevent mispronunciation
-        const replaceMohali = (text: string) => {
-            if (!text) return text;
-            return text.replace(/\bMohali\b/gi, 'मोहाली');
-        };
+        // Only replace 'Mohali' with Devanagari 'मोहाली' when in Hinglish mode (prevents mispronunciation by TTS)
+        if (language !== 'english') {
+            const replaceMohali = (text: string) => {
+                if (!text) return text;
+                return text.replace(/\bMohali\b/gi, 'मोहाली');
+            };
 
-        if (script.dialogue) {
-            script.dialogue = replaceMohali(script.dialogue);
-        }
-        if (script.scenes && Array.isArray(script.scenes)) {
-            script.scenes = script.scenes.map((scene: any) => {
-                if (scene.dialogue) {
-                    scene.dialogue = replaceMohali(scene.dialogue);
-                }
-                if (scene.visuals) {
-                    scene.visuals = replaceMohali(scene.visuals);
-                }
-                return scene;
-            });
+            if (script.dialogue) {
+                script.dialogue = replaceMohali(script.dialogue);
+            }
+            if (script.scenes && Array.isArray(script.scenes)) {
+                script.scenes = script.scenes.map((scene: any) => {
+                    if (scene.dialogue) {
+                        scene.dialogue = replaceMohali(scene.dialogue);
+                    }
+                    if (scene.visuals) {
+                        scene.visuals = replaceMohali(scene.visuals);
+                    }
+                    return scene;
+                });
+            }
         }
 
         const url = new URL(request.url)

@@ -248,136 +248,6 @@ function DomainManager({
   )
 }
 
-const normalizeVideoClientSide = (file: File, onProgress: (progress: number) => void): Promise<File> => {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video')
-    video.src = URL.createObjectURL(file)
-    video.muted = true
-    video.playsInline = true
-    video.crossOrigin = "anonymous"
-
-    video.onloadedmetadata = () => {
-      try {
-        const width = video.videoWidth
-        const height = video.videoHeight
-        const ratio = width / height
-        const pixelCount = width * height
-
-        // Target Kie.ai Seedance 2.0 specs
-        let targetWidth = width
-        let targetHeight = height
-
-        if (pixelCount < 409600) {
-          if (width < height) {
-            // Vertical 9:16
-            targetWidth = 720
-            targetHeight = Math.round(720 / ratio)
-          } else if (width > height) {
-            // Landscape
-            targetHeight = 720
-            targetWidth = Math.round(720 * ratio)
-          } else {
-            // Square
-            targetWidth = 640
-            targetHeight = 640
-          }
-
-          // Even dimensions required for H.264
-          targetWidth = Math.round(targetWidth / 2) * 2
-          targetHeight = Math.round(targetHeight / 2) * 2
-        }
-
-        const canvas = document.createElement('canvas')
-        canvas.width = targetWidth
-        canvas.height = targetHeight
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
-          throw new Error("Could not create canvas 2D context")
-        }
-
-        const stream = canvas.captureStream(30)
-        
-        let audioTrack: MediaStreamTrack | null = null
-        try {
-          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-          const dest = audioContext.createMediaStreamDestination()
-          const source = audioContext.createMediaElementSource(video)
-          source.connect(dest)
-          source.connect(audioContext.destination)
-          if (dest.stream.getAudioTracks().length > 0) {
-            audioTrack = dest.stream.getAudioTracks()[0]
-            stream.addTrack(audioTrack)
-          }
-        } catch (e) {
-          console.log("No audio or audio routing failed (CORS/No Audio):", e)
-        }
-
-        let mimeType = 'video/webm'
-        if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
-          mimeType = 'video/mp4;codecs=h264'
-        } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-          mimeType = 'video/mp4'
-        } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-          mimeType = 'video/webm;codecs=vp9'
-        } else if (MediaRecorder.isTypeSupported('video/webm')) {
-          mimeType = 'video/webm'
-        }
-
-        const mediaRecorder = new MediaRecorder(stream, {
-          mimeType,
-          videoBitsPerSecond: 2500000
-        })
-        const chunks: Blob[] = []
-        
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) chunks.push(e.data)
-        }
-
-        mediaRecorder.onstop = () => {
-          try {
-            video.pause()
-            URL.revokeObjectURL(video.src)
-            const blob = new Blob(chunks, { type: mimeType })
-            const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'
-            const processedFile = new File(
-              [blob], 
-              file.name.replace(/\.[^/.]+$/, "") + `_normalized.${ext}`, 
-              { type: mimeType }
-            )
-            resolve(processedFile)
-          } catch (err) {
-            reject(err)
-          }
-        }
-
-        video.playbackRate = 1.5 // Speed up browser rendering by 50%
-        video.play()
-        mediaRecorder.start()
-
-        const drawLoop = () => {
-          if (video.paused || video.ended) {
-            mediaRecorder.stop()
-            return
-          }
-          ctx.drawImage(video, 0, 0, targetWidth, targetHeight)
-          const progress = Math.min(Math.round((video.currentTime / video.duration) * 100), 99)
-          onProgress(progress)
-          requestAnimationFrame(drawLoop)
-        }
-
-        video.onplay = () => {
-          requestAnimationFrame(drawLoop)
-        }
-      } catch (err) {
-        reject(err)
-      }
-    }
-
-    video.onerror = () => {
-      reject(new Error("Failed to load video metadata"))
-    }
-  })
-}
 
 export default function ProfilePage() {
   const router = useRouter()
@@ -400,9 +270,6 @@ export default function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [isConnectingFb, setIsConnectingFb] = useState(false) // Added connection loading state
-  const [processingProgress, setProcessingProgress] = useState(0)
-  const [isProcessingVideo, setIsProcessingVideo] = useState(false)
-
   // Connections
   const [isFacebookConnected, setIsFacebookConnected] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
@@ -904,28 +771,14 @@ export default function ProfilePage() {
       }
 
       setUploadingCharacter(true)
-      setIsProcessingVideo(true)
-      setProcessingProgress(0)
 
       const effectiveUserId = targetUserId || userId;
       if (!effectiveUserId) return
 
-      let processedFile = file
-      try {
-        processedFile = await normalizeVideoClientSide(file, (progress) => {
-          setProcessingProgress(progress)
-        })
-      } catch (err) {
-        console.error("Client-side upscaling failed, uploading original file:", err)
-      } finally {
-        setIsProcessingVideo(false)
-        setProcessingProgress(0)
-      }
-
-      const fileExt = processedFile.name.split('.').pop()
+      const fileExt = file.name.split('.').pop()
       const fileName = `character-${effectiveUserId}-${Date.now()}.${fileExt}`
 
-      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, processedFile)
+      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
       if (uploadError) throw uploadError
 
       const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
@@ -950,8 +803,6 @@ export default function ProfilePage() {
       alert('Error uploading character video')
     } finally {
       setUploadingCharacter(false)
-      setIsProcessingVideo(false)
-      setProcessingProgress(0)
     }
   }
 
@@ -1113,11 +964,7 @@ export default function ProfilePage() {
                   {uploadingCharacter ? (
                     <div className="flex flex-col items-center justify-center p-2 text-center">
                       <Loader2 className="animate-spin text-purple-600 mb-1" size={20} />
-                      {processingProgress > 0 ? (
-                        <span className="text-[8px] font-black text-purple-600">{processingProgress}%</span>
-                      ) : (
-                        <span className="text-[8px] font-black text-slate-400">Scaling...</span>
-                      )}
+                      <span className="text-[8px] font-black text-slate-400">Uploading...</span>
                     </div>
                   ) : formData.characterUrl ? (
                     <>
@@ -1587,31 +1434,14 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {isProcessingVideo && (
+      {uploadingCharacter && (
         <div className="fixed inset-0 z-[20000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="bg-white max-w-md w-full rounded-[2rem] p-8 shadow-2xl border border-slate-100 flex flex-col items-center text-center space-y-5">
-            <div className="relative">
-              <Loader2 className="animate-spin text-purple-600 w-16 h-16" strokeWidth={2.5} />
-              <div className="absolute inset-0 flex items-center justify-center text-xs font-black text-purple-900">
-                {processingProgress}%
-              </div>
-            </div>
+            <Loader2 className="animate-spin text-purple-600 w-16 h-16" strokeWidth={2.5} />
             <div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Optimizing Reference Video</h3>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Uploading Reference Video</h3>
               <p className="text-slate-500 text-sm leading-relaxed">
-                We are upscaling and normalizing your video to the target Kie.ai Seedance 2.0 specifications right on your device.
-              </p>
-            </div>
-            <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-              <div 
-                className="bg-gradient-to-r from-purple-600 to-indigo-600 h-full rounded-full transition-all duration-300"
-                style={{ width: `${processingProgress}%` }}
-              />
-            </div>
-            <div className="bg-purple-50/60 border border-purple-100 p-4 rounded-2xl w-full">
-              <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest block mb-1">Important</span>
-              <p className="text-[11px] text-purple-800 font-semibold leading-relaxed">
-                Please do not leave this page or close your browser tab. The heavy lifting is being performed directly on your device.
+                We are uploading your reference video directly to the secure storage bucket. Please don't close this tab.
               </p>
             </div>
           </div>

@@ -66,8 +66,48 @@ export async function GET(request: Request) {
                 const allInputImages = [...propImages];
                 if (logoUrl) allInputImages.push(logoUrl);
 
-                // C. Construct Prompts (Hormozi Persona)
-                let finalImagePrompt = `PERSONA: World-class Senior Ad Creative Director (20+ years exp) at a top-tier global advertising agency.
+                // C. Synthesize dynamic ad creative image prompt via Gemini
+                let finalImagePrompt = "";
+                try {
+                    const synthesisPrompt = `You are a world-class Direct Response Ad Creative Director and Senior Copywriter.
+Your goal is to write a highly detailed, premium image generation prompt for a static Meta ad.
+
+We are designing an ad for:
+- Product/Service Title: "${prop.title}"
+- Description/Context: "${prop.description || ''}"
+- Business Name: "${businessName}"
+- Contact Number: "${contactNumber || 'None'}"
+- Mission Statement: "${profile.mission_statement || ''}"
+- Style Preference: "${profile.custom_prompt || ''}"
+- Design Style: HYPER-REALISTIC studio photo (high-end professional camera, soft lighting, premium agency layout)
+- Aspect Ratio: 4:5
+
+Your task is to write a highly detailed, descriptive image generation prompt (around 150-250 words) for the AI Image Generator.
+Follow these rules:
+1. THE HOOK & HEADLINE (CRITICAL):
+   - Formulate a highly relatable, scroll-stopping headline hook that directly appeals to the target audience's desires/pain points. Do NOT just print the product title.
+   - The headline MUST be short and bold (maximum 4-5 words) to ensure the image generator renders the text perfectly without spelling errors.
+   - Specify exactly where the headline should be rendered (e.g. "large, bold, high-contrast text at the top").
+2. THE VISUAL SCENE & COMPOSITION:
+   - Describe a stunning, premium scene that showcases the product's value.
+   - Include high-quality, aspirational, beautiful people matching the ethnicity of the business context (${businessName}) who look successful.
+   - Specify natural, soft lighting and a harmonious, curated color palette (avoiding generic primary colors, use HSL-tailored premium colors like deep indigo, warm gold, rich teal, or charcoal).
+   - Keep the design clean, premium, and uncluttered.
+3. BRANDING & CONTACT:
+   - Instruct the generator to professionally integrate the business logo and the contact number (${contactNumber || ''}) with premium, high-end typography and placement (e.g., at the bottom or corner of the image).
+4. OUTPUT FORMAT:
+   - Output ONLY the final detailed prompt that will be sent directly to the image generator. Do not include introductory text, conversational phrases, or formatting blocks. Just the prompt.
+
+Write the prompt now:`;
+
+                    finalImagePrompt = await generateKieChat(synthesisPrompt, "gemini-3-flash-preview");
+                    finalImagePrompt = finalImagePrompt.trim();
+                } catch (err) {
+                    console.error("Cron prompt synthesis failed, using fallback:", err);
+                }
+
+                if (!finalImagePrompt) {
+                    finalImagePrompt = `PERSONA: World-class Senior Ad Creative Director (20+ years exp) at a top-tier global advertising agency.
 OBJECTIVE: Design a "High-Value" professional Meta Ad creative for: "${prop.title}".
 
 CONTEXT: "${prop.description || ''}"
@@ -83,8 +123,8 @@ DESIGN RULES:
 5. TYPOGRAPHY & TEXT DENSITY: Use minimal, high-impact text. Do NOT clutter the image with long sentences. Include ONLY the Business Name and a single bold "Offer". Ensure all text is large and readable on mobile.
 6. HOOK: Bold, attention-grabbing visual hook.
 `;
-                
-                if (contactNumber) finalImagePrompt += ` Display contact: ${contactNumber}.`;
+                    if (contactNumber) finalImagePrompt += ` Display contact: ${contactNumber}.`;
+                }
 
                 const payload = {
                   "model": "gpt-image-2-image-to-image", // Upgraded to premium model

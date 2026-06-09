@@ -1,23 +1,5 @@
 import * as path from 'path';
 import * as Module from 'module';
-
-// Dynamic resolver hook for Next.js path aliases
-const originalRequire = (Module.prototype as any).require;
-(Module.prototype as any).require = function (name: string) {
-    if (name === '@/utils/supabase/server') {
-        return {
-            createClient: async () => mockSupabase
-        };
-    }
-    if (name.startsWith('@/')) {
-        const resolvedPath = path.resolve(__dirname, '..', name.slice(2));
-        return originalRequire.call(this, resolvedPath);
-    }
-    return originalRequire.apply(this, arguments);
-};
-
-// Now import the route and packages
-import { POST } from '../app/api/chat/route';
 import * as dotenv from 'dotenv';
 
 dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
@@ -56,6 +38,28 @@ const mockSupabase = {
     }
 };
 
+// Dynamic resolver hook for Next.js path aliases
+const originalRequire = (Module.prototype as any).require;
+(Module.prototype as any).require = function (name: string) {
+    if (name === '@/utils/supabase/server') {
+        return {
+            createClient: async () => mockSupabase
+        };
+    }
+    if (name === '@/utils/subscription-server') {
+        return {
+            checkLimitAndIncrement: async () => {},
+            refundLimit: async () => {},
+            checkStorageLimit: async () => {}
+        };
+    }
+    if (name.startsWith('@/')) {
+        const resolvedPath = path.resolve(__dirname, '..', name.slice(2));
+        return originalRequire.call(this, resolvedPath);
+    }
+    return originalRequire.apply(this, arguments);
+};
+
 async function run() {
     console.log("=== RUNNING IN-MEMORY /api/chat POST DIAGNOSTIC ===");
     try {
@@ -77,6 +81,7 @@ async function run() {
         });
 
         console.log("Invoking POST handler...");
+        const { POST } = await import('../app/api/chat/route');
         const response = await POST(mockRequest);
 
         console.log("POST Invocation completed!");

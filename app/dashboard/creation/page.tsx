@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon, Clock, Trash2 } from 'lucide-react'
+import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon, Clock, Trash2, Globe, Languages } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { toast } from 'sonner'
@@ -161,6 +161,9 @@ export default function CreationPage() {
 
   // Dynamic Video Duration State (15s, 30s, 45s, 60s)
   const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 45 | 60>(30)
+
+  // Language Toggle for Video (Hinglish = Devanagari-English mix, English = pure English)
+  const [videoLanguage, setVideoLanguage] = useState<'hinglish' | 'english'>('hinglish')
 
   // Deselected catalog images state
   const [deselectedCatalogImages, setDeselectedCatalogImages] = useState<string[]>([])
@@ -401,7 +404,7 @@ export default function CreationPage() {
   const handleSelectConcept = async (concept: any, refImages: string[], imageDescriptions?: string[], msgIdToReplace?: number) => {
     if (isThinking) return
     setIsThinking(true)
-    setCurrentStep(`AI Creative Director is writing your ${selectedDuration}s Hinglish script...`)
+    setCurrentStep(`AI Creative Director is writing your ${selectedDuration}s ${videoLanguage === 'hinglish' ? 'Hinglish' : 'English'} script...`)
 
     const activeMsgId = msgIdToReplace || Date.now()
 
@@ -418,7 +421,8 @@ export default function CreationPage() {
                 images: refImages,
                 imageDescriptions,
                 useCharacterVideo,
-                duration: selectedDuration
+                duration: selectedDuration,
+                language: videoLanguage
             })
         });
 
@@ -487,7 +491,8 @@ export default function CreationPage() {
                 imageDescriptions,
                 variation: true,
                 useCharacterVideo,
-                duration: selectedDuration
+                duration: selectedDuration,
+                language: videoLanguage
             })
         });
 
@@ -552,7 +557,8 @@ export default function CreationPage() {
                 imageDescriptions,
                 useCharacterVideo,
                 customInstructions: script.concept?.description || script.concept?.visualConcept || '',
-                prompts
+                prompts,
+                language: videoLanguage
             })
         });
 
@@ -598,7 +604,8 @@ export default function CreationPage() {
                 imageDescriptions,
                 useCharacterVideo,
                 customInstructions: script.concept?.description || script.concept?.visualConcept || '',
-                preview: true
+                preview: true,
+                language: videoLanguage
             })
         });
 
@@ -669,7 +676,8 @@ export default function CreationPage() {
                     userInstructions: userText,
                     images: refImages,
                     useCharacterVideo,
-                    duration: selectedDuration
+                    duration: selectedDuration,
+                    language: videoLanguage
                 })
             });
 
@@ -859,7 +867,7 @@ export default function CreationPage() {
             Mobile: 2 cols for Model & Ratio, full width for Product
             Desktop: 3 cols inline
         */}
-        <div className="px-4 mb-3 grid grid-cols-2 md:grid-cols-3 gap-2">
+        <div className={`px-4 mb-3 grid grid-cols-2 ${creationMode === 'video' ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-2`}>
             
             {currentUserRole === 'super_admin' && (
                 <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full">
@@ -906,6 +914,26 @@ export default function CreationPage() {
                             </button>
                         )
                     })}
+                </div>
+            )}
+
+            {/* Language Toggle (only in video mode) */}
+            {creationMode === 'video' && (
+                <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full animate-in fade-in duration-200">
+                    <button 
+                        type="button"
+                        onClick={() => setVideoLanguage('hinglish')}
+                        className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition-all duration-300 flex items-center justify-center gap-1 ${videoLanguage === 'hinglish' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <Languages size={12} className="hidden sm:block" /> हिंग्लिश
+                    </button>
+                    <button 
+                        type="button"
+                        onClick={() => setVideoLanguage('english')}
+                        className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition-all duration-300 flex items-center justify-center gap-1 ${videoLanguage === 'english' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <Globe size={12} className="hidden sm:block" /> English
+                    </button>
                 </div>
             )}
 
@@ -1254,7 +1282,7 @@ export default function CreationPage() {
                             {/* Dialogue/Voiceover */}
                             <div className="flex flex-col gap-1 border-t border-slate-200/40 pt-2.5">
                               <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
-                                <User size={10} /> Dialogue (Hinglish)
+                                <User size={10} /> Dialogue ({videoLanguage === 'hinglish' ? 'Hinglish' : 'English'})
                               </span>
                               <textarea
                                 value={scene.dialogue}
@@ -1298,7 +1326,7 @@ export default function CreationPage() {
                         {/* Dialogue/Voiceover */}
                         <div className="flex flex-col gap-1.5">
                           <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
-                            <User size={12} /> Conversational Audio/Dialogue (Hinglish)
+                            <User size={12} /> Conversational Audio/Dialogue ({videoLanguage === 'hinglish' ? 'Hinglish' : 'English'})
                           </span>
                           <textarea
                             value={msg.script.dialogue}
