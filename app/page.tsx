@@ -25,7 +25,7 @@ import PricingSection from '@/components/PricingSection'
 import ContactForm from '@/components/ContactForm'
 
 export const metadata = {
-   title: 'AdRolls - AI Marketing Suite & High-Converting Landing Page Builder',
+   title: 'AdRolls - Your First AI Marketing Employee',
    description: 'Bypass cookie blockers, auto-design ad graphics, and launch Meta Ads using server-side Conversions API (CAPI) with AdRolls—the ultimate AI marketing engine for SMBs.',
    keywords: [
       'adrolls', 'adrolls.in', 'AI marketing', 'landing page generator', 
@@ -36,7 +36,7 @@ export const metadata = {
       canonical: 'https://adrolls.in'
    },
    openGraph: {
-      title: 'AdRolls - AI Marketing Suite & Landing Page Builder',
+      title: 'AdRolls - Your First AI Marketing Employee',
       description: 'Launch high-converting landing pages and CAPI-optimized Meta Ads on autopilot.',
       url: 'https://adrolls.in',
       siteName: 'AdRolls',
@@ -225,6 +225,10 @@ export default function LandingPage() {
                            src="https://i.ibb.co/HwJ0bnZ/compare.png"
                            alt="Adrolls comparison showing pricing and performance benefits"
                            className="w-full h-auto rounded-[1.75rem] border border-slate-100"
+                           fetchPriority="high"
+                           loading="eager"
+                           width={580}
+                           height={362}
                         />
                      </div>
                   </div>
@@ -238,7 +242,7 @@ export default function LandingPage() {
                         <div key={i} className="flex flex-col items-center text-center group transition-transform hover:-translate-y-1 duration-300">
                            <div className="mb-3 transform group-hover:scale-105 transition-transform duration-300 w-16 h-16 rounded-xl bg-white border border-slate-100 flex items-center justify-center p-2 shadow-sm overflow-hidden shrink-0">
                               {client.logoUrl ? (
-                                 <img src={client.logoUrl} alt={client.name} className="w-full h-full object-contain" />
+                                 <img src={client.logoUrl} alt={client.name} className="w-full h-full object-contain" loading="lazy" width={64} height={64} />
                               ) : (
                                  client.logo
                               )}
@@ -270,7 +274,7 @@ export default function LandingPage() {
                      <div key={idx} className="bg-white/5 border border-white/10 rounded-3xl p-5 shadow-xl flex flex-col justify-between hover:border-white/20 transition-all">
                         <div className="w-full aspect-[9/16] rounded-2xl overflow-hidden bg-black shadow-inner border border-white/5 relative group mb-5">
                            <video 
-                              src={video.url}
+                              src={`${video.url}#t=0.1`}
                               className="w-full h-full object-cover"
                               preload="metadata"
                               controls
