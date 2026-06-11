@@ -59,7 +59,7 @@ export default function LandingPage() {
       {
          name: 'Bluesquare Infra',
          subtitle: 'Infrastructure Group',
-         logoUrl: 'https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg',
+         logoUrl: '/images/optimized/logo_bluesquare.webp',
          logo: (
             <svg className="w-8 h-8 text-[#124376]/50 group-hover:text-[#B31B20] transition-colors duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -70,7 +70,7 @@ export default function LandingPage() {
       {
          name: 'HomCom Realtors',
          subtitle: 'Luxury Housing & Realtors',
-         logoUrl: 'https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1778751282660.jpeg',
+         logoUrl: '/images/optimized/logo_homcom.webp',
          logo: (
             <svg className="w-8 h-8 text-[#124376]/50 group-hover:text-[#B31B20] transition-colors duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -81,7 +81,7 @@ export default function LandingPage() {
       {
          name: 'GNR Homes',
          subtitle: 'Elite Construction',
-         logoUrl: 'https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/42d2e0c5-4fe6-4738-8a9f-63f09be01f12-1778827763343.png',
+         logoUrl: '/images/optimized/logo_gnrhomes.webp',
          logo: (
             <svg className="w-8 h-8 text-[#124376]/50 group-hover:text-[#B31B20] transition-colors duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                <path d="m2 22 10-18 10 18" />
@@ -92,7 +92,7 @@ export default function LandingPage() {
       {
          name: 'Realty Nation',
          subtitle: 'Real Estate Leaders',
-         logoUrl: 'https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/c890a11f-84ce-4592-ab8f-8682927b1a9d-1778916086679.png',
+         logoUrl: '/images/optimized/logo_realtynation.webp',
          logo: (
             <svg className="w-8 h-8 text-[#124376]/50 group-hover:text-[#B31B20] transition-colors duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                <circle cx="12" cy="12" r="10" />
@@ -113,7 +113,7 @@ export default function LandingPage() {
       {
          name: 'YourLocalAgency Canada',
          subtitle: 'Global Ad Partners',
-         logoUrl: 'https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/6164b910-af29-4976-8b1a-f0885d2caaec-1778680066756.png',
+         logoUrl: '/images/optimized/logo_yourlocalagency.webp',
          logo: (
             <svg className="w-8 h-8 text-[#124376]/50 group-hover:text-[#B31B20] transition-colors duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
@@ -142,16 +142,16 @@ export default function LandingPage() {
    ]
 
    const staticGraphics = [
-      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1780308660323.png',
-      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1780308586608.png',
-      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1780109222082.png',
-      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1780018509263.png',
-      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/9bbf6e51-283e-48d1-bbb4-8dc546cc74b2/1780904690138.png',
-      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/9bbf6e51-283e-48d1-bbb4-8dc546cc74b2/1779447936200.png',
-      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/9bbf6e51-283e-48d1-bbb4-8dc546cc74b2/1779447925050.png',
-      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/42d2e0c5-4fe6-4738-8a9f-63f09be01f12/1781132190243.png',
-      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/42d2e0c5-4fe6-4738-8a9f-63f09be01f12/1780662095979.png',
-      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/42d2e0c5-4fe6-4738-8a9f-63f09be01f12/1780661995672.png'
+      '/images/optimized/graphic_1.webp',
+      '/images/optimized/graphic_2.webp',
+      '/images/optimized/graphic_3.webp',
+      '/images/optimized/graphic_4.webp',
+      '/images/optimized/graphic_5.webp',
+      '/images/optimized/graphic_6.webp',
+      '/images/optimized/graphic_7.webp',
+      '/images/optimized/graphic_8.webp',
+      '/images/optimized/graphic_9.webp',
+      '/images/optimized/graphic_10.webp'
    ]
 
    return (
@@ -222,7 +222,7 @@ export default function LandingPage() {
                      <div className="absolute -inset-2 bg-gradient-to-r from-[#B31B20] via-[#DF9E27] to-[#124376] rounded-[2.5rem] blur-xl opacity-10"></div>
                      <div className="relative rounded-[2.5rem] bg-white border border-slate-200/60 p-3 shadow-2xl overflow-hidden hover:scale-[1.01] transition-transform duration-300">
                         <img
-                           src="https://i.ibb.co/HwJ0bnZ/compare.png"
+                           src="/images/optimized/hero_compare.webp"
                            alt="Adrolls comparison showing pricing and performance benefits"
                            className="w-full h-auto rounded-[1.75rem] border border-slate-100"
                            fetchPriority="high"
