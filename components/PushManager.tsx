@@ -97,7 +97,24 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
         updateViaCache: 'none',
       })
       
-      // 3. Immediately move forward without waiting for long 'ready' promises
+      // Ensure the service worker is active before trying to subscribe
+      if (!registration.active) {
+        await new Promise<void>((resolve) => {
+          const worker = registration.installing || registration.waiting;
+          if (worker) {
+            const stateChangeHandler = () => {
+              if (worker.state === 'activated') {
+                worker.removeEventListener('statechange', stateChangeHandler);
+                resolve();
+              }
+            };
+            worker.addEventListener('statechange', stateChangeHandler);
+          } else {
+            resolve();
+          }
+        });
+      }
+
       const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
       if (!vapidKey) {
         toast.error("Configuration Error: Missing VAPID Key")

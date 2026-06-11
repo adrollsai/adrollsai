@@ -271,9 +271,16 @@ export default function CRMPage() {
   // --- PUSH NOTIFICATIONS ---
   const checkPushSubscription = async () => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.getSubscription();
-      if (subscription) setIsPushEnabled(true);
+      try {
+        const registration = await navigator.serviceWorker.register('/sw.js', {
+          scope: '/',
+          updateViaCache: 'none',
+        });
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) setIsPushEnabled(true);
+      } catch (error) {
+        console.error('Failed to check push subscription:', error);
+      }
     }
   }
 
@@ -282,11 +289,37 @@ export default function CRMPage() {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') return alert('Permission denied.');
       
-      const registration = await navigator.serviceWorker.ready;
+      const registration = await navigator.serviceWorker.register('/sw.js', {
+        scope: '/',
+        updateViaCache: 'none',
+      });
+
+      // Ensure service worker is active before trying to subscribe
+      if (!registration.active) {
+        await new Promise<void>((resolve) => {
+          const worker = registration.installing || registration.waiting;
+          if (worker) {
+            const stateChangeHandler = () => {
+              if (worker.state === 'activated') {
+                worker.removeEventListener('statechange', stateChangeHandler);
+                resolve();
+              }
+            };
+            worker.addEventListener('statechange', stateChangeHandler);
+          } else {
+            resolve();
+          }
+        });
+      }
+
       const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!vapidPublicKey) {
+        return alert('Configuration Error: Missing VAPID Key');
+      }
+
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey!)
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
       });
       const res = await fetch('/api/web-push/subscribe', {
           method: 'POST',

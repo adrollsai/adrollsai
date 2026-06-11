@@ -96,6 +96,6 @@ export const config = {
      * - auth (auth callback routes)
      * - shared (custom domain internal routes)
      */
-    '/((?!_next/static|_next/image|favicon.ico|auth|shared|sw.js|sw-v2.js).*)',
+    '/((?!_next/static|_next/image|favicon.ico|auth|shared|sw.js|sw-v2.js|custom-sw.js|workbox-[a-f0-9]+.js).*)',
   ],
 }
