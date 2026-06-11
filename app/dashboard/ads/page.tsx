@@ -233,6 +233,8 @@ export default function AdsPage() {
   const [adForm, setAdForm] = useState({
     metaLocations: [] as { location: LocationOption, radius: number }[],
     gender: 'All',
+    ageMin: 18,
+    ageMax: 65,
     dailyBudgetINR: 500,
     pageId: '', 
     linkUrl: 'https://adrolls.in', 
@@ -942,6 +944,8 @@ export default function AdsPage() {
     formPayload.append('optimizeForConversions', adForm.optimizeForConversions.toString());
     formPayload.append('customQuestions', JSON.stringify(formQuestions));
     formPayload.append('campaignType', campaignType);
+    formPayload.append('ageMin', adForm.ageMin.toString());
+    formPayload.append('ageMax', adForm.ageMax.toString());
     if (pixelId) {
         formPayload.append('pixelId', pixelId);
     }
@@ -972,7 +976,7 @@ export default function AdsPage() {
         alert(`${data.message}`);
         setIsModalOpen(false)
         setRemarketSourceCampaign(null);
-        setAdForm(prev => ({ ...prev, metaLocations: [], dailyBudgetINR: 500 })) 
+        setAdForm(prev => ({ ...prev, metaLocations: [], dailyBudgetINR: 500, ageMin: 18, ageMax: 65 })) 
         setSelectedCreatives([]);
         setFormQuestions([]);
         fetchAdsData(true);
@@ -2354,6 +2358,42 @@ export default function AdsPage() {
                                     className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 pl-11 pr-4 rounded-2xl text-slate-800 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all" 
                                   />
                               </div>
+                          </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-4 mt-4">
+                          <div className="flex-1">
+                              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Min Age</label>
+                              <select 
+                                value={adForm.ageMin} 
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  setAdForm(prev => ({
+                                    ...prev,
+                                    ageMin: val,
+                                    ageMax: prev.ageMax < val ? val : prev.ageMax
+                                  }))
+                                }} 
+                                className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 px-4 rounded-2xl text-slate-800 text-sm font-medium outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
+                              >
+                                {Array.from({ length: 48 }, (_, i) => 18 + i).map(age => (
+                                    <option key={age} value={age}>{age}</option>
+                                ))}
+                              </select>
+                          </div>
+                          <div className="flex-1">
+                              <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Max Age</label>
+                              <select 
+                                value={adForm.ageMax} 
+                                onChange={(e) => setAdForm(prev => ({ ...prev, ageMax: parseInt(e.target.value) }))} 
+                                className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 px-4 rounded-2xl text-slate-800 text-sm font-medium outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
+                              >
+                                {Array.from({ length: 48 }, (_, i) => 18 + i)
+                                  .filter(age => age >= adForm.ageMin)
+                                  .map(age => (
+                                      <option key={age} value={age}>{age === 65 ? '65+' : age}</option>
+                                  ))}
+                              </select>
                           </div>
                       </div>
                   </div>

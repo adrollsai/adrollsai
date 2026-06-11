@@ -70,8 +70,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'All fields are required.' }, { status: 400 })
     }
 
-    // 1. Resolve User ID for rchopra489@gmail.com
-    const targetUserId = await getUserIdByEmail('rchopra489@gmail.com')
+    // 1. Resolve workspace owner / admin profile (no hardcoded email)
+    const { data: firstAdmin } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('role', 'admin')
+      .limit(1)
+      .maybeSingle()
+
+    const targetUserId = firstAdmin?.id || (await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle()).data?.id || null
 
     let leadId = '';
     if (targetUserId) {

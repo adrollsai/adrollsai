@@ -92,6 +92,10 @@ export default function PagesDashboard() {
         { sender: 'ai', message: "Hi! I am your Landing Page Assistant. Tell me what changes you'd like to make to the generated landing page (e.g. 'Make the buttons larger and glowing', 'change background to premium dark mode')." }
     ])
 
+    // Slug inline editing states
+    const [editingSlugPageId, setEditingSlugPageId] = useState<string | null>(null)
+    const [tempSlug, setTempSlug] = useState('')
+
     // --- 1. SESSION & IMPERSONATION SETUP ---
     useEffect(() => {
         const resolveTargetAccount = async () => {
@@ -395,6 +399,50 @@ export default function PagesDashboard() {
         }
     }
 
+    const handleUpdateSlug = async (pageId: string, newSlug: string) => {
+        const cleanSlug = newSlug.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-')
+        if (!cleanSlug) {
+            showToast("Slug cannot be empty.", "error")
+            return
+        }
+
+        setActionLoading(true)
+        try {
+            // Check if slug is taken by another landing page of this user
+            const { data: existing, error: checkErr } = await supabase
+                .from('landing_pages')
+                .select('id')
+                .eq('user_id', targetUserId)
+                .eq('slug', cleanSlug)
+                .neq('id', pageId)
+                .maybeSingle()
+
+            if (checkErr) throw checkErr
+            if (existing) {
+                showToast("This slug is already taken by another landing page.", "error")
+                return
+            }
+
+            const { error: updateErr } = await supabase
+                .from('landing_pages')
+                .update({ slug: cleanSlug })
+                .eq('id', pageId)
+
+            if (updateErr) throw updateErr
+            showToast("Slug updated successfully!")
+            setEditingSlugPageId(null)
+            await fetchListData(targetUserId)
+
+            if (activeEditorPage && activeEditorPage.id === pageId) {
+                setActiveEditorPage(prev => prev ? { ...prev, slug: cleanSlug } : null)
+            }
+        } catch (e: any) {
+            showToast("Failed to update slug: " + e.message, "error")
+        } finally {
+            setActionLoading(false)
+        }
+    }
+
     // --- 5. CONVERSATIONAL EDIT CHAT Console ---
     const handleSendChatEdit = async () => {
         if (!chatInput.trim() || !activeEditorPage) return
@@ -413,6 +461,8 @@ export default function PagesDashboard() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    id: activeEditorPage.id,
+                    slug: activeEditorPage.slug,
                     productName: activeEditorPage.product_name,
                     formId: activeEditorPage.form_id,
                     mode: 'edit',
@@ -449,20 +499,33 @@ export default function PagesDashboard() {
         let html = page.html_content
         const form = forms.find(f => f.id === page.form_id)
         
+        let buttonText = "Submit & Continue (Form Preview)"
+        let cardTitle = "Get Instant Details"
+        
+        const containerMatch = html.match(/<div\s+[^>]*id="qualification-form-container"([^>]*?)>/i)
+        if (containerMatch && containerMatch[1]) {
+            const attrs = containerMatch[1]
+            const btnTextMatch = attrs.match(/data-button-text="([^"]+)"/i) || attrs.match(/data-button-text='([^']+)'/i)
+            if (btnTextMatch) buttonText = btnTextMatch[1]
+
+            const titleMatch = attrs.match(/data-title="([^"]+)"/i) || attrs.match(/data-title='([^']+)'/i)
+            if (titleMatch) cardTitle = titleMatch[1]
+        }
+        
         let formHtml = `
             <div style="max-width: 500px; margin: 2rem auto; padding: 2rem; background: #ffffff; border-radius: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); font-family: system-ui, -apple-system, sans-serif; text-align: left;">
-                <h3 style="margin-top: 0; margin-bottom: 1.5rem; color: #0f172a; font-size: 1.5rem; font-weight: 800; text-align: center; letter-spacing: -0.025em;">Get Instant Details</h3>
+                <h3 style="margin-top: 0; margin-bottom: 1.5rem; color: #0f172a; font-size: 1.5rem; font-weight: 800; text-align: center; letter-spacing: -0.025em;">${cardTitle}</h3>
                 <div style="margin-bottom: 1.25rem;">
                     <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: #475569;">Full Name</label>
-                    <input type="text" disabled placeholder="John Doe" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box;" />
+                    <input type="text" disabled placeholder="John Doe" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: #0f172a; background-color: #ffffff;" />
                 </div>
                 <div style="margin-bottom: 1.25rem;">
                     <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: #475569;">WhatsApp Number</label>
-                    <input type="tel" disabled placeholder="+91 98765 43210" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box;" />
+                    <input type="tel" disabled placeholder="+91 98765 43210" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: #0f172a; background-color: #ffffff;" />
                 </div>
                 <div style="margin-bottom: 1.25rem;">
                     <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: #475569;">City</label>
-                    <input type="text" disabled placeholder="Mohali" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box;" />
+                    <input type="text" disabled placeholder="Mohali" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: #0f172a; background-color: #ffffff;" />
                 </div>
         `
 
@@ -496,7 +559,7 @@ export default function PagesDashboard() {
         }
 
         formHtml += `
-                <button disabled style="width: 100%; padding: 0.875rem; background: #2563eb; color: #ffffff; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2); cursor: not-allowed;">Submit & Continue (Form Preview)</button>
+                <button disabled style="width: 100%; padding: 0.875rem; background: #2563eb; color: #ffffff; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2); cursor: not-allowed;">${buttonText}</button>
             </div>
         `
 
@@ -702,7 +765,48 @@ export default function PagesDashboard() {
                                             <p className="text-xs font-semibold text-slate-400 line-clamp-2 leading-relaxed mb-4">{page.title}</p>
                                             
                                             <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex items-center justify-between mb-4 shrink-0 min-w-0 gap-3">
-                                                <span className="text-[10px] font-bold text-slate-500 truncate select-all">{`/${page.slug}`}</span>
+                                                {editingSlugPageId === page.id ? (
+                                                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                                        <span className="text-[10px] font-bold text-slate-400">/</span>
+                                                        <input 
+                                                            type="text" 
+                                                            value={tempSlug} 
+                                                            onChange={e => setTempSlug(e.target.value)}
+                                                            className="flex-1 bg-white border border-slate-200 rounded px-1.5 py-0.5 text-[10px] font-bold text-slate-700 outline-none"
+                                                            onKeyDown={e => {
+                                                                if (e.key === 'Enter') handleUpdateSlug(page.id, tempSlug)
+                                                                if (e.key === 'Escape') setEditingSlugPageId(null)
+                                                            }}
+                                                            autoFocus
+                                                        />
+                                                        <button 
+                                                            onClick={() => handleUpdateSlug(page.id, tempSlug)}
+                                                            className="text-green-600 hover:text-green-700 text-[10px] font-black shrink-0"
+                                                        >
+                                                            Save
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => setEditingSlugPageId(null)}
+                                                            className="text-slate-400 hover:text-slate-600 text-[10px] font-bold shrink-0"
+                                                        >
+                                                            X
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                                        <span className="text-[10px] font-bold text-slate-500 truncate select-all">{`/${page.slug}`}</span>
+                                                        <button
+                                                            onClick={() => {
+                                                                setEditingSlugPageId(page.id)
+                                                                setTempSlug(page.slug)
+                                                            }}
+                                                            className="text-slate-400 hover:text-slate-600 p-0.5 transition-colors shrink-0"
+                                                            title="Edit Slug"
+                                                        >
+                                                            <Edit3 size={11} />
+                                                        </button>
+                                                    </div>
+                                                )}
                                                 
                                                 <button
                                                     onClick={() => copyUrl(page.slug, page.id)}

@@ -18,7 +18,7 @@ export async function GET(request: Request, { params }: RouteProps) {
         console.log(`[Shared Route GET] Starting diagnostics... identifier="${identifier}", slug="${slug}"`)
 
         // 1. Resolve business profile
-        let profileQuery = supabase.from('profiles').select('id, business_name, logo_url, custom_domain, pixel_id')
+        let profileQuery = supabase.from('profiles').select('id, business_name, logo_url, custom_domain, pixel_id, brand_color')
         if (identifier.includes('.')) {
             profileQuery = profileQuery.eq('custom_domain', identifier)
         } else {
@@ -72,18 +72,37 @@ export async function GET(request: Request, { params }: RouteProps) {
 
         let finalHtml = page.html_content
 
+        // Extract customized values from LLM HTML attributes
+        let buttonText = "Start Eligibility Check"
+        let cardTitle = "Apply & Check Eligibility"
+        let cardDesc = "Answer a few quick questions to see if you qualify and get instant details."
+
+        const containerMatch = finalHtml.match(/<div\s+[^>]*id="qualification-form-container"([^>]*?)>/i)
+        if (containerMatch && containerMatch[1]) {
+            const attrs = containerMatch[1]
+            const btnTextMatch = attrs.match(/data-button-text="([^"]+)"/i) || attrs.match(/data-button-text='([^']+)'/i)
+            if (btnTextMatch) buttonText = btnTextMatch[1]
+
+            const titleMatch = attrs.match(/data-title="([^"]+)"/i) || attrs.match(/data-title='([^']+)'/i)
+            if (titleMatch) cardTitle = titleMatch[1]
+
+            const descMatch = attrs.match(/data-description="([^"]+)"/i) || attrs.match(/data-description='([^']+)'/i)
+            if (descMatch) cardDesc = descMatch[1]
+        }
+
         // Construct form HTML
         let formHtml = ''
         const customQuestions = form?.custom_questions || []
+        const brandColor = profile?.brand_color || '#2563eb'
 
         formHtml = `
             <div class="qualification-trigger-card" style="max-width: 500px; margin: 2rem auto; padding: 2.5rem 2rem; background: #ffffff; border-radius: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -5px rgba(0,0,0,0.05); font-family: system-ui, -apple-system, sans-serif; text-align: center; box-sizing: border-box;">
-                <div style="width: 3.5rem; height: 3.5rem; background: #eff6ff; border-radius: 1rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem;">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>
+                <div style="width: 3.5rem; height: 3.5rem; background: color-mix(in srgb, ${brandColor} 10%, transparent); border-radius: 1rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${brandColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>
                 </div>
-                <h3 style="margin-top: 0; margin-bottom: 0.5rem; color: #0f172a; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.025em;">Apply & Check Eligibility</h3>
-                <p style="color: #64748b; font-size: 0.875rem; margin-bottom: 1.5rem; line-height: 1.5;">Answer a few quick questions to see if you qualify and get instant details.</p>
-                <button class="open-eligibility-modal-btn" style="width: 100%; padding: 0.875rem; background: #2563eb; color: #ffffff; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);">Start Eligibility Check</button>
+                <h3 style="margin-top: 0; margin-bottom: 0.5rem; color: #0f172a; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.025em;">${cardTitle}</h3>
+                <p style="color: #64748b; font-size: 0.875rem; margin-bottom: 1.5rem; line-height: 1.5;">${cardDesc}</p>
+                <button class="open-eligibility-modal-btn" style="width: 100%; padding: 0.875rem; background: ${brandColor}; color: #ffffff; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);">${buttonText}</button>
             </div>
 
             <!-- Full-Screen Eligibility Modal Overlay -->
@@ -129,12 +148,12 @@ export async function GET(request: Request, { params }: RouteProps) {
             .eligibility-opt-btn {
                 width: 100%;
                 padding: 1rem 1.25rem;
-                background: #f8fafc;
+                background: #f8fafc !important;
                 border: 1px solid #e2e8f0;
                 border-radius: 0.75rem;
                 font-size: 0.875rem;
                 font-weight: 600;
-                color: #334155;
+                color: #334155 !important;
                 text-align: left;
                 cursor: pointer;
                 transition: all 0.2s;
@@ -145,9 +164,9 @@ export async function GET(request: Request, { params }: RouteProps) {
                 margin-bottom: 0.75rem;
             }
             .eligibility-opt-btn:hover {
-                background: #f1f5f9;
+                background: #f1f5f9 !important;
                 border-color: #cbd5e1;
-                color: #0f172a;
+                color: #0f172a !important;
                 transform: translateY(-1px);
             }
             .eligibility-opt-btn:active {
@@ -172,15 +191,17 @@ export async function GET(request: Request, { params }: RouteProps) {
                 font-size: 0.875rem;
                 box-sizing: border-box;
                 transition: all 0.2s;
+                color: #0f172a !important;
+                background-color: #ffffff !important;
             }
             .eligibility-input:focus {
-                border-color: #2563eb;
-                box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+                border-color: ${brandColor};
+                box-shadow: 0 0 0 3px color-mix(in srgb, ${brandColor} 15%, transparent);
             }
             .eligibility-submit-btn {
                 width: 100%;
                 padding: 0.875rem;
-                background: #2563eb;
+                background: ${brandColor};
                 color: #ffffff;
                 border: none;
                 border-radius: 0.75rem;
@@ -196,7 +217,8 @@ export async function GET(request: Request, { params }: RouteProps) {
                 gap: 0.5rem;
             }
             .eligibility-submit-btn:hover {
-                background: #1d4ed8;
+                background: ${brandColor};
+                filter: brightness(0.9);
                 box-shadow: 0 6px 12px -1px rgba(37, 99, 235, 0.25);
             }
             .eligibility-submit-btn:disabled {
@@ -586,7 +608,7 @@ export async function GET(request: Request, { params }: RouteProps) {
                     
                     const backBtnDisq = document.createElement('button');
                     backBtnDisq.className = 'eligibility-submit-btn';
-                    backBtnDisq.style.background = '#2563eb';
+                    backBtnDisq.style.background = '${brandColor}';
                     backBtnDisq.style.boxShadow = 'none';
                     backBtnDisq.textContent = 'Go Back & Edit';
                     backBtnDisq.addEventListener('click', function() {

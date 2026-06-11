@@ -39,7 +39,7 @@ export async function POST(req: Request) {
                 .eq('role', 'admin')
                 .limit(1)
                 .maybeSingle();
-            targetUserId = anyAdmin?.id || 'rchopra489@gmail.com'; // fallback placeholder
+            targetUserId = anyAdmin?.id || (await supabaseAdmin.from('profiles').select('id').limit(1).maybeSingle()).data?.id || '';
         }
 
         // Format detailed lead profile notes for the CRM

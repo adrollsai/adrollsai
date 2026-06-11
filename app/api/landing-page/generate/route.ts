@@ -93,6 +93,8 @@ export async function POST(request: Request) {
 
         const body = await request.json()
         const { 
+            id,
+            slug: requestSlug,
             productName, 
             context, 
             propertyId,
@@ -356,7 +358,7 @@ ${youtubeEmbedSection}
      * CRITICAL RULE: If the list is empty (no images are available), DO NOT use generic stock placeholders, placehold.co, or placeholder images. Instead, generate a highly elegant typographic hero section that relies on beautiful fonts, high-contrast CTA buttons, background patterns, and structured copy.
    - Call-To-Action (CTA): High-contrast, clear, action-oriented button (e.g. "Schedule your exclusive site visit", "Get Started Now", "Request Details"). Clicking this should smoothly scroll the visitor directly to the nearest form container.
    - Risk Reversals: Immediately beneath the CTA button, code in 3 trust badges or checkmarks (e.g. Money-Back Guarantee, Fast Setup, Secure Checkout) to increase perceived likelihood of success and reduce fear.
-   - Lead Qualification Form Card: A styled white card enclosing EXACTLY this structural container: '<div id="qualification-form-container"></div>'. Do NOT write a form element inside this container! The platform will automatically inject a high-converting form collecting fields: ${formFieldsText}. Wrap it in a beautiful styling card (white background, rounded corners, soft shadow) so that it integrates seamlessly.
+   - Lead Qualification Form Card: A styled card enclosing EXACTLY this structural container: '<div id="qualification-form-container" data-button-text="Start Eligibility Check"></div>'. Do NOT write a form element inside this container! The platform will automatically inject a high-converting form collecting fields: ${formFieldsText}. Wrap it in a beautiful styling card (white background, rounded corners, soft shadow) so that it integrates seamlessly. You can customize the button text by editing the 'data-button-text' attribute of this div (e.g. set it to "book exclusive site visit" or whatever specific text the user asks for). You can also add 'data-title' and 'data-description' attributes to customize the title and description inside this card.
 
 2. SOCIAL PROOF (Increase Likelihood of Success):
    - Design a visual "Wall of Love" section.
@@ -396,10 +398,11 @@ CURRENT HTML:
 ${currentHtml}
 
 CRITICAL RULES:
-1. Preserve the structural container '<div id="qualification-form-container"></div>' exactly as it is, so that the lead form continues to function perfectly.
+1. Preserve the structural container '<div id="qualification-form-container" ...></div>' (and all its attributes), modifying ONLY the attributes or container itself as requested by the user. Do NOT write a form element inside this container.
 2. Retain all existing styling, layout elements, assets, and copywriting, modifying ONLY the parts requested by the user.
-3. Return ONLY the raw, complete, valid updated HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
-4. ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output ONLY the pure raw updated HTML string. No conversational text.`
+3. If the user asks to change the form button text, modify the 'data-button-text' attribute on the '<div id="qualification-form-container" ...>' element. Do NOT write button HTML inside that container, only modify the attribute.
+4. Return ONLY the raw, complete, valid updated HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
+5. ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output ONLY the pure raw updated HTML string. No conversational text.`
         }
 
         console.log(`[Lander API] Calling Gemini in mode: ${mode}...`)
@@ -412,31 +415,39 @@ CRITICAL RULES:
             .replace(/\s*```$/, '')
             .trim()
 
-        // Generate unique slug
-        const baseSlug = resolvedProductName
-            ? resolvedProductName
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, '-')
-                .replace(/(^-|-$)/g, '')
-            : 'listing'
-            
-        const slug = mode === 'generate' 
-            ? `${baseSlug}-${Date.now().toString().slice(-4)}` 
-            : baseSlug
+        // Resolve slug
+        let slug = requestSlug
+        if (!slug) {
+            const baseSlug = resolvedProductName
+                ? resolvedProductName
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/(^-|-$)/g, '')
+                : 'listing'
+                
+            slug = mode === 'generate' 
+                ? `${baseSlug}-${Date.now().toString().slice(-4)}` 
+                : baseSlug
+        }
+
+        const payload: any = {
+            user_id: targetUserId,
+            slug,
+            title: `${resolvedProductName || 'Offer'} | High-Converting Listing`,
+            product_name: resolvedProductName || 'Property Listing',
+            html_content: htmlResult,
+            form_id: formId || null,
+            updated_at: new Date().toISOString()
+        }
+        if (id) {
+            payload.id = id
+        }
 
         // Create or update record in public.landing_pages
         const { data: pageRecord, error: dbError } = await supabase
             .from('landing_pages')
-            .upsert({
-                user_id: targetUserId,
-                slug,
-                title: `${resolvedProductName || 'Offer'} | High-Converting Listing`,
-                product_name: resolvedProductName || 'Property Listing',
-                html_content: htmlResult,
-                form_id: formId || null,
-                updated_at: new Date().toISOString()
-            }, {
-                onConflict: 'user_id, slug'
+            .upsert(payload, {
+                onConflict: id ? 'id' : 'user_id, slug'
             })
             .select()
             .single()

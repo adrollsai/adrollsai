@@ -79,6 +79,11 @@ export async function POST(request: Request) {
         data.campaignType = formData.get('campaignType')?.toString();
         data.pixelId = formData.get('pixelId')?.toString();
         
+        const ageMinVal = formData.get('ageMin');
+        if (ageMinVal) data.ageMin = parseInt(ageMinVal.toString());
+        const ageMaxVal = formData.get('ageMax');
+        if (ageMaxVal) data.ageMax = parseInt(ageMaxVal.toString());
+
         data.creativeFiles = [];
         formData.forEach((value, key) => {
             if (key.startsWith('creativeFiles[') && value instanceof Blob) {
@@ -119,7 +124,9 @@ export async function POST(request: Request) {
         sourceCampaignId,
         sourceCampaignName = 'Campaign',
         campaignType = 'instant_form',
-        pixelId
+        pixelId,
+        ageMin,
+        ageMax
     } = data;
     
     const currency = targetProfile?.currency || 'INR';
@@ -645,6 +652,19 @@ export async function POST(request: Request) {
                 console.error("Failed to parse locations array", e);
             }
         }
+
+        // Apply strict targeting constraints and manual placements (excluding Audience Network)
+        targetingConfig.age_min = ageMin !== undefined && ageMin !== null ? ageMin : 18;
+        targetingConfig.age_max = ageMax !== undefined && ageMax !== null ? ageMax : 65;
+        targetingConfig.targeting_relaxation_types = {
+            custom_audience: 0,
+            lookalike: 0
+        };
+        targetingConfig.targeting_automation = {
+            advantage_audience: 0
+        };
+        targetingConfig.device_platforms = ['mobile', 'desktop'];
+        targetingConfig.publisher_platforms = ['facebook', 'instagram', 'messenger'];
 
         // --- Step F: Ad Set targeting custom audience ---
         logToFile("--- 6. AD SET ---");
