@@ -269,12 +269,12 @@ export default function AdsPage() {
       }
   }
 
-  // Auto-verify account sanity whenever ad account, page ID, campaign type, or modal open changes
+  // Auto-verify account sanity whenever ad account or page ID changes
   useEffect(() => {
-      if (selectedAdAccountId && isModalOpen) {
+      if (selectedAdAccountId) {
           checkAccountStatus(selectedAdAccountId, adForm.pageId)
       }
-  }, [selectedAdAccountId, adForm.pageId, campaignType, isModalOpen])
+  }, [selectedAdAccountId, adForm.pageId])
 
   const fetchAdsData = async (force = false) => {
     try {
@@ -1023,6 +1023,186 @@ export default function AdsPage() {
                 <button onClick={() => setIsModalOpen(true)} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-8 py-3.5 rounded-full shadow-md shadow-blue-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 font-bold"><Plus size={20} strokeWidth={3} /> <span className="hidden sm:inline">New Campaign</span></button>
             </div>
         </div>
+
+        {/* META INTEGRATION HEALTH & FUNDS STATUS */}
+        {selectedAdAccountId && (
+          <div className="mb-8 bg-white border border-slate-200/60 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <CheckCircle size={18} className="text-emerald-500 animate-pulse" /> Meta Account Health & Funds
+                </h2>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Real-time status of your Meta Ads integration and billing configurations
+                </p>
+              </div>
+              <div className="flex items-center gap-3 self-end md:self-auto">
+                {checkingSanity ? (
+                  <span className="text-xs font-bold text-slate-400 animate-pulse flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
+                    <Loader2 size={13} className="animate-spin text-blue-500" /> Verifying Meta Integration...
+                  </span>
+                ) : (
+                  <button 
+                    onClick={() => checkAccountStatus(selectedAdAccountId, adForm.pageId)}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50/80 px-3.5 py-1.5 rounded-full border border-blue-100 transition-all active:scale-95 flex items-center gap-1.5 bg-white shadow-sm font-semibold"
+                  >
+                    <RefreshCw size={12} className={checkingSanity ? "animate-spin" : ""} /> Force Check
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {/* 1. Available Funds */}
+              <div className="bg-slate-50/80 border border-slate-200/50 rounded-2xl p-5 flex flex-col justify-between hover:border-slate-300 transition-colors shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-blue-500/5 to-transparent rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-500" />
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Available Funds</span>
+                  <div className="p-2 rounded-xl bg-blue-50 text-blue-600 border border-blue-100/30">
+                    <CreditCard size={16} />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-2xl font-black text-slate-800 tracking-tight leading-none">
+                    {checkingSanity ? (
+                      <span className="text-slate-300 animate-pulse">Checking...</span>
+                    ) : accountStatus?.balance !== undefined && accountStatus?.balance !== null ? (
+                      `${(accountStatus.currency || currency) === 'INR' ? '₹' : (accountStatus.currency || currency) === 'AED' ? 'د.إ' : (accountStatus.currency || currency) === 'GBP' ? '£' : (accountStatus.currency || currency) === 'EUR' ? '€' : '$'}${((accountStatus.balance / 100)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    ) : (
+                      <span className="text-slate-400 text-sm font-semibold">Postpaid / Credit</span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-medium mt-2">
+                    {accountStatus?.balance !== undefined && accountStatus?.balance !== null ? `Prepaid Balance (${accountStatus?.currency || currency})` : 'Automatic Postpaid Billing'}
+                  </p>
+                </div>
+              </div>
+
+              {/* 2. Ad Account Status */}
+              <div className="bg-slate-50/80 border border-slate-200/50 rounded-2xl p-5 flex flex-col justify-between hover:border-slate-300 transition-colors shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-emerald-500/5 to-transparent rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-500" />
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Ad Account Status</span>
+                  <div className={`p-2 rounded-xl border ${accountStatus?.account_status === 1 ? 'bg-emerald-50 text-emerald-600 border-emerald-100/30' : 'bg-rose-50 text-rose-600 border-rose-100/30'}`}>
+                    <Zap size={16} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${accountStatus?.account_status === 1 ? 'bg-emerald-500 animate-ping' : 'bg-rose-500'}`} />
+                    <div className="text-xl font-extrabold text-slate-800 leading-none">
+                      {checkingSanity ? (
+                        <span className="text-slate-300 animate-pulse">Checking...</span>
+                      ) : accountStatus?.account_status === 1 ? (
+                        'Active'
+                      ) : (
+                        'Inactive'
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-medium mt-2">
+                    Meta Ad Account is {accountStatus?.account_status === 1 ? 'healthy & ready' : 'restricted/disabled'}
+                  </p>
+                </div>
+              </div>
+
+              {/* 3. Payment Method */}
+              <div className="bg-slate-50/80 border border-slate-200/50 rounded-2xl p-5 flex flex-col justify-between hover:border-slate-300 transition-colors shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-indigo-500/5 to-transparent rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-500" />
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Payment Details</span>
+                  <div className={`p-2 rounded-xl border ${accountStatus?.has_payment_method ? 'bg-emerald-50 text-emerald-600 border-emerald-100/30' : 'bg-rose-50 text-rose-600 border-rose-100/30'}`}>
+                    <CreditCard size={16} />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-extrabold text-slate-800 leading-none truncate font-bold">
+                    {checkingSanity ? (
+                      <span className="text-slate-300 animate-pulse">Checking...</span>
+                    ) : accountStatus?.has_payment_method ? (
+                      accountStatus?.funding_source_details?.display_string || 'Linked'
+                    ) : (
+                      'Missing Card'
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-medium mt-2">
+                    {accountStatus?.has_payment_method ? 'Payment method linked to Ads account' : 'Funding source not found'}
+                  </p>
+                </div>
+              </div>
+
+              {/* 4. Lead Ads TOS */}
+              <div className="bg-slate-50/80 border border-slate-200/50 rounded-2xl p-5 flex flex-col justify-between hover:border-slate-300 transition-colors shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-purple-500/5 to-transparent rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-500" />
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Lead Ads TOS</span>
+                  <div className={`p-2 rounded-xl border ${accountStatus?.leadgenTos?.leadgen_tos?.accepted ? 'bg-emerald-50 text-emerald-600 border-emerald-100/30' : 'bg-rose-50 text-rose-600 border-rose-100/30'}`}>
+                    <Settings2 size={16} />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-extrabold text-slate-800 leading-none">
+                    {checkingSanity ? (
+                      <span className="text-slate-300 animate-pulse">Checking...</span>
+                    ) : accountStatus?.leadgenTos?.leadgen_tos?.accepted ? (
+                      'Accepted'
+                    ) : (
+                      'Not Accepted'
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-medium mt-2">
+                    Page Lead Gen Terms of Service
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Warnings / Error banner section */}
+            {!checkingSanity && (
+              <div className="mt-5 space-y-2.5">
+                {accountStatus?.error && (
+                  <div className="bg-rose-50 border border-rose-100/80 p-4 rounded-2xl text-xs text-rose-800 font-semibold leading-relaxed flex items-start gap-3 animate-in fade-in duration-300">
+                    <XCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />
+                    <div className="break-words max-w-full">
+                      <span className="font-bold text-rose-900 block mb-0.5">Meta Verification Failed</span>
+                      {accountStatus.error}
+                    </div>
+                  </div>
+                )}
+                {!accountStatus?.error && accountStatus?.account_status !== 1 && (
+                  <div className="bg-rose-50/80 border border-rose-100/60 p-4 rounded-2xl text-xs text-rose-800 font-semibold leading-relaxed flex items-start gap-3">
+                    <XCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-rose-900 block">Meta Ad Account is Inactive or Restricted</span>
+                      Your Meta Ad Account status is disabled. Please resolve billing, review policy holds, or verify identity.
+                      <a href="https://adsmanager.facebook.com/" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-rose-900 underline font-extrabold mt-1">Open Meta Ads Manager <ExternalLink size={12} /></a>
+                    </div>
+                  </div>
+                )}
+                {!accountStatus?.has_payment_method && (
+                  <div className="bg-rose-50/80 border border-rose-100/60 p-4 rounded-2xl text-xs text-rose-800 font-semibold leading-relaxed flex items-start gap-3">
+                    <XCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-rose-900 block">Missing Payment Method</span>
+                      No payment card, PayPal, or ad credit is linked to this account. Campaigns cannot serve impressions without a active payment method.
+                      <a href="https://adsmanager.facebook.com/ads/manager/billing/" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-rose-900 underline font-extrabold mt-1">Link Payment Method in Meta Billing <ExternalLink size={12} /></a>
+                    </div>
+                  </div>
+                )}
+                {accountStatus?.leadgenTos?.leadgen_tos?.accepted !== true && (
+                  <div className="bg-rose-50/80 border border-rose-100/60 p-4 rounded-2xl text-xs text-rose-800 font-semibold leading-relaxed flex items-start gap-3">
+                    <XCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-rose-900 block">Page Lead Generation Terms Outstanding</span>
+                      You must accept Facebook's Lead Generation Terms of Service for your connected Facebook Page before running lead-based campaigns.
+                      <a href={`https://www.facebook.com/ads/leadgen/tos/?page_id=${adForm.pageId}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-rose-900 underline font-extrabold mt-1">Review & Accept Terms on Facebook <ExternalLink size={12} /></a>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {loading ? (
             <div className="flex flex-col items-center justify-center min-h-[40vh] text-slate-400 gap-4"><Loader2 size={32} className="animate-spin text-slate-300" /><p className="text-sm font-medium animate-pulse">Syncing with Meta...</p></div>
@@ -2430,125 +2610,7 @@ export default function AdsPage() {
 
             </div>
 
-            {/* PRE-FLIGHT SANITY CHECKLIST */}
-            <div className="p-6 bg-slate-50 border-t border-b border-slate-100 space-y-4">
-                <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2">
-                        <CheckCircle size={15} className="text-emerald-500 animate-pulse" /> Meta Pre-flight Checklist
-                    </h3>
-                    {checkingSanity ? (
-                        <span className="text-[10px] font-bold text-slate-400 animate-pulse flex items-center gap-1">
-                            <Loader2 size={12} className="animate-spin" /> Verifying...
-                        </span>
-                    ) : (
-                        <span className="text-[10px] font-bold text-emerald-600 uppercase bg-emerald-50 border border-emerald-100/50 px-2.5 py-0.5 rounded-full">
-                            Checks Completed
-                        </span>
-                    )}
-                </div>
 
-                <div className="space-y-3">
-                    {/* Check 1: Ad Account Status */}
-                    <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                            <div className={`p-1 rounded ${accountStatus?.account_status === 1 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                                <CreditCard size={12} />
-                            </div>
-                            <span className="font-bold text-slate-600">Ad Account Status</span>
-                        </div>
-                        <div>
-                            {checkingSanity ? (
-                                <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-200 border-t-slate-400 animate-spin" />
-                            ) : accountStatus?.account_status === 1 ? (
-                                <span className="text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md border border-emerald-100/50 flex items-center gap-0.5"><Check size={10} strokeWidth={4} /> Active</span>
-                            ) : (
-                                <span className="text-[10px] font-extrabold uppercase bg-rose-50 text-rose-600 px-2 py-0.5 rounded-md border border-rose-100/50 flex items-center gap-0.5"><XCircle size={10} /> Inactive</span>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Check 2: Payment Method Linked */}
-                    <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                            <div className={`p-1 rounded ${accountStatus?.has_payment_method ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                                <CreditCard size={12} />
-                            </div>
-                            <span className="font-bold text-slate-600">Payment Method Linked</span>
-                        </div>
-                        <div>
-                            {checkingSanity ? (
-                                <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-200 border-t-slate-400 animate-spin" />
-                            ) : accountStatus?.has_payment_method ? (
-                                <span className="text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md border border-emerald-100/50 flex items-center gap-0.5"><Check size={10} strokeWidth={4} /> Linked</span>
-                            ) : (
-                                <span className="text-[10px] font-extrabold uppercase bg-rose-50 text-rose-600 px-2 py-0.5 rounded-md border border-rose-100/50 flex items-center gap-0.5"><XCircle size={10} /> Missing</span>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Check 3: Lead Ads Terms (Only for Lead Ads) */}
-                    {campaignType === 'instant_form' && (
-                        <div className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2">
-                                <div className={`p-1 rounded ${accountStatus?.leadgenTos?.leadgen_tos?.accepted ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                                    <Settings2 size={12} />
-                                </div>
-                                <span className="font-bold text-slate-600">Lead Ads Terms Accepted</span>
-                            </div>
-                            <div>
-                                {checkingSanity ? (
-                                    <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-200 border-t-slate-400 animate-spin" />
-                                ) : accountStatus?.leadgenTos?.leadgen_tos?.accepted ? (
-                                    <span className="text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md border border-emerald-100/50 flex items-center gap-0.5"><Check size={10} strokeWidth={4} /> Accepted</span>
-                                ) : (
-                                    <span className="text-[10px] font-extrabold uppercase bg-rose-50 text-rose-600 px-2 py-0.5 rounded-md border border-rose-100/50 flex items-center gap-0.5"><XCircle size={10} /> Not Accepted</span>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Checklist Warning messages */}
-                {!checkingSanity && (
-                    <div className="space-y-2 pt-2 border-t border-slate-200/50">
-                        {accountStatus?.error && (
-                            <div className="bg-rose-50 border border-rose-100/50 p-3 rounded-xl text-[11px] text-rose-800 font-semibold leading-relaxed flex items-start gap-2 animate-in fade-in duration-300">
-                                <XCircle size={14} className="text-rose-500 shrink-0 mt-0.5" />
-                                <div className="break-words max-w-full">
-                                    Meta Verification Failed: {accountStatus.error}
-                                </div>
-                            </div>
-                        )}
-                        {!accountStatus?.error && accountStatus?.account_status !== 1 && (
-                            <div className="bg-rose-50 border border-rose-100/50 p-3 rounded-xl text-[11px] text-rose-800 font-semibold leading-relaxed flex items-start gap-2">
-                                <XCircle size={14} className="text-rose-500 shrink-0 mt-0.5" />
-                                <div>
-                                    Your Meta Ad Account is inactive or disabled. Let's resolve it.
-                                    <a href="https://adsmanager.facebook.com/" target="_blank" rel="noreferrer" className="block text-rose-900 underline font-extrabold mt-0.5">Open Meta Ads Manager ↗</a>
-                                </div>
-                            </div>
-                        )}
-                        {!accountStatus?.has_payment_method && (
-                            <div className="bg-rose-50 border border-rose-100/50 p-3 rounded-xl text-[11px] text-rose-800 font-semibold leading-relaxed flex items-start gap-2">
-                                <XCircle size={14} className="text-rose-500 shrink-0 mt-0.5" />
-                                <div>
-                                    No payment method is linked to this Ad Account.
-                                    <a href="https://adsmanager.facebook.com/ads/manager/billing/" target="_blank" rel="noreferrer" className="block text-rose-900 underline font-extrabold mt-0.5">Add Payment Method in Meta Billing ↗</a>
-                                </div>
-                            </div>
-                        )}
-                        {campaignType === 'instant_form' && accountStatus?.leadgenTos?.leadgen_tos?.accepted !== true && (
-                            <div className="bg-rose-50 border border-rose-100/50 p-3 rounded-xl text-[11px] text-rose-800 font-semibold leading-relaxed flex items-start gap-2">
-                                <XCircle size={14} className="text-rose-500 shrink-0 mt-0.5" />
-                                <div>
-                                    Accept the Facebook Lead Generation Terms of Service for this Page to run Lead Ads.
-                                    <a href={`https://www.facebook.com/ads/leadgen/tos/?page_id=${adForm.pageId}`} target="_blank" rel="noreferrer" className="block text-rose-900 underline font-extrabold mt-0.5">Accept Lead Ads Terms of Service ↗</a>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
 
             <div className="p-6 bg-white border-t border-slate-100 flex-shrink-0">
               <button 
