@@ -42,6 +42,7 @@ export async function POST(request: Request) {
         const { 
             name, 
             phone, 
+            email,
             city, 
             landing_page_id, 
             user_id, 
@@ -98,12 +99,15 @@ export async function POST(request: Request) {
             .insert({
                 name,
                 phone,
+                email,
                 user_id,
                 source: slug ? `Landing Page - ${slug}` : 'Landing Page',
                 pipeline_stage: 'New',
                 custom_fields: customFields,
                 status: 'active',
-                assigned_to: assignedAgentId
+                assigned_to: assignedAgentId,
+                budget: body.custom_question_0 || '',
+                timeline: body.custom_question_1 || '',
             })
             .select()
             .single()

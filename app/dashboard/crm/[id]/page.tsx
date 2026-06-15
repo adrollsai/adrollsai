@@ -27,6 +27,22 @@ export default function LeadProfilePage() {
     }
   }, [id])
 
+  // Realtime subscription to reflect bookings/updates instantly
+  useEffect(() => {
+    if (!id) return
+
+    const channel = supabase.channel(`lead_detail_${id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads', filter: `id=eq.${id}` }, (payload) => {
+        setLead(payload.new)
+        fetchLeadHistory()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [id, supabase])
+
   const fetchLeadData = async () => {
     const { data } = await supabase.from('leads').select('*').eq('id', id).single()
     if (data) setLead(data)
@@ -145,7 +161,17 @@ END:VCARD`
             </button>
             <div className="min-w-0 flex-1">
                 <h2 className="text-xl font-bold text-slate-900 truncate">{lead.name}</h2>
-                <p className="text-xs font-medium text-slate-500 mt-0.5 truncate">{lead.phone} {lead.email ? `• ${lead.email}` : ''}</p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
+                    <p className="text-xs font-medium text-slate-500 truncate">{lead.phone} {lead.email ? `• ${lead.email}` : ''}</p>
+                    <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md border border-blue-200">
+                        {lead.pipeline_stage || 'New'}
+                    </span>
+                    {lead.booked_time && (
+                        <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1 shadow-sm shrink-0">
+                            📆 Booked: {new Date(lead.booked_time).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                        </span>
+                    )}
+                </div>
             </div>
             {lead.phone && (
                 <div className="flex gap-2">

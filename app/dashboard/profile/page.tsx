@@ -1776,7 +1776,7 @@ export default function ProfilePage() {
                         Reference Library
                         <span className="bg-purple-50 text-purple-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">Super Admin</span>
                       </h4>
-                      <p className="text-xs text-slate-500 font-medium mt-1">Manage visual references for Premium, EDM & High Converting strategies</p>
+                      <p className="text-xs text-slate-500 font-medium mt-1">Manage visual references for Premium & High Converting strategies</p>
                     </div>
                   </div>
                   <ChevronRight size={20} className="text-slate-400 group-hover:translate-x-1 transition-transform" />

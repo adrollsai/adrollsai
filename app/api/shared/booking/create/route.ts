@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { refreshGoogleAccessToken, getCalendarTimezone } from '@/utils/google-calendar'
+import { sendCAPIEvent } from '@/utils/external-apis'
 
 export async function POST(request: Request) {
   try {
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
     // 2. Fetch Host Settings
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('google_refresh_token, google_booking_enabled, google_booking_duration, business_name, google_calendar_id')
+      .select('google_refresh_token, google_booking_enabled, google_booking_duration, business_name, google_calendar_id, facebook_token, selected_page_token, pixel_id')
       .eq('id', user_id)
       .maybeSingle()
 
@@ -104,10 +105,72 @@ export async function POST(request: Request) {
     // 5. Update Lead in Supabase
     const { error: updateError } = await supabaseAdmin
       .from('leads')
-      .update({ booked_time: slot })
+      .update({ 
+        booked_time: slot,
+        pipeline_stage: 'Appointment booked'
+      })
       .eq('id', lead_id)
 
     if (updateError) throw updateError
+
+    // 5.5. Save History Log
+    try {
+      const localSlotDate = new Date(slot)
+      const formattedDate = localSlotDate.toLocaleString([], {
+         weekday: 'long',
+         month: 'long',
+         day: 'numeric',
+         year: 'numeric',
+         hour: '2-digit',
+         minute: '2-digit',
+         hour12: true
+      })
+      const historyDesc = `Appointment booked for ${formattedDate}`
+
+      await supabaseAdmin.from('lead_history').insert({
+          lead_id: lead_id,
+          user_id: user_id,
+          action_type: 'STATUS_CHANGE',
+          description: historyDesc
+      })
+    } catch (histErr) {
+      console.error("[Booking Create API] Failed to log lead history:", histErr)
+    }
+
+    // 6. Trigger Conversions API (CAPI) Schedule Event
+    const pixelId = profile?.pixel_id
+    const fbToken = profile?.facebook_token || profile?.selected_page_token
+    if (pixelId && fbToken) {
+      const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 
+                       request.headers.get('x-real-ip') || 
+                       '127.0.0.1';
+      const clientUa = request.headers.get('user-agent') || '';
+      const sourceUrl = request.headers.get('referer') || '';
+      
+      const nameParts = (lead.name || '').trim().split(/\s+/);
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      console.log(`[CAPI Schedule] Dispatching Schedule event to Meta CAPI for Pixel: ${pixelId}`)
+      sendCAPIEvent(
+        fbToken,
+        pixelId,
+        'Schedule',
+        {
+          email: leadEmail || undefined,
+          phone: lead.phone,
+          firstName: firstName,
+          lastName: lastName,
+          externalId: lead.id
+        },
+        0,
+        clientIp,
+        clientUa,
+        sourceUrl
+      ).catch(err => {
+        console.error("[CAPI Schedule] Failed to send CAPI Schedule event:", err)
+      })
+    }
 
     console.log(`[Booking Create API] Successfully booked slot ${slot} for Lead ID: ${lead_id}`)
 

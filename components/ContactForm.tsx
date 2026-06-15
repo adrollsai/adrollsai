@@ -9,6 +9,8 @@ export default function ContactForm() {
    const [contactEmail, setContactEmail] = useState('')
    const [contactPhone, setContactPhone] = useState('')
    const [contactMessage, setContactMessage] = useState('')
+   const [budget, setBudget] = useState('10k - 20k')
+   const [timeline, setTimeline] = useState('Immediately')
    const [isSubmitting, setIsSubmitting] = useState(false)
    const [submitSuccess, setSubmitSuccess] = useState(false)
    const [submitError, setSubmitError] = useState('')
@@ -27,7 +29,9 @@ export default function ContactForm() {
                name: contactName,
                email: contactEmail,
                phone: contactPhone,
-               message: contactMessage
+               message: contactMessage,
+               budget,
+               timeline
             })
          })
 
@@ -72,6 +76,49 @@ export default function ContactForm() {
                      {submitError}
                   </div>
                )}
+
+               {/* Qualification Questions */}
+               <div className="space-y-4 bg-slate-50/60 p-4.5 rounded-2xl border border-slate-200/50 mb-2">
+                  <div className="space-y-2">
+                     <label className="text-[10px] text-[#003D6F] font-black uppercase tracking-wider block">What is your monthly marketing budget?</label>
+                     <div className="grid grid-cols-3 gap-2">
+                        {['10k - 20k', '20k - 30k', '50k+'].map(opt => (
+                           <button
+                              type="button"
+                              key={opt}
+                              onClick={() => setBudget(opt)}
+                              className={`py-2.5 text-xs font-black rounded-xl border text-center transition-all cursor-pointer ${
+                                 budget === opt 
+                                 ? 'bg-[#003D6F] text-white border-[#003D6F] shadow-sm' 
+                                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                              }`}
+                           >
+                              {opt}
+                           </button>
+                        ))}
+                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                     <label className="text-[10px] text-[#003D6F] font-black uppercase tracking-wider block">When are you looking to get started?</label>
+                     <div className="grid grid-cols-3 gap-2">
+                        {['Immediately', 'This Week', 'Next Week'].map(opt => (
+                           <button
+                              type="button"
+                              key={opt}
+                              onClick={() => setTimeline(opt)}
+                              className={`py-2.5 text-xs font-black rounded-xl border text-center transition-all cursor-pointer ${
+                                 timeline === opt 
+                                 ? 'bg-[#003D6F] text-white border-[#003D6F] shadow-sm' 
+                                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                              }`}
+                           >
+                              {opt}
+                           </button>
+                        ))}
+                     </div>
+                  </div>
+               </div>
 
                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">

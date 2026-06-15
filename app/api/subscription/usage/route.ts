@@ -49,7 +49,6 @@ export async function GET() {
 
         const totalBytesUsed = dbBytes + mediaBytes;
         const storageGB = totalBytesUsed / (1024 * 1024 * 1024);
-        const storageLimitGB = 10;
 
         // --- CALCULATE TEAM SIZE ---
         // Fetch added team members linked to this parent ID
@@ -62,6 +61,7 @@ export async function GET() {
 
         // Resolve plan-based limits
         const limits = getUserLimits(primaryProfile);
+        const storageLimitGB = limits.storage_gb || 10;
 
         // Helper to retrieve usage from new column, falling back to legacy column
         const getUsage = (newCol: string, oldCol: string) => {

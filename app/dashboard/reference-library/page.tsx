@@ -21,7 +21,7 @@ import { toast } from 'sonner'
 
 type ReferenceCreative = {
   id: string
-  category: 'premium' | 'edm' | 'high_converting'
+  category: 'premium' | 'high_converting'
   url: string
   created_at: string
 }
@@ -103,14 +103,14 @@ export default function ReferenceLibraryPage() {
   const [referenceCreatives, setReferenceCreatives] = useState<ReferenceCreative[]>([])
   
   // Upload State
-  const [uploadCategory, setUploadCategory] = useState<'premium' | 'edm' | 'high_converting'>('premium')
+  const [uploadCategory, setUploadCategory] = useState<'premium' | 'high_converting'>('premium')
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState('')
   
   // Filter state
-  const [activeTab, setActiveTab] = useState<'all' | 'premium' | 'edm' | 'high_converting'>('all')
+  const [activeTab, setActiveTab] = useState<'all' | 'premium' | 'high_converting'>('all')
   
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -291,7 +291,6 @@ export default function ReferenceLibraryPage() {
 
   // Categorize counts
   const premiumCount = referenceCreatives.filter(c => c.category === 'premium').length
-  const edmCount = referenceCreatives.filter(c => c.category === 'edm').length
   const highConvertingCount = referenceCreatives.filter(c => c.category === 'high_converting').length
   const totalCount = referenceCreatives.length
 
@@ -350,7 +349,6 @@ export default function ReferenceLibraryPage() {
                   className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-2xl text-xs font-bold outline-none cursor-pointer text-slate-800 focus:border-purple-500 focus:ring-1 focus:ring-purple-500/20 transition-all"
                 >
                   <option value="premium">💎 Premium (High-End Luxury renders/glows)</option>
-                  <option value="edm">🌀 EDM (Abstract Lifestyle and feelings)</option>
                   <option value="high_converting">🎯 High Converting (Barebones organic snapshot)</option>
                 </select>
               </div>
@@ -445,7 +443,6 @@ export default function ReferenceLibraryPage() {
                   {[
                     { id: 'all', label: 'All strategy references', count: totalCount },
                     { id: 'premium', label: 'Premium Strategy', count: premiumCount },
-                    { id: 'edm', label: 'EDM Strategy', count: edmCount },
                     { id: 'high_converting', label: 'High Converting', count: highConvertingCount }
                   ].map((tab) => (
                     <button

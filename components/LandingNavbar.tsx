@@ -67,8 +67,8 @@ export default function LandingNavbar() {
                      Signup/Login
                   </Link>
                   <Link
-                     href={partnerLoginUrl}
-                     className="bg-[#B22B31] hover:bg-[#902227] text-white px-8 py-3.5 rounded-full text-base font-extrabold transition-all shadow-[0_10px_25px_-8px_rgba(178,43,49,0.4)] active:scale-95 flex items-center gap-2"
+                     href="#hero-form-section"
+                     className="bg-[#B22B31] hover:bg-[#902227] text-white px-8 py-3.5 rounded-full text-base font-extrabold transition-all shadow-[0_10px_25px_-8px_rgba(178,43,49,0.4)] active:scale-95 flex items-center gap-2 cursor-pointer"
                   >
                      Get Started <ArrowRight size={16} />
                   </Link>

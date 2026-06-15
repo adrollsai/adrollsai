@@ -228,6 +228,9 @@ export async function checkStorageLimit(userId: string) {
     const { data: userProfile } = await supabase.from('profiles').select('parent_id').eq('id', userId).single();
     const primaryUserId = userProfile?.parent_id || userId;
     
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', primaryUserId).single();
+    if (!profile) return true;
+
     // Calculate real-time usage (more accurate than just trusting storage_bytes_used)
     const { count: assetCount } = await supabase.from('assets').select('id', { count: 'exact', head: true }).eq('user_id', primaryUserId);
     const { count: propCount } = await supabase.from('properties').select('id', { count: 'exact', head: true }).eq('user_id', primaryUserId);
@@ -244,10 +247,13 @@ export async function checkStorageLimit(userId: string) {
     const mediaBytes = safeAssetCount * 750 * 1024;
     const totalBytesUsed = dbBytes + mediaBytes;
     
-    const storageLimitBytes = 10 * 1024 * 1024 * 1024; // 10 GB
+    // Resolve dynamic limit based on plan
+    const limits = getUserLimits(profile);
+    const storageLimitGb = limits.storage_gb || 10;
+    const storageLimitBytes = storageLimitGb * 1024 * 1024 * 1024;
 
     if (totalBytesUsed >= storageLimitBytes) {
-        throw new Error("Cloud storage limit reached (10GB). Please manage your assets or upgrade your plan.");
+        throw new Error(`Cloud storage limit reached (${storageLimitGb}GB). Please manage your assets or upgrade your plan.`);
     }
 
     return true;

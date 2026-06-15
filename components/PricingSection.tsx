@@ -87,7 +87,7 @@ export default function PricingSection() {
                            "5 AI Campaign Optimizations / mo",
                            "5 Team seats & Full CRM",
                            "Social Auto-Posting",
-                           "10 GB Cloud Storage",
+                           "5 GB Cloud Storage",
                            "Priority Email Support"
                         ].map((feature, i) => (
                            <li key={i} className="flex items-center gap-2.5 text-slate-600 font-bold text-xs">
@@ -98,8 +98,8 @@ export default function PricingSection() {
                      </ul>
                   </div>
                   <Link
-                     href={partnerLoginUrl}
-                     className="block w-full py-4 bg-[#003D6F] hover:bg-[#00284d] text-white text-center rounded-xl font-black text-sm transition-all active:scale-95"
+                     href="#hero-form-section"
+                     className="block w-full py-4 bg-[#003D6F] hover:bg-[#00284d] text-white text-center rounded-xl font-black text-sm transition-all active:scale-95 cursor-pointer"
                   >
                      Start Growth Plan
                   </Link>
@@ -139,8 +139,8 @@ export default function PricingSection() {
                      </ul>
                   </div>
                   <Link
-                     href={partnerLoginUrl}
-                     className="block w-full py-4 bg-[#B22B31] hover:bg-[#902227] text-white text-center rounded-xl font-black text-sm transition-all shadow-md active:scale-95 shadow-[#B22B31]/30"
+                     href="#hero-form-section"
+                     className="block w-full py-4 bg-[#B22B31] hover:bg-[#902227] text-white text-center rounded-xl font-black text-sm transition-all shadow-md active:scale-95 shadow-[#B22B31]/30 cursor-pointer"
                   >
                      Start Pro Plan
                   </Link>
@@ -166,7 +166,7 @@ export default function PricingSection() {
                            "15 AI Campaign Optimizations / mo",
                            "20 Team seats & Full CRM",
                            "Social Auto-Posting",
-                           "10 GB Cloud Storage",
+                           "20 GB Cloud Storage",
                            "24/7 Account Manager"
                         ].map((feature, i) => (
                            <li key={i} className="flex items-center gap-2.5 text-slate-600 font-bold text-xs">
@@ -177,8 +177,8 @@ export default function PricingSection() {
                      </ul>
                   </div>
                   <Link
-                     href={partnerLoginUrl}
-                     className="block w-full py-4 bg-slate-900 hover:bg-slate-800 text-white text-center rounded-xl font-black text-sm transition-all active:scale-95"
+                     href="#hero-form-section"
+                     className="block w-full py-4 bg-slate-900 hover:bg-slate-800 text-white text-center rounded-xl font-black text-sm transition-all active:scale-95 cursor-pointer"
                   >
                      Start Enterprise Plan
                   </Link>

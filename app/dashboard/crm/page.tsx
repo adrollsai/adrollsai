@@ -810,7 +810,7 @@ END:VCARD\n`
                             <div className="flex flex-col gap-1 items-start">
                                 <span className="text-sm font-bold text-blue-600">{lead.pipeline_stage || 'New Lead'}</span>
                                 {lead.booked_time && (
-                                    <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1 shadow-sm shrink-0">
+                                    <span className="text-xs font-black bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg border border-emerald-300/80 flex items-center gap-1.5 shadow-sm shrink-0 mt-1">
                                         📆 Booked: {new Date(lead.booked_time).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
                                     </span>
                                 )}

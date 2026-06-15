@@ -1066,7 +1066,6 @@ export default function CreationPage() {
                     >
                         {[
                           'Premium',
-                          'EDM',
                           'High Converting'
                         ].map(cat => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
@@ -1991,7 +1990,6 @@ function CreativeFlowModal({
                       >
                         {[
                           'Premium',
-                          'EDM',
                           'High Converting'
                         ].map(cat => <option key={cat} value={cat}>{cat}</option>)}
                       </select>

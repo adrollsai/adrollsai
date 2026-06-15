@@ -9,7 +9,8 @@ export const PLANS = {
             campaign_launches: 1,
             campaign_optimizations: 1,
             team_members: 1,
-            retargeting_campaigns: 0
+            retargeting_campaigns: 0,
+            storage_gb: 5
         }
     },
     growth: {
@@ -22,7 +23,8 @@ export const PLANS = {
             campaign_launches: 5,
             campaign_optimizations: 5,
             team_members: 5,
-            retargeting_campaigns: 0
+            retargeting_campaigns: 0,
+            storage_gb: 5
         }
     },
     pro: {
@@ -35,7 +37,8 @@ export const PLANS = {
             campaign_launches: 8,
             campaign_optimizations: 8,
             team_members: 10,
-            retargeting_campaigns: 0
+            retargeting_campaigns: 0,
+            storage_gb: 10
         }
     },
     professional: { // Alias for backwards compatibility
@@ -48,7 +51,8 @@ export const PLANS = {
             campaign_launches: 8,
             campaign_optimizations: 8,
             team_members: 10,
-            retargeting_campaigns: 0
+            retargeting_campaigns: 0,
+            storage_gb: 10
         }
     },
     enterprise: {
@@ -61,7 +65,8 @@ export const PLANS = {
             campaign_launches: 15,
             campaign_optimizations: 15,
             team_members: 20,
-            retargeting_campaigns: 0
+            retargeting_campaigns: 0,
+            storage_gb: 20
         }
     },
     free: {
@@ -74,7 +79,8 @@ export const PLANS = {
             campaign_launches: 0,
             campaign_optimizations: 0,
             team_members: 1,
-            retargeting_campaigns: 0
+            retargeting_campaigns: 0,
+            storage_gb: 1
         }
     }
 };
@@ -180,6 +186,6 @@ export function getUserLimits(profile: any) {
         campaign_optimizations: base.campaign_optimizations + addon_campaign_optimizations,
         team_members: base.team_members === 999999 ? 999999 : base.team_members + addon_team_members,
         retargeting_campaigns: base.retargeting_campaigns + addon_retargeting_campaigns,
-        storage_gb: 10
+        storage_gb: base.storage_gb || 10
     };
 }

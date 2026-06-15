@@ -64,7 +64,7 @@ async function getUserIdByEmail(email: string): Promise<string | null> {
 
 export async function POST(request: Request) {
   try {
-    const { name, email, phone, message } = await request.json()
+    const { name, email, phone, message, budget, timeline } = await request.json()
 
     if (!name || !email || !phone || !message) {
       return NextResponse.json({ error: 'All fields are required.' }, { status: 400 })
@@ -133,7 +133,13 @@ export async function POST(request: Request) {
           notes: message,
           source: 'Landing Page Contact',
           pipeline_stage: 'New',
-          assigned_to: assignedAgentId
+          assigned_to: assignedAgentId,
+          budget: budget || '',
+          timeline: timeline || '',
+          custom_fields: {
+            custom_question_0: budget || '',
+            custom_question_1: timeline || ''
+          }
         })
         .select()
         .single();
