@@ -132,10 +132,17 @@ When writing image prompts, you MUST follow and apply the Visual Production Rule
 
 ${visualProductionRules}
 
+### CONTENT INTEGRITY (CRITICAL)
+- ONLY use text, facts, prices, features, and claims that are EXPLICITLY provided in the product/business input above. Do NOT invent, fabricate, or assume ANY information.
+- If a detail (price, discount, phone, website) is NOT provided, do NOT include it. Leave it out entirely.
+- Keep the creative CLEAN and UNCLUTTERED — only the most essential info. Prefer visual storytelling over text-heavy layouts.
+- The business logo MUST always be included in the creative (placed cleanly in a corner).
+- Contact info MUST be included if provided (subtle bottom strip). Do NOT fabricate contact info if not provided.
+
 Your task is to generate:
 1. Three (3) highly converting, short image ad prompts. Each prompt MUST follow this exact, simple, short layout format (approx. 50-80 words):
-   "Make a high converting static meta ad, make sure the result is super real looking, and include attractive looking humans in it (ethnicity should be according to where the business is from) that don't look ai like, they should look super real. Only include super essential info in the image text overlays so it is not cluttered with text too much.
-   Product Info: ${productTitle}. Description: [Short sentence summarizing the essential product info].
+   "Make a high converting static meta ad, make sure the result is super real looking, and include attractive looking humans in it (ethnicity should be according to where the business is from) that don't look ai like, they should look super real. Only include super essential info in the image text overlays so it is not cluttered with text too much. Do NOT include any information that is not explicitly provided below — no made-up prices, discounts, claims, or contact details.
+   Product Info: ${productTitle}. Description: [Short sentence summarizing ONLY the essential product info that was provided].
    Business Name: ${companyName || 'N/A'}
    Business Logo: Include the business logo cleanly in a corner.
    Style: Render the image in a [Varying style, e.g., prompt 1 is 'Sunset Golden Hour', prompt 2 is 'Minimalist Clean Studio', prompt 3 is 'Warm Home Interior'] aesthetic."

@@ -93,11 +93,11 @@ export async function GET(request: Request) {
 
                 // C. Build literal, simplified, high-converting image prompt
                 const promptParts = [
-                    "Make a high converting static meta ad, make sure the result is super real looking, and include attractive looking humans in it (ethnicity should be according to where the business is from) that don't look ai like, they should look super real. Only include super essential info in the image text overlays so it is not cluttered with text too much.",
+                    "Make a high converting static meta ad, make sure the result is super real looking, and include attractive looking humans in it (ethnicity should be according to where the business is from) that don't look ai like, they should look super real. Only include super essential info in the image text overlays so it is not cluttered with text too much. IMPORTANT: Do NOT include ANY information that is not explicitly provided below — no made-up prices, discounts, claims, phone numbers, websites, or contact details. If a detail is not provided, leave it out entirely.",
                     `Product Info: ${prop.title || ''}. Description: ${prop.description || ''}`,
                     businessName ? `Business Name: ${businessName}` : '',
                     contactNumber ? `Contact Info: ${contactNumber}` : '',
-                    logoUrl ? `Business Logo: Include the business logo cleanly in a corner.` : '',
+                    logoUrl ? `Business Logo: Include the business logo cleanly in a corner of the creative.` : 'Business Logo: Include the business logo cleanly in a corner.',
                     profile.custom_prompt ? `Custom Instructions: ${profile.custom_prompt}` : ''
                 ].filter(Boolean);
 

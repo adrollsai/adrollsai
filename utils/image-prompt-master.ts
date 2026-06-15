@@ -116,6 +116,45 @@ export const RENDERING_PRIORITIES = `Rendering priorities (highest to lowest):
 export const AUTHENTICITY_RULE = `The primary objective is to maximize perceived authenticity. A viewer should believe the image is a genuine photograph captured in the real world. Whenever there is a trade-off between beauty and realism, choose realism. Small natural imperfections are desirable because they increase believability.`;
 
 // ============================================================================
+// CONTENT INTEGRITY RULES — Anti-hallucination, anti-clutter, branding defaults
+// ============================================================================
+
+export const CONTENT_INTEGRITY_RULES = `Content Integrity & Branding Rules (MANDATORY — apply to EVERY creative):
+
+1. ZERO HALLUCINATION POLICY:
+   - You must ONLY include text, facts, numbers, prices, features, claims, and details that are EXPLICITLY provided in the product/business input.
+   - Do NOT invent, fabricate, assume, or embellish ANY information — no made-up prices, no fake discounts, no imaginary features, no fictional testimonials, no assumed locations or addresses.
+   - If a piece of information (e.g. price, offer, phone number, website) is NOT provided in the input, do NOT include it in the creative. Leave it out entirely rather than guessing.
+   - Do NOT add generic marketing claims like "#1 in the city", "Best quality", "Award-winning" unless these exact claims are provided in the input.
+
+2. ANTI-CLUTTER RULE:
+   - Keep the creative clean, breathable, and visually premium. Less is more.
+   - Only include the MOST ESSENTIAL information from the product input — typically: product/service name, one key benefit or price point, and brand identity.
+   - Do NOT overload the image with excessive text overlays, multiple bullet points, long descriptions, or too many data points.
+   - Text overlays should be minimal, high-impact, and easily readable at a glance.
+   - Prefer visual storytelling over text-heavy layouts.
+
+3. BUSINESS LOGO (MANDATORY BY DEFAULT):
+   - The business logo MUST be included in every creative as a clean, professional element.
+   - Place the logo as a subtle but visible seal/watermark in a corner (top-left, top-right, or bottom-right) — it should feel integrated, not pasted on.
+   - If a logo image is provided in the input images, reproduce it faithfully. Do NOT redesign, reinterpret, or replace the logo.
+   - The logo should be appropriately sized — visible but not dominating the creative.
+   - EXCEPTION: Only omit the logo if the user EXPLICITLY requests "no logo" or "remove the logo" in their instructions.
+
+4. CONTACT INFORMATION (MANDATORY BY DEFAULT):
+   - If contact information (phone number, website, email, or address) is provided in the input, it MUST be included in the creative.
+   - Place contact details in a clean, minimal bar or strip at the bottom of the creative, using a small, well-spaced, legible font.
+   - Do NOT clutter the creative with contact info — keep it subtle and professional.
+   - If NO contact info is provided in the input, do NOT fabricate any — simply omit the contact section.
+   - EXCEPTION: Only omit contact info if the user EXPLICITLY requests "no contact info" or similar in their instructions.
+
+5. INFORMATION HIERARCHY:
+   - Primary: Hero visual (product/property/service image) — takes up 60-70% of the canvas.
+   - Secondary: Brand name + one key message/headline — concise and impactful.
+   - Tertiary: Logo (corner) + Contact info (bottom strip).
+   - Everything else is optional and should only be included if explicitly provided AND if it doesn't clutter the layout.`;
+
+// ============================================================================
 // SUPPORTED INDUSTRIES
 // ============================================================================
 
@@ -162,6 +201,8 @@ ${verticalModule}
 ${RENDERING_PRIORITIES}
 
 ${AUTHENTICITY_RULE}
+
+${CONTENT_INTEGRITY_RULES}
 
 === END VISUAL PRODUCTION RULES ===`;
 }

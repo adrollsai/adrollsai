@@ -219,13 +219,13 @@ export async function POST(request: Request) {
 
     // Build literal, simplified, high-converting image prompt
     const promptParts = [
-        "Make a high converting static meta ad, make sure the result is super real looking, and include attractive looking humans in it (ethnicity should be according to where the business is from) that don't look ai like, they should look super real. Only include super essential info in the image text overlays so it is not cluttered with text too much.",
+        "Make a high converting static meta ad, make sure the result is super real looking, and include attractive looking humans in it (ethnicity should be according to where the business is from) that don't look ai like, they should look super real. Only include super essential info in the image text overlays so it is not cluttered with text too much. IMPORTANT: Do NOT include ANY information that is not explicitly provided below — no made-up prices, discounts, claims, phone numbers, websites, or contact details. If a detail is not provided, leave it out entirely.",
         hasReference ? "Take design layout and style inspiration from the reference image creative (provided in the input images) and mold it for our product with a slight variation." : "",
         categoryPromptGuideline,
         `Product Description: ${propertyTitle || ''}. ${propertyDescription || ''}`,
         businessName ? `Business Info - Brand/Business Name: ${businessName}` : '',
         contactNumber ? `Business Info - Contact Info: ${contactNumber}` : '',
-        logoUrl ? `Business Logo: Include the business logo cleanly in a corner of the image.` : '',
+        logoUrl ? `Business Logo: Include the business logo cleanly in a corner of the image.` : 'Business Logo: Include the business logo cleanly in a corner.',
         (!normalizedCategory && styleAesthetic) ? `Style: Render the image in a ${styleAesthetic} aesthetic.` : '',
         profileCustomPrompt ? `Profile Custom Instructions: ${profileCustomPrompt}` : '',
         userInstructions ? `Custom Instructions: ${userInstructions}` : ''
