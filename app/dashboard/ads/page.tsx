@@ -96,6 +96,7 @@ export default function AdsPage() {
   const [selectedAdAccountId, setSelectedAdAccountId] = useState<string | null>(null)
   const [facebookToken, setFacebookToken] = useState<string | null>(null)
   const [accountStatus, setAccountStatus] = useState<any>(null)
+  const [checkingSanity, setCheckingSanity] = useState(false)
   const [currency, setCurrency] = useState('INR')
   const [pixelId, setPixelId] = useState<string | null>(null)
 
@@ -254,13 +255,26 @@ export default function AdsPage() {
 
   const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string, type?: 'image' | 'video' }>({ isOpen: false, url: '', title: '' })
 
-  const checkAccountStatus = async (accountId: string) => {
+  const checkAccountStatus = async (accountId: string, pageId?: string) => {
+      setCheckingSanity(true)
       try {
-          const res = await fetch(`/api/meta-ads/check-account?adAccountId=${accountId}`)
+          const pageParam = pageId ? `&pageId=${pageId}` : ''
+          const res = await fetch(`/api/meta-ads/check-account?adAccountId=${accountId}${pageParam}`)
           const data = await res.json()
           setAccountStatus(data)
-      } catch (e) { console.error(e) }
+      } catch (e) { 
+          console.error(e) 
+      } finally {
+          setCheckingSanity(false)
+      }
   }
+
+  // Auto-verify account sanity whenever ad account, page ID, campaign type, or modal open changes
+  useEffect(() => {
+      if (selectedAdAccountId && isModalOpen) {
+          checkAccountStatus(selectedAdAccountId, adForm.pageId)
+      }
+  }, [selectedAdAccountId, adForm.pageId, campaignType, isModalOpen])
 
   const fetchAdsData = async (force = false) => {
     try {
@@ -330,14 +344,14 @@ export default function AdsPage() {
         }))
         setCustomDomain(targetProfile.custom_domain || '')
         if (targetProfile.ad_account_id && !force) {
-            checkAccountStatus(targetProfile.ad_account_id)
+            checkAccountStatus(targetProfile.ad_account_id, targetProfile.selected_page_id)
         }
       }
       setTargetUserId(targetUserId)
 
       let newCampaigns: Campaign[] = []
       if (targetProfile?.ad_account_id) {
-          if (force) checkAccountStatus(targetProfile.ad_account_id)
+          if (force) checkAccountStatus(targetProfile.ad_account_id, targetProfile.selected_page_id)
           try {
               const res = await fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
               const data = await res.json()
@@ -2416,16 +2430,137 @@ export default function AdsPage() {
 
             </div>
 
+            {/* PRE-FLIGHT SANITY CHECKLIST */}
+            <div className="p-6 bg-slate-50 border-t border-b border-slate-100 space-y-4">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                        <CheckCircle size={15} className="text-emerald-500 animate-pulse" /> Meta Pre-flight Checklist
+                    </h3>
+                    {checkingSanity ? (
+                        <span className="text-[10px] font-bold text-slate-400 animate-pulse flex items-center gap-1">
+                            <Loader2 size={12} className="animate-spin" /> Verifying...
+                        </span>
+                    ) : (
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase bg-emerald-50 border border-emerald-100/50 px-2.5 py-0.5 rounded-full">
+                            Checks Completed
+                        </span>
+                    )}
+                </div>
+
+                <div className="space-y-3">
+                    {/* Check 1: Ad Account Status */}
+                    <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                            <div className={`p-1 rounded ${accountStatus?.account_status === 1 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                <CreditCard size={12} />
+                            </div>
+                            <span className="font-bold text-slate-600">Ad Account Status</span>
+                        </div>
+                        <div>
+                            {checkingSanity ? (
+                                <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-200 border-t-slate-400 animate-spin" />
+                            ) : accountStatus?.account_status === 1 ? (
+                                <span className="text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md border border-emerald-100/50 flex items-center gap-0.5"><Check size={10} strokeWidth={4} /> Active</span>
+                            ) : (
+                                <span className="text-[10px] font-extrabold uppercase bg-rose-50 text-rose-600 px-2 py-0.5 rounded-md border border-rose-100/50 flex items-center gap-0.5"><XCircle size={10} /> Inactive</span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Check 2: Payment Method Linked */}
+                    <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                            <div className={`p-1 rounded ${accountStatus?.has_payment_method ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                <CreditCard size={12} />
+                            </div>
+                            <span className="font-bold text-slate-600">Payment Method Linked</span>
+                        </div>
+                        <div>
+                            {checkingSanity ? (
+                                <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-200 border-t-slate-400 animate-spin" />
+                            ) : accountStatus?.has_payment_method ? (
+                                <span className="text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md border border-emerald-100/50 flex items-center gap-0.5"><Check size={10} strokeWidth={4} /> Linked</span>
+                            ) : (
+                                <span className="text-[10px] font-extrabold uppercase bg-rose-50 text-rose-600 px-2 py-0.5 rounded-md border border-rose-100/50 flex items-center gap-0.5"><XCircle size={10} /> Missing</span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Check 3: Lead Ads Terms (Only for Lead Ads) */}
+                    {campaignType === 'instant_form' && (
+                        <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                                <div className={`p-1 rounded ${accountStatus?.leadgenTos?.leadgen_tos?.accepted ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                    <Settings2 size={12} />
+                                </div>
+                                <span className="font-bold text-slate-600">Lead Ads Terms Accepted</span>
+                            </div>
+                            <div>
+                                {checkingSanity ? (
+                                    <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-200 border-t-slate-400 animate-spin" />
+                                ) : accountStatus?.leadgenTos?.leadgen_tos?.accepted ? (
+                                    <span className="text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md border border-emerald-100/50 flex items-center gap-0.5"><Check size={10} strokeWidth={4} /> Accepted</span>
+                                ) : (
+                                    <span className="text-[10px] font-extrabold uppercase bg-rose-50 text-rose-600 px-2 py-0.5 rounded-md border border-rose-100/50 flex items-center gap-0.5"><XCircle size={10} /> Not Accepted</span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Checklist Warning messages */}
+                {!checkingSanity && (
+                    <div className="space-y-2 pt-2 border-t border-slate-200/50">
+                        {accountStatus?.account_status !== 1 && (
+                            <div className="bg-rose-50 border border-rose-100/50 p-3 rounded-xl text-[11px] text-rose-800 font-semibold leading-relaxed flex items-start gap-2">
+                                <XCircle size={14} className="text-rose-500 shrink-0 mt-0.5" />
+                                <div>
+                                    Your Meta Ad Account is inactive or disabled. Let's resolve it.
+                                    <a href="https://adsmanager.facebook.com/" target="_blank" rel="noreferrer" className="block text-rose-900 underline font-extrabold mt-0.5">Open Meta Ads Manager ↗</a>
+                                </div>
+                            </div>
+                        )}
+                        {!accountStatus?.has_payment_method && (
+                            <div className="bg-rose-50 border border-rose-100/50 p-3 rounded-xl text-[11px] text-rose-800 font-semibold leading-relaxed flex items-start gap-2">
+                                <XCircle size={14} className="text-rose-500 shrink-0 mt-0.5" />
+                                <div>
+                                    No payment method is linked to this Ad Account.
+                                    <a href="https://adsmanager.facebook.com/ads/manager/billing/" target="_blank" rel="noreferrer" className="block text-rose-900 underline font-extrabold mt-0.5">Add Payment Method in Meta Billing ↗</a>
+                                </div>
+                            </div>
+                        )}
+                        {campaignType === 'instant_form' && accountStatus?.leadgenTos?.leadgen_tos?.accepted !== true && (
+                            <div className="bg-rose-50 border border-rose-100/50 p-3 rounded-xl text-[11px] text-rose-800 font-semibold leading-relaxed flex items-start gap-2">
+                                <XCircle size={14} className="text-rose-500 shrink-0 mt-0.5" />
+                                <div>
+                                    Accept the Facebook Lead Generation Terms of Service for this Page to run Lead Ads.
+                                    <a href={`https://www.facebook.com/ads/leadgen/tos/?page_id=${adForm.pageId}`} target="_blank" rel="noreferrer" className="block text-rose-900 underline font-extrabold mt-0.5">Accept Lead Ads Terms of Service ↗</a>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
             <div className="p-6 bg-white border-t border-slate-100 flex-shrink-0">
               <button 
                 onClick={handleLaunchCampaign} 
-                disabled={isSubmitting || adForm.metaLocations.length === 0 || selectedCreatives.length === 0} 
+                disabled={
+                    isSubmitting || 
+                    checkingSanity ||
+                    adForm.metaLocations.length === 0 || 
+                    selectedCreatives.length === 0 || 
+                    !accountStatus || 
+                    accountStatus.account_status !== 1 || 
+                    !accountStatus.has_payment_method || 
+                    (campaignType === 'instant_form' && accountStatus.leadgenTos?.leadgen_tos?.accepted !== true)
+                } 
                 className="w-full bg-slate-900 text-white py-4 sm:py-5 rounded-[1.5rem] text-sm sm:text-base font-bold flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 shadow-lg shadow-slate-900/20 hover:bg-slate-800"
               >
                 {isSubmitting ? (
                   <Loader2 size={20} className="animate-spin" />
                 ) : (
-                  <Zap size={20} className="text-yellow-400" />
+                  <Zap size={20} className="text-yellow-400 animate-bounce" />
                 )}
                 {isSubmitting 
                   ? 'AI Optimizing & Launching...' 

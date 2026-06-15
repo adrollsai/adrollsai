@@ -4,6 +4,7 @@ import { createClient } from '@/utils/supabase/server'
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const adAccountId = searchParams.get('adAccountId')
+    const pageId = searchParams.get('pageId')
     const supabase = await createClient()
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -26,7 +27,22 @@ export async function GET(request: Request) {
     try {
         const res = await fetch(`https://graph.facebook.com/v19.0/${adAccountId}?fields=account_status,has_payment_method,disable_reason&access_token=${token}`)
         const data = await res.json()
-        return NextResponse.json(data)
+
+        let leadgenTos = null
+        if (pageId) {
+            try {
+                const tosRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/leadgen_tos?access_token=${token}`)
+                const tosData = await tosRes.json()
+                leadgenTos = tosData
+            } catch (tosErr: any) {
+                console.error("[check-account API] leadgen_tos check failed:", tosErr.message)
+            }
+        }
+
+        return NextResponse.json({
+            ...data,
+            leadgenTos
+        })
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 })
     }
