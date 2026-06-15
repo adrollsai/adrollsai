@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { 
     Globe, Plus, Trash2, Edit3, Eye, Copy, Check, MessageSquare, 
-    Sparkles, ArrowRight, Loader2, List, Clipboard, ArrowLeft, Send
+    Sparkles, ArrowRight, Loader2, List, Clipboard, ArrowLeft, Send, Paperclip,
+    Code
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+
 
 type FormField = {
     name: string
@@ -37,6 +39,7 @@ type LandingPage = {
     product_name: string
     html_content: string
     form_id: string | null
+    booking_enabled?: boolean
     created_at: string
 }
 
@@ -46,7 +49,7 @@ export default function PagesDashboard() {
     const supabase = createClient()
     const impersonateId = searchParams.get('impersonate')
 
-    // Tab state: 'landing_pages' | 'forms'
+    // Tab state
     const [activeTab, setActiveTab] = useState<'landing_pages' | 'forms'>('landing_pages')
     
     // Core States
@@ -88,13 +91,100 @@ export default function PagesDashboard() {
     // Edit/Chat Console state
     const [activeEditorPage, setActiveEditorPage] = useState<LandingPage | null>(null)
     const [chatInput, setChatInput] = useState('')
-    const [chatLogs, setChatLogs] = useState<{ sender: 'user' | 'ai', message: string }[]>([
+    const [chatLogs, setChatLogs] = useState<{ sender: 'user' | 'ai', message: string, images?: string[] }[]>([
         { sender: 'ai', message: "Hi! I am your Landing Page Assistant. Tell me what changes you'd like to make to the generated landing page (e.g. 'Make the buttons larger and glowing', 'change background to premium dark mode')." }
     ])
+    const [editorView, setEditorView] = useState<'preview' | 'code'>('preview')
+    const [editedHtml, setEditedHtml] = useState('')
+
+    useEffect(() => {
+        if (activeEditorPage) {
+            setEditedHtml(activeEditorPage.html_content)
+        } else {
+            setEditorView('preview')
+        }
+    }, [activeEditorPage?.id, activeEditorPage?.html_content])
 
     // Slug inline editing states
     const [editingSlugPageId, setEditingSlugPageId] = useState<string | null>(null)
     const [tempSlug, setTempSlug] = useState('')
+
+    // Brand Color & Chat files states
+    const [brandColor, setBrandColor] = useState('#2563eb')
+    const [chatFiles, setChatFiles] = useState<File[]>([])
+    const [chatPreviews, setChatPreviews] = useState<string[]>([])
+    const [isUploadingChatFiles, setIsUploadingChatFiles] = useState(false)
+    const chatFileInputRef = useRef<HTMLInputElement>(null)
+
+    // Image compression helper
+    const compressImage = (file: File, quality = 0.7, maxWidth = 1200): Promise<File> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target?.result as string;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > maxWidth) {
+                        height = (maxWidth / width) * height;
+                        width = maxWidth;
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    const ctx = canvas.getContext('2d');
+                    ctx?.drawImage(img, 0, 0, width, height);
+
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), {
+                                type: 'image/jpeg',
+                                lastModified: Date.now(),
+                            });
+                            resolve(compressedFile);
+                        } else {
+                            reject(new Error('Canvas to Blob conversion failed'));
+                        }
+                    }, 'image/jpeg', quality);
+                };
+                img.onerror = (err) => reject(err);
+            };
+            reader.onerror = (err) => reject(err);
+        });
+    };
+
+    const getContrastColor = (hexColor: string): string => {
+        if (!hexColor) return '#ffffff';
+        let hex = hexColor.trim().replace('#', '');
+        if (hex.length === 3) {
+            hex = hex.split('').map(char => char + char).join('');
+        }
+        if (hex.length !== 6) return '#ffffff';
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+        return (yiq >= 128) ? '#0f172a' : '#ffffff';
+    };
+
+    const handleChatFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files.length > 0) {
+            const filesArray = Array.from(e.target.files)
+            setChatFiles(prev => [...prev, ...filesArray])
+            const newPreviews = filesArray.map(file => URL.createObjectURL(file))
+            setChatPreviews(prev => [...prev, ...newPreviews])
+        }
+    }
+
+    const handleRemoveChatFile = (index: number) => {
+        setChatFiles(prev => prev.filter((_, i) => i !== index))
+        setChatPreviews(prev => prev.filter((_, i) => i !== index))
+    }
 
     // --- 1. SESSION & IMPERSONATION SETUP ---
     useEffect(() => {
@@ -107,26 +197,30 @@ export default function PagesDashboard() {
             }
 
             // Fetch caller profile
-            const { data: caller } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', session.user.id).single()
+            const { data: caller } = await supabase.from('profiles').select('role, agency_id, parent_id, brand_color').eq('id', session.user.id).single()
             let resolvedId = session.user.id
 
             // Resolve target client account if impersonating
             if (impersonateId && ['super_admin', 'agency', 'admin'].includes(caller?.role || '')) {
-                const { data: clientProfile } = await supabase.from('profiles').select('id, business_name, custom_domain').eq('id', impersonateId).single()
+                const { data: clientProfile } = await supabase.from('profiles').select('id, business_name, custom_domain, brand_color').eq('id', impersonateId).single()
                 if (clientProfile) {
                     resolvedId = clientProfile.id
                     setSubAccountName(clientProfile.business_name || 'Client')
                     setCustomDomain(clientProfile.custom_domain || '')
+                    setBrandColor(clientProfile.brand_color || '#2563eb')
                 }
             } else {
-                const { data: ownProfile } = await supabase.from('profiles').select('business_name, custom_domain').eq('id', session.user.id).single()
+                const { data: ownProfile } = await supabase.from('profiles').select('business_name, custom_domain, brand_color').eq('id', session.user.id).single()
                 if (ownProfile) {
                     setCustomDomain(ownProfile.custom_domain || '')
+                    setBrandColor(ownProfile.brand_color || '#2563eb')
                 }
             }
 
             setTargetUserId(resolvedId)
             await fetchListData(resolvedId)
+
+
         };
 
         resolveTargetAccount();
@@ -177,6 +271,8 @@ export default function PagesDashboard() {
             setTimeout(() => setErrorMessage(''), 4000)
         }
     }
+
+
 
     // --- 3. FORM BUILDER OPERATIONS ---
     const handleAddQuestion = () => {
@@ -399,6 +495,28 @@ export default function PagesDashboard() {
         }
     }
 
+    const handleUpdatePageBooking = async (pageId: string, enabled: boolean) => {
+        setActionLoading(true)
+        try {
+            const { error } = await supabase
+                .from('landing_pages')
+                .update({ booking_enabled: enabled })
+                .eq('id', pageId)
+            
+            if (error) throw error
+            showToast("Landing page booking preferences updated successfully!")
+            await fetchListData(targetUserId)
+            
+            if (activeEditorPage && activeEditorPage.id === pageId) {
+                setActiveEditorPage(prev => prev ? { ...prev, booking_enabled: enabled } : null)
+            }
+        } catch (e: any) {
+            showToast(e.message, 'error')
+        } finally {
+            setActionLoading(false)
+        }
+    }
+
     const handleUpdateSlug = async (pageId: string, newSlug: string) => {
         const cleanSlug = newSlug.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-')
         if (!cleanSlug) {
@@ -445,14 +563,42 @@ export default function PagesDashboard() {
 
     // --- 5. CONVERSATIONAL EDIT CHAT Console ---
     const handleSendChatEdit = async () => {
-        if (!chatInput.trim() || !activeEditorPage) return
+        if ((!chatInput.trim() && chatFiles.length === 0) || !activeEditorPage) return
         
         const userMsg = chatInput.trim()
         setChatInput('')
-        setChatLogs(prev => [...prev, { sender: 'user', message: userMsg }])
+        const filesToSend = [...chatFiles]
+        const previewsToSend = [...chatPreviews]
+        setChatFiles([])
+        setChatPreviews([])
+
+        setChatLogs(prev => [...prev, { sender: 'user', message: userMsg || "Sent attachment(s)", images: previewsToSend }])
         setActionLoading(true)
 
         try {
+            let uploadedUrls: string[] = []
+            if (filesToSend.length > 0) {
+                setIsUploadingChatFiles(true)
+                try {
+                    const uploadPromises = filesToSend.map(async (file) => {
+                        const compressedFile = await compressImage(file)
+                        const fileExt = 'jpg'
+                        const fileName = `chat-attachments/${targetUserId}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+                        const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, compressedFile)
+                        if (uploadError) throw uploadError
+                        const { data: { publicUrl } } = supabase.storage.from('properties').getPublicUrl(fileName)
+                        return publicUrl
+                    })
+                    uploadedUrls = await Promise.all(uploadPromises)
+                } catch (err: any) {
+                    showToast("Failed to upload attached images: " + err.message, "error")
+                    setIsUploadingChatFiles(false)
+                    setActionLoading(false)
+                    return
+                }
+                setIsUploadingChatFiles(false)
+            }
+
             const endpoint = impersonateId 
                 ? `/api/landing-page/generate?impersonate=${impersonateId}` 
                 : `/api/landing-page/generate`
@@ -467,12 +613,30 @@ export default function PagesDashboard() {
                     formId: activeEditorPage.form_id,
                     mode: 'edit',
                     instructions: userMsg,
-                    currentHtml: activeEditorPage.html_content
+                    currentHtml: activeEditorPage.html_content,
+                    imageUrls: uploadedUrls
                 })
             })
 
-            const resData = await response.json()
-            if (!response.ok) throw new Error(resData.error || "Edit failed")
+            let resData: any = null
+            if (response.ok) {
+                resData = await response.json()
+            } else {
+                let errMsg = "Edit failed"
+                try {
+                    const contentType = response.headers.get('content-type') || ''
+                    if (contentType.includes('application/json')) {
+                        const errorJson = await response.json()
+                        errMsg = errorJson.error || errMsg
+                    } else {
+                        const errorText = await response.text()
+                        errMsg = errorText || errMsg
+                    }
+                } catch (_) {
+                    errMsg = `Request failed with status ${response.status}`
+                }
+                throw new Error(errMsg)
+            }
 
             if (resData.page) {
                 setActiveEditorPage(resData.page)
@@ -482,6 +646,29 @@ export default function PagesDashboard() {
             }
         } catch(e: any) {
             setChatLogs(prev => [...prev, { sender: 'ai', message: `❌ Edit Failed: ${e.message}. Please try again.` }])
+        } finally {
+            setActionLoading(false)
+            setIsUploadingChatFiles(false)
+        }
+    }
+
+    const handleSaveHtml = async () => {
+        if (!activeEditorPage) return
+
+        setActionLoading(true)
+        try {
+            const { error } = await supabase
+                .from('landing_pages')
+                .update({ html_content: editedHtml })
+                .eq('id', activeEditorPage.id)
+            
+            if (error) throw error
+            showToast("Landing page HTML saved successfully!")
+            
+            setLandingPages(prev => prev.map(p => p.id === activeEditorPage.id ? { ...p, html_content: editedHtml } : p))
+            setActiveEditorPage(prev => prev ? { ...prev, html_content: editedHtml } : null)
+        } catch (e: any) {
+            showToast("Failed to save HTML: " + e.message, 'error')
         } finally {
             setActionLoading(false)
         }
@@ -512,20 +699,24 @@ export default function PagesDashboard() {
             if (titleMatch) cardTitle = titleMatch[1]
         }
         
+        const isBrandLight = getContrastColor(brandColor) === '#0f172a';
+        const buttonBgColor = isBrandLight ? '#0B0F19' : brandColor;
+        const buttonTextColor = '#ffffff';
+
         let formHtml = `
-            <div style="max-width: 500px; margin: 2rem auto; padding: 2rem; background: #ffffff; border-radius: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); font-family: system-ui, -apple-system, sans-serif; text-align: left;">
-                <h3 style="margin-top: 0; margin-bottom: 1.5rem; color: #0f172a; font-size: 1.5rem; font-weight: 800; text-align: center; letter-spacing: -0.025em;">${cardTitle}</h3>
+            <div style="max-width: 500px; margin: 2rem auto; padding: 1.5rem 0; background: transparent; font-family: inherit; text-align: left; box-sizing: border-box;">
+                <h3 style="margin-top: 0; margin-bottom: 1.5rem; color: inherit; font-size: 1.5rem; font-weight: 800; text-align: center; letter-spacing: -0.025em; font-family: inherit;">${cardTitle}</h3>
                 <div style="margin-bottom: 1.25rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: #475569;">Full Name</label>
-                    <input type="text" disabled placeholder="John Doe" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: #0f172a; background-color: #ffffff;" />
+                    <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">Full Name</label>
+                    <input type="text" disabled placeholder="John Doe" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
                 </div>
                 <div style="margin-bottom: 1.25rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: #475569;">WhatsApp Number</label>
-                    <input type="tel" disabled placeholder="+91 98765 43210" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: #0f172a; background-color: #ffffff;" />
+                    <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">WhatsApp Number</label>
+                    <input type="tel" disabled placeholder="+91 98765 43210" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
                 </div>
                 <div style="margin-bottom: 1.25rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: #475569;">City</label>
-                    <input type="text" disabled placeholder="Mohali" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: #0f172a; background-color: #ffffff;" />
+                    <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">City</label>
+                    <input type="text" disabled placeholder="Mohali" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
                 </div>
         `
 
@@ -534,10 +725,10 @@ export default function PagesDashboard() {
             customQuestions.forEach((q: any, index: number) => {
                 formHtml += `
                     <div style="margin-bottom: 1.25rem;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: #475569;">${q.label}</label>
+                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">${q.label}</label>
                 `
                 if (q.type === 'MULTIPLE_CHOICE') {
-                    formHtml += `<select disabled style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; background: #fff;">`
+                    formHtml += `<select disabled style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; background: #fff; color: inherit;">`
                     const displayOpts = [...(q.options || [])]
                     if (q.disqualify_options && Array.isArray(q.disqualify_options)) {
                         q.disqualify_options.forEach((disqOpt: string) => {
@@ -552,14 +743,14 @@ export default function PagesDashboard() {
                     })
                     formHtml += `</select>`
                 } else {
-                    formHtml += `<input type="text" disabled placeholder="Your answer" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box;" />`
+                    formHtml += `<input type="text" disabled placeholder="Your answer" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />`
                 }
                 formHtml += `</div>`
             })
         }
 
         formHtml += `
-                <button disabled style="width: 100%; padding: 0.875rem; background: #2563eb; color: #ffffff; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2); cursor: not-allowed;">${buttonText}</button>
+                <button disabled style="width: 100%; padding: 0.875rem; background: ${buttonBgColor}; color: ${buttonTextColor}; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); cursor: not-allowed; font-family: inherit;">${buttonText}</button>
             </div>
         `
 
@@ -660,30 +851,73 @@ export default function PagesDashboard() {
                                             : 'bg-blue-600 text-white rounded-tr-none self-end ml-auto'
                                     }`}
                                 >
-                                    {log.message}
+                                    <div>{log.message}</div>
+                                    {log.images && log.images.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                            {log.images.map((url, i) => (
+                                                <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block w-14 h-14 rounded-lg overflow-hidden border border-slate-200/50 shadow-sm relative hover:scale-105 transition-all">
+                                                    <img src={url} alt="attachment" className="w-full h-full object-cover" />
+                                                </a>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                             {actionLoading && (
                                 <div className="bg-white text-slate-800 border border-slate-200 rounded-2xl rounded-tl-none p-3 text-xs flex items-center gap-2 self-start mr-auto shadow-sm">
-                                    <Loader2 className="animate-spin text-blue-500 w-4 h-4" /> Asking Gemini to update landing page styles...
+                                    <Loader2 className="animate-spin text-blue-500 w-4 h-4" /> {isUploadingChatFiles ? "Uploading attachments..." : "Asking Gemini to update landing page styles..."}
                                 </div>
                             )}
                         </div>
 
+                        {/* Attached files previews */}
+                        {chatPreviews.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mb-2 p-2 bg-white border border-slate-200 rounded-xl">
+                                {chatPreviews.map((url, idx) => (
+                                    <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200 group">
+                                        <img src={url} alt="attached-preview" className="w-full h-full object-cover" />
+                                        <button
+                                            onClick={() => handleRemoveChatFile(idx)}
+                                            className="absolute top-0.5 right-0.5 bg-red-500/90 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold hover:bg-red-600 transition-colors shadow"
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
                         {/* Input bar */}
                         <div className="mt-3 flex gap-2">
+                            <input 
+                                type="file" 
+                                ref={chatFileInputRef} 
+                                onChange={handleChatFileSelect} 
+                                multiple 
+                                accept="image/*" 
+                                className="hidden" 
+                            />
+                            <button
+                                onClick={() => chatFileInputRef.current?.click()}
+                                disabled={actionLoading}
+                                type="button"
+                                className="bg-white border border-slate-200 text-slate-500 hover:text-slate-700 rounded-xl p-3 shadow-sm hover:bg-slate-50 active:scale-95 disabled:opacity-50 flex items-center justify-center transition-all"
+                                title="Attach photo or screenshot"
+                            >
+                                <Paperclip size={16} />
+                            </button>
                             <input 
                                 type="text"
                                 value={chatInput}
                                 onChange={e => setChatInput(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && !actionLoading && handleSendChatEdit()}
                                 disabled={actionLoading}
-                                placeholder="Change layout styles..."
+                                placeholder="Describe edits or attach screenshots..."
                                 className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 transition-all"
                             />
                             <button
                                 onClick={handleSendChatEdit}
-                                disabled={actionLoading || !chatInput.trim()}
+                                disabled={actionLoading || (!chatInput.trim() && chatFiles.length === 0)}
                                 className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl p-3 shadow-md shadow-blue-500/10 active:scale-95 disabled:opacity-50 flex items-center justify-center transition-all"
                             >
                                 <Send size={16} />
@@ -691,31 +925,71 @@ export default function PagesDashboard() {
                         </div>
                     </div>
 
-                    {/* Right Pane: Live iFrame Preview */}
+                    {/* Right Pane: Live iFrame Preview or HTML Code Editor */}
                     <div className="flex-1 flex flex-col h-full bg-slate-50 border border-slate-200 rounded-[2rem] p-4 relative overflow-hidden">
-                        <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-3">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse flex-shrink-0"></span>
-                                <span className="text-xs font-bold text-slate-600 truncate">
-                                    {`https://${customDomain || `app.adrolls.in/shared/${targetUserId}`}/${activeEditorPage.slug}`}
-                                </span>
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-3 gap-4">
+                            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-full border border-slate-200/50">
+                                <button
+                                    onClick={() => setEditorView('preview')}
+                                    className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+                                        editorView === 'preview' 
+                                            ? 'bg-white text-slate-800 shadow-sm' 
+                                            : 'text-slate-500 hover:text-slate-800'
+                                    }`}
+                                >
+                                    <Eye size={12} /> Preview
+                                </button>
+                                <button
+                                    onClick={() => setEditorView('code')}
+                                    className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+                                        editorView === 'code' 
+                                            ? 'bg-white text-slate-800 shadow-sm' 
+                                            : 'text-slate-500 hover:text-slate-800'
+                                    }`}
+                                >
+                                    <Code size={12} /> HTML Code
+                                </button>
                             </div>
-                            
-                            <button
-                                onClick={() => copyUrl(activeEditorPage.slug, activeEditorPage.id)}
-                                className="bg-white px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-100 text-slate-600 text-[10px] font-black flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
-                            >
-                                {copiedId === activeEditorPage.id ? <Check size={12} className="text-green-600" /> : <Copy size={12} />} 
-                                {copiedId === activeEditorPage.id ? 'Copied' : 'Copy URL'}
-                            </button>
+
+                            <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                                {editorView === 'code' ? (
+                                    <button
+                                        onClick={handleSaveHtml}
+                                        disabled={actionLoading}
+                                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shadow-blue-500/10 active:scale-95 disabled:opacity-50"
+                                    >
+                                        {actionLoading ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                                        Save Code
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => copyUrl(activeEditorPage.slug, activeEditorPage.id)}
+                                        className="bg-white px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-100 text-slate-600 text-[10px] font-black flex items-center gap-1.5 transition-all shadow-sm active:scale-95 truncate"
+                                    >
+                                        {copiedId === activeEditorPage.id ? <Check size={12} className="text-green-600" /> : <Copy size={12} />} 
+                                        {copiedId === activeEditorPage.id ? 'Copied' : 'Copy URL'}
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
-                        <div className="flex-1 rounded-[1.5rem] overflow-hidden border border-slate-200 shadow-inner relative bg-white">
-                            <iframe 
-                                srcDoc={getPreviewHtml(activeEditorPage)} 
-                                className="w-full h-full border-none"
-                            />
-                        </div>
+                        {editorView === 'preview' ? (
+                            <div className="flex-1 rounded-[1.5rem] overflow-hidden border border-slate-200 shadow-inner relative bg-white">
+                                <iframe 
+                                    srcDoc={getPreviewHtml(activeEditorPage)} 
+                                    className="w-full h-full border-none"
+                                />
+                            </div>
+                        ) : (
+                            <div className="flex-1 rounded-[1.5rem] overflow-hidden border border-slate-200 shadow-inner relative bg-slate-950 flex flex-col p-2">
+                                <textarea
+                                    value={editedHtml}
+                                    onChange={(e) => setEditedHtml(e.target.value)}
+                                    className="w-full h-full bg-slate-950 text-emerald-400 font-mono text-[11px] leading-relaxed p-4 outline-none resize-none scrollbar-hide border-none selection:bg-slate-800"
+                                    placeholder="Enter your landing page HTML code here..."
+                                />
+                            </div>
+                        )}
                     </div>
 
                 </div>
@@ -738,6 +1012,7 @@ export default function PagesDashboard() {
                             <List size={18} /> Qualification Forms
                             {activeTab === 'forms' && <span className="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-full animate-in slide-in-from-left duration-200"></span>}
                         </button>
+
                     </div>
 
                     {/* Tab Panels */}
@@ -829,6 +1104,18 @@ export default function PagesDashboard() {
                                                         <option key={f.id} value={f.id}>{f.name}</option>
                                                     ))}
                                                 </select>
+                                            </div>
+
+                                            <div className="mb-6">
+                                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={page.booking_enabled || false}
+                                                        onChange={(e) => handleUpdatePageBooking(page.id, e.target.checked)}
+                                                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                                                    />
+                                                    <span className="text-xs font-bold text-slate-600">Enable Google Calendar booking after lead submission</span>
+                                                </label>
                                             </div>
 
                                             <div className="flex gap-2 w-full pt-4 border-t border-slate-100 mt-auto">
@@ -945,6 +1232,8 @@ export default function PagesDashboard() {
                             )}
                         </div>
                     )}
+
+
 
                 </div>
             )}

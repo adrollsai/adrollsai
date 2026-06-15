@@ -187,6 +187,27 @@ END:VCARD`
                 </div>
             </div>
 
+            {/* Google Calendar Booking Details */}
+            {lead.booked_time && (
+                <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
+                    <h3 className="text-[10px] font-bold text-slate-500 uppercase ml-2 flex items-center gap-1.5 mb-2">
+                        <span className="text-emerald-500 text-lg">📆</span> Google Calendar Booking
+                    </h3>
+                    <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                            <span className="block text-xs font-medium text-slate-500">Scheduled Time</span>
+                            <span className="text-base font-extrabold text-slate-800">
+                                {new Date(lead.booked_time).toLocaleString([], {weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                            </span>
+                        </div>
+                        <span className="text-xs font-black bg-emerald-500 text-white px-3 py-1 rounded-full uppercase tracking-wider">
+                            Confirmed
+                        </span>
+                    </div>
+                </div>
+            )}
+
             {/* Custom Qualification Questions */}
             {lead.custom_fields && Object.keys(lead.custom_fields).length > 0 && (
                 <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100">

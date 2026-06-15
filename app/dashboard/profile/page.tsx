@@ -23,12 +23,20 @@ import {
   User,
   Video,
   BarChart3,
-  Mic
+  Mic,
+  Info,
+  Sparkles,
+  Eye,
+  Trash2,
+  Plus,
+  ImageIcon,
+  Calendar
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import PushManager from '@/components/PushManager'
+import { uploadToR2 } from '@/utils/upload-helper'
 
 type FBPage = {
   id: string
@@ -90,34 +98,10 @@ function DomainManager({
       })
 
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to initialize domain')
-
-      onDomainUpdate() // Refresh parent to show verification box
-      toast.success("Domain initialized. Please follow verification steps.")
-    } catch (err: any) {
-      setErrorMessage(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleVerify = async () => {
-    if (!userId) return
-    setLoading(true)
-    setErrorMessage('')
-
-    try {
-      const res = await fetch('/api/domains/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain, userId, type })
-      })
-
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
+      if (!res.ok) throw new Error(data.error || 'Failed to link domain')
 
       onDomainUpdate()
-      toast.success("Domain Verified & Connected! ✨")
+      toast.success("Domain connected successfully! ✨")
     } catch (err: any) {
       setErrorMessage(err.message)
     } finally {
@@ -140,7 +124,7 @@ function DomainManager({
 
       setDomain('')
       onDomainUpdate()
-      toast.success("Domain Unlinked Successfully.")
+      toast.success("Domain unlinked successfully.")
     } catch (err: any) {
       setErrorMessage(err.message)
     } finally {
@@ -152,6 +136,12 @@ function DomainManager({
     navigator.clipboard.writeText(text)
     toast.success("Copied to clipboard")
   }
+
+  // Determine if it is a subdomain or apex domain
+  const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim().toLowerCase();
+  const parts = cleanDomain.split('.');
+  const isSubdomain = parts.length > 2 && parts[0] !== 'www';
+  const subdomainPrefix = isSubdomain ? parts.slice(0, -2).join('.') : '';
 
   return (
     <div className="bg-blue-50/60 p-5 rounded-3xl border border-blue-100/50 mt-4 transition-all">
@@ -183,58 +173,90 @@ function DomainManager({
             disabled={loading || !domain}
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3.5 rounded-2xl sm:rounded-full text-sm font-bold whitespace-nowrap active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
           >
-            {loading ? <Loader2 size={18} className="animate-spin" /> : verifyStatus === 'pending' ? 'Update Domain' : 'Connect'}
+            {loading ? <Loader2 size={18} className="animate-spin" /> : 'Connect'}
           </button>
         )}
       </div>
 
-      {/* PENDING VERIFICATION STATE */}
-      {verifyStatus === 'pending' && verifyToken && (
-        <div className="mt-5 bg-white p-5 rounded-3xl border border-amber-200 shadow-sm animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center gap-2 text-amber-700 font-bold text-sm mb-4">
-            <AlertCircle size={18} /> Domain Verification Required
-          </div>
-          <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-            To prevent hijacking, please add this <strong>TXT Record</strong> to your DNS settings at your domain registrar:
-          </p>
-
-          <div className="space-y-3 mb-5">
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 relative group">
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Host / Name</label>
-              <div className="flex justify-between items-center">
-                <code className="text-xs font-mono text-slate-700">@</code>
-                <button onClick={() => copyToClipboard('@')} className="text-blue-500 hover:text-blue-700"><Copy size={14} /></button>
-              </div>
-            </div>
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 relative group">
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Value / TXT Content</label>
-              <div className="flex justify-between items-center gap-2">
-                <code className="text-[10px] font-mono text-slate-700 break-all">{verifyToken}</code>
-                <button onClick={() => copyToClipboard(verifyToken)} className="text-blue-500 hover:text-blue-700 shrink-0"><Copy size={14} /></button>
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={handleVerify}
-            disabled={loading}
-            className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md shadow-amber-500/20"
-          >
-            {loading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />} Verify TXT Record
-          </button>
-          <p className="text-[10px] text-slate-400 mt-3 text-center">DNS propagation can take a few minutes to reflect.</p>
-        </div>
-      )}
-
-      {/* VERIFIED STATE */}
+      {/* VERIFIED DNS RECORD INSTRUCTIONS STATE */}
       {verifyStatus === 'verified' && (
-        <div className="mt-4 bg-white p-5 rounded-3xl border border-green-200 shadow-sm animate-in fade-in slide-in-from-top-2">
+        <div className="mt-5 bg-white p-5 rounded-3xl border border-green-200 shadow-sm animate-in fade-in slide-in-from-top-2">
           <p className="text-sm font-bold text-green-700 flex items-center gap-2 mb-3">
-            <CheckCircle2 size={18} /> Domain Verified & Linked!
+            <CheckCircle2 size={18} /> Domain Linked!
           </p>
-          <div className="space-y-1 text-xs text-slate-600 font-medium ml-1">
-            <p>• Point your A Record to <span className="font-mono font-bold">76.76.21.21</span></p>
-            <p>• SSL Status: <span className="text-green-600 font-bold">Active</span></p>
+          <p className="text-xs text-slate-500 mb-4 leading-relaxed font-medium">
+            {isSubdomain ? (
+              <span>
+                To configure your subdomain (<strong>{cleanDomain}</strong>), log in to your DNS provider (e.g., Cloudflare, GoDaddy, Namecheap) and create a new <strong>CNAME</strong> record:
+              </span>
+            ) : (
+              <span>
+                To configure your root domain (<strong>{cleanDomain}</strong>), log in to your DNS provider (e.g., Cloudflare, GoDaddy, Namecheap) and add the following two records (an <strong>A</strong> record and a <strong>CNAME</strong> record):
+              </span>
+            )}
+          </p>
+          
+          <div className="space-y-4">
+            {isSubdomain ? (
+              <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 uppercase font-black tracking-wider text-[10px]">
+                      <th className="p-3">Type</th>
+                      <th className="p-3">Name / Host</th>
+                      <th className="p-3">Value / Target</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-slate-50 text-slate-700 font-medium">
+                      <td className="p-3 font-bold text-blue-600">CNAME</td>
+                      <td className="p-3 font-mono bg-slate-50/50">{subdomainPrefix}</td>
+                      <td className="p-3 flex items-center justify-between gap-2">
+                        <code className="font-mono text-slate-900 bg-slate-50 px-2 py-0.5 rounded">cname.vercel-dns.com</code>
+                        <button onClick={() => copyToClipboard('cname.vercel-dns.com')} className="text-blue-500 hover:text-blue-700"><Copy size={14} /></button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 uppercase font-black tracking-wider text-[10px]">
+                      <th className="p-3">Type</th>
+                      <th className="p-3">Name / Host</th>
+                      <th className="p-3">Value / Target</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-slate-50 text-slate-700 font-medium">
+                      <td className="p-3 font-bold text-blue-600">A</td>
+                      <td className="p-3 font-mono bg-slate-50/50">@</td>
+                      <td className="p-3 flex items-center justify-between gap-2">
+                        <code className="font-mono text-slate-900 bg-slate-50 px-2 py-0.5 rounded">76.76.21.21</code>
+                        <button onClick={() => copyToClipboard('76.76.21.21')} className="text-blue-500 hover:text-blue-700"><Copy size={14} /></button>
+                      </td>
+                    </tr>
+                    <tr className="text-slate-700 font-medium">
+                      <td className="p-3 font-bold text-blue-600">CNAME</td>
+                      <td className="p-3 font-mono bg-slate-50/50">www</td>
+                      <td className="p-3 flex items-center justify-between gap-2">
+                        <code className="font-mono text-slate-900 bg-slate-50 px-2 py-0.5 rounded">cname.vercel-dns.com</code>
+                        <button onClick={() => copyToClipboard('cname.vercel-dns.com')} className="text-blue-500 hover:text-blue-700"><Copy size={14} /></button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+            
+            <div className="bg-blue-50/40 border border-blue-100/50 p-3 rounded-2xl flex items-start gap-2">
+              <Info size={16} className="text-blue-600 mt-0.5 shrink-0" />
+              <p className="text-[10px] text-blue-800 leading-normal font-medium">
+                Note: DNS changes can take anywhere from a few minutes to 24 hours to propagate globally. SSL certificates will configure automatically once the DNS is resolved.
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -279,6 +301,18 @@ export default function ProfilePage() {
   const [linkedinName, setLinkedinName] = useState('')
   const [isConnectingLinkedin, setIsConnectingLinkedin] = useState(false)
 
+  // --- GOOGLE CALENDAR STATE ---
+  const [isGoogleConnected, setIsGoogleConnected] = useState(false)
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false)
+  const [isDisconnectingGoogle, setIsDisconnectingGoogle] = useState(false)
+  const [googleBookingDuration, setGoogleBookingDuration] = useState(30)
+  const [googleBookingStart, setGoogleBookingStart] = useState("09:00")
+  const [googleBookingEnd, setGoogleBookingEnd] = useState("17:00")
+  const [isSavingGoogleSettings, setIsSavingGoogleSettings] = useState(false)
+  const [googleCalendars, setGoogleCalendars] = useState<any[]>([])
+  const [googleCalendarId, setGoogleCalendarId] = useState("primary")
+  const [isLoadingCalendars, setIsLoadingCalendars] = useState(false)
+
   const [facebookToken, setFacebookToken] = useState<string | null>(null);
 
   const [fbPages, setFbPages] = useState<FBPage[]>([])
@@ -314,12 +348,14 @@ export default function ProfilePage() {
     contact: '',
     address: '',
     logoUrl: '',
+    avatarUrl: '',
     characterUrl: '',
     characterAudioUrl: '',
     facebookUrl: '',
     instagramUrl: '',
     customPrompt: '',
-    currency: 'INR'
+    currency: 'INR',
+    industry: ''
   })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -576,12 +612,14 @@ export default function ProfilePage() {
           contact: profileData.contact_number || '',
           address: profileData.address || '',
           logoUrl: profileData.logo_url || '',
+          avatarUrl: profileData.avatar_url || '',
           characterUrl: profileData.character_url || '',
           characterAudioUrl: profileData.character_audio_url || '',
           facebookUrl: profileData.facebook_url || '',
           instagramUrl: profileData.instagram_url || '',
           customPrompt: profileData.custom_prompt || '',
-          currency: profileData.currency || 'INR'
+          currency: profileData.currency || 'INR',
+          industry: profileData.industry || ''
         })
 
         if (profileData.facebook_token && isValidFacebookToken(profileData.facebook_token)) {
@@ -613,6 +651,18 @@ export default function ProfilePage() {
         } else {
           setIsLinkedinConnected(false)
           setLinkedinName('')
+        }
+
+        // Handle Google Status
+        if (profileData.google_refresh_token) {
+          setIsGoogleConnected(true)
+          setGoogleBookingDuration(profileData.google_booking_duration || 30)
+          setGoogleCalendarId(profileData.google_calendar_id || 'primary')
+          const hours = profileData.google_booking_hours || { start: '09:00', end: '17:00' }
+          setGoogleBookingStart(hours.start || '09:00')
+          setGoogleBookingEnd(hours.end || '17:00')
+        } else {
+          setIsGoogleConnected(false)
         }
       }
 
@@ -664,6 +714,83 @@ export default function ProfilePage() {
       toast.success('LinkedIn unlinked successfully')
     } catch (err: any) {
       toast.error('Failed to unlink LinkedIn', { description: err.message })
+    }
+  }
+
+  const handleConnectGoogle = () => {
+    setIsConnectingGoogle(true)
+    const effectiveUserId = targetUserId || userId;
+    window.location.href = `/api/auth/google/signin?userId=${effectiveUserId}`
+  }
+
+  const handleDisconnectGoogle = async () => {
+    if (!confirm("Disconnect Google Calendar?")) return
+    setIsDisconnectingGoogle(true)
+    const effectiveUserId = targetUserId || userId;
+    try {
+      if (effectiveUserId) {
+        const { error } = await supabase.from('profiles').update({
+          google_refresh_token: null,
+          google_booking_enabled: false
+        }).eq('id', effectiveUserId)
+        if (error) throw error
+        setIsGoogleConnected(false)
+        updateLocalCache({ google_refresh_token: null, google_booking_enabled: false })
+        toast.success("Google Calendar disconnected successfully.")
+      }
+    } catch (e: any) {
+      toast.error("Failed to disconnect: " + e.message)
+    } finally {
+      setIsDisconnectingGoogle(false)
+    }
+  }
+
+  const fetchGoogleCalendars = async (uId: string) => {
+    setIsLoadingCalendars(true)
+    try {
+      const res = await fetch(`/api/profile/calendars?userId=${uId}`)
+      const data = await res.json()
+      if (res.ok && data.calendars) {
+        setGoogleCalendars(data.calendars)
+      } else {
+        console.error("Calendars API error:", data.error)
+      }
+    } catch (err) {
+      console.error("Failed to load calendars:", err)
+    } finally {
+      setIsLoadingCalendars(false)
+    }
+  }
+
+  useEffect(() => {
+    const effectiveUserId = targetUserId || userId;
+    if (isGoogleConnected && effectiveUserId) {
+      fetchGoogleCalendars(effectiveUserId)
+    }
+  }, [isGoogleConnected, targetUserId, userId])
+
+  const handleSaveGoogleSettings = async () => {
+    setIsSavingGoogleSettings(true)
+    const effectiveUserId = targetUserId || userId;
+    try {
+      if (effectiveUserId) {
+        const { error } = await supabase.from('profiles').update({
+          google_booking_duration: googleBookingDuration,
+          google_booking_hours: { start: googleBookingStart, end: googleBookingEnd },
+          google_calendar_id: googleCalendarId
+        }).eq('id', effectiveUserId)
+        if (error) throw error
+        updateLocalCache({
+          google_booking_duration: googleBookingDuration,
+          google_booking_hours: { start: googleBookingStart, end: googleBookingEnd },
+          google_calendar_id: googleCalendarId
+        })
+        toast.success("Google Calendar settings saved successfully!")
+      }
+    } catch (e: any) {
+      toast.error("Failed to save settings: " + e.message)
+    } finally {
+      setIsSavingGoogleSettings(false)
     }
   }
 
@@ -754,6 +881,55 @@ export default function ProfilePage() {
       alert('Error uploading logo')
     } finally {
       setUploadingLogo(false)
+    }
+  }
+
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      if (!event.target.files || !event.target.files.length) return
+      
+      const file = event.target.files[0]
+      if (file.size > 15 * 1024 * 1024) {
+        alert("File size exceeds 15MB limit.")
+        return
+      }
+
+      setUploadingAvatar(true)
+
+      const effectiveUserId = targetUserId || userId;
+      if (!effectiveUserId) return
+
+      const fileExt = file.name.split('.').pop()
+      const fileName = `avatar-${effectiveUserId}-${Date.now()}.${fileExt}`
+
+      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
+
+      setFormData(prev => ({ ...prev, avatarUrl: publicUrl }))
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId: effectiveUserId,
+          updates: {
+            avatar_url: publicUrl,
+          }
+        })
+      })
+      const resData = await res.json()
+      if (resData.error) throw new Error(resData.error)
+      updateLocalCache({ avatar_url: publicUrl })
+      toast.success("Avatar photo uploaded successfully!")
+
+    } catch (error) {
+      alert('Error uploading avatar photo')
+    } finally {
+      setUploadingAvatar(false)
     }
   }
 
@@ -869,6 +1045,7 @@ export default function ProfilePage() {
       contact_number: formData.contact,
       address: formData.address,
       logo_url: formData.logoUrl,
+      avatar_url: formData.avatarUrl,
       character_url: formData.characterUrl,
       character_audio_url: formData.characterAudioUrl,
       facebook_url: isAdminLike ? formData.facebookUrl : undefined,
@@ -929,107 +1106,148 @@ export default function ProfilePage() {
           <div className="lg:col-span-7 space-y-6">
 
             {/* Header Identity Card */}
-            <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-200/60 flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left transition-all hover:shadow-md">
-              <div className="flex flex-col sm:flex-row gap-4 shrink-0 items-center">
-                {/* Logo Upload */}
-                <div
-                  onClick={() => !uploadingLogo && fileInputRef.current?.click()}
-                  className="w-24 h-24 bg-slate-50/80 rounded-full flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 transition-all shadow-sm"
-                  title="Upload Brand Logo"
-                >
-                  {uploadingLogo ? (
-                    <Loader2 className="animate-spin text-slate-400" size={24} />
-                  ) : formData.logoUrl ? (
-                    <>
-                      <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Upload size={20} className="text-slate-800 drop-shadow-md" />
+            <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-200/60 flex flex-col gap-8 transition-all hover:shadow-md">
+              <div className="flex flex-col sm:flex-row items-start justify-between gap-6 pb-6 border-b border-slate-100">
+                <div className="flex-1">
+                  <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                    {formData.businessName || (isAdminLike ? 'Your Business' : 'Your Name')}
+                  </h2>
+                  <p className="text-slate-500 text-sm leading-relaxed max-w-xl">
+                    Personalize your workspace branding, presenter profiles, and voice assets. Branding set here reflects on your landing pages and generated creatives.
+                  </p>
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {authUserName && authRole === 'agent' && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full border border-blue-100">
+                        <Shield size={14} />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Logged in as: {authUserName}</span>
                       </div>
-                    </>
-                  ) : (
-                    <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-blue-500 transition-colors">
-                      <Upload size={20} />
-                      <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Logo</span>
-                    </div>
-                  )}
-                  <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
-                </div>
-
-                {/* Character Upload */}
-                <div
-                  onClick={() => !uploadingCharacter && characterInputRef.current?.click()}
-                  className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-purple-500 hover:bg-purple-50 transition-all shadow-sm"
-                  title="Upload Custom Video Character"
-                >
-                  {uploadingCharacter ? (
-                    <div className="flex flex-col items-center justify-center p-2 text-center">
-                      <Loader2 className="animate-spin text-purple-600 mb-1" size={20} />
-                      <span className="text-[8px] font-black text-slate-400">Uploading...</span>
-                    </div>
-                  ) : formData.characterUrl ? (
-                    <>
-                      {(/\.(mp4|webm)/i.test(formData.characterUrl) || formData.characterUrl.includes('video')) ? (
-                        <video src={formData.characterUrl} muted loop playsInline autoPlay className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
-                      ) : (
-                        <img src={formData.characterUrl} alt="Character" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
-                      )}
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                    )}
+                    {formData.industry && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full border border-indigo-100">
+                        <Sparkles size={14} className="text-indigo-500" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Industry: {formData.industry.replace(/_/g, ' ')}</span>
                       </div>
-                    </>
-                  ) : (
-                    <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-purple-500 transition-colors">
-                      <Video size={20} />
-                      <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Video</span>
-                    </div>
-                  )}
-                  <input type="file" ref={characterInputRef} onChange={handleCharacterUpload} accept="video/*" className="hidden" />
-                </div>
-
-                {/* Voice Audio Upload */}
-                <div
-                  onClick={() => !uploadingAudio && audioInputRef.current?.click()}
-                  className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 transition-all shadow-sm"
-                  title="Upload Voice Sample (Upto 15s MP3/WAV)"
-                >
-                  {uploadingAudio ? (
-                    <div className="flex flex-col items-center justify-center p-2 text-center animate-pulse">
-                      <Loader2 className="animate-spin text-emerald-600 mb-1" size={20} />
-                      <span className="text-[8px] font-black text-slate-400">Uploading...</span>
-                    </div>
-                  ) : formData.characterAudioUrl ? (
-                    <div className="flex flex-col items-center gap-1.5 p-3 text-center text-emerald-600 bg-emerald-50/30 w-full h-full justify-center">
-                      <Mic size={24} className="animate-bounce" />
-                      <span className="text-[8px] font-black uppercase tracking-wider leading-none">Voice Loaded</span>
-                      <span className="text-[7px] text-slate-400 truncate max-w-full">
-                        {formData.characterAudioUrl.split('/').pop()?.slice(-15)}
-                      </span>
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-emerald-50/80 transition-opacity">
-                        <Upload size={20} className="text-slate-800 drop-shadow-md" />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-emerald-500 transition-colors">
-                      <Mic size={20} />
-                      <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Voice (Audio)</span>
-                    </div>
-                  )}
-                  <input type="file" ref={audioInputRef} onChange={handleAudioUpload} accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav" className="hidden" />
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="flex-1 mt-2">
-                <h2 className="text-2xl font-bold text-slate-900 mb-2">
-                  {formData.businessName || (isAdminLike ? 'Your Business' : 'Your Name')}
-                </h2>
-                <p className="text-slate-500 text-sm leading-relaxed max-w-md">
-                  Personalize your workspace. Branding set here reflects on your landing pages.
-                </p>
-                {authUserName && authRole === 'agent' && (
-                  <div className="mt-4 flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full w-fit border border-blue-100">
-                    <Shield size={14} />
-                    <span className="text-[11px] font-bold uppercase tracking-wider">Logged in as: {authUserName}</span>
+
+              <div>
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Workspace & Presenter Assets</h3>
+                <div className="flex flex-wrap gap-4 items-center justify-start">
+                  {/* Logo Upload */}
+                  <div
+                    onClick={() => !uploadingLogo && fileInputRef.current?.click()}
+                    className="w-24 h-24 bg-slate-50/80 rounded-full flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 transition-all shadow-sm"
+                    title="Upload Brand Logo"
+                  >
+                    {uploadingLogo ? (
+                      <Loader2 className="animate-spin text-slate-400" size={24} />
+                    ) : formData.logoUrl ? (
+                      <>
+                        <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-blue-500 transition-colors">
+                        <Upload size={20} />
+                        <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Logo</span>
+                      </div>
+                    )}
+                    <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
                   </div>
-                )}
+
+                  {/* Avatar Photo Upload */}
+                  <div
+                    onClick={() => !uploadingAvatar && avatarInputRef.current?.click()}
+                    className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 transition-all shadow-sm"
+                    title="Upload Static Avatar Photo"
+                  >
+                    {uploadingAvatar ? (
+                      <div className="flex flex-col items-center justify-center p-2 text-center">
+                        <Loader2 className="animate-spin text-indigo-600 mb-1" size={20} />
+                        <span className="text-[8px] font-black text-slate-400">Uploading...</span>
+                      </div>
+                    ) : formData.avatarUrl ? (
+                      <>
+                        <img src={formData.avatarUrl} alt="Avatar" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-indigo-500 transition-colors">
+                        <User size={20} />
+                        <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Avatar</span>
+                      </div>
+                    )}
+                    <input type="file" ref={avatarInputRef} onChange={handleAvatarUpload} accept="image/*" className="hidden" />
+                  </div>
+
+                  {/* Character Upload */}
+                  <div
+                    onClick={() => !uploadingCharacter && characterInputRef.current?.click()}
+                    className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-purple-500 hover:bg-purple-50 transition-all shadow-sm"
+                    title="Upload Custom Video Character Reference"
+                  >
+                    {uploadingCharacter ? (
+                      <div className="flex flex-col items-center justify-center p-2 text-center">
+                        <Loader2 className="animate-spin text-purple-600 mb-1" size={20} />
+                        <span className="text-[8px] font-black text-slate-400">Uploading...</span>
+                      </div>
+                    ) : formData.characterUrl ? (
+                      <>
+                        {(/\.(mp4|webm)/i.test(formData.characterUrl) || formData.characterUrl.includes('video')) ? (
+                          <video src={formData.characterUrl} muted loop playsInline autoPlay className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                        ) : (
+                          <img src={formData.characterUrl} alt="Character" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-purple-500 transition-colors">
+                        <Video size={20} />
+                        <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Video (Ref)</span>
+                      </div>
+                    )}
+                    <input type="file" ref={characterInputRef} onChange={handleCharacterUpload} accept="video/*" className="hidden" />
+                  </div>
+
+                  {/* Voice Audio Upload */}
+                  <div
+                    onClick={() => !uploadingAudio && audioInputRef.current?.click()}
+                    className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 transition-all shadow-sm"
+                    title="Upload Voice Sample (Upto 15s MP3/WAV)"
+                  >
+                    {uploadingAudio ? (
+                      <div className="flex flex-col items-center justify-center p-2 text-center animate-pulse">
+                        <Loader2 className="animate-spin text-emerald-600 mb-1" size={20} />
+                        <span className="text-[8px] font-black text-slate-400">Uploading...</span>
+                      </div>
+                    ) : formData.characterAudioUrl ? (
+                      <div className="flex flex-col items-center gap-1.5 p-3 text-center text-emerald-600 bg-emerald-50/30 w-full h-full justify-center relative">
+                        <Mic size={24} className="animate-bounce" />
+                        <span className="text-[8px] font-black uppercase tracking-wider leading-none">Voice Loaded</span>
+                        <span className="text-[7px] text-slate-400 truncate max-w-full">
+                          {formData.characterAudioUrl.split('/').pop()?.slice(-15)}
+                        </span>
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-emerald-50/80 transition-opacity">
+                          <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-emerald-500 transition-colors">
+                        <Mic size={20} />
+                        <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Voice (Audio)</span>
+                      </div>
+                    )}
+                    <input type="file" ref={audioInputRef} onChange={handleAudioUpload} accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav" className="hidden" />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1183,7 +1401,32 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                {/* DOMAIN MANAGER SECTION (Hidden) */}
+                {/* Custom Domains Section */}
+                {isAdminLike && (
+                  <div className="space-y-4 pt-4 border-t border-slate-100 mt-4">
+                    <DomainManager
+                      initialDomain={domainData.domain}
+                      verifyToken={domainData.token}
+                      verifyStatus={domainData.status}
+                      userId={targetUserId || userId}
+                      onDomainUpdate={() => fetchProfile(true)}
+                      type="catalogue"
+                      label="Custom Landing Page Domain"
+                    />
+
+                    {role === 'agency' && (
+                      <DomainManager
+                        initialDomain={whitelabelDomainData.domain}
+                        verifyToken={whitelabelDomainData.token}
+                        verifyStatus={whitelabelDomainData.status}
+                        userId={targetUserId || userId}
+                        onDomainUpdate={() => fetchProfile(true)}
+                        type="platform"
+                        label="White-Label Platform Domain (Agency Only)"
+                      />
+                    )}
+                  </div>
+                )}
               </div>
 
               <button
@@ -1248,7 +1491,10 @@ export default function ProfilePage() {
                           <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
                             {fbPages.map(page => (
                               <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3.5 rounded-2xl text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-blue-200 ring-2 ring-blue-500/20' : 'hover:bg-slate-200/50 bg-slate-100/50'}`}>
-                                <span className={`text-sm font-bold truncate pr-3 ${selectedPageId === page.id ? 'text-blue-900' : 'text-slate-600'}`}>{page.name}</span>
+                                <div className="flex flex-col truncate pr-3">
+                                  <span className={`text-sm font-bold truncate ${selectedPageId === page.id ? 'text-blue-900' : 'text-slate-600'}`}>{page.name}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {page.id}</span>
+                                </div>
                                 {selectedPageId === page.id && <CheckCircle size={18} className="text-blue-600 shrink-0" />}
                               </button>
                             ))}
@@ -1274,7 +1520,10 @@ export default function ProfilePage() {
                           <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
                             {adAccounts.map(account => (
                               <button key={account.id} onClick={() => handleAdAccountSelect(account.id)} className={`w-full flex items-center justify-between p-3.5 rounded-2xl text-left transition-all ${selectedAdAccountId === account.id ? 'bg-white shadow-sm border border-emerald-200 ring-2 ring-emerald-500/20' : 'hover:bg-slate-200/50 bg-slate-100/50'}`}>
-                                <span className={`text-sm font-bold truncate pr-3 ${selectedAdAccountId === account.id ? 'text-emerald-900' : 'text-slate-600'}`}>{account.name}</span>
+                                <div className="flex flex-col truncate pr-3">
+                                  <span className={`text-sm font-bold truncate ${selectedAdAccountId === account.id ? 'text-emerald-900' : 'text-slate-600'}`}>{account.name}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {account.id}</span>
+                                </div>
                                 {selectedAdAccountId === account.id && <CheckCircle size={18} className="text-emerald-600 shrink-0" />}
                               </button>
                             ))}
@@ -1305,7 +1554,10 @@ export default function ProfilePage() {
                               <button key={pixel.id} onClick={() => handlePixelSelect(pixel.id)} className={`w-full flex items-center justify-between p-3.5 rounded-2xl text-left transition-all ${selectedPixelId === pixel.id ? 'bg-white shadow-sm border border-purple-200 ring-2 ring-purple-500/20' : 'hover:bg-slate-200/50 bg-slate-100/50'}`}>
                                 <div className="flex items-center gap-3 truncate pr-3">
                                   <Target size={16} className={selectedPixelId === pixel.id ? 'text-purple-600 shrink-0' : 'text-slate-400 shrink-0'} />
-                                  <span className={`text-sm font-bold truncate ${selectedPixelId === pixel.id ? 'text-purple-900' : 'text-slate-600'}`}>{pixel.name}</span>
+                                  <div className="flex flex-col truncate">
+                                    <span className={`text-sm font-bold truncate ${selectedPixelId === pixel.id ? 'text-purple-900' : 'text-slate-600'}`}>{pixel.name}</span>
+                                    <span className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {pixel.id}</span>
+                                  </div>
                                 </div>
                                 {selectedPixelId === pixel.id && <CheckCircle size={18} className="text-purple-600 shrink-0" />}
                               </button>
@@ -1356,6 +1608,113 @@ export default function ProfilePage() {
             )}
 
             {isAdminLike && authRole !== 'agent' && (
+              <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md mb-6">
+                <div className="p-6 sm:p-7">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3.5">
+                      <div className="bg-red-100 text-red-600 p-3 rounded-full shadow-md shadow-red-500/10">
+                        <Calendar size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-base text-slate-900">Google Calendar</h4>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5">
+                          {isGoogleConnected ? 'Connected & Active' : 'Sync schedule to book leads'}
+                        </p>
+                      </div>
+                    </div>
+                    {isGoogleConnected ? (
+                      <button onClick={handleDisconnectGoogle} disabled={isDisconnectingGoogle} className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-full font-bold transition-colors">
+                        {isDisconnectingGoogle ? '...' : 'Unlink'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleConnectGoogle}
+                        disabled={isConnectingGoogle}
+                        className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-full text-xs font-bold shadow-sm transition-colors disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {isConnectingGoogle ? <Loader2 size={14} className="animate-spin" /> : null}
+                        {isConnectingGoogle ? 'Connecting...' : 'Connect'}
+                      </button>
+                    )}
+                  </div>
+
+                  {isGoogleConnected && (
+                    <div className="space-y-4 pt-4 border-t border-slate-100 mt-4">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 block mb-1.5 font-black">Target Google Calendar</label>
+                        {isLoadingCalendars ? (
+                          <div className="text-xs text-slate-400 py-2.5 pl-2 font-medium">Loading calendars...</div>
+                        ) : (
+                          <select
+                            value={googleCalendarId}
+                            onChange={(e) => setGoogleCalendarId(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 py-2.5 px-4 rounded-2xl text-xs font-bold outline-none cursor-pointer text-slate-800 focus:border-red-500 transition-all"
+                          >
+                            <option value="primary">Primary Calendar (Default)</option>
+                            {googleCalendars
+                              .filter(c => c.id !== 'primary')
+                              .map(c => (
+                                <option key={c.id} value={c.id}>
+                                  {c.summary}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                        <p className="text-[10px] text-slate-400 mt-1 ml-1 leading-relaxed">
+                          New appointment events will be created and checked for availability on this calendar.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 block mb-1.5 font-black">Slot Duration</label>
+                        <select
+                          value={googleBookingDuration}
+                          onChange={(e) => setGoogleBookingDuration(Number(e.target.value))}
+                          className="w-full bg-slate-50 border border-slate-200 py-2.5 px-4 rounded-2xl text-xs font-bold outline-none cursor-pointer text-slate-800 focus:border-red-500 transition-all"
+                        >
+                          <option value={15}>15 Minutes</option>
+                          <option value={30}>30 Minutes</option>
+                          <option value={45}>45 Minutes</option>
+                          <option value={60}>60 Minutes</option>
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 block mb-1.5 font-black">Start Time</label>
+                          <input
+                            type="time"
+                            value={googleBookingStart}
+                            onChange={(e) => setGoogleBookingStart(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 py-2 px-3 rounded-2xl text-xs font-bold outline-none text-slate-800 focus:border-red-500 transition-all"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 block mb-1.5 font-black">End Time</label>
+                          <input
+                            type="time"
+                            value={googleBookingEnd}
+                            onChange={(e) => setGoogleBookingEnd(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 py-2 px-3 rounded-2xl text-xs font-bold outline-none text-slate-800 focus:border-red-500 transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handleSaveGoogleSettings}
+                        disabled={isSavingGoogleSettings}
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-5 rounded-full transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                      >
+                        {isSavingGoogleSettings ? <Loader2 size={14} className="animate-spin" /> : null}
+                        {isSavingGoogleSettings ? 'Saving...' : 'Save Calendar Settings'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {isAdminLike && authRole !== 'agent' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
                 <button 
                   onClick={() => router.push(`/dashboard/billing${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
@@ -1401,6 +1760,30 @@ export default function ProfilePage() {
               </div>
             )}
 
+            {/* REFERENCE LIBRARY LINK - super_admin only */}
+            {authRole === 'super_admin' && (
+              <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
+                <button 
+                  onClick={() => router.push(`/dashboard/reference-library${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  className="w-full p-6 sm:p-7 flex items-center justify-between hover:bg-slate-50/50 transition-all group"
+                >
+                  <div className="flex items-center gap-4 text-left">
+                    <div className="bg-purple-100 text-purple-600 p-3.5 rounded-2xl group-hover:scale-105 transition-transform">
+                      <ImageIcon size={22} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                        Reference Library
+                        <span className="bg-purple-50 text-purple-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">Super Admin</span>
+                      </h4>
+                      <p className="text-xs text-slate-500 font-medium mt-1">Manage visual references for Premium, EDM & High Converting strategies</p>
+                    </div>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </div>
+            )}
+
             <div className="bg-white rounded-[2rem] shadow-sm border border-red-100 overflow-hidden transition-all hover:border-red-200 hover:shadow-md">
               <button
                 onClick={handleSignOut}
@@ -1442,6 +1825,20 @@ export default function ProfilePage() {
               <h3 className="text-xl font-bold text-slate-900 mb-2">Uploading Reference Video</h3>
               <p className="text-slate-500 text-sm leading-relaxed">
                 We are uploading your reference video directly to the secure storage bucket. Please don't close this tab.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {uploadingAvatar && (
+        <div className="fixed inset-0 z-[20000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-white max-w-md w-full rounded-[2rem] p-8 shadow-2xl border border-slate-100 flex flex-col items-center text-center space-y-5">
+            <Loader2 className="animate-spin text-indigo-600 w-16 h-16" strokeWidth={2.5} />
+            <div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Uploading Avatar Photo</h3>
+              <p className="text-slate-500 text-sm leading-relaxed">
+                We are uploading your avatar photo and analyzing its physical characteristics using AI. Please don't close this tab.
               </p>
             </div>
           </div>

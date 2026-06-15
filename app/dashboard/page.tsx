@@ -251,7 +251,7 @@ export default function ProductsPage() {
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files)
       const currentCount = selectedFiles.length
-      const limit = 10
+      const limit = 20
 
       if (currentCount + newFiles.length > limit) {
           toast.error(`Maximum ${limit} images allowed per product.`)
@@ -268,7 +268,7 @@ export default function ProductsPage() {
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files)
       const currentCount = existingImages.length + editFiles.length
-      const limit = 10
+      const limit = 20
 
       if (currentCount + newFiles.length > limit) {
           toast.error(`Maximum ${limit} images allowed per product.`)
@@ -296,8 +296,8 @@ export default function ProductsPage() {
         return
     }
 
-    if (existingImages.length + editFiles.length > 10) {
-        toast.error("Maximum 10 images allowed.")
+    if (existingImages.length + editFiles.length > 20) {
+        toast.error("Maximum 20 images allowed.")
         return
     }
 
@@ -436,7 +436,8 @@ export default function ProductsPage() {
           propImages: propImages,
           templateUrl: null,
           aspectRatio: '4:5',
-          model: 'google/nano-banana-2'
+          model: 'google/nano-banana-2',
+          creativeCategory: 'premium'
       }
 
       const urlParams = new URLSearchParams(window.location.search)
@@ -501,8 +502,8 @@ export default function ProductsPage() {
         toast.error("Please enter a Product/Service Name.")
         return
     }
-    if (selectedFiles.length > 10) {
-        toast.error("Maximum 10 images allowed.")
+    if (selectedFiles.length > 20) {
+        toast.error("Maximum 20 images allowed.")
         return
     }
 

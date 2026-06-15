@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon, Clock, Trash2, Globe, Languages } from 'lucide-react'
+import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon, Clock, Trash2, Globe, Languages, Mic, AlertCircle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { toast } from 'sonner'
@@ -42,6 +42,9 @@ type Profile = {
   brand_color: string
   mission_statement: string
   character_url?: string
+  character_audio_url?: string
+  avatar_url?: string
+  avatar_description?: string
 }
 
 
@@ -147,6 +150,7 @@ export default function CreationPage() {
   const [selectedRatio, setSelectedRatio] = useState('4:5')
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<'google/nano-banana-2' | 'gpt/gpt-image-2-text-to-image'>('gpt/gpt-image-2-text-to-image')
+  const [creativeCategory, setCreativeCategory] = useState('Premium')
   
   // Custom Reference State
   const [uploadedRefUrl, setUploadedRefUrl] = useState<string | null>(null)
@@ -156,8 +160,127 @@ export default function CreationPage() {
   // NEW: Creation Mode Toggle
   const [creationMode, setCreationMode] = useState<'image' | 'video'>('image')
   
-  // Character speaker video/reference toggle
-  const [useCharacterVideo, setUseCharacterVideo] = useState(true)
+  // Presenter settings mode: 'video' (reference video), 'avatar' (avatar photo), or 'none'
+  const [presenterMode, setPresenterMode] = useState<'video' | 'avatar' | 'none'>('none')
+
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [uploadingVideo, setUploadingVideo] = useState(false)
+  const [uploadingAudio, setUploadingAudio] = useState(false)
+
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+  const videoInputRef = useRef<HTMLInputElement>(null)
+  const audioInputRef = useRef<HTMLInputElement>(null)
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0]
+      if (!file || !targetUserId) return
+      if (file.size > 15 * 1024 * 1024) {
+        toast.error("Avatar image size exceeds 15MB limit.")
+        return
+      }
+      setUploadingAvatar(true)
+      const fileExt = file.name.split('.').pop()
+      const fileName = `avatar-${targetUserId}-${Date.now()}.${fileExt}`
+      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
+      if (uploadError) throw uploadError
+      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
+
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId,
+          updates: { avatar_url: publicUrl }
+        })
+      })
+      const resData = await res.json()
+      if (resData.error) throw new Error(resData.error)
+
+      setProfile(prev => prev ? { ...prev, avatar_url: publicUrl } : null)
+      setPresenterMode('avatar')
+      toast.success("Avatar photo uploaded and analyzed successfully!")
+    } catch (err: any) {
+      console.error(err)
+      toast.error("Failed to upload avatar photo.")
+    } finally {
+      setUploadingAvatar(false)
+    }
+  }
+
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0]
+      if (!file || !targetUserId) return
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error("Video size exceeds 50MB limit.")
+        return
+      }
+      setUploadingVideo(true)
+      const fileExt = file.name.split('.').pop()
+      const fileName = `character-${targetUserId}-${Date.now()}.${fileExt}`
+      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
+      if (uploadError) throw uploadError
+      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
+
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId,
+          updates: { character_url: publicUrl }
+        })
+      })
+      const resData = await res.json()
+      if (resData.error) throw new Error(resData.error)
+
+      const updatedProfile = resData.profile || { ...profile, character_url: resData.profile?.character_url || publicUrl, character_audio_url: resData.profile?.character_audio_url }
+      setProfile(prev => prev ? { ...prev, ...updatedProfile } : null)
+      setPresenterMode('video')
+      toast.success("Reference video uploaded and automatically trimmed/normalized successfully!")
+    } catch (err: any) {
+      console.error(err)
+      toast.error("Failed to upload reference video.")
+    } finally {
+      setUploadingVideo(false)
+    }
+  }
+
+  const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0]
+      if (!file || !targetUserId) return
+      if (file.size > 15 * 1024 * 1024) {
+        toast.error("Audio size exceeds 15MB limit.")
+        return
+      }
+      setUploadingAudio(true)
+      const fileExt = file.name.split('.').pop()
+      const fileName = `voice-sample-${targetUserId}-${Date.now()}.${fileExt}`
+      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
+      if (uploadError) throw uploadError
+      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
+
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId,
+          updates: { character_audio_url: publicUrl }
+        })
+      })
+      const resData = await res.json()
+      if (resData.error) throw new Error(resData.error)
+
+      setProfile(prev => prev ? { ...prev, character_audio_url: publicUrl } : null)
+      toast.success("Voice audio sample uploaded successfully!")
+    } catch (err: any) {
+      console.error(err)
+      toast.error("Failed to upload voice audio sample.")
+    } finally {
+      setUploadingAudio(false)
+    }
+  }
 
   // Dynamic Video Duration State (15s, 30s, 45s, 60s)
   const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 45 | 60>(30)
@@ -219,6 +342,15 @@ export default function CreationPage() {
       const { data: profileData } = await supabase.from('profiles').select('*').eq('id', tUserId).single()
       if (profileData) {
           setProfile(profileData)
+          if (profileData.character_url && profileData.avatar_url) {
+              setPresenterMode('video')
+          } else if (profileData.character_url) {
+              setPresenterMode('video')
+          } else if (profileData.avatar_url) {
+              setPresenterMode('avatar')
+          } else {
+              setPresenterMode('none')
+          }
       }
 
       const { data, error: dbError } = await supabase
@@ -250,6 +382,7 @@ export default function CreationPage() {
     instructions: string,
     quantity: number,
     isOrganic: boolean,
+    creativeCategory: string,
     angles: any[],
     selectedAngles: number[],
     generatedAssets: any[],
@@ -260,7 +393,8 @@ export default function CreationPage() {
     product: null,
     instructions: '',
     quantity: 5,
-    isOrganic: true,
+    isOrganic: false,
+    creativeCategory: 'Premium',
     angles: [],
     selectedAngles: [],
     generatedAssets: [],
@@ -278,7 +412,8 @@ export default function CreationPage() {
               product: creativeFlow.product,
               quantity: creativeFlow.quantity,
               instructions: creativeFlow.instructions,
-              previousAngles: (creativeFlow.angles || []).map((a: any) => a.title).join(', ')
+              previousAngles: (creativeFlow.angles || []).map((a: any) => a.title).join(', '),
+              creativeCategory: creativeFlow.creativeCategory || 'Premium'
           })
       });
       const strategyData = await strategyRes.json();
@@ -313,10 +448,12 @@ export default function CreationPage() {
 
             const payload = {
                 propertyTitle: creativeFlow.product?.title,
-                propertyDescription: (creativeFlow.product?.description || "") + "\n\nANGLE: " + angle.title + "\nCONCEPT: " + angle.visual_concept,
-                userInstructions: creativeFlow.instructions,
+                propertyDescription: creativeFlow.product?.description || "",
+                creativeCategory: creativeFlow.creativeCategory || 'Premium',
+                styleAesthetic: angle.title ? `${angle.title} - ${angle.visual_concept}` : undefined,
+                userInstructions: creativeFlow.instructions + (angle.visual_concept ? `\nVisual Concept to follow: ${angle.visual_concept}` : ""),
                 propImages: propImages,
-                isOrganic: creativeFlow.isOrganic,
+                isOrganic: creativeFlow.isOrganic || angle.title?.toLowerCase().includes('raw') || angle.title?.toLowerCase().includes('smartphone') || creativeFlow.creativeCategory === 'High Converting',
                 aspectRatio: "4:5",
                 model: 'image-2.0',
                 contactNumber: profile?.contact_number,
@@ -420,7 +557,7 @@ export default function CreationPage() {
                 userInstructions: '', // None yet during selection
                 images: refImages,
                 imageDescriptions,
-                useCharacterVideo,
+                presenterType: presenterMode,
                 duration: selectedDuration,
                 language: videoLanguage
             })
@@ -490,7 +627,7 @@ export default function CreationPage() {
                 images: refImages,
                 imageDescriptions,
                 variation: true,
-                useCharacterVideo,
+                presenterType: presenterMode,
                 duration: selectedDuration,
                 language: videoLanguage
             })
@@ -555,7 +692,7 @@ export default function CreationPage() {
                 script,
                 images: refImages,
                 imageDescriptions,
-                useCharacterVideo,
+                presenterType: presenterMode,
                 customInstructions: script.concept?.description || script.concept?.visualConcept || '',
                 prompts,
                 language: videoLanguage
@@ -602,7 +739,7 @@ export default function CreationPage() {
                 script,
                 images: refImages,
                 imageDescriptions,
-                useCharacterVideo,
+                presenterType: presenterMode,
                 customInstructions: script.concept?.description || script.concept?.visualConcept || '',
                 preview: true,
                 language: videoLanguage
@@ -675,7 +812,7 @@ export default function CreationPage() {
                     propertyId: selectedPropId || null,
                     userInstructions: userText,
                     images: refImages,
-                    useCharacterVideo,
+                    presenterType: presenterMode,
                     duration: selectedDuration,
                     language: videoLanguage
                 })
@@ -728,7 +865,9 @@ export default function CreationPage() {
         propImages: [...propImages, ...chatAttachments],
         templateUrl: activeReferenceUrl, 
         aspectRatio: selectedRatio,
-        model: selectedModel 
+        model: selectedModel,
+        creativeCategory: creativeCategory,
+        isOrganic: creativeCategory === 'High Converting'
     })
   })
       
@@ -917,6 +1056,24 @@ export default function CreationPage() {
                 </div>
             )}
 
+            {creationMode === 'image' && (
+                <div className="relative w-full">
+                    <Sparkles size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-purple-500 animate-pulse" />
+                    <select 
+                        value={creativeCategory}
+                        onChange={(e) => setCreativeCategory(e.target.value)}
+                        className="w-full bg-purple-50/50 hover:bg-purple-100/50 border border-purple-100 text-purple-900 text-[11px] font-bold rounded-[1rem] py-2.5 pl-9 pr-8 appearance-none outline-none focus:ring-2 focus:ring-purple-500/20 transition-all cursor-pointer h-full"
+                    >
+                        {[
+                          'Premium',
+                          'EDM',
+                          'High Converting'
+                        ].map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
+                </div>
+            )}
+
             {/* Language Toggle (only in video mode) */}
             {creationMode === 'video' && (
                 <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full animate-in fade-in duration-200">
@@ -961,52 +1118,210 @@ export default function CreationPage() {
                 )}
             </div>
         </div>
-               {/* ROW 2: Templates & Reference Upload (Grid Layout) */}
-        {creationMode === 'video' ? (
-            <div className="px-4 flex gap-2.5 w-full overflow-x-auto scrollbar-hide py-1 animate-in fade-in duration-300">
-                {/* 1. Character Image Card (Speaker) */}
-                <div 
-                    onClick={() => {
-                        if (profile?.character_url) {
-                            setUseCharacterVideo(prev => !prev);
-                        } else {
-                            toast.info("Upload a character photo or video in Profile settings first!");
-                        }
-                    }}
-                    className={`relative w-16 h-16 rounded-[1.25rem] overflow-hidden flex-shrink-0 bg-white flex flex-col items-center justify-center shadow-sm cursor-pointer transition-all duration-300 ${
-                        useCharacterVideo 
-                            ? 'border-2 border-blue-500 ring-2 ring-blue-100/50 scale-100' 
-                            : 'border border-slate-200 opacity-40 grayscale hover:opacity-75 scale-95'
-                    }`}
-                >
-                    {profile?.character_url ? (
-                        <>
-                            {(/\.(mp4|webm)/i.test(profile.character_url) || profile.character_url.includes('video')) ? (
-                                <video src={profile.character_url} muted loop playsInline autoPlay className="w-full h-full object-cover" />
-                            ) : (
-                                <img src={profile.character_url} className="w-full h-full object-cover" alt="Character" />
-                            )}
-                            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/10 to-transparent flex items-end justify-center pb-1">
-                                <span className="text-white text-[8px] font-black uppercase tracking-wider text-center w-full truncate">
-                                    {useCharacterVideo ? 'Speaker ON' : 'Speaker OFF'}
-                                </span>
+
+        {/* Presenter Settings Panel */}
+        {creationMode === 'video' && (
+            <div className="px-4 mb-3 animate-in fade-in duration-300">
+                <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm space-y-3.5">
+                    {/* Header */}
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                        <div className="flex items-center gap-2">
+                            <div className="bg-indigo-50 text-indigo-600 p-1.5 rounded-xl">
+                                <User size={16} />
                             </div>
-                            {useCharacterVideo && (
-                                <div className="absolute top-1 right-1 bg-blue-500 text-white rounded-full p-0.5 shadow-md flex items-center justify-center z-10 animate-in zoom-in duration-200">
+                            <div>
+                                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Presenter Configuration</h3>
+                                <p className="text-[10px] text-slate-400">Select presenter type for Kie.ai Seedance 2.0 UGC video generation</p>
+                            </div>
+                        </div>
+                        {presenterMode !== 'none' && (
+                            <span className="text-[9px] font-extrabold uppercase bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-100/50">
+                                Active: {presenterMode === 'video' ? 'Reference Video' : 'Avatar Photo'}
+                            </span>
+                        )}
+                    </div>
+
+                    {/* Selector Cards */}
+                    <div className="grid grid-cols-3 gap-2.5">
+                        {/* Option 1: Reference Video */}
+                        <div
+                            onClick={() => {
+                                if (profile?.character_url) {
+                                    setPresenterMode('video');
+                                } else {
+                                    toast.info("Upload a character reference video first!");
+                                }
+                            }}
+                            className={`relative border p-3 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 ${
+                                presenterMode === 'video'
+                                    ? 'border-purple-500 bg-purple-50/20 ring-2 ring-purple-100'
+                                    : 'border-slate-200 hover:border-slate-300 bg-slate-50/20'
+                            } ${!profile?.character_url ? 'opacity-50 cursor-not-allowed bg-slate-50/40' : ''}`}
+                        >
+                            {profile?.character_url ? (
+                                <div className="w-10 h-10 rounded-full overflow-hidden mb-1.5 border border-purple-200/50">
+                                    {(/\.(mp4|webm)/i.test(profile.character_url) || profile.character_url.includes('video')) ? (
+                                        <video src={profile.character_url} muted loop playsInline autoPlay className="w-full h-full object-cover" />
+                                    ) : (
+                                        <img src={profile.character_url} className="w-full h-full object-cover" alt="Video character" />
+                                    )}
+                                </div>
+                            ) : (
+                                <VideoIcon size={18} className="text-slate-400 mb-1.5" />
+                            )}
+                            <span className="text-[10px] font-black text-slate-800">Reference Video</span>
+                            <span className="text-[8px] text-slate-400 mt-0.5 leading-none">
+                                {profile?.character_url ? 'Configured' : 'Not Uploaded'}
+                            </span>
+                            {presenterMode === 'video' && (
+                                <div className="absolute top-1.5 right-1.5 bg-purple-500 text-white rounded-full p-0.5 shadow-sm">
                                     <Check size={8} strokeWidth={4} />
                                 </div>
                             )}
-                        </>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center text-center p-2">
-                            <User size={16} className="text-slate-400" />
-                            <span className="text-[8px] font-bold text-slate-400 leading-tight">No Character</span>
+                        </div>
+
+                        {/* Option 2: Avatar Photo */}
+                        <div
+                            onClick={() => {
+                                if (profile?.avatar_url) {
+                                    setPresenterMode('avatar');
+                                } else {
+                                    toast.info("Upload a presenter avatar photo first!");
+                                }
+                            }}
+                            className={`relative border p-3 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 ${
+                                presenterMode === 'avatar'
+                                    ? 'border-indigo-500 bg-indigo-50/20 ring-2 ring-indigo-100'
+                                    : 'border-slate-200 hover:border-slate-300 bg-slate-50/20'
+                            } ${!profile?.avatar_url ? 'opacity-50 cursor-not-allowed bg-slate-50/40' : ''}`}
+                        >
+                            {profile?.avatar_url ? (
+                                <div className="w-10 h-10 rounded-full overflow-hidden mb-1.5 border border-indigo-200/50">
+                                    <img src={profile.avatar_url} className="w-full h-full object-cover" alt="Avatar character" />
+                                </div>
+                            ) : (
+                                <User size={18} className="text-slate-400 mb-1.5" />
+                            )}
+                            <span className="text-[10px] font-black text-slate-800">Avatar Photo</span>
+                            <span className="text-[8px] text-slate-400 mt-0.5 leading-none">
+                                {profile?.avatar_url ? 'Configured' : 'Not Uploaded'}
+                            </span>
+                            {presenterMode === 'avatar' && (
+                                <div className="absolute top-1.5 right-1.5 bg-indigo-500 text-white rounded-full p-0.5 shadow-sm">
+                                    <Check size={8} strokeWidth={4} />
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Option 3: Disable Presenter */}
+                        <div
+                            onClick={() => setPresenterMode('none')}
+                            className={`relative border p-3 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 ${
+                                presenterMode === 'none'
+                                    ? 'border-slate-500 bg-slate-100 ring-2 ring-slate-200'
+                                    : 'border-slate-200 hover:border-slate-300 bg-slate-50/20'
+                            }`}
+                        >
+                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-1.5 text-slate-400">
+                                <X size={18} />
+                            </div>
+                            <span className="text-[10px] font-black text-slate-800">No Presenter</span>
+                            <span className="text-[8px] text-slate-400 mt-0.5 leading-none">Generic Video</span>
+                            {presenterMode === 'none' && (
+                                <div className="absolute top-1.5 right-1.5 bg-slate-600 text-white rounded-full p-0.5 shadow-sm">
+                                    <Check size={8} strokeWidth={4} />
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Conditional Upload Panel (If missing selection requirements) */}
+                    {((presenterMode === 'video' && (!profile?.character_url || !profile?.character_audio_url)) ||
+                      (presenterMode === 'avatar' && !profile?.avatar_url) ||
+                      (!profile?.character_url && !profile?.avatar_url)) && (
+                        <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 space-y-2.5 animate-in slide-in-from-top-2 duration-300">
+                            <div className="flex items-center gap-1.5 text-slate-600">
+                                <AlertCircle size={14} className="text-amber-500" />
+                                <span className="text-[10px] font-bold">Missing Required Presenter Assets</span>
+                            </div>
+                            
+                            <div className="flex flex-col sm:flex-row gap-2">
+                                {/* 1. Upload Avatar Photo */}
+                                {(!profile?.avatar_url || presenterMode === 'avatar') && (
+                                    <button
+                                        type="button"
+                                        onClick={() => avatarInputRef.current?.click()}
+                                        disabled={uploadingAvatar}
+                                        className="flex-1 bg-white hover:bg-indigo-50/30 text-slate-700 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 py-2 px-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                                    >
+                                        {uploadingAvatar ? (
+                                            <Loader2 size={12} className="animate-spin text-indigo-600" />
+                                        ) : (
+                                            <Upload size={12} />
+                                        )}
+                                        {profile?.avatar_url ? 'Update Avatar Photo' : 'Upload Avatar Photo'}
+                                    </button>
+                                )}
+
+                                {/* 2. Upload Reference Video */}
+                                {(!profile?.character_url || presenterMode === 'video') && (
+                                    <button
+                                        type="button"
+                                        onClick={() => videoInputRef.current?.click()}
+                                        disabled={uploadingVideo}
+                                        className="flex-1 bg-white hover:bg-purple-50/30 text-slate-700 hover:text-purple-600 border border-slate-200 hover:border-purple-200 py-2 px-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                                    >
+                                        {uploadingVideo ? (
+                                            <Loader2 size={12} className="animate-spin text-purple-600" />
+                                        ) : (
+                                            <Upload size={12} />
+                                        )}
+                                        {profile?.character_url ? 'Update Ref Video' : 'Upload Ref Video'}
+                                    </button>
+                                )}
+
+                                {/* 3. Upload Audio sample (required only for Video presenter) */}
+                                {(presenterMode === 'video' || (!profile?.character_url && !profile?.avatar_url)) && (
+                                    <button
+                                        type="button"
+                                        onClick={() => audioInputRef.current?.click()}
+                                        disabled={uploadingAudio}
+                                        className={`flex-1 bg-white hover:bg-emerald-50/30 border py-2 px-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs ${
+                                            profile?.character_audio_url 
+                                                ? 'text-emerald-700 border-emerald-200 hover:border-emerald-300' 
+                                                : 'text-slate-700 border-slate-200 hover:border-emerald-200'
+                                        }`}
+                                    >
+                                        {uploadingAudio ? (
+                                            <Loader2 size={12} className="animate-spin text-emerald-600" />
+                                        ) : (
+                                            <Mic size={12} className={profile?.character_audio_url ? "text-emerald-500 animate-pulse" : ""} />
+                                        )}
+                                        {profile?.character_audio_url ? 'Voice Loaded' : 'Upload Voice (Audio)'}
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Descriptions / Warnings */}
+                            {presenterMode === 'video' && !profile?.character_audio_url && (
+                                <p className="text-[9px] text-amber-600 font-bold leading-tight">
+                                    ⚠️ Cloning voice requires a voice audio sample. Upload an audio sample (up to 15s MP3/WAV) to proceed.
+                                </p>
+                            )}
+
+                            {/* Hidden File Inputs */}
+                            <input type="file" ref={avatarInputRef} onChange={handleAvatarUpload} className="hidden" accept="image/*" />
+                            <input type="file" ref={videoInputRef} onChange={handleVideoUpload} className="hidden" accept="video/*" />
+                            <input type="file" ref={audioInputRef} onChange={handleAudioUpload} className="hidden" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav" />
                         </div>
                     )}
                 </div>
+            </div>
+        )}
 
-                {/* Divider */}
-                <div className="w-[1px] bg-slate-200/80 h-10 my-auto flex-shrink-0" />
+               {/* ROW 2: Templates & Reference Upload (Grid Layout) */}
+        {creationMode === 'video' ? (
+            <div className="px-4 flex gap-2.5 w-full overflow-x-auto scrollbar-hide py-1 animate-in fade-in duration-300">
 
                 {/* 2. Product Catalog Images (Filtered with Toggle selection capability) */}
                 {(() => {
@@ -1659,16 +1974,29 @@ function CreativeFlowModal({
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">3. Vibe</label>
-                    <button 
-                      onClick={() => setCreativeFlow((prev: any) => ({ ...prev, isOrganic: !prev.isOrganic }))}
-                      className={`w-full py-3.5 px-4 rounded-2xl text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
-                        creativeFlow.isOrganic ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-blue-50 border-blue-200 text-blue-700'
-                      }`}
-                    >
-                      {creativeFlow.isOrganic ? <Zap size={16} /> : <ImageIcon size={16} />}
-                      {creativeFlow.isOrganic ? 'Raw & Organic' : 'Hyper-Realistic Studio'}
-                    </button>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">3. Creative Strategy</label>
+                    <div className="relative">
+                      <Sparkles size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-500 animate-pulse pointer-events-none" />
+                      <select 
+                        value={creativeFlow.creativeCategory || 'Premium'}
+                        onChange={(e) => {
+                          const cat = e.target.value;
+                          setCreativeFlow((prev: any) => ({ 
+                            ...prev, 
+                            creativeCategory: cat,
+                            isOrganic: cat === 'High Converting'
+                          }));
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 py-3.5 pl-11 pr-10 rounded-2xl text-sm font-bold outline-none cursor-pointer hover:bg-slate-100/50 appearance-none transition-all h-[52px]"
+                      >
+                        {[
+                          'Premium',
+                          'EDM',
+                          'High Converting'
+                        ].map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      </select>
+                      <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    </div>
                   </div>
                 </div>
   

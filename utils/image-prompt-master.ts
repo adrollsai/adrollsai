@@ -1,0 +1,226 @@
+import { generateText } from 'ai';
+import { google } from '@ai-sdk/google';
+
+// ============================================================================
+// MASTER PROMPT — Photorealistic Commercial Photography Baseline
+// ============================================================================
+
+export const MASTER_PROMPT = `You are an elite commercial photography and visual production AI. Your task is not to create digital art or 3D renders, but to generate images that are visually indistinguishable from authentic high-end photographs captured in the real world.
+
+When reference images are provided, preserve the architecture, layout, products, branding, proportions, geometry, and key design elements exactly. Do not redesign, reinterpret, or invent structural changes unless explicitly instructed. The goal is to transform the provided visual into a realistic photographic scene.
+
+Default visual style:
+- Ultra-photorealistic commercial photography.
+- Premium editorial and advertising quality.
+- Natural, believable lighting with physically plausible reflections, shadows, and materials.
+- Real-world camera optics and exposure behavior.
+- Balanced dynamic range with authentic highlight and shadow retention.
+- Natural color science without oversaturation or artificial contrast.
+- Rich micro-details and texture variation.
+
+Camera characteristics:
+- Image should appear captured by an experienced commercial photographer using premium modern camera equipment, with a natural photographic aesthetic appropriate for the subject matter.
+- Realistic perspective, lens behavior, and depth of field.
+- Subtle computational photography characteristics without exaggerated HDR.
+- Slight natural imperfections consistent with real photography.
+- The result should feel authentic and suitable for use in a high-end advertising campaign.
+
+Human subjects (when included):
+- Humans must appear completely authentic and naturally posed.
+- Realistic anatomy, skin texture, pores, hair strands, eye reflections, clothing folds, and body proportions.
+- Natural facial asymmetry and candid expressions.
+- Avoid model-like posing unless specifically requested.
+- Hands, fingers, teeth, and eyes must be anatomically accurate.
+
+Materials and environment:
+- Surfaces should display realistic physical properties and subtle imperfections.
+- Glass, metal, wood, stone, concrete, water, and vegetation should behave naturally under available light.
+- Add believable environmental details and lived-in context where appropriate.
+- Avoid repetitive patterns, sterile perfection, or synthetic-looking textures.
+
+Critical quality requirements:
+- The final result must look like a genuine photograph taken by a professional photographer.
+- The image should never resemble a CGI render, architectural visualization, illustration, concept art, or AI-generated artwork.
+- Avoid common AI artifacts including plastic skin, over-symmetry, distorted anatomy, unrealistic smiles, floating objects, duplicated elements, warped text, or excessive sharpness.
+- Prefer subtle realism and believable imperfections over idealized perfection.
+
+If there is any conflict between artistic stylization and photographic realism, always prioritize photographic realism.`;
+
+// ============================================================================
+// ORGANIC / SMARTPHONE OVERRIDE
+// When isOrganic=true, this replaces the camera characteristics section
+// ============================================================================
+
+export const ORGANIC_OVERRIDE = `Camera characteristics override (RAW & ORGANIC):
+- The image must look like an unedited, authentic photo taken by a regular person on a recent flagship smartphone camera (e.g. iPhone 16, Pixel 9, Samsung S25).
+- Subtle computational photography characteristics: natural HDR, slight lens softness at edges.
+- Natural, slightly imperfect ambient lighting — no artificial studio glow or rim lighting.
+- Candid, unpolished composition with real-world background clutter.
+- Slight natural imperfections: micro motion blur, casual framing, ambient noise grain.`;
+
+// ============================================================================
+// VERTICAL MODULES — Industry-specific production add-ons
+// ============================================================================
+
+export const VERTICAL_MODULES: Record<string, string> = {
+  real_estate: `Vertical module — Real Estate, Land, & Architecture:
+The objective is to produce highly premium, modern, and conceptual luxury real estate graphic layouts. Draw layout and design inspiration from elite digital real estate graphics (such as those seen on Pinterest or Architectural Digest social feeds).
+
+Layout & Visual Structure Rules:
+1. Floating Asset Visual: If generating land or plots, portray it as an isometric 3D block of land floating cleanly in space with realistic soil layers, green grass, and trees. Place a glowing, high-contrast semi-transparent wireframe or digital blueprint overlay outlining villa/home structures directly on the land to represent planning, future value, and modern architectural potential.
+2. Premium Atmosphere & Lighting: Set the scene against a luminous golden-hour sunset, warm sunrise, or clear azure sky with soft clouds. Use warm interior glows emitting from floor-to-ceiling villa glass windows, coupled with soft sunflares filter from the margins to evoke premium quality.
+3. Design Layout & Spacing: Keep the visual clean and uncluttered. Use an asymmetric split: place branding and headlines on one side covered by a subtle dark gradient vignette for maximum legibility, while letting the hero home/plot image occupy the rest of the canvas.
+4. Typography Pairing: Use modern, clean, geometric sans-serif fonts. Emphasize keywords using weight contrast—combine a regular/thin weight phrase (e.g., "INVEST IN") with a bold, uppercase primary keyword (e.g., "LAND") in a vibrant color (like lime-green or gold).
+5. Brand & Info Integration: The brand logo must be positioned as a small, elegant seal/monogram in a corner (e.g. top-left or top-right) to act as a discrete stamp of quality. Website and contact information should be aligned horizontally at the bottom margin in a tiny, well-spaced clean font.`,
+
+  food: `Vertical module — Food & Restaurant:
+The objective is realistic editorial food photography. Preserve the dish, plating, and ingredients faithfully while emphasizing freshness, texture, and appetite appeal. Use natural window light or warm ambient restaurant lighting. Avoid exaggerated steam, unrealistic glossiness, or artificial perfection. Show real tableware, textured surfaces, and environmental context (wooden table, marble counter, restaurant interior). The result should resemble a photograph from a premium restaurant campaign or food magazine like Bon Appétit.`,
+
+  fashion: `Vertical module — Fashion & Apparel:
+The objective is premium editorial fashion photography. Preserve exact garment design, fabric texture, colors, and fit. Models should look naturally posed with authentic body language. Lighting should emphasize fabric drape and texture realistically. The result should resemble a high-end lookbook or fashion editorial from Vogue or GQ.`,
+
+  beauty: `Vertical module — Beauty & Skincare:
+The objective is premium beauty and skincare commercial photography. Preserve exact product design, packaging, colors, and branding. Skin should look naturally healthy with real texture (pores, light freckles) — not airbrushed or plastic. Use soft, diffused natural light. The result should resemble a high-end beauty campaign from brands like Glossier or La Mer.`,
+
+  ecommerce: `Vertical module — Product & E-commerce:
+The objective is premium commercial product photography. Preserve the exact design, shape, branding, colors, and proportions of the product. Lighting should emphasize materials realistically — the shine of metal, the softness of fabric, the transparency of glass. Show the product in a lifestyle context or clean studio setting. The result should resemble a high-end Apple, Nike, or premium e-commerce campaign photograph.`,
+
+  automotive: `Vertical module — Automotive:
+The objective is premium automotive commercial photography. Preserve the exact vehicle model, paint color, body lines, and proportions. Show realistic reflections, paint depth, and environmental lighting. The result should resemble a manufacturer's official press photograph or a premium automotive magazine cover.`,
+
+  saas: `Vertical module — Technology & SaaS:
+The objective is modern tech product photography and lifestyle imagery. Show devices, screens, and workspaces in clean, contemporary environments. Humans interacting with technology should look natural and focused. The result should resemble tech editorial from publications like Wired or Apple marketing campaigns.`,
+
+  services: `Vertical module — Professional Services:
+The objective is authentic professional services photography showing real people in real work environments. Capture genuine interactions, professional settings, and warm interpersonal moments. The result should resemble corporate photography from a premium branding agency.`,
+
+  general: `Vertical module — General Commercial:
+The objective is versatile, premium commercial photography suitable for advertising. Adapt the visual style to match the subject matter naturally. Emphasize authenticity, warmth, and professional quality. The result should be suitable for use in a high-end multi-channel advertising campaign.`
+};
+
+// ============================================================================
+// RENDERING PRIORITIES — Reality bias hierarchy
+// ============================================================================
+
+export const RENDERING_PRIORITIES = `Rendering priorities (highest to lowest):
+1. Preserve reference image fidelity.
+2. Maintain physical and architectural accuracy.
+3. Achieve photographic realism.
+4. Create an attractive commercial composition.
+5. Add aesthetic enhancements only if they do not reduce realism.`;
+
+// ============================================================================
+// AUTHENTICITY RULE — The single most important backend instruction
+// ============================================================================
+
+export const AUTHENTICITY_RULE = `The primary objective is to maximize perceived authenticity. A viewer should believe the image is a genuine photograph captured in the real world. Whenever there is a trade-off between beauty and realism, choose realism. Small natural imperfections are desirable because they increase believability.`;
+
+// ============================================================================
+// SUPPORTED INDUSTRIES
+// ============================================================================
+
+export const SUPPORTED_INDUSTRIES = [
+  'real_estate',
+  'food',
+  'fashion',
+  'beauty',
+  'ecommerce',
+  'automotive',
+  'saas',
+  'services',
+  'general'
+] as const;
+
+export type Industry = typeof SUPPORTED_INDUSTRIES[number];
+
+// ============================================================================
+// HELPER: Get vertical module for an industry
+// ============================================================================
+
+export function getVerticalModule(industry: string): string {
+  return VERTICAL_MODULES[industry] || VERTICAL_MODULES['general'];
+}
+
+// ============================================================================
+// BUILDER: Assemble the full master system prompt
+// ============================================================================
+
+export function buildImageSystemPrompt(industry: string, isOrganic: boolean = false): string {
+  const verticalModule = getVerticalModule(industry);
+
+  const cameraSection = isOrganic ? ORGANIC_OVERRIDE : '';
+
+  return `=== SYSTEM-LEVEL VISUAL PRODUCTION RULES ===
+(These rules define the foundational visual grammar for ALL image generation. The image prompt you write MUST follow these rules.)
+
+${MASTER_PROMPT}
+
+${cameraSection}
+
+${verticalModule}
+
+${RENDERING_PRIORITIES}
+
+${AUTHENTICITY_RULE}
+
+=== END VISUAL PRODUCTION RULES ===`;
+}
+
+// ============================================================================
+// DETECTOR: Auto-classify user's industry via Gemini
+// ============================================================================
+
+export async function detectIndustry(
+  businessName: string,
+  businessInfo: string,
+  missionStatement: string
+): Promise<Industry> {
+  const supportedList = SUPPORTED_INDUSTRIES.join(', ');
+
+  const prompt = `You are a business classification expert. Based on the following business profile, classify the business into exactly ONE of these industry categories: ${supportedList}.
+
+Business Name: "${businessName || 'N/A'}"
+Business Description: "${businessInfo || 'N/A'}"
+Mission/Tagline: "${missionStatement || 'N/A'}"
+
+Rules:
+- If the business sells or markets properties, land, apartments, homes, plots, villas, or construction — classify as "real_estate".
+- If the business is a restaurant, cafe, bakery, food delivery, catering, or sells food/beverage products — classify as "food".
+- If the business sells clothing, accessories, shoes, jewelry, or apparel — classify as "fashion".
+- If the business sells skincare, cosmetics, haircare, wellness, or beauty products — classify as "beauty".
+- If the business sells physical products online (electronics, gadgets, home goods, etc.) — classify as "ecommerce".
+- If the business sells or markets vehicles, car dealerships, or automotive parts — classify as "automotive".
+- If the business is a software company, app, SaaS platform, or tech service — classify as "saas".
+- If the business provides professional services (consulting, legal, accounting, marketing agency, education, healthcare) — classify as "services".
+- If none of the above match clearly — classify as "general".
+
+Output ONLY the single lowercase category string (e.g. "real_estate"). No explanation, no quotes, no extra text.`;
+
+  try {
+    let result;
+    try {
+      result = await generateText({
+        model: google('gemini-3.5-flash'),
+        prompt,
+      });
+    } catch {
+      result = await generateText({
+        model: google('gemini-3-flash-preview'),
+        prompt,
+      });
+    }
+
+    const detected = result.text.trim().toLowerCase().replace(/['"]/g, '');
+
+    if (SUPPORTED_INDUSTRIES.includes(detected as Industry)) {
+      console.log(`[Industry Detection] Classified "${businessName}" as: ${detected}`);
+      return detected as Industry;
+    }
+
+    console.warn(`[Industry Detection] Gemini returned unsupported industry "${detected}". Falling back to "general".`);
+    return 'general';
+  } catch (err: any) {
+    console.error(`[Industry Detection] Failed to classify industry: ${err.message}. Falling back to "general".`);
+    return 'general';
+  }
+}

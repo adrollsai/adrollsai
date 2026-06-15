@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { callGemini, createKieImageTask } from '@/utils/external-apis'
+
+const supabaseAdmin = createSupabaseAdmin(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 function extractImageUrl(checkData: any): string | null {
     if (!checkData) return null;
@@ -102,7 +108,8 @@ export async function POST(request: Request) {
             formId, 
             mode = 'generate', 
             instructions, 
-            currentHtml 
+            currentHtml,
+            imageUrls
         } = body
 
         if (mode === 'generate' && !productName && !propertyId) {
@@ -118,13 +125,13 @@ export async function POST(request: Request) {
         let propertyImagesList: string[] = []
         let resolvedProductName = productName || ""
         let resolvedContext = context || ""
-        let propertyRera = "PBRERA-SAS79-PR0777"
+        let propertyRera = ""
         let propertyFloorPlan = "https://i.ibb.co/NdSPkfxQ/3bhk.webp"
         let propertyPrice = "₹ 1.7 Cr"
         let propertyYoutubeUrl = ""
 
         if (propertyId) {
-            const { data: property } = await supabase
+            const { data: property } = await supabaseAdmin
                 .from('properties')
                 .select('*')
                 .eq('id', propertyId)
@@ -166,7 +173,7 @@ PROPERTY INVENTORY CONTEXT:
         }
 
         // 2. Fetch business profile details for automatic contact pre-fill & branding
-        const { data: profile } = await supabase
+        const { data: profile } = await supabaseAdmin
             .from('profiles')
             .select('business_name, contact_number, email, custom_domain, brand_color, logo_url')
             .eq('id', targetUserId)
@@ -185,7 +192,7 @@ BUSINESS CONTACT INFO:
         // 3. Fetch connected form if available to enrich the prompt context
         let formFieldsText = "Full Name, WhatsApp Number, City"
         if (formId) {
-            const { data: form } = await supabase
+            const { data: form } = await supabaseAdmin
                 .from('qualification_forms')
                 .select('*')
                 .eq('id', formId)
@@ -309,7 +316,7 @@ Format your response as a detailed summary that a frontend developer can easily 
             if (propertyId) {
                 realEstateDetails = `
 REAL-ESTATE LISTING SPECIFICATIONS:
-- Prominently display the RERA ID/Number: "${propertyRera}".
+${propertyRera ? `- Prominently display the RERA ID/Number: "${propertyRera}".` : ''}
 - Floor Plan Section: Display the floor plan image "${propertyFloorPlan}" with buttons to switch configurations (e.g. 3 BHK, Duplex). Place an overlay with blurry backdrop and a secure lock icon overlay: '<div id="floorplan-overlay" class="absolute inset-0 bg-white/40 backdrop-blur-md flex flex-col items-center justify-center">Submit Enquiry to Unlock Floor Plan</div>'. Supply the JavaScript function 'changeFloorPlan(button, imgSrc, isLocked, titleText)' to handle config changes.
 - Project Connectivity: An accessibility distances accordion/section detailing distances with clear visual '+' / '-' icons.
 - Smart Living features grid.
@@ -339,6 +346,11 @@ ${imageAnalysisResults}
 
             systemPrompt = `You are a world-class front-end developer and elite direct-response landing page copywriter specializing in high-converting landing pages.
 Create a complete, responsive, premium single-page landing page in HTML based on the details below, strictly following Alex Hormozi's "Value Equation" conversion framework.
+
+### CRITICAL ACCURACY RULE (MANDATORY):
+- You must ONLY include, describe, or reference the exact information passed as context in this prompt (such as titles, description context, and actual assets).
+- Absolutely DO NOT hallucinate, assume, or generate registration numbers, RERA IDs, approvals, or any parameters/specifications not explicitly provided.
+- If a RERA ID or number is not explicitly provided in the specifications above, DO NOT mention RERA, do not write "RERA Approved", and do not show any fake/placeholder registration numbers.
 
 ### INPUT VARIABLES
 * Brand/Product Name: "${resolvedProductName}"
@@ -393,6 +405,7 @@ ${realEstateDetails}
             systemPrompt = `You are a master front-end developer.
 Edit the provided landing page HTML strictly according to the user's instructions.
 User Instructions: "${instructions}"
+${imageUrls && imageUrls.length > 0 ? `The user has attached the following image(s)/screenshot(s) as visual reference: ${JSON.stringify(imageUrls)}. Analyze these attached images carefully and apply any visual edits, layout fixes, styling corrections, or component updates requested by the user based on what is pointed out in the images.` : ''}
 
 CURRENT HTML:
 ${currentHtml}
@@ -402,11 +415,13 @@ CRITICAL RULES:
 2. Retain all existing styling, layout elements, assets, and copywriting, modifying ONLY the parts requested by the user.
 3. If the user asks to change the form button text, modify the 'data-button-text' attribute on the '<div id="qualification-form-container" ...>' element. Do NOT write button HTML inside that container, only modify the attribute.
 4. Return ONLY the raw, complete, valid updated HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
-5. ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output ONLY the pure raw updated HTML string. No conversational text.`
+5. ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output ONLY the pure raw updated HTML string. No conversational text.
+6. DO NOT delete, alter, or omit any existing page sections, styles, JS scripts, or sections unless explicitly instructed to do so. Your edit must be a direct, surgical modification of the provided CURRENT HTML, maintaining 100% of the other page elements, structure, and images.
+7. CRITICAL ACCURACY RULE: You must ONLY include, describe, or reference the exact information passed as context in this prompt. Absolutely DO NOT hallucinate, assume, or generate registration numbers, RERA IDs, approvals, or any parameters/specifications not explicitly provided. If a RERA ID or number is not explicitly provided, DO NOT mention RERA, do not write "RERA Approved", and do not show any fake/placeholder registration numbers.`
         }
 
         console.log(`[Lander API] Calling Gemini in mode: ${mode}...`)
-        const aiRawResult = await callGemini(systemPrompt)
+        const aiRawResult = await callGemini(systemPrompt, imageUrls)
         
         // Clean markdown formatting if LLM failed to follow the instruction
         const htmlResult = aiRawResult
@@ -444,7 +459,7 @@ CRITICAL RULES:
         }
 
         // Create or update record in public.landing_pages
-        const { data: pageRecord, error: dbError } = await supabase
+        const { data: pageRecord, error: dbError } = await supabaseAdmin
             .from('landing_pages')
             .upsert(payload, {
                 onConflict: id ? 'id' : 'user_id, slug'

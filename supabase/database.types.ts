@@ -912,6 +912,7 @@ export type Database = {
           google_business_refresh_token: string | null
           google_business_token: string | null
           id: string
+          industry: string | null
           instagram_url: string | null
           last_activity_date: string | null
           level: number | null
@@ -979,6 +980,7 @@ export type Database = {
           google_business_refresh_token?: string | null
           google_business_token?: string | null
           id: string
+          industry?: string | null
           instagram_url?: string | null
           last_activity_date?: string | null
           level?: number | null
@@ -1046,6 +1048,7 @@ export type Database = {
           google_business_refresh_token?: string | null
           google_business_token?: string | null
           id?: string
+          industry?: string | null
           instagram_url?: string | null
           last_activity_date?: string | null
           level?: number | null

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+export const dynamic = 'force-dynamic';
+
 type RouteProps = {
     params: Promise<{ user_id: string, slug: string }>
 }
@@ -18,7 +20,7 @@ export async function GET(request: Request, { params }: RouteProps) {
         console.log(`[Shared Route GET] Starting diagnostics... identifier="${identifier}", slug="${slug}"`)
 
         // 1. Resolve business profile
-        let profileQuery = supabase.from('profiles').select('id, business_name, logo_url, custom_domain, pixel_id, brand_color')
+        let profileQuery = supabase.from('profiles').select('id, business_name, logo_url, custom_domain, pixel_id, brand_color, google_refresh_token, google_booking_enabled')
         if (identifier.includes('.')) {
             profileQuery = profileQuery.eq('custom_domain', identifier)
         } else {
@@ -43,7 +45,8 @@ export async function GET(request: Request, { params }: RouteProps) {
                 title,
                 product_name,
                 html_content,
-                form_id
+                form_id,
+                booking_enabled
             `)
             .eq('user_id', profile.id)
             .eq('slug', slug)
@@ -70,6 +73,8 @@ export async function GET(request: Request, { params }: RouteProps) {
             form = formData
         }
 
+        const bookingEnabled = !!(page?.booking_enabled && profile?.google_refresh_token && profile?.google_booking_enabled)
+
         let finalHtml = page.html_content
 
         // Extract customized values from LLM HTML attributes
@@ -95,14 +100,32 @@ export async function GET(request: Request, { params }: RouteProps) {
         const customQuestions = form?.custom_questions || []
         const brandColor = profile?.brand_color || '#2563eb'
 
+        function getContrastColor(hexColor: string): string {
+            if (!hexColor) return '#ffffff';
+            let hex = hexColor.trim().replace('#', '');
+            if (hex.length === 3) {
+                hex = hex.split('').map(char => char + char).join('');
+            }
+            if (hex.length !== 6) return '#ffffff';
+            const r = parseInt(hex.substring(0, 2), 16);
+            const g = parseInt(hex.substring(2, 4), 16);
+            const b = parseInt(hex.substring(4, 6), 16);
+            const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+            return (yiq >= 128) ? '#0f172a' : '#ffffff';
+        }
+
+        const isBrandLight = getContrastColor(brandColor) === '#0f172a';
+        const buttonBgColor = isBrandLight ? '#0B0F19' : brandColor;
+        const buttonTextColor = '#ffffff';
+
         formHtml = `
-            <div class="qualification-trigger-card" style="max-width: 500px; margin: 2rem auto; padding: 2.5rem 2rem; background: #ffffff; border-radius: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -5px rgba(0,0,0,0.05); font-family: system-ui, -apple-system, sans-serif; text-align: center; box-sizing: border-box;">
-                <div style="width: 3.5rem; height: 3.5rem; background: color-mix(in srgb, ${brandColor} 10%, transparent); border-radius: 1rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem;">
+            <div class="qualification-trigger-card" style="max-width: 500px; margin: 2rem auto; padding: 1.5rem 0; background: transparent; font-family: inherit; text-align: center; box-sizing: border-box;">
+                <div style="width: 3.5rem; height: 3.5rem; background: color-mix(in srgb, ${brandColor} 15%, transparent); border-radius: 1rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${brandColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>
                 </div>
-                <h3 style="margin-top: 0; margin-bottom: 0.5rem; color: #0f172a; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.025em;">${cardTitle}</h3>
-                <p style="color: #64748b; font-size: 0.875rem; margin-bottom: 1.5rem; line-height: 1.5;">${cardDesc}</p>
-                <button class="open-eligibility-modal-btn" style="width: 100%; padding: 0.875rem; background: ${brandColor}; color: #ffffff; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);">${buttonText}</button>
+                <h3 style="margin-top: 0; margin-bottom: 0.5rem; color: inherit; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.025em; font-family: inherit;">${cardTitle}</h3>
+                <p style="color: inherit; opacity: 0.8; font-size: 0.875rem; margin-bottom: 1.5rem; line-height: 1.5; font-family: inherit;">${cardDesc}</p>
+                <button class="open-eligibility-modal-btn" style="width: 100%; padding: 0.875rem 1.25rem; background: ${buttonBgColor} !important; color: ${buttonTextColor} !important; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.15); font-family: inherit;">${buttonText}</button>
             </div>
 
             <!-- Full-Screen Eligibility Modal Overlay -->
@@ -117,7 +140,7 @@ export async function GET(request: Request, { params }: RouteProps) {
                     <!-- Progress Container -->
                     <div id="eligibility-modal-progress-container" style="display: flex; align-items: center; gap: 0.75rem; width: 100%; box-sizing: border-box; margin-bottom: 0.25rem;">
                         <div style="flex: 1; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
-                            <div id="eligibility-modal-progress-bar" style="width: 0%; height: 100%; background: #2563eb; border-radius: 3px; transition: width 0.3s ease-out;"></div>
+                            <div id="eligibility-modal-progress-bar" style="width: 0%; height: 100%; background: ${brandColor}; border-radius: 3px; transition: width 0.3s ease-out;"></div>
                         </div>
                         <span id="eligibility-modal-progress-text" style="font-size: 0.75rem; font-weight: 700; color: #64748b; white-space: nowrap;">Step 1 of 3</span>
                     </div>
@@ -201,15 +224,15 @@ export async function GET(request: Request, { params }: RouteProps) {
             .eligibility-submit-btn {
                 width: 100%;
                 padding: 0.875rem;
-                background: ${brandColor};
-                color: #ffffff;
+                background: ${buttonBgColor} !important;
+                color: ${buttonTextColor} !important;
                 border: none;
                 border-radius: 0.75rem;
                 font-size: 0.875rem;
                 font-weight: 700;
                 cursor: pointer;
                 transition: all 0.2s;
-                box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
                 box-sizing: border-box;
                 display: flex;
                 align-items: center;
@@ -217,18 +240,81 @@ export async function GET(request: Request, { params }: RouteProps) {
                 gap: 0.5rem;
             }
             .eligibility-submit-btn:hover {
-                background: ${brandColor};
+                background: ${buttonBgColor} !important;
                 filter: brightness(0.9);
-                box-shadow: 0 6px 12px -1px rgba(37, 99, 235, 0.25);
+                box-shadow: 0 6px 12px -1px rgba(0, 0, 0, 0.15);
             }
             .eligibility-submit-btn:disabled {
                 opacity: 0.6;
                 cursor: not-allowed;
             }
+            .calendar-days-grid {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 0.5rem;
+                margin-bottom: 1.25rem;
+            }
+            .calendar-day-btn {
+                padding: 0.625rem 0.5rem;
+                background: #f8fafc !important;
+                border: 1px solid #e2e8f0;
+                border-radius: 0.5rem;
+                font-size: 0.75rem;
+                font-weight: 700;
+                color: #475569 !important;
+                text-align: center;
+                cursor: pointer;
+                transition: all 0.2s;
+                box-sizing: border-box;
+            }
+            .calendar-day-btn.active {
+                background: ${brandColor} !important;
+                color: #ffffff !important;
+                border-color: ${brandColor};
+            }
+            .calendar-day-btn:hover:not(.active) {
+                background: #f1f5f9 !important;
+                border-color: #cbd5e1;
+                color: #0f172a !important;
+            }
+            .calendar-slots-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.5rem;
+                max-height: 200px;
+                overflow-y: auto;
+                padding-right: 0.25rem;
+            }
+            .calendar-slot-btn {
+                padding: 0.625rem;
+                background: #ffffff !important;
+                border: 1px solid #cbd5e1;
+                border-radius: 0.5rem;
+                font-size: 0.8125rem;
+                font-weight: 600;
+                color: #1e293b !important;
+                text-align: center;
+                cursor: pointer;
+                transition: all 0.2s;
+                box-sizing: border-box;
+            }
+            .calendar-slot-btn:hover {
+                background: color-mix(in srgb, ${brandColor} 8%, #ffffff) !important;
+                border-color: ${brandColor};
+                color: ${brandColor} !important;
+            }
+            .calendar-slot-btn.active {
+                background: ${brandColor} !important;
+                color: #ffffff !important;
+                border-color: ${brandColor};
+            }
             </style>
 
             <script>
             (function() {
+                const bookingEnabled = ${bookingEnabled};
+                const userId = '${profile.id}';
+                const brandColor = '${brandColor}';
                 const questions = ${JSON.stringify(customQuestions)};
                 let currentStep = 0;
                 const answers = {};
@@ -497,7 +583,7 @@ export async function GET(request: Request, { params }: RouteProps) {
                                     });
                                 }
                                 
-                                showSuccess();
+                                showSuccess(resData.leadId);
                             } catch(err) {
                                 errMsg.textContent = err.message || 'Something went wrong. Please try again.';
                                 errMsg.style.display = 'block';
@@ -608,7 +694,8 @@ export async function GET(request: Request, { params }: RouteProps) {
                     
                     const backBtnDisq = document.createElement('button');
                     backBtnDisq.className = 'eligibility-submit-btn';
-                    backBtnDisq.style.background = '${brandColor}';
+                    backBtnDisq.style.setProperty('background', '${buttonBgColor}', 'important');
+                    backBtnDisq.style.setProperty('color', '${buttonTextColor}', 'important');
                     backBtnDisq.style.boxShadow = 'none';
                     backBtnDisq.textContent = 'Go Back & Edit';
                     backBtnDisq.addEventListener('click', function() {
@@ -618,7 +705,8 @@ export async function GET(request: Request, { params }: RouteProps) {
                     
                     const closeBtn2 = document.createElement('button');
                     closeBtn2.className = 'eligibility-submit-btn';
-                    closeBtn2.style.background = '#6b7280';
+                    closeBtn2.style.setProperty('background', '#6b7280', 'important');
+                    closeBtn2.style.setProperty('color', '#ffffff', 'important');
                     closeBtn2.style.boxShadow = 'none';
                     closeBtn2.textContent = 'Close';
                     closeBtn2.addEventListener('click', closeModal);
@@ -629,7 +717,35 @@ export async function GET(request: Request, { params }: RouteProps) {
                     stepsContainer.appendChild(wrapper);
                 }
                 
-                function showSuccess() {
+                function getNextBookingDays() {
+                    const days = [];
+                    const current = new Date();
+                    // Generate next 6 calendar days, excluding Sundays (0)
+                    while (days.length < 6) {
+                        const dayOfWeek = current.getDay();
+                        if (dayOfWeek !== 0) {
+                            const yyyy = current.getFullYear();
+                            const mm = String(current.getMonth() + 1).padStart(2, '0');
+                            const dd = String(current.getDate()).padStart(2, '0');
+                            days.push({
+                                dateStr: yyyy + '-' + mm + '-' + dd,
+                                label: current.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                            });
+                        }
+                        current.setDate(current.getDate() + 1);
+                    }
+                    return days;
+                }
+
+                function showSuccess(leadId) {
+                    if (bookingEnabled && leadId) {
+                        renderCalendarBooking(leadId);
+                    } else {
+                        showSuccessDirect();
+                    }
+                }
+
+                function showSuccessDirect() {
                     progressContainer.style.display = 'none';
                     if (backBtn) backBtn.style.display = 'none';
                     stepsContainer.innerHTML = '';
@@ -673,13 +789,314 @@ export async function GET(request: Request, { params }: RouteProps) {
                     
                     const closeBtn2 = document.createElement('button');
                     closeBtn2.className = 'eligibility-submit-btn';
-                    closeBtn2.style.background = '#166534';
+                    closeBtn2.style.setProperty('background', '#166534', 'important');
+                    closeBtn2.style.setProperty('color', '#ffffff', 'important');
                     closeBtn2.style.boxShadow = 'none';
                     closeBtn2.textContent = 'Done';
                     closeBtn2.addEventListener('click', closeModal);
                     wrapper.appendChild(closeBtn2);
                     
                     stepsContainer.appendChild(wrapper);
+                }
+
+                function renderCalendarBooking(leadId) {
+                    stepsContainer.innerHTML = '';
+                    progressContainer.style.display = 'none';
+                    if (backBtn) backBtn.style.display = 'none';
+
+                    const wrapper = document.createElement('div');
+                    wrapper.style.display = 'flex';
+                    wrapper.style.flexDirection = 'column';
+                    wrapper.style.gap = '1.25rem';
+                    wrapper.style.textAlign = 'left';
+
+                    const title = document.createElement('h4');
+                    title.style.margin = '0';
+                    title.style.color = '#0f172a';
+                    title.style.fontSize = '1.25rem';
+                    title.style.fontWeight = '800';
+                    title.textContent = 'Schedule Your Session';
+                    wrapper.appendChild(title);
+
+                    const desc = document.createElement('p');
+                    desc.style.margin = '0';
+                    desc.style.color = '#64748b';
+                    desc.style.fontSize = '0.875rem';
+                    desc.style.lineHeight = '1.5';
+                    desc.textContent = 'Pick a convenient date and time to book your slots on Google Calendar.';
+                    wrapper.appendChild(desc);
+
+                    const daysGrid = document.createElement('div');
+                    daysGrid.className = 'calendar-days-grid';
+                    wrapper.appendChild(daysGrid);
+
+                    const slotsTitle = document.createElement('h5');
+                    slotsTitle.style.margin = '0 0 0.5rem';
+                    slotsTitle.style.fontSize = '0.875rem';
+                    slotsTitle.style.fontWeight = '700';
+                    slotsTitle.style.color = '#475569';
+                    slotsTitle.textContent = 'Available Slots:';
+                    wrapper.appendChild(slotsTitle);
+
+                    const slotsContainer = document.createElement('div');
+                    slotsContainer.className = 'calendar-slots-grid';
+                    wrapper.appendChild(slotsContainer);
+
+                    const loadingIndicator = document.createElement('div');
+                    loadingIndicator.style.fontSize = '0.875rem';
+                    loadingIndicator.style.color = '#64748b';
+                    loadingIndicator.style.padding = '1rem 0';
+                    loadingIndicator.style.textAlign = 'center';
+                    loadingIndicator.textContent = 'Loading slots...';
+
+                    const days = getNextBookingDays();
+                    let selectedDateStr = days[0].dateStr;
+
+                    days.forEach(function(day, index) {
+                        const dayBtn = document.createElement('button');
+                        dayBtn.className = 'calendar-day-btn' + (index === 0 ? ' active' : '');
+                        dayBtn.textContent = day.label;
+                        dayBtn.addEventListener('click', function() {
+                            const activeBtns = daysGrid.querySelectorAll('.calendar-day-btn');
+                            activeBtns.forEach(btn => btn.classList.remove('active'));
+                            dayBtn.classList.add('active');
+                            selectedDateStr = day.dateStr;
+                            loadSlots(day.dateStr);
+                        });
+                        daysGrid.appendChild(dayBtn);
+                    });
+
+                    async function loadSlots(dateStr) {
+                        slotsContainer.innerHTML = '';
+                        slotsContainer.appendChild(loadingIndicator);
+                        try {
+                            const res = await fetch('/api/shared/booking/slots?userId=' + encodeURIComponent(userId) + '&date=' + encodeURIComponent(dateStr));
+                            const data = await res.json();
+                            slotsContainer.innerHTML = '';
+
+                            if (!res.ok) throw new Error(data.error || 'Failed to fetch slots');
+
+                            const slots = data.slots || [];
+                            if (slots.length === 0) {
+                                const noSlots = document.createElement('div');
+                                noSlots.style.gridColumn = 'span 2';
+                                noSlots.style.fontSize = '0.875rem';
+                                noSlots.style.color = '#64748b';
+                                noSlots.style.padding = '1.5rem 0';
+                                noSlots.style.textAlign = 'center';
+                                noSlots.textContent = 'No slots available for this day.';
+                                slotsContainer.appendChild(noSlots);
+                                return;
+                            }
+
+                            slots.forEach(function(slotIso) {
+                                const slotDate = new Date(slotIso);
+                                const timeLabel = slotDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                
+                                const slotBtn = document.createElement('button');
+                                slotBtn.className = 'calendar-slot-btn';
+                                slotBtn.textContent = timeLabel;
+                                slotBtn.addEventListener('click', function() {
+                                    showConfirmBooking(slotIso, timeLabel, dateStr);
+                                });
+                                slotsContainer.appendChild(slotBtn);
+                            });
+                        } catch (err) {
+                            slotsContainer.innerHTML = '';
+                            const errEl = document.createElement('div');
+                            errEl.style.gridColumn = 'span 2';
+                            errEl.style.fontSize = '0.875rem';
+                            errEl.style.color = '#ef4444';
+                            errEl.style.padding = '1.5rem 0';
+                            errEl.style.textAlign = 'center';
+                            errEl.style.fontWeight = '600';
+                            errEl.textContent = 'Error loading slots: ' + err.message;
+                            slotsContainer.appendChild(errEl);
+                        }
+                    }
+
+                    const footer = document.createElement('div');
+                    footer.style.display = 'flex';
+                    footer.style.justifyContent = 'center';
+                    footer.style.marginTop = '1rem';
+                    footer.style.borderTop = '1px solid #e2e8f0';
+                    footer.style.paddingTop = '1rem';
+
+                    const skipBtn = document.createElement('button');
+                    skipBtn.style.background = 'none';
+                    skipBtn.style.border = 'none';
+                    skipBtn.style.color = '#64748b';
+                    skipBtn.style.fontSize = '0.875rem';
+                    skipBtn.style.fontWeight = '600';
+                    skipBtn.style.cursor = 'pointer';
+                    skipBtn.textContent = 'Skip for now';
+                    skipBtn.addEventListener('click', function() {
+                        showSuccessDirect();
+                    });
+                    footer.appendChild(skipBtn);
+                    wrapper.appendChild(footer);
+
+                    stepsContainer.appendChild(wrapper);
+
+                    // Load slots for first day
+                    loadSlots(selectedDateStr);
+
+                    function showConfirmBooking(slotIso, timeLabel, dateStr) {
+                        stepsContainer.innerHTML = '';
+                        
+                        const confirmWrapper = document.createElement('div');
+                        confirmWrapper.style.display = 'flex';
+                        confirmWrapper.style.flexDirection = 'column';
+                        confirmWrapper.style.gap = '1.25rem';
+                        confirmWrapper.style.textAlign = 'center';
+                        confirmWrapper.style.padding = '1rem 0';
+
+                        const confirmTitle = document.createElement('h4');
+                        confirmTitle.style.margin = '0';
+                        confirmTitle.style.color = '#0f172a';
+                        confirmTitle.style.fontSize = '1.25rem';
+                        confirmTitle.style.fontWeight = '800';
+                        confirmTitle.textContent = 'Confirm Your Appointment';
+                        confirmWrapper.appendChild(confirmTitle);
+
+                        const detailBox = document.createElement('div');
+                        detailBox.style.background = '#f8fafc';
+                        detailBox.style.border = '1px solid #e2e8f0';
+                        detailBox.style.borderRadius = '0.75rem';
+                        detailBox.style.padding = '1.25rem';
+                        detailBox.style.display = 'flex';
+                        detailBox.style.flexDirection = 'column';
+                        detailBox.style.gap = '0.5rem';
+
+                        const formattedDate = new Date(slotIso).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+                        const dateEl = document.createElement('div');
+                        dateEl.style.fontSize = '0.95rem';
+                        dateEl.style.fontWeight = '700';
+                        dateEl.style.color = '#1e293b';
+                        dateEl.textContent = '📅  ' + formattedDate;
+                        detailBox.appendChild(dateEl);
+
+                        const timeEl = document.createElement('div');
+                        timeEl.style.fontSize = '1.1rem';
+                        timeEl.style.fontWeight = '800';
+                        timeEl.style.color = brandColor;
+                        timeEl.textContent = '⏰  ' + timeLabel;
+                        detailBox.appendChild(timeEl);
+
+                        confirmWrapper.appendChild(detailBox);
+
+                        const actionBtn = document.createElement('button');
+                        actionBtn.className = 'eligibility-submit-btn';
+                        actionBtn.textContent = 'Confirm Booking';
+                        confirmWrapper.appendChild(actionBtn);
+
+                        const cancelBtn = document.createElement('button');
+                        cancelBtn.className = 'eligibility-submit-btn';
+                        cancelBtn.style.setProperty('background', '#f1f5f9', 'important');
+                        cancelBtn.style.setProperty('color', '#475569', 'important');
+                        cancelBtn.style.boxShadow = 'none';
+                        cancelBtn.style.border = '1px solid #e2e8f0';
+                        cancelBtn.textContent = 'Change Date/Time';
+                        cancelBtn.addEventListener('click', function() {
+                            renderCalendarBooking(leadId);
+                        });
+                        confirmWrapper.appendChild(cancelBtn);
+
+                        const errorMsg = document.createElement('p');
+                        errorMsg.style.margin = '0';
+                        errorMsg.style.fontSize = '0.875rem';
+                        errorMsg.style.color = '#ef4444';
+                        errorMsg.style.fontWeight = '600';
+                        errorMsg.style.display = 'none';
+                        confirmWrapper.appendChild(errorMsg);
+
+                        actionBtn.addEventListener('click', async function() {
+                            actionBtn.disabled = true;
+                            actionBtn.textContent = 'Booking...';
+                            errorMsg.style.display = 'none';
+                            cancelBtn.style.display = 'none';
+
+                            try {
+                                const bookingRes = await fetch('/api/shared/booking/create', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        lead_id: leadId,
+                                        slot: slotIso,
+                                        user_id: userId
+                                    })
+                                });
+
+                                const bookingData = await bookingRes.json();
+                                if (!bookingRes.ok || !bookingData.success) {
+                                    throw new Error(bookingData.error || 'Booking failed');
+                                }
+
+                                showBookedSuccess(formattedDate, timeLabel);
+                            } catch (err) {
+                                errorMsg.textContent = err.message || 'Something went wrong. Please try again.';
+                                errorMsg.style.display = 'block';
+                                actionBtn.disabled = false;
+                                actionBtn.textContent = 'Confirm Booking';
+                                cancelBtn.style.display = 'block';
+                            }
+                        });
+
+                        stepsContainer.appendChild(confirmWrapper);
+                    }
+
+                    function showBookedSuccess(dateLabel, timeLabel) {
+                        stepsContainer.innerHTML = '';
+
+                        const wrapper = document.createElement('div');
+                        wrapper.style.display = 'flex';
+                        wrapper.style.flexDirection = 'column';
+                        wrapper.style.alignItems = 'center';
+                        wrapper.style.textAlign = 'center';
+                        wrapper.style.gap = '1.25rem';
+                        wrapper.style.padding = '1.5rem 0';
+
+                        const iconContainer = document.createElement('div');
+                        iconContainer.style.width = '4rem';
+                        iconContainer.style.height = '4rem';
+                        iconContainer.style.background = '#f0fdf4';
+                        iconContainer.style.borderRadius = '50%';
+                        iconContainer.style.display = 'flex';
+                        iconContainer.style.alignItems = 'center';
+                        iconContainer.style.justifyContent = 'center';
+                        iconContainer.style.color = '#22c55e';
+                        iconContainer.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>';
+                        wrapper.appendChild(iconContainer);
+
+                        const title = document.createElement('h4');
+                        title.style.margin = '0';
+                        title.style.color = '#166534';
+                        title.style.fontSize = '1.5rem';
+                        title.style.fontWeight = '900';
+                        title.textContent = 'Booking Confirmed!';
+                        wrapper.appendChild(title);
+
+                        const msgText = document.createElement('p');
+                        msgText.style.margin = '0';
+                        msgText.style.color = '#4b5563';
+                        msgText.style.fontSize = '0.95rem';
+                        msgText.style.lineHeight = '1.6';
+                        msgText.style.fontWeight = '600';
+                        msgText.innerHTML = 'Your appointment is scheduled for <br><span style="color:#0f172a; font-weight:800;">' + dateLabel + ' at ' + timeLabel + '</span>.<br>A Google Calendar invitation has been sent to your email.';
+                        wrapper.appendChild(msgText);
+
+                        const closeBtn2 = document.createElement('button');
+                        closeBtn2.className = 'eligibility-submit-btn';
+                        closeBtn2.style.setProperty('background', '#166534', 'important');
+                        closeBtn2.style.setProperty('color', '#ffffff', 'important');
+                        closeBtn2.style.boxShadow = 'none';
+                        closeBtn2.textContent = 'Done';
+                        closeBtn2.addEventListener('click', closeModal);
+                        wrapper.appendChild(closeBtn2);
+
+                        stepsContainer.appendChild(wrapper);
+                    }
                 }
                 
                 document.addEventListener('click', function(e) {

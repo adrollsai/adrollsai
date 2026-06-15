@@ -359,22 +359,43 @@ export async function POST(request: Request) {
             property = data;
         }
 
-        const { data: targetProfile } = await supabase
+        let targetProfile: any = null;
+        const selectWithAvatars = await supabase
             .from('profiles')
-            .select('business_name, mission_statement, custom_prompt, character_url, character_description, character_audio_url')
+            .select('business_name, mission_statement, custom_prompt, character_url, character_description, character_audio_url, avatar_url, avatar_description')
             .eq('id', targetUserId)
             .single();
 
-        if (useCharacterVideo !== false && (!targetProfile || !targetProfile.character_url)) {
+        if (selectWithAvatars.error) {
+            console.warn("[Video Generate] Failed to select with avatar columns, retrying without them:", selectWithAvatars.error.message);
+            const selectWithoutAvatars = await supabase
+                .from('profiles')
+                .select('business_name, mission_statement, custom_prompt, character_url, character_description, character_audio_url')
+                .eq('id', targetUserId)
+                .single();
+            targetProfile = selectWithoutAvatars.data;
+        } else {
+            targetProfile = selectWithAvatars.data;
+        }
+
+        const presenterType = body.presenterType || (useCharacterVideo ? 'video' : 'none');
+
+        if (presenterType === 'video' && (!targetProfile || !targetProfile.character_url)) {
             return NextResponse.json({ 
-                error: 'Please upload a character photo in your profile settings first before generating videos.' 
+                error: 'Please upload a reference video in your Profile settings or Creation tab first before generating videos.' 
+            }, { status: 400 });
+        }
+
+        if (presenterType === 'avatar' && (!targetProfile || !targetProfile.avatar_url)) {
+            return NextResponse.json({ 
+                error: 'Please upload an avatar photo in your Profile settings or Creation tab first before generating videos.' 
             }, { status: 400 });
         }
 
         let profile: any = targetProfile || {};
 
         // Self-heal: If character_url is present but character_description is null, analyze it on-the-fly!
-        if (useCharacterVideo !== false && profile?.character_url && !profile.character_description) {
+        if (presenterType === 'video' && profile?.character_url && !profile.character_description) {
             try {
                 console.log(`[Self-Healing] Character URL is present but description is null. Performing on-the-fly vision analysis for: ${profile.character_url}`);
                 const imageRes = await fetch(profile.character_url);
@@ -422,6 +443,55 @@ export async function POST(request: Request) {
             }
         }
 
+        // Self-heal: If avatar_url is present but avatar_description is null, analyze it on-the-fly!
+        if (presenterType === 'avatar' && profile?.avatar_url && !profile.avatar_description) {
+            try {
+                console.log(`[Self-Healing] Avatar URL is present but description is null. Performing on-the-fly vision analysis for: ${profile.avatar_url}`);
+                const imageRes = await fetch(profile.avatar_url);
+                if (imageRes.ok) {
+                    const buffer = Buffer.from(await imageRes.arrayBuffer());
+                    const mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
+                    
+                    const { GoogleGenerativeAI } = require('@google/generative-ai');
+                    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY!);
+                    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+                    
+                    const visionPrompt = "You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata.";
+                    
+                    const result = await model.generateContent([
+                        visionPrompt,
+                        {
+                            inlineData: {
+                                data: buffer.toString('base64'),
+                                mimeType
+                            }
+                        }
+                    ]);
+                    
+                    const desc = result.response.text()?.trim();
+                    if (desc) {
+                        console.log(`[Self-Healing] Avatar on-the-fly vision analysis success: "${desc}"`);
+                        
+                        // Update Supabase using a service role client to bypass client RLS rules
+                        const { createClient: createAdminClient } = require('@supabase/supabase-js');
+                        const supabaseAdmin = createAdminClient(
+                            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                            process.env.SUPABASE_SERVICE_ROLE_KEY!
+                        );
+                        await supabaseAdmin
+                            .from('profiles')
+                            .update({ avatar_description: desc })
+                            .eq('id', targetUserId);
+                        
+                        // Update current object in memory
+                        profile.avatar_description = desc;
+                    }
+                }
+            } catch (visionErr) {
+                console.error("[Self-Healing] Avatar vision analysis failed:", visionErr);
+            }
+        }
+
         const productInfo = property ? `Product: ${property.title}. Description: ${property.description}` : 'Generic product promotion';
         const businessName = profile?.business_name || 'Your Business';
         const brandGuidelines = profile?.custom_prompt || 'Natural UGC style';
@@ -449,10 +519,10 @@ export async function POST(request: Request) {
             .map((desc: string, i: number) => `- Reference Image ${i + 1} description: "${desc}"`)
             .join('\n') || 'No detailed image descriptions provided. Describe the images based on standard product expectations.';
 
-        // 2. Use custom uploaded profile avatar (checked and guaranteed to exist when useCharacterVideo is true)
-        let avatarUrl = useCharacterVideo !== false ? profile.character_url : null;
-        let isCharacterVideo = avatarUrl && (/\.(mp4|webm|mov|avi|wmv)/i.test(avatarUrl) || avatarUrl.includes('video'));
-        let referenceAudioUrl = useCharacterVideo !== false ? (profile.character_audio_url || "") : "";
+        // 2. Use custom uploaded profile avatar / reference video based on presenterType
+        let avatarUrl = presenterType === 'video' ? profile.character_url : (presenterType === 'avatar' ? profile.avatar_url : null);
+        let isCharacterVideo = presenterType === 'video';
+        let referenceAudioUrl = presenterType === 'video' ? (profile.character_audio_url || "") : "";
         
         if (avatarUrl) {
             console.log(`[Video Generate] Using custom uploaded character ${isCharacterVideo ? 'video' : 'photo'} from profile: ${avatarUrl}`);
@@ -474,7 +544,7 @@ export async function POST(request: Request) {
                 console.log(`[Video Generate] Using uploaded voice sample directly: ${referenceAudioUrl}`);
             }
         } else {
-            console.log(`[Video Generate] Speaker reference is disabled (useCharacterVideo=false). Using generic presenter.`);
+            console.log(`[Video Generate] Speaker reference is disabled (presenterType=none). Using generic presenter.`);
         }
 
         // Prepend the custom character avatar to the reference images (only if it's a photo, not a video)
@@ -494,9 +564,11 @@ export async function POST(request: Request) {
             // Extrapolate ethnicity based on where the business is based
             const extrapolatedEthnicity = extrapolateEthnicity(profile, property, customInstructions);
             
+            const profileDesc = presenterType === 'video' ? profile.character_description : (presenterType === 'avatar' ? profile.avatar_description : null);
+
             // Character description — fed directly to Gemini
-            const characterDescription = (useCharacterVideo !== false && profile?.character_url)
-                ? (profile?.character_description || `a stunningly beautiful, highly attractive, charismatic ${extrapolatedEthnicity} female UGC content creator with a fair complexion, smiling warmly`)
+            const characterDescription = presenterType !== 'none'
+                ? (profileDesc || `a stunningly beautiful, highly attractive, charismatic ${extrapolatedEthnicity} female UGC content creator with a fair complexion, smiling warmly`)
                 : `a stunningly beautiful, highly charismatic ${extrapolatedEthnicity} female UGC content creator, smiling warmly and speaking directly to the camera`;
 
             for (let i = 0; i < scenes.length; i++) {

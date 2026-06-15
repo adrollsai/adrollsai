@@ -1,15 +1,26 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { createKieTask } from '@/utils/external-apis';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google'; 
 import { checkLimitAndIncrement, refundLimit, checkStorageLimit } from '@/utils/subscription-server';
+import { buildImageSystemPrompt, detectIndustry } from '@/utils/image-prompt-master';
+
+const supabaseAdmin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 function logToFile(msg: string) {
   const timestamp = new Date().toISOString();
-  // Using standard console.log for Vercel/Next.js cloud logs
-  // Local file system writing is disabled due to EROFS errors in serverless functions.
   console.log(`[ImageGen] [${timestamp}] ${msg}`);
+}
+
+function extractTag(text: string, tag: string, fallback: string = ''): string {
+  const regex = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i');
+  const match = text.match(regex);
+  return match ? match[1].trim() : fallback;
 }
 
 export async function POST(request: Request) {
@@ -87,19 +98,96 @@ export async function POST(request: Request) {
         aspectRatio = "4:5",
         model,
         isDirect = false,
-        isOrganic = false // New flag for raw/organic look
+        isOrganic = false,
+        styleAesthetic,
+        creativeCategory
     } = body;
 
-    // Fetch user profile for business context
+    // Fetch user profile for business context + industry
     const { data: profile } = await supabase
       .from('profiles')
-      .select('business_name')
+      .select('business_name, business_info, mission_statement, custom_prompt, industry')
       .eq('id', targetUserId)
       .single()
 
-    const businessName = profile?.business_name || 'Your Business';
+    const businessName = profile?.business_name || '';
+    const profileCustomPrompt = profile?.custom_prompt || '';
 
-    logToFile(`STARTING GENERATION | MODEL: ${model} | Target User ID: ${targetUserId} | Business Name: ${businessName}`);
+    // Determine the target creative category
+    let targetCategory = creativeCategory || null;
+    const styleOptions = ['premium', 'edm', 'high converting', 'high_converting'];
+    if (!targetCategory && styleAesthetic && styleOptions.includes(styleAesthetic.toLowerCase())) {
+        targetCategory = styleAesthetic;
+    }
+    if (isDirect && !targetCategory) {
+        targetCategory = 'premium';
+    }
+
+    let normalizedCategory: 'premium' | 'edm' | 'high_converting' | null = null;
+    if (targetCategory) {
+        const catLower = targetCategory.toLowerCase();
+        if (catLower.includes('premium')) normalizedCategory = 'premium';
+        else if (catLower.includes('edm')) normalizedCategory = 'edm';
+        else if (catLower.includes('high')) normalizedCategory = 'high_converting';
+    }
+
+    // Fetch random reference creative matching category
+    let fetchedRefUrl = null;
+    if (normalizedCategory) {
+        try {
+            const { data: refItems, error: refError } = await supabaseAdmin
+                .from('reference_creatives')
+                .select('url')
+                .eq('category', normalizedCategory);
+            
+            if (!refError && refItems && refItems.length > 0) {
+                const randomIndex = Math.floor(Math.random() * refItems.length);
+                fetchedRefUrl = refItems[randomIndex].url;
+                logToFile(`Selected random reference URL from database for category ${normalizedCategory}: ${fetchedRefUrl}`);
+            }
+        } catch (dbErr) {
+            console.error("Failed to fetch reference creatives from DB:", dbErr);
+        }
+
+        // Fallback to seeded R2 URLs if none found in DB (table not created yet, or empty)
+        if (!fetchedRefUrl) {
+            const fallbacks = {
+                premium: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/reference-creatives/premium_seed_orchid.png',
+                edm: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/reference-creatives/edm_seed_farmland.jpg',
+                high_converting: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/reference-creatives/high_converting_seed_99acres.jpg'
+            };
+            fetchedRefUrl = fallbacks[normalizedCategory];
+            logToFile(`Using fallback reference URL for category ${normalizedCategory}: ${fetchedRefUrl}`);
+        }
+    }
+
+    // Force organic smartphone style for high converting ads
+    let isOrganicOverride = isOrganic;
+    if (normalizedCategory === 'high_converting') {
+        isOrganicOverride = true;
+    }
+
+    // --- INDUSTRY DETECTION & CACHING ---
+    let industry = profile?.industry || null;
+    if (!industry) {
+        logToFile("Industry not set for user. Auto-detecting...");
+        industry = await detectIndustry(
+            profile?.business_name || '',
+            profile?.business_info || '',
+            profile?.mission_statement || ''
+        );
+        // Persist to DB so we don't re-detect on every request
+        await supabaseAdmin
+            .from('profiles')
+            .update({ industry })
+            .eq('id', targetUserId);
+        logToFile(`Industry auto-detected and saved: ${industry}`);
+    }
+
+    // --- BUILD MASTER VISUAL PRODUCTION RULES ---
+    const visualProductionRules = buildImageSystemPrompt(industry, isOrganicOverride);
+
+    logToFile(`STARTING GENERATION | MODEL: ${model} | Target User ID: ${targetUserId} | Business Name: ${businessName} | Industry: ${industry} | Category: ${normalizedCategory || 'None'}`);
     
     // Consolidate and filter images (Remove placeholders, SVGs and invalid URLs)
     // SVGs are often rejected by Image-to-Image models as 'unsupported file type'.
@@ -113,95 +201,37 @@ export async function POST(request: Request) {
 
     const validPropImages = filterImages(propImages);
     const validLogo = filterImages([logoUrl]);
-    const validTemplate = filterImages([templateUrl]);
+    const validTemplate = filterImages([templateUrl || fetchedRefUrl]);
     
     const allInputImages = [...validPropImages, ...validLogo, ...validTemplate];
 
-    // --- HORMORZI-STYLE DIRECT RESPONSE PROMPT ---
-    let styleInstructions = isOrganic 
-      ? `AESTHETIC: RAW & ORGANIC. Use a smartphone-photo style. It must look like an unedited, authentic photo taken by a regular person, not a professional photographer. 
-         LIGHTING: Natural, slightly imperfect, no studio glow.
-         TYPOGRAPHY: Hand-written or slightly unorganized text overlays. Avoid professional agency layouts. It must feel "real" and trustworthy.`
-      : `HYPER-REALISM: The image must look like a professional photograph taken with a high-end camera (Sony A7R V or Canon EOS R5). 
-         NO ARTIFICIAL SHEEN: Avoid that typical "AI look". No plasticy textures, no artificial glowing sheen, and no saturated "HDR-style" over-processing.
-         NATURAL LIGHTING: Use soft, natural light (Golden Hour or professional studio lighting). Shadows should be soft and realistic.`;
-
-    // Dynamic prompt synthesis via Gemini
-    let synthesizedPrompt = "";
-    try {
-        logToFile("Synthesizing dynamic ad creative image prompt via Gemini...");
-        const synthesisPrompt = `You are a world-class Direct Response Ad Creative Director and Senior Copywriter.
-Your goal is to write a highly detailed, premium image generation prompt for a static Meta ad.
-
-We are designing an ad for:
-- Product/Service Title: "${propertyTitle}"
-- Description/Context: "${propertyDescription}"
-- Business Name: "${businessName}"
-- Contact Number: "${contactNumber || 'None'}"
-- User Style/Instructions: "${userInstructions || 'None'}"
-- Design Style: ${isOrganic ? 'RAW & ORGANIC smartphone photo look (natural light, unedited, authentic look)' : 'HYPER-REALISTIC studio photo (high-end professional camera, soft lighting, premium agency layout)'}
-- Aspect Ratio: ${aspectRatio}
-
-Your task is to write a highly detailed, descriptive image generation prompt (around 150-250 words) for the AI Image Generator.
-Follow these rules:
-1. THE HOOK & HEADLINE (CRITICAL):
-   - Formulate a highly relatable, scroll-stopping headline hook that directly appeals to the target audience's desires/pain points. Do NOT just print the product title. For example, for a NEET course, a hook like "Crush NEET 2027!" or "Score 680+ in NEET" is far better than "Path IQ".
-   - The headline MUST be short and bold (maximum 4-5 words) to ensure the image generator renders the text perfectly without spelling errors.
-   - Specify exactly where the headline should be rendered (e.g. "large, bold, high-contrast text at the top").
-2. THE VISUAL SCENE & COMPOSITION:
-   - Describe a stunning, premium scene that showcases the product's value.
-   - Include high-quality, aspirational, beautiful people matching the ethnicity of the business context (${businessName}) who look successful.
-   - Specify natural, soft lighting and a harmonious, curated color palette (avoiding generic primary colors, use HSL-tailored premium colors like deep indigo, warm gold, rich teal, or charcoal).
-   - Keep the design clean, premium, and uncluttered.
-3. BRANDING & CONTACT:
-   - Instruct the generator to professionally integrate the business logo (${logoUrl ? 'using the logo URL' : ''}) and the contact number (${contactNumber || ''}) with premium, high-end typography and placement (e.g., at the bottom or corner of the image).
-4. OUTPUT FORMAT:
-   - Output ONLY the final detailed prompt that will be sent directly to the image generator. Do not include introductory text, conversational phrases, or formatting blocks. Just the prompt.
-
-Write the prompt now:`;
-
-        let modelName = 'gemini-3.5-flash';
-        let response;
-        try {
-            response = await generateText({
-              model: google(modelName),
-              prompt: synthesisPrompt,
-            });
-        } catch (err: any) {
-            logToFile(`Failed with ${modelName}: ${err.message}. Falling back to gemini-3-flash-preview...`);
-            modelName = 'gemini-3-flash-preview';
-            response = await generateText({
-              model: google(modelName),
-              prompt: synthesisPrompt,
-            });
-        }
-        
-        synthesizedPrompt = response.text.trim();
-        logToFile(`Synthesized prompt successfully using ${modelName}: ${synthesizedPrompt}`);
-    } catch (err: any) {
-        logToFile(`Warning: Prompt synthesis failed: ${err.message}. Falling back to default static prompt.`);
+    // Build category specific layout and aesthetic guidance
+    let categoryPromptGuideline = "";
+    if (normalizedCategory === 'premium') {
+        categoryPromptGuideline = "Style: Premium luxury ad creative layout. High-end clean commercial photography of the product/property, premium interior glow, warm lighting, elegant reflections, clean professional composition, elegant text design.";
+    } else if (normalizedCategory === 'edm') {
+        categoryPromptGuideline = "Style: EDM (Emotion & Feeling) ad creative. Focus on abstract lifestyle visual elements that evoke an emotional response (e.g. cozy fireplace atmosphere, beautiful view, warm pool water, abstract beauty) rather than directly showing the product. Sell the feeling. Include a powerful emotional hook.";
+    } else if (normalizedCategory === 'high_converting') {
+        categoryPromptGuideline = "Style: High converting raw organic ad creative. Unpolished, low-effort smartphone photo look that does not seem like an ad. Display a raw, clean image of the product. Directly on the image itself, overlay a simple, clean, readable text caption/card displaying bare minimum info (Location, Price, and Configuration) with zero clutter.";
     }
 
-    let finalImagePrompt = synthesizedPrompt || `PERSONA: World-class Senior Ad Creative Director (20+ years exp) at a top-tier global advertising agency.
-OBJECTIVE: Design a "High-Value" professional Meta Ad creative that encapsulates the product's essence with industry-standard excellence while maintaining extreme scroll-stopping power.
+    const hasReference = validTemplate.length > 0;
 
-TITLE/OFFER: "${propertyTitle}"
-DESCRIPTION/CONTEXT: "${propertyDescription}"
-BUSINESS NAME: "${businessName}"
-CONTACT NUMBER: "${contactNumber || 'Not provided'}"
+    // Build literal, simplified, high-converting image prompt
+    const promptParts = [
+        "Make a high converting static meta ad, make sure the result is super real looking, and include attractive looking humans in it (ethnicity should be according to where the business is from) that don't look ai like, they should look super real. Only include super essential info in the image text overlays so it is not cluttered with text too much.",
+        hasReference ? "Take design layout and style inspiration from the reference image creative (provided in the input images) and mold it for our product with a slight variation." : "",
+        categoryPromptGuideline,
+        `Product Description: ${propertyTitle || ''}. ${propertyDescription || ''}`,
+        businessName ? `Business Info - Brand/Business Name: ${businessName}` : '',
+        contactNumber ? `Business Info - Contact Info: ${contactNumber}` : '',
+        logoUrl ? `Business Logo: Include the business logo cleanly in a corner of the image.` : '',
+        (!normalizedCategory && styleAesthetic) ? `Style: Render the image in a ${styleAesthetic} aesthetic.` : '',
+        profileCustomPrompt ? `Profile Custom Instructions: ${profileCustomPrompt}` : '',
+        userInstructions ? `Custom Instructions: ${userInstructions}` : ''
+    ].filter(Boolean);
 
-DESIGN RULES:
-1. ${styleInstructions}
-2. PEOPLE: ALWAYS include high-quality, "super beautiful" people who look successful and aspirational. 
-3. ETHNICITY: Match the ethnicity of the people to the context of the Business Name (${businessName}) and Location. If the business is regional, use the appropriate local ethnicity.
-4. BRAND ENCAPSULATION: Professionally integrate the product details into the scene. It should feel like a premium, state-of-the-art brand advertisement.
-5. NO NONSENSE: Ensure perfectly clean anatomy and NO nonsensical artifacts or "AI hallucinations".
-6. HOOK & HIERARCHY: Use a clear visual hook that immediately draws the eye to the most important element of the offer.
-7. TYPOGRAPHY & TEXT DENSITY: Use minimal, high-impact text. Do NOT clutter the image with long sentences. Include ONLY the Business Name and the most important "Hook" or "Offer". Ensure all text is large, bold, and easily readable on a small mobile screen. Avoid tiny fine print.
-8. BRAND INTEGRATION: Include the provided BUSINESS LOGO and the CONTACT NUMBER (${contactNumber || ''}) with premium, high-end typography and placement.
-
-USER INSTRUCTIONS: ${userInstructions || 'None'}
-ASPECT RATIO: ${aspectRatio}`;
+    const finalImagePrompt = promptParts.join("\n");
 
     let kieModel = isDirect ? 'nano-banana-2' : 'gpt-image-2-text-to-image';
     let imageField = 'image_input'; // Default for text-to-image and nano
@@ -293,10 +323,11 @@ Premium design, clean layout, bold headline.`;
     logToFile(`✅ SUCCESS: KIE TASK CREATED: ${kieResult.taskId}`);
 
     // 2. Try the Caption Generation Safely
-    let generatedCaption = "Check out this premium property! DM for more details.";
+    let finalCaption = "";
     try {
+        logToFile("Generating high-converting Meta ad caption via Gemini...");
         const { text } = await generateText({
-          model: google('gemini-3-flash-preview'),
+          model: google('gemini-3.5-flash'),
           prompt: `You are a world-class Direct Response Copywriter. 
 Write a high-converting Meta ad caption for: "${propertyTitle}". 
 Context: "${propertyDescription}". 
@@ -313,15 +344,24 @@ RULES:
 - Make it stop the scroll.
 - Output ONLY the caption, NO extra text.`,
         });
-        generatedCaption = text;
+        finalCaption = text;
         logToFile("Caption generated successfully.");
     } catch (chatError: any) {
-        logToFile(`Caption generation failed: ${chatError.message}`);
+        logToFile(`Caption generation failed: ${chatError.message}. Trying fallback model...`);
+        try {
+            const { text } = await generateText({
+              model: google('gemini-3-flash-preview'),
+              prompt: `Write a high-converting Meta ad caption for: "${propertyTitle}". Context: "${propertyDescription}". Business: "${businessName}". Contact: "${contactNumber || 'DM for details!'}" without bolding and without hashtags.`,
+            });
+            finalCaption = text;
+        } catch {
+            finalCaption = "Check out this premium property! DM for more details.";
+        }
     }
 
     return NextResponse.json({ 
         taskId: kieResult.taskId,
-        caption: generatedCaption,
+        caption: finalCaption,
     })
 
   } catch (error: any) {

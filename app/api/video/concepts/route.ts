@@ -59,15 +59,36 @@ export async function POST(request: Request) {
             }
         }
 
-        const { data: targetProfile } = await supabase
+        let targetProfile: any = null;
+        const selectWithAvatars = await supabase
             .from('profiles')
-            .select('business_name, mission_statement, business_info, custom_prompt, character_url, character_description')
+            .select('business_name, mission_statement, business_info, custom_prompt, character_url, character_description, avatar_url, avatar_description')
             .eq('id', targetUserId)
             .single();
 
-        if (useCharacterVideo !== false && (!targetProfile || !targetProfile.character_url)) {
+        if (selectWithAvatars.error) {
+            console.warn("[Concepts API] Failed to select with avatar columns, retrying without them:", selectWithAvatars.error.message);
+            const selectWithoutAvatars = await supabase
+                .from('profiles')
+                .select('business_name, mission_statement, business_info, custom_prompt, character_url, character_description')
+                .eq('id', targetUserId)
+                .single();
+            targetProfile = selectWithoutAvatars.data;
+        } else {
+            targetProfile = selectWithAvatars.data;
+        }
+
+        const presenterType = body.presenterType || (useCharacterVideo ? 'video' : 'none');
+
+        if (presenterType === 'video' && (!targetProfile || !targetProfile.character_url)) {
             return NextResponse.json({ 
-                error: 'Please upload a character photo in your profile settings first before generating video concepts.' 
+                error: 'Please upload a reference video in your Profile settings or Creation tab first before generating video concepts.' 
+            }, { status: 400 });
+        }
+
+        if (presenterType === 'avatar' && (!targetProfile || !targetProfile.avatar_url)) {
+            return NextResponse.json({ 
+                error: 'Please upload an avatar photo in your Profile settings or Creation tab first before generating video concepts.' 
             }, { status: 400 });
         }
 
@@ -89,14 +110,26 @@ export async function POST(request: Request) {
             .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined')
             .slice(0, 8);
 
-        const productInfo = property ? `Product: ${property.title}. Description: ${property.description}` : 'Generic product promotion';
+        let productInfo = 'Generic product promotion';
+        if (property) {
+            productInfo = `
+Product/Property Name: ${property.title}
+Core Description: ${property.description || "N/A"}
+Price/Pricing Info: ${property.price || "N/A"}
+Location/Address: ${property.address || "N/A"}
+Amenities/Features: ${property.amenities || "N/A"}
+`;
+        }
         const businessName = profile?.business_name || 'Your Business';
         const brandGuidelines = profile?.custom_prompt || 'UGC style, engaging';
 
         // Build prompt for analysis and concept generation
-        const characterDescription = useCharacterVideo !== false
-            ? (profile?.character_description || "a stunningly beautiful, highly attractive, charismatic Indian female UGC content creator with a fair complexion, smiling warmly")
-            : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera";
+        let characterDescription = "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera";
+        if (presenterType === 'video') {
+            characterDescription = profile?.character_description || "a stunningly beautiful, highly attractive, charismatic Indian female UGC content creator with a fair complexion, smiling warmly";
+        } else if (presenterType === 'avatar') {
+            characterDescription = profile?.avatar_description || "a stunningly beautiful, highly attractive, charismatic Indian female UGC content creator with a fair complexion, smiling warmly";
+        }
 
         const numClips = Math.ceil(duration / 15);
         const durationText = `${duration}-second ad concepts ${numClips > 1 ? `(intended to be split into exactly ${numClips} sequential 15-second scenes/clips)` : '(a single 15-second scene)'}`;
@@ -137,6 +170,10 @@ ${refImages.map((img, i) => `- Image Image_${i + 1}: ${img}`).join('\n')}
 
 INSTRUCTIONS:
 0. CRITICAL CUSTOM INSTRUCTIONS PRIORITIZATION RULE: You MUST strictly prioritize and adhere to the user's Custom Instructions: "${userInstructions || 'None'}". Every single concept angle, visual storyline, hook, and psychological positioning MUST be custom-tailored to follow these instructions first and foremost. Do not ignore them or generate generic real estate/e-commerce templates that do not reflect what the user has requested here.
+0.1. CRITICAL CONCRETE PRODUCT DETAILS RULE (DO NOT BE VAGUE):
+   - You MUST explicitly base the hooks and concepts on the actual, concrete specifications, price, location, and amenities of the product/property provided in the Product/Service Info.
+   - Do NOT use vague marketing terms, generic placeholders (like "[price]", "[location]"), or broad fluff.
+   - The concept title, hook, and description MUST include real, informative details (e.g., specific price, exact location, actual key amenities/features) so that the resulting video script can provide actual, concrete information to the viewer. Focus on details that drive engagement and conversion. Do NOT mention RERA IDs or registration numbers.
 1. Since the videos will run as Facebook/Instagram/TikTok UGC Ads, they must be warm, authentic, natural, and deeply emotional. ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or pushy marketing hooks. Every concept must be centered around warm, authentic, emotional storytelling that generates real feelings of comfort, trust, pride, or security. You must dig deep into the psychological pain points of the target audience (e.g., escaping rent anxiety, security for parents/children, fear of delayed projects, wanting luxury/status, high return on investment) and position the business/product directly as the perfect solution to their deep-seated desire or pain. Avoid surface-level feature listicles; write concepts with emotional depth.
 ${hookLanguageRule}
 2. The ad concepts should be designed for a strict ${duration}-second video clip in 9:16 dimension ${numClips > 1 ? `consisting of exactly ${numClips} sequential 15-second scenes/clips` : '(a single 15-second scene)'}.

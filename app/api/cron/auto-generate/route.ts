@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createKieTask, generateKieChat } from '@/utils/external-apis';
 import { sendPushNotification } from '@/utils/notification-helper';
+import { buildImageSystemPrompt, detectIndustry } from '@/utils/image-prompt-master';
+
+function extractTag(text: string, tag: string, fallback: string = ''): string {
+  const regex = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i');
+  const match = text.match(regex);
+  return match ? match[1].trim() : fallback;
+}
 
 // Initialize Supabase Admin to bypass Row Level Security since this runs in the background
 const supabaseAdmin = createClient(
@@ -54,9 +61,27 @@ export async function GET(request: Request) {
 
                 if (!profile) throw new Error("Profile not found");
 
-                const businessName = profile.business_name || 'Your Business';
+                const businessName = profile.business_name || '';
                 const contactNumber = profile.contact_number || '';
                 const logoUrl = profile.logo_url || '';
+
+                // Auto-detect and cache industry if not set
+                let industry = profile.industry || null;
+                if (!industry) {
+                    industry = await detectIndustry(
+                        profile.business_name || '',
+                        profile.business_info || '',
+                        profile.mission_statement || ''
+                    );
+                    await supabaseAdmin
+                        .from('profiles')
+                        .update({ industry })
+                        .eq('id', prop.user_id);
+                    console.log(`[Auto-Generate] Industry auto-detected for ${prop.user_id}: ${industry}`);
+                }
+
+                // Build master visual production rules
+                const visualProductionRules = buildImageSystemPrompt(industry, false);
 
                 // B. Prepare the Image Array
                 let propImages: string[] = [];
@@ -66,65 +91,17 @@ export async function GET(request: Request) {
                 const allInputImages = [...propImages];
                 if (logoUrl) allInputImages.push(logoUrl);
 
-                // C. Synthesize dynamic ad creative image prompt via Gemini
-                let finalImagePrompt = "";
-                try {
-                    const synthesisPrompt = `You are a world-class Direct Response Ad Creative Director and Senior Copywriter.
-Your goal is to write a highly detailed, premium image generation prompt for a static Meta ad.
+                // C. Build literal, simplified, high-converting image prompt
+                const promptParts = [
+                    "Make a high converting static meta ad, make sure the result is super real looking, and include attractive looking humans in it (ethnicity should be according to where the business is from) that don't look ai like, they should look super real. Only include super essential info in the image text overlays so it is not cluttered with text too much.",
+                    `Product Info: ${prop.title || ''}. Description: ${prop.description || ''}`,
+                    businessName ? `Business Name: ${businessName}` : '',
+                    contactNumber ? `Contact Info: ${contactNumber}` : '',
+                    logoUrl ? `Business Logo: Include the business logo cleanly in a corner.` : '',
+                    profile.custom_prompt ? `Custom Instructions: ${profile.custom_prompt}` : ''
+                ].filter(Boolean);
 
-We are designing an ad for:
-- Product/Service Title: "${prop.title}"
-- Description/Context: "${prop.description || ''}"
-- Business Name: "${businessName}"
-- Contact Number: "${contactNumber || 'None'}"
-- Mission Statement: "${profile.mission_statement || ''}"
-- Style Preference: "${profile.custom_prompt || ''}"
-- Design Style: HYPER-REALISTIC studio photo (high-end professional camera, soft lighting, premium agency layout)
-- Aspect Ratio: 4:5
-
-Your task is to write a highly detailed, descriptive image generation prompt (around 150-250 words) for the AI Image Generator.
-Follow these rules:
-1. THE HOOK & HEADLINE (CRITICAL):
-   - Formulate a highly relatable, scroll-stopping headline hook that directly appeals to the target audience's desires/pain points. Do NOT just print the product title.
-   - The headline MUST be short and bold (maximum 4-5 words) to ensure the image generator renders the text perfectly without spelling errors.
-   - Specify exactly where the headline should be rendered (e.g. "large, bold, high-contrast text at the top").
-2. THE VISUAL SCENE & COMPOSITION:
-   - Describe a stunning, premium scene that showcases the product's value.
-   - Include high-quality, aspirational, beautiful people matching the ethnicity of the business context (${businessName}) who look successful.
-   - Specify natural, soft lighting and a harmonious, curated color palette (avoiding generic primary colors, use HSL-tailored premium colors like deep indigo, warm gold, rich teal, or charcoal).
-   - Keep the design clean, premium, and uncluttered.
-3. BRANDING & CONTACT:
-   - Instruct the generator to professionally integrate the business logo and the contact number (${contactNumber || ''}) with premium, high-end typography and placement (e.g., at the bottom or corner of the image).
-4. OUTPUT FORMAT:
-   - Output ONLY the final detailed prompt that will be sent directly to the image generator. Do not include introductory text, conversational phrases, or formatting blocks. Just the prompt.
-
-Write the prompt now:`;
-
-                    finalImagePrompt = await generateKieChat(synthesisPrompt, "gemini-3-flash-preview");
-                    finalImagePrompt = finalImagePrompt.trim();
-                } catch (err) {
-                    console.error("Cron prompt synthesis failed, using fallback:", err);
-                }
-
-                if (!finalImagePrompt) {
-                    finalImagePrompt = `PERSONA: World-class Senior Ad Creative Director (20+ years exp) at a top-tier global advertising agency.
-OBJECTIVE: Design a "High-Value" professional Meta Ad creative for: "${prop.title}".
-
-CONTEXT: "${prop.description || ''}"
-BUSINESS: "${businessName}"
-MISSION: "${profile.mission_statement || ''}"
-STYLE PREFERENCE (MUST PRIORITIZE): "${profile.custom_prompt || ''}"
-
-DESIGN RULES:
-1. PREMIUM AESTHETIC: High-quality photography, sophisticated lighting, and clean visual hierarchy.
-2. PEOPLE: ALWAYS include "super beautiful", high-end people that match the ethnicity of the business context (${businessName}).
-3. BRAND ENCAPSULATION: Professionally integrate product info. It must look like a premium advertisement.
-4. NO NONSENSE: Perfectly clean anatomy and zero AI artifacts.
-5. TYPOGRAPHY & TEXT DENSITY: Use minimal, high-impact text. Do NOT clutter the image with long sentences. Include ONLY the Business Name and a single bold "Offer". Ensure all text is large and readable on mobile.
-6. HOOK: Bold, attention-grabbing visual hook.
-`;
-                    if (contactNumber) finalImagePrompt += ` Display contact: ${contactNumber}.`;
-                }
+                const finalImagePrompt = promptParts.join("\n");
 
                 const payload = {
                   "model": "gpt-image-2-image-to-image", // Upgraded to premium model
@@ -136,27 +113,37 @@ DESIGN RULES:
                   }
                 };
 
-                const copyPrompt = `
-                  You are an elite direct-response copywriter trained in Alex Hormozi's "$100M Offers" framework.
-                  Write a high-converting caption for:
-                  TITLE: ${prop.title}
-                  DETAILS: ${prop.description || ''}
-                  COMPANY: ${businessName}
-                  MISSION: ${profile.mission_statement || ''}
-                  CONTACT: ${contactNumber || 'DM for details!'}
-                  FRAMEWORK:
-                  1. HOOK: Call out the buyer.
-                  2. OFFER: The no-brainer deal.
-                  3. VALUE STACK: Benefit bullets.
-                  4. SCARCITY/URGENCY: Why now.
-                  5. CTA: Direct instruction.
-                `;
-
                 // D. Fire External API requests
-                const [kieResult, generatedCaption] = await Promise.all([
-                    createKieTask(payload),
-                    generateKieChat(copyPrompt, "gemini-3-flash")
-                ]);
+                let generatedCaption = "";
+                let kieResult;
+                
+                try {
+                    const copyPrompt = `
+                      You are an elite direct-response copywriter trained in Alex Hormozi's "$100M Offers" framework.
+                      Write a high-converting caption for:
+                      TITLE: ${prop.title}
+                      DETAILS: ${prop.description || ''}
+                      COMPANY: ${businessName}
+                      MISSION: ${profile.mission_statement || ''}
+                      CONTACT: ${contactNumber || 'DM for details!'}
+                      FRAMEWORK:
+                      1. HOOK: Call out the buyer.
+                      2. OFFER: The no-brainer deal.
+                      3. VALUE STACK: Benefit bullets.
+                      4. SCARCITY/URGENCY: Why now.
+                      5. CTA: Direct instruction.
+                    `;
+                    const [taskRes, chatRes] = await Promise.all([
+                        createKieTask(payload),
+                        generateKieChat(copyPrompt, "gemini-3-flash")
+                    ]);
+                    kieResult = taskRes;
+                    generatedCaption = chatRes;
+                } catch (err: any) {
+                    console.error("Task submission or caption generation failed, falling back:", err);
+                    kieResult = await createKieTask(payload);
+                    generatedCaption = `Check out ${prop.title}! Contact us at ${contactNumber || 'our office'} for more details.`;
+                }
 
                 if (!kieResult || kieResult.error || !kieResult.taskId) {
                   throw new Error(`Kie AI Task failed: ${kieResult?.error || 'Unknown error'}`);

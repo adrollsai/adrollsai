@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1 Kanal Super Luxury Kothi - New Chandigarh | The ProEstate</title>
+    <!-- Tailwind CSS CDN with config extension -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            DEFAULT: '#D0E8FF',
+                            light: '#E2F1FF',
+                            dark: '#0B0F19',
+                            accent: '#D4AF37', // Luxury Champagne Gold
+                            accentHover: '#C5A880',
+                            bg: '#0F172A', // Slate-900 for modern deep premium contrast
+                            heading: '#F8FAFC'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Outfit', 'Inter', 'sans-serif'],
+                        serif: ['Playfair Display', 'Georgia', 'serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* Smooth scale hover effects */
+        .hover-zoom img {
+            transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .hover-zoom:hover img {
+            transform: scale(1.06);
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0B0F19;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #D4AF37;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-brand-bg text-slate-300 font-sans antialiased min-h-screen">
+
+    <!-- TOP TELEPHONE HEADER -->
+    <header class="sticky top-0 z-50 bg-brand-dark/95 backdrop-blur-md border-b border-slate-800 transition-all duration-300">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+            <a href="#" class="flex items-center gap-3">
+                <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/29937131-1975-4c5f-9b78-e5b28f918d32-1781177373186.png" 
+                     alt="The ProEstate" 
+                     class="h-12 w-auto object-contain">
+                <div class="hidden sm:block">
+                    <span class="block text-white font-bold text-lg leading-none tracking-wide">The ProEstate</span>
+                    <span class="text-[10px] text-brand-accent tracking-widest uppercase">Luxury Portfolio</span>
+                </div>
+            </a>
+
+            <nav class="hidden md:flex items-center gap-8 text-sm font-medium tracking-wide">
+                <a href="#grand-tour" class="hover:text-brand-accent transition-colors">The Grand Tour</a>
+                <a href="#culinary" class="hover:text-brand-accent transition-colors">Culinary</a>
+                <a href="#spa-suites" class="hover:text-brand-accent transition-colors">Spa Suites</a>
+                <a href="#specifications" class="hover:text-brand-accent transition-colors">Specifications</a>
+                <a href="#floor-plans" class="hover:text-brand-accent transition-colors">Floor Plans</a>
+            </nav>
+
+            <div class="flex items-center gap-4">
+                <a href="tel:+919115739559" class="hidden sm:inline-flex items-center gap-2 text-brand-accent bg-brand-accent/10 border border-brand-accent/30 px-4 py-2 rounded-full text-sm font-semibold hover:bg-brand-accent hover:text-brand-dark transition-all">
+                    <i class="fa-solid fa-phone"></i>
+                    <span>+91 91157 39559</span>
+                </a>
+                <a href="#schedule-visit" class="bg-brand-accent hover:bg-brand-accentHover text-brand-dark px-5 py-2.5 rounded-full text-sm font-bold tracking-wide transition-all shadow-lg shadow-brand-accent/15">
+                    Book Private Tour
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- HERO SECTION (Alex Hormozi Framework: Dream Outcome + Speed / Pain Mitigation) -->
+    <section class="relative min-h-[90vh] flex items-center py-12 md:py-20 lg:py-24 overflow-hidden">
+        <!-- Hero Background Slider -->
+        <div class="absolute inset-0 z-0">
+            <div id="hero-bg-carousel" class="relative w-full h-full transition-opacity duration-1000">
+                <!-- Background Slides (Controlled via simple JS below) -->
+                <div class="absolute inset-0 bg-cover bg-center transition-opacity duration-1000 opacity-100" style="background-image: url('https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910753-dwq1sj.jpg');"></div>
+                <div class="absolute inset-0 bg-cover bg-center transition-opacity duration-1000 opacity-0" style="background-image: url('https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910735-azkcps.jpg');"></div>
+                <div class="absolute inset-0 bg-cover bg-center transition-opacity duration-1000 opacity-0" style="background-image: url('https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910724-dx3fsc.jpg');"></div>
+            </div>
+            <!-- Linear Dark Luxury Overlay -->
+            <div class="absolute inset-0 bg-gradient-to-r from-brand-dark via-brand-dark/90 to-transparent"></div>
+        </div>
+
+        <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+            
+            <!-- Left: Value Proposition Copy -->
+            <div class="lg:col-span-7 flex flex-col justify-center">
+                <span class="inline-flex items-center gap-2 bg-brand-accent/20 border border-brand-accent/40 text-brand-accent text-xs uppercase tracking-widest font-bold px-3 py-1.5 rounded-full w-fit mb-6">
+                    <i class="fa-solid fa-gem text-[10px]"></i> Prestigious Address in New Chandigarh
+                </span>
+                
+                <!-- H1 Headline (Dream Outcome + Specific Timeframe) -->
+                <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold font-serif text-white tracking-tight leading-[1.1] mb-6">
+                    Secure Your <span class="text-brand-accent">1 Kanal Kothi</span> Park-Facing Luxury Estate So You Can Step Into Multi-Generational Grandeur This Week.
+                </h1>
+
+                <!-- Sub-headline (Effort & Sacrifice Mitigation) -->
+                <p class="text-lg text-slate-300 leading-relaxed mb-8 max-w-xl">
+                    Experience Italian Iceberg marble, a private integrated elevator, and an expansive exclusive party hall—completely customized for elite families <strong class="text-white font-semibold">without the years of construction delays, skyrocketing materials cost, or layout compromises.</strong>
+                </p>
+
+                <!-- Key Value Trust Indicators -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                    <div class="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl p-3 backdrop-blur-sm">
+                        <i class="fa-solid fa-compass text-brand-accent text-xl"></i>
+                        <div>
+                            <span class="block text-white font-semibold text-sm">Park Facing</span>
+                            <span class="text-xs text-slate-400">Direct Serene Views</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl p-3 backdrop-blur-sm">
+                        <i class="fa-solid fa-stairs text-brand-accent text-xl"></i>
+                        <div>
+                            <span class="block text-white font-semibold text-sm">Private Elevator</span>
+                            <span class="text-xs text-slate-400">Serving All Levels</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl p-3 backdrop-blur-sm">
+                        <i class="fa-solid fa-wand-magic-sparkles text-brand-accent text-xl"></i>
+                        <div>
+                            <span class="block text-white font-semibold text-sm">Iceberg Marble</span>
+                            <span class="text-xs text-slate-400">Bespoke Italian Floor</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CTA Navigation Link -->
+                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+                    <a href="#qualification-card" class="bg-brand-accent hover:bg-brand-accentHover text-brand-dark px-8 py-4 rounded-xl font-extrabold tracking-wide text-center transition-all shadow-xl shadow-brand-accent/20 flex items-center justify-center gap-2">
+                        <span>Schedule Private Tour</span>
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </a>
+                    <a href="#grand-tour" class="border border-white/20 hover:border-white/40 text-white px-8 py-4 rounded-xl font-bold tracking-wide text-center transition-all flex items-center justify-center gap-2">
+                        <span>Explore Gallery</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Right: Dynamic Form Container -->
+            <div id="qualification-card" class="lg:col-span-5">
+                <div class="bg-brand-dark border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+                    <div class="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-brand-accent via-brand-light to-brand-accent"></div>
+                    <div class="mb-6">
+                        <h3 class="text-2xl font-bold font-serif text-white">Request VIP Passage</h3>
+                        <p class="text-sm text-slate-400 mt-1">Check availability and secure a personalized site tour of this ultra-luxury estate.</p>
+                    </div>
+
+                    <!-- CRITICAL PLATFORM FORM CONTAINER -->
+                    <div id="qualification-form-container" 
+                         data-button-text="Verify Eligibility & Book Site Tour"
+                         data-title="Exclusive Private Screening"
+                         data-description="Fill out the criteria below to register your exclusive direct-response walkthrough sequence.">
+                    </div>
+
+                    <!-- Risk Reversal Badges immediately below CTA -->
+                    <div class="mt-6 pt-6 border-t border-slate-800 grid grid-cols-3 gap-2 text-center text-[10px] tracking-wider text-slate-400 uppercase">
+                        <div>
+                            <i class="fa-solid fa-shield text-brand-accent mb-1 block text-sm"></i>
+                            Direct Dealership
+                        </div>
+                        <div>
+                            <i class="fa-solid fa-circle-check text-brand-accent mb-1 block text-sm"></i>
+                            100% Secure
+                        </div>
+                        <div>
+                            <i class="fa-solid fa-key text-brand-accent mb-1 block text-sm"></i>
+                            Immediate Delivery
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- THE GRAND TOUR (Scanner H2 Concept) -->
+    <section id="grand-tour" class="py-24 bg-brand-dark border-t border-slate-900">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <span class="text-brand-accent uppercase tracking-widest text-xs font-extrabold">Exquisite Spatial Design</span>
+                <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold font-serif text-white mt-3 leading-tight">
+                    Step Into An Architectural Masterpiece Crafted For Elite Lifestyles
+                </h2>
+                <p class="text-slate-400 mt-4">Every angle has been curated to project status, inspire entertaining, and foster multi-generational harmony.</p>
+            </div>
+
+            <!-- Bento Box Grid Layout for structural assets -->
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+                
+                <!-- Main Featured Item: Formal Living Room (Image 2) -->
+                <div class="md:col-span-8 group relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 hover-zoom">
+                    <div class="h-96 md:h-[28rem] overflow-hidden relative">
+                        <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910735-azkcps.jpg" 
+                             alt="Grand Sun-Kissed Formal Living Room" 
+                             class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent"></div>
+                    </div>
+                    <div class="absolute bottom-0 inset-x-0 p-6 md:p-8">
+                        <span class="bg-brand-accent text-brand-dark text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded mb-3 inline-block">Living Spaces</span>
+                        <h3 class="text-xl md:text-2xl font-serif font-bold text-white mb-2">Sun-Kissed Formal Lounge & Reflective Premium Marble</h3>
+                        <p class="text-xs md:text-sm text-slate-300 max-w-xl">Highly reflective grey marble floors illuminated by massive floor-to-ceiling sliding glass doors opening directly into serene landscaped gardens.</p>
+                    </div>
+                </div>
+
+                <!-- Secondary Tall Item: Curved Spiral Staircase (Image 1) -->
+                <div class="md:col-span-4 group relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 hover-zoom">
+                    <div class="h-96 md:h-[28rem] overflow-hidden relative">
+                        <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910724-dx3fsc.jpg" 
+                             alt="Grand Spiral Staircase" 
+                             class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent"></div>
+                    </div>
+                    <div class="absolute bottom-0 inset-x-0 p-6">
+                        <span class="bg-brand-accent text-brand-dark text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded mb-3 inline-block">Vertical Flow</span>
+                        <h3 class="text-lg md:text-xl font-serif font-bold text-white mb-1">Architectural Spiral Staircase</h3>
+                        <p class="text-xs text-slate-300">A sweeping wooden curved masterpiece set perfectly against minimalist architectural detailing.</p>
+                    </div>
+                </div>
+
+                <!-- Grid Item 3: Lift Lobby (Image 3) -->
+                <div class="md:col-span-4 group relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 hover-zoom">
+                    <div class="h-80 overflow-hidden relative">
+                        <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910726-3h3zxe.jpg" 
+                             alt="Private In-House Elevator" 
+                             class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent"></div>
+                    </div>
+                    <div class="absolute bottom-0 inset-x-0 p-6">
+                        <span class="bg-brand-accent text-brand-dark text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded mb-3 inline-block">Absolute Convenience</span>
+                        <h3 class="text-lg font-serif font-bold text-white mb-1">Gold-Finished Private Elevator</h3>
+                        <p class="text-xs text-slate-300">Integrated private elevator serving all residential levels effortlessly.</p>
+                    </div>
+                </div>
+
+                <!-- Grid Item 4: Green Park View (Image 13) -->
+                <div class="md:col-span-8 group relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 hover-zoom">
+                    <div class="h-80 overflow-hidden relative">
+                        <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910864-612jm.jpg" 
+                             alt="Rooftop views of green parks" 
+                             class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent"></div>
+                    </div>
+                    <div class="absolute bottom-0 inset-x-0 p-6 md:p-8">
+                        <span class="bg-brand-accent text-brand-dark text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded mb-3 inline-block">Surroundings</span>
+                        <h3 class="text-xl font-serif font-bold text-white mb-2">Uninterrupted Panoramic Parkway Views</h3>
+                        <p class="text-xs md:text-sm text-slate-300">Nestled directly facing a manicured neighborhood green parkway, guaranteeing unobstructed sunlight and absolute privacy.</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- THE CULINARY SPACE (Modern Modular Kitchen Section) -->
+    <section id="culinary" class="py-24 bg-slate-950 border-t border-slate-900">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+                
+                <!-- Left: Dynamic Interactive Carousel -->
+                <div class="relative rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
+                    <div class="relative h-96 md:h-[28rem] w-full">
+                        <!-- Slide 1 -->
+                        <div id="kitchen-slide-1" class="absolute inset-0 transition-opacity duration-700 opacity-100">
+                            <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910727-97ewrh.jpg" 
+                                 alt="Gourmet Custom Modular Kitchen Layout" 
+                                 class="w-full h-full object-cover">
+                            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950 p-6">
+                                <span class="text-white text-xs font-semibold uppercase tracking-wider">Angle 1: Integrated Custom Storage Pantry</span>
+                            </div>
+                        </div>
+                        <!-- Slide 2 -->
+                        <div id="kitchen-slide-2" class="absolute inset-0 transition-opacity duration-700 opacity-0">
+                            <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910725-6oqr8.jpg" 
+                                 alt="Alternate Kitchen View" 
+                                 class="w-full h-full object-cover">
+                            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950 p-6">
+                                <span class="text-white text-xs font-semibold uppercase tracking-wider">Angle 2: Seamless Workstation & Island Area</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Inner Overlay Box displaying Image 11 Close-up -->
+                    <div class="absolute top-4 right-4 w-28 h-28 md:w-36 md:h-36 rounded-2xl overflow-hidden border-2 border-brand-accent shadow-lg hidden sm:block">
+                        <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910724-21on8y.jpg" 
+                             alt="Commercial-grade kitchen wash faucets close up" 
+                             class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-slate-950/40"></div>
+                    </div>
+
+                    <!-- Carousel Controls -->
+                    <div class="absolute bottom-4 right-4 flex gap-2">
+                        <button onclick="toggleKitchenSlide(1)" class="w-8 h-8 rounded-full bg-slate-900/80 border border-slate-700 hover:border-brand-accent text-white transition-all flex items-center justify-center">
+                            <i class="fa-solid fa-angle-left text-xs"></i>
+                        </button>
+                        <button onclick="toggleKitchenSlide(2)" class="w-8 h-8 rounded-full bg-slate-900/80 border border-slate-700 hover:border-brand-accent text-white transition-all flex items-center justify-center">
+                            <i class="fa-solid fa-angle-right text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Right: Content & Bullet points with SVGs -->
+                <div>
+                    <span class="text-brand-accent uppercase tracking-widest text-xs font-extrabold">State-of-the-art culinary hub</span>
+                    <h2 class="text-3xl sm:text-4xl font-bold font-serif text-white mt-3 mb-6 leading-tight">
+                        A Masterfully Engineered Modular Kitchen Built For High-Capacity Culinary Artistry
+                    </h2>
+                    <p class="text-slate-400 mb-8 leading-relaxed">
+                        Say goodbye to standard kitchen limitations. This custom-offered culinary station features highly integrated dry pantry storage, dedicated preparations islands, and top-tier heavy-duty utility integrations designed for elite hosts.
+                    </p>
+
+                    <div class="space-y-4">
+                        <div class="flex gap-4">
+                            <span class="flex-shrink-0 w-10 h-10 rounded-full bg-brand-accent/10 border border-brand-accent/30 flex items-center justify-center text-brand-accent">
+                                <i class="fa-solid fa-utensils"></i>
+                            </span>
+                            <div>
+                                <h4 class="text-white font-bold">Attached Heavy-Duty Laundry & Pantry Area</h4>
+                                <p class="text-sm text-slate-400 mt-0.5">Separate high-capacity dry-goods pantry and heavy-duty wash systems directly adjacent to the kitchen.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-4">
+                            <span class="flex-shrink-0 w-10 h-10 rounded-full bg-brand-accent/10 border border-brand-accent/30 flex items-center justify-center text-brand-accent">
+                                <i class="fa-solid fa-faucet-drip"></i>
+                            </span>
+                            <div>
+                                <h4 class="text-white font-bold">Dual Under-Mount Stainless Steel Sinks</h4>
+                                <p class="text-sm text-slate-400 mt-0.5">Equipped with commercial-grade heavy dual goose-neck faucets and heavy-duty structural piping.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-4">
+                            <span class="flex-shrink-0 w-10 h-10 rounded-full bg-brand-accent/10 border border-brand-accent/30 flex items-center justify-center text-brand-accent">
+                                <i class="fa-solid fa-house-chimney-window"></i>
+                            </span>
+                            <div>
+                                <h4 class="text-white font-bold">Integrated Natural Lighting Ventilation</h4>
+                                <p class="text-sm text-slate-400 mt-0.5">Specially oriented to invite ambient morning sunlight while keeping internal cooking zones thoroughly ventilated.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- SPA SUITES GALLERY GRID (Quality Proof Points) -->
+    <section id="spa-suites" class="py-24 bg-brand-dark border-t border-slate-900">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <span class="text-brand-accent uppercase tracking-widest text-xs font-extrabold">Sanctuary of Well-Being</span>
+                <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold font-serif text-white mt-3 leading-tight">
+                    Five-Star Wellness Retreats Nested Within Your Private Chambers
+                </h2>
+                <p class="text-slate-400 mt-4">Every private bedroom is backed by a spa-inspired bath suite clad in premium masonry, handpicked details, and state-of-the-art body fixtures.</p>
+            </div>
+
+            <!-- Bathroom Mosaic Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                <!-- Col 1: Warm earth tone vanity (Image 4) -->
+                <div class="group relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 hover-zoom">
+                    <div class="h-96 overflow-hidden relative">
+                        <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910843-lfar58.jpg" 
+                             alt="Luxury master bathroom vanity wood finish" 
+                             class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/10 to-transparent"></div>
+                    </div>
+                    <div class="absolute bottom-0 inset-x-0 p-6">
+                        <span class="text-brand-accent text-xs font-bold uppercase tracking-wider mb-1 block">Master Bathroom</span>
+                        <h4 class="text-white text-lg font-serif font-bold">Solid Floating Wood Vanity</h4>
+                        <p class="text-xs text-slate-300 mt-1">Bespoke wood paneling, premium vessel sinks, and custom bronze lighting setups.</p>
+                    </div>
+                </div>
+
+                <!-- Col 2: White Slat design vanity (Image 5) -->
+                <div class="group relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 hover-zoom">
+                    <div class="h-96 overflow-hidden relative">
+                        <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910752-r0sxkb.jpg" 
+                             alt="Sleek white vertical-slat bathroom" 
+                             class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/10 to-transparent"></div>
+                    </div>
+                    <div class="absolute bottom-0 inset-x-0 p-6">
+                        <span class="text-brand-accent text-xs font-bold uppercase tracking-wider mb-1 block">Minimalist Elegance</span>
+                        <h4 class="text-white text-lg font-serif font-bold">Vertical Slat Privacy Partition</h4>
+                        <p class="text-xs text-slate-300 mt-1">Sleek minimalist white washstands integrated seamlessly with custom recessed ambient illumination.</p>
+                    </div>
+                </div>
+
+                <!-- Col 3: Two stacked elements (Image 8 & Image 12) -->
+                <div class="space-y-6 flex flex-col justify-between">
+                    
+                    <!-- Item 3A: Dark grey glass shower suite (Image 8) -->
+                    <div class="group relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 hover-zoom h-[11.2rem] flex-1">
+                        <div class="absolute inset-0 overflow-hidden">
+                            <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910753-n56arc.jpg" 
+                                 alt="Glass shower cubicle bathroom" 
+                                 class="w-full h-full object-cover">
+                            <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent"></div>
+                        </div>
+                        <div class="absolute bottom-0 inset-x-0 p-4 z-10">
+                            <h4 class="text-white text-md font-serif font-bold">Glass Shower Suites & Jaquar Fittings</h4>
+                        </div>
+                    </div>
+
+                    <!-- Item 3B: Rustic natural stone brick powder room (Image 12) -->
+                    <div class="group relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 hover-zoom h-[11.2rem] flex-1">
+                        <div class="absolute inset-0 overflow-hidden">
+                            <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910776-d4tjdc.jpg" 
+                                 alt="Rustic Stone powder room" 
+                                 class="w-full h-full object-cover">
+                            <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent"></div>
+                        </div>
+                        <div class="absolute bottom-0 inset-x-0 p-4 z-10">
+                            <h4 class="text-white text-md font-serif font-bold">Raw Stone-Brick Powder Room</h4>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- Hover detailing box highlighting materials consistency -->
+            <div class="mt-8 bg-slate-950 border border-slate-800 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6">
+                <div class="flex items-center gap-4">
+                    <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910737-4dett.jpg" 
+                         alt="TOTO Sanitaryware close-up" 
+                         class="w-16 h-16 rounded-xl object-cover border border-slate-700">
+                    <div>
+                        <span class="text-brand-accent text-xs font-bold uppercase tracking-wider">Uncompromising Materials Proof</span>
+                        <h4 class="text-white font-bold font-serif text-md mt-0.5">TOTO Premium Sanitaryware & Mirror-Finish Mixers</h4>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910726-26o5z.jpg" 
+                         alt="Cylindrical wall-sconce light vanity detail" 
+                         class="w-16 h-16 rounded-xl object-cover border border-slate-700">
+                    <div>
+                        <span class="text-brand-accent text-xs font-bold uppercase tracking-wider">Craftsmanship Details</span>
+                        <h4 class="text-white font-bold font-serif text-md mt-0.5">Cylindrical Sconces & Jaquar colored fixtures with body jets</h4>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- SMART LIVING & GREEN TECH -->
+    <section class="py-24 bg-slate-950 border-t border-slate-900">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+                
+                <div>
+                    <span class="text-brand-accent uppercase tracking-widest text-xs font-extrabold">Sustainable Modernism</span>
+                    <h2 class="text-3xl sm:text-4xl font-bold font-serif text-white mt-3 mb-6 leading-tight">
+                        Next-Gen Automation Intertwined With Sustainable Infrastructure
+                    </h2>
+                    <p class="text-slate-400 mb-8 leading-relaxed">
+                        A truly legacy-grade home must be built for the future. The estate features highly specialized structural additions designed to provide complete energy independence, automated security entryways, and pristine climate-controlled atmospheres year-round.
+                    </p>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <div class="bg-brand-dark border border-slate-800 p-5 rounded-2xl">
+                            <i class="fa-solid fa-solar-panel text-brand-accent text-2xl mb-3 block"></i>
+                            <h4 class="text-white font-bold text-base">Clean Energy Solar Array</h4>
+                            <p class="text-xs text-slate-400 mt-1">Equipped with a massive high-capacity rooftop solar configuration to significantly scale back utility overheads.</p>
+                        </div>
+                        <div class="bg-brand-dark border border-slate-800 p-5 rounded-2xl">
+                            <i class="fa-solid fa-key text-brand-accent text-2xl mb-3 block"></i>
+                            <h4 class="text-white font-bold text-base">Sliding Motorized Gate</h4>
+                            <p class="text-xs text-slate-400 mt-1">Seamless automated perimeter security for swift, keyless vehicle ingress and egress.</p>
+                        </div>
+                        <div class="bg-brand-dark border border-slate-800 p-5 rounded-2xl">
+                            <i class="fa-solid fa-snowflake text-brand-accent text-2xl mb-3 block"></i>
+                            <h4 class="text-white font-bold text-base">Ductable Ground-Floor AC</h4>
+                            <p class="text-xs text-slate-400 mt-1">Full high-performance climate control integrated directly into the formal areas and the independent party hall.</p>
+                        </div>
+                        <div class="bg-brand-dark border border-slate-800 p-5 rounded-2xl">
+                            <i class="fa-solid fa-droplet text-brand-accent text-2xl mb-3 block"></i>
+                            <h4 class="text-white font-bold text-base">Stainless Steel Overhead Tank</h4>
+                            <p class="text-xs text-slate-400 mt-1">Durable, food-grade safe storage arrays safeguarding pristine structural water flow.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Visual grids of the smart specs -->
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-6">
+                    <div class="sm:col-span-12 rounded-3xl overflow-hidden border border-slate-800 relative group">
+                        <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910722-wb23xl.jpg" 
+                             alt="Rooftop solar panel array system" 
+                             class="w-full h-80 object-cover group-hover:scale-105 transition-all duration-700">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent"></div>
+                        <span class="absolute bottom-4 left-4 bg-slate-900/90 text-white border border-slate-700 px-3 py-1.5 text-xs rounded-xl font-semibold">
+                            Off-Grid Ready Solar Configuration
+                        </span>
+                    </div>
+
+                    <div class="sm:col-span-12 rounded-3xl overflow-hidden border border-slate-800 relative group">
+                        <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910715-kocewj.jpg" 
+                             alt="Balcony outdoor walk paths" 
+                             class="w-full h-56 object-cover group-hover:scale-105 transition-all duration-700">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent"></div>
+                        <span class="absolute bottom-4 left-4 bg-slate-900/90 text-white border border-slate-700 px-3 py-1.5 text-xs rounded-xl font-semibold">
+                            Ventilation Designed Walkways
+                        </span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- AMENITIES / SALIENT FEATURES SECTION -->
+    <section id="specifications" class="py-24 bg-brand-dark border-t border-slate-900">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <span class="text-brand-accent uppercase tracking-widest text-xs font-extrabold">Complete Feature Inventory</span>
+                <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold font-serif text-white mt-3 leading-tight">
+                    The 12 Uncompromising Features That Define Absolute Kothi Living
+                </h2>
+                <p class="text-slate-400 mt-4">Every detail has been rigorously completed to ensure absolute residential luxury without compromise.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Feature 1 -->
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-2xl flex gap-4">
+                    <span class="text-brand-accent text-2xl pt-1"><i class="fa-solid fa-tree"></i></span>
+                    <div>
+                        <h4 class="text-white font-bold text-base">Park-Facing Covered Area</h4>
+                        <p class="text-sm text-slate-400 mt-1">Commanding an ultra-spacious 7,700 sq. ft. of impeccably oriented layout.</p>
+                    </div>
+                </div>
+                <!-- Feature 2 -->
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-2xl flex gap-4">
+                    <span class="text-brand-accent text-2xl pt-1"><i class="fa-solid fa-bed"></i></span>
+                    <div>
+                        <h4 class="text-white font-bold text-base">Spacious Bedroom Layouts</h4>
+                        <p class="text-sm text-slate-400 mt-1">Two grand master suites on each floor, two kids' bedrooms, one guest suite, and powder room.</p>
+                    </div>
+                </div>
+                <!-- Feature 3 -->
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-2xl flex gap-4">
+                    <span class="text-brand-accent text-2xl pt-1"><i class="fa-solid fa-kitchen-set"></i></span>
+                    <div>
+                        <h4 class="text-white font-bold text-base">Gourmet Chef's Kitchen</h4>
+                        <p class="text-sm text-slate-400 mt-1">Highly detailed layout seamlessly attached to separate utility laundry and dry pantry area.</p>
+                    </div>
+                </div>
+                <!-- Feature 4 -->
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-2xl flex gap-4">
+                    <span class="text-brand-accent text-2xl pt-1"><i class="fa-solid fa-champagne-glasses"></i></span>
+                    <div>
+                        <h4 class="text-white font-bold text-base">Private Party Hall Setup</h4>
+                        <p class="text-sm text-slate-400 mt-1">Equipped with private powder room, attached service kitchenette, and dedicated store room.</p>
+                    </div>
+                </div>
+                <!-- Feature 5 -->
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-2xl flex gap-4">
+                    <span class="text-brand-accent text-2xl pt-1"><i class="fa-solid fa-users"></i></span>
+                    <div>
+                        <h4 class="text-white font-bold text-base">Two Private Servant Rooms</h4>
+                        <p class="text-sm text-slate-400 mt-1">Accompanied with self-contained private kitchen provision.</p>
+                    </div>
+                </div>
+                <!-- Feature 6 -->
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-2xl flex gap-4">
+                    <span class="text-brand-accent text-2xl pt-1"><i class="fa-solid fa-gem"></i></span>
+                    <div>
+                        <h4 class="text-white font-bold text-base">Italian Iceberg Marble</h4>
+                        <p class="text-sm text-slate-400 mt-1">Glistening premium stone flooring continuous throughout the entire estate layout.</p>
+                    </div>
+                </div>
+                <!-- Feature 7 -->
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-2xl flex gap-4">
+                    <span class="text-brand-accent text-2xl pt-1"><i class="fa-solid fa-shower"></i></span>
+                    <div>
+                        <h4 class="text-white font-bold text-base">Jaquar Colored Fittings</h4>
+                        <p class="text-sm text-slate-400 mt-1">Bespoke customized fixtures integrated with relaxing therapeutic body jets.</p>
+                    </div>
+                </div>
+                <!-- Feature 8 -->
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-2xl flex gap-4">
+                    <span class="text-brand-accent text-2xl pt-1"><i class="fa-solid fa-maximize"></i></span>
+                    <div>
+                        <h4 class="text-white font-bold text-base">Colored Shower Cubicles</h4>
+                        <p class="text-sm text-slate-400 mt-1">Bespoke luxury partitions that offer clean, elegant zoning in spa zones.</p>
+                    </div>
+                </div>
+                <!-- Feature 9 -->
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-2xl flex gap-4">
+                    <span class="text-brand-accent text-2xl pt-1"><i class="fa-solid fa-bath"></i></span>
+                    <div>
+                        <h4 class="text-white font-bold text-base">Victorian Bathtub</h4>
+                        <p class="text-sm text-slate-400 mt-1">Impeccably positioned inside the first-floor bathroom suite for supreme leisure.</p>
+                    </div>
+                </div>
+                <!-- Feature 10 -->
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-2xl flex gap-4">
+                    <span class="text-brand-accent text-2xl pt-1"><i class="fa-solid fa-database"></i></span>
+                    <div>
+                        <h4 class="text-white font-bold text-base">Stainless Steel Water Tank</h4>
+                        <p class="text-sm text-slate-400 mt-1">Heavy-duty overhead storage that ensures clean, worry-free water containment.</p>
+                    </div>
+                </div>
+                <!-- Feature 11 -->
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-2xl flex gap-4">
+                    <span class="text-brand-accent text-2xl pt-1"><i class="fa-solid fa-door-closed"></i></span>
+                    <div>
+                        <h4 class="text-white font-bold text-base">Sliding Motorized Gate</h4>
+                        <p class="text-sm text-slate-400 mt-1">Smart secure control parameters for immediate automatic estate entry.</p>
+                    </div>
+                </div>
+                <!-- Feature 12 -->
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-2xl flex gap-4">
+                    <span class="text-brand-accent text-2xl pt-1"><i class="fa-solid fa-wind"></i></span>
+                    <div>
+                        <h4 class="text-white font-bold text-base">Ductable Air Conditioning</h4>
+                        <p class="text-sm text-slate-400 mt-1">Fully integrated throughout the entire ground floor formal zones and family party hall.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FLOOR PLANS SECTION -->
+    <section id="floor-plans" class="py-24 bg-slate-950 border-t border-slate-900">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <span class="text-brand-accent uppercase tracking-widest text-xs font-extrabold">Architectural Layout Blueprints</span>
+                <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold font-serif text-white mt-3 leading-tight">
+                    Masterfully Optimised Configurations For Multi-Generational Luxury Living
+                </h2>
+                <p class="text-slate-400 mt-4">Review the grand allocation of the 7,700 Sq. Ft. layout built for absolute space efficiency and flow.</p>
+            </div>
+
+            <div class="max-w-4xl mx-auto bg-brand-dark border border-slate-800 rounded-3xl p-6 sm:p-8 relative overflow-hidden">
+                <div class="flex flex-wrap gap-4 justify-center mb-8">
+                    <button onclick="changeFloorPlan(this, 'https://i.ibb.co/NdSPkfxQ/3bhk.webp', true, 'Ground Floor Layout - Formal & Master Suites')" class="bg-brand-accent text-brand-dark px-6 py-2.5 rounded-full text-xs font-black tracking-wider uppercase transition-all">
+                        Ground Floor Config
+                    </button>
+                    <button onclick="changeFloorPlan(this, 'https://i.ibb.co/NdSPkfxQ/3bhk.webp', true, 'First Floor Layout - Master Bed & Leisure Terraces')" class="bg-slate-800 hover:bg-slate-700 text-white px-6 py-2.5 rounded-full text-xs font-black tracking-wider uppercase transition-all">
+                        First Floor Config
+                    </button>
+                    <button onclick="changeFloorPlan(this, 'https://i.ibb.co/NdSPkfxQ/3bhk.webp', true, 'Party Hall & Rooftop Terrace Config')" class="bg-slate-800 hover:bg-slate-700 text-white px-6 py-2.5 rounded-full text-xs font-black tracking-wider uppercase transition-all">
+                        Entertainment Floor Config
+                    </button>
+                </div>
+
+                <div class="relative bg-slate-900 border border-slate-800 rounded-2xl p-4 overflow-hidden flex items-center justify-center min-h-[350px]">
+                    <!-- Floor plan image -->
+                    <img id="floorplan-image" src="https://i.ibb.co/NdSPkfxQ/3bhk.webp" alt="1 Kanal Super Luxury Kothi Floor Plan Blueprint" class="max-w-full h-auto max-h-[500px] object-contain rounded-xl">
+                    
+                    <!-- Blur Lock Overlay -->
+                    <div id="floorplan-overlay" class="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center text-center p-6 transition-all duration-300">
+                        <span class="w-16 h-16 rounded-full bg-brand-accent/10 border border-brand-accent/30 flex items-center justify-center text-brand-accent text-2xl mb-4">
+                            <i class="fa-solid fa-lock"></i>
+                        </span>
+                        <h4 id="floorplan-title" class="text-xl font-serif font-bold text-white mb-2">Ground Floor Layout - Formal & Master Suites</h4>
+                        <p class="text-sm text-slate-400 max-w-sm mb-6">Enter your contact details inside our secure system above to instantly unlock high-definition architectural layouts.</p>
+                        <a href="#qualification-card" class="bg-brand-accent hover:bg-brand-accentHover text-brand-dark px-6 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all">
+                            Submit Inquiry to Unlock Plans
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- PROJECT CONNECTIVITY ACCORDION -->
+    <section class="py-24 bg-brand-dark border-t border-slate-900">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6">
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <span class="text-brand-accent uppercase tracking-widest text-xs font-extrabold">Seamless Connectivity</span>
+                <h2 class="text-3xl sm:text-4xl font-bold font-serif text-white mt-3 leading-tight">
+                    A Prestigious High-Connection Address Nestled Within New Chandigarh's Finest Boulevard
+                </h2>
+                <p class="text-slate-400 mt-4">Unmatched, swift transit times connecting you to critical lifestyle hotspots, luxury shopping, and major infrastructure hubs.</p>
+            </div>
+
+            <!-- Accessibility Distances Accordion -->
+            <div class="space-y-4">
+                
+                <!-- Item 1 -->
+                <div class="border border-slate-800 rounded-2xl bg-slate-950 overflow-hidden">
+                    <button onclick="toggleAccordion('acc-1')" class="w-full flex items-center justify-between p-6 text-left hover:bg-white/5 transition-all">
+                        <span class="text-white font-bold text-base md:text-lg flex items-center gap-3">
+                            <i class="fa-solid fa-tree text-brand-accent"></i> Direct Green Parkway Access
+                        </span>
+                        <span id="icon-acc-1" class="text-brand-accent text-xl font-bold"><i class="fa-solid fa-plus"></i></span>
+                    </button>
+                    <div id="content-acc-1" class="hidden p-6 border-t border-slate-900 text-sm text-slate-400 leading-relaxed bg-brand-dark">
+                        The property rests directly facing a premium manicured sector green parkway. Step out of your modern motorized sliding gate onto lush walks instantly.
+                    </div>
+                </div>
+
+                <!-- Item 2 -->
+                <div class="border border-slate-800 rounded-2xl bg-slate-950 overflow-hidden">
+                    <button onclick="toggleAccordion('acc-2')" class="w-full flex items-center justify-between p-6 text-left hover:bg-white/5 transition-all">
+                        <span class="text-white font-bold text-base md:text-lg flex items-center gap-3">
+                            <i class="fa-solid fa-car text-brand-accent"></i> Main Commercial Spine Connectivity
+                        </span>
+                        <span id="icon-acc-2" class="text-brand-accent text-xl font-bold"><i class="fa-solid fa-plus"></i></span>
+                    </button>
+                    <div id="content-acc-2" class="hidden p-6 border-t border-slate-900 text-sm text-slate-400 leading-relaxed bg-brand-dark">
+                        A mere 3-minute drive links your quiet, tree-lined residential enclave to the central commercial artery of New Chandigarh.
+                    </div>
+                </div>
+
+                <!-- Item 3 -->
+                <div class="border border-slate-800 rounded-2xl bg-slate-950 overflow-hidden">
+                    <button onclick="toggleAccordion('acc-3')" class="w-full flex items-center justify-between p-6 text-left hover:bg-white/5 transition-all">
+                        <span class="text-white font-bold text-base md:text-lg flex items-center gap-3">
+                            <i class="fa-solid fa-plane text-brand-accent"></i> Smooth Highway Transit Avenues
+                        </span>
+                        <span id="icon-acc-3" class="text-brand-accent text-xl font-bold"><i class="fa-solid fa-plus"></i></span>
+                    </button>
+                    <div id="content-acc-3" class="hidden p-6 border-t border-slate-900 text-sm text-slate-400 leading-relaxed bg-brand-dark">
+                        Experience rapid outer-loop expressway connections allowing congestion-free commutes to neighboring airports, luxury shopping malls, and healthcare institutions.
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- HOW IT WORKS (Reduce Effort Structure - Exactly 3 Steps) -->
+    <section class="py-24 bg-brand-dark border-t border-slate-900">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <span class="text-brand-accent uppercase tracking-widest text-xs font-extrabold">Seamless Onboarding</span>
+                <h2 class="text-3xl sm:text-4xl font-bold font-serif text-white mt-3 leading-tight">
+                    Secure Your VIP Estate Showing In Exactly 3 Simple Steps
+                </h2>
+                <p class="text-slate-400 mt-4">We have stripped away complex procedures so you can experience premier structural excellence without friction.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
+                
+                <!-- Connector Line for Desktop -->
+                <div class="hidden md:block absolute top-1/3 left-[15%] right-[15%] h-0.5 bg-slate-800 z-0"></div>
+
+                <!-- Step 1 -->
+                <div class="bg-slate-950 border border-slate-800 p-8 rounded-3xl text-center relative z-10">
+                    <span class="w-12 h-12 rounded-full bg-brand-accent text-brand-dark flex items-center justify-center font-extrabold text-lg mx-auto mb-6 shadow-lg shadow-brand-accent/20">
+                        01
+                    </span>
+                    <h4 class="text-white font-bold text-lg mb-2">Submit Your Criteria</h4>
+                    <p class="text-sm text-slate-400 leading-relaxed">
+                        Complete the quick qualification layout at the top of this portal so our private portfolio managers can align with your specific preferences.
+                    </p>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="bg-slate-950 border border-slate-800 p-8 rounded-3xl text-center relative z-10">
+                    <span class="w-12 h-12 rounded-full bg-brand-accent text-brand-dark flex items-center justify-center font-extrabold text-lg mx-auto mb-6 shadow-lg shadow-brand-accent/20">
+                        02
+                    </span>
+                    <h4 class="text-white font-bold text-lg mb-2">Private Screening Invitation</h4>
+                    <p class="text-sm text-slate-400 leading-relaxed">
+                        Receive a direct contact sequence scheduling a custom direct-response walking walkthrough at a convenient time slot of your choice.
+                    </p>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="bg-slate-950 border border-slate-800 p-8 rounded-3xl text-center relative z-10">
+                    <span class="w-12 h-12 rounded-full bg-brand-accent text-brand-dark flex items-center justify-center font-extrabold text-lg mx-auto mb-6 shadow-lg shadow-brand-accent/20">
+                        03
+                    </span>
+                    <h4 class="text-white font-bold text-lg mb-2">Immediate Possessional Handover</h4>
+                    <p class="text-sm text-slate-400 leading-relaxed">
+                        Execute secure direct-dealership title documentation and immediately receive the keys to your ready-to-move-in luxury estate.
+                    </p>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- FINAL CALL TO ACTION (CTA with Backdrop Image 16) -->
+    <section id="schedule-visit" class="relative py-28 overflow-hidden">
+        <div class="absolute inset-0 z-0">
+            <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781334910757-ng3dw.jpg" 
+                 alt="Scenic boulevard views of New Chandigarh layout" 
+                 class="w-full h-full object-cover">
+            <div class="absolute inset-0 bg-slate-950/90 backdrop-blur-sm"></div>
+        </div>
+
+        <div class="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 text-center">
+            <span class="inline-flex items-center gap-2 bg-brand-accent/20 border border-brand-accent/40 text-brand-accent text-xs uppercase tracking-widest font-bold px-3 py-1.5 rounded-full mb-6">
+                <i class="fa-solid fa-clock"></i> Limited Private Access Availability
+            </span>
+            <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold font-serif text-white tracking-tight leading-tight mb-6">
+                Are You Ready To Claim Your Legacy Address Facing New Chandigarh's Prime Greenways?
+            </h2>
+            <p class="text-slate-300 text-base sm:text-lg max-w-2xl mx-auto mb-8">
+                Do not risk losing direct site visit priority on this ready-to-move kothi. Arrange an immediate private walk sequence to ensure absolute structural security.
+            </p>
+
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <a href="#qualification-card" class="w-full sm:w-auto bg-brand-accent hover:bg-brand-accentHover text-brand-dark px-8 py-4 rounded-xl font-extrabold tracking-wide text-center transition-all shadow-xl shadow-brand-accent/20 flex items-center justify-center gap-2">
+                    <span>Initiate Screening Process</span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </a>
+                <a href="tel:+919115739559" class="w-full sm:w-auto border border-white/20 hover:border-white/40 text-white bg-slate-950/80 px-8 py-4 rounded-xl font-bold tracking-wide text-center transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-phone"></i>
+                    <span>Call +91 91157 39559</span>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="bg-brand-dark border-t border-slate-900 py-12 text-sm text-slate-500">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
+            
+            <div class="md:col-span-4 flex items-center gap-3">
+                <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/29937131-1975-4c5f-9b78-e5b28f918d32-1781177373186.png" 
+                     alt="The ProEstate" 
+                     class="h-10 w-auto object-contain">
+                <div>
+                    <span class="block text-white font-bold leading-none">The ProEstate</span>
+                    <span class="text-[10px] text-brand-accent tracking-widest uppercase">Luxury Portfolios</span>
+                </div>
+            </div>
+
+            <div class="md:col-span-4 text-center md:text-left space-y-1">
+                <span class="block text-slate-400 font-semibold">Business Contact Info</span>
+                <span class="block">Phone: <a href="tel:+919115739559" class="hover:text-brand-accent transition-colors">+91 91157 39559</a></span>
+            </div>
+
+            <div class="md:col-span-4 text-center md:text-right space-y-2">
+                <span class="block text-slate-400">© 2026 The ProEstate. All Rights Reserved.</span>
+                <span class="block text-xs">Direct Platform Address: <a href="https://app.adrolls.in/shared/29937131-1975-4c5f-9b78-e5b28f918d32" class="text-brand-accent hover:underline" target="_blank">Portfolio Link</a></span>
+            </div>
+
+        </div>
+    </footer>
+
+    <!-- MOBILE FLOATING BOTTOM CTA BAR -->
+    <div class="fixed bottom-0 inset-x-0 z-40 md:hidden bg-brand-dark/95 border-t border-slate-800 p-3 flex gap-3 shadow-2xl backdrop-blur-md">
+        <a href="tel:+919115739559" class="flex-1 bg-slate-900 border border-slate-700 hover:border-brand-accent text-white py-3 rounded-xl font-bold text-center flex items-center justify-center gap-2 text-sm transition-all">
+            <i class="fa-solid fa-phone text-brand-accent"></i>
+            <span>Call Now</span>
+        </a>
+        <a href="https://wa.me/919115739559" target="_blank" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-bold text-center flex items-center justify-center gap-2 text-sm transition-all shadow-lg shadow-green-600/20">
+            <i class="fa-brands fa-whatsapp"></i>
+            <span>WhatsApp</span>
+        </a>
+    </div>
+
+    <!-- Extra padding bottom for mobile layout to prevent CTA overlap -->
+    <div class="h-20 md:hidden"></div>
+
+
+    <!-- JAVASCRIPT MECHANICS -->
+    <script>
+        // Hero Background Carousel Animation (Fade out / Fade in)
+        const bgCarousel = document.getElementById('hero-bg-carousel');
+        if (bgCarousel) {
+            const slides = bgCarousel.children;
+            let activeSlideIndex = 0;
+
+            setInterval(() => {
+                slides[activeSlideIndex].classList.remove('opacity-100');
+                slides[activeSlideIndex].classList.add('opacity-0');
+                
+                activeSlideIndex = (activeSlideIndex + 1) % slides.length;
+                
+                slides[activeSlideIndex].classList.remove('opacity-0');
+                slides[activeSlideIndex].classList.add('opacity-100');
+            }, 6000);
+        }
+
+        // Modular Kitchen Gallery Toggle View
+        function toggleKitchenSlide(slideNumber) {
+            const slide1 = document.getElementById('kitchen-slide-1');
+            const slide2 = document.getElementById('kitchen-slide-2');
+
+            if (slideNumber === 1) {
+                slide1.classList.remove('opacity-0');
+                slide1.classList.add('opacity-100');
+                slide2.classList.remove('opacity-100');
+                slide2.classList.add('opacity-0');
+            } else {
+                slide1.classList.remove('opacity-100');
+                slide1.classList.add('opacity-0');
+                slide2.classList.remove('opacity-0');
+                slide2.classList.add('opacity-100');
+            }
+        }
+
+        // Project Connectivity Accordion Toggle mechanic
+        function toggleAccordion(id) {
+            const content = document.getElementById('content-' + id);
+            const icon = document.getElementById('icon-' + id);
+            
+            if (content.classList.contains('hidden')) {
+                content.classList.remove('hidden');
+                icon.innerHTML = '<i class="fa-solid fa-minus"></i>';
+            } else {
+                content.classList.add('hidden');
+                icon.innerHTML = '<i class="fa-solid fa-plus"></i>';
+            }
+        }
+
+        // Floor Plan Interactive Config Handler
+        function changeFloorPlan(button, imgSrc, isLocked, titleText) {
+            // Switch active classes among buttons
+            const buttons = button.parentNode.querySelectorAll('button');
+            buttons.forEach(btn => {
+                btn.classList.remove('bg-brand-accent', 'text-brand-dark');
+                btn.classList.add('bg-slate-800', 'text-white');
+            });
+            button.classList.add('bg-brand-accent', 'text-brand-dark');
+            button.classList.remove('bg-slate-800', 'text-white');
+
+            // Switch layout picture source
+            const img = document.getElementById('floorplan-image');
+            img.src = imgSrc;
+
+            // Switch layout header text
+            document.getElementById('floorplan-title').innerText = titleText;
+
+            // Handle the private secure lock overlay visibility
+            const overlay = document.getElementById('floorplan-overlay');
+            if (isLocked) {
+                overlay.classList.remove('hidden');
+                overlay.classList.add('flex');
+            } else {
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
+            }
+        }
+    </script>
+</body>
+</html>

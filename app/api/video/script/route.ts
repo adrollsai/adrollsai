@@ -58,22 +58,43 @@ export async function POST(request: Request) {
             }
         }
 
-        const { data: targetProfile } = await supabase
+        let targetProfile: any = null;
+        const selectWithAvatars = await supabase
             .from('profiles')
-            .select('business_name, mission_statement, business_info, custom_prompt, character_url, character_description')
+            .select('business_name, mission_statement, business_info, custom_prompt, character_url, character_description, avatar_url, avatar_description')
             .eq('id', targetUserId)
             .single();
 
-        if (useCharacterVideo !== false && (!targetProfile || !targetProfile.character_url)) {
+        if (selectWithAvatars.error) {
+            console.warn("[Script API] Failed to select with avatar columns, retrying without them:", selectWithAvatars.error.message);
+            const selectWithoutAvatars = await supabase
+                .from('profiles')
+                .select('business_name, mission_statement, business_info, custom_prompt, character_url, character_description')
+                .eq('id', targetUserId)
+                .single();
+            targetProfile = selectWithoutAvatars.data;
+        } else {
+            targetProfile = selectWithAvatars.data;
+        }
+
+        const presenterType = body.presenterType || (useCharacterVideo ? 'video' : 'none');
+
+        if (presenterType === 'video' && (!targetProfile || !targetProfile.character_url)) {
             return NextResponse.json({ 
-                error: 'Please upload a character photo in your profile settings first before generating video scripts.' 
+                error: 'Please upload a reference video in your Profile settings or Creation tab first before generating video scripts.' 
+            }, { status: 400 });
+        }
+
+        if (presenterType === 'avatar' && (!targetProfile || !targetProfile.avatar_url)) {
+            return NextResponse.json({ 
+                error: 'Please upload an avatar photo in your Profile settings or Creation tab first before generating video scripts.' 
             }, { status: 400 });
         }
 
         let profile: any = targetProfile || {};
 
         // Self-heal: If character_url is present but character_description is null, analyze it on-the-fly!
-        if (useCharacterVideo !== false && profile?.character_url && !profile.character_description) {
+        if (presenterType === 'video' && profile?.character_url && !profile.character_description) {
             try {
                 console.log(`[Self-Healing Script] Character URL is present but description is null. Performing vision analysis for: ${profile.character_url}`);
                 const imageRes = await fetch(profile.character_url);
@@ -121,7 +142,72 @@ export async function POST(request: Request) {
             }
         }
 
-        const productInfo = property ? `Product: ${property.title}. Description: ${property.description}` : 'Generic product promotion';
+        // Self-heal for Avatar: If avatar_url is present but avatar_description is null, analyze it on-the-fly!
+        if (presenterType === 'avatar' && profile?.avatar_url && !profile.avatar_description) {
+            try {
+                console.log(`[Self-Healing Script] Avatar URL is present but description is null. Performing vision analysis for: ${profile.avatar_url}`);
+                const imageRes = await fetch(profile.avatar_url);
+                if (imageRes.ok) {
+                    const buffer = Buffer.from(await imageRes.arrayBuffer());
+                    const mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
+                    
+                    const { GoogleGenerativeAI } = require('@google/generative-ai');
+                    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY!);
+                    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+                    
+                    const visionPrompt = "You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata.";
+                    
+                    const result = await model.generateContent([
+                        visionPrompt,
+                        {
+                            inlineData: {
+                                data: buffer.toString('base64'),
+                                mimeType
+                            }
+                        }
+                    ]);
+                    
+                    const desc = result.response.text()?.trim();
+                    if (desc) {
+                        console.log(`[Self-Healing Script] Avatar vision analysis success: "${desc}"`);
+                        
+                        // Update Supabase using a service role client to bypass client RLS rules
+                        const { createClient: createAdminClient } = require('@supabase/supabase-js');
+                        const supabaseAdmin = createAdminClient(
+                            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                            process.env.SUPABASE_SERVICE_ROLE_KEY!
+                        );
+                        await supabaseAdmin
+                            .from('profiles')
+                            .update({ avatar_description: desc })
+                            .eq('id', targetUserId);
+                        
+                        // Update current object in memory
+                        profile.avatar_description = desc;
+                    }
+                }
+            } catch (visionErr) {
+                console.error("[Self-Healing Script] Avatar vision analysis failed:", visionErr);
+            }
+        }
+
+        let characterDescription = "";
+        if (presenterType === 'video') {
+            characterDescription = profile?.character_description || "";
+        } else if (presenterType === 'avatar') {
+            characterDescription = profile?.avatar_description || "";
+        }
+
+        let productInfo = 'Generic product promotion';
+        if (property) {
+            productInfo = `
+Product/Property Name: ${property.title}
+Core Description: ${property.description || "N/A"}
+Price/Pricing Info: ${property.price || "N/A"}
+Location/Address: ${property.address || "N/A"}
+Amenities/Features: ${property.amenities || "N/A"}
+`;
+        }
         const businessName = profile?.business_name || 'Your Business';
         const brandGuidelines = profile?.custom_prompt || '';
 
@@ -233,12 +319,15 @@ CONSTRAINTS & RULES:
    - Scene 1 visuals MUST open with an instant, scroll-stopping visual hook.
 1. Duration: STRICTLY ${duration} seconds total, split into exactly ${numClips} sequential 15-second clips (Scene 1 to Scene ${numClips}). Deeply emotional, slow-paced, warm, and natural.
 2. Dialogue language: ${languageInstruction}
-3. Speaker Character: The speaker in all scenes MUST be ${useCharacterVideo !== false ? (profile?.character_description || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion") : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera"} (speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy). Their appearance must be identical and consistent across all scenes. Use the correct gender pronouns naturally based on this character description. Wherever the character is shown, you MUST specify a close-up shot (e.g. "detailed close-up of the character's face", "close-up of the speaker") in the visual instructions to preserve and not mutate their facial features. Medium or wide shots of the character are strictly prohibited.
+3. Speaker Character: The speaker in all scenes MUST be ${presenterType !== 'none' ? (characterDescription || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion") : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera"} (speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy). Their appearance must be identical and consistent across all scenes. Use the correct gender pronouns naturally based on this character description. Wherever the character is shown, you MUST specify a close-up shot (e.g. "detailed close-up of the character's face", "close-up of the speaker") in the visual instructions to preserve and not mutate their facial features. Medium or wide shots of the character are strictly prohibited.
 4. Spoken Dialogue Tone, Voice Quality & Deep Psychological Depth: The voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging.
    - ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or fast-talking hooks.
    - The script must have immense depth and empathy. You must dig deep into the psychological pain points of the business's target audience. E.g., if selling real estate, target the deep emotional anxiety of wastefully paying rent, landlord hassles, security and comfort for children/parents, the fear of delayed projects, wanting luxury/status, or needing peace of mind.
    - Map the values of our product/service directly to these deep-seated emotional pain points. Explain exactly how our product delivers the ultimate comfort, relief, security, or wealth creation that they desire.
    - Avoid surface-level marketing listicles or generic features. Write complete, smooth, conversational sentences that produce feelings of warmth, family comfort, safety, and deep emotional resonance.
+4.3. CRITICAL CONCRETE PRODUCT DETAILS RULE (DO NOT BE VAGUE):
+   - You MUST explicitly weave the actual, concrete facts, features, price, and specifications of the product/property (such as the specific location, name, price, unique layouts, or key amenities) directly into the spoken dialogue. For instance, do NOT say generic phrases like "this beautiful home at an amazing price in a great location". Instead, explicitly state the real details provided, such as: "this 3 BHK apartment in Mohali Sector 82, priced at 1.5 Crores, with amenities like a swimming pool and clubhouse".
+   - Do NOT use vague marketing terms, generic placeholders (like "[price]", "[location]", "[insert details]"), or broad fluff. The script must communicate real, informative details about the product so that the video provides actual, concrete information to the viewer, while maintaining a smooth and natural conversational flow. Focus on details that drive engagement and conversion: price, location, key amenities, and standout features. Do NOT mention RERA IDs or registration numbers in the video dialogue.
 4.1. NATURAL BODY LANGUAGE & GESTURES: In all visual instructions, the character must have highly natural, dynamic, and expressive body language — real hand gestures while talking, subtle head tilts, natural eye contact shifts, genuine smiling, leaning in/out, touching/pointing at products naturally. Their movements should feel organic and alive like a real UGC creator, NOT stiff, static, or robotic.
 ${isEnglish ? `4.2. PRONUNCIATION: Use clear, standard English vocabulary. Keep the language accessible and professional. Avoid jargon or overly complex words.` : `4.2. PRONUNCIATION WORKAROUND (STRICTLY AVOID COMPLEX HINDI WORDS):
    - The AI speech synthesizer frequently stumbles or produces errors when trying to pronounce complex, formal, or Sanskritized Hindi words.

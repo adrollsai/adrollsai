@@ -5,6 +5,7 @@ import { generateObject } from 'ai';
 import { google } from '@ai-sdk/google';
 import { z } from 'zod';
 import { createKieImageTask, createKieTask } from '@/utils/external-apis';
+import { buildImageSystemPrompt, detectIndustry } from '@/utils/image-prompt-master';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -95,7 +96,19 @@ export async function POST(request: Request) {
             throw new Error(`Failed to add product: ${propertyError?.message || 'Unknown error'}`);
         }
 
-        // 4. Generate image prompts and video script using Gemini
+        // 4. Auto-detect and persist industry
+        console.log("[Onboarding API] Auto-detecting industry...");
+        const detectedIndustry = await detectIndustry(companyName, companyDescription, '');
+        await supabaseAdmin
+            .from('profiles')
+            .update({ industry: detectedIndustry })
+            .eq('id', user.id);
+        console.log(`[Onboarding API] Industry detected and saved: ${detectedIndustry}`);
+
+        // Build master visual production rules for image prompts
+        const visualProductionRules = buildImageSystemPrompt(detectedIndustry, false);
+
+        // 5. Generate image prompts and video script using Gemini
         console.log("[Onboarding API] Generating prompts via Gemini...");
         
         let aiResult;
@@ -112,9 +125,21 @@ Company Description: "${companyDescription}"
 Product Title: "${productTitle}"
 Product Description: "${productDescription}"
 Product Price: "${productPrice}"
+Industry/Vertical: "${detectedIndustry}"
+
+### SYSTEM-LEVEL VISUAL PRODUCTION RULES
+When writing image prompts, you MUST follow and apply the Visual Production Rules below as your foundational visual grammar:
+
+${visualProductionRules}
 
 Your task is to generate:
-1. Three (3) highly converting, scroll-stopping image ad prompts for Bytedance/Kie.ai FLUX (Flex Text-to-Image) model. Each prompt should describe a premium, high-value professional product showcase advertisement featuring successful models, studio lighting, clean backgrounds, and the product. Specify details of a successful scene aligned with "${companyName}" branding. The images must be optimized for a 4:5 aspect ratio. Keep text minimal and high impact.
+1. Three (3) highly converting, short image ad prompts. Each prompt MUST follow this exact, simple, short layout format (approx. 50-80 words):
+   "Make a high converting static meta ad, make sure the result is super real looking, and include attractive looking humans in it (ethnicity should be according to where the business is from) that don't look ai like, they should look super real. Only include super essential info in the image text overlays so it is not cluttered with text too much.
+   Product Info: ${productTitle}. Description: [Short sentence summarizing the essential product info].
+   Business Name: ${companyName || 'N/A'}
+   Business Logo: Include the business logo cleanly in a corner.
+   Style: Render the image in a [Varying style, e.g., prompt 1 is 'Sunset Golden Hour', prompt 2 is 'Minimalist Clean Studio', prompt 3 is 'Warm Home Interior'] aesthetic."
+   Optimized for a 4:5 aspect ratio.
 2. One (1) structured video prompt for Bytedance Seedance 2.0 (aspect ratio 9:16, 15 seconds duration).
    - Character Ethnicity / Details: Determine the country/business context based on the inputs (e.g. if the currency is ₹, or the company name/description/price refers to India, Delhi, Mumbai, etc., it is India).
      - If the context is India, describe the presenter in the "CHARACTER APPEARANCE" section as: "a beautiful Indian female with fair complexion and sharp features".

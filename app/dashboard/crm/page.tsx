@@ -239,26 +239,53 @@ export default function CRMPage() {
     initCRM()
   }, [])
 
-  // 2. SUPABASE REAL-TIME (Listen for Webhook Insertions)
+  // 2. SUPABASE REAL-TIME (Listen for Webhook Insertions & Updates)
   useEffect(() => {
     if (!userId) return
 
     const channel = supabase.channel('realtime_leads')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
-        const newLead = payload.new
-        // Only inject into UI if this lead belongs to the target (impersonated/agency client), the logged-in user, or assigned to this user
-        if (newLead.user_id === targetUserId || newLead.user_id === userId || newLead.assigned_to === userId) {
-             setLeads(prev => {
-                 // Prevent duplicates if manual add triggered exactly at same time
-                 if (prev.find(l => l.id === newLead.id)) return prev;
-                 const updated = [newLead, ...prev];
-                 
-                 // Update cache silently
-                 const cacheKey = `crm_cache_${userId}`
-                 localStorage.setItem(cacheKey, JSON.stringify(updated))
-                 
-                 return updated;
-             })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+            const newLead = payload.new
+            // Only inject into UI if this lead belongs to the target (impersonated/agency client), the logged-in user, or assigned to this user
+            if (newLead.user_id === targetUserId || newLead.user_id === userId || newLead.assigned_to === userId) {
+                 setLeads(prev => {
+                      // Prevent duplicates if manual add triggered exactly at same time
+                      if (prev.find(l => l.id === newLead.id)) return prev;
+                      const updated = [newLead, ...prev];
+                      
+                      // Update cache silently
+                      const cacheKey = `crm_cache_${userId}`
+                      localStorage.setItem(cacheKey, JSON.stringify(updated))
+                      
+                      return updated;
+                 })
+            }
+        } else if (payload.eventType === 'UPDATE') {
+            const updatedLead = payload.new
+            setLeads(prev => {
+                const index = prev.findIndex(l => l.id === updatedLead.id)
+                if (index === -1) return prev;
+                const updated = [...prev]
+                updated[index] = { ...updated[index], ...updatedLead }
+                
+                // Update cache silently
+                const cacheKey = `crm_cache_${userId}`
+                localStorage.setItem(cacheKey, JSON.stringify(updated))
+                
+                return updated;
+            })
+        } else if (payload.eventType === 'DELETE') {
+            const oldId = payload.old.id
+            setLeads(prev => {
+                const updated = prev.filter(l => l.id !== oldId)
+                
+                // Update cache silently
+                const cacheKey = `crm_cache_${userId}`
+                localStorage.setItem(cacheKey, JSON.stringify(updated))
+                
+                return updated;
+            })
         }
       })
       .subscribe()
@@ -779,9 +806,16 @@ END:VCARD\n`
                         </div>
 
                         {/* ROW 2: Status & Date */}
-                        <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-100 border-dashed">
-                            <span className="text-sm font-bold text-blue-600">{lead.pipeline_stage || 'New Lead'}</span>
-                            <span className="text-[11px] font-bold text-slate-400">
+                        <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-100 border-dashed gap-2">
+                            <div className="flex flex-col gap-1 items-start">
+                                <span className="text-sm font-bold text-blue-600">{lead.pipeline_stage || 'New Lead'}</span>
+                                {lead.booked_time && (
+                                    <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1 shadow-sm shrink-0">
+                                        📆 Booked: {new Date(lead.booked_time).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                                    </span>
+                                )}
+                            </div>
+                            <span className="text-[11px] font-bold text-slate-400 shrink-0">
                                 {new Date(lead.facebook_created_at || lead.created_at).toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}
                             </span>
                         </div>
