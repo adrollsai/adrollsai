@@ -1790,7 +1790,7 @@ export default function CreationPage() {
                     >
                         {profile?.character_url ? (
                             <div className="w-10 h-10 rounded-full overflow-hidden mb-1.5 border border-purple-200/50 flex-shrink-0 animate-in zoom-in duration-300">
-                                {(/\\.(mp4|webm)/i.test(profile.character_url) || profile.character_url.includes('video')) ? (
+                                {(/\.(mp4|webm)/i.test(profile.character_url) || profile.character_url.includes('video')) ? (
                                     <video src={profile.character_url} muted loop playsInline autoPlay className="w-full h-full object-cover" />
                                 ) : (
                                     <img src={profile.character_url} className="w-full h-full object-cover" alt="Video character" />
