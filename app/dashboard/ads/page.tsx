@@ -2511,7 +2511,15 @@ export default function AdsPage() {
                 {/* Checklist Warning messages */}
                 {!checkingSanity && (
                     <div className="space-y-2 pt-2 border-t border-slate-200/50">
-                        {accountStatus?.account_status !== 1 && (
+                        {accountStatus?.error && (
+                            <div className="bg-rose-50 border border-rose-100/50 p-3 rounded-xl text-[11px] text-rose-800 font-semibold leading-relaxed flex items-start gap-2 animate-in fade-in duration-300">
+                                <XCircle size={14} className="text-rose-500 shrink-0 mt-0.5" />
+                                <div className="break-words max-w-full">
+                                    Meta Verification Failed: {accountStatus.error}
+                                </div>
+                            </div>
+                        )}
+                        {!accountStatus?.error && accountStatus?.account_status !== 1 && (
                             <div className="bg-rose-50 border border-rose-100/50 p-3 rounded-xl text-[11px] text-rose-800 font-semibold leading-relaxed flex items-start gap-2">
                                 <XCircle size={14} className="text-rose-500 shrink-0 mt-0.5" />
                                 <div>

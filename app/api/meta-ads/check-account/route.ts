@@ -25,22 +25,48 @@ export async function GET(request: Request) {
     if (!token) return NextResponse.json({ error: 'No token' }, { status: 400 })
 
     try {
-        const res = await fetch(`https://graph.facebook.com/v19.0/${adAccountId}?fields=account_status,has_payment_method,disable_reason&access_token=${token}`)
+        // has_payment_method requires restricted permissions and triggers OAuthException. 
+        // We query funding_source and funding_source_details which are standard public fields.
+        const res = await fetch(`https://graph.facebook.com/v19.0/${adAccountId}?fields=account_status,disable_reason,funding_source,funding_source_details&access_token=${token}`)
         const data = await res.json()
+
+        if (data.error) {
+            console.error("[check-account API] Ad Account Graph error:", data.error)
+            return NextResponse.json({ error: data.error.message || 'Meta API error' }, { status: 400 })
+        }
+
+        const hasPaymentMethod = !!(data.funding_source || data.funding_source_details)
 
         let leadgenTos = null
         if (pageId) {
             try {
-                const tosRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/leadgen_tos?access_token=${token}`)
+                // leadgen_tos endpoint is deprecated/restricted in v19.0+; we query page fields directly.
+                const tosRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}?fields=leadgen_tos_accepted,name&access_token=${token}`)
                 const tosData = await tosRes.json()
-                leadgenTos = tosData
+                
+                if (tosData && typeof tosData.leadgen_tos_accepted === 'boolean') {
+                    leadgenTos = {
+                        leadgen_tos: {
+                            accepted: tosData.leadgen_tos_accepted
+                        }
+                    }
+                } else {
+                    console.error("[check-account API] Page TOS check returned unexpected format:", tosData)
+                    leadgenTos = {
+                        leadgen_tos: {
+                            accepted: false
+                        }
+                    }
+                }
             } catch (tosErr: any) {
                 console.error("[check-account API] leadgen_tos check failed:", tosErr.message)
             }
         }
 
         return NextResponse.json({
-            ...data,
+            account_status: data.account_status,
+            disable_reason: data.disable_reason,
+            has_payment_method: hasPaymentMethod,
             leadgenTos
         })
     } catch (error: any) {
