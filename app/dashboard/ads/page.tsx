@@ -97,6 +97,7 @@ export default function AdsPage() {
   const [facebookToken, setFacebookToken] = useState<string | null>(null)
   const [accountStatus, setAccountStatus] = useState<any>(null)
   const [checkingSanity, setCheckingSanity] = useState(false)
+  const [isCreatingPixel, setIsCreatingPixel] = useState(false)
   const [currency, setCurrency] = useState('INR')
   const [pixelId, setPixelId] = useState<string | null>(null)
 
@@ -269,6 +270,59 @@ export default function AdsPage() {
           console.error(e) 
       } finally {
           setCheckingSanity(false)
+      }
+  }
+
+  const handleCreatePixel = async () => {
+      if (!selectedAdAccountId) return
+      
+      const pixelName = prompt("Enter Pixel Name:", "AdRolls Pixel")
+      if (!pixelName) return
+
+      setIsCreatingPixel(true)
+      try {
+          const urlParams = new URLSearchParams(window.location.search)
+          const impersonateId = urlParams.get('impersonate')
+          
+          const res = await fetch('/api/meta-ads/create-pixel', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  adAccountId: selectedAdAccountId,
+                  pixelName,
+                  impersonateId
+              })
+          })
+          const data = await res.json()
+
+          if (data.error) {
+              toast.error(`Failed to create pixel: ${data.error}`)
+          } else {
+              toast.success("Meta Pixel created successfully!")
+              setPixelId(data.pixelId)
+              
+              // Refresh pixel list
+              setIsLoadingPixels(true)
+              try {
+                  const pixelRes = await fetch('/api/facebook/pixels', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ adAccountId: selectedAdAccountId })
+                  })
+                  const pixelData = await pixelRes.json()
+                  if (pixelData.pixels) {
+                      setPixels(pixelData.pixels)
+                  }
+              } catch (e) {
+                  console.error(e)
+              } finally {
+                  setIsLoadingPixels(false)
+              }
+          }
+      } catch (err: any) {
+          toast.error(`Error: ${err.message}`)
+      } finally {
+          setIsCreatingPixel(false)
       }
   }
 
@@ -2450,7 +2504,27 @@ export default function AdsPage() {
                                   </div>
                               )}
                               <div>
-                                  <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Select Meta Pixel</label>
+                                  <div className="flex justify-between items-center mb-1.5">
+                                      <label className="text-[10px] font-bold text-slate-500 ml-2 uppercase tracking-wider">Select Meta Pixel</label>
+                                      {selectedAdAccountId && !isLoadingPixels && (
+                                          <button 
+                                              type="button"
+                                              onClick={handleCreatePixel}
+                                              disabled={isCreatingPixel}
+                                              className="text-[10px] font-extrabold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none mr-2 uppercase tracking-wider"
+                                          >
+                                              {isCreatingPixel ? (
+                                                  <>
+                                                      <Loader2 size={10} className="animate-spin text-blue-500" /> Generating...
+                                                  </>
+                                              ) : (
+                                                  <>
+                                                      <PlusCircle size={11} className="text-blue-500" /> Auto-Create Pixel
+                                                  </>
+                                              )}
+                                          </button>
+                                      )}
+                                  </div>
                                   {isLoadingPixels ? (
                                       <div className="flex items-center gap-2 py-3 px-4 bg-slate-50 rounded-2xl border border-slate-200/60">
                                           <Loader2 size={16} className="animate-spin text-blue-500" />
