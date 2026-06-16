@@ -2440,7 +2440,7 @@ export default function AdsPage() {
                                   >
                                       <option value="">-- Choose a Landing Page --</option>
                                       {landingPages.map(p => (
-                                          <option key={p.id} value={p.id}>{p.product_name} ({p.title})</option>
+                                          <option key={p.id} value={p.id}>/{p.slug || p.product_name || p.title}</option>
                                       ))}
                                   </select>
                               </div>
