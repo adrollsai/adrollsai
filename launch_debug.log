@@ -1,0 +1,8 @@
+[Launch API] Date: 2026-06-16T08:40:22.614Z
+URL: http://localhost:3000/api/meta-ads/launch-campaign?impersonate=c890a11f-84ce-4592-ab8f-8682927b1a9d
+impersonateId (from query): c890a11f-84ce-4592-ab8f-8682927b1a9d
+targetUserId (resolved): c890a11f-84ce-4592-ab8f-8682927b1a9d
+user.id (logged-in): bc63c065-9bcc-4793-bedc-f0960406425b
+targetProfile exists: true
+targetProfile: {"facebook_token":"EAAMaVhrzxNABRkmfW3olVUEGyZCXsA4ag2BqY1XCr5L6jpjyRhrdIJxOMZBjdOz88n1hqA7wcmobDPXy6ZBudxFGxaZAZCEp56nwcZAooAyLlKR0FHqyJJukHg3Fv1XnC0VHpKOZC0nLeRl6DB5eLtZB1IkYzDZCAVbYiSAeqywYZCye3PZB6O9WWcKqCGRMAhHIVPti4vQAx8jIZBBsyPNiWsyCWmwldeTTZBUFyfZAIyWoYkMzwUgXLINQtJ4rJJD13Kgt4nJtacbuVwncieINB1QnihpzSXmPn0hZADP","ad_account_id":"act_1076752270421039","selected_page_id":"172777955908986","custom_domain":"app.realtynationmohali.com","business_name":"Realty Nation","contact_number":"+91 98725 00094","currency":"INR","pixel_id":"1039854950770272"}
+------------------------------------------------

@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const impersonateId = url.searchParams.get('impersonate')
 
   // 1.5 Get User Profile for role/hierarchy
-  const { data: profile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('profiles').select('role, facebook_token, agency_id, parent_id').eq('id', user.id).single()
   
   let targetUserId = (['admin', 'agent'].includes(profile?.role || '') && (profile?.agency_id || profile?.parent_id)) 
     ? (profile.agency_id || profile.parent_id) 
@@ -53,18 +53,32 @@ export async function GET(request: Request) {
 
   const { data: targetProfile } = await supabase
     .from('profiles')
-    .select('facebook_token, ad_account_id')
+    .select('facebook_token, ad_account_id, agency_id, parent_id')
     .eq('id', targetUserId)
     .single()
 
-  if (!targetProfile?.facebook_token || !targetProfile?.ad_account_id) {
+  let token = targetProfile?.facebook_token
+  if (!token) {
+      token = profile?.facebook_token
+  }
+
+  if (!token && (profile?.agency_id || profile?.parent_id)) {
+      const { data: parentProfile } = await supabase
+          .from('profiles')
+          .select('facebook_token')
+          .eq('id', profile.agency_id || profile.parent_id)
+          .single()
+      token = parentProfile?.facebook_token
+  }
+
+  if (!token || !targetProfile?.ad_account_id) {
     return NextResponse.json({ campaigns: [] }) // Return empty if not connected
   }
 
   try {
     // 3. Fetch Campaigns from Meta
     // fields=effective_status fetches ACTIVE, PAUSED, ARCHIVED, etc.
-    const fbUrl = `${FB_GRAPH_URL}/${targetProfile.ad_account_id}/campaigns?fields=id,name,status,effective_status,objective,start_time&filtering=[{"field":"objective","operator":"IN","value":["OUTCOME_LEADS","LEAD_GENERATION"]}]&limit=20&access_token=${targetProfile.facebook_token}`;
+    const fbUrl = `${FB_GRAPH_URL}/${targetProfile.ad_account_id}/campaigns?fields=id,name,status,effective_status,objective,start_time&filtering=[{"field":"objective","operator":"IN","value":["OUTCOME_LEADS","LEAD_GENERATION"]}]&limit=20&access_token=${token}`;
     
     const response = await fetch(fbUrl);
     const data = await response.json();

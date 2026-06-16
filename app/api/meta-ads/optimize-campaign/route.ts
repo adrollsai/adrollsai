@@ -22,7 +22,7 @@ export async function POST(request: Request) {
         // --- 0. Resolve Target User ID ---
         const url = new URL(request.url);
         const impersonateId = url.searchParams.get('impersonate');
-        const { data: ownProfile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
+        const { data: ownProfile } = await supabase.from('profiles').select('role, facebook_token, parent_id, agency_id').eq('id', user.id).single();
         targetUserId = user.id;
 
         if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
@@ -51,13 +51,38 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: limitErr.message }, { status: 403 });
         }
 
-        const { data: profile, error: profileErr } = await supabase.from('profiles')
-            .select('facebook_token, ad_account_id, business_name, logo_url, contact_number')
+        // Use admin client to bypass RLS for impersonated accounts
+        const { createClient: createAdminClient } = await import('@supabase/supabase-js');
+        const supabaseAdmin = createAdminClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+
+        let { data: profile, error: profileErr } = await supabaseAdmin.from('profiles')
+            .select('facebook_token, ad_account_id, business_name, logo_url, contact_number, agency_id, parent_id')
             .eq('id', targetUserId)
             .single();
         
         if (profileErr) {
             console.error("[Optimize] Supabase Profile Error:", profileErr);
+        }
+
+        let token = profile?.facebook_token;
+        if (!token) {
+            token = ownProfile?.facebook_token;
+        }
+
+        if (!token && (ownProfile?.agency_id || ownProfile?.parent_id)) {
+            const { data: parentProfile } = await supabase
+                .from('profiles')
+                .select('facebook_token')
+                .eq('id', ownProfile.agency_id || ownProfile.parent_id)
+                .single();
+            token = parentProfile?.facebook_token;
+        }
+
+        if (profile) {
+            profile.facebook_token = token || null;
         }
 
         if (!profile?.facebook_token || !profile?.ad_account_id) {

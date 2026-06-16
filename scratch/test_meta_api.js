@@ -7,23 +7,34 @@ dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-async function run() {
-    const { data: profile } = await supabaseAdmin
+async function main() {
+    console.log("=== Debugging Meta Token Permissions ===");
+    const adAccountId = "act_431233473660683";
+
+    // Find the target profile
+    const { data: subAccount, error: err1 } = await supabase
         .from('profiles')
-        .select('*')
-        .eq('email', 'rchopra489@gmail.com')
+        .select('id, business_name, role, facebook_token, agency_id, parent_id')
+        .eq('ad_account_id', adAccountId)
         .single();
-    
-    const adAccountId = profile.ad_account_id;
-    const token = profile.facebook_token;
-    
-    console.log("Querying Meta Ad Account common billing/funding fields...");
-    const url = `https://graph.facebook.com/v19.0/${adAccountId}?fields=account_status,disable_reason,currency,funding_source,funding_source_details,balance&access_token=${token}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    console.log("Meta Ad Account response:", JSON.stringify(data, null, 2));
+
+    if (err1) {
+        console.error("Error fetching sub-account:", err1);
+        return;
+    }
+
+    if (subAccount.facebook_token) {
+        console.log(`\n--- Sub-account (${subAccount.business_name}) Token Permissions ---`);
+        try {
+            const res = await fetch(`https://graph.facebook.com/v19.0/me/permissions?access_token=${subAccount.facebook_token}`);
+            const data = await res.json();
+            console.log("Permissions:", JSON.stringify(data, null, 2));
+        } catch (e) {
+            console.error("Fetch failed:", e);
+        }
+    }
 }
 
-run().catch(console.error);
+main().catch(console.error);

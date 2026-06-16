@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   }
 
   // 2. Get credentials (supporting impersonation)
-  const { data: profile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('profiles').select('role, facebook_token, agency_id, parent_id').eq('id', user.id).single()
   
   let targetUserId = (['admin', 'agent'].includes(profile?.role || '') && (profile?.agency_id || profile?.parent_id)) 
     ? (profile.agency_id || profile.parent_id) 
@@ -54,11 +54,25 @@ export async function POST(request: Request) {
 
   const { data: targetProfile } = await supabase
     .from('profiles')
-    .select('facebook_token')
+    .select('facebook_token, agency_id, parent_id')
     .eq('id', targetUserId)
     .single()
 
-  if (!targetProfile?.facebook_token) {
+  let token = targetProfile?.facebook_token
+  if (!token) {
+      token = profile?.facebook_token
+  }
+
+  if (!token && (profile?.agency_id || profile?.parent_id)) {
+      const { data: parentProfile } = await supabase
+          .from('profiles')
+          .select('facebook_token')
+          .eq('id', profile.agency_id || profile.parent_id)
+          .single()
+      token = parentProfile?.facebook_token
+  }
+
+  if (!token) {
     return NextResponse.json({ error: 'No Facebook token found for this account' }, { status: 400 })
   }
 
@@ -69,7 +83,7 @@ export async function POST(request: Request) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             status: newStatus, // 'ACTIVE' or 'PAUSED'
-            access_token: targetProfile.facebook_token
+            access_token: token
         })
     });
 

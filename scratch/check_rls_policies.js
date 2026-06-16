@@ -12,7 +12,7 @@ async function run() {
     
     // We can query pg_policies to see active RLS policies!
     const { data: policies, error } = await supabaseAdmin.rpc('exec_sql', {
-        query: "SELECT schemaname, tablename, policyname, roles, cmd, qual, with_check FROM pg_policies WHERE tablename = 'properties';"
+        query: "SELECT schemaname, tablename, policyname, roles, cmd, qual, with_check FROM pg_policies WHERE tablename = 'profiles';"
     });
 
     if (error) {

@@ -92,18 +92,29 @@ export async function POST(request: Request) {
         });
     }
 
-    // Fetch TARGET profile for credentials and business info
-    const { data: targetProfile } = await supabase.from('profiles')
-        .select('facebook_token, ad_account_id, fb_page_id, business_url, business_name, contact_number, currency, pixel_id')
+    // Fetch TARGET profile for credentials and business info (using Admin client to bypass RLS)
+    const { createClient: createAdminClient } = await import('@supabase/supabase-js');
+    const supabaseAdmin = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const { data: targetProfile } = await supabaseAdmin.from('profiles')
+        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id')
         .eq('id', targetUserId)
         .single();
 
     if (targetProfile) {
         data.facebookToken = data.facebookToken || targetProfile.facebook_token;
         data.adAccountId = data.adAccountId || targetProfile.ad_account_id;
-        data.pageId = data.pageId || targetProfile.fb_page_id;
-        data.linkUrl = data.linkUrl || targetProfile.business_url;
-        data.privacyPolicyUrl = data.privacyPolicyUrl || (targetProfile.business_url ? `${targetProfile.business_url}/privacy` : '');
+        data.pageId = data.pageId || targetProfile.selected_page_id;
+        
+        const targetBusinessUrl = targetProfile.custom_domain 
+            ? `https://${targetProfile.custom_domain}` 
+            : `https://app.adrolls.in/shared/${targetUserId}`;
+
+        data.linkUrl = data.linkUrl || targetBusinessUrl;
+        data.privacyPolicyUrl = data.privacyPolicyUrl || `${targetBusinessUrl}/privacy`;
         data.business_name = targetProfile.business_name;
         data.contact_number = targetProfile.contact_number;
     }
@@ -588,8 +599,22 @@ export async function POST(request: Request) {
         // --- Step E: Campaign ---
         logToFile("--- 5. RETARGETING CAMPAIGN ---");
         
-        // Distinguishable Campaign Naming
-        const campaignName = `${businessName} - Retargeting - CRM Qualified Leads - ${sourceCampaignName} - ${new Date().toISOString().slice(0, 10)}`;
+        let propertyTitle = "";
+        if (inventoryIds.length > 0) {
+            try {
+                const { data: prop } = await supabaseAdmin
+                    .from('properties')
+                    .select('title')
+                    .eq('id', inventoryIds[0])
+                    .single();
+                if (prop?.title) {
+                    propertyTitle = prop.title;
+                }
+            } catch (e) {}
+        }
+
+        // Distinguishable Campaign Naming including Retargeting and Product Name
+        const campaignName = `${businessName} - Retargeting - ${propertyTitle || "AI Smart Campaign"} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
 
         const campaignPayload = {
             name: campaignName,

@@ -28,8 +28,8 @@ export async function POST(req: Request) {
 
         if (!file || !caption) return NextResponse.json({ error: 'Missing file or caption' }, { status: 400 });
 
-        const { data: profile } = await supabase.from('profiles').select('selected_page_token, fb_page_id, ig_business_id').eq('id', user.id).single();
-        if (!profile?.selected_page_token || !profile?.fb_page_id) {
+        const { data: profile } = await supabase.from('profiles').select('selected_page_token, selected_page_id, ig_business_id').eq('id', user.id).single();
+        if (!profile?.selected_page_token || !profile?.selected_page_id) {
             return NextResponse.json({ error: 'Meta Page ID or Access Token missing.' }, { status: 400 });
         }
 
@@ -44,8 +44,8 @@ export async function POST(req: Request) {
             fbFormData.append('source', file);
 
             const endpoint = isVideo 
-                ? `https://graph-video.facebook.com/v19.0/${profile.fb_page_id}/videos`
-                : `https://graph.facebook.com/v19.0/${profile.fb_page_id}/photos`;
+                ? `https://graph-video.facebook.com/v19.0/${profile.selected_page_id}/videos`
+                : `https://graph.facebook.com/v19.0/${profile.selected_page_id}/photos`;
 
             const res = await fetch(endpoint, { method: 'POST', body: fbFormData });
             results.facebook = await res.json();

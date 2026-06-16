@@ -16,7 +16,7 @@ export async function POST(request: Request) {
         const { data: myProfile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
         const isAdminLike = ['super_admin', 'agency', 'admin'].includes(myProfile?.role || '');
 
-        const { data: ownProfile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
+        const { data: ownProfile } = await supabase.from('profiles').select('role, facebook_token, parent_id, agency_id').eq('id', user.id).single();
         let targetUserId = user.id;
 
         if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
@@ -33,7 +33,26 @@ export async function POST(request: Request) {
             }
         }
         
-        const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, custom_domain, logo_url').eq('id', targetUserId).single();
+        let { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, custom_domain, logo_url, agency_id, parent_id').eq('id', targetUserId).single();
+        
+        let token = profile?.facebook_token;
+        if (!token) {
+            token = ownProfile?.facebook_token;
+        }
+
+        if (!token && (ownProfile?.agency_id || ownProfile?.parent_id)) {
+            const { data: parentProfile } = await supabase
+                .from('profiles')
+                .select('facebook_token')
+                .eq('id', ownProfile.agency_id || ownProfile.parent_id)
+                .single();
+            token = parentProfile?.facebook_token;
+        }
+
+        if (profile) {
+            profile.facebook_token = token || null;
+        }
+
         if (!profile?.facebook_token || !profile?.ad_account_id) {
             console.error("[Push] Profile missing credentials for target user:", targetUserId);
             return NextResponse.json({ error: 'Missing Meta credentials' }, { status: 400 });

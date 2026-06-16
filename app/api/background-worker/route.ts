@@ -223,7 +223,7 @@ export async function POST(req: Request) {
         if (metaCampaignId) {
             try {
                 // Fetch Meta Credentials
-                const { data: profile } = await supabaseAdmin.from('profiles').select('facebook_token, ad_account_id, fb_page_id, business_url').eq('id', userId).single();
+                const { data: profile } = await supabaseAdmin.from('profiles').select('facebook_token, ad_account_id, selected_page_id, custom_domain').eq('id', userId).single();
                 
                 if (profile?.facebook_token && profile?.ad_account_id) {
                     const FB_URL = "https://graph.facebook.com/v19.0";
@@ -249,14 +249,18 @@ export async function POST(req: Request) {
                             const [headline, ...rest] = generatedCaption.split('\n\n');
                             const primaryText = rest.join('\n\n') || headline;
 
+                            const targetBusinessUrl = profile.custom_domain 
+                                ? `https://${profile.custom_domain}` 
+                                : `https://app.adrolls.in/shared/${userId}`;
+
                             const creativePayload = {
                                 name: `AI Opt - ${propertyTitle || 'Variation'}`,
                                 object_story_spec: {
-                                    page_id: profile.fb_page_id,
+                                    page_id: profile.selected_page_id,
                                     link_data: {
                                         message: primaryText,
                                         name: headline,
-                                        link: profile.business_url || 'https://adrolls.in',
+                                        link: targetBusinessUrl,
                                         image_hash: imgHash,
                                         call_to_action: { type: 'LEARN_MORE', value: { lead_gen_form_id: metaLeadFormId } }
                                     }

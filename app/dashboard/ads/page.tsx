@@ -307,7 +307,7 @@ export default function AdsPage() {
                   const pixelRes = await fetch('/api/facebook/pixels', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ adAccountId: selectedAdAccountId })
+                      body: JSON.stringify({ adAccountId: selectedAdAccountId, impersonateId })
                   })
                   const pixelData = await pixelRes.json()
                   if (pixelData.pixels) {
@@ -385,7 +385,8 @@ export default function AdsPage() {
       
       if (targetProfile) {
         setCurrency(targetProfile.currency || 'INR')
-        setFacebookToken(targetProfile.facebook_token)
+        const activeToken = targetProfile.facebook_token || profile?.facebook_token || null
+        setFacebookToken(activeToken)
         setSelectedAdAccountId(targetProfile.ad_account_id)
         setPixelId(targetProfile.pixel_id || null)
         
@@ -447,7 +448,7 @@ export default function AdsPage() {
               const res = await fetch('/api/facebook/pixels', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ adAccountId: targetProfile.ad_account_id })
+                  body: JSON.stringify({ adAccountId: targetProfile.ad_account_id, impersonateId })
               });
               const data = await res.json();
               if (data.pixels) {

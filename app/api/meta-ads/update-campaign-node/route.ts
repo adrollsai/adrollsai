@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
   }
 
-  const { data: profile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('profiles').select('role, facebook_token, agency_id, parent_id').eq('id', user.id).single()
   
   let targetUserId = (['admin', 'agent'].includes(profile?.role || '') && (profile?.agency_id || profile?.parent_id)) 
     ? (profile.agency_id || profile.parent_id) 
@@ -50,16 +50,29 @@ export async function POST(request: Request) {
 
   const { data: targetProfile } = await supabase
     .from('profiles')
-    .select('facebook_token, ad_account_id')
+    .select('facebook_token, ad_account_id, agency_id, parent_id')
     .eq('id', targetUserId)
     .single()
 
-  if (!targetProfile?.facebook_token) {
+  let token = targetProfile?.facebook_token
+  if (!token) {
+      token = profile?.facebook_token
+  }
+
+  if (!token && (profile?.agency_id || profile?.parent_id)) {
+      const { data: parentProfile } = await supabase
+          .from('profiles')
+          .select('facebook_token')
+          .eq('id', profile.agency_id || profile.parent_id)
+          .single()
+      token = parentProfile?.facebook_token
+  }
+
+  if (!token) {
     return NextResponse.json({ error: 'Meta Ad Account not fully connected.' }, { status: 400 })
   }
 
-  const token = targetProfile.facebook_token
-  const adAccountId = targetProfile.ad_account_id
+  const adAccountId = targetProfile?.ad_account_id
 
   try {
     let creativeId = fields.creative?.id;

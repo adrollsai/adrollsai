@@ -47,11 +47,15 @@ export async function POST(request: Request) {
 
         const { data: targetProfile } = await supabase
           .from('profiles')
-          .select('facebook_token')
+          .select('facebook_token, agency_id, parent_id')
           .eq('id', targetUserId)
           .single()
 
         let token = targetProfile?.facebook_token
+        if (!token) {
+            token = profile?.facebook_token
+        }
+
         if (!token && (profile?.agency_id || profile?.parent_id)) {
             const { data: parentProfile } = await supabase
                 .from('profiles')

@@ -90,19 +90,37 @@ export async function POST(request: Request) {
         });
     }
 
-    // Fetch TARGET profile for credentials and business info
-    const { data: targetProfile } = await supabase.from('profiles')
-        .select('facebook_token, ad_account_id, fb_page_id, business_url, business_name, contact_number, currency, pixel_id')
+    // Fetch TARGET profile for credentials and business info (using Admin client to bypass RLS)
+    const { createClient: createAdminClient } = await import('@supabase/supabase-js');
+    const supabaseAdmin = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const { data: targetProfile } = await supabaseAdmin.from('profiles')
+        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id')
         .eq('id', targetUserId)
         .single();
 
+    // Diagnostics Logging
+    try {
+        const fs = require('fs');
+        fs.appendFileSync('c:/Users/USER/Desktop/adrollsai/adrollsai/launch_debug.log', 
+            `[Launch API] Date: ${new Date().toISOString()}\n` +
+            `URL: ${request.url}\n` +
+            `impersonateId (from query): ${impersonateId}\n` +
+            `targetUserId (resolved): ${targetUserId}\n` +
+            `user.id (logged-in): ${user.id}\n` +
+            `targetProfile exists: ${!!targetProfile}\n` +
+            `targetProfile: ${JSON.stringify(targetProfile)}\n` +
+            `------------------------------------------------\n`
+        );
+    } catch (logErr) {
+        console.error("Failed to write to launch_debug.log:", logErr);
+    }
+
     let qualifiedLeadsCount = 0;
     try {
-        const { createClient: createAdminClient } = await import('@supabase/supabase-js');
-        const supabaseAdmin = createAdminClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE_KEY!
-        );
         const { count } = await supabaseAdmin
             .from('leads')
             .select('*', { count: 'exact', head: true })
@@ -117,9 +135,14 @@ export async function POST(request: Request) {
     if (targetProfile) {
         data.facebookToken = data.facebookToken || targetProfile.facebook_token;
         data.adAccountId = data.adAccountId || targetProfile.ad_account_id;
-        data.pageId = data.pageId || targetProfile.fb_page_id;
-        data.linkUrl = data.linkUrl || targetProfile.business_url;
-        data.privacyPolicyUrl = data.privacyPolicyUrl || (targetProfile.business_url ? `${targetProfile.business_url}/privacy` : '');
+        data.pageId = data.pageId || targetProfile.selected_page_id;
+        
+        const targetBusinessUrl = targetProfile.custom_domain 
+            ? `https://${targetProfile.custom_domain}` 
+            : `https://app.adrolls.in/shared/${targetUserId}`;
+
+        data.linkUrl = data.linkUrl || targetBusinessUrl;
+        data.privacyPolicyUrl = data.privacyPolicyUrl || `${targetBusinessUrl}/privacy`;
         data.business_name = targetProfile.business_name;
         data.contact_number = targetProfile.contact_number;
     }
@@ -548,7 +571,7 @@ export async function POST(request: Request) {
             } catch (e) {}
         }
         
-        const campaignName = `${businessName} - ${propertyTitle || "AI Smart Campaign"} - ${new Date().toISOString().slice(0, 10)}`;
+        const campaignName = `${businessName} - ${propertyTitle || "AI Smart Campaign"} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
 
         const campaignPayload = {
             name: campaignName,

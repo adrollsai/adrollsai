@@ -424,7 +424,7 @@ export default function ProfilePage() {
     try {
       const res = await fetch('/api/facebook/pixels', {
         method: 'POST',
-        body: JSON.stringify({ adAccountId })
+        body: JSON.stringify({ adAccountId, impersonateId })
       })
       const data = await res.json()
       if (data.pixels) {

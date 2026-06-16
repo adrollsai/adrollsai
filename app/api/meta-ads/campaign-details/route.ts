@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Campaign ID is required' }, { status: 400 })
   }
 
-  const { data: profile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('profiles').select('role, facebook_token, agency_id, parent_id').eq('id', user.id).single()
   
   let targetUserId = (['admin', 'agent'].includes(profile?.role || '') && (profile?.agency_id || profile?.parent_id)) 
     ? (profile.agency_id || profile.parent_id) 
@@ -49,15 +49,27 @@ export async function GET(request: Request) {
 
   const { data: targetProfile } = await supabase
     .from('profiles')
-    .select('facebook_token')
+    .select('facebook_token, agency_id, parent_id')
     .eq('id', targetUserId)
     .single()
 
-  if (!targetProfile?.facebook_token) {
-    return NextResponse.json({ error: 'Meta Ad Account not fully connected.' }, { status: 400 })
+  let token = targetProfile?.facebook_token
+  if (!token) {
+      token = profile?.facebook_token
   }
 
-  const token = targetProfile.facebook_token
+  if (!token && (profile?.agency_id || profile?.parent_id)) {
+      const { data: parentProfile } = await supabase
+          .from('profiles')
+          .select('facebook_token')
+          .eq('id', profile.agency_id || profile.parent_id)
+          .single()
+      token = parentProfile?.facebook_token
+  }
+
+  if (!token) {
+    return NextResponse.json({ error: 'Meta Ad Account not fully connected.' }, { status: 400 })
+  }
 
   try {
     // Nested Graph API call: Fetch Campaign, its Ad Sets, its Ads, and dynamic insights (delivery stats) for each
