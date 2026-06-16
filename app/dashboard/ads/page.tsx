@@ -258,8 +258,11 @@ export default function AdsPage() {
   const checkAccountStatus = async (accountId: string, pageId?: string) => {
       setCheckingSanity(true)
       try {
+          const urlParams = new URLSearchParams(window.location.search)
+          const impersonateId = urlParams.get('impersonate')
+          const impParam = impersonateId ? `&impersonate=${impersonateId}` : ''
           const pageParam = pageId ? `&pageId=${pageId}` : ''
-          const res = await fetch(`/api/meta-ads/check-account?adAccountId=${accountId}${pageParam}`)
+          const res = await fetch(`/api/meta-ads/check-account?adAccountId=${accountId}${pageParam}${impParam}`)
           const data = await res.json()
           setAccountStatus(data)
       } catch (e) { 
@@ -2620,10 +2623,12 @@ export default function AdsPage() {
                     checkingSanity ||
                     adForm.metaLocations.length === 0 || 
                     selectedCreatives.length === 0 || 
-                    !accountStatus || 
-                    accountStatus.account_status !== 1 || 
-                    !accountStatus.has_payment_method || 
-                    (campaignType === 'instant_form' && accountStatus.leadgenTos?.leadgen_tos?.accepted !== true)
+                    !accountStatus ||
+                    (accountStatus && !accountStatus.error && (
+                        accountStatus.account_status !== 1 || 
+                        !accountStatus.has_payment_method || 
+                        (campaignType === 'instant_form' && accountStatus.leadgenTos?.leadgen_tos?.accepted !== true)
+                    ))
                 } 
                 className="w-full bg-slate-900 text-white py-4 sm:py-5 rounded-[1.5rem] text-sm sm:text-base font-bold flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 shadow-lg shadow-slate-900/20 hover:bg-slate-800"
               >
