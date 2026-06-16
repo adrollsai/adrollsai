@@ -326,6 +326,7 @@ export default function ProfilePage() {
   const [isLoadingPages, setIsLoadingPages] = useState(false)
   const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false)
   const [isLoadingPixels, setIsLoadingPixels] = useState(false)
+  const [isCreatingPixel, setIsCreatingPixel] = useState(false)
 
   // Profile Data
   const [domainData, setDomainData] = useState({
@@ -438,6 +439,43 @@ export default function ProfilePage() {
       setPixels([])
     }
     finally { setIsLoadingPixels(false) }
+  }
+
+  const handleCreatePixel = async () => {
+      if (!selectedAdAccountId) {
+          toast.error("Please connect and select an Ad Account first.")
+          return
+      }
+      
+      const pixelName = prompt("Enter Pixel Name:", "AdRolls Pixel")
+      if (!pixelName) return
+
+      setIsCreatingPixel(true)
+      try {
+          const res = await fetch('/api/meta-ads/create-pixel', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  adAccountId: selectedAdAccountId,
+                  pixelName,
+                  impersonateId
+              })
+          })
+          const data = await res.json()
+
+          if (data.error) {
+              toast.error(`Failed to create pixel: ${data.error}`)
+          } else {
+              toast.success("Meta Pixel created successfully!")
+              setSelectedPixelId(data.pixelId)
+              updateLocalCache({ pixel_id: data.pixelId })
+              fetchPixels(selectedAdAccountId)
+          }
+      } catch (err: any) {
+          toast.error(`Error: ${err.message}`)
+      } finally {
+          setIsCreatingPixel(false)
+      }
   }
 
   // --- SELECTION HANDLERS ---
@@ -1539,7 +1577,26 @@ export default function ProfilePage() {
                       <div className="bg-slate-50/80 rounded-3xl p-4 border border-slate-100">
                         <div className="flex justify-between items-center mb-3 px-1">
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Pixel</label>
-                          <button onClick={() => selectedAdAccountId && fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-600 font-bold uppercase tracking-wider transition-colors">Refresh List</button>
+                          <div className="flex items-center gap-3">
+                            {selectedAdAccountId && (
+                              <button 
+                                onClick={handleCreatePixel} 
+                                disabled={isCreatingPixel}
+                                className="text-[10px] text-purple-600 hover:text-purple-700 font-bold uppercase tracking-wider transition-all disabled:opacity-50 flex items-center gap-1 active:scale-95"
+                              >
+                                {isCreatingPixel ? (
+                                  <>
+                                    <Loader2 size={10} className="animate-spin text-purple-600" /> Creating...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus size={12} className="text-purple-600" /> Auto-Create Pixel
+                                  </>
+                                )}
+                              </button>
+                            )}
+                            <button onClick={() => selectedAdAccountId && fetchPixels(selectedAdAccountId)} className="text-[10px] text-blue-600 hover:text-blue-800 font-bold uppercase tracking-wider transition-colors">Refresh List</button>
+                          </div>
                         </div>
 
                         {!selectedAdAccountId ? (
