@@ -30,7 +30,8 @@ import {
   Trash2,
   Plus,
   ImageIcon,
-  Calendar
+  Calendar,
+  Plug
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -312,6 +313,7 @@ export default function ProfilePage() {
   const [googleCalendars, setGoogleCalendars] = useState<any[]>([])
   const [googleCalendarId, setGoogleCalendarId] = useState("primary")
   const [isLoadingCalendars, setIsLoadingCalendars] = useState(false)
+
 
   const [facebookToken, setFacebookToken] = useState<string | null>(null);
 
@@ -1771,6 +1773,7 @@ export default function ProfilePage() {
               </div>
             )}
 
+
             {isAdminLike && authRole !== 'agent' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
                 <button 
@@ -1804,13 +1807,26 @@ export default function ProfilePage() {
 
                 <button 
                   onClick={() => router.push(`/dashboard/team${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
-                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all"
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"
                 >
                   <div className="flex items-center gap-4">
                     <div className="bg-emerald-100 text-emerald-600 p-3 rounded-2xl">
                       <Shield size={20} />
                     </div>
                     <span className="font-bold text-sm text-slate-900">Team Management</span>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400" />
+                </button>
+
+                <button 
+                  onClick={() => router.push(`/dashboard/plugins${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-gradient-to-br from-amber-100 to-orange-100 text-orange-600 p-3 rounded-2xl">
+                      <Plug size={20} />
+                    </div>
+                    <span className="font-bold text-sm text-slate-900">Plugins & Integrations</span>
                   </div>
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>
