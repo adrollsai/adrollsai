@@ -34,7 +34,7 @@ import ContactForm from '@/components/ContactForm'
 const ADMIN_USER_ID = 'bc63c065-9bcc-4793-bedc-f0960406425b'
 const LANDING_PAGE_ID = '906bdd5f-dda6-4f76-9170-4c81e90dc1f5'
 const SLUG_VALUE = 'test-adrolls-1592'
-const PIXEL_ID = '1684607746296534'
+const PIXEL_ID = '1344722394272912'
 
 export default function LandingPageClient() {
    const partnerLoginUrl = 'https://app.adrolls.in'
