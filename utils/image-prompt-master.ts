@@ -116,6 +116,63 @@ export const RENDERING_PRIORITIES = `Rendering priorities (highest to lowest):
 export const AUTHENTICITY_RULE = `The primary objective is to maximize perceived authenticity. A viewer should believe the image is a genuine photograph captured in the real world. Whenever there is a trade-off between beauty and realism, choose realism. Small natural imperfections are desirable because they increase believability.`;
 
 // ============================================================================
+// REFERENCE CREATIVE PREAMBLE BUILDER
+// Places reference creative instructions at the TOP of the prompt with
+// explicit priority weighting so the model doesn't drift or ignore them.
+// ============================================================================
+
+export function buildReferenceCreativePreamble(
+  numPropertyImages: number,
+  hasLogo: boolean,
+  hasReference: boolean
+): string {
+  if (!hasReference) return '';
+
+  // Build explicit image disambiguation so the model knows which image is which
+  const imageMap: string[] = [];
+  for (let i = 0; i < numPropertyImages; i++) {
+    imageMap.push(`  - Image ${i + 1}: PROPERTY/PRODUCT photo (content asset only — use as hero visual)`);
+  }
+  if (hasLogo) {
+    imageMap.push(`  - Image ${numPropertyImages + 1}: BUSINESS LOGO (branding asset only — place in corner)`);
+  }
+  const refIndex = numPropertyImages + (hasLogo ? 1 : 0) + 1;
+  imageMap.push(`  - Image ${refIndex} (LAST image): REFERENCE CREATIVE — this is the PRIMARY DESIGN BLUEPRINT`);
+
+  return `=== CRITICAL DESIGN INSTRUCTION (HIGHEST PRIORITY) ===
+
+REFERENCE PRIORITY: 10/10
+CONTENT PRIORITY: 8/10
+TEXT PRIORITY: 6/10
+
+IMAGE DISAMBIGUATION (each input image is labeled below):
+${imageMap.join('\n')}
+
+The LAST image in the input array is the REFERENCE CREATIVE.
+
+The final ad MUST closely follow the reference creative's:
+- Layout structure and spatial composition
+- Typography hierarchy and text placement
+- Image framing and visual balance
+- Design style, color palette treatment, and overall aesthetic
+- Element positioning (where headlines, images, logos, and CTAs are placed)
+
+Match the reference creative as closely as possible while replacing all content with the provided property/product images and business logo.
+
+Do NOT create a new layout from scratch.
+Do NOT invent a different composition.
+Do NOT rearrange where elements are placed compared to the reference.
+Use the reference creative as the primary design blueprint.
+
+The property/product photos are CONTENT ASSETS ONLY — they replace the hero visual in the reference layout.
+The logo image is BRANDING ONLY — it replaces any logo in the reference or goes in a corner.
+
+=== END CRITICAL DESIGN INSTRUCTION ===
+
+`;
+}
+
+// ============================================================================
 // CONTENT INTEGRITY RULES — Anti-hallucination, anti-clutter, branding defaults
 // ============================================================================
 

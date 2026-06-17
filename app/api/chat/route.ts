@@ -5,7 +5,7 @@ import { createKieTask } from '@/utils/external-apis';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google'; 
 import { checkLimitAndIncrement, refundLimit, checkStorageLimit } from '@/utils/subscription-server';
-import { buildImageSystemPrompt, detectIndustry } from '@/utils/image-prompt-master';
+import { buildImageSystemPrompt, buildReferenceCreativePreamble, detectIndustry } from '@/utils/image-prompt-master';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -203,7 +203,18 @@ export async function POST(request: Request) {
     const validLogo = filterImages([logoUrl]);
     const validTemplate = filterImages([templateUrl || fetchedRefUrl]);
     
+    // Ensure reference creative is ALWAYS the LAST image in the array
+    // This makes image disambiguation deterministic for the model
     const allInputImages = [...validPropImages, ...validLogo, ...validTemplate];
+
+    const hasReference = validTemplate.length > 0;
+
+    // Build the reference creative preamble (placed at TOP of prompt)
+    const referenceCreativePreamble = buildReferenceCreativePreamble(
+        validPropImages.length,
+        validLogo.length > 0,
+        hasReference
+    );
 
     // Build category specific layout and aesthetic guidance
     let categoryPromptGuideline = "";
@@ -215,13 +226,17 @@ export async function POST(request: Request) {
         categoryPromptGuideline = "Style: High converting raw organic ad creative. Unpolished, low-effort smartphone photo look that does not seem like an ad. Display a raw, clean image of the product. Directly on the image itself, overlay a simple, clean, readable text caption/card displaying bare minimum info (Location, Price, and Configuration) with zero clutter.";
     }
 
-    const hasReference = validTemplate.length > 0;
 
-    // Build literal, simplified, high-converting image prompt
+    // Build the prompt with reference preamble at the TOP (highest attention position)
     const promptParts = [
-        "Make a high converting static meta ad, make sure the result is super real looking, and include attractive looking humans in it (ethnicity should be according to where the business is from) that don't look ai like, they should look super real. Only include super essential info in the image text overlays so it is not cluttered with text too much. IMPORTANT: Do NOT include ANY information that is not explicitly provided below — no made-up prices, discounts, claims, phone numbers, websites, or contact details. If a detail is not provided, leave it out entirely.",
-        hasReference ? "Take design layout and style inspiration from the reference image creative (provided in the input images) and mold it for our product with a slight variation." : "",
-        categoryPromptGuideline,
+        // 1. REFERENCE PREAMBLE — highest priority, placed first so the model sees it before anything else
+        referenceCreativePreamble,
+        // 2. Core task instruction
+        "Create a high converting static Meta ad creative. The result must look super photorealistic with attractive, real-looking humans (ethnicity matching the business region). Use only super essential info in text overlays to avoid clutter. IMPORTANT: Do NOT include ANY information that is not explicitly provided below — no made-up prices, discounts, claims, phone numbers, websites, or contact details. If a detail is not provided, leave it out entirely.",
+        // 3. Category/style guidelines (only if no reference, to avoid conflicting layout instructions)
+        (!hasReference && categoryPromptGuideline) ? categoryPromptGuideline : '',
+        (hasReference && categoryPromptGuideline) ? `Style note (secondary to reference layout): ${categoryPromptGuideline}` : '',
+        // 4. Product/business details — content to populate the layout
         `Product Description: ${propertyTitle || ''}. ${propertyDescription || ''}`,
         businessName ? `Business Info - Brand/Business Name: ${businessName}` : '',
         contactNumber ? `Business Info - Contact Info: ${contactNumber}` : '',
