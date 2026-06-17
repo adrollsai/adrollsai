@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
 import { sendCAPIEvent } from '@/utils/external-apis'
+import { triggerWelcomeDrip } from '@/utils/whatsapp/drips'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -219,6 +220,20 @@ export async function POST(request: Request) {
               `${name} • ${phone} • ${cleanSource}`,
               `/dashboard/crm/${savedLead.id}` 
           )
+
+          // Trigger automated WhatsApp welcome drip campaign
+          if (savedLead && phone) {
+              triggerWelcomeDrip(
+                  supabaseAdmin,
+                  savedLead.id,
+                  name,
+                  phone,
+                  profile.id,
+                  adCampaignString || 'All'
+              ).catch(err => {
+                  console.error('[DRIP TRIGGER] Facebook lead welcome drip failed:', err);
+              });
+          }
         }
       }
     }

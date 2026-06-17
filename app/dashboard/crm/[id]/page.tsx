@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus } from 'lucide-react'
+import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 const STAGES = ['New', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
@@ -21,6 +21,13 @@ export default function LeadProfilePage() {
   const [reminderDate, setReminderDate] = useState('')
   const [pixels, setPixels] = useState<any[]>([])
   const [isLoadingPixels, setIsLoadingPixels] = useState(false)
+
+  // WhatsApp template states
+  const [isSendTemplateOpen, setIsSendTemplateOpen] = useState(false)
+  const [approvedTemplates, setApprovedTemplates] = useState<any[]>([])
+  const [selectedTemplateName, setSelectedTemplateName] = useState('')
+  const [selectedTemplateBody, setSelectedTemplateBody] = useState('')
+  const [isSendingTemplate, setIsSendingTemplate] = useState(false)
 
   useEffect(() => {
     if (id) {
@@ -82,6 +89,73 @@ export default function LeadProfilePage() {
   const fetchLeadHistory = async () => {
     const { data } = await supabase.from('lead_history').select('*').eq('lead_id', id).order('created_at', { ascending: false })
     if (data) setLeadHistory(data)
+  }
+
+  const fetchApprovedTemplates = async () => {
+    try {
+      const res = await fetch('/api/whatsapp/templates')
+      const data = await res.json()
+      if (data.success) {
+        setApprovedTemplates(data.templates || [])
+      }
+    } catch (e) {
+      console.error("Failed to fetch templates:", e)
+    }
+  }
+
+  useEffect(() => {
+    if (isSendTemplateOpen) {
+      fetchApprovedTemplates()
+    }
+  }, [isSendTemplateOpen])
+
+  const handleSendTemplate = async () => {
+    if (!selectedTemplateName) return alert("Please select a template")
+    setIsSendingTemplate(true)
+
+    const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
+    if (!displayPhone) {
+      setIsSendingTemplate(false)
+      return alert("Lead does not have a phone number")
+    }
+
+    try {
+      const res = await fetch('/api/whatsapp/test-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient: displayPhone,
+          templateName: selectedTemplateName,
+          isSandboxTest: selectedTemplateName === 'hello_world'
+        })
+      })
+      if (res.ok) {
+        const desc = `💬 WhatsApp template sent: "${selectedTemplateName}"`
+        setLeadHistory([{ id: Date.now(), action_type: 'REMARK', description: desc, created_at: new Date().toISOString() }, ...leadHistory])
+        
+        await fetch('/api/crm/lead-action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            leadId: id,
+            actionType: 'REMARK',
+            description: desc
+          })
+        })
+        
+        setIsSendTemplateOpen(false)
+        setSelectedTemplateName('')
+        setSelectedTemplateBody('')
+        alert("WhatsApp template sent successfully!")
+      } else {
+        alert("Failed to send WhatsApp template.")
+      }
+    } catch (err) {
+      console.error("Error sending template:", err)
+      alert("An error occurred while sending the WhatsApp template.")
+    } finally {
+      setIsSendingTemplate(false)
+    }
   }
 
   const updateStage = async (newStage: string) => {
@@ -208,8 +282,12 @@ END:VCARD`
                     <button onClick={downloadVCard} className="p-3 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-full shadow-sm transition-colors" title="Save to Contacts">
                         <UserPlus size={18}/>
                     </button>
-                    <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-3 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors"><MessageCircle size={18}/></a>
-                    <a href={`tel:${lead.phone}`} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full shadow-sm transition-colors"><Phone size={18}/></a>
+                    <button onClick={() => setIsSendTemplateOpen(true)} className="p-3 bg-[#25D366] text-white hover:bg-[#22c35e] rounded-full shadow-sm transition-colors flex items-center gap-1.5 px-4 font-bold text-xs animate-pulse" title="Send WhatsApp Template">
+                        <MessageCircle size={18}/>
+                        <span>Send Template</span>
+                    </button>
+                    <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-3 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors" title="Direct WhatsApp Chat"><MessageCircle size={18}/></a>
+                    <a href={`tel:${lead.phone}`} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full shadow-sm transition-colors" title="Call Lead"><Phone size={18}/></a>
                 </div>
             )}
         </div>
@@ -407,6 +485,68 @@ END:VCARD`
                 </div>
             </div>
         </div>
+
+      {/* SEND WHATSAPP TEMPLATE MODAL */}
+      {isSendTemplateOpen && (
+          <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
+              <div className="bg-white w-full max-w-md rounded-t-[1.75rem] xs:rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 flex flex-col overflow-hidden">
+                  <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white">
+                      <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                          <MessageCircle size={22} className="text-[#25D366]" />
+                          Send WhatsApp Template
+                      </h2>
+                      <button onClick={() => setIsSendTemplateOpen(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={18} /></button>
+                  </div>
+                  
+                  <div className="p-6 space-y-4">
+                      <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Select WhatsApp Template</label>
+                          <div className="relative">
+                              <select 
+                                  value={selectedTemplateName} 
+                                  onChange={(e) => {
+                                      const name = e.target.value;
+                                      setSelectedTemplateName(name);
+                                      const t = approvedTemplates.find(x => x.name === name);
+                                      setSelectedTemplateBody(t?.components?.find((c: any) => c.type === 'BODY')?.text || '');
+                                  }}
+                                  className="w-full appearance-none bg-slate-50 border border-slate-100 py-3.5 px-5 rounded-2xl text-sm font-bold text-slate-900 focus:ring-4 focus:ring-blue-500/10 outline-none cursor-pointer"
+                              >
+                                  <option value="">Choose template...</option>
+                                  {approvedTemplates.map(t => (
+                                      <option key={t.name} value={t.name}>{t.name} ({t.status})</option>
+                                  ))}
+                              </select>
+                              <ChevronDown size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                          </div>
+                      </div>
+
+                      {selectedTemplateBody && (
+                          <div className="space-y-3">
+                              <div className="space-y-1">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase block ml-1">Template Content</label>
+                                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/50 text-xs text-slate-600 leading-relaxed font-semibold font-sans whitespace-pre-wrap">
+                                      {selectedTemplateBody}
+                                  </div>
+                              </div>
+                              <div className="bg-blue-50/50 border border-blue-100 p-3.5 rounded-2xl text-[10px] text-blue-800 leading-normal font-bold">
+                                  ℹ️ Variables like lead name and company name are mapped automatically when sent to Meta.
+                              </div>
+                          </div>
+                      )}
+
+                      <button 
+                          onClick={handleSendTemplate} 
+                          disabled={isSendingTemplate || !selectedTemplateName} 
+                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-slate-900/20 disabled:opacity-50 disabled:scale-100 mt-2"
+                      >
+                          {isSendingTemplate ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />} 
+                          {isSendingTemplate ? 'Sending Message...' : 'Send Message'}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
 
     </div>
   )

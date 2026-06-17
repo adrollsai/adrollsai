@@ -1,26 +1,30 @@
-const { createClient } = require('@supabase/supabase-js');
-const path = require('path');
-const dotenv = require('dotenv');
-dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
+const { createClient } = require('@supabase/supabase-js')
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const url = "https://dvygrupphzjitzbrtlve.supabase.co"
+const serviceKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR2eWdydXBwaHpqaXR6YnJ0bHZlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTM4OTkxNiwiZXhwIjoyMDgwOTY1OTE2fQ.WfJTY1EDtVAIePBlf97wVAiZlxNKUWydcXP-LcEiCDA"
 
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+const supabase = createClient(url, serviceKey)
 
-async function run() {
-    console.log("=== MOST RECENT LEADS ===");
-    const { data: leads, error } = await supabaseAdmin
-        .from('leads')
-        .select('id, name, email, pipeline_stage, booked_time, created_at')
-        .order('created_at', { ascending: false })
-        .limit(5);
-    
-    if (error) {
-        console.error(error);
-        return;
-    }
-    console.log(JSON.stringify(leads, null, 2));
+async function test() {
+  const { data: leads, error } = await supabase
+    .from('leads')
+    .select('id, user_id, ad_name')
+  
+  if (error) {
+    console.error("Error fetching leads:", error)
+    return
+  }
+
+  console.log(`Total Leads found in DB: ${leads.length}`)
+  const uniqueUsers = new Set()
+  const camps = new Set()
+  leads.forEach(l => {
+    uniqueUsers.add(l.user_id)
+    if (l.ad_name) camps.add(l.ad_name)
+  })
+
+  console.log("Unique User IDs in Leads table:", Array.from(uniqueUsers))
+  console.log("Campaigns / Ad Names in Leads table:", Array.from(camps))
 }
 
-run().catch(console.error);
+test()

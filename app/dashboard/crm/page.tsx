@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { 
   Search, Phone, MessageCircle, RefreshCw, Upload, 
   Plus, CheckCircle2, X, Download, Trash2, UserPlus, 
-  Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, FileText
+  Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, FileText, Send
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import TestNotificationBtn from '@/components/TestNotificationBtn'
@@ -78,6 +78,82 @@ export default function CRMPage() {
   
   const [isPushEnabled, setIsPushEnabled] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // --- BULK WHATSAPP STATE ---
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
+  const [isSendTemplateModalOpen, setIsSendTemplateModalOpen] = useState(false)
+  const [approvedTemplates, setApprovedTemplates] = useState<any[]>([])
+  const [selectedTemplateName, setSelectedTemplateName] = useState('')
+  const [selectedTemplateBody, setSelectedTemplateBody] = useState('')
+  const [isSendingTemplates, setIsSendingTemplates] = useState(false)
+
+  const fetchApprovedTemplates = async () => {
+    try {
+      const res = await fetch('/api/whatsapp/templates')
+      const data = await res.json()
+      if (data.success) {
+        setApprovedTemplates(data.templates || [])
+      }
+    } catch (e) {
+      console.error("Failed to fetch templates:", e)
+    }
+  }
+
+  useEffect(() => {
+    if (isSendTemplateModalOpen) {
+      fetchApprovedTemplates()
+    }
+  }, [isSendTemplateModalOpen])
+
+  const handleBulkSendTemplate = async () => {
+    if (!selectedTemplateName) return alert("Please select a template")
+    setIsSendingTemplates(true)
+
+    const selectedLeads = leads.filter(l => selectedLeadIds.includes(l.id))
+    
+    let sentCount = 0
+    let failedCount = 0
+
+    for (const lead of selectedLeads) {
+      const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
+      if (!displayPhone) continue
+
+      try {
+        const res = await fetch('/api/whatsapp/test-send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipient: displayPhone,
+            templateName: selectedTemplateName,
+            isSandboxTest: selectedTemplateName === 'hello_world'
+          })
+        })
+        if (res.ok) {
+          sentCount++
+          await fetch('/api/crm/lead-action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              leadId: lead.id,
+              actionType: 'REMARK',
+              description: `💬 Manual WhatsApp template sent: "${selectedTemplateName}"`
+            })
+          })
+        } else {
+          failedCount++
+        }
+      } catch (err) {
+        failedCount++
+      }
+    }
+
+    setIsSendingTemplates(false)
+    setIsSendTemplateModalOpen(false)
+    setSelectedLeadIds([])
+    alert(`WhatsApp blast complete! Sent: ${sentCount}, Failed: ${failedCount}`)
+    fetchLeads(true)
+  }
+
 
   // 1. SAFE FETCH WITH LOCAL CACHING
   const fetchLeads = async (force = false) => {
@@ -794,6 +870,32 @@ END:VCARD\n`
             </div>
         </div>
 
+        {/* SELECT ALL & SELECTION ACTIONS INFO BAR */}
+        {!loading && filteredLeads.length > 0 && (
+            <div className="flex justify-between items-center bg-white border border-slate-200/60 py-3 px-5 rounded-2xl mb-6 shadow-sm">
+                <div className="flex items-center gap-3">
+                    <input 
+                        type="checkbox"
+                        checked={currentLeads.length > 0 && currentLeads.every(l => selectedLeadIds.includes(l.id))}
+                        onChange={(e) => {
+                            const currentIds = currentLeads.map(l => l.id);
+                            const allSelected = currentIds.every(id => selectedLeadIds.includes(id));
+                            if (allSelected) {
+                                setSelectedLeadIds(prev => prev.filter(id => !currentIds.includes(id)));
+                            } else {
+                                setSelectedLeadIds(prev => Array.from(new Set([...prev, ...currentIds])));
+                            }
+                        }}
+                        className="rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer"
+                    />
+                    <span className="text-xs font-bold text-slate-700">Select All {currentLeads.length} leads on this page</span>
+                </div>
+                {selectedLeadIds.length > 0 && (
+                    <span className="text-xs font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full">{selectedLeadIds.length} Selected</span>
+                )}
+            </div>
+        )}
+
         {/* LEADS GRID */}
         {loading ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-4">
@@ -814,11 +916,26 @@ END:VCARD\n`
                     return (
                     <div key={lead.id} onClick={() => handleLeadClick(lead)} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-200/60 cursor-pointer hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-300 flex flex-col h-full group">
                         
-                        {/* ROW 1: Name and Actions */}
+                        {/* ROW 1: Name, Checkbox and Actions */}
                         <div className="flex justify-between items-start mb-3">
-                            <div className="flex-1 min-w-0 pr-4 mt-1">
-                                <h3 className="font-extrabold text-slate-900 text-lg truncate group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
-                                <p className="text-[11px] font-bold text-slate-500 mt-0.5">{displayPhone || 'No phone number'}</p>
+                            <div className="flex items-start gap-3 flex-1 min-w-0 pr-4 mt-1">
+                                <input 
+                                    type="checkbox"
+                                    checked={selectedLeadIds.includes(lead.id)}
+                                    onChange={(e) => {
+                                        e.stopPropagation();
+                                        if (selectedLeadIds.includes(lead.id)) {
+                                            setSelectedLeadIds(prev => prev.filter(id => id !== lead.id))
+                                        } else {
+                                            setSelectedLeadIds(prev => [...prev, lead.id])
+                                        }
+                                    }}
+                                    className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer"
+                                />
+                                <div className="min-w-0 flex-1">
+                                    <h3 className="font-extrabold text-slate-900 text-lg truncate group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
+                                    <p className="text-[11px] font-bold text-slate-500 mt-0.5">{displayPhone || 'No phone number'}</p>
+                                </div>
                             </div>
                             <div className="flex gap-2 shrink-0">
                                 {displayPhone && (
@@ -1151,6 +1268,91 @@ END:VCARD\n`
                           className="w-full bg-slate-900 hover:bg-slate-800 text-white py-5 rounded-[2rem] text-sm font-bold shadow-xl shadow-slate-900/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                           {isAssigning ? <Loader2 className="animate-spin" size={20} /> : <><CheckCircle2 size={18} /> Confirm Bulk Assignment</>}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+      {/* FLOATING ACTION OVERLAY PANEL */}
+      {selectedLeadIds.length > 0 && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[90] bg-slate-950/95 backdrop-blur-md px-6 py-4 rounded-full shadow-2xl border border-slate-800 text-white flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300">
+              <span className="text-xs font-black tracking-wider text-slate-300 uppercase">
+                  {selectedLeadIds.length} Leads Selected
+              </span>
+              <div className="w-[1px] h-6 bg-slate-800" />
+              <div className="flex gap-2">
+                  <button 
+                      onClick={() => setIsSendTemplateModalOpen(true)}
+                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md animate-pulse"
+                  >
+                      <MessageCircle size={14} /> Send WhatsApp Template
+                  </button>
+                  <button 
+                      onClick={() => setSelectedLeadIds([])}
+                      className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-full text-xs font-bold transition-all text-slate-400 hover:text-white cursor-pointer"
+                  >
+                      Cancel
+                  </button>
+              </div>
+          </div>
+      )}
+
+      {/* SEND WHATSAPP TEMPLATE MODAL */}
+      {isSendTemplateModalOpen && (
+          <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
+              <div className="bg-white w-full max-w-md rounded-t-[1.75rem] xs:rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 flex flex-col overflow-hidden">
+                  <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white">
+                      <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                          <MessageCircle size={22} className="text-blue-600" />
+                          Send Template Blast
+                      </h2>
+                      <button onClick={() => setIsSendTemplateModalOpen(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={18} /></button>
+                  </div>
+                  
+                  <div className="p-6 space-y-4">
+                      <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Select WhatsApp Template</label>
+                          <div className="relative">
+                              <select 
+                                  value={selectedTemplateName} 
+                                  onChange={(e) => {
+                                      const name = e.target.value;
+                                      setSelectedTemplateName(name);
+                                      const t = approvedTemplates.find(x => x.name === name);
+                                      setSelectedTemplateBody(t?.components?.find((c: any) => c.type === 'BODY')?.text || '');
+                                  }}
+                                  className="w-full appearance-none bg-slate-50 border border-slate-100 py-3.5 px-5 rounded-2xl text-sm font-bold text-slate-900 focus:ring-4 focus:ring-blue-500/10 outline-none cursor-pointer"
+                              >
+                                  <option value="">Choose template...</option>
+                                  {approvedTemplates.map(t => (
+                                      <option key={t.name} value={t.name}>{t.name} ({t.status})</option>
+                                  ))}
+                              </select>
+                              <ChevronDown size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                          </div>
+                      </div>
+
+                      {selectedTemplateBody && (
+                          <div className="space-y-3">
+                              <div className="space-y-1">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase block ml-1">Template Content</label>
+                                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/50 text-xs text-slate-600 leading-relaxed font-semibold font-sans whitespace-pre-wrap">
+                                      {selectedTemplateBody}
+                                  </div>
+                              </div>
+                              <div className="bg-blue-50/50 border border-blue-100 p-3.5 rounded-2xl text-[10px] text-blue-800 leading-normal font-bold">
+                                  ℹ️ Variables like lead name and company name are mapped automatically when sent to Meta.
+                              </div>
+                          </div>
+                      )}
+
+                      <button 
+                          onClick={handleBulkSendTemplate} 
+                          disabled={isSendingTemplates || !selectedTemplateName} 
+                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-slate-900/20 disabled:opacity-50 disabled:scale-100 mt-2"
+                      >
+                          {isSendingTemplates ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />} 
+                          {isSendingTemplates ? `Sending to ${selectedLeadIds.length} Leads...` : `Send Message to ${selectedLeadIds.length} Leads`}
                       </button>
                   </div>
               </div>
