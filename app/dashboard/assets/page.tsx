@@ -1204,15 +1204,17 @@ export default function AssetsPage() {
                                 <div className="mb-6">
                                     <div className="flex justify-between items-center mb-2">
                                         <label className="text-xs font-bold text-slate-500 ml-2 block uppercase tracking-wider">Asset Caption</label>
-                                        <button
-                                            type="button"
-                                            onClick={handleGenerateAICaptions}
-                                            disabled={isGeneratingCaptions || isPosting}
-                                            className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/80 px-3 py-1.5 rounded-xl transition-all active:scale-95 disabled:opacity-50"
-                                        >
-                                            {isGeneratingCaptions ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                                            {isGeneratingCaptions ? 'Generating...' : 'Generate AI Captions'}
-                                        </button>
+                                        {selectedAsset.type !== 'video' && (
+                                            <button
+                                                type="button"
+                                                onClick={handleGenerateAICaptions}
+                                                disabled={isGeneratingCaptions || isPosting}
+                                                className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/80 px-3 py-1.5 rounded-xl transition-all active:scale-95 disabled:opacity-50"
+                                            >
+                                                {isGeneratingCaptions ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                                                {isGeneratingCaptions ? 'Generating...' : 'Generate AI Captions'}
+                                            </button>
+                                        )}
                                     </div>
                                     <textarea
                                         value={caption}

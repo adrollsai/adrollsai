@@ -162,23 +162,25 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     }
     const creationId = containerData.id;
 
-    // 4. POLL STATUS (Increased delay to 15s to avoid hitting App Limits)
-    let status = 'IN_PROGRESS';
-    let attempts = 0;
-    while (status !== 'FINISHED' && attempts < 15) {
-        await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15s (Conserves API limit)
-        const statusRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code,status_description&access_token=${accessToken}`, {});
-        const statusData = await statusRes.json();
-        status = statusData.status_code;
-        
-        if (status === 'ERROR') {
-            throw new Error(`Instagram processing failed: ${statusData.status_description || 'Unknown Meta processing error'}`);
+    // 4. POLL STATUS FOR VIDEOS ONLY (Images are processed synchronously by Meta, and requesting status_description on image containers returns an OAuth error)
+    if (isVideo) {
+        let status = 'IN_PROGRESS';
+        let attempts = 0;
+        while (status !== 'FINISHED' && attempts < 15) {
+            await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15s (Conserves API limit)
+            const statusRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code,status_description&access_token=${accessToken}`, {});
+            const statusData = await statusRes.json();
+            status = statusData.status_code;
+            
+            if (status === 'ERROR') {
+                throw new Error(`Instagram processing failed: ${statusData.status_description || 'Unknown Meta processing error'}`);
+            }
+            attempts++;
         }
-        attempts++;
-    }
 
-    if (status !== 'FINISHED') {
-        throw new Error("Instagram media processing timed out. Please try again in a few minutes.");
+        if (status !== 'FINISHED') {
+            throw new Error("Instagram media processing timed out. Please try again in a few minutes.");
+        }
     }
 
     // 5. Publish Container
