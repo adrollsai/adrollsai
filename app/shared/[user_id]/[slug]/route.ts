@@ -46,7 +46,8 @@ export async function GET(request: Request, { params }: RouteProps) {
                 product_name,
                 html_content,
                 form_id,
-                booking_enabled
+                booking_enabled,
+                pixel_id
             `)
             .eq('user_id', profile.id)
             .eq('slug', slug)
@@ -1122,7 +1123,8 @@ export async function GET(request: Request, { params }: RouteProps) {
 
         // Meta Pixel tracking code
         let pixelScript = ''
-        if (profile.pixel_id) {
+        const pagePixelId = page.pixel_id || profile.pixel_id
+        if (pagePixelId) {
             pixelScript = `
                 <!-- Meta Pixel Code -->
                 <script>
@@ -1134,11 +1136,24 @@ export async function GET(request: Request, { params }: RouteProps) {
                 t.src=v;s=b.getElementsByTagName(e)[0];
                 s.parentNode.insertBefore(t,s)}(window, document,'script',
                 'https://connect.facebook.net/en_US/fbevents.js');
-                fbq('init', '${profile.pixel_id}');
+                fbq('init', '${pagePixelId}');
                 fbq('track', 'PageView');
+
+                // Fire server-side CAPI PageView event via proxy
+                fetch('/api/shared/capi-event', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: '${profile.id}',
+                        pixelId: '${pagePixelId}',
+                        eventName: 'PageView',
+                        eventID: 'evt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11),
+                        sourceUrl: window.location.href
+                    })
+                }).catch(err => console.error('[CAPI Proxy Error]', err));
                 </script>
                 <noscript><img height="1" width="1" style="display:none"
-                src="https://www.facebook.com/tr?id=${profile.pixel_id}&ev=PageView&noscript=1"
+                src="https://www.facebook.com/tr?id=${pagePixelId}&ev=PageView&noscript=1"
                 /></noscript>
                 <!-- End Meta Pixel Code -->
             `
@@ -1160,7 +1175,10 @@ export async function GET(request: Request, { params }: RouteProps) {
 
         return new Response(finalHtml, {
             headers: {
-                'content-type': 'text/html; charset=utf-8'
+                'content-type': 'text/html; charset=utf-8',
+                'cache-control': 'no-cache, no-store, must-revalidate',
+                'pragma': 'no-cache',
+                'expires': '0'
             }
         })
     } catch (e: any) {

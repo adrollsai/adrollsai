@@ -2486,6 +2486,11 @@ export default function AdsPage() {
                                               
                                               const form = forms.find(f => f.id === page.form_id);
                                               setAttachedFormName(form ? form.name : 'Default Form (Name, WhatsApp, City)');
+
+                                              // Auto-select the page's pixel if it is configured
+                                              if (page.pixel_id) {
+                                                  setPixelId(page.pixel_id);
+                                              }
                                           } else {
                                               setAdForm(prev => ({ ...prev, linkUrl: '' }));
                                               setAttachedFormName('');
@@ -2499,6 +2504,24 @@ export default function AdsPage() {
                                       ))}
                                   </select>
                               </div>
+                              {selectedLandingPageId && (() => {
+                                  const page = landingPages.find(p => p.id === selectedLandingPageId);
+                                  if (!page) return null;
+                                  if (page.pixel_id) {
+                                      const connectedPixel = pixels.find(px => px.id === page.pixel_id);
+                                      return (
+                                          <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl text-xs text-emerald-800 font-semibold leading-relaxed">
+                                              🎯 Connected Pixel with Page: <strong>{connectedPixel ? connectedPixel.name : 'Custom Pixel'} ({page.pixel_id})</strong>
+                                          </div>
+                                      );
+                                  } else {
+                                      return (
+                                          <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl text-xs text-slate-600 font-semibold leading-relaxed animate-pulse">
+                                              ℹ️ Connected Pixel with Page: Using Profile's Default Pixel
+                                          </div>
+                                      );
+                                  }
+                              })()}
                               {attachedFormName && (
                                   <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl text-xs text-blue-800 font-semibold leading-relaxed">
                                       ℹ️ Attached Qualification Form: <strong>{attachedFormName}</strong>

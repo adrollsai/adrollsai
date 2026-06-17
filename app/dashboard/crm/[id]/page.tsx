@@ -19,6 +19,8 @@ export default function LeadProfilePage() {
   const [loading, setLoading] = useState(true)
   const [remarkInput, setRemarkInput] = useState('')
   const [reminderDate, setReminderDate] = useState('')
+  const [pixels, setPixels] = useState<any[]>([])
+  const [isLoadingPixels, setIsLoadingPixels] = useState(false)
 
   useEffect(() => {
     if (id) {
@@ -26,6 +28,34 @@ export default function LeadProfilePage() {
       fetchLeadHistory()
     }
   }, [id])
+
+  useEffect(() => {
+    if (lead?.user_id) {
+      fetchPixelsForLead(lead.user_id)
+    }
+  }, [lead?.user_id])
+
+  const fetchPixelsForLead = async (ownerUserId: string) => {
+    setIsLoadingPixels(true)
+    try {
+      const { data: profile } = await supabase.from('profiles').select('ad_account_id').eq('id', ownerUserId).single()
+      if (profile?.ad_account_id) {
+        const res = await fetch('/api/facebook/pixels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ adAccountId: profile.ad_account_id, impersonateId })
+        })
+        const data = await res.json()
+        if (data.pixels) {
+          setPixels(data.pixels)
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch pixels for lead:", e)
+    } finally {
+      setIsLoadingPixels(false)
+    }
+  }
 
   // Realtime subscription to reflect bookings/updates instantly
   useEffect(() => {
@@ -120,7 +150,7 @@ export default function LeadProfilePage() {
     await supabase.from('leads').update({ notes: newNotes }).eq('id', id)
   }
 
-  const handleFieldUpdate = async (field: string, value: string) => {
+  const handleFieldUpdate = async (field: string, value: any) => {
     setLead({ ...lead, [field]: value })
     await supabase.from('leads').update({ [field]: value }).eq('id', id)
   }
@@ -195,6 +225,23 @@ END:VCARD`
                 <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-50">
                     <span className="text-[10px] font-bold text-slate-400 uppercase">Lead Source</span>
                     <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md">{lead.source}</span>
+                </div>
+                <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-50">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Target Meta Pixel</span>
+                    {isLoadingPixels ? (
+                        <span className="text-[10px] text-slate-400 animate-pulse font-bold">Loading...</span>
+                    ) : (
+                        <select 
+                            value={lead.pixel_id || ''} 
+                            onChange={(e) => handleFieldUpdate('pixel_id', e.target.value || null)}
+                            className="bg-purple-50 text-purple-700 text-xs font-bold rounded-md border border-purple-200 px-2 py-1 outline-none cursor-pointer"
+                        >
+                            <option value="">Profile Default</option>
+                            {pixels.map(p => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                        </select>
+                    )}
                 </div>
                 {lead.ad_name && (
                     <p className="text-xs font-medium text-slate-600 mb-4 bg-slate-50 p-2.5 rounded-xl border border-slate-100">

@@ -138,7 +138,7 @@ export async function POST(request: Request) {
     }
 
     // 6. Trigger Conversions API (CAPI) Schedule Event
-    const pixelId = profile?.pixel_id
+    const pixelId = lead?.pixel_id || profile?.pixel_id
     const fbToken = profile?.facebook_token || profile?.selected_page_token
     if (pixelId && fbToken) {
       const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 

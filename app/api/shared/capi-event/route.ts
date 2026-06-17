@@ -5,7 +5,7 @@ import { sendCAPIEvent } from '@/utils/external-apis'
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { userId, eventName, eventID, eventData, sourceUrl } = body
+    const { userId, eventName, eventID, eventData, sourceUrl, pixelId: bodyPixelId } = body
 
     if (!userId || !eventName) {
       return NextResponse.json({ error: 'Missing userId or eventName' }, { status: 400 })
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Catalog profile not found' }, { status: 404 })
     }
 
-    const pixelId = profile.pixel_id
+    const pixelId = bodyPixelId || profile.pixel_id
     const accessToken = profile.facebook_token || profile.selected_page_token
 
     if (!pixelId || !accessToken) {

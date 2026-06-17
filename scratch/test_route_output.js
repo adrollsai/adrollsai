@@ -1,50 +1,63 @@
 const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 const dotenv = require('dotenv');
+
 dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-    // Tricity Homez page slug: '1-kanal-super-luxury-kothi-new-chandigarh-5581'
-    const slug = '1-kanal-super-luxury-kothi-new-chandigarh-5581';
-    const { data: page } = await supabase.from('landing_pages').select('*').eq('slug', slug).single();
-    if (!page) {
-        console.log("No page found.");
+    const subAccountId = 'c890a11f-84ce-4592-ab8f-8682927b1a9d';
+    const slug = 'highland-mayfield-4167';
+    
+    console.log("=== STEP 1: Updating pixel_id to '1039854950770272' for page in DB ===");
+    const { error: updateErr } = await supabaseAdmin
+        .from('landing_pages')
+        .update({ pixel_id: '1039854950770272' })
+        .eq('user_id', subAccountId)
+        .eq('slug', slug);
+
+    if (updateErr) {
+        console.error("Failed to update page pixel:", updateErr.message);
         return;
     }
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', page.user_id).single();
-    
-    const brandColor = profile?.brand_color || '#2563eb';
-    
-    function getContrastColor(hexColor) {
-        if (!hexColor) return '#ffffff';
-        const hex = hexColor.replace('#', '');
-        if (hex.length !== 6) return '#ffffff';
-        const r = parseInt(hex.substring(0, 2), 16);
-        const g = parseInt(hex.substring(2, 4), 16);
-        const b = parseInt(hex.substring(4, 6), 16);
-        const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-        return (yiq >= 128) ? '#0f172a' : '#ffffff';
-    }
+    console.log("Successfully set page pixel to '1039854950770272' in DB!");
 
-    const isBrandLight = getContrastColor(brandColor) === '#0f172a';
-    const buttonBgColor = isBrandLight ? '#0B0F19' : brandColor;
-    const buttonTextColor = '#ffffff';
+    console.log("\n=== STEP 2: Fetching page HTML from local server ===");
+    try {
+        const url = `http://localhost:3000/shared/${subAccountId}/${slug}`;
+        console.log(`Sending GET request to: ${url}`);
+        const res = await fetch(url);
+        const html = await res.text();
+        
+        console.log(`HTTP Status: ${res.status}`);
+        
+        // Find if fbq('init', ...) is present and inspect its value
+        const fbqInitMatch = html.match(/fbq\('init',\s*'([0-9]+)'\)/);
+        if (fbqInitMatch) {
+            console.log(`\n🎉 Success! Found initialized pixel ID: ${fbqInitMatch[1]}`);
+            if (fbqInitMatch[1] === '1039854950770272') {
+                console.log("MATCH SUCCESS: The custom pixel was correctly initialized!");
+            } else {
+                console.log("MATCH MISMATCH: The pixel ID does not match the custom pixel!");
+            }
+        } else {
+            console.log("\n❌ Did not find fbq('init', ...) in the fetched HTML.");
+        }
 
-    console.log("Brand Color:", brandColor);
-    console.log("Is Brand Light:", isBrandLight);
-    console.log("Button Bg Color:", buttonBgColor);
-    console.log("Button Text Color:", buttonTextColor);
-
-    // Let's find the container in html_content
-    const containerRegex = /<div\s+[^>]*id="qualification-form-container"[^>]*>([\s\S]*?)<\/div>/gi;
-    const match = page.html_content.match(containerRegex);
-    console.log("Matches found in html_content:", match ? match.length : 0);
-    if (match) {
-        console.log("First Match:", match[0]);
+        // Check CAPI proxy body parameter
+        const capiMatch = html.match(/pixelId:\s*'([0-9]+)'/);
+        if (capiMatch) {
+            console.log(`🎉 Success! Found proxy CAPI pixel ID: ${capiMatch[1]}`);
+        } else {
+            console.log("❌ Did not find pixelId parameter in proxy CAPI fetch.");
+        }
+    } catch (e) {
+        console.error("Failed to fetch from local server:", e.message);
+        console.log("Make sure npm run dev is running on port 3000.");
     }
 }
 

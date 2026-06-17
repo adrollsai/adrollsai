@@ -40,6 +40,7 @@ type LandingPage = {
     html_content: string
     form_id: string | null
     booking_enabled?: boolean
+    pixel_id?: string | null
     created_at: string
 }
 
@@ -62,6 +63,8 @@ export default function PagesDashboard() {
     // Data lists
     const [forms, setForms] = useState<QualificationForm[]>([])
     const [landingPages, setLandingPages] = useState<LandingPage[]>([])
+    const [pixels, setPixels] = useState<{ id: string, name: string }[]>([])
+    const [isLoadingPixels, setIsLoadingPixels] = useState(false)
 
     // Impersonation Profile resolver
     const [subAccountName, setSubAccountName] = useState('')
@@ -197,30 +200,34 @@ export default function PagesDashboard() {
             }
 
             // Fetch caller profile
-            const { data: caller } = await supabase.from('profiles').select('role, agency_id, parent_id, brand_color').eq('id', session.user.id).single()
+            const { data: caller } = await supabase.from('profiles').select('role, agency_id, parent_id, brand_color, ad_account_id').eq('id', session.user.id).single()
             let resolvedId = session.user.id
+            let adAccountId: string | null = null
 
             // Resolve target client account if impersonating
             if (impersonateId && ['super_admin', 'agency', 'admin'].includes(caller?.role || '')) {
-                const { data: clientProfile } = await supabase.from('profiles').select('id, business_name, custom_domain, brand_color').eq('id', impersonateId).single()
+                const { data: clientProfile } = await supabase.from('profiles').select('id, business_name, custom_domain, brand_color, ad_account_id').eq('id', impersonateId).single()
                 if (clientProfile) {
                     resolvedId = clientProfile.id
                     setSubAccountName(clientProfile.business_name || 'Client')
                     setCustomDomain(clientProfile.custom_domain || '')
                     setBrandColor(clientProfile.brand_color || '#2563eb')
+                    adAccountId = clientProfile.ad_account_id
                 }
             } else {
-                const { data: ownProfile } = await supabase.from('profiles').select('business_name, custom_domain, brand_color').eq('id', session.user.id).single()
+                const { data: ownProfile } = await supabase.from('profiles').select('business_name, custom_domain, brand_color, ad_account_id').eq('id', session.user.id).single()
                 if (ownProfile) {
                     setCustomDomain(ownProfile.custom_domain || '')
                     setBrandColor(ownProfile.brand_color || '#2563eb')
+                    adAccountId = ownProfile.ad_account_id
                 }
             }
 
             setTargetUserId(resolvedId)
             await fetchListData(resolvedId)
-
-
+            if (adAccountId) {
+                await fetchPixels(adAccountId)
+            }
         };
 
         resolveTargetAccount();
@@ -259,6 +266,28 @@ export default function PagesDashboard() {
             setErrorMessage("Failed to load dashboard data: " + e.message)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const fetchPixels = async (adAccountId: string) => {
+        setIsLoadingPixels(true)
+        try {
+            const res = await fetch('/api/facebook/pixels', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ adAccountId, impersonateId })
+            })
+            const data = await res.json()
+            if (data.pixels) {
+                setPixels(data.pixels)
+            } else {
+                setPixels([])
+            }
+        } catch (e) {
+            console.error("Error fetching pixels:", e)
+            setPixels([])
+        } finally {
+            setIsLoadingPixels(false)
         }
     }
 
@@ -509,6 +538,28 @@ export default function PagesDashboard() {
             
             if (activeEditorPage && activeEditorPage.id === pageId) {
                 setActiveEditorPage(prev => prev ? { ...prev, booking_enabled: enabled } : null)
+            }
+        } catch (e: any) {
+            showToast(e.message, 'error')
+        } finally {
+            setActionLoading(false)
+        }
+    }
+
+    const handleUpdatePagePixel = async (pageId: string, pixelId: string | null) => {
+        setActionLoading(true)
+        try {
+            const { error } = await supabase
+                .from('landing_pages')
+                .update({ pixel_id: pixelId })
+                .eq('id', pageId)
+            
+            if (error) throw error
+            showToast("Landing page pixel updated successfully!")
+            await fetchListData(targetUserId)
+            
+            if (activeEditorPage && activeEditorPage.id === pageId) {
+                setActiveEditorPage(prev => prev ? { ...prev, pixel_id: pixelId } : null)
             }
         } catch (e: any) {
             showToast(e.message, 'error')
@@ -1116,6 +1167,24 @@ export default function PagesDashboard() {
                                                     />
                                                     <span className="text-xs font-bold text-slate-600">Enable Google Calendar booking after lead submission</span>
                                                 </label>
+                                            </div>
+
+                                            <div className="mb-6">
+                                                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5 ml-1">Connected Meta Pixel</label>
+                                                {isLoadingPixels ? (
+                                                    <div className="text-[10px] text-slate-400 font-bold ml-1 animate-pulse">Loading pixels...</div>
+                                                ) : (
+                                                    <select 
+                                                        value={page.pixel_id || ''}
+                                                        onChange={(e) => handleUpdatePagePixel(page.id, e.target.value || null)}
+                                                        className="w-full bg-slate-50 hover:bg-slate-100/50 p-3 rounded-xl text-xs font-bold text-slate-700 outline-none border border-slate-200/60 transition-all cursor-pointer"
+                                                    >
+                                                        <option value="">Default Profile Pixel</option>
+                                                        {pixels.map(p => (
+                                                            <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
+                                                        ))}
+                                                    </select>
+                                                )}
                                             </div>
 
                                             <div className="flex gap-2 w-full pt-4 border-t border-slate-100 mt-auto">

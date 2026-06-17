@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     // 1. Check access: Caller must be owner, assigned agent, or staff of the owner
     const { data: checkLead, error: checkError } = await supabase
         .from('leads')
-        .select('user_id, assigned_to')
+        .select('user_id, assigned_to, pixel_id')
         .eq('id', leadId)
         .single()
 
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
         .single();
 
     const accessToken = profile?.facebook_token || profile?.selected_page_token;
-    const pixelId = profile?.pixel_id;
+    const pixelId = checkLead?.pixel_id || profile?.pixel_id;
 
     if (accessToken && pixelId) {
         let eventName = '';

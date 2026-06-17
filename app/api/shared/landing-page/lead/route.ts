@@ -93,6 +93,19 @@ export async function POST(request: Request) {
             }
         }
 
+        // Fetch custom landing page pixel if available
+        let customPixelId: string | null = null
+        if (landing_page_id) {
+            const { data: pageData } = await supabaseAdmin
+                .from('landing_pages')
+                .select('pixel_id')
+                .eq('id', landing_page_id)
+                .maybeSingle()
+            if (pageData?.pixel_id) {
+                customPixelId = pageData.pixel_id
+            }
+        }
+
         // Insert new lead into public.leads
         const { data: newLead, error: insertError } = await supabaseAdmin
             .from('leads')
@@ -108,6 +121,7 @@ export async function POST(request: Request) {
                 assigned_to: assignedAgentId,
                 budget: body.custom_question_0 || '',
                 timeline: body.custom_question_1 || '',
+                pixel_id: customPixelId || null
             })
             .select()
             .single()
@@ -120,7 +134,7 @@ export async function POST(request: Request) {
         console.log(`✅ Landing Page Lead Captured: ${newLead.id} for Owner: ${user_id}, Assigned To: ${assignedAgentId}`)
 
         // Trigger Conversions API (CAPI) Lead Event
-        const pixelId = ownerProfile?.pixel_id
+        const pixelId = customPixelId || ownerProfile?.pixel_id
         const accessToken = ownerProfile?.facebook_token || ownerProfile?.selected_page_token
         if (pixelId && accessToken) {
             const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 

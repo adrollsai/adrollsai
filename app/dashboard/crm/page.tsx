@@ -64,6 +64,8 @@ export default function CRMPage() {
   const [selectedFormId, setSelectedFormId] = useState<string>('')
   const [isLoadingForms, setIsLoadingForms] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [pixels, setPixels] = useState<any[]>([])
+  const [isLoadingPixels, setIsLoadingPixels] = useState(false)
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', notes: '' })
@@ -106,7 +108,7 @@ export default function CRMPage() {
       }
 
       // Fetch Fresh Data
-      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id').eq('id', user.id).single()
       const currentRole = profile?.role as any || 'admin'
       setRole(currentRole)
       setEnableDistribution(!!profile?.enable_distribution)
@@ -135,6 +137,18 @@ export default function CRMPage() {
           }
       }
       setTargetUserId(targetUserId)
+
+      // Fetch Meta Pixels for target account
+      let adAccountId = profile?.ad_account_id
+      if (targetUserId !== user.id) {
+          const { data: targetProfile } = await supabase.from('profiles').select('ad_account_id').eq('id', targetUserId).single()
+          if (targetProfile?.ad_account_id) {
+              adAccountId = targetProfile.ad_account_id
+          }
+      }
+      if (adAccountId) {
+          fetchPixels(adAccountId, impersonateId)
+      }
 
       if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
           // Fetch all staff members under this agency/organization
@@ -294,6 +308,41 @@ export default function CRMPage() {
       supabase.removeChannel(channel)
     }
   }, [userId, targetUserId, supabase])
+
+  const fetchPixels = async (adAccountId: string, impId: string | null) => {
+    setIsLoadingPixels(true)
+    try {
+      const res = await fetch('/api/facebook/pixels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adAccountId, impersonateId: impId })
+      })
+      const data = await res.json()
+      if (data.pixels) {
+        setPixels(data.pixels)
+      } else {
+        setPixels([])
+      }
+    } catch (e) {
+      console.error("Error fetching pixels in CRM:", e)
+      setPixels([])
+    } finally {
+      setIsLoadingPixels(false)
+    }
+  }
+
+  const updateLeadPixel = async (leadId: string, pixelId: string | null) => {
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .update({ pixel_id: pixelId })
+        .eq('id', leadId)
+      
+      if (error) throw error
+    } catch (e: any) {
+      alert("Failed to update lead pixel: " + e.message)
+    }
+  }
 
   // --- PUSH NOTIFICATIONS ---
   const checkPushSubscription = async () => {
@@ -862,6 +911,27 @@ END:VCARD\n`
                             <div className="flex flex-col gap-1">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Timeline</span>
                                 <span className="text-xs font-bold text-slate-700 truncate">{lead.timeline || '--'}</span>
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Meta Pixel</span>
+                                {isLoadingPixels ? (
+                                    <span className="text-xs text-slate-400 font-bold animate-pulse">Loading...</span>
+                                ) : (
+                                    <div onClick={e => e.stopPropagation()} className="relative mt-0.5">
+                                        <select 
+                                            value={lead.pixel_id || ''} 
+                                            onChange={(e) => updateLeadPixel(lead.id, e.target.value || null)} 
+                                            className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 text-slate-700 text-xs font-bold rounded-lg py-1.5 pl-2 pr-6 outline-none transition-all cursor-pointer truncate border border-slate-200/60"
+                                        >
+                                            <option value="">Profile Default</option>
+                                            {pixels.map(p => (
+                                                <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                    </div>
+                                )}
                             </div>
                         </div>
 
