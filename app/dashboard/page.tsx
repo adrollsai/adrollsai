@@ -60,6 +60,7 @@ export default function ProductsPage() {
   const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent'>('admin')
   const [ownerId, setOwnerId] = useState<string | null>(null) 
   const [adminCustomDomain, setAdminCustomDomain] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
   
   // Interaction State
   const [isSharingId, setIsSharingId] = useState<string | null>(null)
@@ -157,6 +158,8 @@ export default function ProductsPage() {
         setLoading(false)
         return
       }
+
+      setUserEmail(user.email || null)
 
       // Check for impersonation
       const urlParams = new URLSearchParams(window.location.search)
@@ -783,9 +786,16 @@ export default function ProductsPage() {
                   <div className="flex items-center gap-2 shrink-0">
                       {isAdminLike && role !== 'agent' && (
                         <button 
-                            onClick={(e) => handleBackgroundGeneration(e, prop)} 
+                            onClick={(e) => {
+                                if (userEmail === 'adrolls-realty-demo@adrolls.in') {
+                                    e.stopPropagation();
+                                    toast.error("This is a demo account. No AI operations should run on this account.");
+                                    return;
+                                }
+                                handleBackgroundGeneration(e, prop);
+                            }} 
                             disabled={generatingProps.includes(prop.id)}
-                            className="bg-purple-50 text-purple-600 p-2.5 rounded-full hover:bg-purple-600 hover:text-white transition-colors flex-shrink-0 disabled:opacity-50 disabled:hover:bg-purple-50 disabled:hover:text-purple-600"
+                            className={`bg-purple-50 text-purple-600 p-2.5 rounded-full hover:bg-purple-600 hover:text-white transition-colors flex-shrink-0 disabled:opacity-50 disabled:hover:bg-purple-50 disabled:hover:text-purple-600 ${userEmail === 'adrolls-realty-demo@adrolls.in' ? 'opacity-50 cursor-not-allowed' : ''}`}
                             title="Generate AI Poster"
                         >
                            {generatingProps.includes(prop.id) ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
