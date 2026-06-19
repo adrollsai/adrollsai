@@ -5,6 +5,7 @@ import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHor
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner' 
+import { uploadToR2 } from '@/utils/upload-helper'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 
 // Custom WhatsApp SVG Icon
@@ -314,12 +315,7 @@ export default function ProductsPage() {
         const uploadPromises = editFiles.map(async (file) => {
           // COMPRESS BEFORE UPLOAD
           const compressedFile = await compressImage(file)
-          const fileExt = 'jpg'
-          const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
-         
-          const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, compressedFile)
-          if (uploadError) throw uploadError
-          const { data: { publicUrl } } = supabase.storage.from('properties').getPublicUrl(fileName)
+          const publicUrl = await uploadToR2(compressedFile, 'properties')
           return publicUrl
         })
         const results = await Promise.all(uploadPromises)
@@ -519,12 +515,7 @@ export default function ProductsPage() {
         const uploadPromises = selectedFiles.map(async (file) => {
           // COMPRESS BEFORE UPLOAD
           const compressedFile = await compressImage(file)
-          const fileExt = 'jpg'
-          const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
-         
-          const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, compressedFile)
-          if (uploadError) throw uploadError
-          const { data: { publicUrl } } = supabase.storage.from('properties').getPublicUrl(fileName)
+          const publicUrl = await uploadToR2(compressedFile, 'properties')
           return publicUrl
         })
         const results = await Promise.all(uploadPromises)

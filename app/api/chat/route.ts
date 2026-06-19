@@ -138,7 +138,8 @@ export async function POST(request: Request) {
             const { data: refItems, error: refError } = await supabaseAdmin
                 .from('reference_creatives')
                 .select('url')
-                .eq('category', normalizedCategory);
+                .eq('category', normalizedCategory)
+                .is('user_id', null);
             
             if (!refError && refItems && refItems.length > 0) {
                 const randomIndex = Math.floor(Math.random() * refItems.length);

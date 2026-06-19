@@ -1,7 +1,7 @@
 const fs = require('fs');
 const readline = require('readline');
 
-const transcriptPath = 'C:\\Users\\USER\\.gemini\\antigravity-ide\\brain\\966137cb-c8a4-414c-8f6e-0e9f13756216\\.system_generated\\logs\\transcript.jsonl';
+const transcriptPath = 'C:\\Users\\Adrolls\\.gemini\\antigravity-ide\\brain\\80457c45-273e-490b-8fec-b94c42d3ba14\\.system_generated\\logs\\transcript.jsonl';
 
 async function searchTranscript() {
     if (!fs.existsSync(transcriptPath)) {
@@ -9,7 +9,7 @@ async function searchTranscript() {
         return;
     }
 
-    console.log("Searching early steps in transcript.jsonl...");
+    console.log("Searching in transcript.jsonl...");
     const fileStream = fs.createReadStream(transcriptPath);
     const rl = readline.createInterface({
         input: fileStream,
@@ -20,16 +20,12 @@ async function searchTranscript() {
     for await (const line of rl) {
         try {
             const data = JSON.parse(line);
-            if (data.step_index < 500) {
-                const contentStr = data.content || '';
-                const thinkingStr = data.thinking || '';
+            if (true) {
                 const toolCallsStr = JSON.stringify(data.tool_calls || {});
-                
-                const allText = `${contentStr} ${thinkingStr} ${toolCallsStr}`;
-                if (allText.includes('Launched Kie task') || allText.includes('taskIds') || allText.includes('taskId') || allText.includes('video_tasks')) {
+                if (toolCallsStr.includes('run_command')) {
                     foundCount++;
                     console.log(`\n=== Match ${foundCount} (Step: ${data.step_index}, Source: ${data.source}) ===`);
-                    console.log(allText.substring(0, 1500));
+                    console.log(toolCallsStr.substring(0, 1500));
                 }
             }
         } catch (e) {

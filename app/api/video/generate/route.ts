@@ -12,6 +12,7 @@ import { exec } from 'child_process';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import { ensureJpegImage } from '@/utils/image-converter';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -362,18 +363,29 @@ export async function POST(request: Request) {
         let targetProfile: any = null;
         const selectWithAvatars = await supabase
             .from('profiles')
-            .select('business_name, mission_statement, custom_prompt, character_url, character_description, character_audio_url, avatar_url, avatar_description')
+            .select('business_name, mission_statement, custom_prompt, character_url, character_description, character_audio_url, avatar_url, avatar_description, avatar_audio_url')
             .eq('id', targetUserId)
             .single();
 
         if (selectWithAvatars.error) {
-            console.warn("[Video Generate] Failed to select with avatar columns, retrying without them:", selectWithAvatars.error.message);
-            const selectWithoutAvatars = await supabase
+            console.warn("[Video Generate] Failed to select with avatar_audio_url, retrying without it:", selectWithAvatars.error.message);
+            const selectWithAvatarsOnly = await supabase
                 .from('profiles')
-                .select('business_name, mission_statement, custom_prompt, character_url, character_description, character_audio_url')
+                .select('business_name, mission_statement, custom_prompt, character_url, character_description, character_audio_url, avatar_url, avatar_description')
                 .eq('id', targetUserId)
                 .single();
-            targetProfile = selectWithoutAvatars.data;
+            
+            if (selectWithAvatarsOnly.error) {
+                console.warn("[Video Generate] Failed to select with avatar columns, retrying without them:", selectWithAvatarsOnly.error.message);
+                const selectWithoutAvatars = await supabase
+                    .from('profiles')
+                    .select('business_name, mission_statement, custom_prompt, character_url, character_description, character_audio_url')
+                    .eq('id', targetUserId)
+                    .single();
+                targetProfile = selectWithoutAvatars.data;
+            } else {
+                targetProfile = selectWithAvatarsOnly.data;
+            }
         } else {
             targetProfile = selectWithAvatars.data;
         }
@@ -522,23 +534,28 @@ export async function POST(request: Request) {
         // 2. Use custom uploaded profile avatar / reference video based on presenterType
         let avatarUrl = presenterType === 'video' ? profile.character_url : (presenterType === 'avatar' ? profile.avatar_url : null);
         let isCharacterVideo = presenterType === 'video';
-        let referenceAudioUrl = presenterType === 'video' ? (profile.character_audio_url || "") : "";
+        let isAvatarPhoto = presenterType === 'avatar';
+        let referenceAudioUrl = isCharacterVideo 
+            ? (profile.character_audio_url || "") 
+            : (isAvatarPhoto ? (profile.avatar_audio_url || "") : "");
         
         if (avatarUrl) {
             console.log(`[Video Generate] Using custom uploaded character ${isCharacterVideo ? 'video' : 'photo'} from profile: ${avatarUrl}`);
-            if (isCharacterVideo) {
+            if (isCharacterVideo || isAvatarPhoto) {
                 // Ensure they have uploaded a voice sample first
                 if (!referenceAudioUrl) {
                     return NextResponse.json({ 
-                        error: 'Please upload a voice sample (up to 15s MP3/WAV) in your Profile Settings to enable voice cloning for your video character.' 
+                        error: `Please upload a voice sample (up to 15s MP3/WAV) in your Profile Settings to enable voice cloning for your ${isCharacterVideo ? 'video character' : 'avatar character'}.` 
                     }, { status: 400 });
                 }
 
-                try {
-                    // Always use local Vercel trimming to guarantee scaling down to 1080p max width (Kie.ai limit)
-                    avatarUrl = await getTrimmedReferenceVideo(avatarUrl, targetUserId);
-                } catch (delegateErr: any) {
-                    console.error("[Video Generate] Local video trimming failed:", delegateErr.message);
+                if (isCharacterVideo) {
+                    try {
+                        // Always use local Vercel trimming to guarantee scaling down to 1080p max width (Kie.ai limit)
+                        avatarUrl = await getTrimmedReferenceVideo(avatarUrl, targetUserId);
+                    } catch (delegateErr: any) {
+                        console.error("[Video Generate] Local video trimming failed:", delegateErr.message);
+                    }
                 }
                 
                 console.log(`[Video Generate] Using uploaded voice sample directly: ${referenceAudioUrl}`);
@@ -549,6 +566,12 @@ export async function POST(request: Request) {
 
         // Prepend the custom character avatar to the reference images (only if it's a photo, not a video)
         const combinedRefImages = (avatarUrl && !isCharacterVideo) ? [avatarUrl, ...refImages] : [...refImages];
+        
+        // Ensure all reference images are in JPEG format for Kie.ai compatibility
+        console.log(`[Video Generate] Ensuring all reference images are JPEG format for user: ${targetUserId}`);
+        const convertedRefImages = await Promise.all(
+            combinedRefImages.map(imgUrl => ensureJpegImage(imgUrl, targetUserId))
+        );
         
         // If the character is a video, build the reference_video_urls array for Kie.ai Seedance 2.0
         const referenceVideoUrls = (avatarUrl && isCharacterVideo) ? [avatarUrl] : [];
@@ -575,93 +598,45 @@ export async function POST(request: Request) {
                 const scene = scenes[i];
 
                 const characterAppearanceText = isCharacterVideo
-                    ? "Use reference video ONLY for character facial appearance and identity consistency.\n\nUse reference audio ONLY for voice characteristics.\n\nDuration: 15 seconds\nAspect Ratio: 9:16"
-                    : "Use reference image ONLY for character facial appearance and identity consistency.\n\nDuration: 15 seconds\nAspect Ratio: 9:16";
+                    ? `Use reference video ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`
+                    : `Use reference image ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`;
 
-                const synthesisPrompt = `You are a professional Prompt Engineer for Video Generative AI.
-Translate the following specific scene from a script into a simple, high-performing generative prompt for Bytedance/Kie.ai Seedance 2.0.
-
-Scene Number: ${i + 1} of ${scenes.length}
-Scene Dialogue: "${scene.dialogue}"
-Scene Visuals: "${scene.visuals || ''}"
-Business name: "${businessName}"
-Product context: "${productInfo}"
-User's brand style: "${brandGuidelines}"
-Custom instructions: "${customInstructions || 'None'}"
+                const synthesisPrompt = `You are a professional Prompt Engineer for Bytedance/Kie.ai Seedance 2.0.
+Your task is to translate a script scene into a highly effective, minimal, and clean generative video prompt.
 
 CREATOR CHARACTER:
 - Description: "${characterDescription}"
 - Reference Video Available: ${isCharacterVideo ? 'Yes' : 'No'}
 
-REFERENCE IMAGES & DETAILS (Vision-analyzed descriptions of the reference images provided in this ad creation task):
+SCENE DETAILS:
+- Dialogue: "${scene.dialogue}"
+- Visuals/Action: "${scene.visuals || ''}"
+- Business: "${businessName}"
+- Product: "${productInfo}"
+- Custom instructions: "${customInstructions || 'None'}"
+
+REFERENCE IMAGES & DETAILS:
 ${descriptionsText}
 
 YOUR INSTRUCTIONS:
-1. Generate a structured generative video prompt. Do NOT use markdown headers (like #, ##) or code blocks or backticks. Follow the exact structure shown below.
-2. Analyze the reference images description provided. See where they fit well in the video (e.g., background elements, products held in hand, or visually matching scene/product details) and prompt them accordingly in the "B-ROLL" or "Action" section of the output prompt.
-3. Keep the template industry-agnostic. The settings, clothing description, dialogue, speech style, actions, B-roll, camera, lighting, style, and avoids must be dynamically adapted based on the business name, product context, brand guidelines, and custom instructions.
-4. Output the prompt following this EXACT format (ensure correct double newlines and exact uppercase headers):
+1. Keep the output prompt clean, short, and to the point. Do NOT include excessive details, bullet points, camera movements, lighting settings, or negative avoid lists. These degrade the model's pronunciation and video quality.
+2. Focus on:
+   - Defining a simple professional setting and category-appropriate attire.
+   - Instructing the presenter to speak directly to the camera in a natural, organic, UGC-like video presentation that does NOT look AI-generated, delivering the dialogue with highly expressive, warm, and enthusiastic energy.
+   - Referencing the listing images for clean, simple B-roll transitions if applicable. Explicitly state in the B-roll section: "Only show the parts of the image that are actually visible in the reference image. Do not out-paint, extrapolate, or hallucinate areas outside the reference image borders."
+3. If the word 'Mohali' (or 'mohali', 'MOHALI') appears in the dialogue, always write it in Hindi script as 'मोहाली' in the DIALOGUE block. Keep all other words in their original script.
+4. Output the prompt following this EXACT format (replace bracketed values, do NOT include markdown backticks or extra text, ensure double newlines between sections):
 
 ${characterAppearanceText}
 
-LOCATION (IMPORTANT)
-[Write the location guidelines. Determine appropriate environment settings for the presenter. E.g. "The presenter must remain outdoors/in the office/in the kitchen whenever she appears on screen." "Interior rooms/other spaces may appear as cinematic B-roll only." "The presenter must never appear inside any interior space." or whatever is appropriate based on the product context/visuals.]
+Setting: [Describe simple setting/environment, e.g., "A modern, bright real estate office"]
 
-CHARACTER APPEARANCE
-Use the reference video only for facial appearance and identity. (or reference image if video is not available)
-Do NOT copy clothing from the reference video/image.
-The presenter wears a premium, stylish, category-appropriate outfit suited for the business/product (e.g., elegant lifestyle dress, casual smart blazer, sporty activewear, professionally styled outfit):
-• [Attire bullet 1: specific style, colors, fabric]
-• [Attire bullet 2: flowing fabric, modern design, fit details]
-• [Attire bullet 3: minimal/appropriate jewelry, natural makeup, professionally styled hair]
-• [Attire bullet 4: warm, trustworthy, and aspirational appearance]
+Presenter: A warm, professional presenter speaking directly to the camera in a natural, organic, UGC-like video that does not look AI. Delivery must be highly expressive, enthusiastic, and natural. Wearing [describe simple attire].
 
-DIALOGUE
-"[dialogue text to be spoken. Keep it exactly matching the script dialogue. Remember: If the word 'Mohali' (or 'mohali', 'MOHALI') appears in the Dialogue text, ALWAYS write it in Hindi script as 'मोहाली' in this DIALOGUE block. Never write it in English/Latin characters, as doing so leads to mispronunciation by the text-to-speech engine. Keep all other words in their original script/Hinglish representation.]"
+B-Roll: [Describe B-roll transition simply using the reference images, e.g., "Show the villa facade (matching reference image 1) during corresponding dialogue cues. Only show the parts of the image that are actually visible in the reference image. Do not out-paint, extrapolate, or hallucinate areas outside the reference image borders." or "None" if no reference images].
 
-SPEECH STYLE
-[Describe vocal delivery with rich personality, tone, speed, projection, etc. Add a bulleted list of 2-3 key phrases from the dialogue to emphasize strongly, like:
-Strong emphasis on:
-• "[Key Phrase 1]"
-• "[Key Phrase 2]"]
-Excellent vocal projection and warm conversational delivery.
-
-ACTION
-[Describe the precise actions the character is performing. Instruct them to keep energy high and gestures natural. E.g., "The presenter walks slowly through the lawn/office/room while speaking directly to camera. She maintains eye contact, smiles warmly, and uses natural open-handed gestures."]
-
-B-ROLL
-[If reference images are provided, map specific B-roll insertions linked to dialogue cue words. Describe the B-roll setting strictly matching the details from the reference image description to guarantee 100% accuracy and zero hallucination.
-Add constraints like:
-"When mentioning: '[Dialogue fragment]' Insert cinematic B-roll using the supplied reference image. The [room/product] must strictly match the reference image, including: • [Specific ref image detail 1] • [Specific ref image detail 2]. Do not modify the room/product. Do not extend beyond visible boundaries. Do not add elements. Voiceover continues throughout all B-roll. Return to the presenter immediately afterward."]
-
-CAMERA
-[Provide a numbered list of 3-5 camera shots/angles/moves, showing a dynamic multi-shot setup, e.g.:
-1. Medium tracking shot
-2. Close-up presenter
-3. B-roll shot matching reference image
-4. Presenter final CTA shot]
-
-LIGHTING
-[Describe the lighting aesthetic, e.g., "Warm golden-hour luxury lighting. Natural sunlight. Premium residential atmosphere. Photorealistic rendering." or studio/warm ambient lighting depending on setting.]
-
-STYLE
-[Describe the visual aesthetics and production style, e.g. "Luxury real-estate advertisement. Premium UGC presentation. Professional quality. Natural movement. Warm emotional appeal."]
-
-AVOID
-[List specific negative constraints as a bulleted list:
-• No presenter inside restricted spaces (e.g. "No presenter indoors" or "No presenter in kitchen")
-• No copied clothing from reference video/image
-• No text overlays
-• No captions
-• No logos
-• No watermarks
-• No hallucinated elements/furniture
-• No architectural or design changes to reference elements]
-
-Rules:
-- Do NOT wrap the prompt in backticks or markdown code blocks.
-- Do NOT output any intro or outro text. Output the pure text prompt starting directly with 'Use reference video/image...'
-- Output the 10 headers in exact uppercase and ensure double newlines between sections.`;
+Dialogue:
+"${scene.dialogue}"`;
 
                 let finalPrompt = "";
                 try {
@@ -684,52 +659,14 @@ Rules:
                         // Fallback prompt using the new structured template
                         finalPrompt = `${characterAppearanceText}
 
-LOCATION (IMPORTANT)
-The presenter remains in a premium, warm setting appropriate to the brand. Interior or alternative settings appear as B-roll only. The presenter does not enter restricted spaces.
+Setting: A premium, warm setting appropriate to the brand.
 
-CHARACTER APPEARANCE
-Use the reference video only for facial appearance and identity. (or reference image if video is not available)
-Do NOT copy clothing from the reference video.
-The presenter wears a sophisticated premium outfit:
-• Smart-casual blazer or elegant midi dress in pastel colors
-• Refined, modern fabric and design
-• Minimal jewelry and natural makeup
-• Professionally styled, neat hair
-• Warm, trustworthy, aspirational appearance
+Presenter: A warm, professional presenter speaking directly to the camera in a natural, organic, UGC-like video that does not look AI. Delivery is highly expressive, reassuring, and enthusiastic. Wearing smart-casual business attire.
 
-DIALOGUE
-"${scene.dialogue}"
+B-Roll: ${refImages.length > 0 ? "Transition to B-roll showing the product/property matching the supplied reference images during key dialogue points. Only show the parts of the image that are actually visible in the reference image. Do not out-paint, extrapolate, or hallucinate areas outside the reference image borders." : "None."}
 
-SPEECH STYLE
-Natural, energetic, reassuring, and trustworthy. Speaks at a professional, conversational pace with warm vocal projection.
-
-ACTION
-The presenter speaks directly to the camera, maintaining eye contact and smiling warmly. Uses natural open-handed gestures to express key points.
-
-B-ROLL
-When mentioning key product features, transition to cinematic B-roll using the supplied reference images. The visual layout and details must strictly match the reference images without modifications, hallucinated additions, or extending beyond visible boundaries. Return to the presenter immediately afterward.
-
-CAMERA
-1. Medium shot presenter speaking to camera
-2. Close-up presenter shot
-3. B-roll close-up matching reference image
-4. Presenter final medium close-up
-
-LIGHTING
-Warm luxury lighting, natural light, professional clean presentation, photorealistic rendering.
-
-STYLE
-Premium UGC video advertisement, realistic movement, high-end commercial quality, warm engaging appeal.
-
-AVOID
-• No presenter in restricted spaces
-• No copied clothing from reference video
-• No text overlays
-• No captions
-• No logos
-• No watermarks
-• No hallucinated elements or furniture
-• No architectural or design changes to reference elements`;
+Dialogue:
+"${scene.dialogue}"`;
                     }
                 }
                 prompts.push(finalPrompt);
@@ -808,8 +745,8 @@ AVOID
                 }
             };
             
-            if (combinedRefImages.length > 0) {
-                payload.input.reference_image_urls = combinedRefImages.slice(0, 9);
+            if (convertedRefImages.length > 0) {
+                payload.input.reference_image_urls = convertedRefImages.slice(0, 9);
             }
             
             // If character is a video, pass it via reference_video_urls (Seedance 2.0 spec)
@@ -820,9 +757,9 @@ AVOID
 
             // Pass the extracted reference audio URL.
             // DO NOT fall back to passing the .mp4 video URL as the audio URL, as this breaks voice cloning.
-            if (isCharacterVideo) {
+            if (isCharacterVideo || isAvatarPhoto) {
                 if (!referenceAudioUrl) {
-                    throw new Error("Reference audio extraction failed. Please ensure your Cloud Run service is deployed and running, and that your uploaded profile video has a valid, audible sound track.");
+                    throw new Error("Reference audio extraction failed. Please ensure your Cloud Run service is deployed and running, and that your uploaded presenter asset has a valid, audible voice sample.");
                 }
                 payload.input.reference_audio_urls = [referenceAudioUrl];
                 console.log(`[Video Generate] Passing character audio reference: ${referenceAudioUrl}`);

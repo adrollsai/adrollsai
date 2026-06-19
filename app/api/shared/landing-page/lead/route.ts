@@ -46,7 +46,8 @@ export async function POST(request: Request) {
             city, 
             landing_page_id, 
             user_id, 
-            slug 
+            slug,
+            eventId
         } = body
 
         if (!name || !phone || !user_id) {
@@ -70,10 +71,10 @@ export async function POST(request: Request) {
             }
         })
 
-        // Fetch owner profile details including Meta CAPI credentials
+        // Fetch owner profile details including email and Meta CAPI credentials
         const { data: ownerProfile } = await supabaseAdmin
             .from('profiles')
-            .select('facebook_token, selected_page_token, pixel_id, enable_distribution')
+            .select('email, facebook_token, selected_page_token, pixel_id, enable_distribution')
             .eq('id', user_id)
             .maybeSingle()
 
@@ -133,6 +134,43 @@ export async function POST(request: Request) {
 
         console.log(`✅ Landing Page Lead Captured: ${newLead.id} for Owner: ${user_id}, Assigned To: ${assignedAgentId}`)
 
+        // Dispatch email notification to owner and assigned agent connected emails
+        try {
+            const recipientEmails: string[] = [];
+            if (ownerProfile?.email) {
+                recipientEmails.push(ownerProfile.email);
+            }
+            
+            if (assignedAgentId) {
+                const { data: agentProfile } = await supabaseAdmin
+                    .from('profiles')
+                    .select('email')
+                    .eq('id', assignedAgentId)
+                    .maybeSingle();
+                
+                if (agentProfile?.email && !recipientEmails.includes(agentProfile.email)) {
+                    recipientEmails.push(agentProfile.email);
+                }
+            }
+
+            if (recipientEmails.length > 0) {
+                const { sendLandingPageLeadEmail } = await import('@/utils/email-helper');
+                console.log(`[Lead API] Sending lead notification emails to: ${recipientEmails.join(', ')}`);
+                await sendLandingPageLeadEmail(recipientEmails, {
+                    name,
+                    email,
+                    phone,
+                    city,
+                    source: slug ? `Landing Page - ${slug}` : 'Landing Page',
+                    customQuestions: customFields
+                });
+            } else {
+                console.warn("[Lead API] No recipient emails resolved for user:", user_id);
+            }
+        } catch (emailErr) {
+            console.error("[Lead API] Failed to send lead notification emails:", emailErr);
+        }
+
         // Trigger Conversions API (CAPI) Lead Event
         const pixelId = customPixelId || ownerProfile?.pixel_id
         const accessToken = ownerProfile?.facebook_token || ownerProfile?.selected_page_token
@@ -161,7 +199,8 @@ export async function POST(request: Request) {
                 0,
                 clientIp,
                 clientUa,
-                sourceUrl
+                sourceUrl,
+                eventId
             ).catch(err => {
                 console.error("[CAPI Lead] Failed to send CAPI Lead event:", err)
             })

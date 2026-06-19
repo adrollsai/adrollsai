@@ -109,7 +109,8 @@ export async function POST(request: Request) {
             mode = 'generate', 
             instructions, 
             currentHtml,
-            imageUrls
+            imageUrls,
+            pageType = 'standard'
         } = body
 
         if (mode === 'generate' && !productName && !propertyId) {
@@ -309,12 +310,69 @@ Format your response as a detailed summary that a frontend developer can easily 
             }
         }
 
+        let imageAnalysisSection = ""
+        if (imageAnalysisResults) {
+            imageAnalysisSection = `
+### IMAGE LAYOUT & PLACEMENT ANALYSIS (CRITICAL)
+Below is the visual analysis and layout recommendations for the product images. You MUST follow these layout placement recommendations and use the specified image URLs in the corresponding sections/cards of your HTML code:
+${imageAnalysisResults}
+`
+        }
+
         let systemPrompt = ''
         if (mode === 'generate') {
-            // Determine if this is a real estate listing
-            let realEstateDetails = ""
-            if (propertyId) {
-                realEstateDetails = `
+            if (pageType === 'survey') {
+                systemPrompt = `You are a world-class front-end developer and elite copywriter.
+Create a complete, responsive, premium survey form page in HTML based on the details below.
+The page MUST focus entirely on presenting a single, beautifully centered survey card. It must load super fast, look extremely professional, and have a minimal visual footprint with no extra landing page content.
+
+### CRITICAL ACCURACY RULE (MANDATORY):
+- You must ONLY include, describe, or reference the exact information passed as context in this prompt (such as titles, description context, and actual assets).
+- Absolutely DO NOT hallucinate, assume, or generate registration numbers, RERA IDs, approvals, or any parameters/specifications not explicitly provided.
+
+### INPUT VARIABLES
+* Brand/Product Name: "${resolvedProductName}"
+* Core Offer/Product Context: "${resolvedContext}"
+* Target Audience & Brand Info: 
+${contactInfoText}
+${propertyDataText}
+${imageAnalysisSection}
+
+### LAYOUT STRUCTURE (SURVEY ONLY PAGE):
+- **Fullscreen Centered Single-Card Design:** Center the survey card vertically and horizontally on the page so that the visitor is immediately focused on the survey. The page must have a light, clean, elegant background (no dark mode backgrounds).
+- **Property Visuals on Top:** 
+  - At the top of the card (as a header image or banner), display a clean, elegant visual showcase of the property.
+  - If images are available in this list: ${JSON.stringify(propertyImagesList)}, display a high-quality header image or a simple auto-rotating gallery/slider of these images using inline CSS/JS at the top of the card.
+  - If the list is empty, display an elegant typography layout with a premium gradient background instead. Do NOT use stock placeholders or placeholder domains.
+- **Survey Container:** 
+  - Directly underneath the header image / gallery (inside the card), mount the qualification container EXACTLY like this: '<div id="qualification-form-container" data-page-type="survey" data-button-text="Next"></div>'.
+  - Put the '#qualification-form-container' directly below the images/slider inside the card. Ensure that no other sections, highlights, grids, description text, or configuration tables are placed above this container. The survey container MUST be immediately below the visuals.
+  - Wrap the container inside the card in a clean styling box (like bg-slate-50/50, rounded corners, padding) so it integrates seamlessly.
+  - Any highlights, text descriptions, or configurations, if generated at all, MUST be placed below the survey form container (never above it).
+  - Do NOT write a form element, inputs, or any button HTML inside this container, and do NOT write any "Start Survey" trigger cards or trigger buttons. The platform dynamically injects the survey questions, and the first question must render inline immediately.
+
+### STYLING & DESIGN GUIDELINES (LIGHT THEME BY DEFAULT):
+- **Default to Light Theme:** The entire page and card must default to a clean, light, high-contrast premium theme. Use soft light backgrounds (e.g., '#f8fafc' or '#fdfbf7'), dark slate text ('#0f172a'), and the custom brand color as interactive accents. Do NOT use dark backgrounds (black, charcoal, deep gray) unless explicitly requested in custom instructions.
+- Configured Tailwind via CDN with a custom config extension that maps 'brand' theme colors based on the base brand color '${profile?.brand_color || "#9e755c"}':
+  - 'brand.DEFAULT' = Primary color (e.g., '${profile?.brand_color || "#9e755c"}')
+  - 'brand.light' = Elegant light pastel/gold tone (e.g., '#c9b2a1')
+  - 'brand.dark' = Deep premium tone (e.g., '#7a5743')
+  - 'brand.bg' = Soft premium background color (e.g., '#fdfbf7')
+  - 'brand.heading' = Deep luxury brown/black tone (e.g., '#4a3324')
+- Use elegant Google Fonts (e.g. Outfit, Inter or Georgia) for premium typography.
+- Clean, premium aesthetic with subtle micro-animations or hover states on interactive components.
+- Do NOT include any navigation bars, footers, grids of testimonials, how-it-works, FAQs, accordions, or extra content. Only show the centered survey card with property visuals.
+- Ensure the page body is fully scrollable and does NOT cap layout height (do NOT use height: 100vh or overflow: hidden on html/body/main elements).
+
+### OUTPUT FORMAT:
+- Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
+- ABSOLUTELY DO NOT wrap the output in markdown code blocks (e.g., do NOT start with \`\`\`html or end with \`\`\`).
+- Output ONLY the pure raw HTML string. No intro, conversational chat, or outro.`
+            } else {
+                // Determine if this is a real estate listing
+                let realEstateDetails = ""
+                if (propertyId) {
+                    realEstateDetails = `
 REAL-ESTATE LISTING SPECIFICATIONS:
 ${propertyRera ? `- Prominently display the RERA ID/Number: "${propertyRera}".` : ''}
 - Floor Plan Section: Display the floor plan image "${propertyFloorPlan}" with buttons to switch configurations (e.g. 3 BHK, Duplex). Place an overlay with blurry backdrop and a secure lock icon overlay: '<div id="floorplan-overlay" class="absolute inset-0 bg-white/40 backdrop-blur-md flex flex-col items-center justify-center">Submit Enquiry to Unlock Floor Plan</div>'. Supply the JavaScript function 'changeFloorPlan(button, imgSrc, isLocked, titleText)' to handle config changes.
@@ -322,29 +380,22 @@ ${propertyRera ? `- Prominently display the RERA ID/Number: "${propertyRera}".` 
 - Smart Living features grid.
 - Amenities Grid.
 `
-            }
+                }
 
-            let imageAnalysisSection = ""
-            if (imageAnalysisResults) {
-                imageAnalysisSection = `
-### IMAGE LAYOUT & PLACEMENT ANALYSIS (CRITICAL)
-Below is the visual analysis and layout recommendations for the product images. You MUST follow these layout placement recommendations and use the specified image URLs in the corresponding sections/cards of your HTML code:
-${imageAnalysisResults}
-`
-            }
 
-            let youtubeEmbedSection = ""
-            if (propertyYoutubeUrl) {
-                youtubeEmbedSection = `
+
+                let youtubeEmbedSection = ""
+                if (propertyYoutubeUrl) {
+                    youtubeEmbedSection = `
 ### YOUTUBE VIDEO EMBED INSTRUCTIONS (CRITICAL)
 - YouTube Video URL: "${propertyYoutubeUrl}"
 - You MUST embed this YouTube video in a highly visible, premium section on the landing page (e.g., directly below the hero section or inside a feature showcase card/video presentation section).
 - Parse the YouTube URL to extract the 11-character video ID, and generate a responsive iframe pointing to "https://www.youtube.com/embed/<VIDEO_ID>".
 - Ensure the iframe is wrapped in a responsive Tailwind container with professional styling (e.g., class="w-full aspect-video rounded-2xl shadow-lg border border-slate-200/60 overflow-hidden").
 `
-            }
+                }
 
-            systemPrompt = `You are a world-class front-end developer and elite direct-response landing page copywriter specializing in high-converting landing pages.
+                systemPrompt = `You are a world-class front-end developer and elite direct-response landing page copywriter specializing in high-converting landing pages.
 Create a complete, responsive, premium single-page landing page in HTML based on the details below, strictly following Alex Hormozi's "Value Equation" conversion framework.
 
 ### CRITICAL ACCURACY RULE (MANDATORY):
@@ -401,6 +452,7 @@ ${realEstateDetails}
 - Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
 - ABSOLUTELY DO NOT wrap the output in markdown code blocks (e.g., do NOT start with \`\`\`html or end with \`\`\`).
 - Output ONLY the pure raw HTML string. No intro, conversational chat, or outro.`
+            }
         } else {
             systemPrompt = `You are a master front-end developer.
 Edit the provided landing page HTML strictly according to the user's instructions.
@@ -417,7 +469,8 @@ CRITICAL RULES:
 4. Return ONLY the raw, complete, valid updated HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
 5. ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output ONLY the pure raw updated HTML string. No conversational text.
 6. DO NOT delete, alter, or omit any existing page sections, styles, JS scripts, or sections unless explicitly instructed to do so. Your edit must be a direct, surgical modification of the provided CURRENT HTML, maintaining 100% of the other page elements, structure, and images.
-7. CRITICAL ACCURACY RULE: You must ONLY include, describe, or reference the exact information passed as context in this prompt. Absolutely DO NOT hallucinate, assume, or generate registration numbers, RERA IDs, approvals, or any parameters/specifications not explicitly provided. If a RERA ID or number is not explicitly provided, DO NOT mention RERA, do not write "RERA Approved", and do not show any fake/placeholder registration numbers.`
+7. CRITICAL ACCURACY RULE: You must ONLY include, describe, or reference the exact information passed as context in this prompt. Absolutely DO NOT hallucinate, assume, or generate registration numbers, RERA IDs, approvals, or any parameters/specifications not explicitly provided. If a RERA ID or number is not explicitly provided, DO NOT mention RERA, do not write "RERA Approved", and do not show any fake/placeholder registration numbers.
+8. SURVEY LAYOUT RULE: If the instructions request a survey page format, or if the current HTML contains a survey (data-page-type='survey'), you must structure the page as a single fullscreen centered card (light theme). The property visuals/images must be at the top of the card, and the qualification container '<div id="qualification-form-container" data-page-type="survey" data-button-text="Next"></div>' must be placed **directly below** the property images/slider. Ensure all other elements (like highlights or text descriptions), if present, are placed BELOW the survey container. Do NOT generate any "Start Survey" buttons or trigger card HTML; the first question must render immediately.`
         }
 
         console.log(`[Lander API] Calling Gemini in mode: ${mode}...`)

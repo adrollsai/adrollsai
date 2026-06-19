@@ -45,6 +45,7 @@ type Profile = {
   character_audio_url?: string
   avatar_url?: string
   avatar_description?: string
+  avatar_audio_url?: string
 }
 
 
@@ -157,6 +158,10 @@ export default function CreationPage() {
   const [isUploadingRef, setIsUploadingRef] = useState(false)
   const refFileInputRef = useRef<HTMLInputElement>(null)
   
+  // Reference Library State
+  const [userReferences, setUserReferences] = useState<any[]>([])
+  const [selectedUserRefId, setSelectedUserRefId] = useState<string | null>(null)
+  
   // NEW: Creation Mode Toggle
   const [creationMode, setCreationMode] = useState<'image' | 'video'>('image')
   
@@ -167,10 +172,12 @@ export default function CreationPage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [uploadingVideo, setUploadingVideo] = useState(false)
   const [uploadingAudio, setUploadingAudio] = useState(false)
+  const [uploadingAvatarAudio, setUploadingAvatarAudio] = useState(false)
 
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
+  const avatarAudioInputRef = useRef<HTMLInputElement>(null)
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -183,9 +190,8 @@ export default function CreationPage() {
       setUploadingAvatar(true)
       const fileExt = file.name.split('.').pop()
       const fileName = `avatar-${targetUserId}-${Date.now()}.${fileExt}`
-      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
-      if (uploadError) throw uploadError
-      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
+      const renamedFile = new File([file], fileName, { type: file.type })
+      const publicUrl = await uploadToR2(renamedFile, 'logos')
 
       const res = await fetch('/api/profile/update', {
         method: 'POST',
@@ -220,9 +226,8 @@ export default function CreationPage() {
       setUploadingVideo(true)
       const fileExt = file.name.split('.').pop()
       const fileName = `character-${targetUserId}-${Date.now()}.${fileExt}`
-      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
-      if (uploadError) throw uploadError
-      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
+      const renamedFile = new File([file], fileName, { type: file.type })
+      const publicUrl = await uploadToR2(renamedFile, 'logos')
 
       const res = await fetch('/api/profile/update', {
         method: 'POST',
@@ -258,9 +263,8 @@ export default function CreationPage() {
       setUploadingAudio(true)
       const fileExt = file.name.split('.').pop()
       const fileName = `voice-sample-${targetUserId}-${Date.now()}.${fileExt}`
-      const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file)
-      if (uploadError) throw uploadError
-      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName)
+      const renamedFile = new File([file], fileName, { type: file.type })
+      const publicUrl = await uploadToR2(renamedFile, 'logos')
 
       const res = await fetch('/api/profile/update', {
         method: 'POST',
@@ -280,6 +284,41 @@ export default function CreationPage() {
       toast.error("Failed to upload voice audio sample.")
     } finally {
       setUploadingAudio(false)
+    }
+  }
+
+  const handleAvatarAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0]
+      if (!file || !targetUserId) return
+      if (file.size > 15 * 1024 * 1024) {
+        toast.error("Audio size exceeds 15MB limit.")
+        return
+      }
+      setUploadingAvatarAudio(true)
+      const fileExt = file.name.split('.').pop()
+      const fileName = `avatar-voice-sample-${targetUserId}-${Date.now()}.${fileExt}`
+      const renamedFile = new File([file], fileName, { type: file.type })
+      const publicUrl = await uploadToR2(renamedFile, 'logos')
+
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId,
+          updates: { avatar_audio_url: publicUrl }
+        })
+      })
+      const resData = await res.json()
+      if (resData.error) throw new Error(resData.error)
+
+      setProfile(prev => prev ? { ...prev, avatar_audio_url: publicUrl } : null)
+      toast.success("Avatar voice audio sample uploaded successfully!")
+    } catch (err: any) {
+      console.error(err)
+      toast.error("Failed to upload avatar voice audio sample.")
+    } finally {
+      setUploadingAvatarAudio(false)
     }
   }
 
@@ -364,6 +403,16 @@ export default function CreationPage() {
       
       if (data) {
           setProperties(data)
+      }
+
+      // Fetch User's Reference Library creatives
+      const { data: userRefs, error: refsError } = await supabase
+        .from('reference_creatives')
+        .select('id, category, url')
+        .eq('user_id', tUserId)
+        .order('created_at', { ascending: false })
+      if (!refsError && userRefs) {
+        setUserReferences(userRefs)
       }
 
     } catch (error: any) {
@@ -530,6 +579,7 @@ export default function CreationPage() {
         const publicUrl = await uploadToR2(renamedFile, 'references');
         setUploadedRefUrl(publicUrl);
         setSelectedTemplate(null); 
+        setSelectedUserRefId(null);
     } catch (error: any) {
         alert("Upload failed: " + error.message);
     } finally {
@@ -852,7 +902,7 @@ export default function CreationPage() {
   }
 
   const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
-  const activeReferenceUrl = uploadedRefUrl || templateObj?.url || null
+  const activeReferenceUrl = uploadedRefUrl || templateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || null
 
   const startResponse = await fetch(`/api/chat${window.location.search}`, {
     method: 'POST',
@@ -1244,8 +1294,8 @@ export default function CreationPage() {
         ) : (
             <div className="px-4 flex gap-2 w-full overflow-x-auto scrollbar-hide">
                  <button 
-                    onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); }}
-                    className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate === null && uploadedRefUrl === null ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                    onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); setSelectedUserRefId(null); }}
+                    className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate === null && uploadedRefUrl === null && selectedUserRefId === null ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
                  >
                     <Layout size={16} />
                     <span className="text-[9px] font-bold uppercase tracking-wider">Auto</span>
@@ -1276,6 +1326,34 @@ export default function CreationPage() {
                           </button>
                       )}
                  </div>
+
+                 {/* Map user's personal reference library creatives */}
+                 {userReferences.length === 0 && (
+                      <span className="text-[9px] font-bold text-slate-400 border border-dashed border-slate-200 px-3 rounded-2xl h-16 flex items-center justify-center bg-slate-50/50 flex-shrink-0">
+                          Library Empty (Manage in Profile)
+                      </span>
+                 )}
+                 {userReferences.map(ref => (
+                      <button 
+                         key={ref.id}
+                         onClick={() => { 
+                           setSelectedTemplate(null); 
+                           setUploadedRefUrl(null); 
+                           setSelectedUserRefId(ref.id); 
+                         }}
+                         className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 relative overflow-hidden transition-all group ${selectedUserRefId === ref.id ? 'border-purple-500 ring-2 ring-purple-100 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}
+                      >
+                         <img src={ref.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="personal ref" />
+                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-center pb-1">
+                             <span className="text-white text-[8px] font-bold truncate px-1 w-full text-center capitalize">{ref.category.replace('_', ' ')}</span>
+                         </div>
+                         {selectedUserRefId === ref.id && (
+                           <div className="absolute top-1 right-1 bg-purple-500 text-white p-0.5 rounded-full shadow-sm">
+                             <Check size={8} strokeWidth={4} />
+                           </div>
+                         )}
+                      </button>
+                 ))}
      
                  {/* Map visible templates (Limit to 3 or 4 to fit on screen without scrolling if possible) */}
                  {TEMPLATES.slice(0, 4).map(t => (
@@ -1867,7 +1945,7 @@ export default function CreationPage() {
 
                 {/* Conditional Upload Panel (If missing selection requirements) */}
                 {((presenterMode === 'video' && (!profile?.character_url || !profile?.character_audio_url)) ||
-                  (presenterMode === 'avatar' && !profile?.avatar_url) ||
+                  (presenterMode === 'avatar' && (!profile?.avatar_url || !profile?.avatar_audio_url)) ||
                   (!profile?.character_url && !profile?.avatar_url)) && (
                     <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 space-y-2.5 animate-in slide-in-from-top-2 duration-300">
                         <div className="flex items-center gap-1.5 text-slate-600">
@@ -1927,7 +2005,28 @@ export default function CreationPage() {
                                     ) : (
                                         <Mic size={12} className={profile?.character_audio_url ? "text-emerald-500 animate-pulse" : ""} />
                                     )}
-                                    {profile?.character_audio_url ? 'Voice Loaded' : 'Upload Voice (Audio)'}
+                                    {profile?.character_audio_url ? 'Video Voice Loaded' : 'Upload Video Voice (Audio)'}
+                                </button>
+                            )}
+
+                            {/* 4. Upload Audio sample (required for Avatar presenter) */}
+                            {(presenterMode === 'avatar' || (!profile?.character_url && !profile?.avatar_url)) && (
+                                <button
+                                    type="button"
+                                    onClick={() => avatarAudioInputRef.current?.click()}
+                                    disabled={uploadingAvatarAudio}
+                                    className={`w-full bg-white hover:bg-indigo-50/30 border py-2.5 px-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs animate-pulse ${
+                                        profile?.avatar_audio_url 
+                                            ? 'text-indigo-700 border-indigo-200 hover:border-indigo-300' 
+                                            : 'text-slate-700 border-slate-200 hover:border-indigo-200'
+                                    }`}
+                                >
+                                    {uploadingAvatarAudio ? (
+                                        <Loader2 size={12} className="animate-spin text-indigo-600" />
+                                    ) : (
+                                        <Mic size={12} className={profile?.avatar_audio_url ? "text-indigo-500 animate-pulse" : ""} />
+                                    )}
+                                    {profile?.avatar_audio_url ? 'Avatar Voice Loaded' : 'Upload Avatar Voice (Audio)'}
                                 </button>
                             )}
                         </div>
@@ -1935,7 +2034,12 @@ export default function CreationPage() {
                         {/* Descriptions / Warnings */}
                         {presenterMode === 'video' && !profile?.character_audio_url && (
                             <p className="text-[9px] text-amber-600 font-bold leading-tight">
-                                ⚠️ Cloning voice requires a voice audio sample. Upload an audio sample (up to 15s MP3/WAV) to proceed.
+                                ⚠️ Cloning voice for video requires a video voice audio sample. Upload an audio sample (up to 15s MP3/WAV) to proceed.
+                            </p>
+                        )}
+                        {presenterMode === 'avatar' && !profile?.avatar_audio_url && (
+                            <p className="text-[9px] text-amber-600 font-bold leading-tight">
+                                ⚠️ Cloning voice for avatar requires an avatar voice audio sample. Upload an audio sample (up to 15s MP3/WAV) to proceed.
                             </p>
                         )}
                     </div>
@@ -1945,6 +2049,7 @@ export default function CreationPage() {
                 <input type="file" ref={avatarInputRef} onChange={handleAvatarUpload} className="hidden" accept="image/*" />
                 <input type="file" ref={videoInputRef} onChange={handleVideoUpload} className="hidden" accept="video/*" />
                 <input type="file" ref={audioInputRef} onChange={handleAudioUpload} className="hidden" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav" />
+                <input type="file" ref={avatarAudioInputRef} onChange={handleAvatarAudioUpload} className="hidden" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav" />
 
                 {/* Footer Action */}
                 <div className="pt-3 border-t border-slate-100 flex justify-end">

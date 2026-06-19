@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, Youtube, MessageSquare, Trash2, Send, Sparkles } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { uploadToR2 } from '@/utils/upload-helper'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
@@ -175,14 +176,10 @@ export default function FeedManagementPage() {
       let image_url = null
       if (selectedFile) {
         const compressedFile = await compressImage(selectedFile)
-        const fileName = `${targetUserId}/feed/${Date.now()}.jpg`
-        const { error: uploadError } = await supabase.storage
-          .from('assets')
-          .upload(fileName, compressedFile)
-        
-        if (uploadError) throw uploadError
-        const { data: { publicUrl } } = supabase.storage.from('assets').getPublicUrl(fileName)
-        image_url = publicUrl
+        const fileExt = 'jpg'
+        const fileName = `feed-${Date.now()}.${fileExt}`
+        const renamedFile = new File([compressedFile], fileName, { type: compressedFile.type })
+        image_url = await uploadToR2(renamedFile, 'assets')
       }
 
       const { data: postData, error } = await supabase.from('posts').insert({

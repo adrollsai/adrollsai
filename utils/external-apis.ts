@@ -503,7 +503,8 @@ export async function sendCAPIEvent(
     value?: number,
     clientIp?: string,
     clientUa?: string,
-    sourceUrl?: string
+    sourceUrl?: string,
+    eventId?: string
 ) {
     if (!pixelId) return;
     const hashData = (data: string) => crypto.createHash('sha256').update(data.trim().toLowerCase()).digest('hex');
@@ -513,6 +514,7 @@ export async function sendCAPIEvent(
         data: [{
             event_name: eventName,
             event_time: Math.floor(Date.now() / 1000),
+            event_id: eventId || undefined,
             action_source: 'website', 
             event_source_url: sourceUrl || undefined,
             user_data: {

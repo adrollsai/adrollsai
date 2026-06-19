@@ -337,12 +337,27 @@ export async function POST(request: Request) {
 
     if (error) {
       // Self-healing database update retry: if missing new avatar columns, retry without them
-      const isMissingAvatarColumn = error.message?.includes('avatar_url') || error.message?.includes('avatar_description')
+      const isMissingAvatarColumn = error.message?.includes('avatar_url') || error.message?.includes('avatar_description') || error.message?.includes('avatar_audio_url')
       if (isMissingAvatarColumn) {
-        console.warn("[Profile Update API] Database is missing avatar_url/avatar_description columns. Retrying update without them...")
+        console.warn("[Profile Update API] Database is missing avatar_url/avatar_description/avatar_audio_url columns. Retrying update without them...")
         const healedUpdates = { ...allowedUpdates }
         delete healedUpdates.avatar_url
         delete healedUpdates.avatar_description
+        delete healedUpdates.avatar_audio_url
+
+        if (Object.keys(healedUpdates).length === 0) {
+          const { data: currentProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('*')
+            .eq('id', targetUserId)
+            .single()
+
+          return NextResponse.json({ 
+            success: true, 
+            profile: currentProfile,
+            warning: "Migration pending: Please run the SQL in Supabase editor:\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_description TEXT;\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_audio_url TEXT;"
+          })
+        }
 
         const retryResult = await supabaseAdmin
           .from('profiles')
@@ -355,7 +370,7 @@ export async function POST(request: Request) {
           return NextResponse.json({ 
             success: true, 
             profile: retryResult.data,
-            warning: "Migration pending: Please run the SQL in Supabase editor:\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_description TEXT;"
+            warning: "Migration pending: Please run the SQL in Supabase editor:\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_description TEXT;\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_audio_url TEXT;"
           })
         }
         error = retryResult.error

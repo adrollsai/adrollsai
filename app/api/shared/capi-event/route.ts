@@ -83,7 +83,8 @@ export async function POST(request: Request) {
       value,
       clientIp,
       clientUa,
-      sourceUrl
+      sourceUrl,
+      eventID
     )
 
     return NextResponse.json({ success: true })

@@ -888,6 +888,9 @@ export type Database = {
           agency_id: string | null
           ai_ad_optimizations_used: number | null
           ai_creatives_used: number | null
+          avatar_audio_url: string | null
+          avatar_description: string | null
+          avatar_url: string | null
           badges: string[] | null
           brand_color: string | null
           business_info: string | null
@@ -956,6 +959,9 @@ export type Database = {
           agency_id?: string | null
           ai_ad_optimizations_used?: number | null
           ai_creatives_used?: number | null
+          avatar_audio_url?: string | null
+          avatar_description?: string | null
+          avatar_url?: string | null
           badges?: string[] | null
           brand_color?: string | null
           business_info?: string | null
@@ -1024,6 +1030,9 @@ export type Database = {
           agency_id?: string | null
           ai_ad_optimizations_used?: number | null
           ai_creatives_used?: number | null
+          avatar_audio_url?: string | null
+          avatar_description?: string | null
+          avatar_url?: string | null
           badges?: string[] | null
           brand_color?: string | null
           business_info?: string | null

@@ -101,6 +101,8 @@ export default function ReferenceLibraryPage() {
   const [loading, setLoading] = useState(true)
   const [role, setRole] = useState<string | null>(null)
   const [referenceCreatives, setReferenceCreatives] = useState<ReferenceCreative[]>([])
+  const [targetUserId, setTargetUserId] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   
   // Upload State
   const [uploadCategory, setUploadCategory] = useState<'premium' | 'high_converting'>('premium')
@@ -126,9 +128,11 @@ export default function ReferenceLibraryPage() {
           return
         }
 
+        setUserId(session.user.id)
+
         const { data: profile } = await supabase
           .from('profiles')
-          .select('role')
+          .select('role, agency_id, parent_id')
           .eq('id', session.user.id)
           .single()
 
@@ -136,17 +140,45 @@ export default function ReferenceLibraryPage() {
 
         const userRole = profile?.role || 'agent'
         setRole(userRole)
-        
-        if (userRole === 'super_admin') {
-          // Fetch existing references
-          const { data: refs, error } = await supabase
-            .from('reference_creatives')
-            .select('*')
-            .order('created_at', { ascending: false })
-          
-          if (!error && refs) {
-            setReferenceCreatives(refs as ReferenceCreative[])
+
+        // Resolve Target User ID (exactly like profile page)
+        let tUserId = session.user.id
+        if (['admin', 'agent'].includes(userRole) && (profile?.agency_id || profile?.parent_id)) {
+          tUserId = (profile?.agency_id || profile?.parent_id) as string
+        }
+
+        if (impersonateId && (['super_admin', 'agency', 'admin', 'agent'].includes(userRole))) {
+          if (userRole !== 'super_admin') {
+            const { data: subAccount } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('id', impersonateId)
+              .eq('agency_id', profile?.agency_id || session.user.id)
+              .single()
+            if (subAccount) tUserId = impersonateId
+          } else {
+            tUserId = impersonateId
           }
+        }
+        setTargetUserId(tUserId)
+
+        // Fetch references
+        let query = supabase
+          .from('reference_creatives')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (userRole === 'super_admin' && !impersonateId) {
+          query = query.is('user_id', null)
+        } else {
+          query = query.eq('user_id', tUserId)
+        }
+
+        const { data: refs, error } = await query
+        if (!isMounted) return
+
+        if (!error && refs) {
+          setReferenceCreatives(refs as ReferenceCreative[])
         }
       } catch (err) {
         console.error('Auth verification failed:', err)
@@ -200,9 +232,16 @@ export default function ReferenceLibraryPage() {
         const publicUrl = await uploadToR2(compressedFile, 'reference-creatives')
 
         // 3. Save to database
+        const insertPayload: any = { category: uploadCategory, url: publicUrl }
+        if (role === 'super_admin' && !impersonateId) {
+          insertPayload.user_id = null
+        } else {
+          insertPayload.user_id = targetUserId || userId
+        }
+
         const { data, error } = await supabase
           .from('reference_creatives')
-          .insert({ category: uploadCategory, url: publicUrl })
+          .insert(insertPayload)
           .select()
           .single()
 
@@ -264,30 +303,7 @@ export default function ReferenceLibraryPage() {
     )
   }
 
-  // Guard: Unauthorized View
-  if (role !== 'super_admin') {
-    return (
-      <div className="min-h-screen bg-slate-50/50 flex flex-col items-center justify-center p-4">
-        <div className="bg-white rounded-[2rem] p-8 sm:p-10 max-w-md w-full border border-slate-200 shadow-xl text-center space-y-6">
-          <div className="bg-red-50 text-red-500 w-16 h-16 rounded-full flex items-center justify-center mx-auto shadow-inner">
-            <AlertTriangle size={32} />
-          </div>
-          <div>
-            <h2 className="text-xl font-black text-slate-900">Access Denied</h2>
-            <p className="text-slate-500 font-medium text-xs mt-2 leading-relaxed">
-              This module is strictly restricted to system Super Administrators. Your account does not have authorization to view this panel.
-            </p>
-          </div>
-          <button
-            onClick={() => router.push(`/dashboard/profile${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
-            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-3 px-6 rounded-full transition-all flex items-center justify-center gap-2"
-          >
-            <ArrowLeft size={14} /> Go Back to Profile
-          </button>
-        </div>
-      </div>
-    )
-  }
+
 
   // Categorize counts
   const premiumCount = referenceCreatives.filter(c => c.category === 'premium').length
@@ -319,12 +335,21 @@ export default function ReferenceLibraryPage() {
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
               Reference Library
             </h1>
-            <span className="bg-purple-100 text-purple-700 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-sm">
-              Super Admin Mode
-            </span>
+            {role === 'super_admin' && !impersonateId ? (
+              <span className="bg-purple-100 text-purple-700 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                Super Admin Mode
+              </span>
+            ) : (
+              <span className="bg-blue-100 text-blue-700 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                Personal Library
+              </span>
+            )}
           </div>
           <p className="text-sm text-slate-500 font-medium mt-1.5 leading-relaxed">
-            Relocated design guidelines repository. Select multiple file references, automatically compress them client-side to keep hosting efficient, and publish.
+            {role === 'super_admin' && !impersonateId 
+              ? "Relocated global design guidelines repository. Select multiple file references, automatically compress them client-side to keep hosting efficient, and publish."
+              : "Manage your personal reference creatives. Select multiple reference images to compress and upload to your personal design library."
+            }
           </p>
         </div>
 

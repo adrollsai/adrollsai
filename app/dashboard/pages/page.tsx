@@ -8,6 +8,7 @@ import {
     Code
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { uploadToR2 } from '@/utils/upload-helper'
 
 
 type FormField = {
@@ -90,6 +91,7 @@ export default function PagesDashboard() {
     const [properties, setProperties] = useState<any[]>([])
     const [selectedPropertyId, setSelectedPropertyId] = useState('')
     const [customInstructions, setCustomInstructions] = useState('')
+    const [pageType, setPageType] = useState<'standard' | 'survey'>('standard')
 
     // Edit/Chat Console state
     const [activeEditorPage, setActiveEditorPage] = useState<LandingPage | null>(null)
@@ -452,7 +454,8 @@ export default function PagesDashboard() {
                     propertyId: selectedPropertyId || null,
                     customInstructions: customInstructions.trim(),
                     formId: selectedFormId || null,
-                    mode: 'generate'
+                    mode: 'generate',
+                    pageType: pageType
                 })
             })
 
@@ -465,6 +468,7 @@ export default function PagesDashboard() {
             setSelectedPropertyId('')
             setCustomInstructions('')
             setSelectedFormId('')
+            setPageType('standard')
             setShowPageGenerator(false)
             
             // Auto open the newly generated page in the preview editor
@@ -633,11 +637,7 @@ export default function PagesDashboard() {
                 try {
                     const uploadPromises = filesToSend.map(async (file) => {
                         const compressedFile = await compressImage(file)
-                        const fileExt = 'jpg'
-                        const fileName = `chat-attachments/${targetUserId}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
-                        const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, compressedFile)
-                        if (uploadError) throw uploadError
-                        const { data: { publicUrl } } = supabase.storage.from('properties').getPublicUrl(fileName)
+                        const publicUrl = await uploadToR2(compressedFile, 'chat-attachments')
                         return publicUrl
                     })
                     uploadedUrls = await Promise.all(uploadPromises)
@@ -754,56 +754,95 @@ export default function PagesDashboard() {
         const buttonBgColor = isBrandLight ? '#0B0F19' : brandColor;
         const buttonTextColor = '#ffffff';
 
-        let formHtml = `
-            <div style="max-width: 500px; margin: 2rem auto; padding: 1.5rem 0; background: transparent; font-family: inherit; text-align: left; box-sizing: border-box;">
-                <h3 style="margin-top: 0; margin-bottom: 1.5rem; color: inherit; font-size: 1.5rem; font-weight: 800; text-align: center; letter-spacing: -0.025em; font-family: inherit;">${cardTitle}</h3>
-                <div style="margin-bottom: 1.25rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">Full Name</label>
-                    <input type="text" disabled placeholder="John Doe" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
-                </div>
-                <div style="margin-bottom: 1.25rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">WhatsApp Number</label>
-                    <input type="tel" disabled placeholder="+91 98765 43210" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
-                </div>
-                <div style="margin-bottom: 1.25rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">City</label>
-                    <input type="text" disabled placeholder="Mohali" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
-                </div>
-        `
-
-        if (form) {
-            const customQuestions = form.custom_questions || []
-            customQuestions.forEach((q: any, index: number) => {
-                formHtml += `
-                    <div style="margin-bottom: 1.25rem;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">${q.label}</label>
-                `
-                if (q.type === 'MULTIPLE_CHOICE') {
-                    formHtml += `<select disabled style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; background: #fff; color: inherit;">`
-                    const displayOpts = [...(q.options || [])]
-                    if (q.disqualify_options && Array.isArray(q.disqualify_options)) {
-                        q.disqualify_options.forEach((disqOpt: string) => {
-                            const trimmed = disqOpt.trim()
-                            if (trimmed && !displayOpts.some(o => o.trim().toLowerCase() === trimmed.toLowerCase())) {
-                                displayOpts.push(trimmed)
+        const isSurveyPage = html.includes('data-page-type="survey"') || html.includes('id="survey-form-container"')
+        
+        let formHtml = ''
+        if (isSurveyPage) {
+            const customQuestions = form?.custom_questions || []
+            const firstQuestionLabel = customQuestions[0]?.label || "What is your budget limit?"
+            const options = customQuestions[0]?.options || ["Under 1 Cr", "1 Cr - 2 Cr", "Above 2 Cr"]
+            const totalSteps = customQuestions.length + 1
+            
+            formHtml = `
+                <div id="survey-wizard-container" style="width: 100%; max-width: 500px; background: #ffffff; border-radius: 1.5rem; padding: 2.25rem 2rem; border: 1px solid #e2e8f0; box-sizing: border-box; display: flex; flex-direction: column; gap: 1.5rem; margin: 0 auto; text-align: left; font-family: system-ui, sans-serif;">
+                    <!-- Progress Container -->
+                    <div style="display: flex; align-items: center; gap: 0.75rem; width: 100%; box-sizing: border-box;">
+                        <div style="flex: 1; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
+                            <div style="width: ${Math.round(100 / totalSteps)}%; height: 100%; background: ${brandColor}; border-radius: 3px;"></div>
+                        </div>
+                        <span style="font-size: 0.75rem; font-weight: 700; color: #64748b; white-space: nowrap;">Step 1 of ${totalSteps}</span>
+                    </div>
+                    <!-- Steps Content Container -->
+                    <div style="width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 1.25rem;">
+                        <h4 style="margin: 0; color: #0f172a; font-size: 1.25rem; font-weight: 800; line-height: 1.4;">${firstQuestionLabel}</h4>
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            ${customQuestions[0]?.type === 'MULTIPLE_CHOICE' || !customQuestions[0] ? 
+                                options.map(opt => `
+                                    <button disabled style="width: 100%; padding: 1rem 1.25rem; background: #f8fafc !important; border: 1px solid #e2e8f0; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 600; color: #334155 !important; text-align: left; cursor: not-allowed; display: flex; justify-content: space-between; align-items: center; box-sizing: border-box; font-family: inherit;">
+                                        <span>${opt}</span>
+                                        <span style="color: #94a3b8; font-weight: bold;">→</span>
+                                    </button>
+                                `).join('') : `
+                                    <input type="text" disabled placeholder="Type your answer here..." style="width: 100%; padding: 0.875rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: #0f172a; background-color: #ffffff; font-family: inherit;" />
+                                    <button disabled style="width: 100%; padding: 0.875rem; background: ${buttonBgColor}; color: ${buttonTextColor}; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; cursor: not-allowed; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); font-family: inherit;">Next</button>
+                                `
                             }
-                        })
-                    }
-                    displayOpts.forEach((opt: string) => {
-                        formHtml += `<option value="${opt}">${opt}</option>`
-                    })
-                    formHtml += `</select>`
-                } else {
-                    formHtml += `<input type="text" disabled placeholder="Your answer" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />`
-                }
-                formHtml += `</div>`
-            })
-        }
+                        </div>
+                    </div>
+                </div>
+            `
+        } else {
+            formHtml = `
+                <div style="max-width: 500px; margin: 2rem auto; padding: 1.5rem 0; background: transparent; font-family: inherit; text-align: left; box-sizing: border-box;">
+                    <h3 style="margin-top: 0; margin-bottom: 1.5rem; color: inherit; font-size: 1.5rem; font-weight: 800; text-align: center; letter-spacing: -0.025em; font-family: inherit;">${cardTitle}</h3>
+                    <div style="margin-bottom: 1.25rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">Full Name</label>
+                        <input type="text" disabled placeholder="John Doe" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
+                    </div>
+                    <div style="margin-bottom: 1.25rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">WhatsApp Number</label>
+                        <input type="tel" disabled placeholder="+91 98765 43210" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
+                    </div>
+                    <div style="margin-bottom: 1.25rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">City</label>
+                        <input type="text" disabled placeholder="Mohali" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
+                    </div>
+            `
 
-        formHtml += `
-                <button disabled style="width: 100%; padding: 0.875rem; background: ${buttonBgColor}; color: ${buttonTextColor}; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); cursor: not-allowed; font-family: inherit;">${buttonText}</button>
-            </div>
-        `
+            if (form) {
+                const customQuestions = form.custom_questions || []
+                customQuestions.forEach((q: any, index: number) => {
+                    formHtml += `
+                        <div style="margin-bottom: 1.25rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">${q.label}</label>
+                    `
+                    if (q.type === 'MULTIPLE_CHOICE') {
+                        formHtml += `<select disabled style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; background: #fff; color: inherit;">`
+                        const displayOpts = [...(q.options || [])]
+                        if (q.disqualify_options && Array.isArray(q.disqualify_options)) {
+                            q.disqualify_options.forEach((disqOpt: string) => {
+                                const trimmed = disqOpt.trim()
+                                if (trimmed && !displayOpts.some(o => o.trim().toLowerCase() === trimmed.toLowerCase())) {
+                                    displayOpts.push(trimmed)
+                                }
+                            })
+                        }
+                        displayOpts.forEach((opt: string) => {
+                            formHtml += `<option value="${opt}">${opt}</option>`
+                        })
+                        formHtml += `</select>`
+                    } else {
+                        formHtml += `<input type="text" disabled placeholder="Your answer" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />`
+                    }
+                    formHtml += `</div>`
+                })
+            }
+
+            formHtml += `
+                    <button disabled style="width: 100%; padding: 0.875rem; background: ${buttonBgColor}; color: ${buttonTextColor}; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); cursor: not-allowed; font-family: inherit;">${buttonText}</button>
+                </div>
+            `
+        }
 
         const containerRegex = /<div\s+[^>]*id="qualification-form-container"[^>]*>([\s\S]*?)<\/div>/gi
         if (html.match(containerRegex)) {
@@ -843,7 +882,16 @@ export default function PagesDashboard() {
                     <div className="flex gap-2">
                         {activeTab === 'landing_pages' ? (
                             <button 
-                                onClick={() => { setActiveEditorPage(null); setShowPageGenerator(true) }}
+                                onClick={() => { 
+                                    setActiveEditorPage(null); 
+                                    setPageProductName('');
+                                    setPageContext('');
+                                    setSelectedPropertyId('');
+                                    setCustomInstructions('');
+                                    setSelectedFormId('');
+                                    setPageType('standard');
+                                    setShowPageGenerator(true);
+                                }}
                                 className="bg-slate-900 text-white font-extrabold hover:bg-slate-800 text-sm px-6 py-3 rounded-full shadow-md shadow-slate-900/10 flex items-center gap-2 active:scale-95 transition-all"
                             >
                                 <Sparkles size={16} className="text-purple-400" /> AI Lander Generator
@@ -1077,7 +1125,15 @@ export default function PagesDashboard() {
                                     <h3 className="text-lg font-black text-slate-800">No landing pages yet</h3>
                                     <p className="text-xs font-semibold text-slate-400 mt-2 max-w-[280px] mx-auto leading-relaxed">Let Gemini generate high-converting landers with custom forms instantly.</p>
                                     <button 
-                                        onClick={() => setShowPageGenerator(true)}
+                                        onClick={() => {
+                                            setPageProductName('');
+                                            setPageContext('');
+                                            setSelectedPropertyId('');
+                                            setCustomInstructions('');
+                                            setSelectedFormId('');
+                                            setPageType('standard');
+                                            setShowPageGenerator(true);
+                                        }}
                                         className="mt-6 bg-slate-900 text-white font-extrabold text-xs px-5 py-3 rounded-full hover:bg-slate-800 transition-colors shadow-md shadow-slate-900/10 inline-flex items-center gap-2 active:scale-95"
                                     >
                                         <Sparkles size={14} className="text-purple-400" /> Generate First Page
@@ -1087,7 +1143,14 @@ export default function PagesDashboard() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                     {landingPages.map((page) => (
                                         <div key={page.id} className="bg-white border border-slate-200/60 rounded-[2rem] p-5 shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col h-full border-t-4 border-t-blue-500">
-                                            <h3 className="text-lg font-black text-slate-800 leading-tight mb-2 line-clamp-1">{page.product_name}</h3>
+                                            <div className="flex items-center gap-2 mb-2 min-w-0">
+                                                <h3 className="text-lg font-black text-slate-800 leading-tight line-clamp-1 flex-1">{page.product_name}</h3>
+                                                {page.html_content?.includes('data-page-type="survey"') ? (
+                                                    <span className="text-[9px] bg-purple-50 text-purple-600 font-extrabold px-2 py-0.5 rounded-full shrink-0 border border-purple-100">Survey Form</span>
+                                                ) : (
+                                                    <span className="text-[9px] bg-blue-50 text-blue-600 font-extrabold px-2 py-0.5 rounded-full shrink-0 border border-blue-100">Standard Page</span>
+                                                )}
+                                            </div>
                                             <p className="text-xs font-semibold text-slate-400 line-clamp-2 leading-relaxed mb-4">{page.title}</p>
                                             
                                             <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex items-center justify-between mb-4 shrink-0 min-w-0 gap-3">
@@ -1519,6 +1582,19 @@ export default function PagesDashboard() {
                                 rows={3}
                                 className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all resize-none leading-relaxed"
                             />
+                        </div>
+
+                        {/* Page Type Selection */}
+                        <div className="mb-6">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Generation Format / Type</label>
+                            <select 
+                                value={pageType}
+                                onChange={e => setPageType(e.target.value as 'standard' | 'survey')}
+                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
+                            >
+                                <option value="standard">Standard Landing Page (Conversion Copy + Modal Form)</option>
+                                <option value="survey">Survey Form Only (Super Fast + Direct Inline Form)</option>
+                            </select>
                         </div>
 
                         {/* Connect Form */}

@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Highland Mayfield - Ultra-Luxury Sky Residences</title>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              DEFAULT: '#D0E8FF',
+              light: '#EBF4FF',
+              dark: '#0B0F17',
+              accent: '#C5A880',
+              card: '#141A26',
+              border: '#232D3F',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            serif: ['Cinzel', 'serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Premium visual refinements */
+    body {
+      background-color: #FDFBF7;
+      font-family: 'Inter', sans-serif;
+    }
+    .text-serif {
+      font-family: 'Cinzel', serif;
+    }
+    .glass-nav {
+      background: rgba(11, 15, 23, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(208, 232, 255, 0.08);
+    }
+    .glass-card {
+      background: rgba(20, 26, 38, 0.8);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(208, 232, 255, 0.1);
+    }
+    .gold-glow {
+      box-shadow: 0 0 25px rgba(197, 168, 128, 0.15);
+    }
+    .glow-border {
+      position: relative;
+    }
+    .glow-border::after {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: inherit;
+      padding: 1px;
+      background: linear-gradient(to bottom right, rgba(208,232,255,0.2), rgba(197,168,128,0.2), transparent);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+    /* Hide scrollbar for gallery */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="text-gray-300 min-h-screen antialiased">
+
+  <!-- TOP GLASS NAVIGATION -->
+  <header class="glass-nav fixed top-0 left-0 right-0 z-50 transition-all duration-300">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <!-- Brand Logo -->
+      <a href="#" class="flex items-center gap-3">
+        <img 
+          src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/c890a11f-84ce-4592-ab8f-8682927b1a9d-1778916086679.png" 
+          alt="Realty Nation Logo" 
+          class="h-10 w-auto object-contain brightness-110"
+        />
+        <div class="border-l border-white/20 pl-3 hidden sm:block">
+          <span class="text-[10px] tracking-[0.2em] text-gray-400 block font-light">EXCLUSIVE PREVIEW</span>
+          <span class="text-sm font-semibold tracking-wide text-white font-serif">Highland Mayfield</span>
+        </div>
+      </a>
+
+      <!-- Contact Actions -->
+      <div class="flex items-center gap-4 sm:gap-6">
+        <a href="tel:+919872500094" class="flex items-center gap-2 text-xs sm:text-sm font-medium text-brand hover:text-white transition-colors">
+          <svg class="w-4 h-4 text-brand-accent animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path>
+          </svg>
+          <span class="hidden sm:inline">+91 98725 00094</span>
+          <span class="sm:hidden">Call</span>
+        </a>
+        <a href="#survey-section" class="bg-brand-accent/20 hover:bg-brand-accent/30 text-brand-accent border border-brand-accent/40 px-4 py-2 rounded text-xs tracking-wider uppercase font-semibold transition-all">
+          Verify Eligibility
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- SPLIT CONTENT WRAPPER -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-16">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+      
+      <!-- LEFT COLUMN: ELITE IMAGERY & BRAND VALUE PRESENTATION -->
+      <div class="lg:col-span-7 space-y-8">
+        
+        <!-- Header Text Block -->
+        <div class="space-y-4">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand/10 border border-brand/20 text-xs text-brand font-medium">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+            Construction Status: Excavation Started
+          </div>
+
+        <div class="px-6 pt-6 pb-2 sm:px-8 flex-grow">
+            <div class="bg-slate-50/50 rounded-2xl p-4 border border-slate-100 shadow-inner">
+                <div id="qualification-form-container" data-page-type="survey" 
+            data-button-text="Next"
+            class="min-h-[300px] flex flex-col justify-center text-gray-200"></div>
+            </div>
+        </div>
+          <h1 class="text-serif text-3xl sm:text-4xl lg:text-5xl text-white font-bold leading-tight">
+            Where Skyline Elegance <br> Meets Architectural Grace
+          </h1>
+          <p class="text-gray-400 text-base sm:text-lg max-w-2xl">
+            Experience Ultra-Luxury Living at Airport Road, Mohali. A curated collection of four-side open, low-density sky residences nestled in a 15-acre elegant sanctuary of light, glass, and gold.
+          </p>
+        </div>
+
+        <!-- Dynamic Visual Gallery -->
+        <div class="space-y-3">
+          <!-- Main Slider Display -->
+          <div class="relative aspect-[16/10] w-full overflow-hidden rounded-xl border border-brand/10 bg-brand-dark shadow-2xl">
+            <img id="main-gallery-view" 
+                 src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781059624036-1w7tqd.jpg" 
+                 alt="Highland Mayfield Twilight Showcase" 
+                 class="w-full h-full object-cover transition-all duration-700 ease-in-out" />
+            
+            <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none"></div>
+            
+            <div class="absolute bottom-4 left-4 right-4 flex justify-between items-end">
+              <div>
+                <p class="text-xs uppercase tracking-widest text-brand-accent font-semibold" id="gallery-label">THE GRAND SHOWCASE</p>
+                <p class="text-sm text-white font-medium" id="gallery-desc">Elite twilight view of modern architectural marvels.</p>
+              </div>
+              <span class="text-xs text-gray-400 bg-black/50 px-2 py-1 rounded border border-white/10" id="gallery-counter">1 / 5</span>
+            </div>
+          </div>
+
+          <!-- Thumbnail Navigation Strip -->
+          <div class="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+            <button onclick="setGallery(0, 'THE GRAND SHOWCASE', 'Elite twilight view of modern architectural marvels.')" 
+                    class="gallery-thumb flex-shrink-0 w-20 h-14 rounded-md overflow-hidden border-2 border-brand-accent transition-all">
+              <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781059624036-1w7tqd.jpg" class="w-full h-full object-cover" alt="Thumb 0">
+            </button>
+            <button onclick="setGallery(1, 'THE AMNESTY PLAZA', 'Illuminated open-air community amphitheater at dusk.')" 
+                    class="gallery-thumb flex-shrink-0 w-20 h-14 rounded-md overflow-hidden border-2 border-transparent hover:border-brand/40 transition-all">
+              <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781059624037-g0ofd.jpg" class="w-full h-full object-cover" alt="Thumb 1">
+            </button>
+            <button onclick="setGallery(2, 'BOTANICAL RETREAT', 'A highly stylized gold-accented pavilion in lush greenery.')" 
+                    class="gallery-thumb flex-shrink-0 w-20 h-14 rounded-md overflow-hidden border-2 border-transparent hover:border-brand/40 transition-all">
+              <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781059624037-1u4ncjp.jpg" class="w-full h-full object-cover" alt="Thumb 2">
+            </button>
+            <button onclick="setGallery(3, 'PENTHOUSE CROWN', 'Captivating horizontal golden louvers and wrap balconies.')" 
+                    class="gallery-thumb flex-shrink-0 w-20 h-14 rounded-md overflow-hidden border-2 border-transparent hover:border-brand/40 transition-all">
+              <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781059624037-5hsho.jpg" class="w-full h-full object-cover" alt="Thumb 3">
+            </button>
+            <button onclick="setGallery(4, 'MULTI-LEVEL CLUBHOUSE', 'A modern curved clubhouse with social terrace & sports valet.')" 
+                    class="gallery-thumb flex-shrink-0 w-20 h-14 rounded-md overflow-hidden border-2 border-transparent hover:border-brand/40 transition-all">
+              <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781059624037-n2dyb.jpg" class="w-full h-full object-cover" alt="Thumb 4">
+            </button>
+          </div>
+        </div>
+
+        <!-- Property Highlight Highlights Grid -->
+        <div class="space-y-6">
+          <h3 class="text-serif text-lg tracking-wider text-white border-b border-brand/10 pb-2">EXCLUSIVE HIGHLIGHTS</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="flex items-start gap-3 p-4 rounded-lg bg-brand-card/40 border border-brand-border/40">
+              <span class="text-brand-accent mt-0.5 text-xl">✦</span>
+              <div>
+                <h4 class="text-white font-medium text-sm">Ultra-Premium Layouts</h4>
+                <p class="text-xs text-gray-400 mt-1">Four-side open, low-density structure allowing uninterrupted vistas & natural flow.</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 p-4 rounded-lg bg-brand-card/40 border border-brand-border/40">
+              <span class="text-brand-accent mt-0.5 text-xl">✦</span>
+              <div>
+                <h4 class="text-white font-medium text-sm">Superior Engineering</h4>
+                <p class="text-xs text-gray-400 mt-1">Constructed with high-grade MIVAN technology for unparalleled stability & flawless finish.</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 p-4 rounded-lg bg-brand-card/40 border border-brand-border/40">
+              <span class="text-brand-accent mt-0.5 text-xl">✦</span>
+              <div>
+                <h4 class="text-white font-medium text-sm">Golden Proximity</h4>
+                <p class="text-xs text-gray-400 mt-1">At the center of Chandigarh, Mohali & New Chandigarh with seamless multi-state highways access.</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 p-4 rounded-lg bg-brand-card/40 border border-brand-border/40">
+              <span class="text-brand-accent mt-0.5 text-xl">✦</span>
+              <div>
+                <h4 class="text-white font-medium text-sm">15 Acres of Elegance</h4>
+                <p class="text-xs text-gray-400 mt-1">100% registered land designed exquisitely by world-class consultants.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Configuration Spec Strip -->
+        <div class="p-6 rounded-xl bg-gradient-to-r from-brand-card via-brand-card/90 to-brand-dark border border-brand-border">
+          <h4 class="text-serif text-sm tracking-widest text-brand-accent font-semibold mb-4">AVAILABLE CONFIGURATIONS</h4>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+            <div class="border-r border-brand-border/60 last:border-0 pr-2">
+              <p class="text-xs text-gray-400 uppercase">3BHK</p>
+              <p class="text-base text-white font-semibold mt-1">2770 sq.ft.</p>
+            </div>
+            <div class="border-r border-brand-border/60 last:border-0 pr-2">
+              <p class="text-xs text-gray-400 uppercase">3+1BHK</p>
+              <p class="text-base text-white font-semibold mt-1">3673 sq.ft.</p>
+            </div>
+            <div class="border-r border-brand-border/60 last:border-0 pr-2">
+              <p class="text-xs text-gray-400 uppercase">4BHK</p>
+              <p class="text-base text-white font-semibold mt-1">4400 sq.ft.</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400 uppercase">4+1BHK</p>
+              <p class="text-base text-white font-semibold mt-1">4811-4848 sq.ft.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: SURVEY FORM CARD (STICKY) -->
+      <div id="survey-section" class="lg:col-span-5 lg:sticky lg:top-28">
+        
+        <div class="text-center mb-4 lg:hidden">
+          <p class="text-xs tracking-widest text-brand-accent font-bold uppercase">Begin Booking Previews</p>
+          <p class="text-xl text-serif text-white mt-1">Secure Priority Allocation Slot</p>
+        </div>
+
+        <div class="glass-card glow-border rounded-2xl overflow-hidden p-6 sm:p-8 gold-glow">
+          
+          <div class="mb-6 text-center hidden lg:block">
+            <span class="text-xs uppercase tracking-[0.2em] text-brand-accent font-bold">Eligibility check</span>
+            <h2 class="text-serif text-2xl text-white font-bold mt-1">Highland Mayfield Registration</h2>
+            <p class="text-xs text-gray-400 mt-2 max-w-sm mx-auto">
+              Answer a few questions to receive structural floor plans, curated pricing, and verify early invitation pricing.
+            </p>
+          </div>
+
+          <!-- DYNAMIC SURVEY MOUNT POINT -->
+          <!-- The platform automatically injects dynamic multi-step questions inside this container. -->
+          
+              <p class="text-xs tracking-widest text-gray-500 uppercase">Securing secure registration interface...</p>
+            </div>
+          </div>
+
+          <div class="mt-6 pt-6 border-t border-brand-border/60 text-center">
+            <p class="text-[10px] text-gray-500 tracking-wider">
+              ✦ Private previews & site visits coordinated directly by <strong>Realty Nation</strong>.<br>
+              By proceeding, you consent to our privacy terms for project updates.
+            </p>
+          </div>
+
+        </div>
+
+        <!-- FAST CONTACT INFO FOOTER FOR TRUST -->
+        <div class="mt-6 flex flex-col sm:flex-row gap-4 justify-between items-center px-4">
+          <div class="text-center sm:text-left">
+            <p class="text-[10px] text-gray-500 uppercase tracking-widest">Connected Domain</p>
+            <p class="text-xs text-brand/80 font-medium">app.realtynationmohali.com</p>
+          </div>
+          <div class="text-center sm:text-right">
+            <p class="text-[10px] text-gray-500 uppercase tracking-widest">Direct Mail Support</p>
+            <a href="mailto:pankajgoyal0287@gmail.com" class="text-xs text-brand/80 hover:text-white transition-colors">
+              pankajgoyal0287@gmail.com
+            </a>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+  <!-- INTERACTIVE GALLERY SCRIPT -->
+  <script>
+    const images = [
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781059624036-1w7tqd.jpg",
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781059624037-g0ofd.jpg",
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781059624037-1u4ncjp.jpg",
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781059624037-5hsho.jpg",
+      "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/properties/bc63c065-9bcc-4793-bedc-f0960406425b-1781059624037-n2dyb.jpg"
+    ];
+
+    let currentIdx = 0;
+
+    function setGallery(index, title, description) {
+      currentIdx = index;
+      const mainImg = document.getElementById('main-gallery-view');
+      const label = document.getElementById('gallery-label');
+      const desc = document.getElementById('gallery-desc');
+      const counter = document.getElementById('gallery-counter');
+      const thumbs = document.querySelectorAll('.gallery-thumb');
+
+      // Visual crossfade transition
+      mainImg.style.opacity = '0.3';
+      setTimeout(() => {
+        mainImg.src = images[index];
+        label.innerText = title;
+        desc.innerText = description;
+        counter.innerText = `${index + 1} / 5`;
+        mainImg.style.opacity = '1';
+      }, 150);
+
+      // Focus active border
+      thumbs.forEach((thumb, tIdx) => {
+        if (tIdx === index) {
+          thumb.classList.add('border-brand-accent');
+          thumb.classList.remove('border-transparent');
+        } else {
+          thumb.classList.remove('border-brand-accent');
+          thumb.classList.add('border-transparent');
+        }
+      });
+    }
+
+    // Auto rotate banner every 6.5s
+    const galleryMetas = [
+      { t: 'THE GRAND SHOWCASE', d: 'Elite twilight view of modern architectural marvels.' },
+      { t: 'THE AMNESTY PLAZA', d: 'Illuminated open-air community amphitheater at dusk.' },
+      { t: 'BOTANICAL RETREAT', d: 'A highly stylized gold-accented pavilion in lush greenery.' },
+      { t: 'PENTHOUSE CROWN', d: 'Captivating horizontal golden louvers and wrap balconies.' },
+      { t: 'MULTI-LEVEL CLUBHOUSE', d: 'A modern curved clubhouse with social terrace & sports valet.' }
+    ];
+
+    setInterval(() => {
+      let nextIdx = (currentIdx + 1) % images.length;
+      setGallery(nextIdx, galleryMetas[nextIdx].t, galleryMetas[nextIdx].d);
+    }, 6500);
+  </script>
+
+</body>
+</html>

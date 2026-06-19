@@ -6,7 +6,7 @@ import { sendCAPIEvent } from '@/utils/external-apis'
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { lead_id, slot, user_id } = body
+    const { lead_id, slot, user_id, eventId } = body
 
     if (!lead_id || !slot || !user_id) {
       return NextResponse.json({ error: "Missing required parameters: lead_id, slot, user_id" }, { status: 400 })
@@ -166,7 +166,8 @@ export async function POST(request: Request) {
         0,
         clientIp,
         clientUa,
-        sourceUrl
+        sourceUrl,
+        eventId
       ).catch(err => {
         console.error("[CAPI Schedule] Failed to send CAPI Schedule event:", err)
       })

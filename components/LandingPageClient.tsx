@@ -852,6 +852,7 @@ function LeadFormCard({ onComplete }: LeadFormCardProps) {
       setIsSubmitting(true)
       setErrorSubmit('')
       try {
+         const eventId = 'evt_lead_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11)
          const payload = {
             landing_page_id: LANDING_PAGE_ID,
             user_id: ADMIN_USER_ID,
@@ -861,7 +862,8 @@ function LeadFormCard({ onComplete }: LeadFormCardProps) {
             email: email.trim(),
             city: city.trim(),
             custom_question_0: budget,
-            custom_question_1: timeline
+            custom_question_1: timeline,
+            eventId: eventId
          }
 
          const res = await fetch('/api/shared/landing-page/lead', {
@@ -880,7 +882,7 @@ function LeadFormCard({ onComplete }: LeadFormCardProps) {
             (window as any).fbq('track', 'Lead', {
                content_name: 'Adrolls Premium Agency Integration',
                status: 'Qualified'
-            })
+            }, { eventID: eventId })
          }
 
          setLeadId(resData.leadId)
@@ -904,13 +906,15 @@ function LeadFormCard({ onComplete }: LeadFormCardProps) {
       setIsBooking(true)
       setErrorBooking('')
       try {
+         const eventId = 'evt_sched_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11)
          const res = await fetch('/api/shared/booking/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                lead_id: leadId,
                slot: selectedSlot,
-               user_id: ADMIN_USER_ID
+               user_id: ADMIN_USER_ID,
+               eventId: eventId
             })
          })
 
@@ -924,7 +928,7 @@ function LeadFormCard({ onComplete }: LeadFormCardProps) {
             (window as any).fbq('track', 'Schedule', {
                content_name: 'Adrolls Consultation Booking',
                status: 'Booked'
-            })
+            }, { eventID: eventId })
          }
 
          setStep('confirmed')

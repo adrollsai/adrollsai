@@ -225,14 +225,29 @@ export async function POST(request: Request) {
 
                     let referenceAudioUrl = "";
                     try {
-                        const { data: userProfile } = await supabaseAdmin
+                        const selectRes = await supabaseAdmin
                             .from('profiles')
-                            .select('character_audio_url')
+                            .select('character_audio_url, avatar_audio_url')
                             .eq('id', videoTask.user_id)
                             .single();
-                        if (userProfile?.character_audio_url) {
+                        
+                        let userProfile: any = selectRes.data;
+                        if (selectRes.error) {
+                            console.warn(`[Video Callback Retry] Failed to select with avatar_audio_url, retrying without it:`, selectRes.error.message);
+                            const fallbackRes = await supabaseAdmin
+                                .from('profiles')
+                                .select('character_audio_url')
+                                .eq('id', videoTask.user_id)
+                                .single();
+                            userProfile = fallbackRes.data;
+                        }
+
+                        if (isCharacterVideo && userProfile?.character_audio_url) {
                             referenceAudioUrl = userProfile.character_audio_url;
-                            console.log(`[Video Callback Retry] Found voice sample in user profile: ${referenceAudioUrl}`);
+                            console.log(`[Video Callback Retry] Found video character voice sample in user profile: ${referenceAudioUrl}`);
+                        } else if (!isCharacterVideo && userProfile?.avatar_audio_url) {
+                            referenceAudioUrl = userProfile.avatar_audio_url;
+                            console.log(`[Video Callback Retry] Found avatar character voice sample in user profile: ${referenceAudioUrl}`);
                         }
                     } catch (dbErr) {
                         console.error(`[Video Callback Retry] Failed to query user voice sample from profile:`, dbErr);
@@ -241,7 +256,7 @@ export async function POST(request: Request) {
                     if (referenceAudioUrl) {
                         retryPayload.input.reference_audio_urls = [referenceAudioUrl];
                         console.log(`[Video Callback Retry] Passing character audio reference: ${referenceAudioUrl}`);
-                    } else {
+                    } else if (isCharacterVideo) {
                         console.error(`[Video Callback Retry] ERROR: No valid reference audio available for retry. Voice cloning cannot proceed.`);
                         throw new Error("Cannot retry video task without a valid voice sample in profile settings.");
                     }

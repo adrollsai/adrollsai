@@ -6,6 +6,7 @@ import { google } from '@ai-sdk/google';
 import { z } from 'zod';
 import { createKieImageTask, createKieTask } from '@/utils/external-apis';
 import { buildImageSystemPrompt, detectIndustry } from '@/utils/image-prompt-master';
+import { ensureJpegImage } from '@/utils/image-converter';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -266,8 +267,9 @@ AVOID
         };
 
         if (property.image_url) {
+            const convertedImg = await ensureJpegImage(property.image_url, user.id);
             // @ts-ignore
-            payload.input.reference_image_urls = [property.image_url];
+            payload.input.reference_image_urls = [convertedImg];
         }
 
         const taskIds: string[] = [];
