@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight } from 'lucide-react'
+import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight, Link2, Pencil } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
@@ -73,6 +73,7 @@ export default function AdsPage() {
   const [adsetSearchResults, setAdsetSearchResults] = useState<LocationOption[]>([])
   const [isSearchingAdsetLocation, setIsSearchingAdsetLocation] = useState(false)
   const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [inlineLinkEdit, setInlineLinkEdit] = useState<{ adId: string; url: string; saving: boolean } | null>(null)
   const [selectedCreatives, setSelectedCreatives] = useState<SelectedCreative[]>([])
   const [showAssetSelector, setShowAssetSelector] = useState<{isOpen: boolean, type: 'library' | 'batch'}>({isOpen: false, type: 'library'})
   const [assetFilter, setAssetFilter] = useState<string>('All')
@@ -123,7 +124,8 @@ export default function AdsPage() {
     batchId: string | null,
     generationCount: number,
     style: 'hyper' | 'organic',
-    customInstructions: string
+    customInstructions: string,
+    isManual?: boolean
   }>(() => {
     if (typeof window !== 'undefined') {
         const saved = localStorage.getItem('adrolls_orchestrator_cache');
@@ -135,12 +137,12 @@ export default function AdsPage() {
                     variations: parsed.variations || [], 
                     selectedVariations: parsed.selectedVariations || [], 
                     winningImageUrls: [], insight: '', leadFormId: null, batchId: null, 
-                    generationCount: 5, style: 'hyper', customInstructions: '' 
+                    generationCount: 5, style: 'hyper', customInstructions: '', isManual: false
                 };
             } catch (e) {}
         }
     }
-    return { isOpen: false, mode: null, campaign: null, status: 'setup', step: 1, logs: [], variations: [], selectedVariations: [], winningImageUrls: [], insight: '', leadFormId: null, batchId: null, generationCount: 5, style: 'hyper', customInstructions: '' };
+    return { isOpen: false, mode: null, campaign: null, status: 'setup', step: 1, logs: [], variations: [], selectedVariations: [], winningImageUrls: [], insight: '', leadFormId: null, batchId: null, generationCount: 5, style: 'hyper', customInstructions: '', isManual: false };
   });
 
   // Save orchestrator state to local storage whenever variations change
@@ -552,7 +554,8 @@ export default function AdsPage() {
           batchId: null,
           generationCount: 5,
           style: 'hyper',
-          customInstructions: ''
+          customInstructions: '',
+          isManual: false
       });
   }
 
@@ -1428,7 +1431,7 @@ export default function AdsPage() {
                                         </button>
 
                                         <button 
-                                            onClick={() => setOrchestrator(prev => ({ ...prev, step: 2, status: 'picking' }))}
+                                            onClick={() => setOrchestrator(prev => ({ ...prev, step: 2, status: 'picking', isManual: true }))}
                                             className="group relative bg-white border-2 border-slate-100 hover:border-blue-500 p-6 rounded-[2rem] text-left transition-all hover:shadow-xl overflow-hidden"
                                         >
                                             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -1436,7 +1439,7 @@ export default function AdsPage() {
                                                 <Video size={24} />
                                             </div>
                                             <h3 className="text-lg font-black text-slate-900 mb-1">Manual Selection</h3>
-                                            <p className="text-xs text-slate-500 font-medium leading-relaxed">Pick existing creatives from your library and draft custom AI copy for each one.</p>
+                                            <p className="text-xs text-slate-500 font-medium leading-relaxed">Pick existing creatives from your library and publish them directly to the campaign.</p>
                                             <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-blue-600 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
                                                 Open Library <Zap size={10} />
                                             </div>
@@ -1569,13 +1572,15 @@ export default function AdsPage() {
                                                                 className="w-full text-sm font-black text-slate-900 bg-slate-50 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-purple-500/20" 
                                                             />
                                                         </div>
-                                                        <button 
-                                                            onClick={() => handleRegenerateVariation(i)}
-                                                            className="ml-2 bg-slate-100 p-2 rounded-xl text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all"
-                                                            title="Regenerate this variation"
-                                                        >
-                                                            <RefreshCw size={16} />
-                                                        </button>
+                                                        {!orchestrator.isManual && (
+                                                            <button 
+                                                                onClick={() => handleRegenerateVariation(i)}
+                                                                className="ml-2 bg-slate-100 p-2 rounded-xl text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all"
+                                                                title="Regenerate this variation"
+                                                            >
+                                                                <RefreshCw size={16} />
+                                                            </button>
+                                                        )}
                                                     </div>
 
                                                     <div>
@@ -1678,55 +1683,95 @@ export default function AdsPage() {
                               <button 
                                 onClick={async () => {
                                     if (orchestrator.variations.length === 0) return;
-                                    setOrchestrator(prev => ({ ...prev, status: 'analyzing', logs: [...prev.logs, { id: Date.now(), text: "Drafting premium copy...", type: 'system' }] }));
-                                    try {
-                                        const newVariations: any[] = [];
-                                        const impersonateId = new URLSearchParams(window.location.search).get('impersonate');
-                                        const optimizeUrl = `/api/meta-ads/optimize-campaign${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
+                                    
+                                    // Check if any asset lacks saved copy
+                                    const assetsWithoutCopy = orchestrator.variations.filter(v => !v.caption || v.caption.trim().length === 0);
+                                    
+                                    if (assetsWithoutCopy.length > 0) {
+                                        // Fetch copy from existing campaign ads
+                                        setOrchestrator(prev => ({ ...prev, status: 'pushing', logs: [...prev.logs, { id: Date.now(), text: `Inheriting ad copy from existing campaign ads for ${assetsWithoutCopy.length} asset(s)...`, type: 'system' }] }));
                                         
-                                        for (const sourceVar of orchestrator.variations) {
-                                            const res = await fetch(optimizeUrl, { 
-                                                method: 'POST', 
-                                                headers: { 'Content-Type': 'application/json' }, 
-                                                body: JSON.stringify({ 
-                                                    campaignId: orchestrator.campaign?.id, 
-                                                    campaignName: orchestrator.campaign?.name, 
-                                                    step: 'generate-copy', 
-                                                    imageUrls: [sourceVar.image_url], 
-                                                    captions: sourceVar?.caption ? [sourceVar.caption] : [] 
-                                                }) 
+                                        try {
+                                            const impersonateId = new URLSearchParams(window.location.search).get('impersonate');
+                                            const detailsRes = await fetch(`/api/meta-ads/campaign-details?campaignId=${orchestrator.campaign?.id}${impersonateId ? `&impersonate=${impersonateId}` : ''}`);
+                                            const detailsData = await detailsRes.json();
+                                            
+                                            let inheritedHeadline = `${orchestrator.campaign?.name || 'Special Offer'}`;
+                                            let inheritedPrimaryText = 'Contact us today for more details!';
+                                            let inheritedDescription = '';
+                                            
+                                            if (detailsData.success) {
+                                                // Find first ad with copy
+                                                for (const adset of (detailsData.adsets || [])) {
+                                                    for (const ad of (adset.ads || [])) {
+                                                        if (ad.creative?.primaryText || ad.creative?.headline) {
+                                                            inheritedHeadline = ad.creative.headline || inheritedHeadline;
+                                                            inheritedPrimaryText = ad.creative.primaryText || inheritedPrimaryText;
+                                                            inheritedDescription = ad.creative.description || '';
+                                                            break;
+                                                        }
+                                                    }
+                                                    if (inheritedPrimaryText !== 'Contact us today for more details!') break;
+                                                }
+                                            }
+                                            
+                                            // Apply inherited copy to assets without saved copy
+                                            const updatedVariations = orchestrator.variations.map(v => {
+                                                if (!v.caption || v.caption.trim().length === 0) {
+                                                    return { ...v, headline: inheritedHeadline, primary_text: inheritedPrimaryText, description: inheritedDescription };
+                                                }
+                                                return v;
                                             });
-
-                                            if (!res.ok) {
-                                                const errData = await res.json();
-                                                throw new Error(errData.error || 'Copy generation failed');
-                                            }
-
-                                            const data = await res.json();
-                                            if (data.variation) {
-                                                const fullCaption = `${data.variation.headline}\n\n${data.variation.primary_text}${data.variation.description ? `\n\n${data.variation.description}` : ''}`;
-                                                newVariations.push({ ...data.variation, asset_id: sourceVar?.asset_id, image_url: sourceVar.image_url, type: sourceVar?.type || 'image', caption: fullCaption });
-                                            }
+                                            
+                                            setOrchestrator(prev => ({ ...prev, variations: updatedVariations, selectedVariations: updatedVariations.map((_, i) => i) }));
+                                        } catch (e: any) {
+                                            console.error('Failed to fetch existing campaign copy:', e);
+                                            // Continue with defaults
                                         }
-
-                                        if (newVariations.length === 0) throw new Error("No variations generated.");
-
-                                        setOrchestrator(prev => ({ ...prev, step: 3, status: 'reviewing', variations: newVariations, selectedVariations: newVariations.map((_, i) => i) }));
-                                    } catch (e: any) {
-                                        console.error("Copy Gen Error:", e);
-                                        setOrchestrator(prev => ({ ...prev, status: 'error' }));
-                                        toast.error(e.message || "Failed to generate copy.");
+                                    }
+                                    
+                                    // Now push directly
+                                    setOrchestrator(prev => ({ ...prev, status: 'pushing', step: 3, logs: [...prev.logs, { id: Date.now(), text: 'Pushing directly to campaign...', type: 'system' }] }));
+                                    
+                                    const impersonateId = new URLSearchParams(window.location.search).get('impersonate');
+                                    const pushUrl = `/api/meta-ads/push-optimized-ads${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
+                                    
+                                    try {
+                                        const currentVars = orchestrator.variations;
+                                        const selectedAssets = currentVars.filter((_, i) => orchestrator.selectedVariations.includes(i));
+                                        const res = await fetch(pushUrl, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                                campaignId: orchestrator.campaign?.id,
+                                                selectedAssets,
+                                                leadFormId: orchestrator.leadFormId
+                                            })
+                                        });
+                                        const data = await res.json();
+                                        if (data.success) {
+                                            const saved = [...optimizedCampaigns, orchestrator.campaign!.id];
+                                            setOptimizedCampaigns(saved);
+                                            localStorage.setItem('optimized_campaign_ids', JSON.stringify(saved));
+                                            setOrchestrator(prev => ({ ...prev, status: 'success', step: 4, logs: [...prev.logs, { id: Date.now(), text: `Successfully pushed ${data.pushedCount} ads!`, type: 'system' }] }));
+                                        } else {
+                                            setOrchestrator(prev => ({ ...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: data.error || 'Push failed.', type: 'system' }] }));
+                                        }
+                                    } catch (e) {
+                                        setOrchestrator(prev => ({ ...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: 'Network error during push.', type: 'system' }] }));
                                     }
                                 }}
-                                className="w-full bg-purple-600 text-white font-bold py-4 rounded-2xl hover:bg-purple-700 shadow-md transition-all flex items-center justify-center gap-2"
+                                disabled={orchestrator.variations.length === 0 || orchestrator.status === 'pushing'}
+                                className="w-full bg-green-600 text-white font-bold py-4 rounded-2xl hover:bg-green-700 shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                               >
-                                  Generate AI Copy <ArrowRight size={18} />
+                                  {orchestrator.status === 'pushing' ? <><Loader2 size={18} className="animate-spin" /> Publishing...</> : <><Zap size={18} /> Publish {orchestrator.variations.length} Selected Directly</>}
                               </button>
                               <button 
                                 onClick={() => setOrchestrator(prev => ({ ...prev, step: 3, status: 'reviewing' }))}
-                                className="w-full bg-white text-slate-900 font-bold py-4 rounded-2xl hover:bg-slate-50 border-2 border-slate-100 transition-all flex items-center justify-center gap-2 shadow-sm"
+                                disabled={orchestrator.variations.length === 0}
+                                className="w-full bg-white text-slate-900 font-bold py-4 rounded-2xl hover:bg-slate-50 border-2 border-slate-100 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
                               >
-                                  Use Saved Library Copy <ArrowRight size={18} />
+                                  Review & Edit Copy First <ArrowRight size={18} />
                               </button>
                               <button onClick={() => setOrchestrator(prev => ({...prev, step: 1}))} className="w-full text-[10px] font-bold text-slate-400 uppercase tracking-widest py-2 hover:text-slate-600 transition-colors text-center">← Back to Strategy</button>
                           </div>
@@ -2229,6 +2274,30 @@ export default function AdsPage() {
                                                   placeholder="E.g. Subtle additional context"
                                                 />
                                               </div>
+
+                                              <div>
+                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1 flex items-center gap-1"><Link2 size={10} /> Website Link / Landing Page URL</label>
+                                                <input 
+                                                  type="url" 
+                                                  value={editingNode.creative?.linkUrl || ''} 
+                                                  onChange={(e) => setEditingNode({ 
+                                                    ...editingNode, 
+                                                    creative: { ...(editingNode.creative || {}), linkUrl: e.target.value } 
+                                                  })} 
+                                                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold w-full outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                  placeholder="https://example.com/landing-page"
+                                                />
+                                                {editingNode.creative?.linkUrl && (
+                                                  <a 
+                                                    href={editingNode.creative.linkUrl} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className="text-[9px] text-blue-500 hover:text-blue-700 font-semibold mt-1 inline-flex items-center gap-0.5"
+                                                  >
+                                                    <ExternalLink size={8} /> Open in new tab
+                                                  </a>
+                                                )}
+                                              </div>
                                             </div>
 
                                             {/* Column 2: Creative Image */}
@@ -2236,8 +2305,8 @@ export default function AdsPage() {
                                               <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Creative Preview</div>
                                               <div className="relative w-24 h-24 rounded-xl overflow-hidden border border-slate-200 shadow-inner bg-white flex items-center justify-center">
                                                 {editingNode.creative?.imageUrl ? (
-                                                  (/\.(mp4|webm|mov|ogg|m4v|3gp)/i.test((editingNode.creative.imageUrl || '').split('?')[0]) || (editingNode.creative.imageUrl || '').toLowerCase().includes('video')) ? (
-                                                    <video src={fixR2Url(editingNode.creative.imageUrl)} className="w-full h-full object-cover" muted playsInline />
+                                                  (ad.creative?.isVideo || /\.(mp4|webm|mov|ogg|m4v|3gp)/i.test((editingNode.creative.imageUrl || '').split('?')[0])) ? (
+                                                    <video src={fixR2Url(editingNode.creative.imageUrl)} className="w-full h-full object-cover" muted playsInline autoPlay loop />
                                                   ) : (
                                                     <img src={fixR2Url(editingNode.creative.imageUrl)} className="w-full h-full object-cover" />
                                                   )
@@ -2260,7 +2329,7 @@ export default function AdsPage() {
                                                   <button 
                                                     type="button"
                                                     onClick={() => {
-                                                      const isVid = /\.(mp4|webm|mov|ogg|m4v|3gp)/i.test((editingNode.creative!.imageUrl || '').split('?')[0]) || (editingNode.creative!.imageUrl || '').toLowerCase().includes('video');
+                                                      const isVid = ad.creative?.isVideo || /\.(mp4|webm|mov|ogg|m4v|3gp)/i.test((editingNode.creative!.imageUrl || '').split('?')[0]);
                                                       setPreviewImage({ isOpen: true, url: editingNode.creative!.imageUrl || '', title: editingNode.name, type: isVid ? 'video' : 'image' });
                                                     }}
                                                     className="bg-slate-150 hover:bg-slate-200 text-slate-700 font-bold text-[10px] py-1.5 px-3 rounded-lg border border-slate-200 transition-colors flex items-center gap-1"
@@ -2274,6 +2343,26 @@ export default function AdsPage() {
                                         </div>
                                       ) : (
                                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                          {/* Ad Thumbnail Preview */}
+                                          {ad.creative?.imageUrl && (
+                                            <div 
+                                              className="w-12 h-12 rounded-xl overflow-hidden border border-slate-200 shadow-inner bg-white shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-500/30 transition-all"
+                                              onClick={() => {
+                                                setPreviewImage({ isOpen: true, url: ad.creative.imageUrl, title: ad.name, type: ad.creative?.isVideo ? 'video' : 'image' });
+                                              }}
+                                            >
+                                              {ad.creative?.isVideo ? (
+                                                <div className="relative w-full h-full">
+                                                  <video src={ad.creative.imageUrl} className="w-full h-full object-cover" muted playsInline />
+                                                  <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                                                    <PlayCircle size={16} className="text-white drop-shadow-md" />
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                <img src={fixR2Url(ad.creative.imageUrl)} className="w-full h-full object-cover" />
+                                              )}
+                                            </div>
+                                          )}
                                           <div className="flex-1">
                                             <div className="flex items-center gap-2">
                                               <span className="text-xs font-bold text-slate-700">{ad.name}</span>
@@ -2300,6 +2389,112 @@ export default function AdsPage() {
                                               </button>
                                             </div>
                                             <div className="text-[8px] text-slate-400 font-bold uppercase tracking-wider mt-1">Ad ID: {ad.id}</div>
+                                            {/* Inline Link Display & Quick Edit */}
+                                            {ad.creative?.linkUrl && inlineLinkEdit?.adId !== ad.id && (
+                                              <div className="flex items-center gap-1.5 mt-1.5">
+                                                <Link2 size={9} className="text-slate-400 shrink-0" />
+                                                <a 
+                                                  href={ad.creative.linkUrl} 
+                                                  target="_blank" 
+                                                  rel="noopener noreferrer" 
+                                                  className="text-[9px] text-blue-500 hover:text-blue-700 font-medium truncate max-w-[280px]" 
+                                                  title={ad.creative.linkUrl}
+                                                >
+                                                  {ad.creative.linkUrl}
+                                                </a>
+                                                <button
+                                                  onClick={() => setInlineLinkEdit({ adId: ad.id, url: ad.creative.linkUrl, saving: false })}
+                                                  className="text-slate-400 hover:text-blue-600 p-0.5 shrink-0"
+                                                  title="Edit website link"
+                                                >
+                                                  <Pencil size={9} />
+                                                </button>
+                                              </div>
+                                            )}
+                                            {!ad.creative?.linkUrl && inlineLinkEdit?.adId !== ad.id && (
+                                              <button
+                                                onClick={() => setInlineLinkEdit({ adId: ad.id, url: '', saving: false })}
+                                                className="text-[9px] text-blue-500 hover:text-blue-700 font-medium mt-1.5 inline-flex items-center gap-1"
+                                              >
+                                                <Link2 size={9} /> Add website link
+                                              </button>
+                                            )}
+                                            {/* Inline Link Editor */}
+                                            {inlineLinkEdit?.adId === ad.id && (
+                                              <div className="flex items-center gap-1.5 mt-1.5">
+                                                <Link2 size={9} className="text-blue-500 shrink-0" />
+                                                <input
+                                                  type="url"
+                                                  value={inlineLinkEdit.url}
+                                                  onChange={(e) => setInlineLinkEdit({ ...inlineLinkEdit, url: e.target.value })}
+                                                  className="bg-white border border-blue-300 rounded-lg px-2 py-1 text-[10px] font-semibold flex-1 outline-none focus:ring-2 focus:ring-blue-500/20 min-w-0"
+                                                  placeholder="https://example.com/landing-page"
+                                                  autoFocus
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === 'Escape') setInlineLinkEdit(null);
+                                                  }}
+                                                />
+                                                <button
+                                                  disabled={inlineLinkEdit.saving}
+                                                  onClick={async () => {
+                                                    setInlineLinkEdit({ ...inlineLinkEdit, saving: true });
+                                                    const urlParams = new URLSearchParams(window.location.search);
+                                                    const impersonateId = urlParams.get('impersonate');
+                                                    try {
+                                                      const res = await fetch(`/api/meta-ads/update-campaign-node${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({
+                                                          nodeId: ad.id,
+                                                          type: 'ad',
+                                                          fields: {
+                                                            creative: {
+                                                              id: ad.creative?.id || '',
+                                                              imageHash: ad.creative?.imageHash || '',
+                                                              imageUrl: ad.creative?.imageUrl || '',
+                                                              primaryText: ad.creative?.primaryText || '',
+                                                              headline: ad.creative?.headline || '',
+                                                              description: ad.creative?.description || '',
+                                                              linkUrl: inlineLinkEdit.url,
+                                                              leadFormId: ad.creative?.leadFormId || '',
+                                                              pageId: ad.creative?.pageId || ''
+                                                            }
+                                                          }
+                                                        })
+                                                      });
+                                                      const data = await res.json();
+                                                      if (!res.ok) throw new Error(data.error);
+                                                      toast.success('Website link updated!');
+                                                      // Update explorer data locally
+                                                      setExplorerData((prev: any) => {
+                                                        if (!prev) return prev;
+                                                        const updatedAdsets = prev.adsets.map((as: any) => ({
+                                                          ...as,
+                                                          ads: as.ads.map((a: any) => a.id === ad.id ? {
+                                                            ...a,
+                                                            creative: { ...a.creative, linkUrl: inlineLinkEdit.url }
+                                                          } : a)
+                                                        }));
+                                                        return { ...prev, adsets: updatedAdsets };
+                                                      });
+                                                      setInlineLinkEdit(null);
+                                                    } catch (e: any) {
+                                                      toast.error('Failed: ' + e.message);
+                                                      setInlineLinkEdit({ ...inlineLinkEdit, saving: false });
+                                                    }
+                                                  }}
+                                                  className="bg-green-600 hover:bg-green-700 text-white font-bold text-[9px] py-1 px-2.5 rounded-lg flex items-center gap-0.5 disabled:opacity-50 shrink-0"
+                                                >
+                                                  {inlineLinkEdit.saving ? <Loader2 size={9} className="animate-spin" /> : <Check size={9} />} Save
+                                                </button>
+                                                <button
+                                                  onClick={() => setInlineLinkEdit(null)}
+                                                  className="text-slate-400 hover:text-slate-600 p-0.5 shrink-0"
+                                                >
+                                                  <X size={10} />
+                                                </button>
+                                              </div>
+                                            )}
                                           </div>
 
                                           <div className="flex items-center gap-4 flex-wrap">

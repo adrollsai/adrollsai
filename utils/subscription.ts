@@ -59,7 +59,7 @@ export const PLANS = {
         name: "Enterprise Plan",
         price: 24999,
         limits: {
-            videos: 15,
+            videos: 100,
             images: 90,
             seo_articles: 30,
             campaign_launches: 15,

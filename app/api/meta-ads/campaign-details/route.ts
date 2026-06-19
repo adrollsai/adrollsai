@@ -106,6 +106,27 @@ export async function GET(request: Request) {
     const adsetsRaw = data.adsets?.data || [];
     const adsRaw = data.ads?.data || [];
 
+    // Collect video IDs that need source URL resolution
+    const videoIds: string[] = [];
+    for (const ad of adsRaw) {
+      const videoId = ad.creative?.object_story_spec?.video_data?.video_id;
+      if (videoId) videoIds.push(videoId);
+    }
+
+    // Batch-fetch video source URLs from Meta
+    const videoSourceMap: Record<string, string> = {};
+    for (const vid of videoIds) {
+      try {
+        const vidRes = await fetch(`${FB_GRAPH_URL}/${vid}?fields=source&access_token=${token}`);
+        const vidData = await vidRes.json();
+        if (vidData.source) {
+          videoSourceMap[vid] = vidData.source;
+        }
+      } catch (e) {
+        console.error(`Failed to fetch video source for ${vid}:`, e);
+      }
+    }
+
     // Parse and augment Ad Sets
     const adsets = adsetsRaw.map((adset: any) => {
       const metrics = parseInsights(adset.insights);
@@ -130,15 +151,29 @@ export async function GET(request: Request) {
     // Parse Ads and associate them with Ad Sets
     const ads = adsRaw.map((ad: any) => {
       const metrics = parseInsights(ad.insights);
-      const linkData = ad.creative?.object_story_spec?.link_data || {};
-      const imageHash = linkData.image_hash || '';
-      const imageUrl = ad.creative?.image_url || ad.creative?.thumbnail_url || linkData.picture || ''; 
-      const primaryText = linkData.message || '';
-      const headline = linkData.name || '';
-      const description = linkData.description || '';
-      const linkUrl = linkData.link || '';
-      const leadFormId = linkData.call_to_action?.value?.lead_gen_form_id || '';
-      const pageId = ad.creative?.object_story_spec?.page_id || '';
+      const storySpec = ad.creative?.object_story_spec || {};
+      const linkData = storySpec.link_data || {};
+      const videoData = storySpec.video_data || {};
+      const isVideoAd = !!videoData.video_id;
+
+      const imageHash = linkData.image_hash || videoData.image_hash || '';
+      
+      // For video ads, resolve the actual video source URL
+      const videoId = videoData.video_id || '';
+      const videoSourceUrl = videoId ? (videoSourceMap[videoId] || '') : '';
+      
+      // imageUrl: for video ads use the video source, for image ads use the image
+      const imageUrl = isVideoAd 
+        ? (videoSourceUrl || ad.creative?.image_url || ad.creative?.thumbnail_url || '')
+        : (ad.creative?.image_url || ad.creative?.thumbnail_url || linkData.picture || '');
+      
+      // Extract copy from either link_data or video_data
+      const primaryText = linkData.message || videoData.message || '';
+      const headline = linkData.name || videoData.title || '';
+      const description = linkData.description || videoData.link_description || '';
+      const linkUrl = linkData.link || videoData.call_to_action?.value?.link || linkData.call_to_action?.value?.link || '';
+      const leadFormId = linkData.call_to_action?.value?.lead_gen_form_id || videoData.call_to_action?.value?.lead_gen_form_id || '';
+      const pageId = storySpec.page_id || '';
 
       return {
         id: ad.id,
@@ -150,6 +185,8 @@ export async function GET(request: Request) {
           id: ad.creative?.id || '',
           imageHash,
           imageUrl,
+          videoSourceUrl,
+          isVideo: isVideoAd,
           primaryText,
           headline,
           description,

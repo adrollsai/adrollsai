@@ -60,7 +60,8 @@ const ASPECT_RATIOS = [
 
 const ALLOWED_VIDEO_USERS = [
   'bc63c065-9bcc-4793-bedc-f0960406425b',
-  '2f62a259-f23b-48ee-a920-c436f36eaa4b'
+  '2f62a259-f23b-48ee-a920-c436f36eaa4b',
+  '29937131-1975-4c5f-9b78-e5b28f918d32' // The ProEstate
 ]
 
 const renderVisualsWithBadges = (visualsText: string) => {
@@ -1059,7 +1060,7 @@ export default function CreationPage() {
         */}
         <div className={`px-4 mb-3 grid grid-cols-2 ${creationMode === 'video' ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-2`}>
             
-            {currentUserRole === 'super_admin' && (
+            {(currentUserRole === 'super_admin' || (userId && ALLOWED_VIDEO_USERS.includes(userId)) || (targetUserId && ALLOWED_VIDEO_USERS.includes(targetUserId))) && (
                 <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full">
                     <button 
                         onClick={() => setCreationMode('image')}
@@ -1290,6 +1291,39 @@ export default function CreationPage() {
                     </span>
                 </button>
                 <input type="file" ref={localRefFileInputRef} onChange={handleLocalRefUpload} className="hidden" accept="image/*" multiple />
+
+                {/* 5. Personal Reference Library Selection */}
+                {userReferences.map(ref => {
+                    const isSelected = localRefImages.includes(ref.url);
+                    return (
+                        <button 
+                           type="button"
+                           key={ref.id}
+                           onClick={() => { 
+                             if (isSelected) {
+                               setLocalRefImages(prev => prev.filter(url => url !== ref.url));
+                             } else {
+                               if (localRefImages.length >= 2) {
+                                 toast.error("You can select up to 2 reference images.");
+                                 return;
+                               }
+                               setLocalRefImages(prev => [...prev, ref.url]);
+                             }
+                           }}
+                           className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 relative overflow-hidden transition-all group ${isSelected ? 'border-blue-500 ring-2 ring-blue-100 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}
+                        >
+                           <img src={ref.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="personal ref" />
+                           <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-center pb-1">
+                               <span className="text-white text-[8px] font-bold truncate px-1 w-full text-center capitalize">{ref.category.replace('_', ' ')}</span>
+                           </div>
+                           {isSelected && (
+                             <div className="absolute top-1 right-1 bg-blue-500 text-white p-0.5 rounded-full shadow-sm">
+                               <Check size={8} strokeWidth={4} />
+                             </div>
+                           )}
+                        </button>
+                    );
+                })}
             </div>
         ) : (
             <div className="px-4 flex gap-2 w-full overflow-x-auto scrollbar-hide">
@@ -1318,12 +1352,51 @@ export default function CreationPage() {
                       <input type="file" ref={refFileInputRef} onChange={handleReferenceUpload} className="hidden" accept="image/*" />
                       
                       {uploadedRefUrl && (
-                         <button 
-                             onClick={(e) => { e.stopPropagation(); setUploadedRefUrl(null); }}
-                             className="absolute -top-1.5 -right-1.5 bg-slate-800 text-white rounded-full p-1 shadow-md hover:bg-slate-700 transition-colors"
-                         >
-                             <X size={10} />
-                          </button>
+                         <div className="absolute -top-1.5 -right-1.5 flex gap-1 z-10">
+                            <button 
+                                type="button"
+                                onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                        const cat = (creativeCategory || 'Premium').toLowerCase().replace(' ', '_');
+                                        const insertPayload = {
+                                            category: cat,
+                                            url: uploadedRefUrl,
+                                            user_id: targetUserId || userId
+                                        };
+                                        const { data, error } = await supabase
+                                            .from('reference_creatives')
+                                            .insert(insertPayload)
+                                            .select()
+                                            .single();
+                                            
+                                        if (error) throw error;
+                                        
+                                        if (data) {
+                                            setUserReferences(prev => [data, ...prev]);
+                                            setSelectedUserRefId(data.id);
+                                            setUploadedRefUrl(null);
+                                            toast.success("Saved to Reference Library! 💎");
+                                        }
+                                    } catch (err: any) {
+                                        console.error(err);
+                                        toast.error("Failed to save reference style: " + err.message);
+                                    }
+                                }}
+                                className="bg-emerald-600 text-white rounded-full p-1 shadow-md hover:bg-emerald-700 transition-colors"
+                                title="Save to Library"
+                            >
+                                <Check size={10} strokeWidth={3} />
+                            </button>
+                            <button 
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setUploadedRefUrl(null); }}
+                                className="bg-slate-800 text-white rounded-full p-1 shadow-md hover:bg-slate-700 transition-colors"
+                                title="Remove Uploaded Style"
+                            >
+                                <X size={10} />
+                            </button>
+                         </div>
                       )}
                  </div>
 

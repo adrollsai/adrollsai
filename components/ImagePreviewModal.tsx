@@ -110,7 +110,8 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
                                 imageUrl.toLowerCase().includes('.mp4') ||
                                 imageUrl.toLowerCase().includes('.webm') ||
                                 imageUrl.toLowerCase().includes('.mov') ||
-                                imageUrl.toLowerCase().includes('video')
+                                imageUrl.toLowerCase().includes('video') ||
+                                imageUrl.includes('fbcdn.net/v/')
                             ))) ? (
                                 <video 
                                     src={imageUrl} 

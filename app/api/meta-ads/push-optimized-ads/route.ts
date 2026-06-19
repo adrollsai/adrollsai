@@ -75,9 +75,11 @@ export async function POST(request: Request) {
         // Retrieve existing ads to inherit form and link URL
         let activeLinkUrl = null;
         let activeLeadFormId = leadFormId;
+        let inheritedTrackingSpecs = null;
+        let inheritedUrlTags = null;
         
         console.log("[Push] Retrieving existing campaign ads to inherit layout properties...");
-        const adsRes = await fetch(`${FB_URL}/${campaignId}/ads?fields=creative{id,object_story_spec}&access_token=${profile.facebook_token}&limit=5`);
+        const adsRes = await fetch(`${FB_URL}/${campaignId}/ads?fields=creative{id,object_story_spec,url_tags},tracking_specs&access_token=${profile.facebook_token}&limit=5`);
         const adsData = await adsRes.json();
         
         for (const ad of (adsData.data || [])) {
@@ -100,6 +102,18 @@ export async function POST(request: Request) {
                     activeLeadFormId = formId;
                     console.log("[Push] Inherited Lead Form ID:", activeLeadFormId);
                 }
+            }
+
+            // Try to find tracking specs
+            if (!inheritedTrackingSpecs && ad.tracking_specs) {
+                inheritedTrackingSpecs = ad.tracking_specs;
+                console.log("[Push] Inherited tracking specs:", JSON.stringify(inheritedTrackingSpecs));
+            }
+
+            // Try to find URL tags
+            if (!inheritedUrlTags && ad.creative?.url_tags) {
+                inheritedUrlTags = ad.creative.url_tags;
+                console.log("[Push] Inherited URL tags:", inheritedUrlTags);
             }
         }
         
@@ -195,6 +209,9 @@ export async function POST(request: Request) {
                     page_id: profile.selected_page_id,
                 }
             };
+            if (inheritedUrlTags) {
+                creativePayload.url_tags = inheritedUrlTags;
+            }
 
             const ctaValue: any = {};
             if (isWebsiteCampaign) {
@@ -240,13 +257,16 @@ export async function POST(request: Request) {
 
             if (creativeData.id) {
                 console.log(`[Push] Creative created:`, creativeData.id);
-                const adPayload = {
+                const adPayload: any = {
                     name: `AI Optimized Ad - ${isVideo ? 'Video' : 'Image'} - ${Date.now()}`,
                     adset_id: adSetId,
                     creative: { creative_id: creativeData.id },
                     status: 'ACTIVE',
                     access_token: profile.facebook_token
                 };
+                if (inheritedTrackingSpecs) {
+                    adPayload.tracking_specs = inheritedTrackingSpecs;
+                }
                 const adRes = await fetch(`${FB_URL}/${profile.ad_account_id}/ads`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
