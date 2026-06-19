@@ -9,7 +9,7 @@ async function searchTranscript() {
         return;
     }
 
-    console.log("Searching in transcript.jsonl...");
+    console.log("Searching in transcript.jsonl for ALTER TABLE statements...");
     const fileStream = fs.createReadStream(transcriptPath);
     const rl = readline.createInterface({
         input: fileStream,
@@ -20,16 +20,21 @@ async function searchTranscript() {
     for await (const line of rl) {
         try {
             const data = JSON.parse(line);
-            if (true) {
-                const toolCallsStr = JSON.stringify(data.tool_calls || {});
-                if (toolCallsStr.includes('run_command')) {
-                    foundCount++;
-                    console.log(`\n=== Match ${foundCount} (Step: ${data.step_index}, Source: ${data.source}) ===`);
-                    console.log(toolCallsStr.substring(0, 1500));
+            const content = data.content || '';
+            const toolCallsStr = JSON.stringify(data.tool_calls || {});
+            const allText = content + ' ' + toolCallsStr;
+            
+            if (allText.toLowerCase().includes('alter table') || allText.toLowerCase().includes('add column')) {
+                foundCount++;
+                console.log(`\n=== Match ${foundCount} (Step: ${data.step_index}, Source: ${data.source}) ===`);
+                if (data.tool_calls) {
+                    console.log("Tool Calls:", JSON.stringify(data.tool_calls).substring(0, 1000));
+                } else {
+                    console.log("Content:", content.substring(0, 1000));
                 }
             }
         } catch (e) {
-            // Ignore parse errors on empty lines
+            // Ignore parse errors
         }
     }
     console.log(`\nSearch finished. Found ${foundCount} matches.`);

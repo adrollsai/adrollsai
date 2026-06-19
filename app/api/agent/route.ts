@@ -8,7 +8,7 @@ import path from 'path';
 
 export const maxDuration = 60;
 
-const LOG_FILE = 'c:/Users/USER/Desktop/adrollsai/adrollsai/agent_chat_debug.log';
+const LOG_FILE = path.join(process.cwd(), 'scratch', 'agent_chat_debug.log');
 
 export async function POST(req: Request) {
   try {
@@ -23,10 +23,12 @@ export async function POST(req: Request) {
     console.log(`${logPrefix} New Request. Messages: ${messages?.length}`);
 
     // Force overwrite debug log for a clean start on each new request
-    try { 
-        fs.writeFileSync(LOG_FILE, `=== AGENT CHAT DEBUG [${new Date().toISOString()}] ===\n\n--- INPUT MESSAGES ---\n${JSON.stringify(messages, null, 2)}\n\n`); 
-    } catch (e: any) {
-        console.error(`${logPrefix} Log write failed:`, e.message);
+    if (!process.env.VERCEL) {
+        try { 
+            fs.writeFileSync(LOG_FILE, `=== AGENT CHAT DEBUG [${new Date().toISOString()}] ===\n\n--- INPUT MESSAGES ---\n${JSON.stringify(messages, null, 2)}\n\n`); 
+        } catch (e: any) {
+            console.error(`${logPrefix} Log write failed:`, e.message);
+        }
     }
 
     // 1. GATHER DYNAMIC CONTEXT

@@ -185,26 +185,28 @@ END:VCARD`
   return (
     <div className="max-w-7xl mx-auto min-h-screen bg-[#F8FAFC] flex flex-col pb-safe pb-32">
         {/* Header */}
-        <div className="p-5 bg-white border-b border-slate-200 flex items-center gap-3 sticky top-0 z-10">
-            <button onClick={() => router.push(impersonateId ? `/dashboard/crm?impersonate=${impersonateId}` : '/dashboard/crm')} className="p-2 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
-                <ArrowLeft size={18} />
-            </button>
-            <div className="min-w-0 flex-1">
-                <h2 className="text-xl font-bold text-slate-900 truncate">{lead.name}</h2>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
-                    <p className="text-xs font-medium text-slate-500 truncate">{lead.phone} {lead.email ? `• ${lead.email}` : ''}</p>
-                    <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md border border-blue-200">
-                        {lead.pipeline_stage || 'New'}
-                    </span>
-                    {lead.booked_time && (
-                        <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1 shadow-sm shrink-0">
-                            📆 Booked: {new Date(lead.booked_time).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+        <div className="p-5 bg-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sticky top-0 z-10">
+            <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
+                <button onClick={() => router.push(impersonateId ? `/dashboard/crm?impersonate=${impersonateId}` : '/dashboard/crm')} className="p-2 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors shrink-0">
+                    <ArrowLeft size={18} />
+                </button>
+                <div className="min-w-0 flex-1">
+                    <h2 className="text-xl font-bold text-slate-900 break-words sm:truncate leading-tight">{lead.name}</h2>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
+                        <p className="text-xs font-medium text-slate-500 break-all">{lead.phone} {lead.email ? `• ${lead.email}` : ''}</p>
+                        <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md border border-blue-200 shrink-0">
+                            {lead.pipeline_stage || 'New'}
                         </span>
-                    )}
+                        {lead.booked_time && (
+                            <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1 shadow-sm shrink-0">
+                                📆 Booked: {new Date(lead.booked_time).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                            </span>
+                        )}
+                    </div>
                 </div>
             </div>
             {lead.phone && (
-                <div className="flex gap-2">
+                <div className="flex gap-2 w-full sm:w-auto justify-end sm:justify-start pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
                     <button onClick={downloadVCard} className="p-3 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-full shadow-sm transition-colors" title="Save to Contacts">
                         <UserPlus size={18}/>
                     </button>
@@ -273,8 +275,16 @@ END:VCARD`
                             <span className="text-base font-extrabold text-slate-800">
                                 {new Date(lead.booked_time).toLocaleString([], {weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'})}
                             </span>
+                            {lead.meet_link && (
+                                <div className="mt-2 flex flex-col gap-0.5">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Google Meet Video Link</span>
+                                    <a href={lead.meet_link} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline break-all flex items-center gap-1">
+                                        🎥 {lead.meet_link}
+                                    </a>
+                                </div>
+                            )}
                         </div>
-                        <span className="text-xs font-black bg-emerald-500 text-white px-3 py-1 rounded-full uppercase tracking-wider">
+                        <span className="text-xs font-black bg-emerald-500 text-white px-3 py-1 rounded-full uppercase tracking-wider shrink-0">
                             Confirmed
                         </span>
                     </div>

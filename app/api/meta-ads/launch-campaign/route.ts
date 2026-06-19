@@ -103,20 +103,24 @@ export async function POST(request: Request) {
         .single();
 
     // Diagnostics Logging
-    try {
-        const fs = require('fs');
-        fs.appendFileSync('c:/Users/USER/Desktop/adrollsai/adrollsai/launch_debug.log', 
-            `[Launch API] Date: ${new Date().toISOString()}\n` +
-            `URL: ${request.url}\n` +
-            `impersonateId (from query): ${impersonateId}\n` +
-            `targetUserId (resolved): ${targetUserId}\n` +
-            `user.id (logged-in): ${user.id}\n` +
-            `targetProfile exists: ${!!targetProfile}\n` +
-            `targetProfile: ${JSON.stringify(targetProfile)}\n` +
-            `------------------------------------------------\n`
-        );
-    } catch (logErr) {
-        console.error("Failed to write to launch_debug.log:", logErr);
+    if (!process.env.VERCEL) {
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const logPath = path.join(process.cwd(), 'scratch', 'launch_debug.log');
+            fs.appendFileSync(logPath, 
+                `[Launch API] Date: ${new Date().toISOString()}\n` +
+                `URL: ${request.url}\n` +
+                `impersonateId (from query): ${impersonateId}\n` +
+                `targetUserId (resolved): ${targetUserId}\n` +
+                `user.id (logged-in): ${user.id}\n` +
+                `targetProfile exists: ${!!targetProfile}\n` +
+                `targetProfile: ${JSON.stringify(targetProfile)}\n` +
+                `------------------------------------------------\n`
+            );
+        } catch (logErr) {
+            console.error("Failed to write to launch_debug.log:", logErr);
+        }
     }
 
     let qualifiedLeadsCount = 0;

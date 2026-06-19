@@ -157,3 +157,144 @@ export async function sendLandingPageLeadEmail(to: string[], leadDetails: {
     return { success: false, error: error.message };
   }
 }
+
+export async function sendBookingConfirmationEmail(
+  to: string,
+  leadName: string,
+  slot: string,
+  meetLink: string,
+  businessName: string
+) {
+  try {
+    const localDate = new Date(slot)
+    const formattedDate = localDate.toLocaleString([], {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    })
+
+    const info = await transporter.sendMail({
+      from: `"${businessName || 'Consultation'}" <${process.env.SMTP_USER}>`,
+      to: to,
+      subject: `Booking Confirmed: Meeting with ${businessName || 'Us'}`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h2 style="color: #10b981; margin: 0; font-size: 24px; font-weight: bold; border-bottom: 2px solid #10b981; padding-bottom: 12px;">Booking Confirmed!</h2>
+          </div>
+          <p style="font-size: 16px; color: #334155; line-height: 1.5;">Hi ${leadName},</p>
+          <p style="font-size: 15px; color: #475569; line-height: 1.5;">Your meeting with <strong>${businessName || 'our team'}</strong> has been successfully booked.</p>
+          
+          <div style="background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; padding: 16px; margin: 20px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 4px 0; font-weight: bold; color: #64748b; font-size: 13px; text-transform: uppercase; width: 100px;">Time:</td>
+                <td style="padding: 4px 0; font-weight: 600; color: #0f172a; font-size: 15px;">${formattedDate}</td>
+              </tr>
+              ${meetLink ? `
+              <tr>
+                <td style="padding: 8px 0 4px 0; font-weight: bold; color: #64748b; font-size: 13px; text-transform: uppercase; vertical-align: top;">Video Link:</td>
+                <td style="padding: 8px 0 4px 0; font-size: 15px;">
+                  <a href="${meetLink}" style="color: #2563eb; text-decoration: underline; font-weight: bold;">Join Google Meet</a>
+                  <br/>
+                  <span style="font-size: 12px; color: #64748b; display: block; margin-top: 4px;">${meetLink}</span>
+                </td>
+              </tr>
+              ` : ''}
+            </table>
+          </div>
+
+          <p style="font-size: 14px; color: #64748b; line-height: 1.5; margin-top: 24px;">If you need to make changes or reschedule, please reach out to us directly.</p>
+          <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
+            <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
+              AdRolls AI Booking Platform
+            </p>
+          </div>
+        </div>
+      `,
+    })
+    return { success: true, messageId: info.messageId }
+  } catch (error: any) {
+    console.error("Booking Confirmation Email Error:", error)
+    return { success: false, error: error.message }
+  }
+}
+
+export async function sendBookingReminderEmail(
+  to: string,
+  isHost: boolean,
+  leadName: string,
+  slot: string,
+  meetLink: string,
+  businessName: string
+) {
+  try {
+    const localDate = new Date(slot)
+    const formattedDate = localDate.toLocaleString([], {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    })
+
+    const subject = isHost 
+      ? `Reminder: Meeting with ${leadName} in 30 minutes`
+      : `Reminder: Meeting with ${businessName || 'Us'} in 30 minutes`
+
+    const contentTitle = isHost ? "Meeting Reminder" : "Upcoming Meeting Reminder"
+    const contentText = isHost
+      ? `You have an upcoming meeting with lead <strong>${leadName}</strong> in 30 minutes.`
+      : `You have an upcoming meeting with <strong>${businessName || 'our team'}</strong> in 30 minutes.`
+
+    const info = await transporter.sendMail({
+      from: `"${businessName || 'Meeting Reminder'}" <${process.env.SMTP_USER}>`,
+      to: to,
+      subject: subject,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h2 style="color: #003D6F; margin: 0; font-size: 24px; font-weight: bold; border-bottom: 2px solid #003D6F; padding-bottom: 12px;">${contentTitle}</h2>
+          </div>
+          <p style="font-size: 16px; color: #334155; line-height: 1.5;">Hello,</p>
+          <p style="font-size: 15px; color: #475569; line-height: 1.5;">${contentText}</p>
+          
+          <div style="background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; padding: 16px; margin: 20px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 4px 0; font-weight: bold; color: #64748b; font-size: 13px; text-transform: uppercase; width: 100px;">Time:</td>
+                <td style="padding: 4px 0; font-weight: 600; color: #0f172a; font-size: 15px;">${formattedDate} (in 30 mins)</td>
+              </tr>
+              ${meetLink ? `
+              <tr>
+                <td style="padding: 8px 0 4px 0; font-weight: bold; color: #64748b; font-size: 13px; text-transform: uppercase; vertical-align: top;">Video Link:</td>
+                <td style="padding: 8px 0 4px 0; font-size: 15px;">
+                  <a href="${meetLink}" style="color: #2563eb; text-decoration: underline; font-weight: bold;">Join Google Meet</a>
+                  <br/>
+                  <span style="font-size: 12px; color: #64748b; display: block; margin-top: 4px;">${meetLink}</span>
+                </td>
+              </tr>
+              ` : ''}
+            </table>
+          </div>
+
+          <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
+            <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
+              AdRolls AI Booking Platform
+            </p>
+          </div>
+        </div>
+      `,
+    })
+    return { success: true, messageId: info.messageId }
+  } catch (error: any) {
+    console.error("Booking Reminder Email Error:", error)
+    return { success: false, error: error.message }
+  }
+}

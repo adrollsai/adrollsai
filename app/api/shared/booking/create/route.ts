@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // 4. Create Calendar Event on Google Calendar
+    // 4. Create Calendar Event on Google Calendar with Meet conference
     const eventBody: any = {
       summary: `Meeting with ${lead.name}`,
       description: `Google Calendar Booking from Landing Page.\nName: ${lead.name}\nPhone: ${lead.phone || 'N/A'}\nCity: ${lead.custom_fields?.city || 'N/A'}\n\nGenerated via AdRolls CRM.`,
@@ -78,6 +78,14 @@ export async function POST(request: Request) {
       },
       reminders: {
         useDefault: true
+      },
+      conferenceData: {
+        createRequest: {
+          requestId: `booking-${lead.id}-${start.getTime()}`,
+          conferenceSolutionKey: {
+            type: "hangoutsMeet"
+          }
+        }
       }
     }
 
@@ -86,7 +94,7 @@ export async function POST(request: Request) {
     }
 
     const calendarId = encodeURIComponent(profile.google_calendar_id || 'primary')
-    const calendarEventRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?sendUpdates=all`, {
+    const calendarEventRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?sendUpdates=all&conferenceDataVersion=1`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -102,16 +110,36 @@ export async function POST(request: Request) {
       throw new Error(eventResult.error.message || "Failed to create Google Calendar event")
     }
 
+    const hangoutLink = eventResult.hangoutLink || '';
+
     // 5. Update Lead in Supabase
     const { error: updateError } = await supabaseAdmin
       .from('leads')
       .update({ 
         booked_time: slot,
-        pipeline_stage: 'Appointment booked'
+        pipeline_stage: 'Appointment booked',
+        meet_link: hangoutLink || null
       })
       .eq('id', lead_id)
 
     if (updateError) throw updateError
+
+    // Send confirmation email to lead if email is provided
+    if (leadEmail) {
+      try {
+        const { sendBookingConfirmationEmail } = await import('@/utils/email-helper')
+        await sendBookingConfirmationEmail(
+          leadEmail,
+          lead.name,
+          slot,
+          hangoutLink,
+          profile.business_name || 'Consultation'
+        )
+        console.log(`[Booking Create API] Sent confirmation email to lead: ${leadEmail}`)
+      } catch (emailErr) {
+        console.error("[Booking Create API] Failed to send confirmation email to lead:", emailErr)
+      }
+    }
 
     // 5.5. Save History Log
     try {

@@ -2420,81 +2420,85 @@ export default function AdsPage() {
                                               </button>
                                             )}
                                             {/* Inline Link Editor */}
-                                            {inlineLinkEdit?.adId === ad.id && (
-                                              <div className="flex items-center gap-1.5 mt-1.5">
-                                                <Link2 size={9} className="text-blue-500 shrink-0" />
-                                                <input
-                                                  type="url"
-                                                  value={inlineLinkEdit.url}
-                                                  onChange={(e) => setInlineLinkEdit({ ...inlineLinkEdit, url: e.target.value })}
-                                                  className="bg-white border border-blue-300 rounded-lg px-2 py-1 text-[10px] font-semibold flex-1 outline-none focus:ring-2 focus:ring-blue-500/20 min-w-0"
-                                                  placeholder="https://example.com/landing-page"
-                                                  autoFocus
-                                                  onKeyDown={(e) => {
-                                                    if (e.key === 'Escape') setInlineLinkEdit(null);
-                                                  }}
-                                                />
-                                                <button
-                                                  disabled={inlineLinkEdit.saving}
-                                                  onClick={async () => {
-                                                    setInlineLinkEdit({ ...inlineLinkEdit, saving: true });
-                                                    const urlParams = new URLSearchParams(window.location.search);
-                                                    const impersonateId = urlParams.get('impersonate');
-                                                    try {
-                                                      const res = await fetch(`/api/meta-ads/update-campaign-node${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
-                                                        method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json' },
-                                                        body: JSON.stringify({
-                                                          nodeId: ad.id,
-                                                          type: 'ad',
-                                                          fields: {
-                                                            creative: {
-                                                              id: ad.creative?.id || '',
-                                                              imageHash: ad.creative?.imageHash || '',
-                                                              imageUrl: ad.creative?.imageUrl || '',
-                                                              primaryText: ad.creative?.primaryText || '',
-                                                              headline: ad.creative?.headline || '',
-                                                              description: ad.creative?.description || '',
-                                                              linkUrl: inlineLinkEdit.url,
-                                                              leadFormId: ad.creative?.leadFormId || '',
-                                                              pageId: ad.creative?.pageId || ''
+                                            {(() => {
+                                              const editState = inlineLinkEdit;
+                                              if (!editState || editState.adId !== ad.id) return null;
+                                              return (
+                                                <div className="flex items-center gap-1.5 mt-1.5">
+                                                  <Link2 size={9} className="text-blue-500 shrink-0" />
+                                                  <input
+                                                    type="url"
+                                                    value={editState.url}
+                                                    onChange={(e) => setInlineLinkEdit({ ...editState, url: e.target.value })}
+                                                    className="bg-white border border-blue-300 rounded-lg px-2 py-1 text-[10px] font-semibold flex-1 outline-none focus:ring-2 focus:ring-blue-500/20 min-w-0"
+                                                    placeholder="https://example.com/landing-page"
+                                                    autoFocus
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Escape') setInlineLinkEdit(null);
+                                                    }}
+                                                  />
+                                                  <button
+                                                    disabled={editState.saving}
+                                                    onClick={async () => {
+                                                      setInlineLinkEdit({ ...editState, saving: true });
+                                                      const urlParams = new URLSearchParams(window.location.search);
+                                                      const impersonateId = urlParams.get('impersonate');
+                                                      try {
+                                                        const res = await fetch(`/api/meta-ads/update-campaign-node${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+                                                          method: 'POST',
+                                                          headers: { 'Content-Type': 'application/json' },
+                                                          body: JSON.stringify({
+                                                            nodeId: ad.id,
+                                                            type: 'ad',
+                                                            fields: {
+                                                              creative: {
+                                                                id: ad.creative?.id || '',
+                                                                imageHash: ad.creative?.imageHash || '',
+                                                                imageUrl: ad.creative?.imageUrl || '',
+                                                                primaryText: ad.creative?.primaryText || '',
+                                                                headline: ad.creative?.headline || '',
+                                                                description: ad.creative?.description || '',
+                                                                linkUrl: editState.url,
+                                                                leadFormId: ad.creative?.leadFormId || '',
+                                                                pageId: ad.creative?.pageId || ''
+                                                              }
                                                             }
-                                                          }
-                                                        })
-                                                      });
-                                                      const data = await res.json();
-                                                      if (!res.ok) throw new Error(data.error);
-                                                      toast.success('Website link updated!');
-                                                      // Update explorer data locally
-                                                      setExplorerData((prev: any) => {
-                                                        if (!prev) return prev;
-                                                        const updatedAdsets = prev.adsets.map((as: any) => ({
-                                                          ...as,
-                                                          ads: as.ads.map((a: any) => a.id === ad.id ? {
-                                                            ...a,
-                                                            creative: { ...a.creative, linkUrl: inlineLinkEdit.url }
-                                                          } : a)
-                                                        }));
-                                                        return { ...prev, adsets: updatedAdsets };
-                                                      });
-                                                      setInlineLinkEdit(null);
-                                                    } catch (e: any) {
-                                                      toast.error('Failed: ' + e.message);
-                                                      setInlineLinkEdit({ ...inlineLinkEdit, saving: false });
-                                                    }
-                                                  }}
-                                                  className="bg-green-600 hover:bg-green-700 text-white font-bold text-[9px] py-1 px-2.5 rounded-lg flex items-center gap-0.5 disabled:opacity-50 shrink-0"
-                                                >
-                                                  {inlineLinkEdit.saving ? <Loader2 size={9} className="animate-spin" /> : <Check size={9} />} Save
-                                                </button>
-                                                <button
-                                                  onClick={() => setInlineLinkEdit(null)}
-                                                  className="text-slate-400 hover:text-slate-600 p-0.5 shrink-0"
-                                                >
-                                                  <X size={10} />
-                                                </button>
-                                              </div>
-                                            )}
+                                                          })
+                                                        });
+                                                        const data = await res.json();
+                                                        if (!res.ok) throw new Error(data.error);
+                                                        toast.success('Website link updated!');
+                                                        // Update explorer data locally
+                                                        setExplorerData((prev: any) => {
+                                                          if (!prev) return prev;
+                                                          const updatedAdsets = prev.adsets.map((as: any) => ({
+                                                            ...as,
+                                                            ads: as.ads.map((a: any) => a.id === ad.id ? {
+                                                              ...a,
+                                                              creative: { ...a.creative, linkUrl: editState.url }
+                                                            } : a)
+                                                          }));
+                                                          return { ...prev, adsets: updatedAdsets };
+                                                        });
+                                                        setInlineLinkEdit(null);
+                                                      } catch (e: any) {
+                                                        toast.error('Failed: ' + e.message);
+                                                        setInlineLinkEdit({ ...editState, saving: false });
+                                                      }
+                                                    }}
+                                                    className="bg-green-600 hover:bg-green-700 text-white font-bold text-[9px] py-1 px-2.5 rounded-lg flex items-center gap-0.5 disabled:opacity-50 shrink-0"
+                                                  >
+                                                    {editState.saving ? <Loader2 size={9} className="animate-spin" /> : <Check size={9} />} Save
+                                                  </button>
+                                                  <button
+                                                    onClick={() => setInlineLinkEdit(null)}
+                                                    className="text-slate-400 hover:text-slate-600 p-0.5 shrink-0"
+                                                  >
+                                                    <X size={10} />
+                                                  </button>
+                                                </div>
+                                              );
+                                            })()}
                                           </div>
 
                                           <div className="flex items-center gap-4 flex-wrap">
