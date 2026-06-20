@@ -345,6 +345,11 @@ export async function GET(request: Request, { params }: RouteProps) {
                 const bookingEnabled = ${bookingEnabled};
                 const userId = '${profile.id}';
                 const brandColor = '${brandColor}';
+                const fields = ${JSON.stringify(form?.fields && form.fields.length > 0 ? form.fields : [
+                    { name: 'name', type: 'text', label: 'Full Name' },
+                    { name: 'phone', type: 'tel', label: 'WhatsApp Number' },
+                    { name: 'city', type: 'text', label: 'City' }
+                ])};
                 const questions = ${JSON.stringify(customQuestions)};
                 let currentStep = 0;
                 const answers = {};
@@ -545,27 +550,21 @@ export async function GET(request: Request, { params }: RouteProps) {
                         form.style.flexDirection = 'column';
                         form.style.gap = '1rem';
                         
-                        const nameGroup = createInputGroup('Full Name', 'text', 'name', 'John Doe');
-                        const phoneGroup = createInputGroup('WhatsApp Number', 'tel', 'phone', '+91 98765 43210');
-                        const cityGroup = createInputGroup('City', 'text', 'city', 'Mohali');
-                        
-                        nameGroup.input.value = contactInfo.name;
-                        phoneGroup.input.value = contactInfo.phone;
-                        cityGroup.input.value = contactInfo.city;
-                        
-                        nameGroup.input.addEventListener('input', function() {
-                            contactInfo.name = nameGroup.input.value;
+                        const inputs = {};
+                        fields.forEach(function(f) {
+                            let placeholder = 'Your answer';
+                            if (f.name === 'name') placeholder = 'John Doe';
+                            else if (f.name === 'phone') placeholder = '+91 98765 43210';
+                            else if (f.name === 'city') placeholder = 'Mohali';
+
+                            const group = createInputGroup(f.label, f.type, f.name, placeholder);
+                            group.input.value = contactInfo[f.name] || '';
+                            group.input.addEventListener('input', function() {
+                                contactInfo[f.name] = group.input.value;
+                            });
+                            form.appendChild(group.container);
+                            inputs[f.name] = group.input;
                         });
-                        phoneGroup.input.addEventListener('input', function() {
-                            contactInfo.phone = phoneGroup.input.value;
-                        });
-                        cityGroup.input.addEventListener('input', function() {
-                            contactInfo.city = cityGroup.input.value;
-                        });
-                        
-                        form.appendChild(nameGroup.container);
-                        form.appendChild(phoneGroup.container);
-                        form.appendChild(cityGroup.container);
                         
                         const submitBtn = document.createElement('button');
                         submitBtn.type = 'submit';
@@ -593,9 +592,9 @@ export async function GET(request: Request, { params }: RouteProps) {
                                 landing_page_id: '${page.id}',
                                 user_id: '${profile.id}',
                                 slug: '${slug}',
-                                name: nameGroup.input.value.trim(),
-                                phone: phoneGroup.input.value.trim(),
-                                city: cityGroup.input.value.trim(),
+                                name: inputs.name ? inputs.name.value.trim() : '',
+                                phone: inputs.phone ? inputs.phone.value.trim() : '',
+                                city: inputs.city ? inputs.city.value.trim() : '',
                                 eventId: eventId
                             };
                             
@@ -634,7 +633,12 @@ export async function GET(request: Request, { params }: RouteProps) {
                         wrapper.appendChild(form);
                         stepsContainer.appendChild(wrapper);
                         
-                        setTimeout(function() { nameGroup.input.focus(); }, 50);
+                        setTimeout(function() {
+                            const keys = Object.keys(inputs);
+                            if (keys.length > 0 && inputs[keys[0]]) {
+                                inputs[keys[0]].focus();
+                            }
+                        }, 50);
                     }
                 }
                 

@@ -98,7 +98,7 @@ export async function POST(request: Request) {
     );
 
     const { data: targetProfile } = await supabaseAdmin.from('profiles')
-        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id')
+        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url')
         .eq('id', targetUserId)
         .single();
 
@@ -232,8 +232,8 @@ export async function POST(request: Request) {
     } catch (e) {
         logToFile("Ad Account Pre-flight Error:", e);
     }
-
-            // --- Step A: Get Source Data & Context ---
+    try {
+        // --- Step A: Get Source Data & Context ---
         let combinedContext = "";
         interface CreativeItem {
             type: 'image' | 'video';
@@ -305,7 +305,7 @@ export async function POST(request: Request) {
 
         if (creativeItems.length === 0) {
             throw new Error("No images or videos found in the selected properties, assets, or uploads.");
-        }      }
+        }
 
         // --- Step B: Create Lead Form with Custom Questions ---
         const businessName = data.business_name || "Our Business";

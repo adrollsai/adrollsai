@@ -75,8 +75,10 @@ export default function PagesDashboard() {
     // Form builder state
     const [showFormModal, setShowFormModal] = useState(false)
     const [formName, setFormName] = useState('')
+    const [formFields, setFormFields] = useState<FormField[]>([])
     const [formQuestions, setFormQuestions] = useState<CustomQuestion[]>([])
     const [editingFormId, setEditingFormId] = useState<string | null>(null)
+    const [editingQuestionIdx, setEditingQuestionIdx] = useState<number | null>(null)
     const [newQuestionLabel, setNewQuestionLabel] = useState('')
     const [newQuestionType, setNewQuestionType] = useState<'SHORT_ANSWER' | 'MULTIPLE_CHOICE'>('SHORT_ANSWER')
     const [newQuestionOptions, setNewQuestionOptions] = useState('')
@@ -336,8 +338,18 @@ export default function PagesDashboard() {
                 ? newDisqualifyMessage.trim()
                 : undefined
         }
-        setFormQuestions([...formQuestions, newQ])
+
+        if (editingQuestionIdx !== null) {
+            const updated = [...formQuestions]
+            updated[editingQuestionIdx] = newQ
+            setFormQuestions(updated)
+            setEditingQuestionIdx(null)
+        } else {
+            setFormQuestions([...formQuestions, newQ])
+        }
+
         setNewQuestionLabel('')
+        setNewQuestionType('SHORT_ANSWER')
         setNewQuestionOptions('')
         setNewDisqualifyOptions('')
         setNewDisqualifyMessage('')
@@ -345,19 +357,71 @@ export default function PagesDashboard() {
 
     const handleRemoveQuestion = (idx: number) => {
         setFormQuestions(formQuestions.filter((_, i) => i !== idx))
+        if (editingQuestionIdx === idx) {
+            setEditingQuestionIdx(null)
+            setNewQuestionLabel('')
+            setNewQuestionType('SHORT_ANSWER')
+            setNewQuestionOptions('')
+            setNewDisqualifyOptions('')
+            setNewDisqualifyMessage('')
+        } else if (editingQuestionIdx !== null && editingQuestionIdx > idx) {
+            setEditingQuestionIdx(editingQuestionIdx - 1)
+        }
+    }
+
+    const handleEditQuestionClick = (idx: number) => {
+        const q = formQuestions[idx]
+        if (!q) return
+        setNewQuestionLabel(q.label)
+        setNewQuestionType(q.type)
+        setNewQuestionOptions(q.options ? q.options.join(', ') : '')
+        setNewDisqualifyOptions(q.disqualify_options ? q.disqualify_options.join(', ') : '')
+        setNewDisqualifyMessage(q.disqualify_message || '')
+        setEditingQuestionIdx(idx)
+    }
+
+    const handleCancelQuestionEdit = () => {
+        setNewQuestionLabel('')
+        setNewQuestionType('SHORT_ANSWER')
+        setNewQuestionOptions('')
+        setNewDisqualifyOptions('')
+        setNewDisqualifyMessage('')
+        setEditingQuestionIdx(null)
     }
 
     const handleEditFormClick = (form: QualificationForm) => {
         setEditingFormId(form.id)
         setFormName(form.name)
+        setFormFields(form.fields && form.fields.length > 0 ? form.fields : [
+            { name: 'name', type: 'text', label: 'Full Name' },
+            { name: 'phone', type: 'tel', label: 'WhatsApp Number' },
+            { name: 'city', type: 'text', label: 'City' }
+        ])
         setFormQuestions(form.custom_questions || [])
+        setEditingQuestionIdx(null)
+        setNewQuestionLabel('')
+        setNewQuestionType('SHORT_ANSWER')
+        setNewQuestionOptions('')
+        setNewDisqualifyOptions('')
+        setNewDisqualifyMessage('')
         setShowFormModal(true)
     }
 
     const handleOpenNewFormModal = () => {
         setEditingFormId(null)
         setFormName('')
+        setFormFields([
+            { name: 'name', type: 'text', label: 'Full Name' },
+            { name: 'phone', type: 'tel', label: 'WhatsApp Number' },
+            { name: 'city', type: 'text', label: 'City' }
+        ])
         setFormQuestions([])
+        setEditingQuestionIdx(null)
+        setNewQuestionLabel('')
+        setNewQuestionType('SHORT_ANSWER')
+        setNewQuestionOptions('')
+        setNewDisqualifyOptions('')
+        setNewDisqualifyMessage('')
         setShowFormModal(true)
     }
 
@@ -369,17 +433,12 @@ export default function PagesDashboard() {
 
         setActionLoading(true)
         try {
-            const defaultFields: FormField[] = [
-                { name: 'name', type: 'text', label: 'Full Name' },
-                { name: 'phone', type: 'tel', label: 'WhatsApp Number' },
-                { name: 'city', type: 'text', label: 'City' }
-            ]
-
             if (editingFormId) {
                 const { error } = await supabase
                     .from('qualification_forms')
                     .update({
                         name: formName.trim(),
+                        fields: formFields,
                         custom_questions: formQuestions
                     })
                     .eq('id', editingFormId)
@@ -392,7 +451,7 @@ export default function PagesDashboard() {
                     .insert({
                         user_id: targetUserId,
                         name: formName.trim(),
-                        fields: defaultFields,
+                        fields: formFields,
                         custom_questions: formQuestions
                     })
 
@@ -402,7 +461,9 @@ export default function PagesDashboard() {
 
             setFormName('')
             setFormQuestions([])
+            setFormFields([])
             setEditingFormId(null)
+            setEditingQuestionIdx(null)
             setShowFormModal(false)
             await fetchListData(targetUserId)
         } catch (e: any) {
@@ -792,22 +853,30 @@ export default function PagesDashboard() {
                 </div>
             `
         } else {
+            const formFieldsToRender = form && form.fields && form.fields.length > 0 ? form.fields : [
+                { name: 'name', type: 'text', label: 'Full Name' },
+                { name: 'phone', type: 'tel', label: 'WhatsApp Number' },
+                { name: 'city', type: 'text', label: 'City' }
+            ]
+
             formHtml = `
                 <div style="max-width: 500px; margin: 2rem auto; padding: 1.5rem 0; background: transparent; font-family: inherit; text-align: left; box-sizing: border-box;">
                     <h3 style="margin-top: 0; margin-bottom: 1.5rem; color: inherit; font-size: 1.5rem; font-weight: 800; text-align: center; letter-spacing: -0.025em; font-family: inherit;">${cardTitle}</h3>
-                    <div style="margin-bottom: 1.25rem;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">Full Name</label>
-                        <input type="text" disabled placeholder="John Doe" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
-                    </div>
-                    <div style="margin-bottom: 1.25rem;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">WhatsApp Number</label>
-                        <input type="tel" disabled placeholder="+91 98765 43210" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
-                    </div>
-                    <div style="margin-bottom: 1.25rem;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">City</label>
-                        <input type="text" disabled placeholder="Mohali" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
-                    </div>
             `
+
+            formFieldsToRender.forEach((f: any) => {
+                let placeholder = 'Your answer'
+                if (f.name === 'name') placeholder = 'John Doe'
+                else if (f.name === 'phone') placeholder = '+91 98765 43210'
+                else if (f.name === 'city') placeholder = 'Mohali'
+
+                formHtml += `
+                    <div style="margin-bottom: 1.25rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit;">${f.label}</label>
+                        <input type="${f.type}" disabled placeholder="${placeholder}" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;" />
+                    </div>
+                `
+            })
 
             if (form) {
                 const customQuestions = form.custom_questions || []
@@ -1393,9 +1462,88 @@ export default function PagesDashboard() {
                             />
                         </div>
 
-                        {/* Defaults Alert */}
-                        <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 mb-6 text-xs text-slate-500 font-semibold leading-relaxed">
-                            💡 Name, WhatsApp Number, and City fields are automatically included as standard required fields.
+                        {/* Standard Fields Configuration */}
+                        <div className="mb-6 bg-slate-50 border border-slate-200/60 rounded-3xl p-5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-3 block">Configure Base Fields</label>
+                            <div className="space-y-4">
+                                {/* Name Field */}
+                                <div className="flex items-center gap-4">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={true} 
+                                        disabled={true} 
+                                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-not-allowed"
+                                        readOnly
+                                    />
+                                    <div className="flex-1">
+                                        <div className="text-xs font-bold text-slate-700 mb-1">Name Field (Required)</div>
+                                        <input 
+                                            type="text"
+                                            value={formFields.find(f => f.name === 'name')?.label || 'Full Name'}
+                                            onChange={e => {
+                                                const newFields = formFields.map(f => f.name === 'name' ? { ...f, label: e.target.value } : f)
+                                                setFormFields(newFields)
+                                            }}
+                                            placeholder="Label for Name Field"
+                                            className="w-full bg-white px-3 py-2 rounded-xl text-xs font-bold text-slate-700 outline-none border border-slate-200 focus:border-blue-500 transition-all"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Phone/WhatsApp Field */}
+                                <div className="flex items-center gap-4">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={true} 
+                                        disabled={true} 
+                                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-not-allowed"
+                                        readOnly
+                                    />
+                                    <div className="flex-1">
+                                        <div className="text-xs font-bold text-slate-700 mb-1">WhatsApp Number Field (Required)</div>
+                                        <input 
+                                            type="text"
+                                            value={formFields.find(f => f.name === 'phone')?.label || 'WhatsApp Number'}
+                                            onChange={e => {
+                                                const newFields = formFields.map(f => f.name === 'phone' ? { ...f, label: e.target.value } : f)
+                                                setFormFields(newFields)
+                                            }}
+                                            placeholder="Label for WhatsApp Field"
+                                            className="w-full bg-white px-3 py-2 rounded-xl text-xs font-bold text-slate-700 outline-none border border-slate-200 focus:border-blue-500 transition-all"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* City Field */}
+                                <div className="flex items-center gap-4">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={formFields.some(f => f.name === 'city')} 
+                                        onChange={e => {
+                                            if (e.target.checked) {
+                                                setFormFields([...formFields, { name: 'city', type: 'text', label: 'City' }])
+                                            } else {
+                                                setFormFields(formFields.filter(f => f.name !== 'city'))
+                                            }
+                                        }}
+                                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                    />
+                                    <div className="flex-1">
+                                        <div className="text-xs font-bold text-slate-700 mb-1">City Field (Optional)</div>
+                                        <input 
+                                            type="text"
+                                            disabled={!formFields.some(f => f.name === 'city')}
+                                            value={formFields.find(f => f.name === 'city')?.label || 'City'}
+                                            onChange={e => {
+                                                const newFields = formFields.map(f => f.name === 'city' ? { ...f, label: e.target.value } : f)
+                                                setFormFields(newFields)
+                                            }}
+                                            placeholder="Label for City Field"
+                                            className="w-full bg-white disabled:bg-slate-100/50 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 outline-none border border-slate-200 focus:border-blue-500 transition-all"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Added Questions list */}
@@ -1416,9 +1564,22 @@ export default function PagesDashboard() {
                                                     )}
                                                 </div>
                                             </div>
-                                            <button onClick={() => handleRemoveQuestion(idx)} className="text-slate-400 hover:text-red-500 p-1 transition-colors">
-                                                <Trash2 size={14} />
-                                            </button>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                <button 
+                                                    onClick={() => handleEditQuestionClick(idx)} 
+                                                    className={`p-1.5 rounded-lg border transition-all ${editingQuestionIdx === idx ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-100 hover:bg-blue-50 text-slate-500 hover:text-blue-600 border-slate-200'}`}
+                                                    title="Edit Question"
+                                                >
+                                                    <Edit3 size={12} />
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleRemoveQuestion(idx)} 
+                                                    className="bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-600 p-1.5 rounded-lg border border-slate-200 transition-all"
+                                                    title="Delete Question"
+                                                >
+                                                    <Trash2 size={12} />
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -1427,7 +1588,7 @@ export default function PagesDashboard() {
 
                         {/* Question adder */}
                         <div className="border-t border-slate-100 pt-6 mb-8">
-                            <h4 className="text-xs font-black text-slate-700 mb-4">Add Custom Question</h4>
+                            <h4 className="text-xs font-black text-slate-700 mb-4">{editingQuestionIdx !== null ? 'Edit Custom Question' : 'Add Custom Question'}</h4>
                             
                             <div className="space-y-4">
                                 <div>
@@ -1452,12 +1613,22 @@ export default function PagesDashboard() {
                                         </select>
                                     </div>
                                     
-                                    <button 
-                                        onClick={handleAddQuestion}
-                                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs px-5 rounded-xl transition-all"
-                                    >
-                                        Add Question
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={handleAddQuestion}
+                                            className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-5 rounded-xl transition-all h-[42px] shrink-0"
+                                        >
+                                            {editingQuestionIdx !== null ? 'Update' : 'Add'}
+                                        </button>
+                                        {editingQuestionIdx !== null && (
+                                            <button 
+                                                onClick={handleCancelQuestionEdit}
+                                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs px-4 rounded-xl transition-all h-[42px] shrink-0"
+                                            >
+                                                Cancel
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {newQuestionType === 'MULTIPLE_CHOICE' && (

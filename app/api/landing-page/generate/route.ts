@@ -191,17 +191,27 @@ BUSINESS CONTACT INFO:
 `
 
         // 3. Fetch connected form if available to enrich the prompt context
-        let formFieldsText = "Full Name, WhatsApp Number, City"
+        let formFieldsText = ""
         if (formId) {
             const { data: form } = await supabaseAdmin
                 .from('qualification_forms')
                 .select('*')
                 .eq('id', formId)
                 .maybeSingle()
-            if (form && Array.isArray(form.custom_questions)) {
-                const customLabels = form.custom_questions.map((q: any) => q.label).join(', ')
-                if (customLabels) formFieldsText += `, ${customLabels}`
+            if (form) {
+                const baseLabels = form.fields && form.fields.length > 0
+                    ? form.fields.map((f: any) => f.label).join(', ')
+                    : "Full Name, WhatsApp Number, City"
+                formFieldsText = baseLabels
+
+                if (Array.isArray(form.custom_questions)) {
+                    const customLabels = form.custom_questions.map((q: any) => q.label).join(', ')
+                    if (customLabels) formFieldsText += `, ${customLabels}`
+                }
             }
+        }
+        if (!formFieldsText) {
+            formFieldsText = "Full Name, WhatsApp Number, City"
         }
 
         // 4. Generate 5 relevant images using Kie.ai if no images exist
