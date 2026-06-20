@@ -18,9 +18,48 @@ export async function GET(request: Request) {
 
         if (!campaignId) return NextResponse.json({ error: 'Campaign ID is required' }, { status: 400 })
 
+        const impersonateId = searchParams.get('impersonate')
         const { data: profile } = await supabase.from('profiles').select('role, facebook_token, agency_id, parent_id').eq('id', user.id).single()
         
-        let token = profile?.facebook_token
+        let targetUserId = (['admin', 'agent'].includes(profile?.role || '') && (profile?.agency_id || profile?.parent_id)) 
+          ? (profile.agency_id || profile.parent_id) 
+          : user.id
+
+        if (impersonateId) {
+            if (['super_admin', 'agency', 'admin'].includes(profile?.role || '')) {
+                if (profile?.role !== 'super_admin') {
+                    const isParent = (profile?.agency_id === impersonateId || profile?.parent_id === impersonateId);
+                    const { data: subAccount } = await supabase
+                      .from('profiles')
+                      .select('id')
+                      .eq('id', impersonateId)
+                      .eq('agency_id', profile?.agency_id || user.id)
+                      .single()
+
+                    if (isParent || subAccount) {
+                        targetUserId = impersonateId
+                    } else {
+                        return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
+                    }
+                } else {
+                    targetUserId = impersonateId
+                }
+            } else {
+                return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
+            }
+        }
+
+        const { data: targetProfile } = await supabase
+          .from('profiles')
+          .select('facebook_token, agency_id, parent_id')
+          .eq('id', targetUserId)
+          .single()
+
+        let token = targetProfile?.facebook_token
+        if (!token) {
+            token = profile?.facebook_token
+        }
+
         if (!token && (profile?.agency_id || profile?.parent_id)) {
             const { data: parentProfile } = await supabase
                 .from('profiles')
