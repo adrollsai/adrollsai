@@ -65,8 +65,7 @@ export async function GET(request: Request) {
 
     try {
         // has_payment_method requires restricted permissions and triggers OAuthException. 
-        // We query funding_source and funding_source_details which are standard public fields.
-        const res = await fetch(`https://graph.facebook.com/v19.0/${adAccountId}?fields=account_status,disable_reason,funding_source,funding_source_details,balance,spend_cap,amount_spent,currency&access_token=${token}`)
+        const res = await fetch(`https://graph.facebook.com/v19.0/${adAccountId}?fields=account_status,disable_reason,funding_source,funding_source_details,balance,spend_cap,amount_spent,currency,capabilities&access_token=${token}`)
         const data = await res.json()
 
         if (data.error) {
@@ -74,7 +73,11 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: data.error.message || 'Meta API error' }, { status: 400 })
         }
 
-        const hasPaymentMethod = !!(data.funding_source || data.funding_source_details)
+        const hasPaymentMethod = !!(
+            data.funding_source || 
+            data.funding_source_details || 
+            (data.capabilities && data.capabilities.includes('HAS_VALID_PAYMENT_METHODS'))
+        )
 
         let leadgenTos = null
         if (pageId) {

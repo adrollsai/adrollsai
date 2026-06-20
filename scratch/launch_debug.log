@@ -1,0 +1,16 @@
+[Launch API] Date: 2026-06-20T06:09:30.985Z
+URL: http://localhost:3000/api/meta-ads/launch-campaign?impersonate=29937131-1975-4c5f-9b78-e5b28f918d32
+impersonateId (from query): 29937131-1975-4c5f-9b78-e5b28f918d32
+targetUserId (resolved): 29937131-1975-4c5f-9b78-e5b28f918d32
+user.id (logged-in): bc63c065-9bcc-4793-bedc-f0960406425b
+targetProfile exists: true
+targetProfile: {"facebook_token":"EAAMaVhrzxNABRmmwglFAPD34qhrvRDBPBiINXUZCXUc8qSBf4TCLZCPVpKVSk5QL8fl9I5GnUp1KBu3UJhLp87RCfZAE4RZCRSi4YznMytK7lcFZCwtog2YHoQwriwWIC9CF9HTvSanq8q3igtlOGECT0ZBPiSfDd7wPX7S3ETW0VIJ2ZBLw3jdswt4ODQYLmHWbARptLokl1aDZC5Nauq0FRZAibHauDZAo1XvLDo4d8FZAZB7NHkU5tGWsQtuJPbcWjDYzadhg84i5ZCXdhI0E43u6n5ZAJ9M3a6LQZDZD","ad_account_id":"act_1704094376976379","selected_page_id":"561993100340763","custom_domain":"app.theproestate.in","business_name":"The ProEstate","contact_number":"+91 91157 39559","currency":"INR","pixel_id":null}
+------------------------------------------------
+[Launch API] Date: 2026-06-20T08:40:19.042Z
+URL: http://localhost:3000/api/meta-ads/launch-campaign?impersonate=29937131-1975-4c5f-9b78-e5b28f918d32
+impersonateId (from query): 29937131-1975-4c5f-9b78-e5b28f918d32
+targetUserId (resolved): 29937131-1975-4c5f-9b78-e5b28f918d32
+user.id (logged-in): bc63c065-9bcc-4793-bedc-f0960406425b
+targetProfile exists: true
+targetProfile: {"facebook_token":"EAAMaVhrzxNABRmmwglFAPD34qhrvRDBPBiINXUZCXUc8qSBf4TCLZCPVpKVSk5QL8fl9I5GnUp1KBu3UJhLp87RCfZAE4RZCRSi4YznMytK7lcFZCwtog2YHoQwriwWIC9CF9HTvSanq8q3igtlOGECT0ZBPiSfDd7wPX7S3ETW0VIJ2ZBLw3jdswt4ODQYLmHWbARptLokl1aDZC5Nauq0FRZAibHauDZAo1XvLDo4d8FZAZB7NHkU5tGWsQtuJPbcWjDYzadhg84i5ZCXdhI0E43u6n5ZAJ9M3a6LQZDZD","ad_account_id":"act_933486153046457","selected_page_id":"561993100340763","custom_domain":"app.theproestate.in","business_name":"The ProEstate","contact_number":"+91 91157 39559","currency":"INR","pixel_id":null}
+------------------------------------------------

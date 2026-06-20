@@ -437,14 +437,22 @@ export async function POST(request: Request) {
         }
         
         const uploadResults = await Promise.all(creativeUploadPromises);
+        let firstUploadError: any = null;
         uploadResults.forEach((data, i) => {
             if (data.images) {
                 const hash = data.images[Object.keys(data.images)[0]].hash;
                 metaCreativeHashes.push(hash);
+            } else if (data.error) {
+                firstUploadError = data.error;
             }
         });
 
         if (metaCreativeHashes.length === 0) {
+            if (firstUploadError) {
+                const title = firstUploadError.error_user_title ? `${firstUploadError.error_user_title}: ` : "";
+                const msg = firstUploadError.error_user_msg || firstUploadError.message || "Unknown error";
+                throw new Error(`Creative upload failed. Meta API Error: ${title}${msg}`);
+            }
             throw new Error("Creative upload failed. Could not upload any images to Facebook.");
         }
         logToFile(`✅ Uploaded ${metaCreativeHashes.length} creatives to Meta.`);

@@ -8,7 +8,7 @@ import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { useRouter } from 'next/navigation'
 
 type Property = { id: string; title: string; price: string; image_url: string; description?: string }
-type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string }
+type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string; status?: string }
 type Campaign = { id: string; name: string; status: string; objective: string }
 type LocationOption = { key: string; name: string; type: string; region?: string; country_code?: string; }
 type CustomQuestion = { label: string; type: 'SHORT_ANSWER' | 'MULTIPLE_CHOICE'; options?: string[]; disqualifyingOptions?: string[] }
@@ -108,6 +108,11 @@ export default function AdsPage() {
   const [isSearchingLocation, setIsSearchingLocation] = useState(false)
 
   const [statsModal, setStatsModal] = useState<{ isOpen: boolean, campaign: Campaign | null, insights: any, loading: boolean }>({ isOpen: false, campaign: null, insights: null, loading: false })
+  const [statsDatePreset, setStatsDatePreset] = useState<string>('maximum')
+  const [statsSince, setStatsSince] = useState<string>('')
+  const [statsUntil, setStatsUntil] = useState<string>('')
+  const [statsTab, setStatsTab] = useState<'overview' | 'daily' | 'creatives'>('overview')
+  const [chartMetric, setChartMetric] = useState<'spend' | 'leads' | 'clicks'>('spend')
   const [campaignLeadCounts, setCampaignLeadCounts] = useState<Record<string, number>>({})
   const [orchestrator, setOrchestrator] = useState<{
     isOpen: boolean,
@@ -419,16 +424,19 @@ export default function AdsPage() {
           } catch (e) { console.error("Failed to load campaigns", e) }
       }
 
-      const [propsRes, assetsRes, leadsRes, pagesRes, formsRes] = await Promise.all([
+      const [propsRes, leadsRes, pagesRes, formsRes, apiAssetsData] = await Promise.all([
           supabase.from('properties').select('id, title, price, image_url, description').eq('user_id', targetUserId).order('created_at', { ascending: false }),
-          supabase.from('assets').select('id, type, url, property_id, master_creative_id').eq('user_id', targetUserId).order('created_at', { ascending: false }),
           supabase.from('leads').select('campaign_id').eq('user_id', targetUserId),
           supabase.from('landing_pages').select('*').eq('user_id', targetUserId).order('created_at', { ascending: false }),
-          supabase.from('qualification_forms').select('*').eq('user_id', targetUserId).order('created_at', { ascending: false })
+          supabase.from('qualification_forms').select('*').eq('user_id', targetUserId).order('created_at', { ascending: false }),
+          fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}`).then(r => r.json()).catch(e => {
+              console.error("Failed to load assets from API", e);
+              return [];
+          })
       ])
 
       const newProps = propsRes.data || []
-      const newAssets = (assetsRes.data as Asset[]) || []
+      const newAssets = (Array.isArray(apiAssetsData) ? apiAssetsData : []) as Asset[]
       
       const leads = leadsRes.data || [];
       const leadCounts: Record<string, number> = {};
@@ -527,15 +535,126 @@ export default function AdsPage() {
       } finally { setTogglingId(null); }
   }
 
-  const handleOpenStats = async (campaign: Campaign) => {
-      setStatsModal({ isOpen: true, campaign, insights: null, loading: true })
+  const fetchStats = async (campaign: Campaign, preset: string, since: string, until: string) => {
+      setStatsModal(prev => ({ ...prev, loading: true }))
       try {
-          const res = await fetch(`/api/meta-ads/campaign-insights?campaignId=${campaign.id}`)
+          const urlParams = new URLSearchParams()
+          urlParams.append('campaignId', campaign.id)
+          const urlParamsString = new URLSearchParams(window.location.search)
+          const impersonateId = urlParamsString.get('impersonate')
+          if (impersonateId) urlParams.append('impersonate', impersonateId)
+          
+          if (preset === 'custom') {
+              if (since) urlParams.append('since', since)
+              if (until) urlParams.append('until', until)
+          } else {
+              urlParams.append('datePreset', preset)
+          }
+          const res = await fetch(`/api/meta-ads/campaign-insights?${urlParams.toString()}`)
           const data = await res.json()
-          setStatsModal({ isOpen: true, campaign, insights: data.insights, loading: false })
-      } catch(e) {
+          if (data.error) throw new Error(data.error)
+          setStatsModal({ isOpen: true, campaign, insights: data, loading: false })
+      } catch(e: any) {
+          toast.error(`Failed to load insights: ${e.message}`)
           setStatsModal(prev => ({ ...prev, loading: false }))
       }
+  }
+
+  const handleOpenStats = async (campaign: Campaign) => {
+      setStatsDatePreset('maximum')
+      setStatsSince('')
+      setStatsUntil('')
+      setStatsTab('overview')
+      fetchStats(campaign, 'maximum', '', '')
+  }
+
+  const renderSVGChart = (dailyData: any[]) => {
+      if (!dailyData || dailyData.length === 0) {
+          return (
+              <div className="flex items-center justify-center h-48 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs font-semibold">
+                  Not enough performance data to plot trend line.
+              </div>
+          );
+      }
+
+      const getVal = (item: any) => {
+          if (chartMetric === 'spend') return item.spend || 0;
+          if (chartMetric === 'leads') return item.leads || 0;
+          return item.clicks || 0;
+      };
+
+      const maxVal = Math.max(...dailyData.map(getVal), 1);
+      const width = 600;
+      const height = 180;
+      const padding = 20;
+
+      const points = dailyData.map((item, index) => {
+          const x = padding + (index * (width - 2 * padding)) / Math.max(dailyData.length - 1, 1);
+          const y = height - padding - (getVal(item) / maxVal) * (height - 2 * padding);
+          return { x, y, item };
+      });
+
+      const pathD = points.length > 0 
+          ? `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ')
+          : '';
+
+      const areaD = points.length > 0
+          ? `${pathD} L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`
+          : '';
+
+      return (
+          <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200/60 relative">
+              <div className="flex justify-between items-center mb-6">
+                  <div>
+                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Performance Trend</h4>
+                      <p className="text-sm font-bold text-slate-800 mt-1 capitalize">{chartMetric} over time</p>
+                  </div>
+                  <div className="flex bg-white p-1 rounded-xl border border-slate-200/60 shadow-sm">
+                      {(['spend', 'leads', 'clicks'] as const).map(m => (
+                          <button
+                              key={m}
+                              onClick={() => setChartMetric(m)}
+                              className={`text-[10px] font-extrabold uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all ${chartMetric === m ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                          >
+                              {m === 'spend' ? 'Spend' : m === 'leads' ? 'Leads' : 'Clicks'}
+                          </button>
+                      ))}
+                  </div>
+              </div>
+              <div className="w-full overflow-hidden">
+                  <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto overflow-visible">
+                      <defs>
+                          <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#2563eb" stopOpacity="0.25" />
+                              <stop offset="100%" stopColor="#2563eb" stopOpacity="0.00" />
+                          </linearGradient>
+                      </defs>
+                      {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
+                          const y = padding + ratio * (height - 2 * padding);
+                          const gridVal = (maxVal - ratio * maxVal).toFixed(0);
+                          return (
+                              <g key={idx} className="opacity-30">
+                                  <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="#cbd5e1" strokeWidth="1" strokeDasharray="4 4" />
+                                  <text x={padding - 5} y={y + 4} fill="#64748b" fontSize="8" fontWeight="bold" textAnchor="end">{gridVal}</text>
+                              </g>
+                          );
+                      })}
+                      {points.length > 1 && (
+                          <>
+                              <path d={areaD} fill="url(#chartGrad)" />
+                              <path d={pathD} fill="none" stroke="#2563eb" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-md" />
+                              {points.map((p, idx) => (
+                                  <g key={idx} className="group/dot cursor-pointer">
+                                      <circle cx={p.x} cy={p.y} r="4" fill="#2563eb" stroke="#ffffff" strokeWidth="2" className="transition-all group-hover/dot:r-6" />
+                                      <title>{`${p.item.date}: ${getVal(p.item)}`}</title>
+                                  </g>
+                              ))}
+                          </>
+                      )}
+                  </svg>
+              </div>
+          </div>
+      );
   }
 
   const handleOptimize = (campaign: Campaign) => {
@@ -1525,7 +1644,7 @@ export default function AdsPage() {
                                                 });
                                             }} className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${isSelected ? 'border-blue-500 shadow-md ring-2 ring-blue-500/20' : 'border-slate-100 hover:border-slate-200'}`}>
                                                 {a.type === 'video' ? (
-                                                    <video src={fixR2Url(a.url)} className="w-full h-full object-cover" muted playsInline />
+                                                    <video src={`${fixR2Url(a.url)}#t=0.1`} className="w-full h-full object-cover" muted playsInline />
                                                 ) : (
                                                     <img src={fixR2Url(a.url)} className="w-full h-full object-cover" />
                                                 )}
@@ -2554,28 +2673,288 @@ export default function AdsPage() {
 
       {statsModal.isOpen && statsModal.campaign && (
           <div className="fixed inset-0 z-[999] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-              <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95">
-                  <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
+              <div className="bg-white w-full max-w-4xl rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col">
+                  {/* Header */}
+                  <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4 flex-shrink-0">
                       <div>
-                          <h2 className="text-xl font-bold text-slate-900 leading-tight pr-4 truncate max-w-[250px]">{statsModal.campaign.name}</h2>
-                          <span className={`inline-block text-[10px] mt-2 font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${statsModal.campaign.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{statsModal.campaign.status}</span>
+                          <div className="flex items-center gap-2">
+                              <h2 className="text-xl font-bold text-slate-900 leading-tight pr-4 truncate max-w-[400px]">{statsModal.campaign.name}</h2>
+                              <span className={`inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${statsModal.campaign.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{statsModal.campaign.status}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1.5">Campaign ID: {statsModal.campaign.id}</p>
                       </div>
                       <button onClick={() => setStatsModal({ isOpen: false, campaign: null, insights: null, loading: false })} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={18} /></button>
                   </div>
+
+                  {/* Date range filter bar */}
+                  <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200/60 mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
+                      <div className="flex flex-wrap gap-2">
+                          {[
+                              { label: 'All Time', value: 'maximum' },
+                              { label: 'Today', value: 'today' },
+                              { label: 'Yesterday', value: 'yesterday' },
+                              { label: 'Last 7 Days', value: 'last_7d' },
+                              { label: 'Last 30 Days', value: 'last_30d' },
+                              { label: 'This Month', value: 'this_month' },
+                              { label: 'Custom', value: 'custom' }
+                          ].map(item => (
+                              <button
+                                  key={item.value}
+                                  onClick={() => {
+                                      setStatsDatePreset(item.value);
+                                      if (item.value !== 'custom') {
+                                          fetchStats(statsModal.campaign!, item.value, '', '');
+                                      }
+                                  }}
+                                  className={`text-xs font-bold px-4 py-2 rounded-xl transition-all ${statsDatePreset === item.value ? 'bg-slate-900 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                              >
+                                  {item.label}
+                              </button>
+                          ))}
+                      </div>
+
+                      {statsDatePreset === 'custom' && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                              <input
+                                  type="date"
+                                  value={statsSince}
+                                  onChange={(e) => setStatsSince(e.target.value)}
+                                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500/20"
+                              />
+                              <span className="text-xs font-bold text-slate-400">to</span>
+                              <input
+                                  type="date"
+                                  value={statsUntil}
+                                  onChange={(e) => setStatsUntil(e.target.value)}
+                                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500/20"
+                              />
+                              <button
+                                  onClick={() => {
+                                      if (!statsSince || !statsUntil) {
+                                          toast.error("Please select start and end dates");
+                                          return;
+                                      }
+                                      fetchStats(statsModal.campaign!, 'custom', statsSince, statsUntil);
+                                  }}
+                                  className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-blue-700 transition-all shadow-md active:scale-95"
+                              >
+                                  Apply
+                              </button>
+                          </div>
+                      )}
+                  </div>
+
                   {statsModal.loading ? (
-                      <div className="flex flex-col items-center justify-center py-12">
+                      <div className="flex flex-col items-center justify-center py-20 flex-1">
                           <Loader2 className="animate-spin text-blue-500 mb-3" size={32} />
                           <p className="text-sm text-slate-500 font-medium">Fetching Meta Insights...</p>
                       </div>
                   ) : statsModal.insights ? (
-                      <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><CreditCard size={14}/> Spend</div><div className="text-2xl font-black text-slate-800">{currency === 'INR' ? '₹' : '$'}{statsModal.insights.spend || '0'}</div></div>
-                          <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Eye size={14}/> Views</div><div className="text-2xl font-black text-slate-800">{statsModal.insights.impressions || '0'}</div></div>
-                          <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><MousePointerClick size={14}/> Clicks</div><div className="text-2xl font-black text-slate-800">{statsModal.insights.clicks || '0'}</div></div>
-                          <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100 shadow-sm"><div className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14}/> Leads</div><div className="text-3xl font-black text-blue-700">{statsModal.insights.actions?.find((a:any) => a.action_type === 'lead')?.value || '0'}</div></div>
+                      <div className="space-y-8 flex-1">
+                          {/* Tabs */}
+                          <div className="flex border-b border-slate-100">
+                              {[
+                                  { id: 'overview', label: 'Overview & Trend' },
+                                  { id: 'daily', label: 'Daily Log' },
+                                  { id: 'creatives', label: 'Creative Performance' }
+                              ].map(tab => (
+                                  <button
+                                      key={tab.id}
+                                      onClick={() => setStatsTab(tab.id as any)}
+                                      className={`text-sm font-bold px-6 py-3 border-b-2 transition-all ${statsTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                                  >
+                                      {tab.label}
+                                  </button>
+                              ))}
+                          </div>
+
+                          {/* Tab Content */}
+                          {statsTab === 'overview' && (
+                              <div className="space-y-8">
+                                  {/* Metric Cards Grid */}
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                      {/* Spend */}
+                                      <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors">
+                                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><CreditCard size={14}/> Spend</div>
+                                          <div className="text-2xl font-black text-slate-800">{currency === 'INR' ? '₹' : '$'}{(statsModal.insights.summary?.spend || 0).toFixed(2)}</div>
+                                      </div>
+
+                                      {/* Views / Impressions */}
+                                      <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors">
+                                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Eye size={14}/> Views (Impressions)</div>
+                                          <div className="text-2xl font-black text-slate-800">{statsModal.insights.summary?.impressions?.toLocaleString() || '0'}</div>
+                                      </div>
+
+                                      {/* Clicks */}
+                                      <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors">
+                                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><MousePointerClick size={14}/> Clicks</div>
+                                          <div className="text-2xl font-black text-slate-800">{statsModal.insights.summary?.clicks?.toLocaleString() || '0'}</div>
+                                      </div>
+
+                                      {/* Results (Leads) */}
+                                      <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100 shadow-sm hover:border-blue-200 transition-colors">
+                                          <div className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14}/> Results (Leads)</div>
+                                          <div className="text-2xl font-black text-blue-700">{statsModal.insights.summary?.leads?.toLocaleString() || '0'}</div>
+                                          {statsModal.insights.summary?.leads > 0 && (
+                                              <div className="text-[9px] font-black text-blue-500/80 mt-1 uppercase tracking-wider">
+                                                  CPL: {currency === 'INR' ? '₹' : '$'}{(statsModal.insights.summary.spend / statsModal.insights.summary.leads).toFixed(1)}
+                                              </div>
+                                          )}
+                                      </div>
+
+                                      {/* CTR */}
+                                      <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors">
+                                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 15l-6 6m0 0l-3-3m3 3V9a9 9 0 1118 0v6" /></svg>
+                                              Link CTR
+                                          </div>
+                                          <div className="text-2xl font-black text-slate-800">{(statsModal.insights.summary?.inlineLinkClickCtr || statsModal.insights.summary?.ctr || 0).toFixed(2)}%</div>
+                                      </div>
+
+                                      {/* CPC */}
+                                      <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors">
+                                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.529C10.518 16.15 11.22 16.5 12 16.5c1.657 0 3-1.343 3-3 0-1.657-1.343-3-3-3m-3-2.818A4 4 0 1112 3v3m0 0c-.82 0-1.522.35-2.121.782" /></svg>
+                                              CPC
+                                          </div>
+                                          <div className="text-2xl font-black text-slate-800">{currency === 'INR' ? '₹' : '$'}{(statsModal.insights.summary?.cpc || 0).toFixed(2)}</div>
+                                      </div>
+
+                                      {/* CPM */}
+                                      <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors">
+                                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                              CPM
+                                          </div>
+                                          <div className="text-2xl font-black text-slate-800">{currency === 'INR' ? '₹' : '$'}{(statsModal.insights.summary?.cpm || 0).toFixed(2)}</div>
+                                      </div>
+
+                                      {/* Landing Page Views */}
+                                      <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors">
+                                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.905 0-5.64-.78-8.006-2.14M19.843 7.582A8.997 8.997 0 0112 12a8.997 8.997 0 01-7.843-4.418" /></svg>
+                                              Landing Page Views
+                                          </div>
+                                          <div className="text-2xl font-black text-slate-800">{statsModal.insights.summary?.landingPageViews?.toLocaleString() || '0'}</div>
+                                      </div>
+                                  </div>
+
+                                  {/* Trend Visualization Chart */}
+                                  {renderSVGChart(statsModal.insights.dailyBreakdown)}
+                              </div>
+                          )}
+
+                          {statsTab === 'daily' && (
+                              <div className="bg-white rounded-3xl border border-slate-200/60 overflow-hidden shadow-sm">
+                                  <div className="overflow-x-auto">
+                                      <table className="w-full text-left border-collapse">
+                                          <thead>
+                                              <tr className="bg-slate-50 border-b border-slate-100 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                                                  <th className="p-4 pl-6">Date</th>
+                                                  <th className="p-4">Spend</th>
+                                                  <th className="p-4">Impressions</th>
+                                                  <th className="p-4">Clicks</th>
+                                                  <th className="p-4">CTR</th>
+                                                  <th className="p-4">CPM</th>
+                                                  <th className="p-4">Leads</th>
+                                                  <th className="p-4 pr-6">Page Views</th>
+                                              </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
+                                              {statsModal.insights.dailyBreakdown?.length > 0 ? (
+                                                  statsModal.insights.dailyBreakdown.map((day: any, idx: number) => (
+                                                      <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                                          <td className="p-4 pl-6 font-bold">{new Date(day.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                          <td className="p-4 text-slate-900">{currency === 'INR' ? '₹' : '$'}{day.spend.toFixed(2)}</td>
+                                                          <td className="p-4 text-slate-600">{day.impressions.toLocaleString()}</td>
+                                                          <td className="p-4 text-slate-600">{day.clicks.toLocaleString()}</td>
+                                                          <td className="p-4">{(day.inlineLinkClickCtr || day.ctr || 0).toFixed(2)}%</td>
+                                                          <td className="p-4">{currency === 'INR' ? '₹' : '$'}{day.cpm.toFixed(2)}</td>
+                                                          <td className="p-4 text-blue-600 font-bold">{day.leads.toLocaleString()}</td>
+                                                          <td className="p-4 pr-6 text-slate-600">{day.landingPageViews.toLocaleString()}</td>
+                                                      </tr>
+                                                  ))
+                                              ) : (
+                                                  <tr>
+                                                      <td colSpan={8} className="p-10 text-center text-slate-400 font-bold">No daily logs available.</td>
+                                                  </tr>
+                                              )}
+                                          </tbody>
+                                      </table>
+                                  </div>
+                              </div>
+                          )}
+
+                          {statsTab === 'creatives' && (
+                              <div className="space-y-6">
+                                  <div className="bg-white rounded-3xl border border-slate-200/60 overflow-hidden shadow-sm">
+                                      <div className="overflow-x-auto">
+                                          <table className="w-full text-left border-collapse">
+                                              <thead>
+                                                  <tr className="bg-slate-50 border-b border-slate-100 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                                                      <th className="p-4 pl-6">Creative</th>
+                                                      <th className="p-4">Ad Name</th>
+                                                      <th className="p-4">Spend</th>
+                                                      <th className="p-4">Clicks</th>
+                                                      <th className="p-4">CTR</th>
+                                                      <th className="p-4">CPM</th>
+                                                      <th className="p-4">Leads</th>
+                                                      <th className="p-4 pr-6">Cost Per Lead</th>
+                                                  </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
+                                                  {statsModal.insights.creativeInsights?.length > 0 ? (
+                                                      statsModal.insights.creativeInsights.map((ad: any, idx: number) => (
+                                                          <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                                              <td className="p-4 pl-6">
+                                                                  <div className="w-12 h-12 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center shrink-0 shadow-inner">
+                                                                      {ad.thumbnail ? (
+                                                                          ad.thumbnail.includes('.mp4') || ad.thumbnail.includes('.mov') ? (
+                                                                              <div className="relative w-full h-full">
+                                                                                  <video src={ad.thumbnail} className="w-full h-full object-cover" muted playsInline />
+                                                                                  <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+                                                                                      <PlayCircle size={14} className="text-white" />
+                                                                                  </div>
+                                                                              </div>
+                                                                          ) : (
+                                                                              <img src={ad.thumbnail} className="w-full h-full object-cover" />
+                                                                          )
+                                                                      ) : (
+                                                                          <ImageIcon size={16} className="text-slate-400" />
+                                                                      )}
+                                                                  </div>
+                                                              </td>
+                                                              <td className="p-4 font-bold max-w-[200px] truncate" title={ad.adName}>{ad.adName}</td>
+                                                              <td className="p-4 text-slate-900">{currency === 'INR' ? '₹' : '$'}{ad.spend.toFixed(2)}</td>
+                                                              <td className="p-4 text-slate-600">{ad.clicks.toLocaleString()}</td>
+                                                              <td className="p-4">{(ad.inlineLinkClickCtr || ad.ctr || 0).toFixed(2)}%</td>
+                                                              <td className="p-4">{currency === 'INR' ? '₹' : '$'}{ad.cpm.toFixed(2)}</td>
+                                                              <td className="p-4 text-blue-600 font-bold">{ad.leads.toLocaleString()}</td>
+                                                              <td className="p-4 pr-6 text-slate-900 font-bold">
+                                                                  {ad.leads > 0 ? (
+                                                                      <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg border border-blue-100">
+                                                                          {currency === 'INR' ? '₹' : '$'}{(ad.spend / ad.leads).toFixed(1)}
+                                                                      </span>
+                                                                  ) : (
+                                                                      <span className="text-slate-400">-</span>
+                                                                  )}
+                                                              </td>
+                                                          </tr>
+                                                      ))
+                                                  ) : (
+                                                      <tr>
+                                                          <td colSpan={8} className="p-10 text-center text-slate-400 font-bold">No creative metrics available yet.</td>
+                                                      </tr>
+                                                  )}
+                                              </tbody>
+                                          </table>
+                                      </div>
+                                  </div>
+                              </div>
+                          )}
                       </div>
                   ) : (
-                      <div className="py-10 text-center text-sm font-medium text-slate-500 bg-slate-50 rounded-[1.5rem] border border-dashed border-slate-200">No performance data available yet. <br/>Check back after 24 hours.</div>
+                      <div className="py-20 text-center text-sm font-medium text-slate-500 bg-slate-50 rounded-[2rem] border border-dashed border-slate-200">No performance data available for this range.</div>
                   )}
               </div>
           </div>
@@ -2625,10 +3004,10 @@ export default function AdsPage() {
                         className="relative w-20 h-20 rounded-[1.25rem] flex-shrink-0 bg-white shadow-sm border border-slate-200 group cursor-pointer" 
                         onClick={() => setPreviewImage({ isOpen: true, url: c.previewUrl, title: c.name, type: (c.sourceType === 'local' && c.file && isVideoFile(c.file)) || c.type === 'video' ? 'video' : 'image' })}
                       >
-                        {c.sourceType === 'local' && c.file && isVideoFile(c.file) ? (
-                          <video src={c.previewUrl} className="w-full h-full object-cover rounded-[1.25rem]" />
+                        {(c.sourceType === 'local' && c.file && isVideoFile(c.file)) || c.type === 'video' ? (
+                          <video src={fixR2Url(c.previewUrl)} className="w-full h-full object-cover rounded-[1.25rem]" muted playsInline />
                         ) : (
-                          <img src={c.previewUrl} className="w-full h-full object-cover rounded-[1.25rem]" />
+                          <img src={fixR2Url(c.previewUrl)} className="w-full h-full object-cover rounded-[1.25rem]" />
                         )}
                         <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-[1.25rem]">
                           <Maximize2 size={16} className="text-white"/>
@@ -2960,7 +3339,7 @@ export default function AdsPage() {
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                {assets.filter(a => !a.master_creative_id && (assetFilter === 'All' || a.property_id === assetFilter)).map(a => {
+                                {assets.filter(a => !['Failed', 'Processing', 'Rendering', 'Distributed'].includes(a.status || '') && (assetFilter === 'All' || a.property_id === assetFilter)).map(a => {
                                     const isSelected = selectedCreatives.some(c => c.id === a.id);
                                     return (
                                         <div key={a.id} onClick={() => {
@@ -2983,7 +3362,18 @@ export default function AdsPage() {
                                             if (isSelected) removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid); 
                                             else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Library', type: a.type }]); 
                                         }} className={`relative aspect-square rounded-[1.5rem] overflow-hidden border-[3px] transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}>
-                                            <img src={fixR2Url(a.url)} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+                                            {a.type === 'video' ? (
+                                                <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
+                                                    <video src={`${fixR2Url(a.url)}#t=0.1`} preload="metadata" playsInline muted className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+                                                    <div className="absolute inset-0 flex items-center justify-center bg-black/10 pointer-events-none">
+                                                        <div className="bg-white/20 backdrop-blur-md p-2.5 rounded-full shadow-sm">
+                                                            <Video className="text-white" size={20} />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <img src={fixR2Url(a.url)} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+                                            )}
                                             {isSelected && <div className="absolute top-3 right-3 bg-blue-500 text-white p-1 rounded-full shadow-md"><CheckCircle size={16} /></div>}
                                         </div>
                                     );
@@ -2992,8 +3382,8 @@ export default function AdsPage() {
                         </div>
                     ) : (
                         <div className="space-y-6">
-                            {Array.from(new Set(assets.filter(a => a.master_creative_id).map(a => a.master_creative_id))).map(batchId => {
-                                const batchAssets = assets.filter(a => a.master_creative_id === batchId);
+                            {Array.from(new Set(assets.filter(a => a.master_creative_id && !['Failed', 'Processing', 'Rendering', 'Distributed'].includes(a.status || '')).map(a => a.master_creative_id))).map(batchId => {
+                                const batchAssets = assets.filter(a => a.master_creative_id === batchId && !['Failed', 'Processing', 'Rendering', 'Distributed'].includes(a.status || ''));
                                 return (
                                     <div key={batchId} className="bg-white p-4 rounded-2xl border border-slate-200">
                                         <h3 className="text-sm font-bold mb-3">Batch: {batchId}</h3>
@@ -3021,7 +3411,18 @@ export default function AdsPage() {
                                                         if (isSelected) removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid); 
                                                         else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Batch Asset', type: a.type }]); 
                                                     }} className={`relative aspect-square rounded-xl overflow-hidden border-[3px] transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}>
-                                                        <img src={fixR2Url(a.url)} className="w-full h-full object-cover" />
+                                                        {a.type === 'video' ? (
+                                                            <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
+                                                                <video src={`${fixR2Url(a.url)}#t=0.1`} preload="metadata" playsInline muted className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+                                                                <div className="absolute inset-0 flex items-center justify-center bg-black/10 pointer-events-none">
+                                                                    <div className="bg-white/20 backdrop-blur-md p-1.5 rounded-full shadow-sm">
+                                                                        <Video className="text-white" size={14} />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <img src={fixR2Url(a.url)} className="w-full h-full object-cover" />
+                                                        )}
                                                         {isSelected && <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full"><CheckCircle size={12} /></div>}
                                                     </div>
                                                 );
