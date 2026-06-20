@@ -233,13 +233,31 @@ export async function POST(request: Request) {
         logToFile("Ad Account Pre-flight Error:", e);
     }
 
-    try {
-        // --- Step A: Get Source Data & Context ---
+            // --- Step A: Get Source Data & Context ---
         let combinedContext = "";
-        let initialImageUrls: string[] = []; 
+        interface CreativeItem {
+            type: 'image' | 'video';
+            file?: Blob;
+            url?: string;
+        }
+        const creativeItems: CreativeItem[] = [];
+
+        if (creativeFiles.length > 0) {
+            for (const file of creativeFiles) {
+                const isVideo = file.type?.startsWith('video/') || file.name?.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/);
+                creativeItems.push({
+                    type: isVideo ? 'video' : 'image',
+                    file
+                });
+            }
+        }
 
         if (data.imageUrl) {
-            initialImageUrls.push(data.imageUrl);
+            const isVideo = data.imageUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/);
+            creativeItems.push({
+                type: isVideo ? 'video' : 'image',
+                url: data.imageUrl
+            });
         }
 
         if (inventoryIds.length > 0) {
@@ -254,30 +272,40 @@ export async function POST(request: Request) {
                 props.forEach(prop => {
                     combinedContext += `Property: ${prop.title || 'N/A'}. Description: ${prop.description || 'N/A'}. `;
                     if (prop.images && Array.isArray(prop.images) && prop.images.length > 0) {
-                        initialImageUrls.push(...prop.images);
+                        prop.images.forEach(img => {
+                            if (img && img.startsWith('http')) {
+                                creativeItems.push({ type: 'image', url: img });
+                            }
+                        });
                     } else if (prop.image_url) {
-                        initialImageUrls.push(prop.image_url);
+                        creativeItems.push({ type: 'image', url: prop.image_url });
                     }
                 });
             }
         } 
         
         if (assetIds.length > 0) {
-             const { data: assets } = await supabase
+             const { data: assets } = await supabaseAdmin
                 .from('assets')
-                .select('url')
+                .select('url, type')
                 .in('id', assetIds);
-
+ 
              if (assets) {
                  assets.forEach(asset => {
-                     if (asset.url) initialImageUrls.push(asset.url);
+                     if (asset.url) {
+                         const isVideo = asset.type === 'video' || asset.url.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/);
+                         creativeItems.push({
+                             type: isVideo ? 'video' : 'image',
+                             url: asset.url
+                         });
+                     }
                  });
              }
         }
 
-        if (creativeFiles.length === 0 && initialImageUrls.length === 0) {
-            throw new Error("No images found in the selected properties, assets, or uploads.");
-        }
+        if (creativeItems.length === 0) {
+            throw new Error("No images or videos found in the selected properties, assets, or uploads.");
+        }      }
 
         // --- Step B: Create Lead Form with Custom Questions ---
         const businessName = data.business_name || "Our Business";
@@ -399,63 +427,121 @@ export async function POST(request: Request) {
 
         // --- Step C: Upload Creatives (PROXY UPLOAD) ---
         logToFile("--- 3. UPLOADING ALL CREATIVES ---");
-        const metaCreativeHashes: string[] = [];
-        const creativeUploadPromises = [];
+        interface UploadedCreative {
+            type: 'image' | 'video';
+            hash?: string;
+            videoId?: string;
+        }
+        const uploadedCreatives: UploadedCreative[] = [];
+        let globalThumbHash: string | null = null;
 
-        if (creativeFiles.length > 0) {
-            for (const file of creativeFiles) {
-                const uploadFormData = new FormData();
-                uploadFormData.append('source', file, file.name); 
-                uploadFormData.append('access_token', facebookToken);
-                
-                creativeUploadPromises.push(
-                    fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, { 
-                        method: 'POST', body: uploadFormData 
-                    }).then(res => res.json())
-                );
-            }
-        } 
-        
-        if (initialImageUrls.length > 0) {
-            // Deduplicate URLs
-            const uniqueUrls = Array.from(new Set(initialImageUrls));
-            for (const url of uniqueUrls) {
-                const imageFetch = await fetch(url);
-                if (!imageFetch.ok) continue; 
-                
-                const imageBlob = await imageFetch.blob();
-                const uploadFormData = new FormData();
-                uploadFormData.append('source', imageBlob, 'marketing_asset.png');
-                uploadFormData.append('access_token', facebookToken);
-                
-                creativeUploadPromises.push(
-                    fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, {
-                        method: 'POST', body: uploadFormData
-                    }).then(res => res.json())
-                );
+        // 1. Prepare global thumbnail hash if we have any videos
+        const hasVideos = creativeItems.some(item => item.type === 'video');
+        if (hasVideos) {
+            logToFile("Preparing video thumbnail for campaign...");
+            const thumbSource = targetProfile?.logo_url || 'https://adrolls.in/logo-square.png';
+            try {
+                const thumbFetch = await fetch(thumbSource);
+                if (thumbFetch.ok) {
+                    const thumbBlob = await thumbFetch.blob();
+                    const thumbData = new FormData();
+                    thumbData.append('source', thumbBlob, `thumb_${Date.now()}.png`);
+                    thumbData.append('access_token', facebookToken);
+                    const thumbRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, { method: 'POST', body: thumbData });
+                    const thumbResult = await thumbRes.json();
+                    if (thumbResult.images) {
+                        globalThumbHash = thumbResult.images[Object.keys(thumbResult.images)[0]].hash;
+                        logToFile(`Prepared global thumbnail hash: ${globalThumbHash}`);
+                    }
+                }
+            } catch (thumbErr: any) {
+                logToFile("Failed to prepare video thumbnail:", thumbErr.message);
             }
         }
-        
-        const uploadResults = await Promise.all(creativeUploadPromises);
-        let firstUploadError: any = null;
-        uploadResults.forEach((data, i) => {
-            if (data.images) {
-                const hash = data.images[Object.keys(data.images)[0]].hash;
-                metaCreativeHashes.push(hash);
-            } else if (data.error) {
-                firstUploadError = data.error;
-            }
-        });
 
-        if (metaCreativeHashes.length === 0) {
+        // 2. Upload each creative item
+        let firstUploadError: any = null;
+        for (let i = 0; i < creativeItems.length; i++) {
+            const item = creativeItems[i];
+            try {
+                if (item.type === 'video') {
+                    const videoData = new FormData();
+                    if (item.file) {
+                        videoData.append('source', item.file, (item.file as any).name || 'video.mp4');
+                    } else if (item.url) {
+                        videoData.append('file_url', item.url);
+                    }
+                    videoData.append('access_token', facebookToken);
+                    
+                    logToFile(`Uploading video ${i + 1} to Meta...`);
+                    const videoRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/advideos`, { method: 'POST', body: videoData });
+                    const videoResult = await videoRes.json();
+                    
+                    if (videoResult.id) {
+                        logToFile(`✅ Video ${i + 1} uploaded. ID: ${videoResult.id}`);
+                        uploadedCreatives.push({
+                            type: 'video',
+                            videoId: videoResult.id
+                        });
+                    } else {
+                        logToFile(`❌ Video ${i + 1} upload failed:`, videoResult);
+                        firstUploadError = videoResult.error || { message: "Video upload failed" };
+                    }
+                } else {
+                    const imgData = new FormData();
+                    if (item.file) {
+                        imgData.append('source', item.file, (item.file as any).name || 'image.png');
+                    } else if (item.url) {
+                        const imgFetch = await fetch(item.url);
+                        if (!imgFetch.ok) {
+                            logToFile(`❌ Failed to fetch image URL: ${item.url}`);
+                            continue;
+                        }
+                        const imgBlob = await imgFetch.blob();
+                        imgData.append('source', imgBlob, 'image.png');
+                    }
+                    imgData.append('access_token', facebookToken);
+                    
+                    logToFile(`Uploading image ${i + 1} to Meta...`);
+                    const imgRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, { method: 'POST', body: imgData });
+                    const imgResult = await imgRes.json();
+                    
+                    if (imgResult.images) {
+                        const hash = imgResult.images[Object.keys(imgResult.images)[0]].hash;
+                        logToFile(`✅ Image ${i + 1} uploaded. Hash: ${hash}`);
+                        uploadedCreatives.push({
+                            type: 'image',
+                            hash: hash
+                        });
+                        
+                        if (!globalThumbHash) {
+                            globalThumbHash = hash;
+                        }
+                    } else {
+                        logToFile(`❌ Image ${i + 1} upload failed:`, imgResult);
+                        firstUploadError = imgResult.error || { message: "Image upload failed" };
+                    }
+                }
+            } catch (err: any) {
+                logToFile(`Error uploading creative item ${i + 1}:`, err.message);
+                firstUploadError = { message: err.message };
+            }
+        }
+
+        if (uploadedCreatives.length === 0) {
             if (firstUploadError) {
                 const title = firstUploadError.error_user_title ? `${firstUploadError.error_user_title}: ` : "";
                 const msg = firstUploadError.error_user_msg || firstUploadError.message || "Unknown error";
                 throw new Error(`Creative upload failed. Meta API Error: ${title}${msg}`);
             }
-            throw new Error("Creative upload failed. Could not upload any images to Facebook.");
+            throw new Error("Creative upload failed. Could not upload any images or videos to Facebook.");
         }
-        logToFile(`✅ Uploaded ${metaCreativeHashes.length} creatives to Meta.`);
+
+        if (uploadedCreatives.some(c => c.type === 'video')) {
+            logToFile("Waiting 5 seconds for Meta to process uploaded videos...");
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+        logToFile(`✅ Uploaded ${uploadedCreatives.length} creatives to Meta.`);
 
         // --- Step D: AI Copywriting (Batch Processing) ---
         logToFile("--- 4. AI COPYWRITING (BATCHING) ---");
@@ -504,7 +590,7 @@ export async function POST(request: Request) {
         
         let allCopyVariations: any[] = [];
         const BATCH_SIZE = 10;
-        const totalToGenerate = metaCreativeHashes.length;
+        const totalToGenerate = uploadedCreatives.length;
 
         for (let batchStart = 0; batchStart < totalToGenerate; batchStart += BATCH_SIZE) {
             const batchEnd = Math.min(batchStart + BATCH_SIZE, totalToGenerate);
@@ -723,11 +809,11 @@ export async function POST(request: Request) {
         let lastDraftError = null;
 
         // Ensure we create exactly as many ads as selected creatives
-        const totalAdsToCreate = metaCreativeHashes.length;
+        const totalAdsToCreate = uploadedCreatives.length;
         
         for (let i = 0; i < totalAdsToCreate; i++) {
             // Cycle through unique assets and unique copy
-            const hash = metaCreativeHashes[i % metaCreativeHashes.length];
+            const creativeItem = uploadedCreatives[i % uploadedCreatives.length];
             const copy = copyVariations[i % copyVariations.length];
 
             const ctaValue: any = {};
@@ -735,24 +821,39 @@ export async function POST(request: Request) {
                 ctaValue.link = linkUrl;
             } else {
                 ctaValue.lead_gen_form_id = leadFormId;
+                ctaValue.link = linkUrl;
             }
 
             // Create Creative
-            const creativePayload = {
+            const creativePayload: any = {
                 name: `Creative ${i + 1} - ${Date.now()}`,
                 object_story_spec: {
                     page_id: pageId, 
-                    link_data: {
-                        message: copy.primary_text || "View our latest property.", 
-                        name: copy.headline || "View Details", 
-                        description: copy.description || "",
-                        link: linkUrl, 
-                        image_hash: hash, 
-                        call_to_action: { type: 'LEARN_MORE', value: ctaValue }
-                    }
                 },
                 access_token: facebookToken,
             };
+
+            if (creativeItem.type === 'video') {
+                creativePayload.object_story_spec.video_data = {
+                    video_id: creativeItem.videoId,
+                    message: copy.primary_text || "View our latest video.",
+                    title: copy.headline || "View Details",
+                    image_hash: globalThumbHash, // Meta requires a thumbnail
+                    call_to_action: {
+                        type: 'LEARN_MORE',
+                        value: ctaValue
+                    }
+                };
+            } else {
+                creativePayload.object_story_spec.link_data = {
+                    message: copy.primary_text || "View our latest property.", 
+                    name: copy.headline || "View Details", 
+                    description: copy.description || "",
+                    link: linkUrl, 
+                    image_hash: creativeItem.hash, 
+                    call_to_action: { type: 'LEARN_MORE', value: ctaValue }
+                };
+            }
 
             const creativeRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adcreatives`, {
                 method: 'POST',
@@ -768,8 +869,6 @@ export async function POST(request: Request) {
 
             // NEW: Persist generated copy back to assets table for future Strategist use
             try {
-                // Try to find the asset id for this hash
-                // Note: This is an approximation if multiple assets have same image
                 const assetId = assetIds[i % assetIds.length];
                 if (assetId) {
                     const fullCaption = `${copy.headline}\n\n${copy.primary_text}${copy.description ? `\n\n${copy.description}` : ''}`;
