@@ -93,7 +93,7 @@ export default function PagesDashboard() {
     const [properties, setProperties] = useState<any[]>([])
     const [selectedPropertyId, setSelectedPropertyId] = useState('')
     const [customInstructions, setCustomInstructions] = useState('')
-    const [pageType, setPageType] = useState<'standard' | 'survey'>('standard')
+    const [pageType, setPageType] = useState<'standard' | 'survey' | 'raw_survey'>('standard')
 
     // Edit/Chat Console state
     const [activeEditorPage, setActiveEditorPage] = useState<LandingPage | null>(null)
@@ -1760,11 +1760,12 @@ export default function PagesDashboard() {
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Generation Format / Type</label>
                             <select 
                                 value={pageType}
-                                onChange={e => setPageType(e.target.value as 'standard' | 'survey')}
+                                onChange={e => setPageType(e.target.value as 'standard' | 'survey' | 'raw_survey')}
                                 className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
                             >
                                 <option value="standard">Standard Landing Page (Conversion Copy + Modal Form)</option>
                                 <option value="survey">Survey Form Only (Super Fast + Direct Inline Form)</option>
+                                <option value="raw_survey">Raw Survey Card (Photos + Form Callout, No extra info)</option>
                             </select>
                         </div>
 

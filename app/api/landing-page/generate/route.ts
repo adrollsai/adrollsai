@@ -331,7 +331,45 @@ ${imageAnalysisResults}
 
         let systemPrompt = ''
         if (mode === 'generate') {
-            if (pageType === 'survey') {
+            if (pageType === 'raw_survey') {
+                systemPrompt = `You are a world-class front-end developer and elite copywriter.
+Create a complete, responsive, premium raw survey form page in HTML based on the details below.
+The page MUST focus entirely on presenting a minimal, clean, centered survey layout with NO extra copy, sections, features list, FAQs, or content whatsoever. Just a clear callout at the top, a gallery/grid/slider of a couple of product photos immediately below it, and the dynamic form container beneath the photos.
+
+### CRITICAL ACCURACY RULE (MANDATORY):
+- You must ONLY include, describe, or reference the exact information passed as context in this prompt (such as titles, description context, and actual assets).
+- Absolutely DO NOT hallucinate, assume, or generate registration numbers, RERA IDs, approvals, or any parameters/specifications not explicitly provided.
+
+### INPUT VARIABLES
+* Brand/Product Name: "${resolvedProductName}"
+* Core Offer/Product Context: "${resolvedContext}"
+* Target Audience & Brand Info: 
+${contactInfoText}
+${propertyDataText}
+${imageAnalysisSection}
+
+### LAYOUT STRUCTURE (RAW SURVEY PAGE):
+1. **Header Callout (Top)**:
+   - Display a prominent, elegant callout message instructing the visitor to fill out the form to get the price list, brochure, and dynamic details (e.g. "Fill out the quick form below to receive the price list, brochure, and exclusive details").
+   - Use bold, high-contrast, clean typography.
+2. **Product Photos (Middle)**:
+   - Below the header text, display a premium visual section containing a couple of high-quality photos.
+   - If images are available in this list: ${JSON.stringify(propertyImagesList)}, show a clean grid of 2-3 images or a beautiful image slider.
+   - If the list is empty, display a clean placeholder gradient block or typography element. Do NOT use external generic stock placeholder domains.
+3. **Form Container (Bottom)**:
+   - Below the photos, mount the qualification container EXACTLY like this: '<div id="qualification-form-container" data-page-type="survey" data-button-text="Next"></div>'.
+   - Do NOT write a form element, inputs, or any button HTML inside this container, and do NOT write any "Start Survey" trigger cards or trigger buttons. The platform dynamically injects the survey questions, and the first question must render inline immediately.
+
+### STYLING & DESIGN GUIDELINES (LIGHT THEME BY DEFAULT):
+- Use a soft, clean light theme background (no dark themes unless explicitly requested).
+- Configured Tailwind via CDN with a custom config extension that maps 'brand' theme colors based on the base brand color '${profile?.brand_color || "#9e755c"}'.
+- Keep margins, paddings, and card shadows clean, minimal, and modern.
+- Ensure the page body is fully scrollable and does NOT cap layout height (do NOT use height: 100vh or overflow: hidden on html/body/main elements).
+
+### OUTPUT FORMAT:
+- Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
+- ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output ONLY the pure raw HTML string.`
+            } else if (pageType === 'survey') {
                 systemPrompt = `You are a world-class front-end developer and elite copywriter.
 Create a complete, responsive, premium survey form page in HTML based on the details below.
 The page MUST focus entirely on presenting a single, beautifully centered survey card. It must load super fast, look extremely professional, and have a minimal visual footprint with no extra landing page content.

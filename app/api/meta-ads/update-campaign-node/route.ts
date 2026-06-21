@@ -105,6 +105,16 @@ export async function POST(request: Request) {
         }
       }
 
+      const ctaValue: any = {};
+      if (fields.creative.leadFormId) {
+        ctaValue.lead_gen_form_id = fields.creative.leadFormId;
+      }
+      if (fields.creative.linkUrl) {
+        ctaValue.link = fields.creative.linkUrl;
+      } else {
+        ctaValue.link = "https://adrolls.in";
+      }
+
       const creativePayload = {
         name: `Edited Creative - ${Date.now()}`,
         object_story_spec: {
@@ -117,7 +127,7 @@ export async function POST(request: Request) {
             image_hash: imageHash, 
             call_to_action: { 
               type: 'LEARN_MORE', 
-              value: { lead_gen_form_id: fields.creative.leadFormId } 
+              value: ctaValue
             }
           }
         },

@@ -84,6 +84,34 @@ export async function POST(request: Request) {
 
         if (metaData.error) {
             console.error("[create-pixel API] Meta Graph API error:", metaData.error)
+            
+            // Gracefully handle "pixel already exists" error by fetching and using the existing pixel
+            if (metaData.error.code === 6200 || (metaData.error.message && metaData.error.message.includes('already exists'))) {
+                console.log("[create-pixel API] Pixel already exists. Attempting to fetch existing pixels...")
+                try {
+                    const fetchRes = await fetch(`https://graph.facebook.com/v19.0/${adAccountId}/adspixels?fields=id,name&access_token=${token}`)
+                    const fetchData = await fetchRes.json()
+                    
+                    if (fetchData.data && fetchData.data.length > 0) {
+                        const existingPixelId = fetchData.data[0].id
+                        console.log(`[create-pixel API] Found existing pixel: ${existingPixelId}. Associating with user profile...`)
+                        
+                        const { error: updateError } = await supabase
+                            .from('profiles')
+                            .update({ pixel_id: existingPixelId })
+                            .eq('id', targetUserId)
+
+                        if (updateError) {
+                            console.error("[create-pixel API] Supabase update error:", updateError)
+                            return NextResponse.json({ error: 'Failed to update user profile with existing Pixel ID' }, { status: 500 })
+                        }
+
+                        return NextResponse.json({ success: true, pixelId: existingPixelId, note: 'Associated existing pixel' })
+                    }
+                } catch (fetchErr) {
+                    console.error("[create-pixel API] Failed to fetch existing pixels:", fetchErr)
+                }
+            }
             return NextResponse.json({ error: metaData.error.message || 'Meta API error' }, { status: 400 })
         }
 
