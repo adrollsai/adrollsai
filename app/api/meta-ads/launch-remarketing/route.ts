@@ -48,13 +48,6 @@ export async function POST(request: Request) {
         }
     }
 
-    // --- SUBSCRIPTION CHECK (Always deduct from the authenticated user) ---
-    try {
-        await checkLimitAndIncrement(user.id, 'campaign_launches');
-    } catch (limitErr: any) {
-        logToFile(`QUOTA ERROR: ${limitErr.message}`);
-        return NextResponse.json({ error: limitErr.message }, { status: 403 });
-    }
 
     let data: any = {};
     const contentType = request.headers.get('content-type') || '';
@@ -100,7 +93,7 @@ export async function POST(request: Request) {
     );
 
     const { data: targetProfile } = await supabaseAdmin.from('profiles')
-        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id')
+        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url')
         .eq('id', targetUserId)
         .single();
 
@@ -146,9 +139,7 @@ export async function POST(request: Request) {
     const isWebsiteCampaign = campaignType === 'website_conversion';
 
     if (isWebsiteCampaign && !finalPixelId) {
-        if (user?.id) {
-            await refundLimit(user.id, 'campaign_launches');
-        }
+
         return NextResponse.json(
             { error: 'Meta Pixel ID is required for Website Conversion campaigns. Please select a Pixel or connect one in your profile.' }, 
             { status: 400 }
@@ -167,6 +158,56 @@ export async function POST(request: Request) {
         );
     }
 
+    // --- Step 00. Check Meta Custom Audience Terms of Service ---
+    logToFile("--- Checking Meta Custom Audience Terms of Service ---");
+    const targetActId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+    const tosUrl = `https://graph.facebook.com/v19.0/${targetActId}?fields=tos_accepted&access_token=${facebookToken}`;
+    
+    let isCustomAudienceTosAccepted = false;
+    let isWebCustomAudienceTosAccepted = false;
+    
+    try {
+        const tosRes = await fetch(tosUrl);
+        const tosData = await tosRes.json();
+        
+        if (tosData.tos_accepted) {
+            isCustomAudienceTosAccepted = tosData.tos_accepted.custom_audience_tos === 1;
+            isWebCustomAudienceTosAccepted = tosData.tos_accepted.web_custom_audience_tos === 1;
+        } else {
+            // If tos_accepted field is missing, check if there's an error
+            if (tosData.error) {
+                logToFile(`Error checking Meta TOS response: ${JSON.stringify(tosData.error)}`);
+            }
+        }
+    } catch (tosErr: any) {
+        logToFile(`Error checking Meta TOS: ${tosErr.message}`);
+        // If the check fails for some network/API reason, we don't block the entire launch
+        isCustomAudienceTosAccepted = true; 
+        isWebCustomAudienceTosAccepted = true;
+    }
+
+    const cleanActId = targetActId.replace('act_', '');
+    
+    if (!isCustomAudienceTosAccepted || !isWebCustomAudienceTosAccepted) {
+
+        
+        const acceptUrl = `https://www.facebook.com/customaudiences/app/tos/?act=${cleanActId}`;
+        const errorMsg = !isCustomAudienceTosAccepted && !isWebCustomAudienceTosAccepted
+            ? `Meta Custom Audience and Web Pixel Terms of Service have not been accepted for this Ad Account. Please visit this link to accept the terms, then try again: ${acceptUrl}`
+            : !isCustomAudienceTosAccepted
+                ? `Meta Custom Audience Terms of Service (for customer list uploads) have not been accepted. Please visit this link to accept the terms, then try again: ${acceptUrl}`
+                : `Meta Web Pixel Custom Audience Terms of Service have not been accepted. Please visit this link to accept the terms, then try again: ${acceptUrl}`;
+
+        return NextResponse.json(
+            { 
+                error: errorMsg,
+                tosLink: acceptUrl,
+                error_subcode: 2663 
+            }, 
+            { status: 400 }
+        );
+    }
+
     logToFile("=== STARTING AI RETARGETING CAMPAIGN LAUNCH ===");
 
     // --- Step 0. Fetch Qualified CRM Leads ---
@@ -179,18 +220,24 @@ export async function POST(request: Request) {
 
     if (leadsErr) {
         logToFile(`LEADS FETCH ERROR: ${leadsErr.message}`);
-        await refundLimit(user.id, 'campaign_launches');
         return NextResponse.json({ error: `Failed to fetch qualified CRM leads: ${leadsErr.message}` }, { status: 500 });
     }
 
     if (!qualifiedLeads || qualifiedLeads.length === 0) {
-        await refundLimit(user.id, 'campaign_launches');
         return NextResponse.json({ 
             error: "No qualified CRM leads found. You must have at least one lead in 'Qualified', 'Appointment booked', 'Appointment done', or 'Closed' stages to launch a retargeting campaign." 
         }, { status: 400 });
     }
 
     logToFile(`Found ${qualifiedLeads.length} qualified CRM leads.`);
+
+    // --- SUBSCRIPTION CHECK (Deduct campaign launch count since validation passed) ---
+    try {
+        await checkLimitAndIncrement(user.id, 'campaign_launches');
+    } catch (limitErr: any) {
+        logToFile(`QUOTA ERROR: ${limitErr.message}`);
+        return NextResponse.json({ error: limitErr.message }, { status: 403 });
+    }
 
     // --- Step 0b. Create Meta Custom Audience ---
     logToFile("--- 0b. CREATING CUSTOM AUDIENCE ---");
@@ -219,6 +266,7 @@ export async function POST(request: Request) {
 
     const customAudienceId = audienceData.id;
     logToFile(`✅ Custom Audience Created: ${customAudienceId}`);
+    const targetCustomAudienceIds: string[] = [customAudienceId];
 
     // --- Step 0c. Hash and Upload Contacts ---
     logToFile("--- 0c. HASHING AND UPLOADING CONTACTS ---");
@@ -274,13 +322,287 @@ export async function POST(request: Request) {
 
     logToFile(`✅ Uploaded ${uploadData.num_received} contacts to custom audience.`);
 
+    // --- Step 0d. Create Additional Retargeting Custom Audiences ---
+    let sourceVideoIds: string[] = [];
+    let sourceFormIds: string[] = [];
+
+    if (sourceCampaignId) {
+        logToFile(`--- 0d. Fetching ads for source campaign: ${sourceCampaignId} ---`);
+        try {
+            const adsRes = await fetch(`${FB_MARKETING_URL}/${sourceCampaignId}/ads?fields=creative{id,video_id,object_story_spec}&access_token=${facebookToken}`);
+            const adsData = await adsRes.json();
+            
+            if (adsData.data && Array.isArray(adsData.data)) {
+                adsData.data.forEach((ad: any) => {
+                    if (ad.creative) {
+                        if (ad.creative.video_id) {
+                            sourceVideoIds.push(ad.creative.video_id);
+                        }
+                        const spec = ad.creative.object_story_spec;
+                        if (spec) {
+                            const formIdFromLink = spec.link_data?.call_to_action?.value?.lead_gen_form_id;
+                            if (formIdFromLink) sourceFormIds.push(formIdFromLink);
+
+                            const formIdFromVideo = spec.video_data?.call_to_action?.value?.lead_gen_form_id;
+                            if (formIdFromVideo) sourceFormIds.push(formIdFromVideo);
+
+                            const videoIdFromSpec = spec.video_data?.video_id;
+                            if (videoIdFromSpec) sourceVideoIds.push(videoIdFromSpec);
+                        }
+                    }
+                });
+                
+                sourceVideoIds = Array.from(new Set(sourceVideoIds));
+                sourceFormIds = Array.from(new Set(sourceFormIds));
+                
+                logToFile(`Found source video IDs: ${sourceVideoIds.join(', ')}`);
+                logToFile(`Found source lead form IDs: ${sourceFormIds.join(', ')}`);
+            }
+        } catch (e: any) {
+            logToFile(`Error fetching source campaign ads: ${e.message}`);
+        }
+    }
+
+    // Create 95% Video Watchers Custom Audiences (video_completed is Meta's 95% milestone)
+    for (const videoId of sourceVideoIds) {
+        logToFile(`Creating 95% video view audience for video: ${videoId}`);
+        const videoAudienceName = `Video Watchers 95% - Video ${videoId} - ${new Date().toISOString().slice(0, 10)}`;
+        const rule = [
+            {
+                event_name: "video_completed",
+                object_id: videoId
+            }
+        ];
+
+        try {
+            const res = await fetch(`${FB_MARKETING_URL}/${adAccountId}/customaudiences`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: videoAudienceName,
+                    subtype: "ENGAGEMENT",
+                    rule: JSON.stringify(rule),
+                    prefill: 1,
+                    access_token: facebookToken
+                })
+            });
+            const resData = await res.json();
+            if (res.ok && resData.id) {
+                targetCustomAudienceIds.push(resData.id);
+                logToFile(`✅ Video views custom audience created: ${resData.id}`);
+            } else {
+                logToFile(`❌ Video views custom audience creation failed for video ${videoId}:`, resData);
+            }
+        } catch (e: any) {
+            logToFile(`Error creating video custom audience: ${e.message}`);
+        }
+    }
+
+    // Create Lead Form Openers & Submitters Custom Audiences
+    for (const formId of sourceFormIds) {
+        // Opened Form Custom Audience
+        logToFile(`Creating Opened Form audience for form: ${formId}`);
+        const openedAudienceName = `Form Openers - Form ${formId} - ${new Date().toISOString().slice(0, 10)}`;
+        const openedRule = {
+            inclusions: {
+                operator: "or",
+                rules: [
+                    {
+                        event_sources: [
+                            {
+                                id: pageId,
+                                type: "page"
+                            }
+                        ],
+                        retention_seconds: 7776000, // 90 days
+                        filter: {
+                            operator: "and",
+                            filters: [
+                                {
+                                    field: "event",
+                                    operator: "eq",
+                                    value: "lead_generation_opened"
+                                },
+                                {
+                                    field: "form_id",
+                                    operator: "eq",
+                                    value: formId
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        };
+
+        try {
+            const res = await fetch(`${FB_MARKETING_URL}/${adAccountId}/customaudiences`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: openedAudienceName,
+                    rule: JSON.stringify(openedRule),
+                    prefill: 1,
+                    access_token: facebookToken
+                })
+            });
+            const resData = await res.json();
+            if (res.ok && resData.id) {
+                targetCustomAudienceIds.push(resData.id);
+                logToFile(`✅ Form Openers custom audience created: ${resData.id}`);
+            } else {
+                logToFile(`❌ Form Openers custom audience creation failed for form ${formId}:`, resData);
+            }
+        } catch (e: any) {
+            logToFile(`Error creating form openers audience: ${e.message}`);
+        }
+
+        // Submitted Form Custom Audience
+        logToFile(`Creating Submitted Form audience for form: ${formId}`);
+        const submittedAudienceName = `Form Submitters - Form ${formId} - ${new Date().toISOString().slice(0, 10)}`;
+        const submittedRule = {
+            inclusions: {
+                operator: "or",
+                rules: [
+                    {
+                        event_sources: [
+                            {
+                                id: pageId,
+                                type: "page"
+                            }
+                        ],
+                        retention_seconds: 7776000, // 90 days
+                        filter: {
+                            operator: "and",
+                            filters: [
+                                {
+                                    field: "event",
+                                    operator: "eq",
+                                    value: "lead_generation_submitted"
+                                },
+                                {
+                                    field: "form_id",
+                                    operator: "eq",
+                                    value: formId
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        };
+
+        try {
+            const res = await fetch(`${FB_MARKETING_URL}/${adAccountId}/customaudiences`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: submittedAudienceName,
+                    rule: JSON.stringify(submittedRule),
+                    prefill: 1,
+                    access_token: facebookToken
+                })
+            });
+            const resData = await res.json();
+            if (res.ok && resData.id) {
+                targetCustomAudienceIds.push(resData.id);
+                logToFile(`✅ Form Submitters custom audience created: ${resData.id}`);
+            } else {
+                logToFile(`❌ Form Submitters custom audience creation failed for form ${formId}:`, resData);
+            }
+        } catch (e: any) {
+            logToFile(`Error creating form submitters audience: ${e.message}`);
+        }
+    }
+
+    // Create Website Visitors Custom Audience (using Pixel and Link URL)
+    if (finalPixelId && linkUrl) {
+        logToFile(`Creating Website Custom Audience for URL: ${linkUrl} using Pixel: ${finalPixelId}`);
+        let matchValue = linkUrl;
+        try {
+            const parsedUrl = new URL(linkUrl);
+            matchValue = parsedUrl.host + parsedUrl.pathname;
+        } catch (urlErr) {
+            // Keep raw URL if parsing fails
+        }
+
+        const websiteAudienceName = `Website Visitors - ${matchValue.substring(0, 40)} - ${new Date().toISOString().slice(0, 10)}`;
+        const websiteRule = {
+            inclusions: {
+                operator: "or",
+                rules: [
+                    {
+                        event_sources: [
+                            {
+                                id: finalPixelId,
+                                type: "pixel"
+                            }
+                        ],
+                        retention_seconds: 15552000, // 180 days
+                        filter: {
+                            operator: "and",
+                            filters: [
+                                {
+                                    field: "url",
+                                    operator: "i_contains",
+                                    value: matchValue
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        };
+
+        try {
+            const res = await fetch(`${FB_MARKETING_URL}/${adAccountId}/customaudiences`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: websiteAudienceName,
+                    rule: JSON.stringify(websiteRule),
+                    prefill: 1,
+                    access_token: facebookToken
+                })
+            });
+            const resData = await res.json();
+            if (res.ok && resData.id) {
+                targetCustomAudienceIds.push(resData.id);
+                logToFile(`✅ Website Custom Audience created: ${resData.id}`);
+            } else {
+                logToFile(`❌ Website Custom Audience creation failed:`, resData);
+            }
+        } catch (e: any) {
+            logToFile(`Error creating website custom audience: ${e.message}`);
+        }
+    }
+
     try {
         // --- Step A: Get Source Data & Context ---
         let combinedContext = "";
-        let initialImageUrls: string[] = []; 
+        interface CreativeItem {
+            type: 'image' | 'video';
+            file?: Blob;
+            url?: string;
+        }
+        const creativeItems: CreativeItem[] = [];
+
+        if (creativeFiles.length > 0) {
+            for (const file of creativeFiles) {
+                const isVideo = file.type?.startsWith('video/') || file.name?.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/);
+                creativeItems.push({
+                    type: isVideo ? 'video' : 'image',
+                    file
+                });
+            }
+        }
 
         if (data.imageUrl) {
-            initialImageUrls.push(data.imageUrl);
+            const isVideo = data.imageUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/);
+            creativeItems.push({
+                type: isVideo ? 'video' : 'image',
+                url: data.imageUrl
+            });
         }
 
         if (inventoryIds.length > 0) {
@@ -295,29 +617,39 @@ export async function POST(request: Request) {
                 props.forEach(prop => {
                     combinedContext += `Property: ${prop.title || 'N/A'}. Description: ${prop.description || 'N/A'}. `;
                     if (prop.images && Array.isArray(prop.images) && prop.images.length > 0) {
-                        initialImageUrls.push(...prop.images);
+                        prop.images.forEach(img => {
+                            if (img && img.startsWith('http')) {
+                                creativeItems.push({ type: 'image', url: img });
+                            }
+                        });
                     } else if (prop.image_url) {
-                        initialImageUrls.push(prop.image_url);
+                        creativeItems.push({ type: 'image', url: prop.image_url });
                     }
                 });
             }
         } 
         
         if (assetIds.length > 0) {
-             const { data: assets } = await supabase
+             const { data: assets } = await supabaseAdmin
                 .from('assets')
-                .select('url')
+                .select('url, type')
                 .in('id', assetIds);
 
              if (assets) {
                  assets.forEach(asset => {
-                     if (asset.url) initialImageUrls.push(asset.url);
+                     if (asset.url) {
+                         const isVideo = asset.type === 'video' || asset.url.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/);
+                         creativeItems.push({
+                             type: isVideo ? 'video' : 'image',
+                             url: asset.url
+                         });
+                     }
                  });
              }
         }
 
-        if (creativeFiles.length === 0 && initialImageUrls.length === 0) {
-            throw new Error("No images found in the selected properties, assets, or uploads.");
+        if (creativeItems.length === 0) {
+            throw new Error("No images or videos found in the selected properties, assets, or uploads.");
         }
 
         // --- Step B: Create Lead Form with Custom Questions ---
@@ -435,62 +767,121 @@ export async function POST(request: Request) {
 
         // --- Step C: Upload Creatives (PROXY UPLOAD) ---
         logToFile("--- 3. UPLOADING ALL CREATIVES ---");
-        const metaCreativeHashes: string[] = [];
-        const creativeUploadPromises = [];
+        interface UploadedCreative {
+            type: 'image' | 'video';
+            hash?: string;
+            videoId?: string;
+        }
+        const uploadedCreatives: UploadedCreative[] = [];
+        let globalThumbHash: string | null = null;
 
-        if (creativeFiles.length > 0) {
-            for (const file of creativeFiles) {
-                const uploadFormData = new FormData();
-                uploadFormData.append('source', file, file.name); 
-                uploadFormData.append('access_token', facebookToken);
-                
-                creativeUploadPromises.push(
-                    fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, { 
-                        method: 'POST', body: uploadFormData 
-                    }).then(res => res.json())
-                );
-            }
-        } 
-        
-        if (initialImageUrls.length > 0) {
-            const uniqueUrls = Array.from(new Set(initialImageUrls));
-            for (const url of uniqueUrls) {
-                const imageFetch = await fetch(url);
-                if (!imageFetch.ok) continue; 
-                
-                const imageBlob = await imageFetch.blob();
-                const uploadFormData = new FormData();
-                uploadFormData.append('source', imageBlob, 'marketing_asset.png');
-                uploadFormData.append('access_token', facebookToken);
-                
-                creativeUploadPromises.push(
-                    fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, {
-                        method: 'POST', body: uploadFormData
-                    }).then(res => res.json())
-                );
+        // 1. Prepare global thumbnail hash if we have any videos
+        const hasVideos = creativeItems.some(item => item.type === 'video');
+        if (hasVideos) {
+            logToFile("Preparing video thumbnail for retargeting campaign...");
+            const thumbSource = targetProfile?.logo_url || 'https://adrolls.in/logo-square.png';
+            try {
+                const thumbFetch = await fetch(thumbSource);
+                if (thumbFetch.ok) {
+                    const thumbBlob = await thumbFetch.blob();
+                    const thumbData = new FormData();
+                    thumbData.append('source', thumbBlob, `thumb_${Date.now()}.png`);
+                    thumbData.append('access_token', facebookToken);
+                    const thumbRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, { method: 'POST', body: thumbData });
+                    const thumbResult = await thumbRes.json();
+                    if (thumbResult.images) {
+                        globalThumbHash = thumbResult.images[Object.keys(thumbResult.images)[0]].hash;
+                        logToFile(`Prepared global thumbnail hash: ${globalThumbHash}`);
+                    }
+                }
+            } catch (thumbErr: any) {
+                logToFile("Failed to prepare video thumbnail:", thumbErr.message);
             }
         }
-        
-        const uploadResults = await Promise.all(creativeUploadPromises);
-        let firstUploadError: any = null;
-        uploadResults.forEach((data, i) => {
-            if (data.images) {
-                const hash = data.images[Object.keys(data.images)[0]].hash;
-                metaCreativeHashes.push(hash);
-            } else if (data.error) {
-                firstUploadError = data.error;
-            }
-        });
 
-        if (metaCreativeHashes.length === 0) {
+        // 2. Upload each creative item
+        let firstUploadError: any = null;
+        for (let i = 0; i < creativeItems.length; i++) {
+            const item = creativeItems[i];
+            try {
+                if (item.type === 'video') {
+                    const videoData = new FormData();
+                    if (item.file) {
+                        videoData.append('source', item.file, (item.file as any).name || 'video.mp4');
+                    } else if (item.url) {
+                        videoData.append('file_url', item.url);
+                    }
+                    videoData.append('access_token', facebookToken);
+                    
+                    logToFile(`Uploading video ${i + 1} to Meta...`);
+                    const videoRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/advideos`, { method: 'POST', body: videoData });
+                    const videoResult = await videoRes.json();
+                    
+                    if (videoResult.id) {
+                        logToFile(`✅ Video ${i + 1} uploaded. ID: ${videoResult.id}`);
+                        uploadedCreatives.push({
+                            type: 'video',
+                            videoId: videoResult.id
+                        });
+                    } else {
+                        logToFile(`❌ Video ${i + 1} upload failed:`, videoResult);
+                        firstUploadError = videoResult.error || { message: "Video upload failed" };
+                    }
+                } else {
+                    const imgData = new FormData();
+                    if (item.file) {
+                        imgData.append('source', item.file, (item.file as any).name || 'image.png');
+                    } else if (item.url) {
+                        const imgFetch = await fetch(item.url);
+                        if (!imgFetch.ok) {
+                            logToFile(`❌ Failed to fetch image URL: ${item.url}`);
+                            continue;
+                        }
+                        const imgBlob = await imgFetch.blob();
+                        imgData.append('source', imgBlob, 'image.png');
+                    }
+                    imgData.append('access_token', facebookToken);
+                    
+                    logToFile(`Uploading image ${i + 1} to Meta...`);
+                    const imgRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, { method: 'POST', body: imgData });
+                    const imgResult = await imgRes.json();
+                    
+                    if (imgResult.images) {
+                        const hash = imgResult.images[Object.keys(imgResult.images)[0]].hash;
+                        logToFile(`✅ Image ${i + 1} uploaded. Hash: ${hash}`);
+                        uploadedCreatives.push({
+                            type: 'image',
+                            hash: hash
+                        });
+                        
+                        if (!globalThumbHash) {
+                            globalThumbHash = hash;
+                        }
+                    } else {
+                        logToFile(`❌ Image ${i + 1} upload failed:`, imgResult);
+                        firstUploadError = imgResult.error || { message: "Image upload failed" };
+                    }
+                }
+            } catch (err: any) {
+                logToFile(`❌ Upload creative exception: ${err.message}`);
+                firstUploadError = err;
+            }
+        }
+
+        if (uploadedCreatives.length === 0) {
             if (firstUploadError) {
                 const title = firstUploadError.error_user_title ? `${firstUploadError.error_user_title}: ` : "";
                 const msg = firstUploadError.error_user_msg || firstUploadError.message || "Unknown error";
                 throw new Error(`Creative upload failed. Meta API Error: ${title}${msg}`);
             }
-            throw new Error("Creative upload failed. Could not upload any images to Facebook.");
+            throw new Error("Creative upload failed. Could not upload any images or videos to Facebook.");
         }
-        logToFile(`✅ Uploaded ${metaCreativeHashes.length} creatives to Meta.`);
+        
+        if (uploadedCreatives.some(c => c.type === 'video')) {
+            logToFile("Waiting 5 seconds for Meta to process uploaded videos...");
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+        logToFile(`✅ Uploaded ${uploadedCreatives.length} creatives to Meta.`);
 
         // --- Step D: Retargeting AI Copywriting ---
         logToFile("--- 4. RETARGETING AI COPYWRITING ---");
@@ -541,7 +932,7 @@ export async function POST(request: Request) {
         
         let allCopyVariations: any[] = [];
         const BATCH_SIZE = 10;
-        const totalToGenerate = metaCreativeHashes.length;
+        const totalToGenerate = uploadedCreatives.length;
 
         for (let batchStart = 0; batchStart < totalToGenerate; batchStart += BATCH_SIZE) {
             const batchEnd = Math.min(batchStart + BATCH_SIZE, totalToGenerate);
@@ -622,7 +1013,7 @@ export async function POST(request: Request) {
         }
 
         // Distinguishable Campaign Naming including Retargeting and Product Name
-        const campaignName = `${businessName} - Retargeting - ${propertyTitle || "AI Smart Campaign"} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
+        const campaignName = `${businessName} - Retargeting (Retargetting) - ${propertyTitle || "AI Smart Campaign"} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
 
         const campaignPayload = {
             name: campaignName,
@@ -711,7 +1102,7 @@ export async function POST(request: Request) {
             billing_event: 'IMPRESSIONS', 
             targeting: {
                 ...targetingConfig,
-                custom_audiences: [{ id: customAudienceId }]
+                custom_audiences: targetCustomAudienceIds.map(id => ({ id }))
             },
             start_time: startTime, 
             status: 'ACTIVE',
@@ -764,10 +1155,10 @@ export async function POST(request: Request) {
         let successfulAds = 0;
         let lastDraftError = null;
 
-        const totalAdsToCreate = metaCreativeHashes.length;
+        const totalAdsToCreate = uploadedCreatives.length;
         
         for (let i = 0; i < totalAdsToCreate; i++) {
-            const hash = metaCreativeHashes[i % metaCreativeHashes.length];
+            const creativeItem = uploadedCreatives[i % uploadedCreatives.length];
             const copy = copyVariations[i % copyVariations.length];
 
             const ctaValue: any = {};
@@ -775,24 +1166,39 @@ export async function POST(request: Request) {
                 ctaValue.link = linkUrl;
             } else {
                 ctaValue.lead_gen_form_id = leadFormId;
+                ctaValue.link = linkUrl;
             }
 
             // Create Creative
-            const creativePayload = {
+            const creativePayload: any = {
                 name: `Retargeting Creative ${i + 1} - ${Date.now()}`,
                 object_story_spec: {
                     page_id: pageId, 
-                    link_data: {
-                        message: copy.primary_text || "Welcome back! View our exclusive client details.", 
-                        name: copy.headline || "VIP Premium Access", 
-                        description: copy.description || "",
-                        link: linkUrl, 
-                        image_hash: hash, 
-                        call_to_action: { type: 'LEARN_MORE', value: ctaValue }
-                    }
                 },
                 access_token: facebookToken,
             };
+
+            if (creativeItem.type === 'video') {
+                creativePayload.object_story_spec.video_data = {
+                    video_id: creativeItem.videoId,
+                    message: copy.primary_text || "Welcome back! View our exclusive client details.",
+                    title: copy.headline || "VIP Premium Access",
+                    image_hash: globalThumbHash,
+                    call_to_action: {
+                        type: 'LEARN_MORE',
+                        value: ctaValue
+                    }
+                };
+            } else {
+                creativePayload.object_story_spec.link_data = {
+                    message: copy.primary_text || "Welcome back! View our exclusive client details.", 
+                    name: copy.headline || "VIP Premium Access", 
+                    description: copy.description || "",
+                    link: linkUrl, 
+                    image_hash: creativeItem.hash, 
+                    call_to_action: { type: 'LEARN_MORE', value: ctaValue }
+                };
+            }
 
             const creativeRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adcreatives`, {
                 method: 'POST',
