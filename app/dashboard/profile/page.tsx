@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Copy,
   Linkedin,
+  Users,
   User,
   Video,
   BarChart3,
@@ -510,18 +511,22 @@ export default function ProfilePage() {
 
     // 2. TRIGGER WEBHOOK SUBSCRIPTION (Fixes "No app associated" error)
     try {
-      await fetch('/api/facebook/subscribe', {
+      const subRes = await fetch('/api/facebook/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pageId: page.id, pageToken: page.access_token })
       })
+      const subData = await subRes.json()
+      if (!subRes.ok) {
+        throw new Error(subData.error || 'Failed to subscribe page webhooks')
+      }
       toast.success(`Connected to ${page.name}!`, {
         description: "Real-time leads are now enabled for this page."
       })
-    } catch (e) {
+    } catch (e: any) {
       console.error("Auto-subscription failed:", e)
       toast.error("Connected with warnings", {
-        description: "CRM saving works, but real-time notifications might need a manual refresh."
+        description: e.message || "CRM saving works, but real-time notifications might need a manual refresh."
       })
     }
 
@@ -796,6 +801,25 @@ export default function ProfilePage() {
         setGoogleCalendars(data.calendars)
       } else {
         console.error("Calendars API error:", data.error)
+        const isTokenErr = data.error && (
+          data.error.toLowerCase().includes('expired') || 
+          data.error.toLowerCase().includes('revoked') || 
+          data.error.toLowerCase().includes('invalid_grant')
+        )
+        if (isTokenErr) {
+          toast.error("Google Calendar connection has expired or been revoked. Please reconnect.", {
+            duration: 5000
+          })
+          setIsGoogleConnected(false)
+          // Automatically unlink the Google account in the database
+          await supabase.from('profiles').update({
+            google_refresh_token: null,
+            google_booking_enabled: false
+          }).eq('id', uId)
+          updateLocalCache({ google_refresh_token: null, google_booking_enabled: false })
+        } else {
+          toast.error(`Calendars error: ${data.error || 'Failed to fetch calendar list'}`)
+        }
       }
     } catch (err) {
       console.error("Failed to load calendars:", err)
@@ -1703,6 +1727,24 @@ export default function ProfilePage() {
                         ) : (
                           <div className="py-3 px-2"><p className="text-sm text-slate-500 font-medium">No Pixels found for this account.</p></div>
                         )}
+                      </div>
+
+                      {/* Custom Audiences Management */}
+                      <div className="bg-slate-50/80 rounded-3xl p-4 border border-slate-100 mt-4">
+                        <div className="flex justify-between items-center mb-2 px-1">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Custom Audiences</label>
+                        </div>
+                        <div className="py-2 px-1 flex flex-col gap-3 text-left">
+                          <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                            Create, upload, and manage custom audience segments directly inside Meta Ads Manager.
+                          </p>
+                          <button
+                            onClick={() => router.push(`/dashboard/profile/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
+                            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-3 px-5 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-sm"
+                          >
+                            <Users size={14} /> Manage Custom Audiences
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}

@@ -82,6 +82,15 @@ export async function POST(request: Request) {
         const ageMaxVal = formData.get('ageMax');
         if (ageMaxVal) data.ageMax = parseInt(ageMaxVal.toString());
 
+        const audStr = formData.get('customAudienceIds')?.toString();
+        if (audStr) {
+            try {
+                data.customAudienceIds = JSON.parse(audStr);
+            } catch (e) {
+                console.error("Failed to parse customAudienceIds from form data", e);
+            }
+        }
+
         data.creativeFiles = [];
         formData.forEach((value, key) => {
             if (key.startsWith('creativeFiles[') && value instanceof Blob) {
@@ -167,7 +176,8 @@ export async function POST(request: Request) {
         campaignType = 'instant_form',
         pixelId,
         ageMin,
-        ageMax
+        ageMax,
+        customAudienceIds = []
     } = data;
     
     const currency = targetProfile?.currency || 'INR';
@@ -669,7 +679,7 @@ export async function POST(request: Request) {
             } catch (e) {}
         }
         
-        const campaignName = `${businessName} - ${propertyTitle || "AI Smart Campaign"} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
+        const campaignName = `${businessName} - ${customAudienceIds.length > 0 ? 'Retargeting' : (propertyTitle || "AI Smart Campaign")} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
 
         const campaignPayload = {
             name: campaignName,
@@ -700,13 +710,13 @@ export async function POST(request: Request) {
 
         // --- Parse Location Targeting ---
         logToFile("--- PREPARING LOCATION TARGETING ---");
-        let targetingConfig: any = { geo_locations: { countries: ['IN'] } }; 
+        let targetingConfig: any = { geo_locations: { countries: ['IN'], location_types: ['home'] } }; 
         
         if (metaLocationsStr) {
             try {
                 const locationsArray = JSON.parse(metaLocationsStr);
                 if (Array.isArray(locationsArray) && locationsArray.length > 0) {
-                    targetingConfig = { geo_locations: { cities: [], regions: [], countries: [], zips: [] } };
+                    targetingConfig = { geo_locations: { cities: [], regions: [], countries: [], zips: [], location_types: ['home'] } };
                     
                     locationsArray.forEach((locData: any) => {
                         const loc = locData.location;
@@ -733,18 +743,19 @@ export async function POST(request: Request) {
             }
         }
 
-        // Apply strict targeting constraints and manual placements (excluding Audience Network)
-        targetingConfig.age_min = ageMin !== undefined && ageMin !== null ? ageMin : 18;
-        targetingConfig.age_max = ageMax !== undefined && ageMax !== null ? ageMax : 65;
+        // Apply smart targeting constraints and placements (matching high-performing campaigns)
+        // Meta's Advantage+ Audience requires age_min <= 25 and age_max >= 65 for hard controls
+        targetingConfig.age_min = ageMin !== undefined && ageMin !== null ? Math.min(ageMin, 25) : 18;
+        targetingConfig.age_max = 65;
         targetingConfig.targeting_relaxation_types = {
-            custom_audience: 0,
-            lookalike: 0
+            custom_audience: 1,
+            lookalike: 1
         };
         targetingConfig.targeting_automation = {
-            advantage_audience: 0
+            advantage_audience: 1 // Enable Advantage+ Audience
         };
         targetingConfig.device_platforms = ['mobile', 'desktop'];
-        targetingConfig.publisher_platforms = ['facebook', 'instagram', 'messenger'];
+        targetingConfig.publisher_platforms = ['facebook', 'instagram']; // Exclude messenger for higher lead quality
 
         // --- Step F: Ad Set ---
         logToFile("--- 6. AD SET ---");
@@ -753,10 +764,15 @@ export async function POST(request: Request) {
         const customEventType = 'LEAD';
 
         const adSetPayload: any = {
-            name: `Smart AdSet - AI Audiences`,
+            name: customAudienceIds.length > 0 ? `Retargeting AdSet - Custom Audiences` : `Smart AdSet - AI Audiences`,
             campaign_id: campaignId,
             billing_event: 'IMPRESSIONS', 
-            targeting: targetingConfig,
+            targeting: {
+                ...targetingConfig,
+                ...(customAudienceIds.length > 0 ? {
+                    custom_audiences: customAudienceIds.map((id: string) => ({ id }))
+                } : {})
+            },
             start_time: startTime, 
             status: 'ACTIVE',
             access_token: facebookToken,

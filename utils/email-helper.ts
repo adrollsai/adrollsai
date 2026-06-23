@@ -298,3 +298,128 @@ export async function sendBookingReminderEmail(
     return { success: false, error: error.message }
   }
 }
+
+export async function sendFacebookLeadEmail(
+  to: string[],
+  leadDetails: {
+    name: string,
+    email?: string,
+    phone: string,
+    formName?: string,
+    adName?: string,
+    customQuestions?: Record<string, any>
+  }
+) {
+  try {
+    if (!to || to.length === 0) {
+      return { success: false, error: "No recipients provided" };
+    }
+
+    let customQuestionsHtml = '';
+    if (leadDetails.customQuestions && Object.keys(leadDetails.customQuestions).length > 0) {
+      customQuestionsHtml = '<div style="margin-top: 16px; border-top: 1px solid #f1f5f9; padding-top: 12px;">';
+      customQuestionsHtml += '<h3 style="color: #64748b; font-size: 13px; text-transform: uppercase; margin: 0 0 8px 0; font-weight: bold;">Form Submissions / Answers:</h3>';
+      customQuestionsHtml += '<ul style="list-style-type: none; padding-left: 0; margin: 0;">';
+      for (const [key, value] of Object.entries(leadDetails.customQuestions)) {
+        customQuestionsHtml += `<li style="margin-bottom: 6px; font-size: 14px; color: #334155;"><strong style="text-transform: capitalize; color: #64748b;">${key}:</strong> ${value}</li>`;
+      }
+      customQuestionsHtml += '</ul></div>';
+    }
+
+    const info = await transporter.sendMail({
+      from: `"AdRolls CRM" <${process.env.SMTP_USER}>`,
+      to: to.join(', '),
+      subject: `🔥 New Facebook Lead: ${leadDetails.name}`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h2 style="color: #003D6F; margin: 0; font-size: 24px; font-weight: bold; border-bottom: 2px solid #003D6F; padding-bottom: 12px;">New Facebook Lead</h2>
+          </div>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+              <td style="padding: 12px 8px; font-weight: bold; width: 140px; color: #64748b; font-size: 14px; text-transform: uppercase;">Name:</td>
+              <td style="padding: 12px 8px; color: #003D6F; font-weight: 600; font-size: 15px;">${leadDetails.name}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+              <td style="padding: 12px 8px; font-weight: bold; color: #64748b; font-size: 14px; text-transform: uppercase;">Phone:</td>
+              <td style="padding: 12px 8px; color: #003D6F; font-weight: 600; font-size: 15px;">${leadDetails.phone}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+              <td style="padding: 12px 8px; font-weight: bold; color: #64748b; font-size: 14px; text-transform: uppercase;">Email:</td>
+              <td style="padding: 12px 8px; color: #003D6F; font-weight: 600; font-size: 15px;">
+                ${leadDetails.email ? `<a href="mailto:${leadDetails.email}" style="color: #B22B31; text-decoration: none;">${leadDetails.email}</a>` : 'Not provided'}
+              </td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+              <td style="padding: 12px 8px; font-weight: bold; color: #64748b; font-size: 14px; text-transform: uppercase;">Form Name:</td>
+              <td style="padding: 12px 8px; color: #003D6F; font-weight: 600; font-size: 15px;">${leadDetails.formName || 'Facebook Lead Form'}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+              <td style="padding: 12px 8px; font-weight: bold; color: #64748b; font-size: 14px; text-transform: uppercase;">Campaign/Ad:</td>
+              <td style="padding: 12px 8px; color: #003D6F; font-weight: 600; font-size: 15px;">${leadDetails.adName || 'Facebook Ads'}</td>
+            </tr>
+          </table>
+          ${customQuestionsHtml}
+          <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
+            <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
+              Sent automatically by AdRolls CRM Platform
+            </p>
+          </div>
+        </div>
+      `,
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    console.error("Facebook Lead Email Error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function sendLeadAutoResponseEmail(
+  to: string,
+  leadName: string,
+  businessName: string,
+  adName?: string
+) {
+  try {
+    if (!to) {
+      return { success: false, error: "No recipient email provided" };
+    }
+
+    const campaignInfo = adName ? ` regarding <strong>${adName}</strong>` : '';
+
+    const info = await transporter.sendMail({
+      from: `"${businessName || 'AdRolls'}" <${process.env.SMTP_USER}>`,
+      to: to,
+      subject: `Thank you for contacting ${businessName || 'us'}!`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h2 style="color: #003D6F; margin: 0; font-size: 24px; font-weight: bold; border-bottom: 2px solid #003D6F; padding-bottom: 12px;">We Received Your Details!</h2>
+          </div>
+          <p style="font-size: 16px; color: #334155; line-height: 1.5;">Hi ${leadName},</p>
+          <p style="font-size: 15px; color: #475569; line-height: 1.5;">
+            Thank you for reaching out to <strong>${businessName || 'our team'}</strong>${campaignInfo}. We have successfully received your query.
+          </p>
+          <p style="font-size: 15px; color: #475569; line-height: 1.5;">
+            One of our team members will review your details and get in touch with you shortly.
+          </p>
+          <div style="background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; padding: 16px; margin: 20px 0; text-align: center;">
+            <p style="margin: 0; font-size: 14px; color: #64748b; font-weight: 600;">
+              No further action is required from your end. We'll speak with you soon!
+            </p>
+          </div>
+          <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
+            <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
+              Powered by AdRolls
+            </p>
+          </div>
+        </div>
+      `,
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    console.error("Lead AutoResponse Email Error:", error);
+    return { success: false, error: error.message };
+  }
+}

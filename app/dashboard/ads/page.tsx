@@ -5,7 +5,7 @@ import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditC
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 type Property = { id: string; title: string; price: string; image_url: string; description?: string }
 type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string; status?: string }
@@ -27,6 +27,8 @@ const GENDERS = ['All', 'Male', 'Female']
 
 export default function AdsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const impersonateId = searchParams.get('impersonate')
   const supabase = createClient()
   const fileInputRef = useRef<HTMLInputElement>(null) 
   
@@ -238,6 +240,38 @@ export default function AdsPage() {
   const [isAddingQuestion, setIsAddingQuestion] = useState(false)
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const [newQuestion, setNewQuestion] = useState<CustomQuestion>({ label: '', type: 'SHORT_ANSWER', options: [''] })
+
+  // Meta Custom Audience States
+  const [customAudiences, setCustomAudiences] = useState<any[]>([])
+  const [isLoadingCustomAudiences, setIsLoadingCustomAudiences] = useState(false)
+  const [runAsRemarketing, setRunAsRemarketing] = useState(false)
+  const [selectedCustomAudienceIds, setSelectedCustomAudienceIds] = useState<string[]>([])
+
+  useEffect(() => {
+    if (isModalOpen && selectedAdAccountId) {
+      const fetchCustomAudiences = async () => {
+        setIsLoadingCustomAudiences(true)
+        try {
+          const urlParams = new URLSearchParams(window.location.search)
+          const impersonateId = urlParams.get('impersonate')
+          const impParam = impersonateId ? `?impersonate=${impersonateId}` : ''
+          const res = await fetch(`/api/meta-ads/custom-audiences?${impParam}`)
+          const data = await res.json()
+          if (data.audiences) {
+            setCustomAudiences(data.audiences)
+          }
+        } catch (e) {
+          console.error("Failed to fetch custom audiences for modal", e)
+        } finally {
+          setIsLoadingCustomAudiences(false)
+        }
+      }
+      fetchCustomAudiences()
+    } else if (!isModalOpen) {
+      setRunAsRemarketing(false)
+      setSelectedCustomAudienceIds([])
+    }
+  }, [isModalOpen, selectedAdAccountId])
 
   const [adForm, setAdForm] = useState({
     metaLocations: [] as { location: LocationOption, radius: number }[],
@@ -1142,6 +1176,10 @@ export default function AdsPage() {
     formPayload.append('ageMax', adForm.ageMax.toString());
     if (pixelId) {
         formPayload.append('pixelId', pixelId);
+    }
+
+    if (runAsRemarketing && selectedCustomAudienceIds.length > 0) {
+        formPayload.append('customAudienceIds', JSON.stringify(selectedCustomAudienceIds));
     }
 
     if (remarketSourceCampaign) {
@@ -3210,6 +3248,70 @@ export default function AdsPage() {
                           </div>
                           {locationResults.length > 0 && (<div className="absolute z-20 w-full bg-white mt-2 rounded-2xl shadow-xl border border-slate-100 max-h-56 overflow-y-auto custom-scrollbar">{locationResults.map(loc => (<div key={loc.key} onClick={() => { if (!adForm.metaLocations.find(l => l.location.key === loc.key)) setAdForm(prev => ({ ...prev, metaLocations: [...prev.metaLocations, { location: loc, radius: 20 }] })); setLocationSearchText(''); setLocationResults([]); }} className="p-4 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors"><div className="text-sm font-bold text-slate-800">{loc.name}</div><div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mt-1">{loc.region ? `${loc.region}, ` : ''}{loc.country_code} ({loc.type})</div></div>))}</div>)}
                       </div>
+
+                      {/* Run as Remarketing Campaign Toggle */}
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-2xl border border-blue-100 flex items-center justify-between mt-4">
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5"><Users size={16} className="text-blue-500"/> Run as Remarketing Campaign</h3>
+                            <p className="text-xs text-slate-600 mt-1 font-medium">Target your existing Meta custom audiences instead of broad geographic targeting.</p>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => setRunAsRemarketing(prev => !prev)} 
+                            className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 shrink-0 ${runAsRemarketing ? 'bg-blue-500 focus:ring-blue-500' : 'bg-slate-300 focus:ring-slate-400'}`}
+                          >
+                            <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${runAsRemarketing ? 'translate-x-5' : 'translate-x-0'}`} />
+                          </button>
+                      </div>
+
+                      {/* Custom Audience Selection Checklist */}
+                      {runAsRemarketing && (
+                        <div className="mt-4 bg-slate-50 border border-slate-200/60 rounded-2xl p-5 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5 font-black">Select Target Custom Audiences</label>
+                          {isLoadingCustomAudiences ? (
+                            <div className="flex items-center gap-2 text-xs text-slate-500 py-2 font-medium">
+                              <Loader2 size={14} className="animate-spin text-blue-500" /> Fetching audiences...
+                            </div>
+                          ) : customAudiences.length === 0 ? (
+                            <div className="text-xs text-slate-500 font-medium py-2">
+                              No custom audiences found in this ad account. <a href={`/dashboard/profile/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`} className="text-blue-600 hover:underline font-bold" target="_blank" rel="noopener noreferrer">Create or upload one first</a>.
+                            </div>
+                          ) : (
+                            <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                              {customAudiences.map((aud) => {
+                                const isChecked = selectedCustomAudienceIds.includes(aud.id);
+                                return (
+                                  <label key={aud.id} className="flex items-start gap-3 p-3 bg-white border border-slate-100 hover:border-blue-100 rounded-xl cursor-pointer shadow-sm transition-all select-none text-left">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        if (isChecked) {
+                                          setSelectedCustomAudienceIds(prev => prev.filter(id => id !== aud.id));
+                                        } else {
+                                          setSelectedCustomAudienceIds(prev => [...prev, aud.id]);
+                                        }
+                                      }}
+                                      className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-xs font-bold text-slate-800 truncate flex items-center justify-between">
+                                        <span>{aud.name}</span>
+                                        <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 ml-2">
+                                          {aud.subtype}
+                                        </span>
+                                      </div>
+                                      {aud.description && (
+                                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">{aud.description}</p>
+                                      )}
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
  
                       <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-2xl border border-purple-100 flex items-center justify-between mt-4">
                           <div><h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5"><Sparkles size={16} className="text-purple-500"/> Optimize for High-Quality Leads</h3><p className="text-xs text-slate-600 mt-1 font-medium">Use AI to automatically find users who are more likely to convert (requires Pixel).</p></div>

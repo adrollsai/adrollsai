@@ -77,7 +77,7 @@ export async function POST(request: Request) {
           // Find the User based on the Page ID using Admin Client
           const { data: profile, error: profileErr } = await supabaseAdmin
             .from('profiles')
-            .select('id, selected_page_token, pixel_id, enable_distribution')
+            .select('id, email, business_name, selected_page_token, pixel_id, enable_distribution')
             .eq('selected_page_id', page_id)
             .single()
 
@@ -209,6 +209,59 @@ export async function POST(request: Request) {
           }).select().single()
 
           if (error) continue;
+
+          // Dispatch email notification to owner and assigned agent connected emails
+          try {
+              const recipientEmails: string[] = [];
+              if (profile.email) {
+                  recipientEmails.push(profile.email);
+              }
+              
+              if (assignedAgentId) {
+                  const { data: agentProfile } = await supabaseAdmin
+                      .from('profiles')
+                      .select('email')
+                      .eq('id', assignedAgentId)
+                      .maybeSingle();
+                  
+                  if (agentProfile?.email && !recipientEmails.includes(agentProfile.email)) {
+                      recipientEmails.push(agentProfile.email);
+                  }
+              }
+
+              if (recipientEmails.length > 0) {
+                  const { sendFacebookLeadEmail } = await import('@/utils/email-helper');
+                  console.log(`[Facebook Webhook] Sending lead notification emails to: ${recipientEmails.join(', ')}`);
+                  await sendFacebookLeadEmail(recipientEmails, {
+                      name,
+                      email,
+                      phone,
+                      formName,
+                      adName: adCampaignString,
+                      customQuestions: customFields
+                  });
+              } else {
+                  console.warn("[Facebook Webhook] No recipient emails resolved for profile ID:", profile.id);
+              }
+          } catch (emailErr) {
+              console.error("[Facebook Webhook] Failed to send lead notification emails:", emailErr);
+          }
+
+          // Dispatch thank you auto-response email to the captured lead
+          if (email) {
+              try {
+                  const { sendLeadAutoResponseEmail } = await import('@/utils/email-helper');
+                  console.log(`[Facebook Webhook] Sending auto-response thank you email to lead: ${email}`);
+                  await sendLeadAutoResponseEmail(
+                      email,
+                      name,
+                      profile.business_name || '',
+                      adCampaignString
+                  );
+              } catch (autoEmailErr) {
+                  console.error("[Facebook Webhook] Failed to send auto-response email to lead:", autoEmailErr);
+              }
+          }
 
           // FIRE THE RICHER NOTIFICATION
           const cleanSource = adCampaignString.split(' / ')[0];

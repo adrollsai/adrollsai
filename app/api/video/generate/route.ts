@@ -272,7 +272,8 @@ export async function POST(request: Request) {
             images, // Reference images (up to 4)
             imageDescriptions,
             useCharacterVideo = true,
-            language = 'hinglish'
+            language = 'hinglish',
+            useUploadedAudio = true
         } = body;
 
         // Auto-extract and propagate custom instructions to all scene generations
@@ -526,22 +527,19 @@ export async function POST(request: Request) {
             .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined')
             .slice(0, 8);
 
-        // Prepare physical image descriptions
-        const descriptionsText = (imageDescriptions || script.imageDescriptions || [])
-            .map((desc: string, i: number) => `- Reference Image ${i + 1} description: "${desc}"`)
-            .join('\n') || 'No detailed image descriptions provided. Describe the images based on standard product expectations.';
+        // Prepare physical image descriptions (will be built dynamically below based on final image array mapping)
 
         // 2. Use custom uploaded profile avatar / reference video based on presenterType
         let avatarUrl = presenterType === 'video' ? profile.character_url : (presenterType === 'avatar' ? profile.avatar_url : null);
         let isCharacterVideo = presenterType === 'video';
         let isAvatarPhoto = presenterType === 'avatar';
-        let referenceAudioUrl = isCharacterVideo 
-            ? (profile.character_audio_url || "") 
-            : (isAvatarPhoto ? (profile.avatar_audio_url || "") : "");
+        let referenceAudioUrl = (isCharacterVideo || isAvatarPhoto) && useUploadedAudio
+            ? (isCharacterVideo ? (profile.character_audio_url || "") : (profile.avatar_audio_url || ""))
+            : "";
         
         if (avatarUrl) {
             console.log(`[Video Generate] Using custom uploaded character ${isCharacterVideo ? 'video' : 'photo'} from profile: ${avatarUrl}`);
-            if (isCharacterVideo || isAvatarPhoto) {
+            if ((isCharacterVideo || isAvatarPhoto) && useUploadedAudio) {
                 // Ensure they have uploaded a voice sample first
                 if (!referenceAudioUrl) {
                     return NextResponse.json({ 
@@ -559,6 +557,13 @@ export async function POST(request: Request) {
                 }
                 
                 console.log(`[Video Generate] Using uploaded voice sample directly: ${referenceAudioUrl}`);
+            } else if (isCharacterVideo) {
+                // Still trim the video reference even if not cloning voice
+                try {
+                    avatarUrl = await getTrimmedReferenceVideo(avatarUrl, targetUserId);
+                } catch (delegateErr: any) {
+                    console.error("[Video Generate] Local video trimming failed:", delegateErr.message);
+                }
             }
         } else {
             console.log(`[Video Generate] Speaker reference is disabled (presenterType=none). Using generic presenter.`);
@@ -580,6 +585,23 @@ export async function POST(request: Request) {
         let prompts: string[] = [];
         const scenes = script.scenes || [{ dialogue: script.dialogue, visuals: script.visuals }];
         
+        // Prepare precise image mapping instructions to prevent any ambiguity for Kie.ai Seedance 2.0
+        let preciseImageMapping = [];
+        let currentIndex = 1;
+        if (avatarUrl && !isCharacterVideo) {
+            preciseImageMapping.push(`Image_1 (reference_image_urls[0]): Presenter Avatar Photo (used ONLY for character face/identity consistency, NOT for scenes background)`);
+            currentIndex = 2;
+        }
+        
+        const listingDescriptions = imageDescriptions || script.imageDescriptions || [];
+        for (let i = 0; i < refImages.length; i++) {
+            const desc = listingDescriptions[i] || `Property photo showing scene/features`;
+            preciseImageMapping.push(`Image_${currentIndex} (reference_image_urls[${currentIndex - 1}]): Property Listing Image ${i + 1} - Description: "${desc}"`);
+            currentIndex++;
+        }
+        
+        const descriptionsText = preciseImageMapping.join('\n') || 'No detailed image descriptions provided.';
+
         if (body.prompts && Array.isArray(body.prompts) && body.prompts.length > 0) {
             console.log(`[Video Generate] Using user-provided custom prompts (length: ${body.prompts.length})`);
             prompts = body.prompts;
@@ -601,8 +623,8 @@ export async function POST(request: Request) {
                     ? `Use reference video ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`
                     : `Use reference image ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`;
 
-                const synthesisPrompt = `You are a professional Prompt Engineer for Bytedance/Kie.ai Seedance 2.0.
-Your task is to translate a script scene into a highly effective, minimal, and clean generative video prompt.
+                const synthesisPrompt = `You are a professional Video Director and Prompt Engineer for Bytedance/Kie.ai Seedance 2.0.
+Your task is to translate a script scene into a highly engaging, step-by-step chronological generative video prompt, formatted exactly like the reference example.
 
 CREATOR CHARACTER:
 - Description: "${characterDescription}"
@@ -619,24 +641,49 @@ REFERENCE IMAGES & DETAILS:
 ${descriptionsText}
 
 YOUR INSTRUCTIONS:
-1. Keep the output prompt clean, short, and to the point. Do NOT include excessive details, bullet points, camera movements, lighting settings, or negative avoid lists. These degrade the model's pronunciation and video quality.
-2. Focus on:
-   - Defining a simple professional setting and category-appropriate attire.
-   - Instructing the presenter to speak directly to the camera in a natural, organic, UGC-like video presentation that does NOT look AI-generated, delivering the dialogue with highly expressive, warm, and enthusiastic energy.
-   - Referencing the listing images for clean, simple B-roll transitions if applicable. Explicitly state in the B-roll section: "Only show the parts of the image that are actually visible in the reference image. Do not out-paint, extrapolate, or hallucinate areas outside the reference image borders."
-3. If the word 'Mohali' (or 'mohali', 'MOHALI') appears in the dialogue, always write it in Hindi script as 'मोहाली' in the DIALOGUE block. Keep all other words in their original script.
-4. Output the prompt following this EXACT format (replace bracketed values, do NOT include markdown backticks or extra text, ensure double newlines between sections):
+1. The output prompt MUST be written as a chronological, line-by-line sequence of actions, camera directions, and dialogues, separated by empty lines.
+2. Structure and Formatting:
+   - Start by describing the opening setting, scene, and background.
+   - Presenter Environment & Setting: The presenter MUST be placed inside the target setting described (e.g., inside the luxury kothi's modern foyer/living room/garden environment). You MUST explicitly instruct the generator to ignore the background of the presenter's reference avatar image/photo (Image_1) and completely replace it with the described setting setting (e.g. 'The presenter is standing in the luxurious modern foyer setting of the kothi (completely replacing and ignoring the background of the reference image Image_1).').
+   - Describe the character's initial stance, action, and expressions.
+   - For all dialogue delivery, write it on new lines exactly as:
+     She says:
+     "[dialogue]"
+     (Use 'She says' or 'He says' based on the character's gender from the description. Do NOT separate out or write "Dialogue: ..." or group it into a single paragraph).
+   - Dialogue Language & Script: In the final prompt, the spoken dialogue (the text inside the double quotes after 'She says:' or 'He says:') MUST preserve the exact language and script formatting of the input scene dialogue. For Hinglish/Hindi, any words that do not exist in the English dictionary (Hindi words like 'apni', 'aur', 'bhi', 'ke liye', 'apna', 'dhoondh rahe ho', etc., and locations like "चंडीगढ़" or "मोहाली", and units like "कनाल" or "बी-एच-के") MUST be written in Hindi (using Devanagari script). Standard English words that exist in the English dictionary (like "dream home", "luxury", "family", "BHK", "comfort", "status", "marble", "flooring") MUST remain in standard English letters using Roman characters. Absolutely DO NOT transliterate the Devanagari script back to Roman characters in the dialogue part of the prompt.
+   - Descriptive Text: All descriptive text (visual details, camera instructions, style attributes) in the final prompt MUST be written in English (using standard Roman characters). Do NOT use Devanagari script in the visual descriptions or camera instructions.
+   - Referencing listing images: You MUST reference each image in the camera/visual direction parts using BOTH its visual description and its exact label 'Image_X' as defined in the mapping list (e.g. 'The camera pans to reveal the stunning curved spiral staircase with premium gold-finished railings (matching Image_3)').
+   - Facial Mutation Guardrails & Framing: Whenever the presenter is shown on camera, you MUST specify a medium closeup shot of the presenter speaking from chest up (e.g. 'A medium closeup shot of the presenter speaking from chest up', 'A chest-up shot of the speaker smiling warmly') to keep their face consistent and avoid mutation. Do NOT zoom in too tight or show only the face. Keep a chest-up distance to allow natural body language and hand gestures. Medium or wide shots showing the presenter's entire body from far away are strictly prohibited.
+   - If you want to show something large (like a building facade, room interior, or landscape), it MUST be a B-roll transition WITHOUT the presenter, and the shot MUST be specified as a super far away wide scenic shot so that no human face is visible or noticed.
+   - At the end of the prompt, list the exact high-quality camera and video style attributes as separate lines.
 
-${characterAppearanceText}
+3. Output the prompt following this EXACT format (do NOT include markdown code blocks, backticks, or extra conversational text, output only the single unified prompt block):
 
-Setting: [Describe simple setting/environment, e.g., "A modern, bright real estate office"]
+[Describe the setting, scene opening, and presenter character medium closeup chest-up action, explicitly replacing the reference image background]
 
-Presenter: A warm, professional presenter speaking directly to the camera in a natural, organic, UGC-like video that does not look AI. Delivery must be highly expressive, enthusiastic, and natural. Wearing [describe simple attire].
+[Describe camera movement direction]
 
-B-Roll: [Describe B-roll transition simply using the reference images, e.g., "Show the villa facade (matching reference image 1) during corresponding dialogue cues. Only show the parts of the image that are actually visible in the reference image. Do not out-paint, extrapolate, or hallucinate areas outside the reference image borders." or "None" if no reference images].
+She/He says:
+"[Spoken dialogue preserving the input's mixed Devanagari-English script]"
 
-Dialogue:
-"${scene.dialogue}"`;
+[Describe transitions and listing images referencing by label like Image_X, e.g.]
+Transition to a wide scenic shot showing the property facade (matching Image_2) from super far away so that no human face is visible or mutated.
+
+She/He says:
+"[Spoken dialogue preserving the input's mixed Devanagari-English script]"
+
+Professional real estate home tour.
+Photorealistic.
+Ultra-realistic human motion.
+Natural body language.
+Perfect lip synchronization.
+Luxury property marketing video.
+Smooth steadycam movement.
+Cinematic architectural videography.
+Premium lighting.
+No AI artifacts.
+High-end commercial production quality.
+15-second continuous shot.`;
 
                 let finalPrompt = "";
                 try {
@@ -657,16 +704,34 @@ Dialogue:
                     } catch (fallbackErr: any) {
                         console.error(`[Generate API] Fallback prompt synthesis also failed for scene ${i + 1}:`, fallbackErr);
                         // Fallback prompt using the new structured template
+                        const targetImageLabel = (avatarUrl && !isCharacterVideo) ? "Image_2" : "Image_1";
+                        // Keep dialogue exactly as-is without stripping Devanagari characters
+                        const cleanFallbackDialogue = scene.dialogue;
                         finalPrompt = `${characterAppearanceText}
 
-Setting: A premium, warm setting appropriate to the brand.
+The video opens in a premium, warm real estate setting.
 
-Presenter: A warm, professional presenter speaking directly to the camera in a natural, organic, UGC-like video that does not look AI. Delivery is highly expressive, reassuring, and enthusiastic. Wearing smart-casual business attire.
+A professional female UGC presenter stands in a detailed closeup shot looking directly into the camera.
 
-B-Roll: ${refImages.length > 0 ? "Transition to B-roll showing the product/property matching the supplied reference images during key dialogue points. Only show the parts of the image that are actually visible in the reference image. Do not out-paint, extrapolate, or hallucinate areas outside the reference image borders." : "None."}
+She says:
+"${cleanFallbackDialogue}"
 
-Dialogue:
-"${scene.dialogue}"`;
+The camera slowly dollies toward the presenter's face.
+
+Transition to a wide scenic shot showing the product/property matching the supplied reference image 1 (${targetImageLabel}) from super far away so that no human face is visible or mutated.
+
+Professional real estate home tour.
+Photorealistic.
+Ultra-realistic human motion.
+Natural body language.
+Perfect lip synchronization.
+Luxury property marketing video.
+Smooth steadycam movement.
+Cinematic architectural videography.
+Premium lighting.
+No AI artifacts.
+High-end commercial production quality.
+15-second continuous shot.`;
                     }
                 }
                 prompts.push(finalPrompt);
@@ -757,7 +822,7 @@ Dialogue:
 
             // Pass the extracted reference audio URL.
             // DO NOT fall back to passing the .mp4 video URL as the audio URL, as this breaks voice cloning.
-            if (isCharacterVideo || isAvatarPhoto) {
+            if ((isCharacterVideo || isAvatarPhoto) && useUploadedAudio) {
                 if (!referenceAudioUrl) {
                     throw new Error("Reference audio extraction failed. Please ensure your Cloud Run service is deployed and running, and that your uploaded presenter asset has a valid, audible voice sample.");
                 }

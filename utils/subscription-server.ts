@@ -21,14 +21,6 @@ export async function checkLimitAndIncrement(
 ) {
     const supabase = await getAdminClient();
     
-    const UNLIMITED_USERS = [
-        'bc63c065-9bcc-4793-bedc-f0960406425b',
-        'c890a11f-84ce-4592-ab8f-8682927b1a9d',
-        '9bbf6e51-283e-48d1-bbb4-8dc546cc74b2',
-        '29937131-1975-4c5f-9b78-e5b28f918d32' // The ProEstate
-    ];
-    if (UNLIMITED_USERS.includes(userId)) return true;
-
     // Map new types to their corresponding DB columns (for both old and new schemas)
     const dbColumnMap: Record<string, string> = {
         videos: 'videos_used',
@@ -76,6 +68,15 @@ export async function checkLimitAndIncrement(
             .single();
         if (parentProfile) profileToUpdate = parentProfile;
     }
+
+    const UNLIMITED_USERS = [
+        'bc63c065-9bcc-4793-bedc-f0960406425b',
+        'c890a11f-84ce-4592-ab8f-8682927b1a9d',
+        '9bbf6e51-283e-48d1-bbb4-8dc546cc74b2',
+        '29937131-1975-4c5f-9b78-e5b28f918d32', // The ProEstate
+        '42d2e0c5-4fe6-4738-8a9f-63f09be01f12'  // GNR HOMES
+    ];
+    if (UNLIMITED_USERS.includes(userId) || UNLIMITED_USERS.includes(primaryUserId)) return true;
 
     // Resolve limits dynamically
     const limits = getUserLimits(profileToUpdate);

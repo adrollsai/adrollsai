@@ -169,6 +169,8 @@ export default function CreationPage() {
   // Presenter settings mode: 'video' (reference video), 'avatar' (avatar photo), or 'none'
   const [presenterMode, setPresenterMode] = useState<'video' | 'avatar' | 'none'>('none')
   const [isPresenterModalOpen, setIsPresenterModalOpen] = useState(false)
+  const [videoInstructions, setVideoInstructions] = useState('')
+  const [useUploadedAudio, setUseUploadedAudio] = useState(true)
 
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [uploadingVideo, setUploadingVideo] = useState(false)
@@ -324,7 +326,7 @@ export default function CreationPage() {
   }
 
   // Dynamic Video Duration State (15s, 30s, 45s, 60s)
-  const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 45 | 60>(30)
+  const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 45 | 60>(15)
 
   // Language Toggle for Video (Hinglish = Devanagari-English mix, English = pure English)
   const [videoLanguage, setVideoLanguage] = useState<'hinglish' | 'english'>('hinglish')
@@ -606,7 +608,7 @@ export default function CreationPage() {
             body: JSON.stringify({
                 propertyId: selectedPropId || null,
                 concept,
-                userInstructions: '', // None yet during selection
+                userInstructions: videoInstructions,
                 images: refImages,
                 imageDescriptions,
                 presenterType: presenterMode,
@@ -618,10 +620,44 @@ export default function CreationPage() {
         const scriptData = await scriptResponse.json();
         if (scriptData.error) throw new Error(scriptData.error);
 
+        // Fetch prompts immediately to bypass "Review Final Prompts" step
+        setCurrentStep('AI Creative Director is generating physical scenes prompts for review...')
+        let prompts = []
+        try {
+            const promptResponse = await fetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    propertyId: selectedPropId || null,
+                    script: {
+                        title: scriptData.title,
+                        dialogue: scriptData.dialogue,
+                        visuals: scriptData.visuals,
+                        scenes: scriptData.scenes,
+                        finalCaption: scriptData.finalCaption,
+                        concept
+                    },
+                    images: scriptData.refImages || refImages,
+                    imageDescriptions: scriptData.imageDescriptions || imageDescriptions,
+                    presenterType: presenterMode,
+                    customInstructions: `${videoInstructions ? `${videoInstructions}\n\n` : ''}${concept.description || concept.visualConcept || ''}`.trim(),
+                    preview: true,
+                    language: videoLanguage,
+                    useUploadedAudio
+                })
+            });
+            const promptData = await promptResponse.json();
+            if (promptData.prompts) {
+                prompts = promptData.prompts;
+            }
+        } catch (promptErr: any) {
+            console.error("Failed to generate preview prompts automatically:", promptErr);
+        }
+
         const aiMsg: Message = {
             id: activeMsgId,
             role: 'ai',
-            text: `Here is the drafted script for **${scriptData.title}**! 🎬\n\nReview the dialogue, visuals, and final caption below.`,
+            text: `Here is the drafted script and generated prompts for **${scriptData.title}**! 🎬\n\nReview the dialogue, visuals, final caption, and customize the prompts below.`,
             script: {
                 title: scriptData.title,
                 dialogue: scriptData.dialogue,
@@ -631,7 +667,8 @@ export default function CreationPage() {
                 concept
             },
             refImages: scriptData.refImages || refImages,
-            imageDescriptions: scriptData.imageDescriptions || imageDescriptions
+            imageDescriptions: scriptData.imageDescriptions || imageDescriptions,
+            prompts: prompts.length > 0 ? prompts : undefined
         };
 
         if (msgIdToReplace) {
@@ -675,7 +712,7 @@ export default function CreationPage() {
             body: JSON.stringify({
                 propertyId: selectedPropId || null,
                 concept,
-                userInstructions: '',
+                userInstructions: videoInstructions,
                 images: refImages,
                 imageDescriptions,
                 variation: true,
@@ -688,11 +725,45 @@ export default function CreationPage() {
         const scriptData = await scriptResponse.json();
         if (scriptData.error) throw new Error(scriptData.error);
 
+        // Fetch prompts immediately to bypass "Review Final Prompts" step
+        setCurrentStep('AI Creative Director is generating physical scenes prompts for review...')
+        let prompts = []
+        try {
+            const promptResponse = await fetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    propertyId: selectedPropId || null,
+                    script: {
+                        title: scriptData.title,
+                        dialogue: scriptData.dialogue,
+                        visuals: scriptData.visuals,
+                        scenes: scriptData.scenes,
+                        finalCaption: scriptData.finalCaption,
+                        concept
+                    },
+                    images: scriptData.refImages || refImages,
+                    imageDescriptions: scriptData.imageDescriptions || imageDescriptions,
+                    presenterType: presenterMode,
+                    customInstructions: `${videoInstructions ? `${videoInstructions}\n\n` : ''}${concept.description || concept.visualConcept || ''}`.trim(),
+                    preview: true,
+                    language: videoLanguage,
+                    useUploadedAudio
+                })
+            });
+            const promptData = await promptResponse.json();
+            if (promptData.prompts) {
+                prompts = promptData.prompts;
+            }
+        } catch (promptErr: any) {
+            console.error("Failed to generate preview prompts automatically:", promptErr);
+        }
+
         setMessages(prev => prev.map(m => {
             if (m.id === messageId) {
                 return {
                     ...m,
-                    text: `Here is a fresh variation for **${scriptData.title}**! 🎬\n\nReview the dialogue, visuals, and final caption below.`,
+                    text: `Here is a fresh variation and generated prompts for **${scriptData.title}**! 🎬\n\nReview the dialogue, visuals, final caption, and customize the prompts below.`,
                     isError: false,
                     failedConcept: undefined,
                     script: {
@@ -704,12 +775,13 @@ export default function CreationPage() {
                         concept
                     },
                     refImages: scriptData.refImages || refImages,
-                    imageDescriptions: scriptData.imageDescriptions || imageDescriptions
+                    imageDescriptions: scriptData.imageDescriptions || imageDescriptions,
+                    prompts: prompts.length > 0 ? prompts : undefined
                 }
             }
             return m
         }))
-        toast.success("Script variation generated! ✨");
+        toast.success("Script variation and prompts generated! ✨");
     } catch (error: any) {
         toast.error("Failed to generate variation: " + error.message);
         const errorMsg: Message = {
@@ -745,9 +817,10 @@ export default function CreationPage() {
                 images: refImages,
                 imageDescriptions,
                 presenterType: presenterMode,
-                customInstructions: script.concept?.description || script.concept?.visualConcept || '',
+                customInstructions: `${videoInstructions ? `${videoInstructions}\n\n` : ''}${script.concept?.description || script.concept?.visualConcept || ''}`.trim(),
                 prompts,
-                language: videoLanguage
+                language: videoLanguage,
+                useUploadedAudio
             })
         });
 
@@ -792,9 +865,10 @@ export default function CreationPage() {
                 images: refImages,
                 imageDescriptions,
                 presenterType: presenterMode,
-                customInstructions: script.concept?.description || script.concept?.visualConcept || '',
+                customInstructions: `${videoInstructions ? `${videoInstructions}\n\n` : ''}${script.concept?.description || script.concept?.visualConcept || ''}`.trim(),
                 preview: true,
-                language: videoLanguage
+                language: videoLanguage,
+                useUploadedAudio
             })
         });
 
@@ -839,6 +913,7 @@ export default function CreationPage() {
 
     try {
         if (creationMode === 'video') {
+            setVideoInstructions(userText);
             // --- STEP 1: CONCEPTS ---
             setCurrentStep('AI Creative Director is analyzing your images & generating 5 ad concepts...');
             
@@ -1565,94 +1640,96 @@ export default function CreationPage() {
                       </span>
                     </div>
 
-                    {msg.script.scenes && Array.isArray(msg.script.scenes) ? (
-                      <div className="flex flex-col gap-3.5">
-                        {msg.script.scenes.map((scene: any, idx: number) => (
-                          <div key={idx} className="bg-slate-50/60 rounded-[1.5rem] p-4 border border-slate-100 flex flex-col gap-3 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 bg-blue-500 text-white text-[9px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-wider">
-                              Scene {idx + 1} (15s)
-                            </div>
-                            
-                            {/* Visual Scene Description */}
-                            <div className="flex flex-col gap-1 mt-1">
-                              <span className="text-[9px] font-extrabold text-blue-500 uppercase tracking-wider flex items-center gap-1">
-                                <ImageIcon size={10} /> Visuals
-                              </span>
-                              <textarea
-                                value={scene.visuals}
-                                onChange={(e) => {
-                                  const updatedScenes = [...msg.script.scenes];
-                                  updatedScenes[idx] = { ...scene, visuals: e.target.value };
-                                  setMessages(prev => prev.map(m => m.id === msg.id ? {
-                                    ...m,
-                                    script: { ...m.script, scenes: updatedScenes }
-                                  } : m));
-                                }}
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 font-medium focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all resize-none h-16"
-                              />
-                            </div>
+                    {!msg.prompts && (
+                      msg.script.scenes && Array.isArray(msg.script.scenes) ? (
+                        <div className="flex flex-col gap-3.5">
+                          {msg.script.scenes.map((scene: any, idx: number) => (
+                            <div key={idx} className="bg-slate-50/60 rounded-[1.5rem] p-4 border border-slate-100 flex flex-col gap-3 relative overflow-hidden">
+                              <div className="absolute top-0 right-0 bg-blue-500 text-white text-[9px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-wider">
+                                Scene {idx + 1} (15s)
+                              </div>
+                              
+                              {/* Visual Scene Description */}
+                              <div className="flex flex-col gap-1 mt-1">
+                                <span className="text-[9px] font-extrabold text-blue-500 uppercase tracking-wider flex items-center gap-1">
+                                  <ImageIcon size={10} /> Visuals
+                                </span>
+                                <textarea
+                                  value={scene.visuals}
+                                  onChange={(e) => {
+                                    const updatedScenes = [...msg.script.scenes];
+                                    updatedScenes[idx] = { ...scene, visuals: e.target.value };
+                                    setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                      ...m,
+                                      script: { ...m.script, scenes: updatedScenes }
+                                    } : m));
+                                  }}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 font-medium focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all resize-none h-16"
+                                />
+                              </div>
 
-                            {/* Dialogue/Voiceover */}
-                            <div className="flex flex-col gap-1 border-t border-slate-200/40 pt-2.5">
-                              <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
-                                <User size={10} /> Dialogue ({videoLanguage === 'hinglish' ? 'Hinglish' : 'English'})
-                              </span>
-                              <textarea
-                                value={scene.dialogue}
-                                onChange={(e) => {
-                                  const updatedScenes = [...msg.script.scenes];
-                                  updatedScenes[idx] = { ...scene, dialogue: e.target.value };
-                                  setMessages(prev => prev.map(m => m.id === msg.id ? {
-                                    ...m,
-                                    script: { 
-                                      ...m.script, 
-                                      scenes: updatedScenes,
-                                      dialogue: updatedScenes.map(s => s.dialogue).join(" ")
-                                    }
-                                  } : m));
-                                }}
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 font-medium italic focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all resize-none h-20"
-                              />
+                              {/* Dialogue/Voiceover */}
+                              <div className="flex flex-col gap-1 border-t border-slate-200/40 pt-2.5">
+                                <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                                  <User size={10} /> Dialogue ({videoLanguage === 'hinglish' ? 'Hinglish' : 'English'})
+                                </span>
+                                <textarea
+                                  value={scene.dialogue}
+                                  onChange={(e) => {
+                                    const updatedScenes = [...msg.script.scenes];
+                                    updatedScenes[idx] = { ...scene, dialogue: e.target.value };
+                                    setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                      ...m,
+                                      script: { 
+                                        ...m.script, 
+                                        scenes: updatedScenes,
+                                        dialogue: updatedScenes.map(s => s.dialogue).join(" ")
+                                      }
+                                    } : m));
+                                  }}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 font-medium italic focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all resize-none h-20"
+                                />
+                              </div>
                             </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Visual Scene Description */}
+                          <div className="flex flex-col gap-1.5">
+                            <span className="text-[9px] font-extrabold text-blue-500 uppercase tracking-wider flex items-center gap-1">
+                              <ImageIcon size={12} /> Visual Action Sequence (9:16 UGC)
+                            </span>
+                            <textarea
+                              value={msg.script.visuals}
+                              onChange={(e) => {
+                                setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                  ...m,
+                                  script: { ...m.script, visuals: e.target.value }
+                                } : m));
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-700 font-medium outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all h-24"
+                            />
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <>
-                        {/* Visual Scene Description */}
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-[9px] font-extrabold text-blue-500 uppercase tracking-wider flex items-center gap-1">
-                            <ImageIcon size={12} /> Visual Action Sequence (9:16 UGC)
-                          </span>
-                          <textarea
-                            value={msg.script.visuals}
-                            onChange={(e) => {
-                              setMessages(prev => prev.map(m => m.id === msg.id ? {
-                                ...m,
-                                script: { ...m.script, visuals: e.target.value }
-                              } : m));
-                            }}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-700 font-medium outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all h-24"
-                          />
-                        </div>
 
-                        {/* Dialogue/Voiceover */}
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
-                            <User size={12} /> Conversational Audio/Dialogue ({videoLanguage === 'hinglish' ? 'Hinglish' : 'English'})
-                          </span>
-                          <textarea
-                            value={msg.script.dialogue}
-                            onChange={(e) => {
-                              setMessages(prev => prev.map(m => m.id === msg.id ? {
-                                ...m,
-                                script: { ...m.script, dialogue: e.target.value }
-                              } : m));
-                            }}
-                            className="w-full bg-indigo-50/30 border border-indigo-100/50 rounded-xl p-3.5 text-xs text-slate-800 font-semibold italic outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all h-24"
-                          />
-                        </div>
-                      </>
+                          {/* Dialogue/Voiceover */}
+                          <div className="flex flex-col gap-1.5">
+                            <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                              <User size={12} /> Conversational Audio/Dialogue ({videoLanguage === 'hinglish' ? 'Hinglish' : 'English'})
+                            </span>
+                            <textarea
+                              value={msg.script.dialogue}
+                              onChange={(e) => {
+                                setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                  ...m,
+                                  script: { ...m.script, dialogue: e.target.value }
+                                } : m));
+                              }}
+                              className="w-full bg-indigo-50/30 border border-indigo-100/50 rounded-xl p-3.5 text-xs text-slate-800 font-semibold italic outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all h-24"
+                            />
+                          </div>
+                        </>
+                      )
                     )}
 
                     {/* Suggested Caption */}
@@ -2105,16 +2182,44 @@ export default function CreationPage() {
                         </div>
 
                         {/* Descriptions / Warnings */}
-                        {presenterMode === 'video' && !profile?.character_audio_url && (
+                        {presenterMode === 'video' && !profile?.character_audio_url && useUploadedAudio && (
                             <p className="text-[9px] text-amber-600 font-bold leading-tight">
                                 ⚠️ Cloning voice for video requires a video voice audio sample. Upload an audio sample (up to 15s MP3/WAV) to proceed.
                             </p>
                         )}
-                        {presenterMode === 'avatar' && !profile?.avatar_audio_url && (
+                        {presenterMode === 'avatar' && !profile?.avatar_audio_url && useUploadedAudio && (
                             <p className="text-[9px] text-amber-600 font-bold leading-tight">
                                 ⚠️ Cloning voice for avatar requires an avatar voice audio sample. Upload an audio sample (up to 15s MP3/WAV) to proceed.
                             </p>
                         )}
+                        {presenterMode !== 'none' && !useUploadedAudio && (
+                            <p className="text-[9px] text-slate-500 font-bold leading-tight">
+                                ℹ️ Video will be generated using the model's default voice.
+                            </p>
+                        )}
+                    </div>
+                )}
+
+                {/* Voice Cloning Option */}
+                {presenterMode !== 'none' && (
+                    <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 flex items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-300">
+                        <div className="min-w-0">
+                            <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest leading-none">Voice Cloning</h4>
+                            <p className="text-xs font-bold text-slate-700 mt-1">Use my uploaded voice sample</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setUseUploadedAudio(prev => !prev)}
+                            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
+                                useUploadedAudio ? 'bg-blue-600' : 'bg-slate-200'
+                            }`}
+                        >
+                            <span
+                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                                    useUploadedAudio ? 'translate-x-5' : 'translate-x-0'
+                                }`}
+                            />
+                        </button>
                     </div>
                 )}
 

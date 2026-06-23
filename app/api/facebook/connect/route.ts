@@ -24,7 +24,8 @@ export async function GET(req: Request) {
         'ads_management',
         'pages_manage_ads',
         'pages_read_user_content',
-        'leads_retrieval'
+        'leads_retrieval',
+        'pages_manage_metadata'
     ].join(',');
 
     const { searchParams } = new URL(req.url);
