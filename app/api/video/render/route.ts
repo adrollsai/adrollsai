@@ -12,7 +12,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { assetId, videoUrl, captions, effects: clientEffects, theme } = await request.json();
+        const { assetId, videoUrl, captions, effects: clientEffects, theme, durationInFrames } = await request.json();
 
         if (!assetId || !videoUrl || !captions || !theme) {
             return NextResponse.json({ error: 'Missing required parameters: assetId, videoUrl, captions, and theme are required.' }, { status: 400 });
@@ -113,6 +113,7 @@ export async function POST(request: Request) {
                 maxRetries: 2,
                 privacy: 'public',
                 framesPerLambda: 120,
+                forceDurationInFrames: durationInFrames ? Number(durationInFrames) : undefined,
                 webhook: {
                     url: callbackUrl,
                     secret: null,

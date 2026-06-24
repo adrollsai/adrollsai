@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient as createServerClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { renderMediaOnLambda } from '@remotion/lambda';
+import { speculateFunctionName } from '@remotion/lambda-client';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { sendPushNotification } from '@/utils/notification-helper';
@@ -336,125 +338,81 @@ export async function POST(request: Request) {
                         continue;
                     }
 
-                    console.log(`[Sync Endpoint] All ${siblings.length} scenes completed. Initiating stitching...`);
-
-                    const stitcherWorkerUrl = process.env.STITCHER_WORKER_URL;
-                    if (stitcherWorkerUrl) {
-                        console.log(`[Sync Endpoint] Offloading stitching to Cloud Run worker at ${stitcherWorkerUrl}...`);
-                        try {
-                            await fetch(`${stitcherWorkerUrl.replace(/\/$/, '')}/stitch`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    siblings: siblings.map(s => ({
-                                        current_index: s.current_index,
-                                        last_successful_task_id: s.last_successful_task_id
-                                    })),
-                                    videoTask: {
-                                        asset_id: task.asset_id,
-                                        user_id: task.user_id
-                                    }
-                                })
-                            });
-                            syncedResults.push({ taskId, assetId: task.asset_id, status: 'offloaded_stitch' });
-                            continue;
-                        } catch (err: any) {
-                            console.error("[Sync Endpoint] Cloud Run worker dispatch failed, falling back to local:", err);
-                        }
-                    }
-
-                    // Local Stitching Fallback
-                    const tempDir = path.join(os.tmpdir(), `stitch_${task.asset_id}`);
+                    console.log(`[Sync Endpoint] All ${siblings.length} scenes completed. Initiating AWS Lambda stitching...`);
+                    
                     try {
-                        if (!fs.existsSync(tempDir)) {
-                            fs.mkdirSync(tempDir, { recursive: true });
+                        const forwardedHost = request.headers.get('x-forwarded-host');
+                        const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+                        const requestOrigin = new URL(request.url).origin;
+                        const publicUrl = process.env.NEXT_PUBLIC_APP_URL;
+                        let baseUrl = requestOrigin;
+                        
+                        if (forwardedHost && !forwardedHost.includes('localhost')) {
+                            baseUrl = `${forwardedProto}://${forwardedHost}`;
+                        } else if (!requestOrigin.includes('localhost')) {
+                            baseUrl = requestOrigin;
+                        } else if (publicUrl && publicUrl.startsWith('http')) {
+                            baseUrl = publicUrl;
                         }
+                        
+                        const callbackUrl = `${baseUrl.replace(/\/$/, '')}/api/video/render/callback`;
+                        console.log(`[Sync Endpoint] Using callback URL for stitching: ${callbackUrl}`);
 
-                        const localFiles: string[] = [];
-                        for (let idx = 0; idx < siblings.length; idx++) {
-                            const sib = siblings[idx];
-                            const clipUrl = sib.last_successful_task_id;
-                            if (!clipUrl || !clipUrl.startsWith('http')) {
-                                throw new Error(`Invalid or missing video URL for scene index ${idx}`);
-                            }
-                            const localPath = path.join(tempDir, `scene_${idx}.mp4`);
-                            const res = await fetch(clipUrl);
-                            if (!res.ok) {
-                                throw new Error(`Failed to download scene ${idx} from ${clipUrl}`);
-                            }
-                            const buffer = Buffer.from(await res.arrayBuffer());
-                            fs.writeFileSync(localPath, buffer);
-                            localFiles.push(localPath);
-                        }
-
-                        // Generate concat.txt
-                        const concatContent = localFiles.map(file => `file '${file.replace(/\\/g, '/')}'`).join('\n');
-                        const concatTxtPath = path.join(tempDir, 'concat.txt');
-                        fs.writeFileSync(concatTxtPath, concatContent);
-
-                        const outputPath = path.join(tempDir, 'stitched.mp4');
-                        const ffmpegBinary = path.join(
-                            process.cwd(), 
-                            'node_modules', 
-                            'ffmpeg-static', 
-                            os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-                        );
-                        const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
-
-                        await new Promise<void>((resolvePromise, rejectPromise) => {
-                            exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr: any, stdout: any, stderr: any) => {
-                                if (execErr) rejectPromise(execErr);
-                                else resolvePromise();
-                            });
+                        const functionName = speculateFunctionName({
+                            diskSizeInMb: 512,
+                            memorySizeInMb: 2048,
+                            timeoutInSeconds: 240,
                         });
 
-                        const stitchedBuffer = fs.readFileSync(outputPath);
-                        const finalFileName = `generated/${task.user_id}/stitched_${Date.now()}.mp4`;
-                        await r2.send(new PutObjectCommand({
-                            Bucket: R2_BUCKET,
-                            Key: finalFileName,
-                            Body: stitchedBuffer,
-                            ContentType: 'video/mp4'
-                        }));
-                        const persistedStitchedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${finalFileName}`;
-                        console.log(`[Sync Endpoint] Stitched video uploaded to R2: ${persistedStitchedUrl}`);
+                        const bucketName = process.env.REMOTION_AWS_BUCKET_NAME || 'remotionlambda-useast1-k8ta4ch4gl';
+                        const siteName = process.env.REMOTION_AWS_SITE_NAME || '1qyt81o4fk';
+                        const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
 
+                        const renderResult = await renderMediaOnLambda({
+                            region,
+                            functionName,
+                            serveUrl: `https://${bucketName}.s3.${region}.amazonaws.com/sites/${siteName}/index.html`,
+                            composition: 'StitchComposition',
+                            inputProps: {
+                                videoUrls: siblings.map(s => s.last_successful_task_id)
+                            },
+                            codec: 'h264',
+                            imageFormat: 'jpeg',
+                            maxRetries: 2,
+                            privacy: 'public',
+                            framesPerLambda: 120,
+                            forceDurationInFrames: siblings.length * 15 * 30, // Override duration dynamically
+                            webhook: {
+                                url: callbackUrl,
+                                secret: null,
+                                customData: {
+                                    assetId: task.asset_id,
+                                    isStitch: true
+                                }
+                            }
+                        });
+
+                        console.log(`[Sync Endpoint] Stitch render successfully delegated to AWS Lambda:`, renderResult.renderId);
+                        
+                        // Mark asset status as Rendering
                         if (task.asset_id) {
-                            await supabaseAdmin.from('assets').update({
-                                url: persistedStitchedUrl,
-                                status: 'Draft'
-                            }).eq('id', task.asset_id);
+                            await supabaseAdmin.from('assets').update({ status: 'Rendering' }).eq('id', task.asset_id);
                         }
 
-                        // Clean up tasks
-                        await supabaseAdmin.from('video_tasks').delete().eq('asset_id', task.asset_id);
-
-                        await sendPushNotification(
-                            task.user_id, 
-                            "🎬 30s Video Creative Ready!", 
-                            "Your 30-second stitched AI video ad has been generated successfully.", 
-                            "/dashboard/assets", 
-                            "asset_ready"
-                        ).catch(() => {});
-
-                        syncedResults.push({ taskId, assetId: task.asset_id, status: 'succeeded' });
+                        syncedResults.push({ taskId, assetId: task.asset_id, status: 'rendering_stitch' });
+                        continue;
 
                     } catch (stitchErr: any) {
-                        console.error("[Sync Endpoint] Local stitching failed:", stitchErr);
+                        console.error("[Sync Endpoint] Lambda stitching dispatch failed:", stitchErr);
                         if (task.asset_id) {
                             await supabaseAdmin.from('assets').update({ 
                                 status: 'Failed',
-                                metadata: { error: `Stitching failed: ${stitchErr.message}` }
+                                metadata: { error: `Stitching dispatch failed: ${stitchErr.message}` }
                             }).eq('id', task.asset_id);
                             await supabaseAdmin.from('video_tasks').delete().eq('asset_id', task.asset_id);
                         }
                         syncedResults.push({ taskId, assetId: task.asset_id, status: 'failed', error: stitchErr.message });
-                    } finally {
-                        try {
-                            if (fs.existsSync(tempDir)) {
-                                fs.rmSync(tempDir, { recursive: true, force: true });
-                            }
-                        } catch (e) {}
+                        continue;
                     }
 
                 } else if (status === 'failed' || status === 'error') {

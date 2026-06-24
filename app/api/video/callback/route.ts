@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { renderMediaOnLambda } from '@remotion/lambda';
+import { speculateFunctionName } from '@remotion/lambda-client';
 import { extendVeoTask, createVeoTask, callGemini, createKieTask } from '@/utils/external-apis';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
@@ -440,144 +442,81 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, message: "Single scene video finalized successfully." });
         }
 
-        const stitcherWorkerUrl = process.env.STITCHER_WORKER_URL;
-        if (stitcherWorkerUrl) {
-            console.log(`[Video Callback] Offloading stitching to Cloud Run worker at ${stitcherWorkerUrl}...`);
-            try {
-                // Fire-and-forget: do not block Edge execution, return immediately to prevent callback timeouts.
-                fetch(`${stitcherWorkerUrl.replace(/\/$/, '')}/stitch`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        siblings: siblings.map(s => ({
-                            current_index: s.current_index,
-                            last_successful_task_id: s.last_successful_task_id
-                        })),
-                        videoTask: {
-                            asset_id: videoTask.asset_id,
-                            user_id: videoTask.user_id
-                        }
-                    })
-                }).catch(e => console.error("[Video Callback] Cloud Run background trigger failed:", e));
-
-                return NextResponse.json({ 
-                    success: true, 
-                    message: `All ${siblings.length} scenes completed. Offloaded stitching to Cloud Run.` 
-                });
-            } catch (err: any) {
-                console.error("[Video Callback] Cloud Run worker dispatch failed, falling back to local:", err);
-            }
-        }
-
-        console.log(`[Video Callback] All ${siblings.length} scenes completed. Initiating local stitching...`);
-
-        const tempDir = path.join(os.tmpdir(), `stitch_${videoTask.asset_id}`);
+        // Retrieve AWS configurations and dispatch stitching to AWS Lambda
         try {
-            if (!fs.existsSync(tempDir)) {
-                fs.mkdirSync(tempDir, { recursive: true });
-            }
-
-            const localFiles: string[] = [];
-            for (let idx = 0; idx < siblings.length; idx++) {
-                const sib = siblings[idx];
-                const clipUrl = sib.last_successful_task_id;
-                if (!clipUrl || !clipUrl.startsWith('http')) {
-                    throw new Error(`Invalid or missing video URL for scene index ${idx}`);
-                }
-                const localPath = path.join(tempDir, `scene_${idx}.mp4`);
-                const res = await fetch(clipUrl);
-                if (!res.ok) {
-                    throw new Error(`Failed to download scene ${idx} from ${clipUrl}`);
-                }
-                const buffer = Buffer.from(await res.arrayBuffer());
-                fs.writeFileSync(localPath, buffer);
-                localFiles.push(localPath);
-                console.log(`[Video Callback] Downloaded scene ${idx} to ${localPath}`);
-            }
-
-            // Generate concat.txt for FFmpeg
-            const concatContent = localFiles.map(file => `file '${file.replace(/\\/g, '/')}'`).join('\n');
-            const concatTxtPath = path.join(tempDir, 'concat.txt');
-            fs.writeFileSync(concatTxtPath, concatContent);
-
-            const outputPath = path.join(tempDir, 'stitched.mp4');
-            const ffmpegBinary = path.join(
-                process.cwd(), 
-                'node_modules', 
-                'ffmpeg-static', 
-                os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-            );
-            const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
-
+            console.log(`[Video Callback] Offloading stitching for Asset ID ${videoTask.asset_id} to AWS Lambda StitchComposition...`);
             
-            console.log(`[Video Callback] Running FFmpeg command: ${cmd}`);
+            const forwardedHost = request.headers.get('x-forwarded-host');
+            const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+            const requestOrigin = new URL(request.url).origin;
+            const publicUrl = process.env.NEXT_PUBLIC_APP_URL;
+            let baseUrl = requestOrigin;
             
-            await new Promise<void>((resolvePromise, rejectPromise) => {
-                exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
-                    if (execErr) {
-                        console.error(`[Video Callback] FFmpeg error:`, execErr);
-                        console.error(`[Video Callback] FFmpeg stderr:`, stderr);
-                        rejectPromise(execErr);
-                    } else {
-                        console.log(`[Video Callback] FFmpeg stdout:`, stdout);
-                        resolvePromise();
-                    }
-                });
+            if (forwardedHost && !forwardedHost.includes('localhost')) {
+                baseUrl = `${forwardedProto}://${forwardedHost}`;
+            } else if (!requestOrigin.includes('localhost')) {
+                baseUrl = requestOrigin;
+            } else if (publicUrl && publicUrl.startsWith('http')) {
+                baseUrl = publicUrl;
+            }
+            
+            const callbackUrl = `${baseUrl.replace(/\/$/, '')}/api/video/render/callback`;
+            console.log(`[Video Callback] Using callback URL for stitching: ${callbackUrl}`);
+
+            const functionName = speculateFunctionName({
+                diskSizeInMb: 512,
+                memorySizeInMb: 2048,
+                timeoutInSeconds: 240,
             });
 
-            // Upload final stitched file to R2
-            const stitchedBuffer = fs.readFileSync(outputPath);
-            const finalFileName = `generated/${videoTask.user_id}/stitched_${Date.now()}.mp4`;
-            await r2.send(new PutObjectCommand({
-                Bucket: R2_BUCKET,
-                Key: finalFileName,
-                Body: stitchedBuffer,
-                ContentType: 'video/mp4'
-            }));
-            const persistedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${finalFileName}`;
-            console.log(`[Video Callback] Stitched video uploaded to R2: ${persistedUrl}`);
+            const bucketName = process.env.REMOTION_AWS_BUCKET_NAME || 'remotionlambda-useast1-k8ta4ch4gl';
+            const siteName = process.env.REMOTION_AWS_SITE_NAME || '1qyt81o4fk';
+            const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
 
-            // Update placeholder asset in Supabase
+            const renderResult = await renderMediaOnLambda({
+                region,
+                functionName,
+                serveUrl: `https://${bucketName}.s3.${region}.amazonaws.com/sites/${siteName}/index.html`,
+                composition: 'StitchComposition',
+                inputProps: {
+                    videoUrls: siblings.map(s => s.last_successful_task_id)
+                },
+                codec: 'h264',
+                imageFormat: 'jpeg',
+                maxRetries: 2,
+                privacy: 'public',
+                framesPerLambda: 120,
+                forceDurationInFrames: siblings.length * 15 * 30, // Override duration dynamically
+                webhook: {
+                    url: callbackUrl,
+                    secret: null,
+                    customData: {
+                        assetId: videoTask.asset_id,
+                        isStitch: true
+                    }
+                }
+            });
+
+            console.log(`[Video Callback] Stitch render successfully dispatched to AWS Lambda:`, renderResult.renderId);
+            
+            // Mark the asset status as Rendering so the UI displays the loader spinner
             if (videoTask.asset_id) {
-                await supabaseAdmin.from('assets').update({
-                    url: persistedUrl,
-                    status: 'Draft' // Turns spinning card into real asset
-                }).eq('id', videoTask.asset_id);
+                await supabaseAdmin.from('assets').update({ status: 'Rendering' }).eq('id', videoTask.asset_id);
             }
 
-            // Clean up database video_tasks records
-            await supabaseAdmin.from('video_tasks').delete().eq('asset_id', videoTask.asset_id);
+            return NextResponse.json({ 
+                success: true, 
+                message: `All ${siblings.length} scenes completed. Dispatched stitch rendering to AWS Lambda.` 
+            });
 
-            // Send dynamic push notification
-            const totalDuration = siblings.length * 15;
-            await sendPushNotification(
-                videoTask.user_id, 
-                `🎬 ${totalDuration}s Video Creative Ready!`, 
-                `Your ${totalDuration}-second stitched AI video ad has been generated successfully.`, 
-                "/dashboard/assets", 
-                "asset_ready"
-            );
         } catch (stitchErr: any) {
-            console.error("[Video Callback] Stitching or finalizing failed:", stitchErr);
-            // Mark the asset as Failed
+            console.error("[Video Callback] Lambda stitching dispatch failed:", stitchErr);
             if (videoTask.asset_id) {
                 await supabaseAdmin.from('assets').update({ status: 'Failed' }).eq('id', videoTask.asset_id);
                 await supabaseAdmin.from('video_tasks').delete().eq('asset_id', videoTask.asset_id);
             }
-            return NextResponse.json({ error: stitchErr.message || 'Stitching failed' }, { status: 500 });
-        } finally {
-            // Clean up local temp files
-            try {
-                if (fs.existsSync(tempDir)) {
-                    fs.rmSync(tempDir, { recursive: true, force: true });
-                    console.log(`[Video Callback] Cleaned up temporary directory: ${tempDir}`);
-                }
-            } catch (cleanupErr) {
-                console.error(`[Video Callback] Error cleaning up temporary directory:`, cleanupErr);
-            }
+            return NextResponse.json({ error: stitchErr.message || 'Stitching dispatch failed' }, { status: 500 });
         }
-
-        return NextResponse.json({ success: true });
 
     } catch (error: any) {
         console.error("Video Callback Fatal Error:", error);

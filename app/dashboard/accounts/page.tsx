@@ -13,7 +13,8 @@ import {
   User as UserIcon,
   Loader2,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  BarChart3
 } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -28,6 +29,10 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState<any[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
+  
+  // Costing Module State (Super User only)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [costingData, setCostingData] = useState<Record<string, any>>({})
   
   // Create Modal State
   const [newAccount, setNewAccount] = useState({
@@ -98,6 +103,20 @@ export default function AccountsPage() {
     // DIAGNOSTIC: See what is actually being returned
     console.log(`[ACCOUNTS] Fetched ${subAccounts?.length || 0} accounts. Roles:`, subAccounts?.map(a => `${a.email} (${a.role})`))
     
+    // Fetch costing metrics if real logged in user is super_admin
+    setIsSuperAdmin(authProfile?.role === 'super_admin')
+    if (authProfile?.role === 'super_admin') {
+      try {
+        const costRes = await fetch('/api/admin/costing')
+        const costJson = await costRes.json()
+        if (costJson.success) {
+          setCostingData(costJson.costing || {})
+        }
+      } catch (err) {
+        console.error("[ACCOUNTS] Failed to fetch costing metrics:", err)
+      }
+    }
+
     setAccounts(subAccounts || [])
     setLoading(false)
   }
@@ -255,6 +274,21 @@ export default function AccountsPage() {
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 truncate max-w-[250px] sm:max-w-md">{root.email}</p>
+                    {isSuperAdmin && costingData[root.id] && (
+                      <div className="mt-2 text-xs flex items-center gap-3 text-slate-600 font-semibold bg-slate-50 border border-slate-200/60 rounded-xl px-3 py-1.5 w-fit group/cost relative cursor-help">
+                        <span>Cost: <strong className="text-blue-600">Rs. {costingData[root.id].totalCostInr}</strong> (${costingData[root.id].totalCostUsd})</span>
+                        <div className="hidden group-hover/cost:block absolute left-0 bottom-full mb-2 bg-slate-900 text-white text-[10px] p-3 rounded-xl shadow-xl border border-slate-800 z-[999] min-w-[200px] text-left">
+                          <p className="font-bold text-slate-400 mb-1 border-b border-slate-800 pb-1">Cost Attribution</p>
+                          <div className="space-y-1 font-mono">
+                            <div className="flex justify-between"><span>Kie Video Gen:</span><span>{costingData[root.id].videosCount}</span></div>
+                            <div className="flex justify-between"><span>Lambda Render:</span><span>{costingData[root.id].rendersCount}</span></div>
+                            <div className="flex justify-between"><span>Kie Image Gen:</span><span>{costingData[root.id].imagesCount}</span></div>
+                            <div className="flex justify-between"><span>Campaign Launch:</span><span>{costingData[root.id].campaignsCount}</span></div>
+                            <div className="flex justify-between"><span>WhatsApp Msg:</span><span>{costingData[root.id].messagesCount}</span></div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 
@@ -277,6 +311,14 @@ export default function AccountsPage() {
                           />
                         </button>
                       </div>
+                    )}
+                    {isSuperAdmin && (
+                      <button 
+                        onClick={() => router.push(`/dashboard/accounts/costing/${root.id}`)}
+                        className="bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 transition-all flex items-center gap-1.5 active:scale-95 shrink-0"
+                      >
+                        <BarChart3 size={14} /> Costing
+                      </button>
                     )}
                     <button 
                       onClick={() => router.push(`/dashboard/team?impersonate=${root.id}`)}
@@ -312,6 +354,21 @@ export default function AccountsPage() {
                             </span>
                           </div>
                           <p className="text-[10px] text-slate-400 font-medium truncate">{child.email}</p>
+                          {isSuperAdmin && costingData[child.id] && (
+                            <div className="mt-1.5 text-[10px] flex items-center gap-3 text-slate-600 font-semibold bg-slate-50 border border-slate-200/60 rounded-lg px-2 py-1 w-fit group/cost relative cursor-help">
+                              <span>Cost: <strong className="text-blue-600">Rs. {costingData[child.id].totalCostInr}</strong> (${costingData[child.id].totalCostUsd})</span>
+                              <div className="hidden group-hover/cost:block absolute left-0 bottom-full mb-2 bg-slate-900 text-white text-[10px] p-3 rounded-xl shadow-xl border border-slate-800 z-[999] min-w-[180px] text-left">
+                                <p className="font-bold text-slate-400 mb-1 border-b border-slate-800 pb-1">Cost Attribution</p>
+                                <div className="space-y-1 font-mono">
+                                  <div className="flex justify-between"><span>Kie Video Gen:</span><span>{costingData[child.id].videosCount}</span></div>
+                                  <div className="flex justify-between"><span>Lambda Render:</span><span>{costingData[child.id].rendersCount}</span></div>
+                                  <div className="flex justify-between"><span>Kie Image Gen:</span><span>{costingData[child.id].imagesCount}</span></div>
+                                  <div className="flex justify-between"><span>Campaign Launch:</span><span>{costingData[child.id].campaignsCount}</span></div>
+                                  <div className="flex justify-between"><span>WhatsApp Msg:</span><span>{costingData[child.id].messagesCount}</span></div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -335,6 +392,15 @@ export default function AccountsPage() {
                               />
                             </button>
                           </div>
+                        )}
+                        {isSuperAdmin && (
+                          <button 
+                            onClick={() => router.push(`/dashboard/accounts/costing/${child.id}`)}
+                            className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 bg-white hover:bg-emerald-50 text-slate-500 hover:text-emerald-700 p-2 rounded-xl border border-slate-200 transition-all active:scale-95 flex items-center justify-center shrink-0"
+                            title="Detailed Costing"
+                          >
+                            <BarChart3 size={14} />
+                          </button>
                         )}
                         <button 
                           onClick={() => router.push(`/dashboard?impersonate=${child.id}`)}

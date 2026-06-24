@@ -279,16 +279,9 @@ const RemotionOutro: React.FC<{
 
     const displayBrandColor = profile?.brand_color || '#3b82f6';
     
-    const opacity = spring({
-        frame,
-        fps,
-        config: { damping: 14 },
-    });
-    
-    const scale = spring({
-        frame,
-        fps,
-        config: { damping: 11, stiffness: 75 },
+    const opacity = interpolate(frame, [0, 15], [0, 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
     });
 
     const logoUrl = profile?.logo_url;
@@ -369,7 +362,6 @@ const RemotionOutro: React.FC<{
                 alignItems: 'center',
                 textAlign: 'center',
                 zIndex: 10,
-                transform: `scale(${scale})`,
             }}>
                 {logoUrl ? (
                     <img 
@@ -378,7 +370,9 @@ const RemotionOutro: React.FC<{
                             width: '270px',
                             height: '270px',
                             borderRadius: '54px',
-                            objectFit: 'cover',
+                            objectFit: 'contain',
+                            backgroundColor: '#FFFFFF',
+                            padding: '20px',
                             marginBottom: '45px',
                             boxShadow: `0 30px 60px ${displayBrandColor}22`,
                             border: `5px solid ${displayBrandColor}`,

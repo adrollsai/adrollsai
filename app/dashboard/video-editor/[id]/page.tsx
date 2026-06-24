@@ -130,7 +130,8 @@ export default function VideoEditorPage() {
                     theme: SUBTITLE_THEMES[selectedTheme],
                     videoUrl: asset.url,
                     captions,
-                    effects // Pass the visual effects as well
+                    effects, // Pass the visual effects as well
+                    durationInFrames
                 })
             })
             const data = await res.json()

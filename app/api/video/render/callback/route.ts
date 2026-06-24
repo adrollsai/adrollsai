@@ -21,6 +21,7 @@ export async function POST(request: Request) {
             ? errors.map((e: any) => e.message).join('\n')
             : (payload.error || "AWS Lambda rendering failed.");
         const assetId = customData?.assetId;
+        const isStitch = customData?.isStitch;
         const isSuccess = type === 'success';
 
         if (!assetId) {
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
 
         // 2. Handle failure
         if (!isSuccess) {
-            console.error(`[Lambda Callback] Render failed for asset ${assetId}:`, renderError);
+            console.error(`[Lambda Callback] Render/Stitch failed for asset ${assetId}:`, renderError);
             
             await supabaseAdmin
                 .from('assets')
@@ -51,6 +52,11 @@ export async function POST(request: Request) {
                     metadata: { ...asset.metadata, error: renderError || "AWS Lambda rendering failed." }
                 })
                 .eq('id', assetId);
+
+            if (isStitch) {
+                // Delete all video tasks sharing this asset_id
+                await supabaseAdmin.from('video_tasks').delete().eq('asset_id', assetId);
+            }
 
             return NextResponse.json({ success: true, message: "Asset marked as failed" });
         }
@@ -70,7 +76,9 @@ export async function POST(request: Request) {
         const arrayBuffer = await videoRes.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        const r2Key = `renders/${asset.user_id}/${assetId}.mp4`;
+        const r2Key = isStitch 
+            ? `generated/${asset.user_id}/stitched_${Date.now()}.mp4`
+            : `renders/${asset.user_id}/${assetId}.mp4`;
         console.log(`[Lambda Callback] Uploading finished video to Cloudflare R2 bucket ${R2_BUCKET} at key: ${r2Key}`);
 
         await r2.send(new PutObjectCommand({
@@ -84,11 +92,20 @@ export async function POST(request: Request) {
         console.log(`[Lambda Callback] Upload complete. R2 URL: ${r2Url}`);
 
         // 4. Update asset status and url
+        const updatedMetadata = {
+            ...(asset.metadata || {}),
+            timeToRenderInMs: payload.timeToRenderInMs,
+            lambdasUsed: payload.lambdasUsed,
+            renderId: payload.renderId,
+            renderTimeSeconds: payload.timeToRenderInMs ? (payload.timeToRenderInMs / 1000) : undefined
+        };
+
         const { error: updateErr } = await supabaseAdmin
             .from('assets')
             .update({
                 url: r2Url,
-                status: 'Draft' // Turns spinning card into completed card
+                status: 'Draft', // Turns spinning card into completed card
+                metadata: updatedMetadata
             })
             .eq('id', assetId);
 
@@ -97,12 +114,19 @@ export async function POST(request: Request) {
             throw updateErr;
         }
 
+        if (isStitch) {
+            // Clean up database video_tasks records
+            await supabaseAdmin.from('video_tasks').delete().eq('asset_id', assetId);
+        }
+
         // 5. Send push notification to user
         try {
+            const title = isStitch ? `🎬 Video Creative Ready!` : `🎬 Edited Video Ready!`;
+            const body = isStitch ? `Your stitched AI video ad has been generated successfully.` : `Your AI-edited video ad has been generated successfully.`;
             await sendPushNotification(
                 asset.user_id, 
-                `🎬 Edited Video Ready!`, 
-                `Your AI-edited video ad has been generated successfully.`, 
+                title, 
+                body, 
                 "/dashboard/assets", 
                 "asset_ready"
             );

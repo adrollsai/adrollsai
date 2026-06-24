@@ -1,6 +1,7 @@
 import React from "react";
 import { Composition } from "remotion";
 import { CaptionsComposition } from "./CaptionsComposition";
+import { StitchComposition } from "./StitchComposition";
 
 export const RemotionRoot: React.FC = () => {
     return (
@@ -23,6 +24,17 @@ export const RemotionRoot: React.FC = () => {
                         animation: 'pop',
                         position: 'center'
                     }
+                }}
+            />
+            <Composition
+                id="StitchComposition"
+                component={StitchComposition as any}
+                durationInFrames={30 * 30} // Overridden dynamically at render time
+                fps={30}
+                width={1080}
+                height={1920}
+                defaultProps={{
+                    videoUrls: [] as string[]
                 }}
             />
         </>
