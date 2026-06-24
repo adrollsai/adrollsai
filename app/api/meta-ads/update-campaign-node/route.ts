@@ -77,8 +77,8 @@ export async function POST(request: Request) {
   try {
     let creativeId = fields.creative?.id;
 
-    // Check if we need to create a new creative (if any copy or image changes)
-    if (fields.creative && (fields.creative.imageUrl || fields.creative.primaryText || fields.creative.headline || fields.creative.description)) {
+    // Check if we need to create a new creative (if any copy, image, or form changes)
+    if (fields.creative && (fields.creative.imageUrl || fields.creative.primaryText || fields.creative.headline || fields.creative.description || fields.creative.leadFormId)) {
       let imageHash = fields.creative.imageHash;
       const imageUrl = fields.creative.imageUrl;
 
@@ -165,7 +165,59 @@ export async function POST(request: Request) {
     }
 
     if (fields.targeting !== undefined) {
-      updateBody.targeting = fields.targeting;
+      if (type === 'adset') {
+        const adsetRes = await fetch(`${FB_GRAPH_URL}/${nodeId}?fields=targeting&access_token=${token}`);
+        const adsetData = await adsetRes.json();
+        if (adsetData.error) {
+          throw new Error(`Failed to fetch current ad set targeting: ${adsetData.error.message}`);
+        }
+        
+        const currentTargeting = adsetData.targeting || {};
+        const currentGeo = currentTargeting.geo_locations || {};
+        const newGeo = fields.targeting.geo_locations || {};
+        
+        const updatedGeo: any = {
+          ...newGeo
+        };
+
+        if (currentGeo.location_types) {
+          updatedGeo.location_types = currentGeo.location_types;
+        }
+        if (currentGeo.custom_audiences) {
+          updatedGeo.custom_audiences = currentGeo.custom_audiences;
+        }
+        if (currentGeo.excluded_custom_audiences) {
+          updatedGeo.excluded_custom_audiences = currentGeo.excluded_custom_audiences;
+        }
+
+        // Clean up locations to use raw structure Meta expects on updates
+        if (updatedGeo.cities) {
+          updatedGeo.cities = updatedGeo.cities.map((c: any) => ({
+            key: c.key,
+            radius: c.radius || 20,
+            distance_unit: c.distance_unit || 'kilometer'
+          }));
+        }
+        if (updatedGeo.regions) {
+          let regionsList = updatedGeo.regions;
+          // De-conflict Chandigarh Region (1726) with Chandigarh City (1021145)
+          const hasChandigarhCity = updatedGeo.cities && updatedGeo.cities.some((c: any) => c.key === '1021145');
+          if (hasChandigarhCity) {
+            regionsList = regionsList.filter((r: any) => r.key !== '1726');
+          }
+          updatedGeo.regions = regionsList.map((r: any) => ({ key: r.key }));
+        }
+        if (updatedGeo.zips) {
+          updatedGeo.zips = updatedGeo.zips.map((z: any) => ({ key: z.key }));
+        }
+
+        updateBody.targeting = {
+          ...currentTargeting,
+          geo_locations: updatedGeo
+        };
+      } else {
+        updateBody.targeting = fields.targeting;
+      }
     }
 
     if (fields.budget !== undefined) {

@@ -403,7 +403,7 @@ export async function callGemini(prompt: string, imageUrls?: string[]): Promise<
  */
 export async function fetchLeadForms(accessToken: string, pageId: string): Promise<any[]> {
     try {
-        const response = await fetch(`${FACEBOOK_GRAPH_URL}/${pageId}/leadgen_forms?fields=id,name,status,leads_count&limit=100&access_token=${accessToken}`);
+        const response = await fetch(`${FACEBOOK_GRAPH_URL}/${pageId}/leadgen_forms?fields=id,name,status,leads_count,questions&limit=100&access_token=${accessToken}`);
         const data = await response.json();
         if (data.error) throw new Error(data.error.message);
         return data.data || [];

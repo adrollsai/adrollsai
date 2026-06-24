@@ -87,6 +87,7 @@ export default function AdsPage() {
   // Landing Page & Form builder states for campaigns
   const [landingPages, setLandingPages] = useState<any[]>([])
   const [forms, setForms] = useState<any[]>([])
+  const [metaLeadForms, setMetaLeadForms] = useState<any[]>([])
   const [campaignType, setCampaignType] = useState<'instant_form' | 'website_conversion'>('instant_form')
   const [selectedLandingPageId, setSelectedLandingPageId] = useState<string>('')
   const [attachedFormName, setAttachedFormName] = useState<string>('')
@@ -103,6 +104,15 @@ export default function AdsPage() {
   const [isCreatingPixel, setIsCreatingPixel] = useState(false)
   const [currency, setCurrency] = useState('INR')
   const [pixelId, setPixelId] = useState<string | null>(null)
+
+  // Ad Lead Form Edit/Creation States
+  const [isCreatingNewAdForm, setIsCreatingNewAdForm] = useState(false)
+  const [newAdFormName, setNewAdFormName] = useState('')
+  const [adFormQuestions, setAdFormQuestions] = useState<any[]>([])
+  const [isAddingAdQuestion, setIsAddingAdQuestion] = useState(false)
+  const [newAdQuestion, setNewAdQuestion] = useState<any>({ label: '', type: 'SHORT_ANSWER', options: [''] })
+  const [isCreatingFormOnMeta, setIsCreatingFormOnMeta] = useState(false)
+  const [expandedQuestionIndices, setExpandedQuestionIndices] = useState<Record<number, boolean>>({})
 
   // Location Search
   const [locationSearchText, setLocationSearchText] = useState('')
@@ -458,7 +468,7 @@ export default function AdsPage() {
           } catch (e) { console.error("Failed to load campaigns", e) }
       }
 
-      const [propsRes, leadsRes, pagesRes, formsRes, apiAssetsData] = await Promise.all([
+      const [propsRes, leadsRes, pagesRes, formsRes, apiAssetsData, metaFormsData] = await Promise.all([
           supabase.from('properties').select('id, title, price, image_url, description').eq('user_id', targetUserId).order('created_at', { ascending: false }),
           supabase.from('leads').select('campaign_id').eq('user_id', targetUserId),
           supabase.from('landing_pages').select('*').eq('user_id', targetUserId).order('created_at', { ascending: false }),
@@ -466,6 +476,10 @@ export default function AdsPage() {
           fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}`).then(r => r.json()).catch(e => {
               console.error("Failed to load assets from API", e);
               return [];
+          }),
+          fetch(`/api/facebook/forms${impersonateId ? `?impersonate=${impersonateId}` : ''}`).then(r => r.json()).catch(e => {
+              console.error("Failed to load Meta lead forms", e);
+              return { forms: [] };
           })
       ])
 
@@ -484,6 +498,7 @@ export default function AdsPage() {
       setAssets(newAssets)
       setLandingPages(pagesRes.data || [])
       setForms(formsRes.data || [])
+      setMetaLeadForms(metaFormsData?.forms || [])
 
       // Fetch pixels if targetProfile has ad_account_id
       if (targetProfile?.ad_account_id) {
@@ -895,7 +910,7 @@ export default function AdsPage() {
     const impersonateId = urlParams.get('impersonate')
 
     const fields: any = { name: editingNode.name }
-    if (editingNode.budget !== undefined) {
+    if (editingNode.budget !== undefined && editingNode.budgetType !== 'none') {
       fields.budget = editingNode.budget
       fields.budgetType = editingNode.budgetType
     }
@@ -2163,12 +2178,36 @@ export default function AdsPage() {
                                           <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Target Locations</label>
                                           {/* Render list of active editing locations */}
                                           <div className="flex flex-wrap gap-1.5 mb-2 max-h-24 overflow-y-auto custom-scrollbar p-1 bg-white border border-slate-100 rounded-xl">
-                                            {(editingNode.targeting?.locations || []).length === 0 ? (
+              {(editingNode.targeting?.locations || []).length === 0 ? (
                                               <span className="text-[10px] text-slate-400 italic p-1">No custom locations (Meta defaults)</span>
                                             ) : (
                                               editingNode.targeting?.locations.map((loc: any, idx: number) => (
-                                                <div key={idx} className="bg-blue-50/50 py-1 px-2.5 rounded-lg border border-blue-150 flex items-center gap-1 text-[10px]">
-                                                  <span className="font-bold text-blue-900 truncate max-w-[120px]">{loc.name}</span>
+                                                <div key={idx} className="bg-blue-50/50 py-1 px-2.5 rounded-lg border border-blue-150 flex items-center flex-wrap gap-1 text-[10px]">
+                                                  <span className="font-bold text-blue-900 truncate max-w-[100px]">{loc.name}</span>
+                                                  {loc.type === 'city' && (
+                                                     <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-0.5 ml-1">
+                                                       <span className="text-[9px] text-slate-400 font-bold">Radius:</span>
+                                                       <input 
+                                                         type="number" 
+                                                         min={17} 
+                                                         max={80} 
+                                                         value={loc.radius || 20} 
+                                                         onChange={(e) => {
+                                                            const val = Math.min(80, Math.max(17, parseInt(e.target.value) || 17));
+                                                            const updatedLocations = (editingNode?.targeting?.locations || []).map((item: any, i: number) => i === idx ? { ...item, radius: val } : item);
+                                                            setEditingNode({
+                                                              ...editingNode,
+                                                              targeting: {
+                                                                ...(editingNode?.targeting || {}),
+                                                                locations: updatedLocations
+                                                              }
+                                                            });
+                                                          }}
+                                                         className="w-8 text-center font-extrabold text-[10px] text-blue-600 bg-slate-50 border border-slate-200 rounded outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                       />
+                                                       <span className="text-[8px] text-slate-500 font-bold">km</span>
+                                                     </div>
+                                                   )}
                                                   <button 
                                                     onClick={() => setEditingNode({
                                                       ...editingNode,
@@ -2203,7 +2242,12 @@ export default function AdsPage() {
                                                   <div 
                                                     key={loc.key} 
                                                     onClick={() => { 
-                                                      const currentList = editingNode.targeting?.locations || [];
+                                                      let currentList = editingNode.targeting?.locations || [];
+                                                      if (loc.key === '1021145') {
+                                                        currentList = currentList.filter(l => l.key !== '1726');
+                                                      } else if (loc.key === '1726') {
+                                                        currentList = currentList.filter(l => l.key !== '1021145');
+                                                      }
                                                       if (!currentList.some(l => l.key === loc.key)) {
                                                         setEditingNode({
                                                           ...editingNode,
@@ -2453,6 +2497,349 @@ export default function AdsPage() {
                                                   >
                                                     <ExternalLink size={8} /> Open in new tab
                                                   </a>
+                                                )}
+                                              </div>
+
+                                              {/* Meta Lead Form selection and creation */}
+                                              <div className="border-t border-slate-100 pt-3 mt-3 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block flex items-center gap-1">
+                                                    <Sparkles size={10} className="text-blue-500" /> Meta Lead Form
+                                                  </label>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setIsCreatingNewAdForm(!isCreatingNewAdForm)}
+                                                    className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5"
+                                                  >
+                                                    {isCreatingNewAdForm ? 'Cancel New Form' : '+ Create Lead Form'}
+                                                  </button>
+                                                </div>
+
+                                                {!isCreatingNewAdForm ? (
+                                                  <div>
+                                                    <select
+                                                      value={editingNode.creative?.leadFormId || ''}
+                                                      onChange={(e) => {
+                                                        setExpandedQuestionIndices({});
+                                                        setEditingNode({
+                                                          ...editingNode,
+                                                          creative: {
+                                                            ...(editingNode.creative || {}),
+                                                            leadFormId: e.target.value
+                                                          }
+                                                        });
+                                                      }}
+                                                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold w-full outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+                                                    >
+                                                      <option value="">None (Use Website Link / Landing Page URL instead)</option>
+                                                      {metaLeadForms.map((form: any) => (
+                                                        <option key={form.id} value={form.id}>
+                                                          {form.name} (ID: {form.id})
+                                                        </option>
+                                                      ))}
+                                                    </select>
+                                                    
+                                                    {/* Questions preview block */}
+                                                    {editingNode.creative?.leadFormId && (() => {
+                                                      const selectedForm = metaLeadForms.find((f: any) => f.id === editingNode.creative?.leadFormId);
+                                                      if (!selectedForm) return null;
+                                                      
+                                                      const getFriendlyLabel = (q: any) => {
+                                                        if (q.label) return q.label;
+                                                        switch (q.type) {
+                                                          case 'FULL_NAME': return 'Full Name';
+                                                          case 'EMAIL': return 'Email Address';
+                                                          case 'PHONE': return 'Phone Number';
+                                                          case 'CITY': return 'City';
+                                                          case 'STATE': return 'State';
+                                                          case 'COUNTRY': return 'Country';
+                                                          case 'ZIP': return 'ZIP Code';
+                                                          case 'COMPANY_NAME': return 'Company Name';
+                                                          case 'JOB_TITLE': return 'Job Title';
+                                                          default: return q.type || q.key || 'Question';
+                                                        }
+                                                      };
+
+                                                      const questions = selectedForm.questions || [];
+                                                      return (
+                                                        <div className="mt-2 bg-slate-50 border border-slate-200/60 rounded-xl p-3 space-y-2 text-[11px]">
+                                                          <div className="font-black text-slate-400 uppercase tracking-widest text-[8px] flex items-center gap-1">
+                                                            <Eye size={10} className="text-blue-500" /> Lead Form Questions
+                                                          </div>
+                                                          {questions.length === 0 ? (
+                                                            <div className="text-slate-400 italic">No questions found in this form.</div>
+                                                          ) : (
+                                                            <div className="flex flex-col gap-1.5">
+                                                               {questions.map((q: any, idx: number) => {
+                                                                 const isExpanded = !!expandedQuestionIndices[idx];
+                                                                 const hasOptions = q.options && q.options.length > 0;
+                                                                 return (
+                                                                   <div key={idx} className="bg-white border border-slate-150 rounded-xl p-2.5 shadow-sm space-y-2">
+                                                                     <div className="flex items-center justify-between gap-2">
+                                                                       <span className="font-semibold text-slate-700 truncate max-w-[200px]" title={getFriendlyLabel(q)}>
+                                                                         {getFriendlyLabel(q)}
+                                                                       </span>
+                                                                       <div className="flex items-center gap-1 shrink-0">
+                                                                         <span className="text-[7px] bg-slate-100 text-slate-500 font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                                                           {q.type === 'CUSTOM' ? (hasOptions ? 'MCQ' : 'Short') : 'Auto-fill'}
+                                                                         </span>
+                                                                         {hasOptions && (
+                                                                           <button
+                                                                             type="button"
+                                                                             onClick={() => setExpandedQuestionIndices(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                                                                             className={`bg-slate-50 hover:bg-blue-50 border rounded p-1 transition-colors ${isExpanded ? 'border-blue-200 text-blue-600 bg-blue-50/50' : 'border-slate-200 text-slate-400 hover:text-blue-500'}`}
+                                                                             title={isExpanded ? "Hide Options" : "View Options"}
+                                                                           >
+                                                                             <Eye size={10} />
+                                                                           </button>
+                                                                         )}
+                                                                       </div>
+                                                                     </div>
+                                                                     {isExpanded && hasOptions && (
+                                                                       <div className="pt-2 border-t border-slate-100 pl-1 space-y-1.5">
+                                                                         <div className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest block">MCQ Options</div>
+                                                                         <div className="flex flex-wrap gap-1">
+                                                                           {q.options.map((opt: any, oIdx: number) => {
+                                                                             const optionVal = typeof opt === 'object' ? opt.value : opt;
+                                                                             return (
+                                                                               <span key={oIdx} className="text-[9px] bg-slate-50 text-slate-650 font-bold border border-slate-200 rounded px-1.5 py-0.5">
+                                                                                 {optionVal}
+                                                                               </span>
+                                                                             );
+                                                                           })}
+                                                                         </div>
+                                                                       </div>
+                                                                     )}
+                                                                   </div>
+                                                                 );
+                                                               })}
+                                                             </div>
+                                                          )}
+                                                        </div>
+                                                      );
+                                                    })()}
+
+                                                    <p className="text-[9px] text-slate-400 font-medium mt-1.5">
+                                                      Select a Meta instant form for this ad creative. Creating a new form or changing it will update the Meta Ad Creative.
+                                                    </p>
+                                                  </div>
+                                                ) : (
+                                                  <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-3.5 text-xs text-slate-700">
+                                                    <h6 className="font-extrabold text-[11px] text-slate-800 uppercase tracking-wide flex items-center gap-1 border-b border-slate-200 pb-1.5">
+                                                      New Meta Lead Form Creator
+                                                    </h6>
+                                                    
+                                                    {/* Form Name */}
+                                                    <div className="space-y-1">
+                                                      <label className="text-[9px] font-bold text-slate-500 uppercase">Form Name</label>
+                                                      <input
+                                                        type="text"
+                                                        value={newAdFormName}
+                                                        onChange={(e) => setNewAdFormName(e.target.value)}
+                                                        placeholder="e.g. Realty Nation New Leads Form"
+                                                        className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-medium w-full outline-none focus:ring-1 focus:ring-blue-500"
+                                                      />
+                                                    </div>
+
+                                                    {/* Custom Questions List */}
+                                                    <div className="space-y-2">
+                                                      <label className="text-[9px] font-bold text-slate-500 uppercase block font-semibold">Custom Questions (Optional)</label>
+                                                      
+                                                      {adFormQuestions.length > 0 && (
+                                                        <div className="space-y-1.5 max-h-40 overflow-y-auto mb-2 pr-1">
+                                                          {adFormQuestions.map((q: any, qIdx: number) => (
+                                                            <div key={qIdx} className="bg-white border border-slate-100 rounded-lg p-2 flex justify-between items-center shadow-sm">
+                                                              <div>
+                                                                <div className="text-[10px] font-bold text-slate-800">{q.label}</div>
+                                                                <div className="flex gap-1.5 mt-0.5">
+                                                                  <span className="text-[7.5px] bg-blue-50 text-blue-600 font-extrabold px-1.5 py-0.5 rounded-full uppercase">
+                                                                    {q.type === 'MULTIPLE_CHOICE' ? 'Multiple Choice' : 'Short Answer'}
+                                                                  </span>
+                                                                  {q.type === 'MULTIPLE_CHOICE' && q.options?.map((o: string, oIdx: number) => (
+                                                                    <span key={oIdx} className="text-[7.5px] bg-slate-50 text-slate-500 font-medium px-1.5 py-0.5 rounded-full">
+                                                                      {o}
+                                                                    </span>
+                                                                  ))}
+                                                                </div>
+                                                              </div>
+                                                              <button
+                                                                type="button"
+                                                                onClick={() => setAdFormQuestions((prev: any[]) => prev.filter((_, i: number) => i !== qIdx))}
+                                                                className="text-slate-450 hover:text-red-500 p-1"
+                                                              >
+                                                                <X size={12} />
+                                                              </button>
+                                                            </div>
+                                                          ))}
+                                                        </div>
+                                                      )}
+
+                                                      {/* Add Question Button / Sub-form */}
+                                                      {!isAddingAdQuestion ? (
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => {
+                                                            setNewAdQuestion({ label: '', type: 'SHORT_ANSWER', options: [''] });
+                                                            setIsAddingAdQuestion(true);
+                                                          }}
+                                                          className="w-full py-1.5 border border-dashed border-slate-350 hover:border-blue-500 hover:text-blue-600 text-slate-500 text-[10px] font-bold rounded-lg transition-colors flex items-center justify-center gap-1 bg-white"
+                                                        >
+                                                          <PlusCircle size={11} /> Add Custom Question
+                                                        </button>
+                                                      ) : (
+                                                        <div className="bg-white border border-slate-200 rounded-lg p-2.5 space-y-2.5">
+                                                          <div className="space-y-1">
+                                                            <label className="text-[8px] font-black text-slate-400 uppercase">Question Text</label>
+                                                            <input
+                                                              type="text"
+                                                              value={newAdQuestion.label}
+                                                              onChange={(e) => setNewAdQuestion({ ...newAdQuestion, label: e.target.value })}
+                                                              placeholder="e.g. When are you looking to buy?"
+                                                              className="bg-slate-50 border border-slate-200 rounded-md px-2 py-1 text-[11px] font-medium w-full outline-none focus:bg-white focus:ring-1 focus:ring-blue-500"
+                                                            />
+                                                          </div>
+
+                                                          <div className="space-y-1">
+                                                            <label className="text-[8px] font-black text-slate-400 uppercase">Question Type</label>
+                                                            <select
+                                                              value={newAdQuestion.type}
+                                                              onChange={(e) => setNewAdQuestion({ ...newAdQuestion, type: e.target.value as any, options: e.target.value === 'MULTIPLE_CHOICE' ? [''] : undefined })}
+                                                              className="bg-slate-50 border border-slate-200 rounded-md px-2 py-1 text-[11px] font-medium w-full outline-none cursor-pointer focus:bg-white focus:ring-1 focus:ring-blue-500"
+                                                            >
+                                                              <option value="SHORT_ANSWER">Short Answer (Text)</option>
+                                                              <option value="MULTIPLE_CHOICE">Multiple Choice</option>
+                                                            </select>
+                                                          </div>
+
+                                                          {newAdQuestion.type === 'MULTIPLE_CHOICE' && (
+                                                            <div className="space-y-1.5 pl-1.5 border-l-2 border-slate-100">
+                                                              <label className="text-[8px] font-black text-slate-400 uppercase block">Options</label>
+                                                              {newAdQuestion.options.map((opt: string, oIdx: number) => (
+                                                                <div key={oIdx} className="flex gap-1 items-center">
+                                                                  <input
+                                                                    type="text"
+                                                                    value={opt}
+                                                                    onChange={(e) => {
+                                                                      const updated = [...newAdQuestion.options];
+                                                                      updated[oIdx] = e.target.value;
+                                                                      setNewAdQuestion({ ...newAdQuestion, options: updated });
+                                                                    }}
+                                                                    placeholder={`Option ${oIdx + 1}`}
+                                                                    className="flex-1 bg-slate-50 border border-slate-250 rounded px-2 py-0.5 text-[10px] font-medium outline-none focus:bg-white focus:ring-1 focus:ring-blue-500"
+                                                                  />
+                                                                  <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                      const updated = newAdQuestion.options.filter((_: any, i: number) => i !== oIdx);
+                                                                      setNewAdQuestion({ ...newAdQuestion, options: updated });
+                                                                    }}
+                                                                    className="text-slate-450 hover:text-red-500"
+                                                                  >
+                                                                    <X size={10} />
+                                                                  </button>
+                                                                </div>
+                                                              ))}
+                                                              <button
+                                                                type="button"
+                                                                onClick={() => setNewAdQuestion({ ...newAdQuestion, options: [...newAdQuestion.options, ''] })}
+                                                                className="text-[9px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5"
+                                                              >
+                                                                + Add Option
+                                                              </button>
+                                                            </div>
+                                                          )}
+
+                                                          <div className="flex gap-2 justify-end pt-1">
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => setIsAddingAdQuestion(false)}
+                                                              className="border border-slate-200 hover:bg-slate-50 px-2.5 py-1 rounded text-[9px] font-bold text-slate-600"
+                                                            >
+                                                              Cancel
+                                                            </button>
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => {
+                                                                if (newAdQuestion.label.trim()) {
+                                                                  setAdFormQuestions(prev => [...prev, newAdQuestion]);
+                                                                  setIsAddingAdQuestion(false);
+                                                                }
+                                                              }}
+                                                              className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded text-[9px] font-bold"
+                                                            >
+                                                              Add Question
+                                                            </button>
+                                                          </div>
+                                                        </div>
+                                                      )}
+                                                    </div>
+
+                                                    {/* Submit Form on Meta button */}
+                                                    <button
+                                                      type="button"
+                                                      disabled={isCreatingFormOnMeta}
+                                                      onClick={async () => {
+                                                        if (!newAdFormName.trim()) {
+                                                          toast.error('Please enter a Form Name');
+                                                          return;
+                                                        }
+                                                        setIsCreatingFormOnMeta(true);
+                                                        try {
+                                                          const pId = editingNode.creative?.pageId || adForm.pageId;
+                                                          if (!pId) {
+                                                            throw new Error("No Facebook Page connected or selected to host the lead form.");
+                                                          }
+                                                          const urlParams = new URLSearchParams(window.location.search);
+                                                          const impersonateId = urlParams.get('impersonate');
+                                                          const res = await fetch(`/api/facebook/forms${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json' },
+                                                            body: JSON.stringify({
+                                                              pageId: pId,
+                                                              name: newAdFormName.trim(),
+                                                              customQuestions: adFormQuestions,
+                                                              linkUrl: editingNode.creative?.linkUrl || 'https://adrolls.in'
+                                                            })
+                                                          });
+                                                          const data = await res.json();
+                                                          if (!res.ok) throw new Error(data.error || 'Failed to create form on Meta');
+                                                          
+                                                          toast.success('Lead Form created successfully on Meta!');
+                                                          
+                                                          // Append to forms dropdown list
+                                                          const createdForm = { id: data.id, name: newAdFormName.trim() };
+                                                          setMetaLeadForms((prev: any[]) => [...prev, createdForm]);
+                                                          
+                                                          // Automatically select it in the editingNode
+                                                          setEditingNode({
+                                                            ...editingNode,
+                                                            creative: {
+                                                              ...(editingNode.creative || {}),
+                                                              leadFormId: data.id
+                                                            }
+                                                          });
+                                                          
+                                                          // Reset states
+                                                          setNewAdFormName('');
+                                                          setAdFormQuestions([]);
+                                                          setIsCreatingNewAdForm(false);
+                                                        } catch (err: any) {
+                                                          toast.error(err.message);
+                                                        } finally {
+                                                          setIsCreatingFormOnMeta(false);
+                                                        }
+                                                      }}
+                                                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-[10px] uppercase tracking-wide flex items-center justify-center gap-1 shadow-sm disabled:opacity-50"
+                                                    >
+                                                      {isCreatingFormOnMeta ? (
+                                                        <>
+                                                          <Loader2 size={11} className="animate-spin" /> Creating Form on Meta...
+                                                        </>
+                                                      ) : (
+                                                        'Create & Select Form on Meta'
+                                                      )}
+                                                    </button>
+                                                  </div>
                                                 )}
                                               </div>
                                             </div>
@@ -3246,7 +3633,7 @@ export default function AdsPage() {
                             <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                             {isSearchingLocation && <Loader2 size={16} className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-blue-500" />}
                           </div>
-                          {locationResults.length > 0 && (<div className="absolute z-20 w-full bg-white mt-2 rounded-2xl shadow-xl border border-slate-100 max-h-56 overflow-y-auto custom-scrollbar">{locationResults.map(loc => (<div key={loc.key} onClick={() => { if (!adForm.metaLocations.find(l => l.location.key === loc.key)) setAdForm(prev => ({ ...prev, metaLocations: [...prev.metaLocations, { location: loc, radius: 20 }] })); setLocationSearchText(''); setLocationResults([]); }} className="p-4 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors"><div className="text-sm font-bold text-slate-800">{loc.name}</div><div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mt-1">{loc.region ? `${loc.region}, ` : ''}{loc.country_code} ({loc.type})</div></div>))}</div>)}
+                          {locationResults.length > 0 && (<div className="absolute z-20 w-full bg-white mt-2 rounded-2xl shadow-xl border border-slate-100 max-h-56 overflow-y-auto custom-scrollbar">{locationResults.map(loc => (<div key={loc.key} onClick={() => { let currentList = adForm.metaLocations; if (loc.key === '1021145') { currentList = currentList.filter(l => l.location.key !== '1726'); } else if (loc.key === '1726') { currentList = currentList.filter(l => l.location.key !== '1021145'); } if (!currentList.find(l => l.location.key === loc.key)) { setAdForm(prev => ({ ...prev, metaLocations: [...currentList, { location: loc, radius: 20 }] })); } setLocationSearchText(''); setLocationResults([]); }} className="p-4 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors"><div className="text-sm font-bold text-slate-800">{loc.name}</div><div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mt-1">{loc.region ? `${loc.region}, ` : ''}{loc.country_code} ({loc.type})</div></div>))}</div>)}
                       </div>
 
                       {/* Run as Remarketing Campaign Toggle */}
