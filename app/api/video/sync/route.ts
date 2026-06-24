@@ -365,7 +365,7 @@ export async function POST(request: Request) {
                         });
 
                         const bucketName = process.env.REMOTION_AWS_BUCKET_NAME || 'remotionlambda-useast1-k8ta4ch4gl';
-                        const siteName = process.env.REMOTION_AWS_SITE_NAME || '1qyt81o4fk';
+                        const siteName = process.env.REMOTION_AWS_SITE_NAME || 'n5io53mlsr';
                         const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
 
                         const renderResult = await renderMediaOnLambda({
