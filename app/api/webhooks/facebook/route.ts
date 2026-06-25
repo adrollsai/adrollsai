@@ -139,11 +139,13 @@ export async function POST(request: Request) {
           // Fetch Ad and Campaign Name if available
           let adCampaignString = 'Direct Lead Form'
           let campaignName = 'Unknown Campaign'
+          let campaignId: string | null = null
           if (ad_id) {
             try {
-                const adRes = await fetch(`https://graph.facebook.com/v19.0/${ad_id}?fields=name,campaign{name}&access_token=${profile.selected_page_token}`)
+                const adRes = await fetch(`https://graph.facebook.com/v19.0/${ad_id}?fields=name,campaign{id,name}&access_token=${profile.selected_page_token}`)
                 const adDetails = await adRes.json()
                 if (adDetails.name) {
+                    campaignId = adDetails.campaign?.id || null
                     campaignName = adDetails.campaign?.name || 'Unknown Campaign'
                     adCampaignString = `${campaignName} / ${adDetails.name}`
                 }
@@ -205,7 +207,8 @@ export async function POST(request: Request) {
             custom_fields: customFields,
             pipeline_stage: 'New',
             ad_name: adCampaignString,
-            assigned_to: assignedAgentId
+            assigned_to: assignedAgentId,
+            campaign_id: campaignId
           }).select().single()
 
           if (error) continue;

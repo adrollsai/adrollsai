@@ -95,9 +95,10 @@ export async function GET(request: Request) {
             if (!actions || !Array.isArray(actions)) {
                 return { leads: 0, clicks: 0, landingPageViews: 0 };
             }
-            const leads = actions
-                .filter((a: any) => a.action_type === 'lead' || a.action_type === 'onsite_conversion.lead_grouped')
-                .reduce((sum: number, a: any) => sum + parseInt(a.value || '0', 10), 0);
+            const leadAction = actions.find((a: any) => a.action_type === 'lead');
+            const leadGroupedAction = actions.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped');
+            const leads = leadAction ? parseInt(leadAction.value || '0', 10) : (leadGroupedAction ? parseInt(leadGroupedAction.value || '0', 10) : 0);
+
             const clicks = actions
                 .filter((a: any) => a.action_type === 'link_click')
                 .reduce((sum: number, a: any) => sum + parseInt(a.value || '0', 10), 0);

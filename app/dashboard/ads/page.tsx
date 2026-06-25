@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight, Link2, Pencil } from 'lucide-react'
+import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight, Link2, Pencil, BarChart4 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
@@ -120,12 +120,28 @@ export default function AdsPage() {
   const [isSearchingLocation, setIsSearchingLocation] = useState(false)
 
   const [statsModal, setStatsModal] = useState<{ isOpen: boolean, campaign: Campaign | null, insights: any, loading: boolean }>({ isOpen: false, campaign: null, insights: null, loading: false })
+  const [analysisModal, setAnalysisModal] = useState<{
+    isOpen: boolean;
+    campaign: Campaign | null;
+    history: any[];
+    selectedAnalysis: any | null;
+    loadingHistory: boolean;
+    generating: boolean;
+  }>({
+    isOpen: false,
+    campaign: null,
+    history: [],
+    selectedAnalysis: null,
+    loadingHistory: false,
+    generating: false
+  })
   const [statsDatePreset, setStatsDatePreset] = useState<string>('maximum')
   const [statsSince, setStatsSince] = useState<string>('')
   const [statsUntil, setStatsUntil] = useState<string>('')
   const [statsTab, setStatsTab] = useState<'overview' | 'daily' | 'creatives'>('overview')
   const [chartMetric, setChartMetric] = useState<'spend' | 'leads' | 'clicks'>('spend')
   const [campaignLeadCounts, setCampaignLeadCounts] = useState<Record<string, number>>({})
+  
   const [orchestrator, setOrchestrator] = useState<{
     isOpen: boolean,
     mode: 'optimize' | 'remarketing' | null,
@@ -615,6 +631,73 @@ export default function AdsPage() {
       setStatsUntil('')
       setStatsTab('overview')
       fetchStats(campaign, 'maximum', '', '')
+  }
+
+  const fetchAnalysisHistory = async (campaign: Campaign) => {
+      setAnalysisModal(prev => ({ ...prev, loadingHistory: true }))
+      try {
+          const urlParams = new URLSearchParams()
+          urlParams.append('campaignId', campaign.id)
+          const urlParamsString = new URLSearchParams(window.location.search)
+          const impersonateId = urlParamsString.get('impersonate')
+          if (impersonateId) urlParams.append('impersonate', impersonateId)
+          
+          const res = await fetch(`/api/meta-ads/analyze-campaign?${urlParams.toString()}`)
+          const data = await res.json()
+          if (data.error) throw new Error(data.error)
+          
+          const history = data.history || []
+          setAnalysisModal(prev => ({ 
+              ...prev, 
+              history, 
+              selectedAnalysis: history.length > 0 ? history[0] : null,
+              loadingHistory: false 
+          }))
+      } catch (e: any) {
+          toast.error(`Failed to load analysis history: ${e.message}`)
+          setAnalysisModal(prev => ({ ...prev, loadingHistory: false }))
+      }
+  }
+
+  const handleOpenAnalysis = (campaign: Campaign) => {
+      setAnalysisModal({
+          isOpen: true,
+          campaign,
+          history: [],
+          selectedAnalysis: null,
+          loadingHistory: true,
+          generating: false
+      })
+      fetchAnalysisHistory(campaign)
+  }
+
+  const handleRunLiveAnalysis = async () => {
+      if (!analysisModal.campaign) return
+      setAnalysisModal(prev => ({ ...prev, generating: true }))
+      try {
+          const urlParamsString = new URLSearchParams(window.location.search)
+          const impersonateId = urlParamsString.get('impersonate')
+          
+          const res = await fetch(`/api/meta-ads/analyze-campaign`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  campaignId: analysisModal.campaign.id,
+                  impersonateId
+              })
+          })
+          const data = await res.json()
+          if (data.error) throw new Error(data.error)
+          
+          toast.success("AI Analysis generated successfully!")
+          
+          // Re-fetch history to include the new one
+          fetchAnalysisHistory(analysisModal.campaign)
+          setAnalysisModal(prev => ({ ...prev, generating: false }))
+      } catch (e: any) {
+          toast.error(`Analysis failed: ${e.message}`)
+          setAnalysisModal(prev => ({ ...prev, generating: false }))
+      }
   }
 
   const renderSVGChart = (dailyData: any[]) => {
@@ -1451,13 +1534,14 @@ export default function AdsPage() {
                                 <div className="flex items-center gap-2">{togglingId === campaign.id && <Loader2 size={14} className="animate-spin text-slate-400" />}<button onClick={() => handleToggleStatus(campaign.id, campaign.status)} className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${campaign.status === 'ACTIVE' ? 'bg-green-500 focus:ring-green-500' : 'bg-slate-200 focus:ring-slate-400'}`}><div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'}`} /></button></div>
                             </div>
                             <div className="flex-grow"></div>
-                            <div className="flex justify-between items-center text-xs text-slate-500 pt-4 border-t border-slate-100">
-                                <button onClick={() => handleOpenStats(campaign)} className="flex items-center justify-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 py-2 px-3 rounded-xl transition-colors"><TrendingUp size={14} /> Stats</button>
-                                <button onClick={() => handleOptimize(campaign)} disabled={orchestrator.isOpen && orchestrator.mode === 'optimize'} className={`flex items-center justify-center gap-1.5 text-xs font-bold py-2 px-3 rounded-xl transition-all ${orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'optimize' ? 'bg-purple-100 text-purple-400 cursor-not-allowed' : optimizedCampaigns.includes(campaign.id) ? 'bg-purple-50 text-purple-600 border border-purple-100 hover:bg-purple-100' : campaign.status !== 'ACTIVE' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : 'bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700 shadow-sm'}`}>
+                            <div className="flex justify-between items-center text-xs text-slate-500 pt-4 border-t border-slate-100 gap-1.5 flex-wrap">
+                                <button onClick={() => handleOpenStats(campaign)} className="flex items-center justify-center gap-1 text-xs font-bold text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 py-2 px-2.5 rounded-xl transition-colors"><TrendingUp size={14} /> Stats</button>
+                                <button onClick={() => handleOpenAnalysis(campaign)} className="flex items-center justify-center gap-1 text-xs font-bold text-slate-600 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 py-2 px-2.5 rounded-xl transition-colors"><BarChart4 size={14} /> Analyse</button>
+                                <button onClick={() => handleOptimize(campaign)} disabled={orchestrator.isOpen && orchestrator.mode === 'optimize'} className={`flex items-center justify-center gap-1 text-xs font-bold py-2 px-2.5 rounded-xl transition-all ${orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'optimize' ? 'bg-purple-100 text-purple-400 cursor-not-allowed' : optimizedCampaigns.includes(campaign.id) ? 'bg-purple-50 text-purple-600 border border-purple-100 hover:bg-purple-100' : campaign.status !== 'ACTIVE' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : 'bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700 shadow-sm'}`}>
                                     <Sparkles size={14} /> 
                                     {orchestrator.isOpen && orchestrator.campaign?.id === campaign.id ? 'Optimizing...' : optimizedCampaigns.includes(campaign.id) ? 'Re-optimize' : 'Optimize'}
                                 </button>
-                                <button onClick={() => handleRemarketing(campaign)} disabled={orchestrator.isOpen && orchestrator.mode === 'remarketing'} className={`flex items-center justify-center gap-1.5 text-xs font-bold py-2 px-3 rounded-xl transition-all ${orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'remarketing' ? 'bg-blue-100 text-blue-400' : 'bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 shadow-sm'}`}><Users size={14} /> Remarket</button>
+                                <button onClick={() => handleRemarketing(campaign)} disabled={orchestrator.isOpen && orchestrator.mode === 'remarketing'} className={`flex items-center justify-center gap-1 text-xs font-bold py-2 px-2.5 rounded-xl transition-all ${orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'remarketing' ? 'bg-blue-100 text-blue-400' : 'bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 shadow-sm'}`}><Users size={14} /> Remarket</button>
                                 <a href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-xl transition-colors"><ExternalLink size={16} /></a>
                             </div>
                         </div>
@@ -3381,6 +3465,157 @@ export default function AdsPage() {
                   ) : (
                       <div className="py-20 text-center text-sm font-medium text-slate-500 bg-slate-50 rounded-[2rem] border border-dashed border-slate-200">No performance data available for this range.</div>
                   )}
+              </div>
+          </div>
+      )}
+
+      {/* Campaign AI Analysis Modal */}
+      {analysisModal.isOpen && analysisModal.campaign && (
+          <div className="fixed inset-0 z-[999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
+              <div className="bg-white w-full max-w-4xl rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-hidden flex flex-col relative">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-indigo-100/50 to-transparent rounded-bl-full opacity-50 pointer-events-none" />
+                  
+                  {/* Header */}
+                  <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4 shrink-0 relative z-10">
+                      <div>
+                          <div className="flex items-center gap-2">
+                              <h2 className="text-xl font-bold text-slate-900 leading-tight pr-4 truncate max-w-[400px] flex items-center gap-2">
+                                  <Sparkles size={20} className="text-indigo-500 animate-pulse" /> Campaign Diagnosis & AI Strategist
+                              </h2>
+                              <span className={`inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${analysisModal.campaign.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{analysisModal.campaign.status}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1.5">{analysisModal.campaign.name}</p>
+                      </div>
+                      <button onClick={() => setAnalysisModal(prev => ({ ...prev, isOpen: false, campaign: null, history: [], selectedAnalysis: null }))} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={18} /></button>
+                  </div>
+
+                  {/* Body Content */}
+                  <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6 relative z-10">
+                      {analysisModal.loadingHistory ? (
+                          <div className="flex flex-col items-center justify-center py-20">
+                              <Loader2 className="animate-spin text-indigo-500 mb-3" size={32} />
+                              <p className="text-sm text-slate-500 font-medium animate-pulse">Loading diagnostics history...</p>
+                          </div>
+                      ) : (
+                          <div className="space-y-6">
+                              {/* History Selector and Live Run Button */}
+                              <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200/60 flex flex-col md:flex-row gap-4 items-center justify-between">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Select Analysis Date:</span>
+                                      {analysisModal.history.length > 0 ? (
+                                          <select
+                                              value={analysisModal.selectedAnalysis?.id || ''}
+                                              onChange={(e) => {
+                                                  const selected = analysisModal.history.find(h => h.id === e.target.value);
+                                                  setAnalysisModal(prev => ({ ...prev, selectedAnalysis: selected || null }));
+                                              }}
+                                              className="bg-white border border-slate-200 text-slate-700 text-xs font-bold py-2 px-3 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
+                                          >
+                                              {analysisModal.history.map((h: any) => (
+                                                  <option key={h.id} value={h.id}>
+                                                      {new Date(h.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                                                  </option>
+                                              ))}
+                                          </select>
+                                      ) : (
+                                          <span className="text-xs font-bold text-slate-400 italic">No analysis logs yet.</span>
+                                      )}
+                                  </div>
+
+                                  <button
+                                      onClick={handleRunLiveAnalysis}
+                                      disabled={analysisModal.generating}
+                                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 px-6 rounded-2xl flex items-center gap-1.5 shadow-md shadow-indigo-600/10 active:scale-95 disabled:opacity-50 transition-all"
+                                  >
+                                      {analysisModal.generating ? (
+                                          <>
+                                              <Loader2 size={14} className="animate-spin" /> Analyzing Performance...
+                                          </>
+                                      ) : (
+                                          <>
+                                              <RefreshCw size={14} /> Run Live AI Diagnostic
+                                          </>
+                                      )}
+                                  </button>
+                              </div>
+
+                              {/* Selected Analysis Display */}
+                              {analysisModal.generating ? (
+                                  <div className="flex flex-col items-center justify-center py-20 bg-indigo-50/20 rounded-[2rem] border border-dashed border-indigo-100">
+                                      <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
+                                      <p className="text-sm font-black text-indigo-950 animate-pulse">Running live Andromeda diagnostic...</p>
+                                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5 max-w-[320px] text-center leading-relaxed">Reading Meta Insights, evaluating adset bidding and target city segments, assessing visual creative weighting...</p>
+                                  </div>
+                              ) : analysisModal.selectedAnalysis ? (
+                                  <div className="space-y-6">
+                                      {/* Analysis Metric Summary Card */}
+                                      <div className="bg-slate-50 border border-slate-200/60 p-5 rounded-[2rem] grid grid-cols-2 md:grid-cols-4 gap-4">
+                                          <div className="text-center md:text-left">
+                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Campaign Spend</span>
+                                              <p className="text-lg font-black text-slate-800 mt-1">{currency === 'INR' ? '₹' : '$'}{(analysisModal.selectedAnalysis.metrics?.spend || 0).toFixed(2)}</p>
+                                          </div>
+                                          <div className="text-center md:text-left border-l border-slate-200/60 pl-2">
+                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">CTR (Click-Through)</span>
+                                              <p className="text-lg font-black text-slate-800 mt-1">{(analysisModal.selectedAnalysis.metrics?.ctr || 0).toFixed(2)}%</p>
+                                          </div>
+                                          <div className="text-center md:text-left border-l border-slate-200/60 pl-2">
+                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Leads (Meta / CRM)</span>
+                                              <p className="text-lg font-black text-slate-800 mt-1">
+                                                  {analysisModal.selectedAnalysis.metrics?.leads || 0} / {analysisModal.selectedAnalysis.metrics?.crmLeads || 0}
+                                              </p>
+                                          </div>
+                                          <div className="text-center md:text-left border-l border-slate-200/60 pl-2">
+                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Cost Per Lead (CPL)</span>
+                                              <p className="text-lg font-black text-slate-800 mt-1">{currency === 'INR' ? '₹' : '$'}{(analysisModal.selectedAnalysis.metrics?.cpl || 0).toFixed(2)}</p>
+                                          </div>
+                                      </div>
+
+                                      {/* Detailed Analysis Text */}
+                                      <div className="space-y-2">
+                                          <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest ml-1">Performance Evaluation</h4>
+                                          <div className="bg-white border border-slate-200/60 p-6 rounded-[2rem] text-sm text-slate-700 leading-relaxed font-medium">
+                                              {analysisModal.selectedAnalysis.analysis_text}
+                                          </div>
+                                      </div>
+
+                                      {/* Practical Actions */}
+                                      <div className="space-y-3">
+                                          <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest ml-1">AI Actionable Steps & Recommendations</h4>
+                                          <div className="space-y-3">
+                                              {Array.isArray(analysisModal.selectedAnalysis.recommendations) && analysisModal.selectedAnalysis.recommendations.length > 0 ? (
+                                                  analysisModal.selectedAnalysis.recommendations.map((rec: any, idx: number) => (
+                                                      <div key={idx} className={`p-5 rounded-[1.75rem] border flex items-start gap-4 transition-colors ${rec.priority === 'high' ? 'bg-rose-50/50 border-rose-100 text-rose-950' : rec.priority === 'medium' ? 'bg-amber-50/50 border-amber-100 text-amber-950' : 'bg-slate-50 border-slate-200 text-slate-800'}`}>
+                                                          <div className={`p-2 rounded-xl shrink-0 mt-0.5 ${rec.priority === 'high' ? 'bg-rose-100 text-rose-600' : rec.priority === 'medium' ? 'bg-amber-100 text-amber-600' : 'bg-slate-200 text-slate-500'}`}>
+                                                              <CheckCircle size={16} />
+                                                          </div>
+                                                          <div>
+                                                              <div className="flex items-center gap-2">
+                                                                  <h5 className="font-bold text-sm leading-snug">{rec.title}</h5>
+                                                                  <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${rec.priority === 'high' ? 'bg-rose-100 text-rose-700' : rec.priority === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'}`}>
+                                                                      {rec.priority} Priority
+                                                                  </span>
+                                                              </div>
+                                                              <p className="text-xs mt-1.5 font-medium leading-relaxed opacity-90">{rec.description}</p>
+                                                          </div>
+                                                      </div>
+                                                  ))
+                                              ) : (
+                                                  <div className="text-center py-6 text-xs text-slate-400 bg-slate-50 border border-slate-200 border-dashed rounded-2xl">
+                                                      No specific recommendations found.
+                                                  </div>
+                                              )}
+                                          </div>
+                                      </div>
+                                  </div>
+                              ) : (
+                                  <div className="text-center py-16 bg-slate-50 border border-slate-200 border-dashed rounded-[2rem]">
+                                      <p className="text-sm text-slate-500 font-bold mb-2">No Campaign Diagnosis logs found.</p>
+                                      <p className="text-xs text-slate-400 max-w-[280px] mx-auto leading-relaxed mb-4">Click "Run Live AI Diagnostic" to evaluate this campaign's real-time metrics and targeting.</p>
+                                  </div>
+                              )}
+                          </div>
+                      )}
+                  </div>
               </div>
           </div>
       )}

@@ -93,7 +93,10 @@ export async function GET(request: Request) {
       const spend = parseFloat(insight.spend || '0');
       const impressions = parseInt(insight.impressions || '0', 10);
       const clicks = parseInt(insight.clicks || '0', 10);
-      const leads = parseInt(insight.actions?.find((a: any) => a.action_type === 'lead')?.value || '0', 10);
+      
+      const leadAction = insight.actions?.find((a: any) => a.action_type === 'lead');
+      const leadGroupedAction = insight.actions?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped');
+      const leads = leadAction ? parseInt(leadAction.value || '0', 10) : (leadGroupedAction ? parseInt(leadGroupedAction.value || '0', 10) : 0);
 
       const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
       const cpc = clicks > 0 ? spend / clicks : 0;
