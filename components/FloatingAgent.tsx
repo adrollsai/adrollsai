@@ -262,6 +262,11 @@ export default function FloatingAgent() {
         body: JSON.stringify(args)
       })
 
+      const responseContentType = response.headers.get('content-type') || '';
+      if (!responseContentType.includes('application/json')) {
+        throw new Error('Server returned a non-JSON response. The request may have timed out. Please try again.');
+      }
+
       const result = await response.json()
       console.log(`[UI] Tool response:`, result);
 

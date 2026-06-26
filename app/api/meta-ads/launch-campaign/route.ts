@@ -7,6 +7,10 @@ const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
 import { logToFile, clearLogFile } from '@/utils/logger';
 
+// Extend Vercel serverless function timeout — this route uploads creatives,
+// calls Gemini for AI copywriting, and creates campaign/adset/ads on Meta.
+export const maxDuration = 120;
+
 export async function POST(request: Request) {
     clearLogFile();
 

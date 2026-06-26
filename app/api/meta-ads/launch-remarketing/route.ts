@@ -7,6 +7,9 @@ const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
 import { logToFile, clearLogFile } from '@/utils/logger';
 
+// Extend Vercel serverless function timeout for heavy Meta API operations
+export const maxDuration = 120;
+
 export async function POST(request: Request) {
     clearLogFile();
 

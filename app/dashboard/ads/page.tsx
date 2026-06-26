@@ -1301,6 +1301,10 @@ export default function AdsPage() {
         : `/api/meta-ads/launch-campaign${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
 
       const res = await fetch(endpoint, { method: 'POST', body: formPayload })
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('Server returned a non-JSON response. This usually means the request timed out or the server encountered an internal error. Please try again.');
+      }
       const data = await res.json()
       if (res.ok) {
         alert(`${data.message}`);
