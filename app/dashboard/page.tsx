@@ -5,8 +5,9 @@ import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHor
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner' 
-import { uploadToR2 } from '@/utils/upload-helper'
+import { uploadToR2, compressImage } from '@/utils/upload-helper'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
+
 
 // Custom WhatsApp SVG Icon
 const WhatsAppIcon = ({ size = 24, className = "" }) => (
@@ -103,47 +104,8 @@ export default function ProductsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const editFileInputRef = useRef<HTMLInputElement>(null)
 
-  // --- UTILS ---
-  const compressImage = (file: File, quality = 0.7, maxWidth = 1200): Promise<File> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
 
-          if (width > maxWidth) {
-            height = (maxWidth / width) * height;
-            width = maxWidth;
-          }
 
-          canvas.width = width;
-          canvas.height = height;
-
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, width, height);
-
-          canvas.toBlob((blob) => {
-            if (blob) {
-              const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), {
-                type: 'image/jpeg',
-                lastModified: Date.now(),
-              });
-              resolve(compressedFile);
-            } else {
-              reject(new Error('Canvas to Blob conversion failed'));
-            }
-          }, 'image/jpeg', quality);
-        };
-        img.onerror = (err) => reject(err);
-      };
-      reader.onerror = (err) => reject(err);
-    });
-  };
 
   // 1. SAFE FETCH WITH LOCAL CACHING
   const fetchProperties = async (force = false) => {

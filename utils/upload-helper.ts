@@ -29,7 +29,60 @@ export const uploadToR2 = async (file: File, folder: string) => {
       }
     })
   
+  
     if (!uploadRes.ok) throw new Error('Upload to storage failed')
   
     return publicUrl
   }
+
+export const compressImage = (file: File, quality = 0.7, maxWidth = 1200): Promise<File> => {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !file.type.startsWith('image/')) {
+      return resolve(file); // Safe fallback for server-side or non-image files
+    }
+
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.src = objectUrl;
+
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxWidth) {
+        height = (maxWidth / width) * height;
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        URL.revokeObjectURL(objectUrl);
+        return resolve(file); // Fallback if 2d context is unsupported
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob((blob) => {
+        URL.revokeObjectURL(objectUrl);
+        if (blob) {
+          const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+          const compressedFile = new File([blob], `${baseName}.jpg`, {
+            type: 'image/jpeg',
+            lastModified: Date.now(),
+          });
+          resolve(compressedFile);
+        } else {
+          resolve(file); // Fallback to original file
+        }
+      }, 'image/jpeg', quality);
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(file); // Fallback to original file on loading error
+    };
+  });
+};

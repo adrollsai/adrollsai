@@ -16,8 +16,9 @@ import {
   FileImage
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
-import { uploadToR2 } from '@/utils/upload-helper'
+import { uploadToR2, compressImage } from '@/utils/upload-helper'
 import { toast } from 'sonner'
+
 
 type ReferenceCreative = {
   id: string
@@ -26,70 +27,8 @@ type ReferenceCreative = {
   created_at: string
 }
 
-// Client-side Canvas-based image compression
-async function compressImage(file: File, maxWidth = 1000, maxHeight = 1000, quality = 0.8): Promise<File> {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) {
-      resolve(file)
-      return
-    }
 
-    const reader = new FileReader()
-    reader.readAsDataURL(file)
-    reader.onload = (event) => {
-      const img = new Image()
-      img.src = event.target?.result as string
-      img.onload = () => {
-        const canvas = document.createElement('canvas')
-        let width = img.width
-        let height = img.height
 
-        // Calculate aspect ratio and clamp width/height
-        if (width > height) {
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width)
-            width = maxWidth
-          }
-        } else {
-          if (height > maxHeight) {
-            width = Math.round((width * maxHeight) / height)
-            height = maxHeight
-          }
-        }
-
-        canvas.width = width
-        canvas.height = height
-
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
-          resolve(file) // Fallback to original
-          return
-        }
-
-        ctx.drawImage(img, 0, 0, width, height)
-
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name
-              const compressedFile = new File([blob], `${baseName}.jpg`, {
-                type: 'image/jpeg',
-                lastModified: Date.now(),
-              })
-              resolve(compressedFile)
-            } else {
-              resolve(file)
-            }
-          },
-          'image/jpeg',
-          quality
-        )
-      }
-      img.onerror = (err) => reject(err)
-    }
-    reader.onerror = (err) => reject(err)
-  })
-}
 
 export default function ReferenceLibraryPage() {
   const router = useRouter()
