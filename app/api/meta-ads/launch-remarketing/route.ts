@@ -1067,9 +1067,19 @@ export async function POST(request: Request) {
                         }
                     });
 
+                    const hasGranularTargeting = 
+                        targetingConfig.geo_locations.cities.length > 0 ||
+                        targetingConfig.geo_locations.regions.length > 0 ||
+                        targetingConfig.geo_locations.zips.length > 0;
+
+                    if (hasGranularTargeting && targetingConfig.geo_locations.countries.length === 0) {
+                        delete targetingConfig.geo_locations.countries;
+                    } else if (targetingConfig.geo_locations.countries.length === 0) {
+                        targetingConfig.geo_locations.countries.push('IN');
+                    }
+
                     if (targetingConfig.geo_locations.cities.length === 0) delete targetingConfig.geo_locations.cities;
                     if (targetingConfig.geo_locations.regions.length === 0) delete targetingConfig.geo_locations.regions;
-                    if (targetingConfig.geo_locations.countries.length === 0) delete targetingConfig.geo_locations.countries;
                     if (targetingConfig.geo_locations.zips.length === 0) delete targetingConfig.geo_locations.zips;
                 }
             } catch (e) {

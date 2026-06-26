@@ -624,7 +624,7 @@ export async function POST(request: Request) {
                     : `Use reference image ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`;
 
                 const synthesisPrompt = `You are a professional Video Director and Prompt Engineer for Bytedance/Kie.ai Seedance 2.0.
-Your task is to translate a script scene into a highly engaging, step-by-step chronological generative video prompt, formatted exactly like the reference example.
+Your task is to translate a specific script scene into a highly engaging, step-by-step chronological generative video prompt, formatted exactly like the reference template.
 
 CREATOR CHARACTER:
 - Description: "${characterDescription}"
@@ -640,16 +640,21 @@ SCENE DETAILS:
 REFERENCE IMAGES & DETAILS:
 ${descriptionsText}
 
+CRITICAL RULES:
+1. SINGLE DIALOGUE RULE: The generated prompt MUST only contain the spoken dialogue of this specific scene: "${scene.dialogue}". Do NOT include, repeat, or reference the dialogue of any other scenes from the script or custom instructions.
+2. EXACTLY ONE DIALOGUE BLOCK: There must be EXACTLY ONE dialogue section (exactly one 'She says' or 'He says' block) in the entire generated prompt. Do not output multiple dialogue sections, multiple spoken parts, or repeat the dialogue block.
+3. 15-SECOND LIMIT: The prompt must only describe a single 15-second sequence of actions and visuals. Do not write a long multi-scene storyboard. Keep transitions simple.
+
 YOUR INSTRUCTIONS:
-1. The output prompt MUST be written as a chronological, line-by-line sequence of actions, camera directions, and dialogues, separated by empty lines.
+1. The output prompt MUST be written as a chronological, line-by-line sequence of actions, camera directions, and dialogue, separated by empty lines.
 2. Structure and Formatting:
    - Start by describing the opening setting, scene, and background.
-   - Presenter Environment & Setting: The presenter MUST be placed inside the target setting described (e.g., inside the luxury kothi's modern foyer/living room/garden environment). You MUST explicitly instruct the generator to ignore the background of the presenter's reference avatar image/photo (Image_1) and completely replace it with the described setting setting (e.g. 'The presenter is standing in the luxurious modern foyer setting of the kothi (completely replacing and ignoring the background of the reference image Image_1).').
+   - Presenter Environment & Setting: The presenter MUST be placed inside the target setting described. You MUST explicitly instruct the generator to ignore the background of the presenter's reference avatar image/photo (Image_1) and completely replace it with the described setting.
    - Describe the character's initial stance, action, and expressions.
-   - For all dialogue delivery, write it on new lines exactly as:
+   - For the dialogue delivery, write it on new lines exactly as:
      She says:
      "[dialogue]"
-     (Use 'She says' or 'He says' based on the character's gender from the description. Do NOT separate out or write "Dialogue: ..." or group it into a single paragraph).
+     (Use 'She says' or 'He says' based on the character's gender from the description. Do NOT separate out or write "Dialogue: ...").
    - Dialogue Language & Script: In the final prompt, the spoken dialogue (the text inside the double quotes after 'She says:' or 'He says:') MUST preserve the exact language and script formatting of the input scene dialogue. For Hinglish/Hindi, any words that do not exist in the English dictionary (Hindi words like 'apni', 'aur', 'bhi', 'ke liye', 'apna', 'dhoondh rahe ho', etc., and locations like "चंडीगढ़" or "मोहाली", and units like "कनाल" or "बी-एच-के") MUST be written in Hindi (using Devanagari script). Standard English words that exist in the English dictionary (like "dream home", "luxury", "family", "BHK", "comfort", "status", "marble", "flooring") MUST remain in standard English letters using Roman characters. Absolutely DO NOT transliterate the Devanagari script back to Roman characters in the dialogue part of the prompt.
    - Descriptive Text: All descriptive text (visual details, camera instructions, style attributes) in the final prompt MUST be written in English (using standard Roman characters). Do NOT use Devanagari script in the visual descriptions or camera instructions.
    - Referencing listing images: You MUST reference each image in the camera/visual direction parts using BOTH its visual description and its exact label 'Image_X' as defined in the mapping list (e.g. 'The camera pans to reveal the stunning curved spiral staircase with premium gold-finished railings (matching Image_3)').
@@ -666,11 +671,7 @@ YOUR INSTRUCTIONS:
 She/He says:
 "[Spoken dialogue preserving the input's mixed Devanagari-English script]"
 
-[Describe transitions and listing images referencing by label like Image_X, e.g.]
-Transition to a wide scenic shot showing the property facade (matching Image_2) from super far away so that no human face is visible or mutated.
-
-She/He says:
-"[Spoken dialogue preserving the input's mixed Devanagari-English script]"
+[Describe transitions and listing images referencing by label like Image_X, e.g. "Transition to a wide scenic shot showing the property facade (matching Image_2) from super far away so that no human face is visible or mutated." or "None" if no reference images].
 
 Professional real estate home tour.
 Photorealistic.
