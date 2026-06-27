@@ -151,8 +151,8 @@ export async function POST(request: Request) {
         }
 
         for (const asset of selectedAssets) {
-            const imageUrl = asset.image_url || asset.url;
-            const isVideo = asset.type === 'video' || imageUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/);
+            const imageUrl = asset.image_url || asset.url || "";
+            const isVideo = asset.type === 'video' || (typeof imageUrl === 'string' && imageUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)/));
             
             console.log(`[Push] Processing ${isVideo ? 'video' : 'image'}:`, imageUrl);
             
@@ -161,9 +161,19 @@ export async function POST(request: Request) {
             let videoId = null;
 
             if (isVideo) {
-                // A. Upload Video
+                // A. Upload Video as binary payload to Meta to bypass Cloudflare bot crawler protection
                 const videoData = new FormData();
-                videoData.append('file_url', imageUrl);
+                try {
+                    const videoFetch = await fetch(imageUrl);
+                    if (!videoFetch.ok) {
+                        throw new Error(`Failed to fetch video file: ${videoFetch.statusText}`);
+                    }
+                    const videoBlob = await videoFetch.blob();
+                    videoData.append('source', videoBlob, 'video.mp4');
+                } catch (fetchErr: any) {
+                    console.error("[Push] Video fetch failed:", fetchErr.message);
+                    continue;
+                }
                 videoData.append('access_token', profile.facebook_token);
                 
                 const videoRes = await fetch(`${FB_URL}/${profile.ad_account_id}/advideos`, { method: 'POST', body: videoData });

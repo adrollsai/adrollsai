@@ -94,7 +94,24 @@ export async function POST(request: Request) {
         }
         const creativeItems: CreativeItem[] = [];
 
-        if (inventoryIds && inventoryIds.length > 0) {
+        // 1. First, build creative items from assetIds (explicitly selected assets)
+        if (assetIds && assetIds.length > 0) {
+            const { data: assets } = await supabaseAdmin
+                .from('assets')
+                .select('url, type')
+                .in('id', assetIds);
+            if (assets) {
+                assets.forEach((asset: any) => {
+                    if (asset.url) {
+                        const isVideo = asset.type === 'video' || asset.url.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/);
+                        creativeItems.push({ type: isVideo ? 'video' : 'image', url: asset.url });
+                    }
+                });
+            }
+        }
+
+        // 2. Only fall back to inventoryIds (product images) if no specific assets were selected
+        if (creativeItems.length === 0 && inventoryIds && inventoryIds.length > 0) {
             const { data: props } = await supabaseAdmin
                 .from('properties')
                 .select('title, description, images, image_url')
@@ -109,21 +126,6 @@ export async function POST(request: Request) {
                         });
                     } else if (prop.image_url) {
                         creativeItems.push({ type: 'image', url: prop.image_url });
-                    }
-                });
-            }
-        }
-
-        if (assetIds && assetIds.length > 0) {
-            const { data: assets } = await supabaseAdmin
-                .from('assets')
-                .select('url, type')
-                .in('id', assetIds);
-            if (assets) {
-                assets.forEach((asset: any) => {
-                    if (asset.url) {
-                        const isVideo = asset.type === 'video' || asset.url.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/);
-                        creativeItems.push({ type: isVideo ? 'video' : 'image', url: asset.url });
                     }
                 });
             }
@@ -171,7 +173,15 @@ export async function POST(request: Request) {
             try {
                 if (item.type === 'video') {
                     const videoData = new FormData();
-                    if (item.url) videoData.append('file_url', item.url);
+                    if (item.url) {
+                        logToFile(`Downloading video for binary upload: ${item.url}`);
+                        const videoFetch = await fetch(item.url);
+                        if (!videoFetch.ok) {
+                            throw new Error(`Failed to fetch video file from storage: ${videoFetch.statusText}`);
+                        }
+                        const videoBlob = await videoFetch.blob();
+                        videoData.append('source', videoBlob, 'video.mp4');
+                    }
                     videoData.append('access_token', facebookToken);
                     const videoRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/advideos`, { method: 'POST', body: videoData });
                     const videoResult = await videoRes.json();
