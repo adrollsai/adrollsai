@@ -148,9 +148,14 @@ export async function POST(request: Request) {
         // Prepare thumbnail if videos exist
         const hasVideos = creativeItems.some(item => item.type === 'video');
         if (hasVideos) {
-            const thumbSource = logoUrl || 'https://adrolls.in/logo-square.png';
+            let thumbSource = logoUrl || 'https://placehold.co/600x600.png';
             try {
-                const thumbFetch = await fetch(thumbSource);
+                let thumbFetch = await fetch(thumbSource);
+                if (!thumbFetch.ok && thumbSource !== 'https://placehold.co/600x600.png') {
+                    logToFile(`Failed to download custom logo (${thumbFetch.statusText}), falling back to placeholder`);
+                    thumbSource = 'https://placehold.co/600x600.png';
+                    thumbFetch = await fetch(thumbSource);
+                }
                 if (thumbFetch.ok) {
                     const thumbBlob = await thumbFetch.blob();
                     const thumbData = new FormData();
@@ -160,7 +165,12 @@ export async function POST(request: Request) {
                     const thumbResult = await thumbRes.json();
                     if (thumbResult.images) {
                         globalThumbHash = thumbResult.images[Object.keys(thumbResult.images)[0]].hash;
+                        logToFile(`Successfully uploaded thumbnail to Meta. Hash: ${globalThumbHash}`);
+                    } else {
+                        logToFile("Meta thumbnail upload response missing images:", thumbResult);
                     }
+                } else {
+                    logToFile(`Failed to download fallback placeholder image: ${thumbFetch.statusText}`);
                 }
             } catch (e: any) {
                 logToFile("Failed to prepare thumbnail:", e.message);
@@ -507,8 +517,13 @@ export async function POST(request: Request) {
 
         // --- Step 9: Update job status ---
         let finalMessage = '';
-        if (successfulAds === 0 && lastDraftError) {
-            finalMessage = "Campaign DRAFTED! ⚠️ Payment Method Missing: Saved in Ads Manager.";
+        if (successfulAds === 0) {
+            if (lastDraftError) {
+                finalMessage = "Campaign DRAFTED! ⚠️ Payment Method Missing: Saved in Ads Manager.";
+            } else {
+                const errMsg = firstUploadError?.message || "All ad creative creations failed. Please check your Meta Ad Account permissions and settings.";
+                throw new Error(errMsg);
+            }
         } else {
             finalMessage = `Campaign Launched Successfully with ${successfulAds} AI Optimized Ads!`;
         }

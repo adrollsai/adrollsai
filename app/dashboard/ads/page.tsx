@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight, Link2, Pencil, BarChart4 } from 'lucide-react'
+import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight, Link2, Pencil, BarChart4, Trash2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
@@ -81,6 +81,7 @@ export default function AdsPage() {
   const [assetFilter, setAssetFilter] = useState<string>('All')
   
   const [campaigns, setCampaigns] = useState<Campaign[]>([]) 
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [properties, setProperties] = useState<Property[]>([])
   const [assets, setAssets] = useState<Asset[]>([]) 
   
@@ -632,6 +633,35 @@ export default function AdsPage() {
           alert(`Failed to update status: ${error.message}`);
           setCampaigns(campaigns);
       } finally { setTogglingId(null); }
+  }
+
+  const handleDeleteCampaign = async (campaignId: string, campaignName: string) => {
+      const confirmDelete = window.confirm(`Are you sure you want to permanently delete campaign "${campaignName}" on Meta? This action cannot be undone.`);
+      if (!confirmDelete) return;
+
+      setDeletingId(campaignId);
+      
+      const impersonateId = new URLSearchParams(window.location.search).get('impersonate');
+      const deleteUrl = `/api/meta-ads/delete-campaign${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
+
+      try {
+          const res = await fetch(deleteUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ campaignId })
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+              toast.success('Campaign deleted successfully!');
+              setCampaigns(prev => prev.filter(c => c.id !== campaignId));
+          } else {
+              throw new Error(data.error || 'Failed to delete campaign');
+          }
+      } catch (e: any) {
+          toast.error('Deletion Failed', { description: e.message });
+      } finally {
+          setDeletingId(null);
+      }
   }
 
   const fetchStats = async (campaign: Campaign, preset: string, since: string, until: string) => {
@@ -1598,8 +1628,19 @@ export default function AdsPage() {
                     campaigns.map(campaign => (
                         <div key={campaign.id} className="bg-white p-6 rounded-[1.5rem] xs:rounded-[2rem] shadow-sm border border-slate-200/60 transition-all hover:shadow-lg hover:border-blue-200 flex flex-col h-full group">
                             <div className="flex justify-between items-start mb-4">
-                                <div onClick={() => handleOpenExplorer(campaign)} className="max-w-[70%] cursor-pointer"><h3 className="text-base font-bold text-slate-800 truncate leading-tight group-hover:text-blue-600 transition-colors flex items-center gap-2">{campaign.name} <ExternalLink size={12} className="text-slate-300 group-hover:text-blue-400 transition-colors" /></h3><div className="flex items-center gap-1.5 mt-2"><span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${campaign.status === 'ACTIVE' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>{campaign.status === 'ACTIVE' ? <PlayCircle size={10}/> : <PauseCircle size={10}/>} {campaign.status}</span></div></div>
-                                <div className="flex items-center gap-2">{togglingId === campaign.id && <Loader2 size={14} className="animate-spin text-slate-400" />}<button onClick={() => handleToggleStatus(campaign.id, campaign.status)} className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${campaign.status === 'ACTIVE' ? 'bg-green-500 focus:ring-green-500' : 'bg-slate-200 focus:ring-slate-400'}`}><div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'}`} /></button></div>
+                                <div onClick={() => handleOpenExplorer(campaign)} className="max-w-[60%] cursor-pointer"><h3 className="text-base font-bold text-slate-800 truncate leading-tight group-hover:text-blue-600 transition-colors flex items-center gap-2">{campaign.name} <ExternalLink size={12} className="text-slate-300 group-hover:text-blue-400 transition-colors" /></h3><div className="flex items-center gap-1.5 mt-2"><span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${campaign.status === 'ACTIVE' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>{campaign.status === 'ACTIVE' ? <PlayCircle size={10}/> : <PauseCircle size={10}/>} {campaign.status}</span></div></div>
+                                <div className="flex items-center gap-2">
+                                    {togglingId === campaign.id && <Loader2 size={14} className="animate-spin text-slate-400" />}
+                                    <button onClick={() => handleToggleStatus(campaign.id, campaign.status)} className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${campaign.status === 'ACTIVE' ? 'bg-green-500 focus:ring-green-500' : 'bg-slate-200 focus:ring-slate-400'}`}><div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'}`} /></button>
+                                    <button 
+                                        onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
+                                        disabled={deletingId === campaign.id}
+                                        className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                                        title="Delete Campaign"
+                                    >
+                                        {deletingId === campaign.id ? <Loader2 size={14} className="animate-spin text-red-500" /> : <Trash2 size={14} />}
+                                    </button>
+                                </div>
                             </div>
                             <div className="flex-grow"></div>
                             <div className="flex justify-between items-center text-xs text-slate-500 pt-4 border-t border-slate-100 gap-1.5 flex-wrap">
