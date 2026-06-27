@@ -41,6 +41,20 @@ export async function POST(request: Request) {
             logToFile("[Processor] campaign_jobs query failed (normal if table doesn't exist):", dbErr.message);
         }
 
+        if (!payload) {
+            try {
+                const { readJobLocal } = require('@/utils/job-store');
+                const localJob = readJobLocal(jobId);
+                if (localJob) {
+                    job = localJob;
+                    payload = localJob.payload;
+                    logToFile("[Processor] Using payload from local job store");
+                }
+            } catch (e: any) {
+                logToFile("[Processor] Failed to read from local job store:", e.message);
+            }
+        }
+
         if (!payload && body.payload) {
             payload = body.payload;
             logToFile("[Processor] Using payload from request body");
@@ -55,8 +69,15 @@ export async function POST(request: Request) {
         }
 
         // 2. Mark as processing
+        try {
+            const { writeJobLocal } = require('@/utils/job-store');
+            writeJobLocal(jobId, { status: 'processing' });
+        } catch (e) {}
+
         if (job) {
-            await supabaseAdmin.from('campaign_jobs').update({ status: 'processing', updated_at: new Date().toISOString() }).eq('id', jobId);
+            try {
+                await supabaseAdmin.from('campaign_jobs').update({ status: 'processing', updated_at: new Date().toISOString() }).eq('id', jobId);
+            } catch (e) {}
         }
         const {
             facebookToken,
@@ -528,13 +549,24 @@ export async function POST(request: Request) {
             finalMessage = `Campaign Launched Successfully with ${successfulAds} AI Optimized Ads!`;
         }
 
-        if (job) {
-            await supabaseAdmin.from('campaign_jobs').update({
+        try {
+            const { writeJobLocal } = require('@/utils/job-store');
+            writeJobLocal(jobId, {
                 status: 'completed',
                 campaign_id: campaignId,
-                message: finalMessage,
-                updated_at: new Date().toISOString()
-            }).eq('id', jobId);
+                message: finalMessage
+            });
+        } catch (e) {}
+
+        if (job) {
+            try {
+                await supabaseAdmin.from('campaign_jobs').update({
+                    status: 'completed',
+                    campaign_id: campaignId,
+                    message: finalMessage,
+                    updated_at: new Date().toISOString()
+                }).eq('id', jobId);
+            } catch (e) {}
         }
 
         logToFile("=== [JOB PROCESSOR] COMPLETED ===", { jobId, campaignId, successfulAds });
@@ -549,8 +581,16 @@ export async function POST(request: Request) {
             try {
                 let uId = job?.user_id;
                 if (!uId) {
-                    const { data } = await supabaseAdmin.from('campaign_jobs').select('user_id').eq('id', jobId).single();
-                    uId = data?.user_id;
+                    try {
+                        const { data } = await supabaseAdmin.from('campaign_jobs').select('user_id').eq('id', jobId).single();
+                        uId = data?.user_id;
+                    } catch (e) {}
+                }
+                if (!uId) {
+                    try {
+                        const { readJobLocal } = require('@/utils/job-store');
+                        uId = readJobLocal(jobId)?.user_id;
+                    } catch (e) {}
                 }
                 if (uId) {
                     const { refundLimit } = await import('@/utils/subscription-server');
@@ -558,12 +598,22 @@ export async function POST(request: Request) {
                 }
             } catch (e) { /* ignore refund errors */ }
 
-            if (job) {
-                await supabaseAdmin.from('campaign_jobs').update({
+            try {
+                const { writeJobLocal } = require('@/utils/job-store');
+                writeJobLocal(jobId, {
                     status: 'failed',
-                    message: error.message || "Internal Server Error",
-                    updated_at: new Date().toISOString()
-                }).eq('id', jobId);
+                    message: error.message || "Internal Server Error"
+                });
+            } catch (e) {}
+
+            if (job) {
+                try {
+                    await supabaseAdmin.from('campaign_jobs').update({
+                        status: 'failed',
+                        message: error.message || "Internal Server Error",
+                        updated_at: new Date().toISOString()
+                    }).eq('id', jobId);
+                } catch (e) {}
             }
         }
 

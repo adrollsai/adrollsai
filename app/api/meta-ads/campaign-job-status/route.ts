@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { readJobLocal } from '@/utils/job-store';
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,7 +23,17 @@ export async function GET(request: Request) {
             .single();
 
         if (error || !job) {
-            // If the query returns "not found" but table exists
+            // Check local store as fallback
+            const localJob = readJobLocal(jobId);
+            if (localJob) {
+                return NextResponse.json({
+                    status: localJob.status,
+                    campaignId: localJob.campaign_id,
+                    message: localJob.message,
+                    createdAt: localJob.created_at,
+                    updatedAt: localJob.updated_at
+                });
+            }
             return NextResponse.json({ status: 'completed', message: 'Job not found in database.' });
         }
 
@@ -34,7 +45,17 @@ export async function GET(request: Request) {
             updatedAt: job.updated_at
         });
     } catch (e: any) {
-        // Fallback: If table campaign_jobs does not exist, terminate polling cleanly
+        // Check local store as fallback
+        const localJob = readJobLocal(jobId);
+        if (localJob) {
+            return NextResponse.json({
+                status: localJob.status,
+                campaignId: localJob.campaign_id,
+                message: localJob.message,
+                createdAt: localJob.created_at,
+                updatedAt: localJob.updated_at
+            });
+        }
         return NextResponse.json({ 
             status: 'completed', 
             message: 'Status polling unavailable (migration has not been run).' 

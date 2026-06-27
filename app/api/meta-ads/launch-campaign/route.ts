@@ -226,6 +226,19 @@ export async function POST(request: Request) {
         const crypto = require('crypto');
         jobId = crypto.randomUUID();
         fallbackWarning = "Note: Background status tracking is inactive because campaign_jobs table has not been created.";
+        
+        // Write status locally
+        try {
+            const { writeJobLocal } = require('@/utils/job-store');
+            writeJobLocal(jobId, {
+                status: 'pending',
+                payload: jobPayload,
+                user_id: user.id,
+                target_user_id: targetUserId
+            });
+        } catch (e: any) {
+            logToFile("Failed to save local job store:", e.message);
+        }
     } else {
         jobId = job.id;
         logToFile(`Job created in DB: ${jobId}`);
