@@ -1816,8 +1816,11 @@ export default function AdsPage() {
                                                     }
                                                     
                                                     const rawCaption = a.caption || '';
-                                                    let headline = `${orchestrator.campaign?.name} - Exclusive Offer`;
-                                                    let primaryText = `Premium opportunities at ${orchestrator.campaign?.name}. Contact us today!`;
+                                                    const campaignName = orchestrator.campaign?.name || "";
+                                                    const matchedProperty = properties.find(p => p.title && campaignName.toLowerCase().includes(p.title.toLowerCase()));
+                                                    
+                                                    let headline = matchedProperty ? matchedProperty.title : `${orchestrator.campaign?.name} - Exclusive Offer`;
+                                                    let primaryText = matchedProperty ? matchedProperty.description : `Premium opportunities at ${orchestrator.campaign?.name}. Contact us today!`;
                                                     let description = "";
 
                                                     if (rawCaption.includes('\n\n')) {
@@ -1896,7 +1899,7 @@ export default function AdsPage() {
                                                                 className="w-full text-sm font-black text-slate-900 bg-slate-50 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-purple-500/20" 
                                                             />
                                                         </div>
-                                                        {!orchestrator.isManual && (
+                                                        {true && (
                                                             <button 
                                                                 onClick={() => handleRegenerateVariation(i)}
                                                                 className="ml-2 bg-slate-100 p-2 rounded-xl text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all"

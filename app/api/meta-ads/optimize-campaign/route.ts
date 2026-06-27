@@ -90,10 +90,46 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Missing Meta credentials. Please ensure your Meta account is linked.' }, { status: 400 });
         }
 
-        // Fetch a real property ID for the user to avoid UUID type errors in Supabase
-        const { data: firstProp } = await supabase.from('properties').select('id').eq('user_id', targetUserId).limit(1).single();
-        console.log("[Optimize] Property ID found:", firstProp?.id);
-        const realPropId = firstProp?.id || null;
+        // Fetch the campaign name from Meta Graph API to match it with the correct property
+        let campaignName = body.campaignName || "";
+        if (campaignId) {
+            try {
+                const compRes = await fetch(`${FB_GRAPH}/${campaignId}?fields=name&access_token=${profile.facebook_token}`);
+                if (compRes.ok) {
+                    const compData = await compRes.json();
+                    if (compData.name) {
+                        campaignName = compData.name;
+                    }
+                }
+            } catch (e: any) {
+                console.error("[Optimize] Failed to fetch campaign name:", e.message);
+            }
+        }
+
+        // Fetch properties for the user to find the matched one
+        let realPropId = null;
+        let matchedProperty = null;
+        try {
+            const { data: properties } = await supabaseAdmin
+                .from('properties')
+                .select('id, title, description')
+                .eq('user_id', targetUserId);
+            
+            if (properties && properties.length > 0) {
+                if (campaignName) {
+                    matchedProperty = properties.find(p => 
+                        p.title && campaignName.toLowerCase().includes(p.title.toLowerCase())
+                    );
+                }
+                // Fallback to first property if no direct title match
+                if (!matchedProperty) {
+                    matchedProperty = properties[0];
+                }
+                realPropId = matchedProperty.id;
+            }
+        } catch (e: any) {
+            console.error("[Optimize] Failed to fetch/match property:", e.message);
+        }
 
         if (step === 'analyze') {
             // 1. Fetch Ad-Level Insights
@@ -283,9 +319,21 @@ export async function POST(request: Request) {
         }
 
         if (step === 'generate-copy') {
-            const { imageUrls = [], captions = [], campaignName = "Our Campaign" } = body;
+            const { imageUrls = [], captions = [] } = body;
+            
+            let propertyContext = "";
+            if (matchedProperty) {
+                propertyContext = `
+                Product/Property Info:
+                Title: ${matchedProperty.title}
+                Description: ${matchedProperty.description}
+                `;
+            }
+
             const llmPrompt = `
             Act as an elite direct-response marketer. Craft exactly ONE (1) distinct, highly persuasive ad copy variation for a campaign named "${campaignName}".
+            
+            ${propertyContext}
             
             Business Context:
             Name: ${profile.business_name || 'Our Company'}
