@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const VERCEL_API_TOKEN = process.env.VERCEL_API_TOKEN;
+const VERCEL_API_TOKEN = process.env.VERCEL_API_TOKEN || process.env.VERCEL_TOKEN;
 const VERCEL_PROJECT_ID = process.env.VERCEL_PROJECT_ID;
 const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
 

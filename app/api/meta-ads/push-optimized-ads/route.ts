@@ -161,27 +161,90 @@ export async function POST(request: Request) {
             let videoId = null;
 
             if (isVideo) {
-                // A. Upload Video as binary payload to Meta to bypass Cloudflare bot crawler protection
-                const videoData = new FormData();
-                try {
-                    const videoFetch = await fetch(imageUrl);
-                    if (!videoFetch.ok) {
-                        throw new Error(`Failed to fetch video file: ${videoFetch.statusText}`);
-                    }
-                    const videoBlob = await videoFetch.blob();
-                    videoData.append('source', videoBlob, 'video.mp4');
-                } catch (fetchErr: any) {
-                    console.error("[Push] Video fetch failed:", fetchErr.message);
-                    continue;
-                }
-                videoData.append('access_token', profile.facebook_token);
+                let uploadError: any = null;
+
+                // 1. Try uploading to Meta via file_url if the URL is public and remote
+                const isPublicUrl = imageUrl && imageUrl.startsWith('http') && !imageUrl.includes('localhost') && !imageUrl.includes('127.0.0.1') && !imageUrl.includes('::1');
                 
-                const videoRes = await fetch(`${FB_URL}/${profile.ad_account_id}/advideos`, { method: 'POST', body: videoData });
-                const videoResult = await videoRes.json();
-                videoId = videoResult.id;
+                if (isPublicUrl && imageUrl) {
+                    try {
+                        console.log(`[Push] Uploading video via Meta file_url (JSON): ${imageUrl}`);
+                        const videoRes = await fetch(`${FB_URL}/${profile.ad_account_id}/advideos`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                file_url: imageUrl,
+                                access_token: profile.facebook_token
+                            })
+                        });
+                        
+                        const resText = await videoRes.text();
+                        console.log(`[Push] Meta file_url response status: ${videoRes.status}`);
+                        
+                        let videoResult: any = {};
+                        try {
+                            videoResult = JSON.parse(resText);
+                        } catch (parseErr) {
+                            throw new Error(`Failed to parse Meta response as JSON (Status ${videoRes.status}): ${resText.substring(0, 500)}`);
+                        }
+                        
+                        if (videoResult.id) {
+                            videoId = videoResult.id;
+                            console.log(`[Push] Successfully uploaded video via file_url. Meta ID: ${videoId}`);
+                        } else {
+                            uploadError = videoResult.error || { message: `file_url upload failed (Status ${videoRes.status}): ${resText}` };
+                            console.error(`[Push] Meta file_url upload failed:`, uploadError);
+                        }
+                    } catch (e: any) {
+                        uploadError = { message: e.message };
+                        console.error(`[Push] Error uploading video via file_url: ${e.message}`);
+                    }
+                }
+
+                // 2. Fallback to downloading video and doing a binary upload if file_url failed or is local
+                if (!videoId && imageUrl) {
+                    try {
+                        console.log(`[Push] Falling back to downloading video for binary upload: ${imageUrl}`);
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+                        const videoFetch = await fetch(imageUrl, { signal: controller.signal });
+                        if (!videoFetch.ok) {
+                            throw new Error(`Failed to fetch video file: ${videoFetch.statusText}`);
+                        }
+                        const videoBlob = await videoFetch.blob();
+                        clearTimeout(timeoutId);
+
+                        const videoData = new FormData();
+                        videoData.append('source', videoBlob, 'video.mp4');
+                        videoData.append('access_token', profile.facebook_token);
+
+                        const videoRes = await fetch(`${FB_URL}/${profile.ad_account_id}/advideos`, { method: 'POST', body: videoData });
+                        const resText = await videoRes.text();
+                        console.log(`[Push] Meta binary fallback response status: ${videoRes.status}`);
+                        
+                        let videoResult: any = {};
+                        try {
+                            videoResult = JSON.parse(resText);
+                        } catch (parseErr) {
+                            throw new Error(`Failed to parse Meta binary response as JSON (Status ${videoRes.status}): ${resText.substring(0, 500)}`);
+                        }
+                        
+                        if (videoResult.id) {
+                            videoId = videoResult.id;
+                            console.log(`[Push] Successfully uploaded video via binary upload fallback. Meta ID: ${videoId}`);
+                        } else {
+                            uploadError = videoResult.error || { message: `Binary fallback upload failed (Status ${videoRes.status}): ${resText}` };
+                            console.error(`[Push] Binary fallback upload failed:`, uploadError);
+                        }
+                    } catch (e: any) {
+                        uploadError = { message: e.message };
+                        console.error(`[Push] Error during binary video upload fallback: ${e.message}`);
+                    }
+                }
 
                 if (!videoId) {
-                    console.error("[Push] Video upload failed:", videoResult);
+                    console.error("[Push] Video upload failed:", uploadError || "Unknown error");
                     continue;
                 }
                 

@@ -5,13 +5,51 @@ export const uploadToR2 = async (file: File, folder: string) => {
       impersonateId = urlParams.get('impersonate');
     }
 
+    let fileToUpload = file;
+
+    // A. Intercept Images: Compress client-side first if not already compressed
+    if (file.type.startsWith('image/') && !(file as any).isCompressed) {
+      try {
+        console.log(`[uploadToR2] Automatically compressing image: ${file.name}`);
+        const compressed = await compressImage(file);
+        fileToUpload = compressed;
+      } catch (e) {
+        console.error('[uploadToR2] Browser image compression failed, uploading original:', e);
+      }
+    }
+
+    // B. Intercept Videos: Route through server-side transcoding/compression API
+    if (file.type.startsWith('video/')) {
+      console.log(`[uploadToR2] Routing video upload to server-side compression endpoint: ${file.name}`);
+      const formData = new FormData();
+      formData.append('file', fileToUpload);
+      formData.append('folder', folder);
+      if (impersonateId) {
+        formData.append('impersonateId', impersonateId);
+      }
+
+      const response = await fetch('/api/upload/video', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Video compression & upload failed: ${errText || response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.publicUrl;
+    }
+
+    // C. Proceed with standard R2 signed URL upload for compressed images & other files
     // 1. Get Signed URL from our API
     const res = await fetch('/api/upload/sign', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        fileName: file.name,
-        fileType: file.type,
+        fileName: fileToUpload.name,
+        fileType: fileToUpload.type,
         folder: folder,
         impersonateId: impersonateId || null
       })
@@ -23,12 +61,11 @@ export const uploadToR2 = async (file: File, folder: string) => {
     // 2. Upload directly to Cloudflare R2
     const uploadRes = await fetch(signedUrl, {
       method: 'PUT',
-      body: file,
+      body: fileToUpload,
       headers: {
-        'Content-Type': file.type
+        'Content-Type': fileToUpload.type
       }
     })
-  
   
     if (!uploadRes.ok) throw new Error('Upload to storage failed')
   
@@ -39,6 +76,10 @@ export const compressImage = (file: File, quality = 0.7, maxWidth = 1200): Promi
   return new Promise((resolve) => {
     if (typeof window === 'undefined' || !file.type.startsWith('image/')) {
       return resolve(file); // Safe fallback for server-side or non-image files
+    }
+
+    if ((file as any).isCompressed) {
+      return resolve(file);
     }
 
     const img = new Image();
@@ -73,6 +114,7 @@ export const compressImage = (file: File, quality = 0.7, maxWidth = 1200): Promi
             type: 'image/jpeg',
             lastModified: Date.now(),
           });
+          (compressedFile as any).isCompressed = true;
           resolve(compressedFile);
         } else {
           resolve(file); // Fallback to original file
@@ -82,7 +124,9 @@ export const compressImage = (file: File, quality = 0.7, maxWidth = 1200): Promi
 
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      resolve(file); // Fallback to original file on loading error
+      const fallbackFile = new File([file], file.name, { type: file.type });
+      (fallbackFile as any).isCompressed = true; // prevent re-compression attempts
+      resolve(fallbackFile);
     };
   });
 };

@@ -232,18 +232,35 @@ export async function POST(request: Request) {
     }
 
     // --- FIRE-AND-FORGET: Trigger the background processor ---
-    const host = request.headers.get('host') || 'localhost:3000';
-    const protocol = host.includes('localhost') ? 'http' : 'https';
-    const processUrl = `${protocol}://${host}/api/meta-ads/process-campaign-job`;
+    if (!process.env.VERCEL) {
+        logToFile(`[LaunchCampaign] Running locally. Executing runCampaignJob in same process to bypass dev server fetch deadlocks for jobId: ${jobId}`);
+        setTimeout(async () => {
+            try {
+                const { runCampaignJob } = await import('@/utils/campaign-processor');
+                await runCampaignJob(jobId, jobPayload);
+            } catch (err: any) {
+                logToFile(`[LaunchCampaign] Local background processor execution crashed: ${err.message}`);
+            }
+        }, 100);
+    } else {
+        const host = request.headers.get('host') || 'localhost:3000';
+        const protocol = host.includes('localhost') ? 'http' : 'https';
+        const processUrl = `${protocol}://${host}/api/meta-ads/process-campaign-job`;
 
-    // Fire and forget — we don't await this
-    fetch(processUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, payload: jobPayload })
-    }).catch(err => {
-        logToFile("Failed to trigger job processor:", err.message);
-    });
+        // Fire and forget — we don't await this in cloud production
+        fetch(processUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jobId, payload: jobPayload })
+        }).then(async res => {
+            if (!res.ok) {
+                const errText = await res.text();
+                logToFile(`Job processor request failed with status ${res.status}: ${errText}`);
+            }
+        }).catch(err => {
+            logToFile("Failed to trigger job processor:", err.message);
+        });
+    }
 
     // --- RETURN IMMEDIATELY ---
     return NextResponse.json({

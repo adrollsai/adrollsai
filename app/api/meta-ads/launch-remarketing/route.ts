@@ -808,27 +808,124 @@ export async function POST(request: Request) {
             const item = creativeItems[i];
             try {
                 if (item.type === 'video') {
-                    const videoData = new FormData();
+                    let videoId: string | null = null;
+                    let uploadError: any = null;
+
+                    // If it is a direct file upload in request body
                     if (item.file) {
-                        videoData.append('source', item.file, (item.file as any).name || 'video.mp4');
+                        try {
+                            logToFile(`Uploading uploaded video file ${i + 1} to Meta...`);
+                            const videoData = new FormData();
+                            videoData.append('source', item.file, (item.file as any).name || 'video.mp4');
+                            videoData.append('access_token', facebookToken);
+
+                            const videoRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/advideos`, { method: 'POST', body: videoData });
+                            const resText = await videoRes.text();
+                            let videoResult: any = {};
+                            try {
+                                videoResult = JSON.parse(resText);
+                            } catch (parseErr) {
+                                throw new Error(`Failed to parse Meta response as JSON (Status ${videoRes.status}): ${resText.substring(0, 500)}`);
+                            }
+                            if (videoResult.id) {
+                                videoId = videoResult.id;
+                            } else {
+                                uploadError = videoResult.error || { message: `Direct video file upload failed (Status ${videoRes.status}): ${resText}` };
+                            }
+                        } catch (e: any) {
+                            uploadError = { message: e.message };
+                        }
                     } else if (item.url) {
-                        videoData.append('file_url', item.url);
+                        // 1. Try uploading to Meta via file_url if the URL is public and remote
+                        const isPublicUrl = item.url.startsWith('http') && !item.url.includes('localhost') && !item.url.includes('127.0.0.1') && !item.url.includes('::1');
+                        
+                        if (isPublicUrl) {
+                            try {
+                                logToFile(`Uploading video ${i + 1} via Meta file_url (JSON): ${item.url}`);
+                                const videoRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/advideos`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        file_url: item.url,
+                                        access_token: facebookToken
+                                    })
+                                });
+                                
+                                const resText = await videoRes.text();
+                                logToFile(`Meta file_url response status for video ${i + 1}: ${videoRes.status}`);
+                                
+                                let videoResult: any = {};
+                                try {
+                                    videoResult = JSON.parse(resText);
+                                } catch (parseErr) {
+                                    throw new Error(`Failed to parse Meta response as JSON (Status ${videoRes.status}): ${resText.substring(0, 500)}`);
+                                }
+                                
+                                if (videoResult.id) {
+                                    videoId = videoResult.id;
+                                    logToFile(`Successfully uploaded video ${i + 1} via file_url. Meta ID: ${videoId}`);
+                                } else {
+                                    uploadError = videoResult.error || { message: `file_url upload failed (Status ${videoRes.status}): ${resText}` };
+                                    logToFile(`Meta file_url upload failed for video ${i + 1}:`, uploadError);
+                                }
+                            } catch (e: any) {
+                                uploadError = { message: e.message };
+                                logToFile(`Error uploading video ${i + 1} via file_url: ${e.message}`);
+                            }
+                        }
+
+                        // 2. Fallback to downloading video and doing a binary upload if file_url failed or is local
+                        if (!videoId) {
+                            try {
+                                logToFile(`Falling back to downloading video ${i + 1} for binary upload: ${item.url}`);
+                                const controller = new AbortController();
+                                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+                                const videoFetch = await fetch(item.url, { signal: controller.signal });
+                                if (!videoFetch.ok) {
+                                    throw new Error(`Failed to fetch video file from storage: ${videoFetch.statusText}`);
+                                }
+                                const videoBlob = await videoFetch.blob();
+                                clearTimeout(timeoutId);
+
+                                const videoData = new FormData();
+                                videoData.append('source', videoBlob, 'video.mp4');
+                                videoData.append('access_token', facebookToken);
+
+                                const videoRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/advideos`, { method: 'POST', body: videoData });
+                                const resText = await videoRes.text();
+                                logToFile(`Meta binary fallback response status for video ${i + 1}: ${videoRes.status}`);
+                                
+                                let videoResult: any = {};
+                                try {
+                                    videoResult = JSON.parse(resText);
+                                } catch (parseErr) {
+                                    throw new Error(`Failed to parse Meta binary response as JSON (Status ${videoRes.status}): ${resText.substring(0, 500)}`);
+                                }
+                                
+                                if (videoResult.id) {
+                                    videoId = videoResult.id;
+                                    logToFile(`Successfully uploaded video ${i + 1} via binary upload fallback. Meta ID: ${videoId}`);
+                                } else {
+                                    uploadError = videoResult.error || { message: `Binary fallback upload failed (Status ${videoRes.status}): ${resText}` };
+                                    logToFile(`Binary fallback upload failed for video ${i + 1}:`, uploadError);
+                                }
+                            } catch (e: any) {
+                                uploadError = { message: e.message };
+                                logToFile(`Error during binary video upload fallback for video ${i + 1}: ${e.message}`);
+                            }
+                        }
                     }
-                    videoData.append('access_token', facebookToken);
-                    
-                    logToFile(`Uploading video ${i + 1} to Meta...`);
-                    const videoRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/advideos`, { method: 'POST', body: videoData });
-                    const videoResult = await videoRes.json();
-                    
-                    if (videoResult.id) {
-                        logToFile(`✅ Video ${i + 1} uploaded. ID: ${videoResult.id}`);
+
+                    if (videoId) {
+                        logToFile(`✅ Video ${i + 1} uploaded. ID: ${videoId}`);
                         uploadedCreatives.push({
                             type: 'video',
-                            videoId: videoResult.id
+                            videoId: videoId
                         });
                     } else {
-                        logToFile(`❌ Video ${i + 1} upload failed:`, videoResult);
-                        firstUploadError = videoResult.error || { message: "Video upload failed" };
+                        logToFile(`❌ Video ${i + 1} upload failed:`, uploadError);
+                        firstUploadError = uploadError || { message: "Video upload failed" };
                     }
                 } else {
                     const imgData = new FormData();
