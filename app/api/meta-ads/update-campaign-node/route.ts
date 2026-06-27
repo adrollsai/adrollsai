@@ -82,26 +82,82 @@ export async function POST(request: Request) {
       let imageHash = fields.creative.imageHash;
       const imageUrl = fields.creative.imageUrl;
 
-      if (imageUrl && !imageHash) {
-        try {
-          const imageFetch = await fetch(imageUrl);
-          if (imageFetch.ok) {
-            const imageBlob = await imageFetch.blob();
-            const uploadFormData = new FormData();
-            uploadFormData.append('source', imageBlob, 'marketing_asset.png');
-            uploadFormData.append('access_token', token);
-            
-            const uploadRes = await fetch(`${FB_GRAPH_URL}/${adAccountId}/adimages`, {
+      let videoId = null;
+
+      if (fields.creative.isVideo) {
+        // Video upload to Meta
+        const videoUrl = fields.creative.imageUrl;
+        if (videoUrl) {
+          try {
+            console.log(`[Update Campaign Node] Uploading video via Meta file_url: ${videoUrl}`);
+            const videoRes = await fetch(`${FB_GRAPH_URL}/${adAccountId}/advideos`, {
               method: 'POST',
-              body: uploadFormData
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                file_url: videoUrl,
+                access_token: token
+              })
             });
-            const uploadData = await uploadRes.json();
-            if (uploadData.images) {
-              imageHash = uploadData.images[Object.keys(uploadData.images)[0]].hash;
+            const videoResult = await videoRes.json();
+            if (videoResult.id) {
+              videoId = videoResult.id;
+              console.log(`[Update Campaign Node] Successfully uploaded video. Meta ID: ${videoId}`);
+            } else {
+              console.error("[Update Campaign Node] file_url upload failed:", videoResult.error);
+            }
+          } catch (err: any) {
+            console.error("[Update Campaign Node] file_url upload error:", err.message);
+          }
+
+          if (!videoId) {
+            try {
+              console.log(`[Update Campaign Node] Falling back to downloading video for binary upload: ${videoUrl}`);
+              const videoFetch = await fetch(videoUrl);
+              if (videoFetch.ok) {
+                const videoBlob = await videoFetch.blob();
+                const videoData = new FormData();
+                videoData.append('source', videoBlob, 'video.mp4');
+                videoData.append('access_token', token);
+                const videoRes = await fetch(`${FB_GRAPH_URL}/${adAccountId}/advideos`, {
+                  method: 'POST',
+                  body: videoData
+                });
+                const videoResult = await videoRes.json();
+                if (videoResult.id) {
+                  videoId = videoResult.id;
+                  console.log(`[Update Campaign Node] Successfully uploaded video via binary fallback. Meta ID: ${videoId}`);
+                } else {
+                  console.error("[Update Campaign Node] Binary upload failed:", videoResult.error);
+                }
+              }
+            } catch (err: any) {
+              console.error("[Update Campaign Node] Binary upload error:", err.message);
             }
           }
-        } catch (err: any) {
-          console.error("Fetching & Uploading image URL failed:", err.message);
+        }
+      } else {
+        // Only upload image if not a video
+        if (imageUrl && !imageHash) {
+          try {
+            const imageFetch = await fetch(imageUrl);
+            if (imageFetch.ok) {
+              const imageBlob = await imageFetch.blob();
+              const uploadFormData = new FormData();
+              uploadFormData.append('source', imageBlob, 'marketing_asset.png');
+              uploadFormData.append('access_token', token);
+              
+              const uploadRes = await fetch(`${FB_GRAPH_URL}/${adAccountId}/adimages`, {
+                method: 'POST',
+                body: uploadFormData
+              });
+              const uploadData = await uploadRes.json();
+              if (uploadData.images) {
+                imageHash = uploadData.images[Object.keys(uploadData.images)[0]].hash;
+              }
+            }
+          } catch (err: any) {
+            console.error("Fetching & Uploading image URL failed:", err.message);
+          }
         }
       }
 
@@ -115,24 +171,38 @@ export async function POST(request: Request) {
         ctaValue.link = "https://adrolls.in";
       }
 
-      const creativePayload = {
+      const creativePayload: any = {
         name: `Edited Creative - ${Date.now()}`,
         object_story_spec: {
           page_id: fields.creative.pageId, 
-          link_data: {
-            message: fields.creative.primaryText || "Exclusive Property Deal. View pricing & details now.", 
-            name: fields.creative.headline || "View Details", 
-            description: fields.creative.description || "",
-            link: fields.creative.linkUrl || "https://adrolls.in", 
-            image_hash: imageHash, 
-            call_to_action: { 
-              type: 'LEARN_MORE', 
-              value: ctaValue
-            }
-          }
         },
         access_token: token,
       };
+
+      if (fields.creative.isVideo && videoId) {
+        creativePayload.object_story_spec.video_data = {
+          video_id: videoId,
+          message: fields.creative.primaryText || "Exclusive Property Deal. View pricing & details now.", 
+          title: fields.creative.headline || "View Details", 
+          image_hash: imageHash, 
+          call_to_action: { 
+            type: 'LEARN_MORE', 
+            value: ctaValue
+          }
+        };
+      } else {
+        creativePayload.object_story_spec.link_data = {
+          message: fields.creative.primaryText || "Exclusive Property Deal. View pricing & details now.", 
+          name: fields.creative.headline || "View Details", 
+          description: fields.creative.description || "",
+          link: fields.creative.linkUrl || "https://adrolls.in", 
+          image_hash: imageHash, 
+          call_to_action: { 
+            type: 'LEARN_MORE', 
+            value: ctaValue
+          }
+        };
+      }
 
       const creativeRes = await fetch(`${FB_GRAPH_URL}/${adAccountId}/adcreatives`, {
         method: 'POST',

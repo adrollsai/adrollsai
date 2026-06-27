@@ -53,6 +53,8 @@ export default function AdsPage() {
       id?: string;
       imageHash?: string;
       imageUrl?: string;
+      isVideo?: boolean;
+      videoSourceUrl?: string;
       primaryText?: string;
       headline?: string;
       description?: string;
@@ -3172,6 +3174,8 @@ export default function AdsPage() {
                                                     id: ad.creative?.id || '',
                                                     imageHash: ad.creative?.imageHash || '',
                                                     imageUrl: ad.creative?.imageUrl || '',
+                                                    isVideo: ad.creative?.isVideo || false,
+                                                    videoSourceUrl: ad.creative?.videoSourceUrl || '',
                                                     primaryText: ad.creative?.primaryText || '',
                                                     headline: ad.creative?.headline || '',
                                                     description: ad.creative?.description || '',
@@ -4311,7 +4315,9 @@ export default function AdsPage() {
                                                         creative: {
                                                             ...(prev.creative || {}),
                                                             imageUrl: a.url,
-                                                            imageHash: '' // clear imageHash so backend fetches it from URL
+                                                            imageHash: '', // clear imageHash so backend fetches it from URL
+                                                            isVideo: a.type === 'video',
+                                                            videoSourceUrl: a.type === 'video' ? a.url : ''
                                                         }
                                                     };
                                                 });
@@ -4360,7 +4366,9 @@ export default function AdsPage() {
                                                                     creative: {
                                                                         ...(prev.creative || {}),
                                                                         imageUrl: a.url,
-                                                                        imageHash: ''
+                                                                        imageHash: '',
+                                                                        isVideo: a.type === 'video',
+                                                                        videoSourceUrl: a.type === 'video' ? a.url : ''
                                                                     }
                                                                 };
                                                             });
