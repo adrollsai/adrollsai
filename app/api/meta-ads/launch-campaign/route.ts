@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 import { logToFile, clearLogFile } from '@/utils/logger';
+import { writeJobLocal } from '@/utils/job-store';
+import { runCampaignJob } from '@/utils/campaign-processor';
+import crypto from 'crypto';
 
 // This route is now FAST — it only validates and creates a job.
 // No need for long maxDuration since heavy work is done by process-campaign-job.
@@ -223,13 +226,11 @@ export async function POST(request: Request) {
     if (jobErr || !job) {
         logToFile("campaign_jobs DB insert failed (normal if migration sql hasn't been run yet):", jobErr?.message || "unknown");
         // Fallback: Generate a random job ID locally so campaign still launches
-        const crypto = require('crypto');
         jobId = crypto.randomUUID();
         fallbackWarning = "Note: Background status tracking is inactive because campaign_jobs table has not been created.";
         
         // Write status locally
         try {
-            const { writeJobLocal } = require('@/utils/job-store');
             writeJobLocal(jobId, {
                 status: 'pending',
                 payload: jobPayload,
@@ -245,9 +246,8 @@ export async function POST(request: Request) {
     }
 
     // --- FIRE-AND-FORGET: Trigger the background processor ---
-    // Import and execute campaign job processing directly in the background
+    // execute campaign job processing directly in the background
     // This avoids HTTP deadlocks in single-threaded local development servers
-    const { runCampaignJob } = require('@/utils/campaign-processor');
     runCampaignJob(jobId, jobPayload).catch((err: any) => {
         logToFile("Failed to execute background campaign processor:", err.message);
     });

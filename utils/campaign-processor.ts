@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { logToFile } from '@/utils/logger';
+import { writeJobLocal, readJobLocal } from '@/utils/job-store';
 
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
@@ -36,7 +37,6 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any) {
 
         if (!payload) {
             try {
-                const { readJobLocal } = require('@/utils/job-store');
                 const localJob = readJobLocal(jobId);
                 if (localJob) {
                     job = localJob;
@@ -59,7 +59,6 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any) {
 
         // 2. Mark as processing
         try {
-            const { writeJobLocal } = require('@/utils/job-store');
             writeJobLocal(jobId, { status: 'processing' });
         } catch (e) {}
 
@@ -535,7 +534,6 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any) {
         }
 
         try {
-            const { writeJobLocal } = require('@/utils/job-store');
             writeJobLocal(jobId, {
                 status: 'completed',
                 campaign_id: campaignId,
@@ -571,7 +569,6 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any) {
                 }
                 if (!uId) {
                     try {
-                        const { readJobLocal } = require('@/utils/job-store');
                         uId = readJobLocal(jobId)?.user_id;
                     } catch (e) {}
                 }
@@ -582,7 +579,6 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any) {
             } catch (e) { /* ignore refund errors */ }
 
             try {
-                const { writeJobLocal } = require('@/utils/job-store');
                 writeJobLocal(jobId, {
                     status: 'failed',
                     message: error.message || "Internal Server Error"
