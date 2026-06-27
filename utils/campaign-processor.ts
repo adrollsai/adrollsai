@@ -15,7 +15,7 @@ export type UploadedCreative = {
     videoId?: string;
 };
 
-export async function runCampaignJob(jobId: string, incomingPayload?: any) {
+export async function runCampaignJob(jobId: string, incomingPayload?: any): Promise<{ campaignId: string; message: string } | undefined> {
     let job: any = null;
     let payload = incomingPayload || null;
 
@@ -554,6 +554,8 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any) {
 
         logToFile("=== [JOB PROCESSOR] COMPLETED ===", { jobId, campaignId, successfulAds });
 
+        return { campaignId, message: finalMessage };
+
     } catch (error: any) {
         logToFile("!!! [JOB PROCESSOR] CRASH !!!", error.message);
 
@@ -595,5 +597,8 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any) {
                 } catch (e) {}
             }
         }
+
+        // Re-throw so the caller can handle it
+        throw error;
     }
 }

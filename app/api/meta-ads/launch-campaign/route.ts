@@ -2,13 +2,10 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 import { logToFile, clearLogFile } from '@/utils/logger';
-import { writeJobLocal } from '@/utils/job-store';
 import { runCampaignJob } from '@/utils/campaign-processor';
-import crypto from 'crypto';
 
-// This route is now FAST — it only validates and creates a job.
-// No need for long maxDuration since heavy work is done by process-campaign-job.
-export const maxDuration = 30;
+// Synchronous launch — does full Meta API work inline.
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
     clearLogFile();
@@ -212,51 +209,21 @@ export async function POST(request: Request) {
         currency,
         logoUrl: targetProfile?.logo_url || null
     };
+    logToFile("=== LAUNCHING CAMPAIGN SYNCHRONOUSLY ===");
 
-    let jobId = null;
-    let fallbackWarning = "";
-
-    const { data: job, error: jobErr } = await supabaseAdmin.from('campaign_jobs').insert({
-        user_id: user.id,
-        target_user_id: targetUserId,
-        status: 'pending',
-        payload: jobPayload
-    }).select('id').single();
-
-    if (jobErr || !job) {
-        logToFile("campaign_jobs DB insert failed (normal if migration sql hasn't been run yet):", jobErr?.message || "unknown");
-        // Fallback: Generate a random job ID locally so campaign still launches
-        jobId = crypto.randomUUID();
-        fallbackWarning = "Note: Background status tracking is inactive because campaign_jobs table has not been created.";
-        
-        // Write status locally
-        try {
-            writeJobLocal(jobId, {
-                status: 'pending',
-                payload: jobPayload,
-                user_id: user.id,
-                target_user_id: targetUserId
-            });
-        } catch (e: any) {
-            logToFile("Failed to save local job store:", e.message);
-        }
-    } else {
-        jobId = job.id;
-        logToFile(`Job created in DB: ${jobId}`);
+    try {
+        const result = await runCampaignJob('inline', jobPayload);
+        return NextResponse.json({
+            success: true,
+            campaignId: result?.campaignId || null,
+            message: result?.message || 'Campaign launched successfully!'
+        });
+    } catch (launchError: any) {
+        logToFile("Campaign launch failed:", launchError.message);
+        await refundLimit(user.id, 'campaign_launches');
+        return NextResponse.json(
+            { error: launchError.message || 'Campaign launch failed.' },
+            { status: 500 }
+        );
     }
-
-    // --- FIRE-AND-FORGET: Trigger the background processor ---
-    // execute campaign job processing directly in the background
-    // This avoids HTTP deadlocks in single-threaded local development servers
-    runCampaignJob(jobId, jobPayload).catch((err: any) => {
-        logToFile("Failed to execute background campaign processor:", err.message);
-    });
-
-    // --- RETURN IMMEDIATELY ---
-    return NextResponse.json({
-        success: true,
-        jobId: jobId,
-        warning: fallbackWarning || undefined,
-        message: 'Campaign is being launched in the background. You will be notified when it\'s ready.'
-    });
 }
