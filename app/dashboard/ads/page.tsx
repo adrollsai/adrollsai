@@ -1627,9 +1627,19 @@ export default function AdsPage() {
                 ) : (
                     campaigns.map(campaign => (
                         <div key={campaign.id} className="bg-white p-6 rounded-[1.5rem] xs:rounded-[2rem] shadow-sm border border-slate-200/60 transition-all hover:shadow-lg hover:border-blue-200 flex flex-col h-full group">
-                            <div className="flex justify-between items-start mb-4">
-                                <div onClick={() => handleOpenExplorer(campaign)} className="max-w-[60%] cursor-pointer"><h3 className="text-base font-bold text-slate-800 truncate leading-tight group-hover:text-blue-600 transition-colors flex items-center gap-2">{campaign.name} <ExternalLink size={12} className="text-slate-300 group-hover:text-blue-400 transition-colors" /></h3><div className="flex items-center gap-1.5 mt-2"><span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${campaign.status === 'ACTIVE' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>{campaign.status === 'ACTIVE' ? <PlayCircle size={10}/> : <PauseCircle size={10}/>} {campaign.status}</span></div></div>
-                                <div className="flex items-center gap-2">
+                            <div className="flex justify-between items-start mb-4 gap-3">
+                                <div onClick={() => handleOpenExplorer(campaign)} className="flex-1 min-w-0 cursor-pointer">
+                                    <h3 className="text-sm sm:text-base font-bold text-slate-800 leading-tight group-hover:text-blue-600 transition-colors flex items-center gap-1.5 w-full">
+                                        <span className="truncate flex-1">{campaign.name}</span>
+                                        <ExternalLink size={12} className="text-slate-300 group-hover:text-blue-400 transition-colors shrink-0" />
+                                    </h3>
+                                    <div className="flex items-center gap-1.5 mt-2">
+                                        <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${campaign.status === 'ACTIVE' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
+                                            {campaign.status === 'ACTIVE' ? <PlayCircle size={10}/> : <PauseCircle size={10}/>} {campaign.status}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
                                     {togglingId === campaign.id && <Loader2 size={14} className="animate-spin text-slate-400" />}
                                     <button onClick={() => handleToggleStatus(campaign.id, campaign.status)} className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${campaign.status === 'ACTIVE' ? 'bg-green-500 focus:ring-green-500' : 'bg-slate-200 focus:ring-slate-400'}`}><div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'}`} /></button>
                                     <button 
