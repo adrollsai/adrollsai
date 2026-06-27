@@ -310,6 +310,40 @@ export default function AdsPage() {
     optimizeForConversions: false,
   })
 
+  // Mandatory Product Selection for Campaign Launch
+  const [selectedProduct, setSelectedProduct] = useState<Property | null>(null)
+  // Job-based launch tracking
+  const [launchJobId, setLaunchJobId] = useState<string | null>(null)
+  const [launchJobStatus, setLaunchJobStatus] = useState<'idle' | 'queued' | 'processing' | 'completed' | 'failed'>('idle')
+
+  // Poll for campaign job status
+  useEffect(() => {
+    if (!launchJobId || launchJobStatus === 'completed' || launchJobStatus === 'failed') return;
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/meta-ads/campaign-job-status?jobId=${launchJobId}`);
+        const data = await res.json();
+        if (data.status === 'completed') {
+          clearInterval(poll);
+          setLaunchJobStatus('completed');
+          toast.success(data.message || 'Campaign launched successfully!');
+          setLaunchJobId(null);
+          fetchAdsData(true);
+        } else if (data.status === 'failed') {
+          clearInterval(poll);
+          setLaunchJobStatus('failed');
+          toast.error('Launch Failed: ' + (data.message || 'Unknown error'));
+          setLaunchJobId(null);
+        } else {
+          setLaunchJobStatus(data.status === 'processing' ? 'processing' : 'queued');
+        }
+      } catch (e) {
+        console.error('Job poll error:', e);
+      }
+    }, 5000);
+    return () => clearInterval(poll);
+  }, [launchJobId, launchJobStatus]);
+
   // Helper: Fix R2 URL structure if bucket name is missing
   const fixR2Url = (url: string) => {
     if (!url) return ''
@@ -1236,15 +1270,29 @@ export default function AdsPage() {
     })
   }
 
+  // Generate ad copy deterministically from the selected product
+  const generateAdCopy = (product: Property | null, businessName?: string, phone?: string) => {
+    if (!product) return { primary_text: '', headline: '', description: '' };
+    let primaryText = (product.description || 'Exclusive deal. Contact us for details.').substring(0, 400);
+    if (phone) primaryText += `\n\n📞 ${phone}`;
+    if (businessName) primaryText += `\n🏢 ${businessName}`;
+    return {
+      headline: (product.title || 'View Details').substring(0, 40),
+      primary_text: primaryText,
+      description: 'View pricing & details. Contact us today.'
+    };
+  };
+
   const handleLaunchCampaign = async () => {
     if (isSubmitting) return
     if (!adForm.pageId || !selectedAdAccountId) { alert("Missing Profile data."); return }
+    if (!selectedProduct) { alert("Please select a product from your inventory."); return; }
     if (selectedCreatives.length === 0) { alert("Select at least one creative."); return; }
     if (adForm.metaLocations.length === 0 || adForm.dailyBudgetINR < 100) { alert("Set valid location and budget."); return }
     
     setIsSubmitting(true)
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user?.id).single();
+    const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, phone').eq('id', user?.id).single();
     
     // Resolve targetUserId for privacy policy
     const urlParams = new URLSearchParams(window.location.search);
@@ -1257,6 +1305,9 @@ export default function AdsPage() {
     if (impersonateId) tUserId = impersonateId;
 
     const autoPrivacyUrl = `https://app.adrolls.in/privacy/${tUserId}`;
+
+    // Generate ad copy from selected product
+    const adCopy = generateAdCopy(selectedProduct, profile?.business_name, profile?.phone);
     
     const formPayload = new FormData();
     formPayload.append('adAccountId', selectedAdAccountId);
@@ -1272,9 +1323,13 @@ export default function AdsPage() {
     formPayload.append('campaignType', campaignType);
     formPayload.append('ageMin', adForm.ageMin.toString());
     formPayload.append('ageMax', adForm.ageMax.toString());
+    formPayload.append('adCopy', JSON.stringify(adCopy));
     if (pixelId) {
         formPayload.append('pixelId', pixelId);
     }
+
+    // Always send the selected product's inventory ID
+    formPayload.append('inventoryIds', selectedProduct.id);
 
     if (runAsRemarketing && selectedCustomAudienceIds.length > 0) {
         formPayload.append('customAudienceIds', JSON.stringify(selectedCustomAudienceIds));
@@ -1285,14 +1340,9 @@ export default function AdsPage() {
       formPayload.append('sourceCampaignName', remarketSourceCampaign.name);
     }
 
-    let localFileIndex = 0;
+    // Send asset IDs from selected creatives
     selectedCreatives.forEach((c) => {
-      if (c.sourceType === 'inventory') formPayload.append('inventoryIds', c.id!);
       if (c.sourceType === 'asset') formPayload.append('assetIds', c.id!);
-      if (c.sourceType === 'local' && c.file) {
-          formPayload.append(`creativeFiles[${localFileIndex}]`, c.file, c.file.name);
-          localFileIndex++;
-      }
     });
     
     try {
@@ -1303,29 +1353,43 @@ export default function AdsPage() {
       const res = await fetch(endpoint, { method: 'POST', body: formPayload })
       const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
-        throw new Error('Server returned a non-JSON response. This usually means the request timed out or the server encountered an internal error. Please try again.');
+        throw new Error('Server returned a non-JSON response. Please try again.');
       }
       const data = await res.json()
       if (res.ok) {
-        alert(`${data.message}`);
-        setIsModalOpen(false)
-        setRemarketSourceCampaign(null);
-        setAdForm(prev => ({ ...prev, metaLocations: [], dailyBudgetINR: 500, ageMin: 18, ageMax: 65 })) 
-        setSelectedCreatives([]);
-        setFormQuestions([]);
-        fetchAdsData(true);
+        if (data.jobId) {
+          // Job-based async launch
+          setLaunchJobId(data.jobId);
+          setLaunchJobStatus('queued');
+          toast.success('🚀 Campaign queued! Launching in background...');
+          setIsModalOpen(false);
+          setRemarketSourceCampaign(null);
+          setSelectedProduct(null);
+          setAdForm(prev => ({ ...prev, metaLocations: [], dailyBudgetINR: 500, ageMin: 18, ageMax: 65 }));
+          setSelectedCreatives([]);
+          setFormQuestions([]);
+        } else {
+          // Legacy direct response
+          toast.success(data.message || 'Campaign launched!');
+          setIsModalOpen(false);
+          setRemarketSourceCampaign(null);
+          setSelectedProduct(null);
+          setAdForm(prev => ({ ...prev, metaLocations: [], dailyBudgetINR: 500, ageMin: 18, ageMax: 65 }));
+          setSelectedCreatives([]);
+          setFormQuestions([]);
+          fetchAdsData(true);
+        }
       } else {
         const metaError = data.metaError;
-        // Subcode 1815089 = Lead Ads TOS not accepted
         if (metaError?.error_subcode === 1815089) {
             if (confirm("Facebook Terms Not Accepted: You need to accept Facebook's Lead Generation Terms of Service for your Page before launching lead ads.\n\nWould you like to open the terms page now?")) {
                 window.open(`https://www.facebook.com/ads/leadgen/tos/?page_id=${adForm.pageId}`, '_blank');
             }
         } else {
-            alert('Launch Failed: ' + (data.error || 'Unknown error'));
+            toast.error('Launch Failed: ' + (data.error || 'Unknown error'));
         }
       }
-    } catch (e: any) { alert('Launch Failed: ' + e.message); } 
+    } catch (e: any) { toast.error('Launch Failed: ' + e.message); } 
     finally { setIsSubmitting(false) }
   }
 
@@ -3652,6 +3716,46 @@ export default function AdsPage() {
                 </div>
               )}
 
+              {/* MANDATORY: Select Product from Inventory */}
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-5 rounded-[2rem] border border-amber-200/60">
+                <label className="text-xs font-bold text-amber-800 uppercase tracking-widest flex items-center gap-2 mb-3"><Zap size={16} className="text-amber-600" /> Select Product *</label>
+                <p className="text-[11px] text-amber-700 font-medium mb-3">Choose the product this campaign is for. Ad copy will be auto-generated from its description.</p>
+                <select
+                  value={selectedProduct?.id || ''}
+                  onChange={(e) => {
+                    const product = properties.find(p => p.id === e.target.value) || null;
+                    setSelectedProduct(product);
+                    // Auto-filter creatives when product changes
+                    if (product) {
+                      const productAssets = assets.filter(a => a.property_id === product.id && !['Failed', 'Processing', 'Rendering', 'Distributed'].includes(a.status || ''));
+                      if (productAssets.length > 0 && selectedCreatives.length === 0) {
+                        setSelectedCreatives(productAssets.map(a => ({
+                          uid: Math.random().toString(),
+                          sourceType: 'asset' as const,
+                          id: a.id,
+                          previewUrl: a.url,
+                          name: product.title,
+                          type: a.type
+                        })));
+                      }
+                    }
+                  }}
+                  className="w-full bg-white py-3.5 px-4 rounded-2xl text-slate-800 text-sm font-semibold outline-none focus:ring-4 focus:ring-amber-500/20 border border-amber-200 transition-all cursor-pointer"
+                >
+                  <option value="">-- Select a Product --</option>
+                  {properties.map(p => (
+                    <option key={p.id} value={p.id}>{p.title}{p.price ? ` — ${p.price}` : ''}</option>
+                  ))}
+                </select>
+                {selectedProduct && selectedProduct.description && (
+                  <div className="mt-3 bg-white border border-amber-100 p-4 rounded-2xl">
+                    <div className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-1.5">Auto-Generated Ad Copy Preview</div>
+                    <div className="text-xs font-bold text-slate-800 mb-1">{selectedProduct.title}</div>
+                    <div className="text-[11px] text-slate-600 leading-relaxed line-clamp-3">{selectedProduct.description}</div>
+                  </div>
+                )}
+              </div>
+
               <div className="bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-4"><ImageIcon size={16} /> Mix & Match Creatives</label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
@@ -4025,6 +4129,7 @@ export default function AdsPage() {
                 disabled={
                     isSubmitting || 
                     checkingSanity ||
+                    !selectedProduct ||
                     adForm.metaLocations.length === 0 || 
                     selectedCreatives.length === 0 || 
                     !accountStatus ||
