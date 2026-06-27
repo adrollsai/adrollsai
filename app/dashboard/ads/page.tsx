@@ -3728,20 +3728,6 @@ export default function AdsPage() {
                   onChange={(e) => {
                     const product = properties.find(p => p.id === e.target.value) || null;
                     setSelectedProduct(product);
-                    // Auto-filter creatives when product changes
-                    if (product) {
-                      const productAssets = assets.filter(a => a.property_id === product.id && !['Failed', 'Processing', 'Rendering', 'Distributed'].includes(a.status || ''));
-                      if (productAssets.length > 0 && selectedCreatives.length === 0) {
-                        setSelectedCreatives(productAssets.map(a => ({
-                          uid: Math.random().toString(),
-                          sourceType: 'asset' as const,
-                          id: a.id,
-                          previewUrl: a.url,
-                          name: product.title,
-                          type: a.type
-                        })));
-                      }
-                    }
                   }}
                   className="w-full bg-white py-3.5 px-4 rounded-2xl text-slate-800 text-sm font-semibold outline-none focus:ring-4 focus:ring-amber-500/20 border border-amber-200 transition-all cursor-pointer"
                 >
