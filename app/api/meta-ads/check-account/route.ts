@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { logToFile } from '@/utils/logger'
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
@@ -8,17 +9,22 @@ export async function GET(request: Request) {
     const supabase = await createClient()
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!user) {
+        logToFile("[Check-Account API] Unauthorized - No user session");
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
     const impersonateId = searchParams.get('impersonate')
     const { data: profile } = await supabase.from('profiles').select('role, facebook_token, agency_id, parent_id').eq('id', user.id).single()
     
+    logToFile(`[Check-Account API] Request by User: ${user.id} (${profile?.role}), Impersonating: ${impersonateId}`);
+
     let targetUserId = (['admin', 'agent'].includes(profile?.role || '') && (profile?.agency_id || profile?.parent_id)) 
       ? (profile.agency_id || profile.parent_id) 
       : user.id
 
-    if (impersonateId) {
-        if (['super_admin', 'agency', 'admin'].includes(profile?.role || '')) {
+    if (impersonateId && impersonateId !== user.id) {
+        if (['super_admin', 'agency', 'admin', 'agent'].includes(profile?.role || '')) {
             if (profile?.role !== 'super_admin') {
                 const isParent = (profile?.agency_id === impersonateId || profile?.parent_id === impersonateId);
                 const { data: subAccount } = await supabase
@@ -31,15 +37,19 @@ export async function GET(request: Request) {
                 if (isParent || subAccount) {
                     targetUserId = impersonateId
                 } else {
+                    logToFile(`[Check-Account API] 403 Unauthorized impersonation (isParent: ${isParent}, subAccount: ${!!subAccount})`);
                     return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
                 }
             } else {
                 targetUserId = impersonateId
             }
         } else {
+            logToFile(`[Check-Account API] 403 Unauthorized impersonation (User role ${profile?.role} not allowed)`);
             return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
         }
     }
+
+    logToFile(`[Check-Account API] targetUserId resolved to: ${targetUserId}`);
 
     const { data: targetProfile } = await supabase
       .from('profiles')
@@ -105,6 +115,14 @@ export async function GET(request: Request) {
             }
         }
 
+        logToFile(`[Check-Account API] Success check results`, {
+            account_status: data.account_status,
+            has_payment_method: hasPaymentMethod,
+            balance: data.balance,
+            currency: data.currency,
+            leadgenTosAccepted: leadgenTos?.leadgen_tos?.accepted
+        });
+
         return NextResponse.json({
             account_status: data.account_status,
             disable_reason: data.disable_reason,
@@ -117,6 +135,7 @@ export async function GET(request: Request) {
             leadgenTos
         })
     } catch (error: any) {
+        logToFile(`[Check-Account API] Catch block error: ${error.message}`);
         return NextResponse.json({ error: error.message }, { status: 500 })
     }
 }

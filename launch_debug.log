@@ -1,0 +1,172 @@
+[2026-06-27T11:00:10.966Z] === CREATING CAMPAIGN JOB ===
+{
+  "userId": "bc63c065-9bcc-4793-bedc-f0960406425b",
+  "targetUserId": "d838c956-1761-4bce-9d91-32f3abecc222"
+}
+------------------------------------------------
+[2026-06-27T11:00:11.230Z] Job created in DB: ded25228-0447-4fdd-b92e-a2ce646a5650
+------------------------------------------------
+[2026-06-27T11:00:11.232Z] [LaunchCampaign] Running locally. Executing runCampaignJob in same process to bypass dev server fetch deadlocks for jobId: ded25228-0447-4fdd-b92e-a2ce646a5650
+------------------------------------------------
+[2026-06-27T11:00:11.732Z] === [JOB PROCESSOR] STARTING CAMPAIGN CREATION ===
+{
+  "jobId": "ded25228-0447-4fdd-b92e-a2ce646a5650"
+}
+------------------------------------------------
+[2026-06-27T11:00:11.921Z] --- UPLOADING CREATIVES TO META ---
+------------------------------------------------
+[2026-06-27T11:00:23.456Z] Successfully uploaded thumbnail to Meta. Hash: 7da29f005578f9f00ad9d063fd10dc56
+------------------------------------------------
+[2026-06-27T11:00:23.457Z] Uploading video via Meta file_url (JSON): https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/d838c956-1761-4bce-9d91-32f3abecc222/1782476055929-wellnesscity2ndvideo.mp4
+------------------------------------------------
+[2026-06-27T11:00:32.482Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:32.483Z] [Check-Account API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:32.497Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:32.499Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:32.685Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-06-27T11:00:33.276Z] [Campaigns API] Successfully fetched 11 campaigns
+------------------------------------------------
+[2026-06-27T11:00:33.626Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "255439",
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-06-27T11:00:38.852Z] Meta file_url response status: 200
+------------------------------------------------
+[2026-06-27T11:00:38.853Z] Successfully uploaded video via file_url. Meta ID: 1780385212927217
+------------------------------------------------
+[2026-06-27T11:00:38.854Z] Waiting 5 seconds for Meta to process uploaded videos...
+------------------------------------------------
+[2026-06-27T11:00:39.895Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:39.895Z] [Check-Account API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:39.918Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:39.919Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:40.114Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-06-27T11:00:40.569Z] [Campaigns API] Successfully fetched 11 campaigns
+------------------------------------------------
+[2026-06-27T11:00:41.345Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "254621",
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-06-27T11:00:43.900Z] Uploaded 1 creatives to Meta.
+------------------------------------------------
+[2026-06-27T11:00:43.901Z] --- CREATING LEAD FORM ---
+------------------------------------------------
+[2026-06-27T11:00:45.916Z] Lead Form Created: 4329825287332683
+------------------------------------------------
+[2026-06-27T11:00:45.916Z] --- CREATING CAMPAIGN ---
+------------------------------------------------
+[2026-06-27T11:00:47.449Z] --- CREATING AD SET ---
+------------------------------------------------
+[2026-06-27T11:00:48.369Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:48.371Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:48.403Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:48.404Z] [Check-Account API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:49.036Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-06-27T11:00:49.511Z] [Campaigns API] Successfully fetched 12 campaigns
+------------------------------------------------
+[2026-06-27T11:00:49.876Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "255439",
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-06-27T11:00:49.923Z] --- CREATING ADS ---
+------------------------------------------------
+[2026-06-27T11:00:50.124Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:50.125Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:50.316Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-06-27T11:00:50.485Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:50.487Z] [Check-Account API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:50.824Z] [Campaigns API] Successfully fetched 12 campaigns
+------------------------------------------------
+[2026-06-27T11:00:51.610Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "254621",
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-06-27T11:00:53.983Z] === [JOB PROCESSOR] COMPLETED ===
+{
+  "jobId": "ded25228-0447-4fdd-b92e-a2ce646a5650",
+  "campaignId": "52515251729753",
+  "successfulAds": 1
+}
+------------------------------------------------
+[2026-06-27T11:00:55.509Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:55.510Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:55.525Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:55.526Z] [Check-Account API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:00:55.694Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-06-27T11:00:56.107Z] [Campaigns API] Successfully fetched 12 campaigns
+------------------------------------------------
+[2026-06-27T11:00:56.543Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "254621",
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-06-27T11:03:03.762Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:03:03.772Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:03:03.796Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:03:03.797Z] [Check-Account API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-06-27T11:03:03.963Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-06-27T11:03:04.503Z] [Campaigns API] Successfully fetched 12 campaigns
+------------------------------------------------
+[2026-06-27T11:03:04.843Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "254621",
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------

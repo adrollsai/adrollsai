@@ -21,8 +21,8 @@ export async function POST(request: Request) {
     ? (profile.agency_id || profile.parent_id) 
     : user.id
 
-  if (impersonateId) {
-      if (['super_admin', 'agency', 'admin'].includes(profile?.role || '')) {
+  if (impersonateId && impersonateId !== user.id) {
+      if (['super_admin', 'agency', 'admin', 'agent'].includes(profile?.role || '')) {
           if (profile?.role !== 'super_admin') {
               const isParent = (profile?.agency_id === impersonateId || profile?.parent_id === impersonateId);
               const { data: subAccount } = await supabase

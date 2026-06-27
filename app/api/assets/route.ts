@@ -24,8 +24,8 @@ export async function GET(request: Request) {
           ? (currentProfile.agency_id || currentProfile.parent_id) 
           : user.id;
 
-        if (impersonateId) {
-            if (['super_admin', 'agency', 'admin'].includes(currentProfile?.role || '')) {
+        if (impersonateId && impersonateId !== user.id) {
+            if (['super_admin', 'agency', 'admin', 'agent'].includes(currentProfile?.role || '')) {
                 if (currentProfile?.role !== 'super_admin') {
                     const isParent = (currentProfile?.agency_id === impersonateId || currentProfile?.parent_id === impersonateId);
                     const { data: subAccount } = await supabase

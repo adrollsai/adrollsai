@@ -19,13 +19,27 @@ export async function GET(request: Request) {
       targetUserId = (ownProfile?.parent_id || ownProfile?.agency_id) as string;
   }
 
-  if (impersonateId && ['super_admin', 'agency', 'admin'].includes(ownProfile?.role || '')) {
-      if (ownProfile?.role !== 'super_admin') {
-          const { data: subAccount } = await supabase.from('profiles').select('id').eq('id', impersonateId).eq('agency_id', user.id).single();
-          if (subAccount) targetUserId = impersonateId;
-          else return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+  if (impersonateId && impersonateId !== user.id) {
+      if (['super_admin', 'agency', 'admin', 'agent'].includes(ownProfile?.role || '')) {
+          if (ownProfile?.role !== 'super_admin') {
+              const isParent = (ownProfile?.agency_id === impersonateId || ownProfile?.parent_id === impersonateId);
+              const { data: subAccount } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('id', impersonateId)
+                .eq('agency_id', ownProfile?.agency_id || user.id)
+                .single();
+
+              if (isParent || subAccount) {
+                  targetUserId = impersonateId;
+              } else {
+                  return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+              }
+          } else {
+              targetUserId = impersonateId;
+          }
       } else {
-          targetUserId = impersonateId;
+          return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
       }
   }
 

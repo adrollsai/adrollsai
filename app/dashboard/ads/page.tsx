@@ -106,10 +106,14 @@ export default function AdsPage() {
   const [currency, setCurrency] = useState('INR')
   const [pixelId, setPixelId] = useState<string | null>(null)
 
+
   // Ad Lead Form Edit/Creation States
   const [isCreatingNewAdForm, setIsCreatingNewAdForm] = useState(false)
   const [newAdFormName, setNewAdFormName] = useState('')
   const [adFormQuestions, setAdFormQuestions] = useState<any[]>([])
+  const [availableWhatsAppNumbers, setAvailableWhatsAppNumbers] = useState<string[]>([])
+  const [selectedWhatsAppNumber, setSelectedWhatsAppNumber] = useState<string>('')
+  const [leadLandingType, setLeadLandingType] = useState<'website' | 'whatsapp'>('website')
   const [isAddingAdQuestion, setIsAddingAdQuestion] = useState(false)
   const [newAdQuestion, setNewAdQuestion] = useState<any>({ label: '', type: 'SHORT_ANSWER', options: [''] })
   const [isCreatingFormOnMeta, setIsCreatingFormOnMeta] = useState(false)
@@ -358,7 +362,7 @@ export default function AdsPage() {
 
   const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string, type?: 'image' | 'video' }>({ isOpen: false, url: '', title: '' })
 
-  const checkAccountStatus = async (accountId: string, pageId?: string) => {
+   const checkAccountStatus = async (accountId: string, pageId?: string) => {
       setCheckingSanity(true)
       try {
           const urlParams = new URLSearchParams(window.location.search)
@@ -368,7 +372,7 @@ export default function AdsPage() {
           const res = await fetch(`/api/meta-ads/check-account?adAccountId=${accountId}${pageParam}${impParam}`)
           const data = await res.json()
           setAccountStatus(data)
-      } catch (e) { 
+      } catch (e: any) { 
           console.error(e) 
       } finally {
           setCheckingSanity(false)
@@ -444,7 +448,8 @@ export default function AdsPage() {
       if (!user) { router.push('/'); return }
 
       // Get profile for role check
-      const { data: initialProfile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      const { data: initialProfile, error: initialProfileErr } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      if (initialProfileErr) throw new Error("initialProfileErr: " + initialProfileErr.message)
       if (initialProfile?.role === 'agent') {
           router.push('/dashboard')
           return
@@ -453,7 +458,8 @@ export default function AdsPage() {
       // Resolve Target User ID
       const urlParams = new URLSearchParams(window.location.search)
       const impersonateId = urlParams.get('impersonate')
-      const { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name, currency, pixel_id').eq('id', user.id).single()
+      const { data: profile, error: profileErr } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name, currency, pixel_id, whatsapp_phone_number, contact_number').eq('id', user.id).single()
+      if (profileErr) throw new Error("profileErr: " + profileErr.message)
       let targetUserId = user.id
       if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
           targetUserId = (profile?.parent_id || profile?.agency_id) as string
@@ -476,11 +482,12 @@ export default function AdsPage() {
       // 2. Fetch TARGET Profile (If impersonating or staff, we need the parent's tokens)
       let targetProfile = profile
       if (targetUserId !== user.id) {
-          const { data: tProf } = await supabase
+          const { data: tProf, error: tProfErr } = await supabase
             .from('profiles')
-            .select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name, currency, pixel_id')
+            .select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name, currency, pixel_id, whatsapp_phone_number, contact_number')
             .eq('id', targetUserId)
             .single()
+          if (tProfErr) throw new Error("tProfErr: " + tProfErr.message)
           if (tProf) targetProfile = tProf
           console.log(`[ADS] Mirroring Agency: ${targetProfile?.business_name} (${targetUserId})`)
       }
@@ -509,6 +516,22 @@ export default function AdsPage() {
       }
       setTargetUserId(targetUserId)
 
+      // Extract unique connected WhatsApp/phone numbers
+      const numbersSet = new Set<string>();
+      if (targetUserId !== user.id) {
+          if (targetProfile?.whatsapp_phone_number) numbersSet.add(targetProfile.whatsapp_phone_number);
+          if (targetProfile?.contact_number) numbersSet.add(targetProfile.contact_number);
+      } else {
+          if (profile?.whatsapp_phone_number) numbersSet.add(profile.whatsapp_phone_number);
+          if (profile?.contact_number) numbersSet.add(profile.contact_number);
+      }
+
+      const numbers = Array.from(numbersSet).filter(Boolean);
+      setAvailableWhatsAppNumbers(numbers);
+      if (numbers.length > 0) {
+        setSelectedWhatsAppNumber(numbers[0]);
+      }
+
       let newCampaigns: Campaign[] = []
       if (targetProfile?.ad_account_id) {
           if (force) checkAccountStatus(targetProfile.ad_account_id, targetProfile.selected_page_id)
@@ -516,7 +539,9 @@ export default function AdsPage() {
               const res = await fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
               const data = await res.json()
               if (data.campaigns) newCampaigns = data.campaigns
-          } catch (e) { console.error("Failed to load campaigns", e) }
+          } catch (e: any) { 
+              console.error("Failed to load campaigns", e) 
+          }
       }
 
       const [propsRes, leadsRes, pagesRes, formsRes, apiAssetsData, metaFormsData] = await Promise.all([
@@ -574,8 +599,8 @@ export default function AdsPage() {
           }
       }
 
-    } catch (error) {
-      console.error("Fetch Error:", error)
+     } catch (error: any) {
+       console.error("Fetch Error:", error)
     } finally {
       setLoading(false)
       setIsRefreshing(false)
@@ -1322,9 +1347,9 @@ export default function AdsPage() {
     
     setIsSubmitting(true)
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, phone').eq('id', user?.id).single();
+    const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, contact_number, whatsapp_phone_number').eq('id', user?.id).single();
     
-    // Resolve targetUserId for privacy policy
+    // Resolve targetUserId
     const urlParams = new URLSearchParams(window.location.search);
     const impersonateId = urlParams.get('impersonate');
     
@@ -1334,11 +1359,29 @@ export default function AdsPage() {
     }
     if (impersonateId) tUserId = impersonateId;
 
+    let targetProfile = profile;
+    if (tUserId !== user?.id) {
+        const { data: tProf } = await supabase
+          .from('profiles')
+          .select('business_name, contact_number, whatsapp_phone_number')
+          .eq('id', tUserId)
+          .single();
+        if (tProf) targetProfile = tProf;
+    }
+
     const autoPrivacyUrl = `https://app.adrolls.in/privacy/${tUserId}`;
 
-    // Generate ad copy from selected product
-    const adCopy = generateAdCopy(selectedProduct, profile?.business_name, profile?.phone);
+    // Generate ad copy from selected product using target profile info
+    const adCopy = generateAdCopy(selectedProduct, targetProfile?.business_name, targetProfile?.contact_number);
     
+    // Resolve final follow-up link url
+    let finalLinkUrl = adForm.linkUrl;
+    if (campaignType === 'instant_form' && leadLandingType === 'whatsapp' && selectedWhatsAppNumber) {
+        // Clean phone number (keep only digits)
+        const cleanPhone = selectedWhatsAppNumber.replace(/[^0-9]/g, '');
+        finalLinkUrl = `https://wa.me/${cleanPhone}`;
+    }
+
     const formPayload = new FormData();
     formPayload.append('adAccountId', selectedAdAccountId);
     formPayload.append('facebookToken', facebookToken || '');
@@ -1346,7 +1389,7 @@ export default function AdsPage() {
     formPayload.append('metaLocations', JSON.stringify(adForm.metaLocations));
     formPayload.append('gender', adForm.gender);
     formPayload.append('dailyBudgetINR', adForm.dailyBudgetINR.toString()); 
-    formPayload.append('linkUrl', adForm.linkUrl);
+    formPayload.append('linkUrl', finalLinkUrl);
     formPayload.append('privacyPolicyUrl', autoPrivacyUrl);
     formPayload.append('optimizeForConversions', adForm.optimizeForConversions.toString());
     formPayload.append('customQuestions', JSON.stringify(formQuestions));
@@ -3854,6 +3897,46 @@ export default function AdsPage() {
                               </button>
                           </div>
                       </div>
+
+                      {campaignType === 'instant_form' && (
+                          <div className="space-y-4 bg-slate-50 p-4 rounded-2xl border border-slate-100/60 mt-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                              <div>
+                                  <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">After Form Submission, Land Lead On</label>
+                                  <div className="flex bg-slate-100 p-1 rounded-2xl">
+                                      <button 
+                                          type="button"
+                                          onClick={() => setLeadLandingType('website')}
+                                          className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${leadLandingType === 'website' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                      >
+                                          Website
+                                      </button>
+                                      <button 
+                                          type="button"
+                                          disabled={availableWhatsAppNumbers.length === 0}
+                                          onClick={() => setLeadLandingType('whatsapp')}
+                                          className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${availableWhatsAppNumbers.length === 0 ? 'opacity-50 cursor-not-allowed text-slate-300' : leadLandingType === 'whatsapp' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                      >
+                                          WhatsApp {availableWhatsAppNumbers.length === 0 && '(None Connected)'}
+                                      </button>
+                                  </div>
+                              </div>
+
+                              {leadLandingType === 'whatsapp' && availableWhatsAppNumbers.length > 0 && (
+                                  <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+                                      <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider font-semibold">Select Connected WhatsApp Number</label>
+                                      <select 
+                                          value={selectedWhatsAppNumber} 
+                                          onChange={(e) => setSelectedWhatsAppNumber(e.target.value)}
+                                          className="w-full bg-white py-3 px-4 rounded-2xl text-slate-800 text-sm font-semibold outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200 transition-all cursor-pointer"
+                                      >
+                                          {availableWhatsAppNumbers.map(num => (
+                                              <option key={num} value={num}>{num}</option>
+                                          ))}
+                                      </select>
+                                  </div>
+                              )}
+                          </div>
+                      )}
 
                       {campaignType === 'website_conversion' && (
                           <div className="space-y-4">
