@@ -18,29 +18,13 @@ export const uploadToR2 = async (file: File, folder: string) => {
       }
     }
 
-    // B. Intercept Videos: Route through server-side transcoding/compression API
+    // B. Videos: Upload directly via signed URL (same as images)
+    // Server-side ffmpeg compression is not available on Vercel serverless.
     if (file.type.startsWith('video/')) {
-      console.log(`[uploadToR2] Routing video upload to server-side compression endpoint: ${file.name}`);
-      const formData = new FormData();
-      formData.append('file', fileToUpload);
-      formData.append('folder', folder);
-      if (impersonateId) {
-        formData.append('impersonateId', impersonateId);
-      }
-
-      const response = await fetch('/api/upload/video', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Video compression & upload failed: ${errText || response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data.publicUrl;
+      console.log(`[uploadToR2] Uploading video directly via signed URL: ${file.name}`);
+      // Fall through to the standard signed-URL upload below
     }
+
 
     // C. Proceed with standard R2 signed URL upload for compressed images & other files
     // 1. Get Signed URL from our API

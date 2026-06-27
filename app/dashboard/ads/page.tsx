@@ -1668,7 +1668,11 @@ export default function AdsPage() {
                 {campaigns.length === 0 ? (
                     <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400 bg-white rounded-[1.75rem] xs:rounded-[2.5rem] border border-slate-200/60 border-dashed"><LayoutGrid size={48} className="text-slate-200 mb-4" /><p className="text-base font-bold text-slate-600">No active campaigns</p><p className="text-sm mt-1">Tap 'New Campaign' to launch your first AI-optimized ad.</p></div>
                 ) : (
-                    campaigns.map(campaign => (
+                    [...campaigns].sort((a, b) => {
+                        if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1;
+                        if (a.status !== 'ACTIVE' && b.status === 'ACTIVE') return 1;
+                        return 0;
+                    }).map(campaign => (
                         <div key={campaign.id} className="bg-white p-6 rounded-[1.5rem] xs:rounded-[2rem] shadow-sm border border-slate-200/60 transition-all hover:shadow-lg hover:border-blue-200 flex flex-col h-full group">
                             <div className="flex justify-between items-start mb-4 gap-3">
                                 <div onClick={() => handleOpenExplorer(campaign)} className="flex-1 min-w-0 cursor-pointer">
