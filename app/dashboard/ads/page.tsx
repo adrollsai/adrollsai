@@ -1530,7 +1530,7 @@ export default function AdsPage() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-extrabold text-slate-800 leading-none truncate font-bold">
+                  <div className="text-[15px] font-extrabold text-slate-800 leading-snug break-words">
                     {checkingSanity ? (
                       <span className="text-slate-300 animate-pulse">Checking...</span>
                     ) : accountStatus?.has_payment_method ? (
