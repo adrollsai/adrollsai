@@ -1363,7 +1363,7 @@ export default function AdsPage() {
     if (tUserId !== user?.id) {
         const { data: tProf } = await supabase
           .from('profiles')
-          .select('business_name, contact_number, whatsapp_phone_number')
+          .select('role, parent_id, agency_id, business_name, contact_number, whatsapp_phone_number')
           .eq('id', tUserId)
           .single();
         if (tProf) targetProfile = tProf;
