@@ -245,17 +245,11 @@ export async function POST(request: Request) {
     }
 
     // --- FIRE-AND-FORGET: Trigger the background processor ---
-    const host = request.headers.get('host') || 'localhost:3000';
-    const protocol = host.includes('localhost') ? 'http' : 'https';
-    const processUrl = `${protocol}://${host}/api/meta-ads/process-campaign-job`;
-
-    // Fire and forget — we don't await this
-    fetch(processUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, payload: jobPayload })
-    }).catch(err => {
-        logToFile("Failed to trigger job processor:", err.message);
+    // Import and execute campaign job processing directly in the background
+    // This avoids HTTP deadlocks in single-threaded local development servers
+    const { runCampaignJob } = require('@/utils/campaign-processor');
+    runCampaignJob(jobId, jobPayload).catch((err: any) => {
+        logToFile("Failed to execute background campaign processor:", err.message);
     });
 
     // --- RETURN IMMEDIATELY ---
