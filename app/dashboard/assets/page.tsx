@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Filter, Download, Facebook, Instagram, Linkedin, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2, Check, Trash2, Upload, Copy } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, Linkedin, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2, Check, Trash2, Upload, Copy, AlertCircle } from 'lucide-react'
 import JSZip from 'jszip'
 import { analyzeMediaAction } from './actions'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -10,6 +10,7 @@ import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { toast } from 'sonner'
+import { useUpload } from '@/utils/UploadContext'
 
 type Asset = {
     id: string
@@ -33,12 +34,20 @@ const filters = ['All', 'image', 'video', 'Campaign Ready']
 export default function AssetsPage() {
     const supabase = createClient()
     const router = useRouter()
+    const { uploadAssets, subscribeToCompletion, hasActiveTasks, tasks, removeTask } = useUpload()
 
     // --- STATE ---
     const [assets, setAssets] = useState<Asset[]>([])
     const [properties, setProperties] = useState<Property[]>([])
     const [loading, setLoading] = useState(true)
     const [isRefreshing, setIsRefreshing] = useState(false)
+
+    useEffect(() => {
+        const unsubscribe = subscribeToCompletion(() => {
+            fetchAssets(true) // Automatically refresh gallery on upload completion
+        })
+        return () => unsubscribe()
+    }, [subscribeToCompletion])
 
     // Filtering State
     const [activeFilter, setActiveFilter] = useState('All')
@@ -356,79 +365,44 @@ export default function AssetsPage() {
         const files = e.target.files;
         if (!files || files.length === 0) return;
 
-        setIsUploading(true);
-        const uploadPromises = Array.from(files).map(async (file) => {
-            try {
-                // 1. Get current user for ownerId
-                const { data: { user } } = await supabase.auth.getUser();
-                if (!user) throw new Error("Authentication required");
-
-                // Check role for targetUserId resolution
-                const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
-                let targetUserId = user.id;
-                if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
-                    targetUserId = (profile?.parent_id || profile?.agency_id) as string;
-                }
-
-                // Impersonation Logic
-                const urlParams = new URLSearchParams(window.location.search);
-                const impersonateId = urlParams.get('impersonate');
-
-                if (impersonateId && (['super_admin', 'agency', 'admin', 'agent'].includes(profile?.role || ''))) {
-                    if (profile?.role !== 'super_admin') {
-                        const { data: subAccount } = await supabase
-                            .from('profiles')
-                            .select('id')
-                            .eq('id', impersonateId)
-                            .eq('agency_id', user.id)
-                            .single();
-                        if (subAccount) targetUserId = impersonateId;
-                    } else {
-                        targetUserId = impersonateId;
-                    }
-                }
-
-                // 2. Upload to Cloudflare R2
-                const publicUrl = await uploadToR2(file, 'library');
-
-                // 3. Insert into assets table
-                const { data: insertedAsset, error: insertError } = await supabase
-                    .from('assets')
-                    .insert({
-                        user_id: targetUserId,
-                        type: file.type.startsWith('video') ? 'video' : 'image',
-                        url: publicUrl,
-                        status: 'Ready',
-                        caption: `Uploaded: ${file.name}`
-                    })
-                    .select()
-                    .single();
-
-                if (insertError) throw insertError;
-                return insertedAsset as Asset;
-            } catch (err: any) {
-                console.error("Upload error:", err);
-                toast.error(`Failed to upload ${file.name}: ${err.message}`);
-                return null;
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                toast.error("Authentication required to upload assets.");
+                return;
             }
-        });
 
-        const results = await Promise.all(uploadPromises);
-        const uploadedAssets = results.filter((item): item is Asset => !!item);
-        
-        if (uploadedAssets.length > 0) {
-            toast.success(`Successfully uploaded ${uploadedAssets.length} assets!`);
-            await fetchAssets(true); // Refresh library
-            
-            // Automatically open sharing modal for the first newly uploaded asset
-            const newAsset = uploadedAssets[0];
-            setSelectedAsset(newAsset);
-            setCaption(newAsset.caption || '');
+            const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
+            let targetUserId = user.id;
+            if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+                targetUserId = (profile?.parent_id || profile?.agency_id) as string;
+            }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const impersonateId = urlParams.get('impersonate');
+
+            if (impersonateId && (['super_admin', 'agency', 'admin', 'agent'].includes(profile?.role || ''))) {
+                if (profile?.role !== 'super_admin') {
+                    const { data: subAccount } = await supabase
+                        .from('profiles')
+                        .select('id')
+                        .eq('id', impersonateId)
+                        .eq('agency_id', user.id)
+                        .single();
+                    if (subAccount) targetUserId = impersonateId;
+                } else {
+                    targetUserId = impersonateId;
+                }
+            }
+
+            uploadAssets(files, targetUserId, impersonateId);
+            toast.success(`Added ${files.length} asset(s) to the upload queue!`);
+        } catch (err: any) {
+            console.error("Queue upload error:", err);
+            toast.error(`Upload queue failed: ${err.message}`);
+        } finally {
+            e.target.value = '';
         }
-        
-        setIsUploading(false);
-        // Clear input
-        e.target.value = '';
     };
 
     const runAIAnalysis = async () => {
@@ -878,11 +852,10 @@ export default function AssetsPage() {
                             />
                             <button
                                 onClick={() => document.getElementById('library-upload')?.click()}
-                                disabled={isUploading}
                                 className="bg-slate-900 text-white px-6 py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
                             >
-                                {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
-                                {isUploading ? 'Uploading...' : 'Upload Assets'}
+                                {hasActiveTasks ? <Loader2 size={18} className="animate-spin text-blue-400" /> : <Upload size={18} />}
+                                {hasActiveTasks ? 'Uploading in BG...' : 'Upload Assets'}
                             </button>
                         </div>
                     )}
@@ -1042,6 +1015,60 @@ export default function AssetsPage() {
                     </div>
                 ) : (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
+                        {/* Rendering Active Upload Tasks as grid cards */}
+                        {tasks.filter(t => t.status !== 'completed' && (activeFilter === 'All' || t.type === activeFilter)).map((task) => (
+                            <div 
+                                key={task.id} 
+                                className="relative aspect-square rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden bg-slate-50 border border-dashed border-slate-300 flex flex-col items-center justify-center p-4 text-center group transition-all duration-300 shadow-sm"
+                            >
+                                <div className="absolute top-3 left-3 bg-slate-900/10 backdrop-blur-md px-2 py-0.5 rounded-full text-[10px] font-black text-slate-700 capitalize">
+                                    {task.status}
+                                </div>
+
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); removeTask(task.id); }}
+                                    className="absolute top-2.5 right-2.5 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 p-1.5 rounded-full transition-colors z-10 shadow-sm border border-slate-200/40"
+                                    title="Dismiss Card"
+                                >
+                                    <X size={12} strokeWidth={2.5} />
+                                </button>
+
+                                <div className="relative w-12 h-12 rounded-2xl bg-white shadow-sm border border-slate-100 flex items-center justify-center mb-3">
+                                    {task.status === 'failed' ? (
+                                        <AlertCircle size={20} className="text-red-500" />
+                                    ) : task.status === 'completed' ? (
+                                        <CheckCircle2 size={20} className="text-emerald-500 animate-in zoom-in-50 duration-300" />
+                                    ) : (
+                                        <Loader2 size={20} className="animate-spin text-blue-500" />
+                                    )}
+                                </div>
+
+                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider tabular-nums">
+                                    {task.status === 'failed' ? 'Failed' : `${task.progress}%`}
+                                </span>
+
+                                <p className="text-xs font-bold text-slate-700 truncate max-w-[120px] mt-1.5 px-2" title={task.fileName}>
+                                    {task.fileName}
+                                </p>
+
+                                {task.status !== 'completed' && task.status !== 'failed' && (
+                                    <div className="w-24 bg-slate-200 h-1 rounded-full overflow-hidden mt-2.5">
+                                        <div 
+                                            className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                                            style={{ width: `${task.progress}%` }}
+                                        />
+                                    </div>
+                                )}
+
+                                {task.status === 'failed' && (
+                                    <p className="text-[9px] text-red-500 font-medium leading-tight max-w-[140px] mt-1 px-1">
+                                        {task.error || 'System error'}
+                                    </p>
+                                )}
+                            </div>
+                        ))}
+
+                        {/* Rendering actual assets */}
                         {filteredAssets.map((asset) => (
                             <div
                                 key={asset.id}

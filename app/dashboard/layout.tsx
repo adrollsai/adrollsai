@@ -7,6 +7,7 @@ import BottomNav from '@/components/BottomNav'
 import PushManager from '@/components/PushManager'
 import { Loader2, XCircle } from 'lucide-react'
 import QuotaManager from '@/components/QuotaManager'
+import { UploadProvider } from '@/utils/UploadContext'
 
 function ImpersonationBanner() {
     const searchParams = useSearchParams()
@@ -138,21 +139,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] overflow-x-hidden">
-      <Suspense fallback={null}>
-        <ImpersonationBanner />
-      </Suspense>
-      
-      {/* PushManager deployed as a banner. It auto-hides if enabled or dismissed */}
-      <PushManager variant="banner" />
+    <UploadProvider>
+      <div className="min-h-screen bg-[#F8FAFC] overflow-x-hidden">
+        <Suspense fallback={null}>
+          <ImpersonationBanner />
+        </Suspense>
+        
+        {/* PushManager deployed as a banner. It auto-hides if enabled or dismissed */}
+        <PushManager variant="banner" />
 
-      {/* Global Plan and Add-on limit checks */}
-      <QuotaManager />
+        {/* Global Plan and Add-on limit checks */}
+        <QuotaManager />
 
-      {children}
+        {children}
 
-      {/* Hide the navigation bar if they are on the billing page, onboarding page or the video editor page */}
-      {pathname !== '/dashboard/billing' && pathname !== '/dashboard/onboarding' && !pathname?.includes('/dashboard/video-editor') && <BottomNav />}
-    </div>
+        {/* Hide the navigation bar if they are on the billing page, onboarding page or the video editor page */}
+        {pathname !== '/dashboard/billing' && pathname !== '/dashboard/onboarding' && !pathname?.includes('/dashboard/video-editor') && <BottomNav />}
+      </div>
+    </UploadProvider>
   )
 }

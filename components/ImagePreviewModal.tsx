@@ -32,6 +32,8 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
         setPosition({ x: 0, y: 0 })
     }
 
+    const lastTouchRef = useRef<{ x: number; y: number } | null>(null)
+
     const handleMouseDown = (e: React.MouseEvent) => {
         if (scale > 1) {
             setIsDragging(true)
@@ -47,7 +49,43 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
         }
     }
 
-    const handleMouseUp = () => setIsDragging(false)
+    const handleMouseUp = () => {
+        setIsDragging(false)
+        lastTouchRef.current = null
+    }
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (scale > 1 && e.touches.length === 1) {
+            setIsDragging(true)
+            lastTouchRef.current = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY
+            }
+        }
+    }
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (isDragging && scale > 1 && e.touches.length === 1 && lastTouchRef.current) {
+            const touch = e.touches[0]
+            const deltaX = touch.clientX - lastTouchRef.current.x
+            const deltaY = touch.clientY - lastTouchRef.current.y
+            
+            setPosition(prev => ({
+                x: prev.x + deltaX,
+                y: prev.y + deltaY
+            }))
+            
+            lastTouchRef.current = {
+                x: touch.clientX,
+                y: touch.clientY
+            }
+        }
+    }
+
+    const handleTouchEnd = () => {
+        setIsDragging(false)
+        lastTouchRef.current = null
+    }
 
     // Handle Wheel Zoom
     const handleWheel = (e: React.WheelEvent) => {
@@ -95,6 +133,9 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
                         onMouseMove={handleMouseMove}
                         onMouseUp={handleMouseUp}
                         onMouseLeave={handleMouseUp}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
                     >
                         <motion.div
                             animate={{ 

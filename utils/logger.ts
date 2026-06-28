@@ -8,7 +8,7 @@ export function logToFile(message: string, data?: any) {
         const timestamp = new Date().toISOString();
         const dataStr = data ? JSON.stringify(data, null, 2) : '';
         const logEntry = `[${timestamp}] ${message}${dataStr ? '\n' + dataStr : ''}\n------------------------------------------------\n`;
-        
+
         // Log to standard console for cloud environments (Vercel/Next.js)
         console.log(`[META AI] ${message}`, data ? JSON.stringify(data) : '');
 
@@ -16,7 +16,7 @@ export function logToFile(message: string, data?: any) {
         if (!process.env.VERCEL) {
             fs.appendFileSync(LOG_FILE, logEntry, 'utf-8');
         }
-        
+
     } catch (e) {
         console.error("Logging failed:", e);
     }
