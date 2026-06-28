@@ -115,10 +115,20 @@ export async function GET(request: Request) {
             }
         }
 
+        let prepaidBalance = null;
+        if (data.funding_source_details?.display_string) {
+            const ds = data.funding_source_details.display_string;
+            const match = ds.match(/(?:Available\s+Balance|Balance)\s*\(?[^\d]*([\d,]+\.?\d*)/i);
+            if (match) {
+                prepaidBalance = parseFloat(match[1].replace(/,/g, ''));
+            }
+        }
+
         logToFile(`[Check-Account API] Success check results`, {
             account_status: data.account_status,
             has_payment_method: hasPaymentMethod,
             balance: data.balance,
+            prepaid_balance: prepaidBalance,
             currency: data.currency,
             leadgenTosAccepted: leadgenTos?.leadgen_tos?.accepted
         });
@@ -128,6 +138,7 @@ export async function GET(request: Request) {
             disable_reason: data.disable_reason,
             has_payment_method: hasPaymentMethod,
             balance: data.balance,
+            prepaid_balance: prepaidBalance,
             spend_cap: data.spend_cap,
             amount_spent: data.amount_spent,
             funding_source_details: data.funding_source_details,

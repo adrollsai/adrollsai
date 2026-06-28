@@ -73,8 +73,8 @@ export async function GET(request: Request) {
 
   try {
     // Nested Graph API call: Fetch Campaign, its Ad Sets, its Ads, and dynamic insights (delivery stats) for each
-    const fields = 'id,name,status,daily_budget,lifetime_budget,budget_remaining,insights{spend,impressions,clicks,actions},adsets{id,name,status,daily_budget,lifetime_budget,insights{spend,impressions,clicks,actions},optimization_goal,billing_event,targeting},ads{id,name,status,adset_id,creative{id,name,image_url,thumbnail_url,object_story_spec},insights{spend,impressions,clicks,actions}}';
-    const fbUrl = `${FB_GRAPH_URL}/${campaignId}?fields=${fields}&date_preset=maximum&access_token=${token}`;
+    const fields = 'id,name,status,daily_budget,lifetime_budget,budget_remaining,insights.date_preset(maximum){spend,impressions,clicks,actions},adsets{id,name,status,daily_budget,lifetime_budget,insights.date_preset(maximum){spend,impressions,clicks,actions},optimization_goal,billing_event,targeting},ads{id,name,status,adset_id,creative{id,name,image_url,thumbnail_url,object_story_spec},insights.date_preset(maximum){spend,impressions,clicks,actions}}';
+    const fbUrl = `${FB_GRAPH_URL}/${campaignId}?fields=${fields}&access_token=${token}`;
 
     const response = await fetch(fbUrl);
     const data = await response.json();

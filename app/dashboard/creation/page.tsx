@@ -99,6 +99,7 @@ export default function CreationPage() {
   const [isThinking, setIsThinking] = useState(false)
   const [currentStep, setCurrentStep] = useState<string>('') 
   const [chatAttachments, setChatAttachments] = useState<string[]>([])
+  const [excludedImages, setExcludedImages] = useState<string[]>([])
   const [isUploadingChat, setIsUploadingChat] = useState(false)
   const chatFileInputRef = useRef<HTMLInputElement>(null)
 
@@ -493,7 +494,7 @@ export default function CreationPage() {
             let propImages: string[] = [];
             if (creativeFlow.product) {
                 if (creativeFlow.product.images && creativeFlow.product.images.length > 0) {
-                    propImages = creativeFlow.product.images.slice(0, 2);
+                    propImages = creativeFlow.product.images.slice(0, 10);
                 } else if (creativeFlow.product.image_url) {
                     propImages = [creativeFlow.product.image_url];
                 }
@@ -510,7 +511,8 @@ export default function CreationPage() {
                 aspectRatio: "4:5",
                 model: 'image-2.0',
                 contactNumber: profile?.contact_number,
-                logoUrl: profile?.logo_url
+                logoUrl: profile?.logo_url,
+                excludedImages: excludedImages
             };
 
             const res = await fetch(`/api/chat${window.location.search}`, {
@@ -973,7 +975,7 @@ export default function CreationPage() {
 
   let propImages: string[] = []
   if (prop) {
-    if (prop.images && prop.images.length > 0) propImages = prop.images.slice(0, 2)
+    if (prop.images && prop.images.length > 0) propImages = prop.images.slice(0, 10)
     else if (prop.image_url) propImages = [prop.image_url]
   }
 
@@ -994,7 +996,8 @@ export default function CreationPage() {
         aspectRatio: selectedRatio,
         model: selectedModel,
         creativeCategory: creativeCategory,
-        isOrganic: creativeCategory === 'High Converting'
+        isOrganic: creativeCategory === 'High Converting',
+        excludedImages: excludedImages
     })
   })
       
@@ -1905,19 +1908,106 @@ export default function CreationPage() {
       {/* --- FLOATING INPUT AREA --- */}
       {/* ADDED PADDING (pb-24 sm:pb-32) SO IT FLOATS ABOVE THE NAVIGATION BAR */}
       <div className="bg-gradient-to-t from-[#F8FAFC] via-[#F8FAFC] to-transparent p-4 pb-24 sm:pb-32 border-t-0 flex-shrink-0 z-20">
-        <div className="max-w-4xl mx-auto mb-2 flex flex-wrap gap-2 px-4">
-            {chatAttachments.map((url, i) => (
-                <div key={i} className="relative group w-14 h-14 rounded-xl overflow-hidden border-2 border-white shadow-md flex-shrink-0">
-                    <img src={url} className="w-full h-full object-cover" alt="attachment" />
-                    <button 
-                        onClick={() => setChatAttachments(prev => prev.filter((_, idx) => idx !== i))}
-                        className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                        <X size={12} />
-                    </button>
+        {(() => {
+          const currentProperty = properties.find(p => p.id === selectedPropId);
+          let currentPropImages: string[] = [];
+          if (currentProperty) {
+            if (currentProperty.images && currentProperty.images.length > 0) {
+              currentPropImages = currentProperty.images.slice(0, 10);
+            } else if (currentProperty.image_url) {
+              currentPropImages = [currentProperty.image_url];
+            }
+          }
+
+          const selectedTemplateObj = TEMPLATES.find(t => t.id === selectedTemplate);
+          const currentActiveReferenceUrl = uploadedRefUrl || selectedTemplateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || null;
+          const currentAccountLogo = profile?.logo_url || "";
+
+          const potentialInputImages = [
+            ...currentPropImages,
+            currentAccountLogo,
+            currentActiveReferenceUrl,
+            ...chatAttachments
+          ].filter((url): url is string => !!(url && typeof url === 'string' && url.startsWith('http') && !url.includes('placehold.co') && !url.toLowerCase().endsWith('.svg')));
+
+          const uniquePotentialInputImages = Array.from(new Set(potentialInputImages));
+          const imagesBeingSent = uniquePotentialInputImages.filter(url => !excludedImages.includes(url));
+          const excludedImagesList = uniquePotentialInputImages.filter(url => excludedImages.includes(url));
+
+          return (
+            <>
+              {imagesBeingSent.length > 0 && (
+                <div className="max-w-4xl mx-auto mb-3 px-4">
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1.5">
+                    Images Sent to Image Model ({imagesBeingSent.length}/16):
+                  </span>
+                  <div className="flex flex-wrap gap-2.5">
+                    {imagesBeingSent.map((url, i) => {
+                      let badge = "Asset";
+                      if (url === currentAccountLogo) badge = "Logo";
+                      else if (url === currentActiveReferenceUrl) badge = "Style";
+                      else if (currentPropImages.includes(url)) badge = "Property";
+
+                      return (
+                        <div key={i} className="relative group w-16 h-16 rounded-2xl overflow-hidden border-2 border-slate-200 shadow-sm flex-shrink-0 bg-slate-50 transition-all hover:scale-95 duration-200">
+                          <img src={url} className="w-full h-full object-cover" alt="asset" />
+                          <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[8px] font-black text-center py-0.5 uppercase tracking-wide">
+                            {badge}
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              setExcludedImages(prev => [...prev, url]);
+                              if (chatAttachments.includes(url)) {
+                                setChatAttachments(prev => prev.filter(u => u !== url));
+                              }
+                            }}
+                            className="absolute top-1 right-1 bg-rose-500 hover:bg-rose-600 text-white p-0.5 rounded-full shadow-sm z-10 transition-colors"
+                            title="Exclude from generation"
+                          >
+                            <X size={10} strokeWidth={3} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {imagesBeingSent.length > 16 && (
+                    <p className="text-[10px] text-rose-500 font-extrabold mt-1">
+                      ⚠️ Warning: Max images limit is 16. Only the first 16 images will be sent.
+                    </p>
+                  )}
                 </div>
-            ))}
-        </div>
+              )}
+
+              {excludedImagesList.length > 0 && (
+                <div className="max-w-4xl mx-auto mb-3 px-4 flex flex-wrap gap-1.5 items-center">
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                    Excluded (Click to Add Back):
+                  </span>
+                  {excludedImagesList.map((url, i) => {
+                    let badge = "Asset";
+                    if (url === currentAccountLogo) badge = "Logo";
+                    else if (url === currentActiveReferenceUrl) badge = "Style";
+                    else if (currentPropImages.includes(url)) badge = "Property";
+
+                    return (
+                      <button
+                        type="button"
+                        key={i}
+                        onClick={() => setExcludedImages(prev => prev.filter(u => u !== url))}
+                        className="text-[9px] font-bold text-slate-500 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 border border-slate-200 hover:border-blue-100 rounded-full px-2 py-0.5 flex items-center gap-1 transition-all active:scale-95"
+                        title="Click to include back"
+                      >
+                        <span>{badge}</span>
+                        <Plus size={8} strokeWidth={3} />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         <form 
             onSubmit={(e) => { e.preventDefault(); handleSend(); }}

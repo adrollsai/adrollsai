@@ -100,7 +100,8 @@ export async function POST(request: Request) {
         isDirect = false,
         isOrganic = false,
         styleAesthetic,
-        creativeCategory
+        creativeCategory,
+        excludedImages = []
     } = body;
 
     // Fetch user profile for business context + industry
@@ -197,53 +198,32 @@ export async function POST(request: Request) {
         typeof url === 'string' && 
         url.startsWith('http') && 
         !url.includes('placehold.co') && 
-        !url.toLowerCase().endsWith('.svg')
+        !url.toLowerCase().endsWith('.svg') &&
+        !excludedImages.includes(url)
     );
 
     const validPropImages = filterImages(propImages);
-    const validLogo = filterImages([logoUrl]);
-    const validTemplate = filterImages([templateUrl || fetchedRefUrl]);
+    const validLogo = logoUrl && !excludedImages.includes(logoUrl) ? filterImages([logoUrl]) : [];
+    const validTemplate = templateUrl && !excludedImages.includes(templateUrl) ? filterImages([templateUrl]) : [];
     
-    // Ensure reference creative is ALWAYS the LAST image in the array
-    // This makes image disambiguation deterministic for the model
-    const allInputImages = [...validPropImages, ...validLogo, ...validTemplate];
+    // Capped at 16 images maximum for GPT 2 model
+    const allInputImages = [...validPropImages, ...validLogo, ...validTemplate].slice(0, 16);
 
     const hasReference = validTemplate.length > 0;
 
-    // Build the reference creative preamble (placed at TOP of prompt)
-    const referenceCreativePreamble = buildReferenceCreativePreamble(
-        validPropImages.length,
-        validLogo.length > 0,
-        hasReference
-    );
+    // Detect if user requested to exclude logo or business info
+    const excludeLogo = userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't)\s+logo\b/i);
+    const excludeBusinessInfo = userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't)\s+(business|brand|info)\b/i);
 
-    // Build category specific layout and aesthetic guidance
-    let categoryPromptGuideline = "";
-    if (normalizedCategory === 'premium') {
-        categoryPromptGuideline = "Style: Premium luxury ad creative layout. High-end clean commercial photography of the product/property, premium interior glow, warm lighting, elegant reflections, clean professional composition, elegant text design.";
-    } else if (normalizedCategory === 'edm') {
-        categoryPromptGuideline = "Style: EDM (Emotion & Feeling) ad creative. Focus on abstract lifestyle visual elements that evoke an emotional response (e.g. cozy fireplace atmosphere, beautiful view, warm pool water, abstract beauty) rather than directly showing the product. Sell the feeling. Include a powerful emotional hook.";
-    } else if (normalizedCategory === 'high_converting') {
-        categoryPromptGuideline = "Style: High converting raw organic ad creative. Unpolished, low-effort smartphone photo look that does not seem like an ad. Display a raw, clean image of the product. Directly on the image itself, overlay a simple, clean, readable text caption/card displaying bare minimum info (Location, Price, and Configuration) with zero clutter.";
-    }
-
-
-    // Build the prompt with reference preamble at the TOP (highest attention position)
+    // Super simple prompting
     const promptParts = [
-        // 1. REFERENCE PREAMBLE — highest priority, placed first so the model sees it before anything else
-        referenceCreativePreamble,
-        // 2. Core task instruction
-        "Create a high converting static Meta ad creative. The result must look super photorealistic with attractive, real-looking humans (ethnicity matching the business region). Use only super essential info in text overlays to avoid clutter. IMPORTANT: Do NOT include ANY information that is not explicitly provided below — no made-up prices, discounts, claims, phone numbers, websites, or contact details. If a detail is not provided, leave it out entirely.",
-        // 3. Category/style guidelines (only if no reference, to avoid conflicting layout instructions)
-        (!hasReference && categoryPromptGuideline) ? categoryPromptGuideline : '',
-        (hasReference && categoryPromptGuideline) ? `Style note (secondary to reference layout): ${categoryPromptGuideline}` : '',
-        // 4. Product/business details — content to populate the layout
-        `Product Description: ${propertyTitle || ''}. ${propertyDescription || ''}`,
-        businessName ? `Business Info - Brand/Business Name: ${businessName}` : '',
-        contactNumber ? `Business Info - Contact Info: ${contactNumber}` : '',
-        logoUrl ? `Business Logo: Include the business logo cleanly in a corner of the image.` : 'Business Logo: Include the business logo cleanly in a corner.',
-        (!normalizedCategory && styleAesthetic) ? `Style: Render the image in a ${styleAesthetic} aesthetic.` : '',
-        profileCustomPrompt ? `Profile Custom Instructions: ${profileCustomPrompt}` : '',
+        `Create a clean, high quality, professional ad creative design.`,
+        propertyTitle ? `Subject: ${propertyTitle}` : '',
+        propertyDescription ? `Details/Description: ${propertyDescription}` : '',
+        (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
+        (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly.` : '',
+        `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`,
+        `Do NOT add any messy or gibberish text overlays on the image unless explicitly requested. Keep the image clean, professional, and visually focused.`,
         userInstructions ? `Custom Instructions: ${userInstructions}` : ''
     ].filter(Boolean);
 

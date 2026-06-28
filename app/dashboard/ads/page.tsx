@@ -1525,6 +1525,8 @@ export default function AdsPage() {
                   <div className="text-2xl font-black text-slate-800 tracking-tight leading-none">
                     {checkingSanity ? (
                       <span className="text-slate-300 animate-pulse">Checking...</span>
+                    ) : accountStatus?.prepaid_balance !== undefined && accountStatus?.prepaid_balance !== null ? (
+                      `${(accountStatus.currency || currency) === 'INR' ? '₹' : (accountStatus.currency || currency) === 'AED' ? 'د.إ' : (accountStatus.currency || currency) === 'GBP' ? '£' : (accountStatus.currency || currency) === 'EUR' ? '€' : '$'}${accountStatus.prepaid_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     ) : accountStatus?.balance !== undefined && accountStatus?.balance !== null ? (
                       `${(accountStatus.currency || currency) === 'INR' ? '₹' : (accountStatus.currency || currency) === 'AED' ? 'د.إ' : (accountStatus.currency || currency) === 'GBP' ? '£' : (accountStatus.currency || currency) === 'EUR' ? '€' : '$'}${((accountStatus.balance / 100)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     ) : (
@@ -1532,7 +1534,7 @@ export default function AdsPage() {
                     )}
                   </div>
                   <p className="text-[10px] text-slate-500 font-medium mt-2">
-                    {accountStatus?.balance !== undefined && accountStatus?.balance !== null ? `Prepaid Balance (${accountStatus?.currency || currency})` : 'Automatic Postpaid Billing'}
+                    {accountStatus?.prepaid_balance !== undefined && accountStatus?.prepaid_balance !== null ? `Prepaid Balance (${accountStatus?.currency || currency})` : accountStatus?.balance !== undefined && accountStatus?.balance !== null ? `Unbilled Accrued Spend (${accountStatus?.currency || currency})` : 'Automatic Postpaid Billing'}
                   </p>
                 </div>
               </div>

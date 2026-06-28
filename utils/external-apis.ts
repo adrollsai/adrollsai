@@ -428,7 +428,7 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
 
         const allLeads = [];
         for (const form of formsToProcess) {
-            let nextUrl = `${FACEBOOK_GRAPH_URL}/${form.id}/leads?fields=id,created_time,field_data,ad_id,ad_name&limit=200&access_token=${accessToken}`;
+            let nextUrl = `${FACEBOOK_GRAPH_URL}/${form.id}/leads?fields=id,created_time,field_data,ad_id,ad_name,campaign_id&limit=200&access_token=${accessToken}`;
             while (nextUrl) {
                 const leadsRes = await fetch(nextUrl);
                 const leadsData = await leadsRes.json();
@@ -472,7 +472,8 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
                             form_name: form.name,
                             custom_fields: customFields,
                             ad_name: sourceTag, 
-                            facebook_created_at: l.created_time
+                            facebook_created_at: l.created_time,
+                            campaign_id: l.campaign_id || null
                         };
                     });
                     allLeads.push(...formattedLeads);

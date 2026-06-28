@@ -123,7 +123,7 @@ export async function POST(req: Request) {
             if (!userProfile?.facebook_token || !userProfile?.ad_account_id) {
               return { success: false, message: "User has not connected Meta Ads account." };
             }
-            const url = `https://graph.facebook.com/v19.0/${userProfile.ad_account_id}/campaigns?fields=id,name,status,effective_status,objective,start_time,insights{spend,impressions,clicks,cpc,inline_link_click_ctr}&limit=20&access_token=${userProfile.facebook_token}`;
+            const url = `https://graph.facebook.com/v19.0/${userProfile.ad_account_id}/campaigns?fields=id,name,status,effective_status,objective,start_time,insights.date_preset(maximum){spend,impressions,clicks,cpc,inline_link_click_ctr}&limit=20&access_token=${userProfile.facebook_token}`;
             const res = await fetch(url);
             const data = await res.json();
 

@@ -127,7 +127,8 @@ export async function POST(request: Request) {
                 facebook_created_at: lead.facebook_created_at,
                 status: 'New', 
                 pipeline_stage: 'New',
-                assigned_to: assignedTo
+                assigned_to: assignedTo,
+                campaign_id: lead.campaign_id || null
             };
         });
 
