@@ -101,15 +101,16 @@ export async function POST(request: Request) {
         isOrganic = false,
         styleAesthetic,
         creativeCategory,
-        excludedImages = []
+        excludedImages = [],
+        isEdit = false
     } = body;
 
     // Fetch user profile for business context + industry
     const { data: profile } = await supabase
       .from('profiles')
-      .select('business_name, business_info, mission_statement, custom_prompt, industry')
+      .select('business_name, business_info, mission_statement, custom_prompt, industry, brand_color')
       .eq('id', targetUserId)
-      .single()
+      .single() as any;
 
     const businessName = profile?.business_name || '';
     const profileCustomPrompt = profile?.custom_prompt || '';
@@ -207,7 +208,7 @@ export async function POST(request: Request) {
     const validTemplate = templateUrl && !excludedImages.includes(templateUrl) ? filterImages([templateUrl]) : [];
     
     // Capped at 16 images maximum for GPT 2 model
-    const allInputImages = [...validPropImages, ...validLogo, ...validTemplate].slice(0, 16);
+    const allInputImages = [...validPropImages, ...validLogo].slice(0, 16);
 
     const hasReference = validTemplate.length > 0;
 
@@ -215,19 +216,189 @@ export async function POST(request: Request) {
     const excludeLogo = userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't)\s+logo\b/i);
     const excludeBusinessInfo = userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't)\s+(business|brand|info)\b/i);
 
-    // Super simple prompting
-    const promptParts = [
-        `Create a clean, high quality, professional ad creative design.`,
-        propertyTitle ? `Subject: ${propertyTitle}` : '',
-        propertyDescription ? `Details/Description: ${propertyDescription}` : '',
-        (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
-        (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly.` : '',
-        `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`,
-        `Do NOT add any messy or gibberish text overlays on the image unless explicitly requested. Keep the image clean, professional, and visually focused.`,
-        userInstructions ? `Custom Instructions: ${userInstructions}` : ''
-    ].filter(Boolean);
+    // Multimodal Visual Style Analysis using Gemini if a reference ad image is selected
+    let styleDescription = "";
+    if (hasReference && validTemplate[0]) {
+      try {
+        const refUrl = validTemplate[0];
+        logToFile(`Fetching reference creative for style analysis: ${refUrl}`);
+        const refRes = await fetch(refUrl);
+        if (refRes.ok) {
+          const refBuffer = Buffer.from(await refRes.arrayBuffer());
+          const refMimeType = refRes.headers.get('content-type') || 'image/png';
+          
+          logToFile("Calling Gemini to analyze reference creative style...");
+          const styleAnalysisInstruction = `Analyze the visual style, design aesthetic, layout composition, typography styling, and color palette of this reference ad in detail. Describe it in a way that guides an AI image generator (like Stable Diffusion or DALL-E) to match this exact aesthetic, layout, and composition. Focus on colors, lighting, placing of objects, backgrounds, design hierarchy, and overall mood. Write a single detailed paragraph.
+IMPORTANT: Do NOT transcribe or include any specific text contents, business names, telephone numbers, barcodes, QR codes, website URLs, or licensing/registration numbers (like RERA) found on the reference ad. Instead, refer to them generally as layout placeholders (e.g., "a logo placeholder in the corner", "licensing text placeholder", "contact detail placeholder").`;
 
-    const finalImagePrompt = promptParts.join("\n");
+          let geminiResult;
+          try {
+            geminiResult = await generateText({
+              model: google('gemini-3.5-flash'),
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    { 
+                      type: 'text', 
+                      text: styleAnalysisInstruction
+                    },
+                    {
+                      type: 'image',
+                      image: refBuffer,
+                      mimeType: refMimeType
+                    } as any
+                  ]
+                }
+              ]
+            });
+          } catch (geminiErr1) {
+            logToFile(`Failed with gemini-3.5-flash: ${(geminiErr1 as Error).message}. Retrying with gemini-3-flash-preview...`);
+            geminiResult = await generateText({
+              model: google('gemini-3-flash-preview'),
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    { 
+                      type: 'text', 
+                      text: styleAnalysisInstruction
+                    },
+                    {
+                      type: 'image',
+                      image: refBuffer,
+                      mimeType: refMimeType
+                    } as any
+                  ]
+                }
+              ]
+            });
+          }
+          styleDescription = geminiResult.text.trim();
+          logToFile(`Successfully extracted style description from reference creative: ${styleDescription}`);
+        } else {
+          logToFile(`Failed to fetch reference creative file: Status ${refRes.status}`);
+        }
+      } catch (err: any) {
+        logToFile(`Error extracting style from reference: ${err.message}`);
+      }
+    }
+
+    // Call Master Designer LLM if no reference style is selected and we are NOT in edit mode
+    let designerPrompt = "";
+    if (!hasReference && !isEdit) {
+      try {
+        logToFile("Calling Gemini Master Designer to compose optimized image generation prompt...");
+        const designComposerPrompt = `You are a Master Advertising Designer with 20+ years of experience in creating high-converting, visually stunning ad creatives.
+Your job is to write a highly detailed, optimized image generation prompt that will be sent to an AI image model (like Stable Diffusion or DALL-E) to produce a professional ad.
+
+Here is the information provided by the user:
+- Product/Property Title: ${propertyTitle || 'N/A'}
+- Product/Property Description: ${propertyDescription || 'N/A'}
+- Business Name: ${businessName || 'N/A'}
+- Brand/Business Info: ${profile?.business_info || 'N/A'}
+- Target Industry: ${industry || 'N/A'}
+- Custom User Instructions: ${userInstructions || 'None'}
+
+Your goal is to synthesize this information and output a detailed prompt for the image generation model.
+Follow these master designer rules:
+1. DO NOT simply copy-paste all descriptions or information. Think on your own: identify what is actually necessary, appealing, and high-converting for this industry. Filter out boring details and focus on the core value proposition.
+2. Design a compelling visual composition. Describe the scene, layout, lighting, colors (brand color is ${profile?.brand_color || 'coordinated'}), camera angles, and overall mood (e.g. professional, luxurious, warm, clean, organic).
+3. Brand Logo: Instruct the image model to place the business logo cleanly and integrate it seamlessly (blending the background smoothly into the surrounding theme/sky).
+4. Image Inputs: Mention that the model is provided with product/property photos, and should identify and use the most relevant/aesthetically appealing ones as the visual hero scene of the ad.
+5. Text Overlays: Keep overlays minimal and high-converting (e.g. a bold, clean headline and subhead). Avoid gibberish or messy text clutter.
+6. The output should be a single cohesive, highly detailed paragraph that describes the visual scene, layout, and instructions for the image model. Output ONLY the prompt text, without any introductory or conversational text.`;
+
+        const imageParts: any[] = [];
+        for (const imgUrl of validPropImages.slice(0, 4)) {
+          try {
+            const res = await fetch(imgUrl);
+            if (res.ok) {
+              const buffer = Buffer.from(await res.arrayBuffer());
+              const mimeType = res.headers.get('content-type') || 'image/png';
+              imageParts.push({
+                type: 'image',
+                image: buffer,
+                mimeType: mimeType
+              } as any);
+            }
+          } catch (err) {
+            logToFile(`Error fetching image for Master Designer: ${imgUrl}`);
+          }
+        }
+
+        const messagesContent: any[] = [
+          {
+            type: 'text',
+            text: designComposerPrompt
+          },
+          ...imageParts
+        ];
+
+        let geminiResult;
+        try {
+          geminiResult = await generateText({
+            model: google('gemini-3.5-flash'),
+            messages: [
+              {
+                role: 'user',
+                content: messagesContent
+              }
+            ]
+          });
+        } catch (geminiErr1) {
+          logToFile(`Failed with gemini-3.5-flash for Master Designer: ${(geminiErr1 as Error).message}. Retrying with gemini-3-flash-preview...`);
+          geminiResult = await generateText({
+            model: google('gemini-3-flash-preview'),
+            messages: [
+              {
+                role: 'user',
+                content: messagesContent
+              }
+            ]
+          });
+        }
+
+        designerPrompt = geminiResult.text.trim();
+        logToFile(`Master Designer generated prompt: ${designerPrompt}`);
+      } catch (err: any) {
+        logToFile(`Error in Master Designer LLM flow: ${err.message}`);
+      }
+    }
+
+    const referencePreamble = buildReferenceCreativePreamble(validPropImages.length, validLogo.length > 0, hasReference);
+
+    let finalImagePrompt = "";
+    if (isEdit) {
+      finalImagePrompt = `Modify the input image according to these custom instructions: "${userInstructions}". 
+Make the edits clean, professional, and blend seamlessly with the original content. Do NOT add any messy or gibberish text overlays unless explicitly requested. Keep the visual theme intact while applying the edits.`;
+    } else if (hasReference) {
+      const promptParts = [
+          referencePreamble,
+          `Create a clean, high quality, professional ad creative design.`,
+          propertyTitle ? `Subject: ${propertyTitle}` : '',
+          propertyDescription ? `Details/Description: ${propertyDescription}` : '',
+          (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
+          (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly. Integrate the brand logo seamlessly with the design and background. Do NOT place it inside a raw, unblended black or white box/circle; blend its background shape smoothly into the background sky/theme.` : '',
+          `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`,
+          `Do NOT add any messy or gibberish text overlays on the image unless explicitly requested. Keep the image clean, professional, and visually focused.`,
+          `IMPORTANT NEGATIVE CONSTRAINT: Do NOT copy any text, barcodes, QR codes, website URLs, or license/RERA numbers (such as RERA registration numbers) directly from the reference image. If the reference creative contains a QR code, license number, or specific website address, omit them entirely from the final generated image.`,
+          styleDescription ? `MATCH THE FOLLOWING STYLE, LAYOUT, AND COMPOSITION EXACTLY:\n${styleDescription}` : '',
+          userInstructions ? `Custom Instructions: ${userInstructions}` : ''
+      ].filter(Boolean);
+      finalImagePrompt = promptParts.join("\n");
+    } else {
+      finalImagePrompt = designerPrompt || [
+          `Create a clean, high quality, professional ad creative design.`,
+          propertyTitle ? `Subject: ${propertyTitle}` : '',
+          propertyDescription ? `Details/Description: ${propertyDescription}` : '',
+          (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
+          (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly. Integrate the brand logo seamlessly with the design and background. Do NOT place it inside a raw, unblended black or white box/circle; blend its background shape smoothly into the background sky/theme.` : '',
+          `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`,
+          `Do NOT add any messy or gibberish text overlays on the image unless explicitly requested. Keep the image clean, professional, and visually focused.`,
+          userInstructions ? `Custom Instructions: ${userInstructions}` : ''
+      ].filter(Boolean).join("\n");
+    }
 
     let kieModel = isDirect ? 'nano-banana-2' : 'gpt-image-2-text-to-image';
     let imageField = 'image_input'; // Default for text-to-image and nano

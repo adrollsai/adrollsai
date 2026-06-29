@@ -136,8 +136,6 @@ export function buildReferenceCreativePreamble(
   if (hasLogo) {
     imageMap.push(`  - Image ${numPropertyImages + 1}: BUSINESS LOGO (branding asset only — place in corner)`);
   }
-  const refIndex = numPropertyImages + (hasLogo ? 1 : 0) + 1;
-  imageMap.push(`  - Image ${refIndex} (LAST image): REFERENCE CREATIVE — this is the PRIMARY DESIGN BLUEPRINT`);
 
   return `=== CRITICAL DESIGN INSTRUCTION (HIGHEST PRIORITY) ===
 
@@ -148,24 +146,20 @@ TEXT PRIORITY: 6/10
 IMAGE DISAMBIGUATION (each input image is labeled below):
 ${imageMap.join('\n')}
 
-The LAST image in the input array is the REFERENCE CREATIVE.
+The visual layout design, element placements, and aesthetic theme of the reference creative are described in text details within the prompt. 
 
-The final ad MUST closely follow the reference creative's:
+The final generated ad MUST closely match the reference's:
 - Layout structure and spatial composition
 - Typography hierarchy and text placement
 - Image framing and visual balance
 - Design style, color palette treatment, and overall aesthetic
 - Element positioning (where headlines, images, logos, and CTAs are placed)
 
-Match the reference creative as closely as possible while replacing all content with the provided property/product images and business logo.
+Do NOT create a random layout from scratch.
+Use the design style and layout described below as the primary design blueprint.
 
-Do NOT create a new layout from scratch.
-Do NOT invent a different composition.
-Do NOT rearrange where elements are placed compared to the reference.
-Use the reference creative as the primary design blueprint.
-
-The property/product photos are CONTENT ASSETS ONLY — they replace the hero visual in the reference layout.
-The logo image is BRANDING ONLY — it replaces any logo in the reference or goes in a corner.
+The property/product photos are CONTENT ASSETS ONLY — they replace the hero visual in the layout.
+The logo image is BRANDING ONLY — it replaces any logo in the reference layout or goes in a corner.
 
 === END CRITICAL DESIGN INSTRUCTION ===
 

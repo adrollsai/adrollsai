@@ -1,11 +1,13 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon, Clock, Trash2, Globe, Languages, Mic, AlertCircle } from 'lucide-react'
+import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon, Clock, Trash2, Globe, Languages, Mic, AlertCircle, Eye } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
+import ImagePreviewModal from '@/components/ImagePreviewModal'
+import { motion, AnimatePresence } from 'framer-motion'
 
 // --- TYPES ---
 type Message = {
@@ -50,7 +52,23 @@ type Profile = {
 
 
 // --- TEMPLATES LIBRARY ---
-const TEMPLATES: { id: string, name: string, url: string }[] = []
+const TEMPLATES: { id: string, name: string, url: string }[] = [
+  {
+    id: 'premium_orchid',
+    name: 'Premium Orchid Layout',
+    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/reference-creatives/premium_seed_orchid.png'
+  },
+  {
+    id: 'edm_farmland',
+    name: 'EDM Farmland Layout',
+    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/reference-creatives/edm_seed_farmland.jpg'
+  },
+  {
+    id: 'high_converting_99acres',
+    name: 'High Converting Layout',
+    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/reference-creatives/high_converting_seed_99acres.jpg'
+  }
+]
 
 const ASPECT_RATIOS = [
   { label: '1:1', value: '1:1', icon: Square },
@@ -102,6 +120,34 @@ export default function CreationPage() {
   const [excludedImages, setExcludedImages] = useState<string[]>([])
   const [isUploadingChat, setIsUploadingChat] = useState(false)
   const chatFileInputRef = useRef<HTMLInputElement>(null)
+
+  const [existingAssets, setExistingAssets] = useState<any[]>([])
+  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false)
+  const [loadingAssets, setLoadingAssets] = useState(false)
+
+  const handleOpenAssetModal = async () => {
+    setIsAssetModalOpen(true)
+    setLoadingAssets(true)
+    try {
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      const response = await fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+      const assetData = await response.json()
+      if (Array.isArray(assetData)) {
+        const photoAssets = assetData.filter((a: any) => 
+          a.type === 'image' && 
+          a.url && 
+          !a.url.includes('processing') && 
+          !['Processing', 'Rendering', 'Failed'].includes(a.status)
+        )
+        setExistingAssets(photoAssets)
+      }
+    } catch (err) {
+      console.error("Failed to load existing assets:", err)
+    } finally {
+      setLoadingAssets(false)
+    }
+  }
 
   const [localRefImages, setLocalRefImages] = useState<string[]>([])
   const [isUploadingLocalRef, setIsUploadingLocalRef] = useState(false)
@@ -163,6 +209,53 @@ export default function CreationPage() {
   // Reference Library State
   const [userReferences, setUserReferences] = useState<any[]>([])
   const [selectedUserRefId, setSelectedUserRefId] = useState<string | null>(null)
+
+  // Style Gallery Modal State
+  const [isGalleryOpen, setIsGalleryOpen] = useState(false)
+  const [galleryTab, setGalleryTab] = useState<'all' | 'templates' | 'personal'>('all')
+
+  // Reference Preview Modal State
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
+  const [previewTitle, setPreviewTitle] = useState<string>('')
+  const [previewType, setPreviewType] = useState<'template' | 'userRef' | 'localRef' | 'uploaded' | null>(null)
+  const [previewId, setPreviewId] = useState<string | null>(null)
+
+  const handleOpenPreview = (url: string, title: string, type: 'template' | 'userRef' | 'localRef' | 'uploaded', id: string | null = null) => {
+    setPreviewImageUrl(url)
+    setPreviewTitle(title)
+    setPreviewType(type)
+    setPreviewId(id)
+  }
+
+  const isPreviewSelected = 
+    previewType === 'template' ? (selectedTemplate === previewId) :
+    previewType === 'userRef' ? (selectedUserRefId === previewId) :
+    previewType === 'localRef' && previewImageUrl ? localRefImages.includes(previewImageUrl) :
+    previewType === 'uploaded' ? (uploadedRefUrl === previewImageUrl) :
+    false;
+
+  const handleSelectFromPreview = () => {
+    if (!previewImageUrl) return;
+    if (previewType === 'template') {
+      setSelectedTemplate(previewId);
+      setUploadedRefUrl(null);
+      setSelectedUserRefId(null);
+    } else if (previewType === 'userRef') {
+      setSelectedTemplate(null);
+      setUploadedRefUrl(null);
+      setSelectedUserRefId(previewId);
+    } else if (previewType === 'localRef') {
+      if (localRefImages.includes(previewImageUrl)) {
+        setLocalRefImages(prev => prev.filter(url => url !== previewImageUrl));
+      } else {
+        if (localRefImages.length >= 2) {
+          toast.error("You can select up to 2 reference images.");
+          return;
+        }
+        setLocalRefImages(prev => [...prev, previewImageUrl]);
+      }
+    }
+  };
   
   // NEW: Creation Mode Toggle
   const [creationMode, setCreationMode] = useState<'image' | 'video'>('image')
@@ -979,6 +1072,17 @@ export default function CreationPage() {
     else if (prop.image_url) propImages = [prop.image_url]
   }
 
+  // Detect if user wants to make edits to the last generated image in the chat window
+  const lastGeneratedImage = [...messages].reverse().find(m => m.role === 'ai' && m.mediaUrl && m.mediaType !== 'video')?.mediaUrl || null;
+  const isEditingLastImage = lastGeneratedImage !== null && chatAttachments.length === 0 && !userText.toLowerCase().includes('create') && !userText.toLowerCase().includes('generate');
+
+  let finalPropImages = [...propImages, ...chatAttachments];
+  if (isEditingLastImage && lastGeneratedImage) {
+    finalPropImages = [lastGeneratedImage];
+  }
+
+  const isEditMode = chatAttachments.length > 0 || isEditingLastImage;
+
   const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
   const activeReferenceUrl = uploadedRefUrl || templateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || null
 
@@ -987,17 +1091,18 @@ export default function CreationPage() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
         userInstructions: userText,
-        propertyDescription: prop?.description || "",
-        propertyTitle: prop?.title || "",
+        propertyDescription: isEditMode ? "" : (prop?.description || ""),
+        propertyTitle: isEditMode ? "" : (prop?.title || ""),
         contactNumber: contactInfo, // Corrected reference
         logoUrl: accountLogo,       // Corrected reference
-        propImages: [...propImages, ...chatAttachments],
+        propImages: finalPropImages,
         templateUrl: activeReferenceUrl, 
         aspectRatio: selectedRatio,
         model: selectedModel,
         creativeCategory: creativeCategory,
         isOrganic: creativeCategory === 'High Converting',
-        excludedImages: excludedImages
+        excludedImages: excludedImages,
+        isEdit: isEditMode
     })
   })
       
@@ -1093,6 +1198,9 @@ export default function CreationPage() {
       setCurrentStep('')
     }
   }
+
+  const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
+  const activeReferenceUrl = uploadedRefUrl || templateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || null
 
   return (
     <div className="flex flex-col h-[calc(100dvh-70px)] sm:h-screen bg-[#F8FAFC] relative">
@@ -1341,14 +1449,15 @@ export default function CreationPage() {
                     });
                 })()}
 
-                {/* 3. Locally Uploaded Product Reference Images */}
+                {/* 3. Locally Uploaded/Selected Product Reference Images */}
                 {localRefImages.map((url, i) => (
-                    <div key={i} className="relative w-16 h-16 rounded-[1.25rem] border border-slate-200 overflow-hidden flex-shrink-0 bg-white shadow-sm group">
-                        <img src={url} className="w-full h-full object-cover" alt="Custom Ref" />
+                    <div key={i} className="relative w-16 h-16 rounded-[1.25rem] border-2 border-purple-500 overflow-hidden flex-shrink-0 bg-white shadow-md group">
+                        <img src={url} className="w-full h-full object-cover" alt="Selected Ref" />
                         <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent flex items-end justify-center pb-1">
-                            <span className="text-white text-[8px] font-black uppercase tracking-wider text-center w-full truncate">Custom {i + 1}</span>
+                            <span className="text-white text-[8px] font-black uppercase tracking-wider text-center w-full truncate">Selected {i + 1}</span>
                         </div>
                         <button 
+                            type="button"
                             onClick={(e) => { e.stopPropagation(); setLocalRefImages(prev => prev.filter((_, idx) => idx !== i)); }}
                             className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-0.5 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
                         >
@@ -1359,6 +1468,7 @@ export default function CreationPage() {
 
                 {/* 4. Local Product Reference Upload Button */}
                 <button 
+                    type="button"
                     onClick={() => localRefFileInputRef.current?.click()}
                     disabled={isUploadingLocalRef || localRefImages.length >= 2}
                     className={`w-16 h-16 rounded-[1.25rem] border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all flex-shrink-0 ${localRefImages.length >= 2 ? 'border-slate-100 text-slate-300 cursor-not-allowed bg-slate-50' : 'border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/5'}`}
@@ -1370,41 +1480,22 @@ export default function CreationPage() {
                 </button>
                 <input type="file" ref={localRefFileInputRef} onChange={handleLocalRefUpload} className="hidden" accept="image/*" multiple />
 
-                {/* 5. Personal Reference Library Selection */}
-                {userReferences.map(ref => {
-                    const isSelected = localRefImages.includes(ref.url);
-                    return (
-                        <button 
-                           type="button"
-                           key={ref.id}
-                           onClick={() => { 
-                             if (isSelected) {
-                               setLocalRefImages(prev => prev.filter(url => url !== ref.url));
-                             } else {
-                               if (localRefImages.length >= 2) {
-                                 toast.error("You can select up to 2 reference images.");
-                                 return;
-                               }
-                               setLocalRefImages(prev => [...prev, ref.url]);
-                             }
-                           }}
-                           className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 relative overflow-hidden transition-all group ${isSelected ? 'border-blue-500 ring-2 ring-blue-100 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}
-                        >
-                           <img src={ref.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="personal ref" />
-                           <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-center pb-1">
-                               <span className="text-white text-[8px] font-bold truncate px-1 w-full text-center capitalize">{ref.category.replace('_', ' ')}</span>
-                           </div>
-                           {isSelected && (
-                             <div className="absolute top-1 right-1 bg-blue-500 text-white p-0.5 rounded-full shadow-sm">
-                               <Check size={8} strokeWidth={4} />
-                             </div>
-                           )}
-                        </button>
-                    );
-                })}
+                {/* 5. Library Gallery Trigger Button */}
+                <button
+                    type="button"
+                    onClick={() => {
+                        setGalleryTab('personal');
+                        setIsGalleryOpen(true);
+                    }}
+                    className="w-16 h-16 rounded-[1.25rem] border-2 border-dashed border-purple-300 text-purple-500 hover:border-purple-400 hover:bg-purple-50/30 flex flex-col items-center justify-center gap-1 transition-all flex-shrink-0"
+                >
+                    <ImageIcon size={16} />
+                    <span className="text-[8px] font-bold text-center px-1 leading-tight uppercase">Library</span>
+                </button>
             </div>
         ) : (
-            <div className="px-4 flex gap-2 w-full overflow-x-auto scrollbar-hide">
+            <div className="px-4 flex gap-2 w-full overflow-x-auto scrollbar-hide items-center">
+                 {/* Auto layout button */}
                  <button 
                     onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); setSelectedUserRefId(null); }}
                     className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate === null && uploadedRefUrl === null && selectedUserRefId === null ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
@@ -1413,13 +1504,27 @@ export default function CreationPage() {
                     <span className="text-[9px] font-bold uppercase tracking-wider">Auto</span>
                  </button>
      
+                 {/* Custom style upload button */}
                  <div className="relative flex-shrink-0">
                       <button 
-                         onClick={() => refFileInputRef.current?.click()}
-                         className={`w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${uploadedRefUrl ? 'border-blue-500 ring-2 ring-blue-100 overflow-hidden p-0' : 'border-dashed border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/30'}`}
+                         type="button"
+                         onClick={() => {
+                             if (uploadedRefUrl) {
+                                 handleOpenPreview(uploadedRefUrl, "Uploaded Reference Style", "uploaded");
+                             } else {
+                                 refFileInputRef.current?.click();
+                             }
+                         }}
+                         className={`w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all group relative overflow-hidden ${uploadedRefUrl ? 'border-blue-500 ring-2 ring-blue-100 p-0' : 'border-dashed border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/30'}`}
                       >
                          {uploadedRefUrl ? (
-                             <img src={uploadedRefUrl} className="w-full h-full object-cover" alt="ref" />
+                             <>
+                                 <img src={uploadedRefUrl} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="ref" />
+                                 <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-all duration-300 gap-0.5 z-10">
+                                     <Eye size={12} className="text-white drop-shadow-md" />
+                                     <span className="text-[7px] text-white/95 font-bold uppercase tracking-wider leading-none drop-shadow-sm">Preview</span>
+                                 </div>
+                             </>
                          ) : (
                              <>
                                  {isUploadingRef ? <Loader2 size={16} className="animate-spin text-blue-500" /> : <Upload size={16} />}
@@ -1478,48 +1583,47 @@ export default function CreationPage() {
                       )}
                  </div>
 
-                 {/* Map user's personal reference library creatives */}
-                 {userReferences.length === 0 && (
-                      <span className="text-[9px] font-bold text-slate-400 border border-dashed border-slate-200 px-3 rounded-2xl h-16 flex items-center justify-center bg-slate-50/50 flex-shrink-0">
-                          Library Empty (Manage in Profile)
-                      </span>
+                 {/* Library Gallery Trigger Button */}
+                 <button
+                    type="button"
+                    onClick={() => {
+                        setGalleryTab('all');
+                        setIsGalleryOpen(true);
+                    }}
+                    className={`w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate !== null || selectedUserRefId !== null ? 'border-purple-500 bg-purple-50 text-purple-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                 >
+                    <ImageIcon size={16} />
+                    <span className="text-[8px] font-bold text-center px-1 leading-tight uppercase">Library</span>
+                 </button>
+
+                 {/* Active Selected Style Card preview */}
+                 {activeReferenceUrl && (
+                     <div className="flex items-center gap-2 bg-purple-50/50 border border-purple-100 px-3 py-1.5 rounded-[1.25rem] flex-shrink-0 shadow-sm animate-in slide-in-from-left-2 duration-300">
+                         <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-purple-200 group">
+                             <img src={activeReferenceUrl} className="w-full h-full object-cover" alt="selected style" />
+                             <button
+                                 type="button"
+                                 onClick={() => handleOpenPreview(activeReferenceUrl, "Selected Reference Style", uploadedRefUrl ? "uploaded" : selectedTemplate ? "template" : "userRef", selectedTemplate || selectedUserRefId)}
+                                 className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300"
+                             >
+                                 <Eye size={12} className="text-white" />
+                             </button>
+                         </div>
+                         <div className="min-w-0">
+                             <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-wider">Selected Style</span>
+                             <h4 className="text-[9.5px] font-black text-slate-800 mt-0.5 truncate max-w-[100px] capitalize leading-none">
+                                 {selectedTemplate ? `Template: ${selectedTemplate.replace('_', ' ')}` : selectedUserRefId ? "Library Item" : "Custom Upload"}
+                             </h4>
+                         </div>
+                         <button 
+                             type="button"
+                             onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); setSelectedUserRefId(null); }}
+                             className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 rounded-full transition-all"
+                         >
+                             <X size={14} />
+                         </button>
+                     </div>
                  )}
-                 {userReferences.map(ref => (
-                      <button 
-                         key={ref.id}
-                         onClick={() => { 
-                           setSelectedTemplate(null); 
-                           setUploadedRefUrl(null); 
-                           setSelectedUserRefId(ref.id); 
-                         }}
-                         className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 relative overflow-hidden transition-all group ${selectedUserRefId === ref.id ? 'border-purple-500 ring-2 ring-purple-100 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}
-                      >
-                         <img src={ref.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="personal ref" />
-                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-center pb-1">
-                             <span className="text-white text-[8px] font-bold truncate px-1 w-full text-center capitalize">{ref.category.replace('_', ' ')}</span>
-                         </div>
-                         {selectedUserRefId === ref.id && (
-                           <div className="absolute top-1 right-1 bg-purple-500 text-white p-0.5 rounded-full shadow-sm">
-                             <Check size={8} strokeWidth={4} />
-                           </div>
-                         )}
-                      </button>
-                 ))}
-     
-                 {/* Map visible templates (Limit to 3 or 4 to fit on screen without scrolling if possible) */}
-                 {TEMPLATES.slice(0, 4).map(t => (
-                      <button 
-                         key={t.id}
-                         onClick={() => { setSelectedTemplate(t.id); setUploadedRefUrl(null); }}
-                         className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 relative overflow-hidden transition-all group ${selectedTemplate === t.id ? 'border-blue-500 ring-2 ring-blue-100 shadow-sm' : 'border-transparent opacity-80 hover:opacity-100'}`}
-                      >
-                         <img src={t.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="template" />
-                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-center pb-1">
-                             <span className="text-white text-[8px] font-bold truncate px-1 w-full text-center">{t.name}</span>
-                         </div>
-                         {selectedTemplate === t.id && <div className="absolute top-1 right-1 bg-blue-500 text-white p-0.5 rounded-full shadow-sm"><Check size={8} strokeWidth={4} /></div>}
-                      </button>
-                 ))}
             </div>
         )}
       </div>
@@ -1926,7 +2030,6 @@ export default function CreationPage() {
           const potentialInputImages = [
             ...currentPropImages,
             currentAccountLogo,
-            currentActiveReferenceUrl,
             ...chatAttachments
           ].filter((url): url is string => !!(url && typeof url === 'string' && url.startsWith('http') && !url.includes('placehold.co') && !url.toLowerCase().endsWith('.svg')));
 
@@ -2026,8 +2129,18 @@ export default function CreationPage() {
               onClick={() => chatFileInputRef.current?.click()}
               disabled={isThinking || isUploadingChat}
               className="p-3 text-slate-400 hover:text-blue-600 transition-colors rounded-full mb-0.5 ml-0.5"
+              title="Upload Photo"
             >
               {isUploadingChat ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
+            </button>
+            <button 
+              type="button"
+              onClick={handleOpenAssetModal}
+              disabled={isThinking || isUploadingChat}
+              className="p-3 text-slate-400 hover:text-blue-600 transition-colors rounded-full mb-0.5"
+              title="Select from created photo assets"
+            >
+              <ImageIcon size={20} />
             </button>
 
             <textarea 
@@ -2055,6 +2168,81 @@ export default function CreationPage() {
             </button>
         </form>
       </div>
+
+      {/* SELECT EXISTING ASSETS MODAL */}
+      <AnimatePresence>
+        {isAssetModalOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl flex flex-col h-[70vh] max-h-[600px] overflow-hidden border border-slate-100"
+            >
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white flex-shrink-0">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <ImageIcon size={20} className="text-blue-600" /> Select Created Asset
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                    Select a generated photo to edit with custom instructions
+                  </p>
+                </div>
+                <button 
+                  type="button"
+                  onClick={() => setIsAssetModalOpen(false)}
+                  className="bg-slate-50 hover:bg-slate-100 p-2 rounded-full text-slate-400 hover:text-slate-600 transition-all"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
+                {loadingAssets ? (
+                  <div className="flex flex-col items-center justify-center py-20">
+                    <Loader2 size={32} className="text-blue-600 animate-spin" />
+                    <span className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-4">Loading Assets...</span>
+                  </div>
+                ) : existingAssets.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <ImageIcon className="text-slate-300 w-12 h-12 mb-3" />
+                    <h4 className="text-sm font-bold text-slate-700">No Photo Assets Found</h4>
+                    <p className="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">Generate some creatives first to select and edit them from here.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {existingAssets.map((asset) => (
+                      <div 
+                        key={asset.id}
+                        onClick={() => {
+                          setChatAttachments(prev => Array.from(new Set([...prev, asset.url])));
+                          setIsAssetModalOpen(false);
+                          toast.success("Asset selected for editing! 📸");
+                        }}
+                        className="bg-white rounded-2xl overflow-hidden border border-slate-100 hover:border-blue-500 shadow-sm hover:shadow-md cursor-pointer transition-all group flex flex-col"
+                      >
+                        <div className="relative aspect-square overflow-hidden bg-slate-100">
+                          <img src={asset.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="asset" />
+                        </div>
+                        <div className="p-3 flex-1 flex flex-col justify-between">
+                          <span className="text-[9px] font-bold text-slate-400 capitalize truncate">
+                            {asset.caption || "Generated Photo"}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* CREATIVE FLOW MODAL */}
       <CreativeFlowModal 
@@ -2332,6 +2520,154 @@ export default function CreationPage() {
             </div>
         </div>
       )}
+
+      <ImagePreviewModal
+        isOpen={!!previewImageUrl}
+        onClose={() => setPreviewImageUrl(null)}
+        imageUrl={previewImageUrl || ''}
+        title={previewTitle}
+        onSelect={previewType !== 'uploaded' ? handleSelectFromPreview : undefined}
+        isSelected={isPreviewSelected}
+      />
+
+      {/* --- STYLE GALLERY MODAL --- */}
+      <AnimatePresence>
+        {isGalleryOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[150] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white w-full max-w-4xl rounded-[2rem] shadow-2xl flex flex-col h-[80vh] max-h-[700px] overflow-hidden border border-slate-100 animate-in zoom-in-95 duration-300"
+            >
+              {/* Modal Header */}
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white flex-shrink-0">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <ImageIcon size={20} className="text-blue-600" /> Reference Styles Library
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                    {creationMode === 'video' ? `Select up to 2 reference images (${localRefImages.length}/2 selected)` : 'Select a style layout for image generation'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {/* Upload inside Modal */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (creationMode === 'video') {
+                        localRefFileInputRef.current?.click();
+                      } else {
+                        refFileInputRef.current?.click();
+                      }
+                    }}
+                    className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                  >
+                    <Upload size={14} /> Upload New
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setIsGalleryOpen(false)}
+                    className="bg-slate-50 hover:bg-slate-100 p-2 rounded-full text-slate-400 hover:text-slate-600 transition-all"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Gallery Content Grid */}
+              <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
+                {/* If personal references are empty */}
+                {userReferences.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <ImageIcon className="text-slate-300 w-12 h-12 mb-3 animate-pulse" />
+                    <h4 className="text-sm font-bold text-slate-700">Your Reference Library is Empty</h4>
+                    <p className="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">Upload style reference images directly or save custom uploaded ones to build your personal library.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                    {/* Map personal library references */}
+                    {userReferences.map(ref => {
+                      const isSelected = creationMode === 'video' 
+                        ? localRefImages.includes(ref.url) 
+                        : (selectedUserRefId === ref.id);
+                      return (
+                        <div 
+                          key={ref.id}
+                          className={`bg-white rounded-2xl overflow-hidden border-2 transition-all group flex flex-col ${
+                            isSelected 
+                              ? 'border-purple-500 ring-2 ring-purple-100 shadow-md' 
+                              : 'border-slate-100 hover:border-slate-200 shadow-sm'
+                          }`}
+                        >
+                          <div className="relative aspect-square overflow-hidden bg-slate-100 group">
+                            <img src={ref.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="personal ref" />
+                            
+                            {/* Large Preview Overlay Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenPreview(ref.url, `Reference Style - ${ref.category.replace('_', ' ')}`, creationMode === 'video' ? 'localRef' : 'userRef', ref.id)}
+                              className="absolute top-2 right-2 bg-slate-900/85 backdrop-blur-md text-white px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-all flex items-center gap-1 z-10 hover:bg-slate-950 shadow-sm"
+                            >
+                              <Eye size={10} /> Preview
+                            </button>
+
+                            {isSelected && (
+                              <div className="absolute top-2 left-2 bg-purple-500 text-white p-1 rounded-full shadow-sm z-10">
+                                <Check size={12} strokeWidth={4} />
+                              </div>
+                            )}
+                          </div>
+                          <div className="p-3 flex-1 flex flex-col justify-between gap-2">
+                            <div className="min-w-0">
+                              <span className="bg-purple-50 text-purple-600 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider">Library Item</span>
+                              <h4 className="text-xs font-bold text-slate-800 mt-1 capitalize truncate leading-tight">{ref.category.replace('_', ' ')}</h4>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (creationMode === 'video') {
+                                  if (isSelected) {
+                                    setLocalRefImages(prev => prev.filter(url => url !== ref.url));
+                                  } else {
+                                    if (localRefImages.length >= 2) {
+                                      toast.error("You can select up to 2 reference images.");
+                                      return;
+                                    }
+                                    setLocalRefImages(prev => [...prev, ref.url]);
+                                  }
+                                } else {
+                                  setSelectedTemplate(null);
+                                  setUploadedRefUrl(null);
+                                  setSelectedUserRefId(ref.id);
+                                  setIsGalleryOpen(false);
+                                  toast.success("Applied reference style! 💎");
+                                }
+                              }}
+                              className={`w-full py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 ${
+                                isSelected 
+                                  ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' 
+                                  : 'bg-slate-900 text-white hover:bg-slate-800'
+                              }`}
+                            >
+                              {isSelected ? 'Deselect' : 'Select'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   )

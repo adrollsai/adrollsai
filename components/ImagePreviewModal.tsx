@@ -10,9 +10,11 @@ interface ImagePreviewModalProps {
     imageUrl: string
     title?: string
     type?: 'image' | 'video'
+    onSelect?: () => void
+    isSelected?: boolean
 }
 
-export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, type }: ImagePreviewModalProps) {
+export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, type, onSelect, isSelected }: ImagePreviewModalProps) {
     const [scale, setScale] = useState(1)
     const [position, setPosition] = useState({ x: 0, y: 0 })
     const [isDragging, setIsDragging] = useState(false)
@@ -170,6 +172,8 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
                             )}
                         </motion.div>
                     </div>
+
+
 
                     {/* Footer Tips */}
                     <div className="absolute bottom-6 left-1/2 -translate-x-1/2 hidden sm:block">

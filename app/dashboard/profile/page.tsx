@@ -1143,6 +1143,44 @@ export default function ProfilePage() {
     }
   }
 
+  const handleRemoveAsset = async (field: 'logoUrl' | 'avatarUrl' | 'avatarAudioUrl' | 'characterUrl' | 'characterAudioUrl') => {
+    try {
+      const effectiveUserId = targetUserId || userId;
+      if (!effectiveUserId) return;
+
+      const dbFields = {
+        logoUrl: 'logo_url',
+        avatarUrl: 'avatar_url',
+        avatarAudioUrl: 'avatar_audio_url',
+        characterUrl: 'character_url',
+        characterAudioUrl: 'character_audio_url'
+      };
+
+      const dbFieldName = dbFields[field];
+
+      setFormData(prev => ({ ...prev, [field]: '' }));
+
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId: effectiveUserId,
+          updates: {
+            [dbFieldName]: null,
+          }
+        })
+      });
+      const resData = await res.json();
+      if (resData.error) throw new Error(resData.error);
+      
+      updateLocalCache({ [dbFieldName]: null });
+      toast.success("Asset removed successfully!");
+    } catch (error: any) {
+      console.error("Remove asset error:", error);
+      alert('Error removing asset: ' + (error.message || JSON.stringify(error)));
+    }
+  }
+
   const handleSave = async () => {
     setIsSaving(true)
     const effectiveUserId = targetUserId || userId;
@@ -1249,19 +1287,34 @@ export default function ProfilePage() {
                 <div className="flex flex-wrap gap-4 items-center justify-start">
                   {/* Logo Upload */}
                   <div
-                    onClick={() => !uploadingLogo && fileInputRef.current?.click()}
+                    onClick={() => !uploadingLogo && !formData.logoUrl && fileInputRef.current?.click()}
                     className="w-24 h-24 bg-slate-50/80 rounded-full flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 transition-all shadow-sm"
                     title="Upload Brand Logo"
                   >
                     {uploadingLogo ? (
                       <Loader2 className="animate-spin text-slate-400" size={24} />
                     ) : formData.logoUrl ? (
-                      <>
+                      <div className="relative w-full h-full group">
                         <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2 bg-black/40">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                            className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-blue-600 hover:scale-105 transition-all shadow-md"
+                            title="Change Logo"
+                          >
+                            <Upload size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleRemoveAsset('logoUrl'); }}
+                            className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
+                            title="Remove Logo"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
-                      </>
+                      </div>
                     ) : (
                       <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-blue-500 transition-colors">
                         <Upload size={20} />
@@ -1273,7 +1326,7 @@ export default function ProfilePage() {
 
                   {/* Avatar Photo Upload */}
                   <div
-                    onClick={() => !uploadingAvatar && avatarInputRef.current?.click()}
+                    onClick={() => !uploadingAvatar && !formData.avatarUrl && avatarInputRef.current?.click()}
                     className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 transition-all shadow-sm"
                     title="Upload Static Avatar Photo"
                   >
@@ -1283,12 +1336,27 @@ export default function ProfilePage() {
                         <span className="text-[8px] font-black text-slate-400">Uploading...</span>
                       </div>
                     ) : formData.avatarUrl ? (
-                      <>
+                      <div className="relative w-full h-full group">
                         <img src={formData.avatarUrl} alt="Avatar" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2 bg-black/40">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); avatarInputRef.current?.click(); }}
+                            className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-indigo-600 hover:scale-105 transition-all shadow-md"
+                            title="Change Avatar"
+                          >
+                            <Upload size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleRemoveAsset('avatarUrl'); }}
+                            className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
+                            title="Remove Avatar"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
-                      </>
+                      </div>
                     ) : (
                       <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-indigo-500 transition-colors">
                         <User size={20} />
@@ -1297,9 +1365,10 @@ export default function ProfilePage() {
                     )}
                     <input type="file" ref={avatarInputRef} onChange={handleAvatarUpload} accept="image/*" className="hidden" />
                   </div>
+
                   {/* Avatar Voice Audio Upload */}
                   <div
-                    onClick={() => !uploadingAvatarAudio && avatarAudioInputRef.current?.click()}
+                    onClick={() => !uploadingAvatarAudio && !formData.avatarAudioUrl && avatarAudioInputRef.current?.click()}
                     className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 transition-all shadow-sm"
                     title="Upload Avatar Voice Sample (Upto 15s MP3/WAV)"
                   >
@@ -1309,14 +1378,29 @@ export default function ProfilePage() {
                         <span className="text-[8px] font-black text-slate-400">Uploading...</span>
                       </div>
                     ) : formData.avatarAudioUrl ? (
-                      <div className="flex flex-col items-center gap-1.5 p-3 text-center text-indigo-600 bg-indigo-50/30 w-full h-full justify-center relative">
+                      <div className="flex flex-col items-center gap-1.5 p-3 text-center text-indigo-600 bg-indigo-50/30 w-full h-full justify-center relative group">
                         <Mic size={24} className="animate-bounce" />
                         <span className="text-[8px] font-black uppercase tracking-wider leading-none">Voice (Avatar)</span>
                         <span className="text-[7px] text-slate-400 truncate max-w-full">
                           {formData.avatarAudioUrl.split('/').pop()?.slice(-15)}
                         </span>
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-indigo-50/80 transition-opacity">
-                          <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 transition-opacity gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); avatarAudioInputRef.current?.click(); }}
+                            className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-indigo-600 hover:scale-105 transition-all shadow-md"
+                            title="Change Voice"
+                          >
+                            <Upload size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleRemoveAsset('avatarAudioUrl'); }}
+                            className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
+                            title="Remove Voice"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </div>
                     ) : (
@@ -1330,7 +1414,7 @@ export default function ProfilePage() {
 
                   {/* Character Upload */}
                   <div
-                    onClick={() => !uploadingCharacter && characterInputRef.current?.click()}
+                    onClick={() => !uploadingCharacter && !formData.characterUrl && characterInputRef.current?.click()}
                     className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-purple-500 hover:bg-purple-50 transition-all shadow-sm"
                     title="Upload Custom Video Character Reference"
                   >
@@ -1340,16 +1424,31 @@ export default function ProfilePage() {
                         <span className="text-[8px] font-black text-slate-400">Uploading...</span>
                       </div>
                     ) : formData.characterUrl ? (
-                      <>
+                      <div className="relative w-full h-full group">
                         {(/\.(mp4|webm)/i.test(formData.characterUrl) || formData.characterUrl.includes('video')) ? (
                           <video src={formData.characterUrl} muted loop playsInline autoPlay className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
                         ) : (
                           <img src={formData.characterUrl} alt="Character" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
                         )}
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2 bg-black/40">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); characterInputRef.current?.click(); }}
+                            className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-purple-600 hover:scale-105 transition-all shadow-md"
+                            title="Change Video"
+                          >
+                            <Upload size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleRemoveAsset('characterUrl'); }}
+                            className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
+                            title="Remove Video"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
-                      </>
+                      </div>
                     ) : (
                       <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-purple-500 transition-colors">
                         <Video size={20} />
@@ -1361,7 +1460,7 @@ export default function ProfilePage() {
  
                   {/* Voice Audio Upload */}
                   <div
-                    onClick={() => !uploadingAudio && audioInputRef.current?.click()}
+                    onClick={() => !uploadingAudio && !formData.characterAudioUrl && audioInputRef.current?.click()}
                     className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 transition-all shadow-sm"
                     title="Upload Video Voice Sample (Upto 15s MP3/WAV)"
                   >
@@ -1371,14 +1470,29 @@ export default function ProfilePage() {
                         <span className="text-[8px] font-black text-slate-400">Uploading...</span>
                       </div>
                     ) : formData.characterAudioUrl ? (
-                      <div className="flex flex-col items-center gap-1.5 p-3 text-center text-emerald-600 bg-emerald-50/30 w-full h-full justify-center relative">
+                      <div className="flex flex-col items-center gap-1.5 p-3 text-center text-emerald-600 bg-emerald-50/30 w-full h-full justify-center relative group">
                         <Mic size={24} className="animate-bounce" />
                         <span className="text-[8px] font-black uppercase tracking-wider leading-none">Voice (Video)</span>
                         <span className="text-[7px] text-slate-400 truncate max-w-full">
                           {formData.characterAudioUrl.split('/').pop()?.slice(-15)}
                         </span>
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-emerald-50/80 transition-opacity">
-                          <Upload size={20} className="text-slate-800 drop-shadow-md" />
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 transition-opacity gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); audioInputRef.current?.click(); }}
+                            className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-emerald-600 hover:scale-105 transition-all shadow-md"
+                            title="Change Voice"
+                          >
+                            <Upload size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleRemoveAsset('characterAudioUrl'); }}
+                            className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
+                            title="Remove Voice"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </div>
                     ) : (
