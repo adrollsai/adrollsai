@@ -253,14 +253,14 @@ AVOID
         // 6. Submit 1 Video Task to Kie.ai (duration 15s, aspect ratio 9:16)
         console.log("[Onboarding API] Submitting video task to Kie.ai...");
         const payload = {
-            model: "bytedance/seedance-2-fast",
+            model: "bytedance/seedance-2-mini",
             callBackUrl: `${baseUrl}/api/video/callback`,
             input: {
                 prompt: videoPrompt,
                 aspect_ratio: "9:16",
                 duration: 15,
                 generate_audio: true,
-                resolution: "480p",
+                resolution: "720p",
                 nsfw_checker: true,
                 web_search: false
             }

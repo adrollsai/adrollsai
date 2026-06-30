@@ -203,14 +203,14 @@ export async function POST(request: Request) {
                 }
 
                 const retryPayload: any = {
-                    model: "bytedance/seedance-2-fast",
+                    model: "bytedance/seedance-2-mini",
                     callBackUrl: callbackUrl,
                     input: {
                         prompt: currentPrompt,
                         aspect_ratio: "9:16",
                         duration: 15,
                         generate_audio: true,
-                        resolution: "480p",
+                        resolution: "720p",
                         nsfw_checker: true,
                         web_search: false
                     }

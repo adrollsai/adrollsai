@@ -624,67 +624,55 @@ export async function POST(request: Request) {
                     : `Use reference image ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`;
 
                 const synthesisPrompt = `You are a professional Video Director and Prompt Engineer for Bytedance/Kie.ai Seedance 2.0.
-Your task is to translate a specific script scene into a highly engaging, step-by-step chronological generative video prompt, formatted exactly like the reference template.
+Your task is to write a simple, high-converting video generation prompt for a 15-second UGC scene clip.
 
 CREATOR CHARACTER:
 - Description: "${characterDescription}"
-- Reference Video Available: ${isCharacterVideo ? 'Yes' : 'No'}
+- Gender: "${presenterType === 'video' ? 'man/woman' : 'person'}"
+- Reference Video/Image: ${isCharacterVideo ? 'Reference video supplied' : 'Reference image supplied'}
 
 SCENE DETAILS:
 - Dialogue: "${scene.dialogue}"
-- Visuals/Action: "${scene.visuals || ''}"
+- Visuals/Action Description from Script: "${scene.visuals || ''}"
 - Business: "${businessName}"
-- Product: "${productInfo}"
-- Custom instructions: "${customInstructions || 'None'}"
+- Product Info: "${productInfo}"
+- Current Scene Index: ${i + 1} (out of ${scenes.length} scenes)
 
-REFERENCE IMAGES & DETAILS:
+REFERENCE IMAGES MAPPING:
 ${descriptionsText}
 
-CRITICAL RULES:
-1. SINGLE DIALOGUE RULE: The generated prompt MUST only contain the spoken dialogue of this specific scene: "${scene.dialogue}". Do NOT include, repeat, or reference the dialogue of any other scenes from the script or custom instructions.
-2. EXACTLY ONE DIALOGUE BLOCK: There must be EXACTLY ONE dialogue section (exactly one 'She says' or 'He says' block) in the entire generated prompt. Do not output multiple dialogue sections, multiple spoken parts, or repeat the dialogue block.
-3. 15-SECOND LIMIT: The prompt must only describe a single 15-second sequence of actions and visuals. Do not write a long multi-scene storyboard. Keep transitions simple.
+PROMPT STRUCTURE & INSTRUCTIONS:
+Your output MUST follow this exact structure and formatting:
 
-YOUR INSTRUCTIONS:
-1. The output prompt MUST be written as a chronological, line-by-line sequence of actions, camera directions, and dialogue, separated by empty lines.
-2. Structure and Formatting:
-   - Start by describing the opening setting, scene, and background.
-   - Presenter Environment & Setting: The presenter MUST be placed inside the target setting described. You MUST explicitly instruct the generator to ignore the background of the presenter's reference avatar image/photo (Image_1) and completely replace it with the described setting.
-   - Describe the character's initial stance, action, and expressions.
-   - For the dialogue delivery, write it on new lines exactly as:
-     She says:
-     "[dialogue]"
-     (Use 'She says' or 'He says' based on the character's gender from the description. Do NOT separate out or write "Dialogue: ...").
-   - Dialogue Language & Script: In the final prompt, the spoken dialogue (the text inside the double quotes after 'She says:' or 'He says:') MUST preserve the exact language and script formatting of the input scene dialogue. For Hinglish/Hindi, any words that do not exist in the English dictionary (Hindi words like 'apni', 'aur', 'bhi', 'ke liye', 'apna', 'dhoondh rahe ho', etc., and locations like "चंडीगढ़" or "मोहाली", and units like "कनाल" or "बी-एच-के") MUST be written in Hindi (using Devanagari script). Standard English words that exist in the English dictionary (like "dream home", "luxury", "family", "BHK", "comfort", "status", "marble", "flooring") MUST remain in standard English letters using Roman characters. Absolutely DO NOT transliterate the Devanagari script back to Roman characters in the dialogue part of the prompt.
-   - Descriptive Text: All descriptive text (visual details, camera instructions, style attributes) in the final prompt MUST be written in English (using standard Roman characters). Do NOT use Devanagari script in the visual descriptions or camera instructions.
-   - Referencing listing images: You MUST reference each image in the camera/visual direction parts using BOTH its visual description and its exact label 'Image_X' as defined in the mapping list (e.g. 'The camera pans to reveal the stunning curved spiral staircase with premium gold-finished railings (matching Image_3)').
-   - Facial Mutation Guardrails & Framing: Whenever the presenter is shown on camera, you MUST specify a medium closeup shot of the presenter speaking from chest up (e.g. 'A medium closeup shot of the presenter speaking from chest up', 'A chest-up shot of the speaker smiling warmly') to keep their face consistent and avoid mutation. Do NOT zoom in too tight or show only the face. Keep a chest-up distance to allow natural body language and hand gestures. Medium or wide shots showing the presenter's entire body from far away are strictly prohibited.
-   - If you want to show something large (like a building facade, room interior, or landscape), it MUST be a B-roll transition WITHOUT the presenter, and the shot MUST be specified as a super far away wide scenic shot so that no human face is visible or noticed.
-   - At the end of the prompt, list the exact high-quality camera and video style attributes as separate lines.
+Use the [man/woman] from the provided reference video (or reference image). Preserve [his/her] exact facial features, hairstyle, body language, clothing consistency, expressions, and natural mannerisms throughout the video.
 
-3. Output the prompt following this EXACT format (do NOT include markdown code blocks, backticks, or extra conversational text, output only the single unified prompt block):
+Clone the voice from the provided reference audio. The lip sync must be perfectly synchronized with the dialogue.
 
-[Describe the setting, scene opening, and presenter character medium closeup chest-up action, explicitly replacing the reference image background]
+[He/She] is wearing [clothing/outfit altered and customized based on the project, e.g. smart business casual blazer, elegant top, etc.] and is standing/sitting in [location description customized based on the project, e.g. a beautiful modern office, a bright luxury penthouse lounge, a cozy warm living room]. [He/She] speaks directly to the camera with confident eye contact. The delivery is natural, conversational, expressive, and professional, emphasizing important words naturally while maintaining realistic facial expressions and gestures.
 
-[Describe camera movement direction]
+[Dialogue section: Define the narration segments with exact timestamps summing to 15 seconds. If this is scene 1, start with Hook. If this is the last scene, end with CTA. Write the Hinglish Roman script dialogue in double quotes under each segment]
+For example:
+${i === 0 ? `Hook (0-3 sec):
+"[Hook dialogue]"
 
-She/He says:
-"[Spoken dialogue preserving the input's mixed Devanagari-English script]"
+Body (3-15 sec):
+"[Body dialogue]"` : (i === scenes.length - 1 ? `Body (0-11 sec):
+"[Body dialogue]"
 
-[Describe transitions and listing images referencing by label like Image_X, e.g. "Transition to a wide scenic shot showing the property facade (matching Image_2) from super far away so that no human face is visible or mutated." or "None" if no reference images].
+CTA (11-15 sec):
+"[CTA dialogue]"` : `Body (0-15 sec):
+"[Body dialogue]"`)}
 
-Professional real estate home tour.
-Photorealistic.
-Ultra-realistic human motion.
-Natural body language.
-Perfect lip synchronization.
-Luxury property marketing video.
-Smooth steadycam movement.
-Cinematic architectural videography.
-Premium lighting.
-No AI artifacts.
-High-end commercial production quality.
-15-second continuous shot.`;
+Important Instructions:
+- Generate only the reference character speaking directly to the camera as a continuous talking head, cutting to b-rolls when appropriate.
+- Cut to B-roll scenes showing [describe property/product details based on the project features and reference images, referencing reference images like Image_X if any] during the Body segment while the presenter's voice narration continues in the background, then cut back to the presenter speaking directly to the camera.
+- No property visuals containing garbled text.
+- No maps, no graphics, no text overlays, no subtitles.
+- Keep the entire video as a single locked-off shot when the presenter is on screen.
+- Maintain realistic lighting and cinematic quality throughout.
+- Perfect lip sync with the cloned voice when the presenter is on camera.
+
+Output ONLY the final prompt text. Do NOT wrap it in markdown code blocks or backticks, just print the raw text.`;
 
                 let finalPrompt = "";
                 try {
@@ -798,14 +786,14 @@ High-end commercial production quality.
         
         const launchPromises = prompts.map(async (promptText, index) => {
             const payload: any = {
-                model: "bytedance/seedance-2-fast",
+                model: "bytedance/seedance-2-mini",
                 callBackUrl: callbackUrl,
                 input: {
                     prompt: promptText,
                     aspect_ratio: "9:16",
                     duration: 15,
                     generate_audio: true,
-                    resolution: "480p",
+                    resolution: "720p",
                     nsfw_checker: true,
                     web_search: false
                 }

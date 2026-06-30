@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
   Search, Phone, MessageCircle, RefreshCw, Upload, 
@@ -42,6 +42,7 @@ export default function CRMPage() {
 
   // --- CRM STATE (LOCAL CACHE) ---
   const [leads, setLeads] = useState<any[]>([])
+  const [campaigns, setCampaigns] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [enableDistribution, setEnableDistribution] = useState(false)
@@ -224,6 +225,16 @@ export default function CRMPage() {
           const merged = force ? data : mergeCacheData<any>(cached, data);
           setLeads(merged);
           setLocalCache(cacheKey, merged);
+      }
+
+      try {
+          const res = await fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+          const campaignData = await res.json()
+          if (campaignData.campaigns) {
+              setCampaigns(campaignData.campaigns)
+          }
+      } catch (err) {
+          console.error("Error fetching campaigns in CRM:", err)
       }
     } catch (e) {
       console.error(e)
@@ -532,7 +543,14 @@ export default function CRMPage() {
             });
         }
 
-        const leadsToAssign = leads.filter(l => !l.assigned_to && (l.ad_name === batchCampaign || l.campaign_name === batchCampaign))
+        const leadsToAssign = leads.filter(l => {
+            if (l.assigned_to) return false;
+            if (l.campaign_id) {
+                const camp = campaigns.find(c => c.id === l.campaign_id);
+                if (camp && camp.name.trim() === batchCampaign.trim()) return true;
+            }
+            return l.ad_name === batchCampaign || l.campaign_name === batchCampaign;
+        })
         if (leadsToAssign.length > 0) {
             let idx = 0;
             const notifiedAgents = new Set();
@@ -627,13 +645,32 @@ END:VCARD\n`
     window.URL.revokeObjectURL(url)
   }
 
+  const getLeadCampaignName = useCallback((lead: any) => {
+    if (lead.campaign_id) {
+      const camp = campaigns.find(c => c.id === lead.campaign_id);
+      if (camp) return camp.name;
+    }
+    return lead.ad_name || lead.campaign_name || '';
+  }, [campaigns])
+
   // --- DYNAMIC FILTER EXTRACTION ---
+  // Hybrid: use campaigns DB table names + lead ad_name values as fallback
   const uniqueCampaigns = useMemo(() => {
-    const campaigns = leads
-      .map(l => l.ad_name || l.campaign_name)
+    // 1. Campaign names from the campaigns DB table
+    const dbNames = campaigns.map(c => c.name).filter(Boolean);
+    // 2. Ad names extracted from leads (fallback for users without DB campaigns)
+    const leadNames = leads
+      .map(l => {
+        // If this lead has a campaign_id that matches a DB campaign, skip it (already covered)
+        if (l.campaign_id) {
+          const camp = campaigns.find(c => c.id === l.campaign_id);
+          if (camp) return null; // already in dbNames
+        }
+        return l.ad_name || l.campaign_name;
+      })
       .filter(c => c && c !== 'null' && c !== 'undefined' && typeof c === 'string')
-    return [...new Set(campaigns)] as string[]
-  }, [leads])
+    return [...new Set([...dbNames, ...leadNames])] as string[]
+  }, [campaigns, leads])
 
   const uniqueForms = useMemo(() => {
     const formNames = leads
@@ -650,16 +687,21 @@ END:VCARD\n`
                           l.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           l.phone?.includes(searchQuery) || 
                           l.email?.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchCampaign = selectedCampaign === '' || 
-                            l.ad_name?.trim() === selectedCampaign.trim() || 
-                            l.campaign_name?.trim() === selectedCampaign.trim()
+      const matchCampaign = selectedCampaign === '' || (() => {
+        if (l.campaign_id) {
+          const camp = campaigns.find(c => c.id === l.campaign_id);
+          if (camp && camp.name.trim() === selectedCampaign.trim()) return true;
+        }
+        return l.ad_name?.trim() === selectedCampaign.trim() || 
+               l.campaign_name?.trim() === selectedCampaign.trim();
+      })()
       const matchForm = selectedForm === '' || 
                         l.form_name?.trim() === selectedForm.trim() || 
                         l.source?.trim() === selectedForm.trim()
       
       return matchSearch && matchCampaign && matchForm
     })
-  }, [leads, searchQuery, selectedCampaign, selectedForm])
+  }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm])
 
   // 2. Final filtered list including pipeline stage matching and sorted by newest first
   const filteredLeads = useMemo(() => {
@@ -902,7 +944,7 @@ END:VCARD\n`
 
                             <div className="flex flex-col gap-1">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Source Detail</span>
-                                <span className="text-xs font-bold text-slate-700 truncate">{lead.form_name || lead.campaign_name || lead.ad_name || '--'}</span>
+                                <span className="text-xs font-bold text-slate-700 truncate">{getLeadCampaignName(lead) || lead.form_name || lead.ad_name || '--'}</span>
                             </div>
 
                             <div className="flex flex-col gap-1">

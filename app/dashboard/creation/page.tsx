@@ -902,7 +902,7 @@ export default function CreationPage() {
   const handleApproveVideo = async (script: any, refImages: string[], imageDescriptions?: string[], prompts?: string[]) => {
     if (isThinking) return
     setIsThinking(true)
-    setCurrentStep('Starting Bytedance Seedance 2.0 Fast video task...')
+    setCurrentStep('Starting Bytedance Seedance 2.0 Mini video task...')
 
     try {
         const urlParams = new URLSearchParams(window.location.search)
@@ -928,7 +928,7 @@ export default function CreationPage() {
 
         const totalDuration = (script.scenes?.length || 1) * 15;
         toast.success("Video Production Started! 🎬", {
-            description: `Your ${totalDuration}s Bytedance Seedance 2.0 Fast video is rendering.`
+            description: `Your ${totalDuration}s Bytedance Seedance 2.0 Mini video is rendering.`
         });
 
         const aiMsg: Message = {
