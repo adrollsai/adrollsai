@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
 type Property = { id: string; title: string; price: string; image_url: string; description?: string }
 type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string; status?: string }
@@ -440,12 +441,8 @@ export default function AdsPage() {
           checkAccountStatus(selectedAdAccountId, adForm.pageId)
       }
   }, [selectedAdAccountId, adForm.pageId])
-
   const fetchAdsData = async (force = false) => {
     try {
-      if (!force && campaigns.length === 0) setLoading(true)
-      if (force) setIsRefreshing(true)
-
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
 
@@ -518,6 +515,44 @@ export default function AdsPage() {
       }
       setTargetUserId(targetUserId)
 
+      // Setup caching keys
+      const campaignCacheKey = `ads_campaigns_cache_${targetUserId}`;
+      const propCacheKey = `properties_cache_${targetUserId}`;
+      const leadsCacheKey = `ads_leads_cache_${targetUserId}`;
+      const pagesCacheKey = `landing_pages_cache_${targetUserId}`;
+      const formsCacheKey = `qualification_forms_cache_${targetUserId}`;
+      const assetsCacheKey = `assets_cache_${targetUserId}`;
+      const metaFormsCacheKey = `meta_forms_cache_${targetUserId}`;
+
+      const cachedCampaigns = force ? [] : getLocalCache<Campaign>(campaignCacheKey);
+      const cachedProps = force ? [] : getLocalCache<Property>(propCacheKey);
+      const cachedLeads = force ? [] : getLocalCache<any>(leadsCacheKey);
+      const cachedPages = force ? [] : getLocalCache<any>(pagesCacheKey);
+      const cachedForms = force ? [] : getLocalCache<any>(formsCacheKey);
+      const cachedAssets = force ? [] : getLocalCache<Asset>(assetsCacheKey);
+      const cachedMetaForms = force ? [] : getLocalCache<any>(metaFormsCacheKey);
+
+      if (cachedCampaigns.length > 0 && campaigns.length === 0) {
+          setCampaigns(cachedCampaigns);
+          setProperties(cachedProps);
+          setAssets(cachedAssets);
+          setLandingPages(cachedPages);
+          setForms(cachedForms);
+          setMetaLeadForms(cachedMetaForms);
+
+           const leadCounts: Record<string, number> = {};
+           cachedLeads.forEach((l: any) => {
+               if (l.campaign_id) leadCounts[l.campaign_id] = (leadCounts[l.campaign_id] || 0) + 1;
+           });
+           setCampaignLeadCounts(leadCounts);
+
+          setLoading(false);
+      } else if (campaigns.length === 0 && !force) {
+          setLoading(true);
+      }
+
+      if (force) setIsRefreshing(true);
+
       // Extract unique connected WhatsApp/phone numbers
       const numbersSet = new Set<string>();
       if (targetUserId !== user.id) {
@@ -534,24 +569,41 @@ export default function AdsPage() {
         setSelectedWhatsAppNumber(numbers[0]);
       }
 
-      let newCampaigns: Campaign[] = []
+      let newCampaigns: Campaign[] = cachedCampaigns;
       if (targetProfile?.ad_account_id) {
           if (force) checkAccountStatus(targetProfile.ad_account_id, targetProfile.selected_page_id)
           try {
               const res = await fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
               const data = await res.json()
-              if (data.campaigns) newCampaigns = data.campaigns
+              if (data.campaigns) {
+                  newCampaigns = data.campaigns;
+                  setLocalCache(campaignCacheKey, newCampaigns);
+              }
           } catch (e: any) { 
               console.error("Failed to load campaigns", e) 
           }
       }
 
+      const maxPropTime = getMaxCreatedAt(cachedProps as any[]);
+      const maxPageTime = getMaxCreatedAt(cachedPages);
+      const maxFormTime = getMaxCreatedAt(cachedForms);
+      const maxAssetTime = getMaxCreatedAt(cachedAssets as any[]);
+
+      let propQuery = supabase.from('properties').select('id, title, price, image_url, description').eq('user_id', targetUserId);
+      if (maxPropTime && !force) propQuery = propQuery.gt('created_at', maxPropTime);
+
+      let pageQuery = supabase.from('landing_pages').select('*').eq('user_id', targetUserId);
+      if (maxPageTime && !force) pageQuery = pageQuery.gt('created_at', maxPageTime);
+
+      let formQuery = supabase.from('qualification_forms').select('*').eq('user_id', targetUserId);
+      if (maxFormTime && !force) formQuery = formQuery.gt('created_at', maxFormTime);
+
       const [propsRes, leadsRes, pagesRes, formsRes, apiAssetsData, metaFormsData] = await Promise.all([
-          supabase.from('properties').select('id, title, price, image_url, description').eq('user_id', targetUserId).order('created_at', { ascending: false }),
+          propQuery.order('created_at', { ascending: false }),
           supabase.from('leads').select('campaign_id').eq('user_id', targetUserId),
-          supabase.from('landing_pages').select('*').eq('user_id', targetUserId).order('created_at', { ascending: false }),
-          supabase.from('qualification_forms').select('*').eq('user_id', targetUserId).order('created_at', { ascending: false }),
-          fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}`).then(r => r.json()).catch(e => {
+          pageQuery.order('created_at', { ascending: false }),
+          formQuery.order('created_at', { ascending: false }),
+          fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}${maxAssetTime && !force ? `&since=${maxAssetTime}` : ''}`).then(r => r.json()).catch(e => {
               console.error("Failed to load assets from API", e);
               return [];
           }),
@@ -561,8 +613,17 @@ export default function AdsPage() {
           })
       ])
 
-      const newProps = propsRes.data || []
-      const newAssets = (Array.isArray(apiAssetsData) ? apiAssetsData : []) as Asset[]
+      const freshProps = propsRes.data || []
+      const mergedProps = force ? freshProps : mergeCacheData<any>(cachedProps, freshProps);
+
+      const freshPages = pagesRes.data || []
+      const mergedPages = force ? freshPages : mergeCacheData<any>(cachedPages, freshPages);
+
+      const freshForms = formsRes.data || []
+      const mergedForms = force ? freshForms : mergeCacheData<any>(cachedForms, freshForms);
+
+      const freshAssets = (Array.isArray(apiAssetsData) ? apiAssetsData : []) as Asset[]
+      const mergedAssets = force ? freshAssets : mergeCacheData<any>(cachedAssets, freshAssets);
       
       const leads = leadsRes.data || [];
       const leadCounts: Record<string, number> = {};
@@ -571,12 +632,21 @@ export default function AdsPage() {
       });
       setCampaignLeadCounts(leadCounts);
 
+      const freshMetaForms = metaFormsData?.forms || [];
+
       setCampaigns(newCampaigns)
-      setProperties(newProps)
-      setAssets(newAssets)
-      setLandingPages(pagesRes.data || [])
-      setForms(formsRes.data || [])
-      setMetaLeadForms(metaFormsData?.forms || [])
+      setProperties(mergedProps)
+      setAssets(mergedAssets)
+      setLandingPages(mergedPages)
+      setForms(mergedForms)
+      setMetaLeadForms(freshMetaForms)
+
+      setLocalCache(propCacheKey, mergedProps);
+      setLocalCache(leadsCacheKey, leads);
+      setLocalCache(pagesCacheKey, mergedPages);
+      setLocalCache(formsCacheKey, mergedForms);
+      setLocalCache(assetsCacheKey, mergedAssets);
+      setLocalCache(metaFormsCacheKey, freshMetaForms);
 
       // Fetch pixels if targetProfile has ad_account_id
       if (targetProfile?.ad_account_id) {
@@ -602,11 +672,11 @@ export default function AdsPage() {
       }
 
      } catch (error: any) {
-       console.error("Fetch Error:", error)
-    } finally {
-      setLoading(false)
-      setIsRefreshing(false)
-    }
+        console.error("Fetch Error:", error)
+     } finally {
+       setLoading(false)
+       setIsRefreshing(false)
+     }
   }
 
   useEffect(() => { 
@@ -1954,7 +2024,7 @@ export default function AdsPage() {
                                                 });
                                             }} className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${isSelected ? 'border-blue-500 shadow-md ring-2 ring-blue-500/20' : 'border-slate-100 hover:border-slate-200'}`}>
                                                 {a.type === 'video' ? (
-                                                    <video src={`${fixR2Url(a.url)}#t=0.1`} className="w-full h-full object-cover" muted playsInline />
+                                                    <video src={`${fixR2Url(a.url)}#t=0.1`} preload="metadata" className="w-full h-full object-cover" muted playsInline />
                                                 ) : (
                                                     <img src={fixR2Url(a.url)} className="w-full h-full object-cover" />
                                                 )}
@@ -1979,7 +2049,7 @@ export default function AdsPage() {
                                             <div className="flex gap-4 items-start">
                                                 <div className="w-20 h-20 rounded-2xl overflow-hidden border border-slate-100 shrink-0 shadow-inner">
                                                     {v.type === 'video' ? (
-                                                        <video src={fixR2Url(v.image_url)} className="w-full h-full object-cover" muted playsInline />
+                                                        <video src={`${fixR2Url(v.image_url)}#t=0.1`} preload="metadata" className="w-full h-full object-cover" muted playsInline />
                                                     ) : (
                                                         <img src={fixR2Url(v.image_url)} className="w-full h-full object-cover" />
                                                     )}
@@ -3107,7 +3177,7 @@ export default function AdsPage() {
                                               <div className="relative w-24 h-24 rounded-xl overflow-hidden border border-slate-200 shadow-inner bg-white flex items-center justify-center">
                                                 {editingNode.creative?.imageUrl ? (
                                                   (ad.creative?.isVideo || /\.(mp4|webm|mov|ogg|m4v|3gp)/i.test((editingNode.creative.imageUrl || '').split('?')[0])) ? (
-                                                    <video src={fixR2Url(editingNode.creative.imageUrl)} className="w-full h-full object-cover" muted playsInline autoPlay loop />
+                                                    <video src={`${fixR2Url(editingNode.creative.imageUrl)}#t=0.1`} preload="metadata" className="w-full h-full object-cover" muted playsInline autoPlay loop />
                                                   ) : (
                                                     <img src={fixR2Url(editingNode.creative.imageUrl)} className="w-full h-full object-cover" />
                                                   )
@@ -3154,7 +3224,7 @@ export default function AdsPage() {
                                             >
                                               {ad.creative?.isVideo ? (
                                                 <div className="relative w-full h-full">
-                                                  <video src={ad.creative.imageUrl} className="w-full h-full object-cover" muted playsInline />
+                                                  <video src={`${ad.creative.imageUrl}#t=0.1`} preload="metadata" className="w-full h-full object-cover" muted playsInline />
                                                   <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                                                     <PlayCircle size={16} className="text-white drop-shadow-md" />
                                                   </div>
@@ -3595,7 +3665,7 @@ export default function AdsPage() {
                                                                       {ad.thumbnail ? (
                                                                           ad.thumbnail.includes('.mp4') || ad.thumbnail.includes('.mov') ? (
                                                                               <div className="relative w-full h-full">
-                                                                                  <video src={ad.thumbnail} className="w-full h-full object-cover" muted playsInline />
+                                                                                  <video src={`${ad.thumbnail}#t=0.1`} preload="metadata" className="w-full h-full object-cover" muted playsInline />
                                                                                   <div className="absolute inset-0 flex items-center justify-center bg-black/25">
                                                                                       <PlayCircle size={14} className="text-white" />
                                                                                   </div>
@@ -3866,7 +3936,7 @@ export default function AdsPage() {
                         onClick={() => setPreviewImage({ isOpen: true, url: c.previewUrl, title: c.name, type: (c.sourceType === 'local' && c.file && isVideoFile(c.file)) || c.type === 'video' ? 'video' : 'image' })}
                       >
                         {(c.sourceType === 'local' && c.file && isVideoFile(c.file)) || c.type === 'video' ? (
-                          <video src={fixR2Url(c.previewUrl)} className="w-full h-full object-cover rounded-[1.25rem]" muted playsInline />
+                          <video src={`${fixR2Url(c.previewUrl)}#t=0.1`} preload="metadata" className="w-full h-full object-cover rounded-[1.25rem]" muted playsInline />
                         ) : (
                           <img src={fixR2Url(c.previewUrl)} className="w-full h-full object-cover rounded-[1.25rem]" />
                         )}

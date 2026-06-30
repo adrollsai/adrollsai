@@ -157,9 +157,10 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
                                 imageUrl.includes('fbcdn.net/v/')
                             ))) ? (
                                 <video 
-                                    src={imageUrl} 
+                                    src={imageUrl.includes('#') ? imageUrl : `${imageUrl}#t=0.001`} 
                                     controls 
                                     autoPlay
+                                    preload="metadata"
                                     className="max-w-[90vw] max-h-[80vh] object-contain select-none shadow-2xl rounded-lg bg-black"
                                 />
                             ) : (

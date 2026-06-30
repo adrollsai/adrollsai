@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner' 
 import { uploadToR2, compressImage } from '@/utils/upload-helper'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
+import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
 
 // Custom WhatsApp SVG Icon
@@ -106,13 +107,9 @@ export default function ProductsPage() {
 
 
 
-
   // 1. SAFE FETCH WITH LOCAL CACHING
   const fetchProperties = async (force = false) => {
     try {
-      if (!force && properties.length === 0) setLoading(true)
-      if (force) setIsRefreshing(true)
-
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (userError || !user) {
@@ -162,16 +159,37 @@ export default function ProductsPage() {
       
       setOwnerId(targetUserId)
 
-      const { data, error: dbError } = await supabase
+      // Setup caching key
+      const cacheKey = `properties_cache_${targetUserId}`;
+      const cached = force ? [] : getLocalCache<Property>(cacheKey);
+
+      if (cached.length > 0 && properties.length === 0) {
+          setProperties(cached);
+          setLoading(false);
+      } else if (properties.length === 0 && !force) {
+          setLoading(true);
+      }
+
+      if (force) setIsRefreshing(true);
+
+      const maxCreatedAt = getMaxCreatedAt(cached as any[]);
+      let query = supabase
         .from('properties')
         .select('*')
-        .eq('user_id', targetUserId)
-        .order('created_at', { ascending: false })
+        .eq('user_id', targetUserId);
+
+      if (maxCreatedAt && !force) {
+          query = query.gt('created_at', maxCreatedAt);
+      }
+
+      const { data, error: dbError } = await query.order('created_at', { ascending: false });
 
       if (dbError) throw new Error(dbError.message || JSON.stringify(dbError))
       
       if (data) {
-          setProperties(data)
+          const merged = force ? data : mergeCacheData<any>(cached, data);
+          setProperties(merged);
+          setLocalCache(cacheKey, merged);
       }
 
     } catch (error: any) {
@@ -1082,7 +1100,7 @@ export default function ProductsPage() {
                                    {propertyAssets.map(asset => (
                                        <div key={asset.id} className="aspect-square bg-slate-200 rounded-[1.5rem] overflow-hidden relative shadow-sm border border-slate-200 group cursor-pointer">
                                            {asset.type === 'video' ? (
-                                               <video src={asset.url} className="w-full h-full object-cover" />
+                                               <video src={`${asset.url}#t=0.001`} preload="metadata" playsInline muted className="w-full h-full object-cover" />
                                            ) : (
                                                <img src={asset.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="Creative" />
                                            )}

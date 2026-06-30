@@ -20,15 +20,14 @@ import { uploadToR2, compressImage } from '@/utils/upload-helper'
 import { toast } from 'sonner'
 
 
+import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
+
 type ReferenceCreative = {
   id: string
   category: 'premium' | 'high_converting'
   url: string
   created_at: string
 }
-
-
-
 
 export default function ReferenceLibraryPage() {
   const router = useRouter()
@@ -59,7 +58,7 @@ export default function ReferenceLibraryPage() {
   useEffect(() => {
     let isMounted = true
 
-    const checkAuth = async () => {
+    const checkAuth = async (force = false) => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session?.user) {
@@ -101,11 +100,26 @@ export default function ReferenceLibraryPage() {
         }
         setTargetUserId(tUserId)
 
+        // Setup caching key
+        const cacheKey = `ref_library_cache_${tUserId}_${userRole === 'super_admin' && !impersonateId ? 'global' : 'user'}`;
+        const cached = force ? [] : getLocalCache<ReferenceCreative>(cacheKey);
+
+        if (cached.length > 0 && referenceCreatives.length === 0) {
+          setReferenceCreatives(cached);
+          setLoading(false);
+        } else if (referenceCreatives.length === 0 && !force) {
+          setLoading(true);
+        }
+
         // Fetch references
         let query = supabase
           .from('reference_creatives')
-          .select('*')
-          .order('created_at', { ascending: false })
+          .select('*');
+
+        const maxCreatedAt = getMaxCreatedAt(cached);
+        if (maxCreatedAt && !force) {
+          query = query.gt('created_at', maxCreatedAt);
+        }
 
         if (userRole === 'super_admin' && !impersonateId) {
           query = query.is('user_id', null)
@@ -113,11 +127,13 @@ export default function ReferenceLibraryPage() {
           query = query.eq('user_id', tUserId)
         }
 
-        const { data: refs, error } = await query
+        const { data: refs, error } = await query.order('created_at', { ascending: false })
         if (!isMounted) return
 
         if (!error && refs) {
-          setReferenceCreatives(refs as ReferenceCreative[])
+          const merged = force ? refs : mergeCacheData<any>(cached, refs);
+          setReferenceCreatives(merged as ReferenceCreative[]);
+          setLocalCache(cacheKey, merged);
         }
       } catch (err) {
         console.error('Auth verification failed:', err)

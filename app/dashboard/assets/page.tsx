@@ -11,6 +11,7 @@ import { uploadToR2 } from '@/utils/upload-helper'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { toast } from 'sonner'
 import { useUpload } from '@/utils/UploadContext'
+import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
 type Asset = {
     id: string
@@ -135,9 +136,6 @@ export default function AssetsPage() {
     // 1. SAFE FETCH WITH LOCAL CACHING
     const fetchAssets = async (force = false) => {
         try {
-            if (!force && assets.length === 0) setLoading(true)
-            if (force) setIsRefreshing(true)
-
             // 1. Get current user
             const { data: { user }, error: userError } = await supabase.auth.getUser()
             if (userError || !user) return
@@ -169,20 +167,49 @@ export default function AssetsPage() {
                 }
             }
 
+            // Caching Keys
+            const assetsKey = `assets_cache_${targetUserId}`;
+            const propsKey = `properties_cache_${targetUserId}`;
+
+            const cachedAssets = force ? [] : getLocalCache<Asset>(assetsKey);
+            const cachedProps = force ? [] : getLocalCache<Property>(propsKey);
+
+            if (cachedAssets.length > 0 && assets.length === 0) {
+                setAssets(cachedAssets);
+                setProperties(cachedProps);
+                setLoading(false);
+            } else if (assets.length === 0 && !force) {
+                setLoading(true);
+            }
+
+            if (force) setIsRefreshing(true);
+
+            const maxAssetTime = getMaxCreatedAt(cachedAssets as any[]);
+            const maxPropTime = getMaxCreatedAt(cachedProps as any[]);
+
             // 2. Fetch assets for the organization securely via server API
-            const response = await fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+            const assetUrl = `/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}${maxAssetTime && !force ? `&since=${maxAssetTime}` : ''}`;
+            const response = await fetch(assetUrl)
             const assetData = await response.json()
             if (assetData.error) throw new Error(assetData.error)
 
-            const { data: propData } = await supabase
+            let propQuery = supabase
                 .from('properties')
                 .select('id, title')
-                .eq('user_id', targetUserId)
-                .order('created_at', { ascending: false })
+                .eq('user_id', targetUserId);
 
-            if (assetData && Array.isArray(assetData)) {
+            if (maxPropTime && !force) {
+                propQuery = propQuery.gt('created_at', maxPropTime);
+            }
+
+            const { data: propData } = await propQuery.order('created_at', { ascending: false });
+
+            let mergedAssets = force ? assetData : mergeCacheData<any>(cachedAssets, assetData || []);
+            let mergedProps = force ? (propData || []) : mergeCacheData<any>(cachedProps, propData || []);
+
+            if (mergedAssets && Array.isArray(mergedAssets)) {
                 // Filter out distributed assets to keep the library clean
-                const cleanAssets = (assetData as Asset[]).filter((asset: Asset) => asset.status !== 'Distributed')
+                const cleanAssets = (mergedAssets as Asset[]).filter((asset: Asset) => asset.status !== 'Distributed')
                 
                 // Sort active 'Processing' or 'Rendering' tasks to the very top, preserving created_at order for the rest
                 const sortedAssets = [...cleanAssets].sort((a, b) => {
@@ -197,10 +224,12 @@ export default function AssetsPage() {
                 });
                 
                 setAssets(sortedAssets)
+                setLocalCache(assetsKey, sortedAssets)
             }
 
-            if (propData) {
-                setProperties(propData)
+            if (mergedProps) {
+                setProperties(mergedProps)
+                setLocalCache(propsKey, mergedProps)
             }
 
             // Cleanup stuck assets in background
@@ -1221,7 +1250,7 @@ export default function AssetsPage() {
                                 {/* Media Preview */}
                                 <div className="rounded-[1.5rem] overflow-hidden bg-slate-100 mb-6 border border-slate-200/60 shadow-inner">
                                     {selectedAsset.type === 'video' ? (
-                                        <video src={selectedAsset.url} controls className="w-full max-h-[250px] object-contain bg-black" />
+                                        <video src={`${selectedAsset.url}#t=0.001`} controls preload="metadata" className="w-full max-h-[250px] object-contain bg-black" />
                                     ) : (
                                         <img src={fixR2Url(selectedAsset.url)} className="w-full max-h-[250px] object-contain" alt="Preview" />
                                     )}
@@ -1491,7 +1520,7 @@ export default function AssetsPage() {
                             >
                                 {directPostData.file ? (
                                     directPostData.file.type.startsWith('video') ? (
-                                        <video src={directPostData.previewUrl!} controls className="w-full max-h-[250px] object-contain" />
+                                        <video src={`${directPostData.previewUrl!}#t=0.001`} controls preload="metadata" className="w-full max-h-[250px] object-contain" />
                                     ) : (
                                         <img src={directPostData.previewUrl!} className="w-full max-h-[250px] object-contain" alt="Preview" />
                                     )

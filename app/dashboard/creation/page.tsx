@@ -533,7 +533,8 @@ export default function CreationPage() {
     angles: any[],
     selectedAngles: number[],
     generatedAssets: any[],
-    status: 'idle' | 'loading' | 'error'
+    status: 'idle' | 'loading' | 'error',
+    batchExcludedImages: string[]
   }>({
     isOpen: false,
     step: 'setup',
@@ -545,7 +546,8 @@ export default function CreationPage() {
     angles: [],
     selectedAngles: [],
     generatedAssets: [],
-    status: 'idle'
+    status: 'idle',
+    batchExcludedImages: []
   })
 
   const handleGenerateAngles = async () => {
@@ -592,6 +594,8 @@ export default function CreationPage() {
                     propImages = [creativeFlow.product.image_url];
                 }
             }
+            // Filter out batch-excluded images
+            const filteredPropImages = propImages.filter(img => !creativeFlow.batchExcludedImages.includes(img));
 
             const payload = {
                 propertyTitle: creativeFlow.product?.title,
@@ -599,7 +603,7 @@ export default function CreationPage() {
                 creativeCategory: creativeFlow.creativeCategory || 'Premium',
                 styleAesthetic: angle.title ? `${angle.title} - ${angle.visual_concept}` : undefined,
                 userInstructions: creativeFlow.instructions + (angle.visual_concept ? `\nVisual Concept to follow: ${angle.visual_concept}` : ""),
-                propImages: propImages,
+                propImages: filteredPropImages,
                 isOrganic: creativeFlow.isOrganic || angle.title?.toLowerCase().includes('raw') || angle.title?.toLowerCase().includes('smartphone') || creativeFlow.creativeCategory === 'High Converting',
                 aspectRatio: "4:5",
                 model: 'image-2.0',
@@ -2715,7 +2719,7 @@ function CreativeFlowModal({
                     {properties.map((p: any) => (
                       <div 
                         key={p.id}
-                        onClick={() => setCreativeFlow((prev: any) => ({ ...prev, product: p }))}
+                        onClick={() => setCreativeFlow((prev: any) => ({ ...prev, product: p, batchExcludedImages: [] }))}
                         className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-2 transition-all ${
                           creativeFlow.product?.id === p.id ? 'border-blue-600 ring-4 ring-blue-500/10' : 'border-transparent hover:border-slate-200'
                         }`}
@@ -2730,10 +2734,63 @@ function CreativeFlowModal({
                     ))}
                   </div>
                 </div>
+
+                {/* IMAGE SELECTOR: Show product images for include/exclude */}
+                {creativeFlow.product && (() => {
+                  const allImages: string[] = [];
+                  if (creativeFlow.product.images && creativeFlow.product.images.length > 0) {
+                    allImages.push(...creativeFlow.product.images.slice(0, 10));
+                  } else if (creativeFlow.product.image_url) {
+                    allImages.push(creativeFlow.product.image_url);
+                  }
+                  const includedCount = allImages.filter(img => !creativeFlow.batchExcludedImages.includes(img)).length;
+                  if (allImages.length === 0) return null;
+                  return (
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">2. Select Photos to Include</label>
+                      <p className="text-[10px] text-slate-400 font-medium mb-4">
+                        {includedCount} of {allImages.length} photos will be sent to the AI model. Click to exclude/include.
+                      </p>
+                      <div className="flex gap-3 flex-wrap">
+                        {allImages.map((imgUrl, idx) => {
+                          const isExcluded = creativeFlow.batchExcludedImages.includes(imgUrl);
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => {
+                                setCreativeFlow((prev: any) => ({
+                                  ...prev,
+                                  batchExcludedImages: isExcluded
+                                    ? prev.batchExcludedImages.filter((u: string) => u !== imgUrl)
+                                    : [...prev.batchExcludedImages, imgUrl]
+                                }));
+                              }}
+                              className={`relative w-16 h-16 rounded-xl overflow-hidden cursor-pointer border-2 transition-all group ${
+                                isExcluded ? 'border-red-400 opacity-40 grayscale' : 'border-blue-500 ring-2 ring-blue-500/10'
+                              }`}
+                            >
+                              <img src={imgUrl} className="w-full h-full object-cover" alt={`Product ${idx + 1}`} />
+                              <div className={`absolute inset-0 flex items-center justify-center transition-all ${
+                                isExcluded ? 'bg-red-900/30' : 'bg-blue-900/10'
+                              }`}>
+                                {isExcluded ? (
+                                  <X size={16} className="text-white drop-shadow-md" />
+                                ) : (
+                                  <Check size={16} className="text-white drop-shadow-md" />
+                                )}
+                              </div>
+                              <span className="absolute bottom-0.5 right-0.5 text-[7px] font-black text-white bg-black/50 px-1 rounded">{idx + 1}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
   
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">2. Quantity</label>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">{creativeFlow.product && ((creativeFlow.product.images?.length || 0) > 0 || creativeFlow.product.image_url) ? '3' : '2'}. Quantity</label>
                     <select 
                       value={creativeFlow.quantity}
                       onChange={(e) => setCreativeFlow((prev: any) => ({ ...prev, quantity: parseInt(e.target.value) }))}
@@ -2743,7 +2800,7 @@ function CreativeFlowModal({
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">3. Creative Strategy</label>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">{creativeFlow.product && ((creativeFlow.product.images?.length || 0) > 0 || creativeFlow.product.image_url) ? '4' : '3'}. Creative Strategy</label>
                     <div className="relative">
                       <Sparkles size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-500 animate-pulse pointer-events-none" />
                       <select 
@@ -2769,7 +2826,7 @@ function CreativeFlowModal({
                 </div>
   
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">4. Additional Context (Optional)</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">{creativeFlow.product && ((creativeFlow.product.images?.length || 0) > 0 || creativeFlow.product.image_url) ? '5' : '4'}. Additional Context (Optional)</label>
                   <textarea 
                     value={creativeFlow.instructions}
                     onChange={(e) => setCreativeFlow((prev: any) => ({ ...prev, instructions: e.target.value }))}

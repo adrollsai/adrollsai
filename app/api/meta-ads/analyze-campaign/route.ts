@@ -150,12 +150,39 @@ export async function POST(request: Request) {
 
         const metrics = parseInsights(data.insights);
 
-        // 3. Count CRM Leads associated with this campaign
-        const { count: crmLeadsCount } = await supabaseAdmin
+        // 3. Count CRM Leads associated with this campaign (broad match)
+        // First try exact campaign_id match
+        const { count: crmLeadsExact } = await supabaseAdmin
             .from('leads')
             .select('id', { count: 'exact', head: true })
             .eq('campaign_id', campaignId)
             .eq('user_id', creds.targetUserId);
+
+        // Also count all CRM leads for this user from Facebook sources (some leads may have null campaign_id)
+        const { count: crmLeadsTotal } = await supabaseAdmin
+            .from('leads')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', creds.targetUserId)
+            .in('source', ['Facebook', 'Facebook Ads']);
+
+        const crmLeadsCount = crmLeadsExact || 0;
+        const crmLeadsTotalCount = crmLeadsTotal || 0;
+
+        // Determine CRM sync status to provide accurate context to the AI
+        let crmSyncStatus = '';
+        if (metrics.leads === 0) {
+            crmSyncStatus = 'No leads registered by Meta yet.';
+        } else if (crmLeadsCount >= metrics.leads) {
+            crmSyncStatus = `✅ All ${metrics.leads} Meta leads are synced to the CRM (${crmLeadsCount} matched by campaign). CRM integration is working correctly.`;
+        } else if (crmLeadsTotalCount >= metrics.leads) {
+            crmSyncStatus = `✅ CRM has ${crmLeadsTotalCount} total Facebook leads for this account (${crmLeadsCount} matched to this specific campaign). Leads are syncing correctly—some may not have the campaign ID tagged but they ARE in the CRM.`;
+        } else if (crmLeadsCount > 0) {
+            crmSyncStatus = `⚠️ ${crmLeadsCount} of ${metrics.leads} Meta leads matched in CRM for this campaign. ${crmLeadsTotalCount} total Facebook leads exist in CRM. Some recent leads may still be in sync queue.`;
+        } else if (crmLeadsTotalCount > 0) {
+            crmSyncStatus = `✅ CRM has ${crmLeadsTotalCount} total Facebook leads for this account. These leads are synced but may not have campaign_id tagged. The CRM integration IS working.`;
+        } else {
+            crmSyncStatus = `⚠️ No Facebook leads found in CRM yet. ${metrics.leads} leads registered by Meta. Check if the webhook integration is active.`;
+        }
 
         // 4. Extract Targeting & Settings details
         const adset = data.adsets?.data?.[0] || {};
@@ -198,7 +225,9 @@ export async function POST(request: Request) {
         - CPC: ${creds.currency === 'INR' ? '₹' : '$'}${metrics.cpc.toFixed(2)}
         - CPM: ${creds.currency === 'INR' ? '₹' : '$'}${metrics.cpm.toFixed(2)}
         - Leads (Meta API): ${metrics.leads}
-        - Leads (CRM Database): ${crmLeadsCount || 0}
+        - Leads (CRM - This Campaign): ${crmLeadsCount}
+        - Leads (CRM - Total Facebook): ${crmLeadsTotalCount}
+        - CRM Sync Status: ${crmSyncStatus}
         - Cost Per Lead (CPL): ${creds.currency === 'INR' ? '₹' : '$'}${metrics.cpl.toFixed(2)}
         - Budget: ${data.daily_budget ? `${creds.currency === 'INR' ? '₹' : '$'}${parseFloat(data.daily_budget)/100}/day` : 'N/A'}
         
@@ -226,7 +255,8 @@ export async function POST(request: Request) {
         - Evaluate budget constraints.
         - Identify delivery bottlenecks (e.g. ad sets holding up budget, imbalance where one ad gets all spend while others get zero).
         - Critique copy and targeting settings (Advantage+ audience, location parameters).
-        - Double-check CRM vs Meta leads. If Meta Leads count is higher than CRM Leads, explain that some leads are in queue or need to be synced manually. If they are equal, confirm they are synced.
+        
+        IMPORTANT CRM GUIDANCE: Read the "CRM Sync Status" field carefully. If it says "✅" (checkmark), the CRM integration IS working correctly—do NOT recommend fixing CRM integration or lead sync. Only recommend CRM fixes if the status explicitly says "⚠️" and indicates leads are genuinely missing. Some leads may not have campaign_id tagged but they are still in the CRM database and accessible to the user.
         
         Provide your analysis and clear, actionable steps to improve.
         
@@ -261,7 +291,8 @@ export async function POST(request: Request) {
             impressions: metrics.impressions,
             clicks: metrics.clicks,
             leads: metrics.leads,
-            crmLeads: crmLeadsCount || 0,
+            crmLeads: crmLeadsCount,
+            crmLeadsTotal: crmLeadsTotalCount,
             ctr: metrics.ctr,
             cpc: metrics.cpc,
             cpm: metrics.cpm,

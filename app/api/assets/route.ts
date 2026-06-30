@@ -48,12 +48,17 @@ export async function GET(request: Request) {
             }
         }
 
-        // Fetch organization assets bypassing RLS via admin client
-        const { data: assetData, error: assetError } = await supabaseAdmin
+        const since = url.searchParams.get('since');
+        let query = supabaseAdmin
             .from('assets')
             .select('*')
-            .eq('user_id', targetUserId)
-            .order('created_at', { ascending: false });
+            .eq('user_id', targetUserId);
+            
+        if (since) {
+            query = query.gt('created_at', since);
+        }
+
+        const { data: assetData, error: assetError } = await query.order('created_at', { ascending: false });
 
         if (assetError) {
             throw assetError;

@@ -10,6 +10,8 @@ import {
 import { createClient } from '@/utils/supabase/client'
 import TestNotificationBtn from '@/components/TestNotificationBtn'
 
+import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
+
 const STAGES = ['New', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
 
 
@@ -82,32 +84,11 @@ export default function CRMPage() {
   // 1. SAFE FETCH WITH LOCAL CACHING
   const fetchLeads = async (force = false) => {
     try {
-      if (!force && leads.length === 0) setLoading(true)
-      if (force) setIsRefreshing(true)
-
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       setUserId(user.id)
 
-      // Try synchronous cache loading for instant UI
-      if (!force) {
-          const cacheKey = `crm_cache_${user.id}`;
-          const cachedData = localStorage.getItem(cacheKey);
-          if (cachedData && leads.length === 0) {
-              try {
-                  setLeads(JSON.parse(cachedData));
-                  setLoading(false);
-                  
-                  // Restore scroll position gracefully
-                  const savedScroll = sessionStorage.getItem('crm_scroll');
-                  if (savedScroll) {
-                      setTimeout(() => window.scrollTo({ top: parseInt(savedScroll, 10), behavior: 'instant' }), 50);
-                  }
-              } catch (e) {}
-          }
-      }
-
-      // Fetch Fresh Data
+      // Fetch Fresh Profile Data first to get targetUserId
       const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id').eq('id', user.id).single()
       const currentRole = profile?.role as any || 'admin'
       setRole(currentRole)
@@ -137,6 +118,27 @@ export default function CRMPage() {
           }
       }
       setTargetUserId(targetUserId)
+
+      // Setup caching key
+      const cacheKey = `crm_cache_${targetUserId}`;
+      const cached = force ? [] : getLocalCache<any>(cacheKey);
+
+      if (cached.length > 0 && leads.length === 0) {
+          setLeads(cached);
+          setLoading(false);
+          
+          // Restore scroll position gracefully
+          const savedScroll = sessionStorage.getItem('crm_scroll');
+          if (savedScroll) {
+              setTimeout(() => window.scrollTo({ top: parseInt(savedScroll, 10), behavior: 'instant' }), 50);
+          }
+      } else if (leads.length === 0 && !force) {
+          setLoading(true);
+      }
+
+      if (force) setIsRefreshing(true);
+
+      const maxCreatedAt = getMaxCreatedAt(cached);
 
       // Fetch Meta Pixels for target account
       let adAccountId = profile?.ad_account_id
@@ -182,6 +184,10 @@ export default function CRMPage() {
                 .order('created_at', { ascending: false })
                 .range(start, start + step - 1)
 
+              if (maxCreatedAt && !force) {
+                  query = query.gt('created_at', maxCreatedAt);
+              }
+
               if (currentRole === 'super_admin') {
                   query = query.eq('user_id', targetUserId)
               } else if (currentRole === 'agency') {
@@ -215,8 +221,9 @@ export default function CRMPage() {
       const data = await fetchAllLeads()
       
       if (data) {
-          setLeads(data)
-          if (user?.id) localStorage.setItem(`crm_cache_${user.id}`, JSON.stringify(data))
+          const merged = force ? data : mergeCacheData<any>(cached, data);
+          setLeads(merged);
+          setLocalCache(cacheKey, merged);
       }
     } catch (e) {
       console.error(e)
