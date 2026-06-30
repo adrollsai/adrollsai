@@ -462,7 +462,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             }
         }
 
-        targetingConfig.age_min = ageMin !== undefined && ageMin !== null ? Math.min(ageMin, 25) : 18;
+        targetingConfig.age_min = ageMin !== undefined && ageMin !== null ? ageMin : 18;
         targetingConfig.age_max = 65;
         targetingConfig.targeting_relaxation_types = { custom_audience: 1, lookalike: 1 };
         targetingConfig.targeting_automation = { advantage_audience: 1 };

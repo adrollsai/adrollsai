@@ -149,12 +149,13 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
                             className="relative max-w-full max-h-full flex items-center justify-center"
                         >
                             {(type === 'video' || (imageUrl && (
-                                /\.(mp4|webm|mov|ogg|m4v|3gp)/i.test(imageUrl.split('?')[0]) ||
+                                (/\.(mp4|webm|mov|ogg|m4v|3gp)/i.test(imageUrl.split('?')[0]) ||
                                 imageUrl.toLowerCase().includes('.mp4') ||
                                 imageUrl.toLowerCase().includes('.webm') ||
                                 imageUrl.toLowerCase().includes('.mov') ||
                                 imageUrl.toLowerCase().includes('video') ||
-                                imageUrl.includes('fbcdn.net/v/')
+                                imageUrl.includes('fbcdn.net/v/')) &&
+                                !/\.(jpg|jpeg|png|webp|gif)/i.test(imageUrl.split('?')[0])
                             ))) ? (
                                 <video 
                                     src={imageUrl.includes('#') ? imageUrl : `${imageUrl}#t=0.001`} 

@@ -3194,14 +3194,15 @@ export default function AdsPage() {
                                                   }}
                                                   className="bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-[10px] py-1.5 px-3 rounded-lg border border-blue-100 transition-colors flex items-center gap-1"
                                                 >
-                                                  <ImageIcon size={10} /> Change Image
+                                                      <ImageIcon size={10} /> Change Image
                                                 </button>
                                                 {editingNode.creative?.imageUrl && (
                                                   <button 
                                                     type="button"
                                                     onClick={() => {
-                                                      const isVid = ad.creative?.isVideo || /\.(mp4|webm|mov|ogg|m4v|3gp)/i.test((editingNode.creative!.imageUrl || '').split('?')[0]);
-                                                      setPreviewImage({ isOpen: true, url: editingNode.creative!.imageUrl || '', title: editingNode.name, type: isVid ? 'video' : 'image' });
+                                                      const hasVidSource = !!editingNode.creative!.videoSourceUrl;
+                                                      const url = editingNode.creative!.videoSourceUrl || editingNode.creative!.imageUrl || '';
+                                                      setPreviewImage({ isOpen: true, url, title: editingNode.name, type: hasVidSource ? 'video' : 'image' });
                                                     }}
                                                     className="bg-slate-150 hover:bg-slate-200 text-slate-700 font-bold text-[10px] py-1.5 px-3 rounded-lg border border-slate-200 transition-colors flex items-center gap-1"
                                                   >
@@ -3219,18 +3220,27 @@ export default function AdsPage() {
                                             <div 
                                               className="w-12 h-12 rounded-xl overflow-hidden border border-slate-200 shadow-inner bg-white shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-500/30 transition-all"
                                               onClick={() => {
-                                                setPreviewImage({ isOpen: true, url: ad.creative.imageUrl, title: ad.name, type: ad.creative?.isVideo ? 'video' : 'image' });
+                                                const url = ad.creative?.videoSourceUrl || ad.creative.imageUrl;
+                                                const type = ad.creative?.videoSourceUrl ? 'video' : 'image';
+                                                setPreviewImage({ isOpen: true, url, title: ad.name, type });
                                               }}
                                             >
-                                              {ad.creative?.isVideo ? (
+                                              {ad.creative?.isVideo && ad.creative?.videoSourceUrl ? (
                                                 <div className="relative w-full h-full">
-                                                  <video src={`${ad.creative.imageUrl}#t=0.1`} preload="metadata" className="w-full h-full object-cover" muted playsInline />
+                                                  <video src={`${ad.creative.videoSourceUrl}#t=0.1`} preload="metadata" className="w-full h-full object-cover" muted playsInline />
                                                   <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                                                     <PlayCircle size={16} className="text-white drop-shadow-md" />
                                                   </div>
                                                 </div>
                                               ) : (
-                                                <img src={fixR2Url(ad.creative.imageUrl)} className="w-full h-full object-cover" />
+                                                <div className="relative w-full h-full">
+                                                  <img src={fixR2Url(ad.creative.imageUrl)} className="w-full h-full object-cover" />
+                                                  {ad.creative?.isVideo && (
+                                                    <div className="absolute inset-0 flex items-center justify-center bg-black/15">
+                                                      <PlayCircle size={16} className="text-white drop-shadow-md" />
+                                                    </div>
+                                                  )}
+                                                </div>
                                               )}
                                             </div>
                                           )}
