@@ -909,9 +909,9 @@ export default function SharedCataloguePage() {
 
       {/* 5. FOOTER */}
       <footer className="mt-12 py-8 border-t border-slate-200/60 text-center">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Powered by AdRolls.in</p>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Powered by Nobogent.com</p>
           <a 
-            href={`https://app.adrolls.in/privacy/${profile?.id}`} 
+            href={`https://app.nobogent.com/privacy/${profile?.id}`} 
             target="_blank" 
             rel="noopener noreferrer" 
             className="text-[10px] font-bold text-blue-500 hover:text-blue-600 uppercase tracking-widest transition-colors"

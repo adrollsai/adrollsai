@@ -52,15 +52,15 @@ export async function POST(request: Request) {
     )
 
     // Build the absolute URLs
-    const domain = profile?.custom_domain || `app.adrolls.in/shared/${ownerId}`;
+    const domain = profile?.custom_domain || `app.nobogent.com/shared/${ownerId}`;
     const feedUrl = profile?.custom_domain 
         ? `https://${profile.custom_domain}/?tab=feed&t=${Date.now()}` 
-        : `https://app.adrolls.in/shared/${ownerId}?tab=feed&t=${Date.now()}`;
+        : `https://app.nobogent.com/shared/${ownerId}?tab=feed&t=${Date.now()}`;
 
     // Use our dynamic icon processor for the notification icon
     const iconUrl = profile?.custom_domain 
         ? `https://${profile.custom_domain}/api/org-icon?type=icon`
-        : `https://app.adrolls.in/api/org-icon?type=icon&uid=${ownerId}`;
+        : `https://app.nobogent.com/api/org-icon?type=icon&uid=${ownerId}`;
     
     const payload = JSON.stringify({
       title: `${profile?.business_name || 'New Update'}`,

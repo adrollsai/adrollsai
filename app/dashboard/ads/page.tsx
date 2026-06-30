@@ -501,12 +501,12 @@ export default function AdsPage() {
         // Construct Catalogue URL
         const catalogueUrl = targetProfile.custom_domain 
           ? `https://${targetProfile.custom_domain}` 
-          : `https://app.adrolls.in/shared/${targetUserId}`
+          : `https://app.nobogent.com/shared/${targetUserId}`
           
         setAdForm(prev => ({
           ...prev, 
           pageId: targetProfile.selected_page_id || '',
-          linkUrl: prev.linkUrl === 'https://adrolls.in' ? catalogueUrl : prev.linkUrl
+          linkUrl: prev.linkUrl === 'https://nobogent.com' ? catalogueUrl : prev.linkUrl
         }))
         setCustomDomain(targetProfile.custom_domain || '')
         if (targetProfile.ad_account_id && !force) {
@@ -1441,7 +1441,7 @@ export default function AdsPage() {
         if (tProf) targetProfile = tProf;
     }
 
-    const autoPrivacyUrl = `https://app.adrolls.in/privacy/${tUserId}`;
+    const autoPrivacyUrl = `https://app.nobogent.com/privacy/${tUserId}`;
 
     // Generate ad copy from selected product using target profile info
     const adCopy = generateAdCopy(selectedProduct, targetProfile?.business_name, targetProfile?.contact_number);
@@ -4039,7 +4039,7 @@ export default function AdsPage() {
                                           setSelectedLandingPageId(pageId);
                                           const page = landingPages.find(p => p.id === pageId);
                                           if (page) {
-                                              const domainBase = customDomain || `app.adrolls.in/shared/${targetUserId}`;
+                                              const domainBase = customDomain || `app.nobogent.com/shared/${targetUserId}`;
                                               const fullUrl = `https://${domainBase}/${page.slug}`;
                                               setAdForm(prev => ({ ...prev, linkUrl: fullUrl }));
                                               

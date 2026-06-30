@@ -10,12 +10,12 @@ export default function PrivacyPolicy() {
           <ArrowLeft size={16} /> Back to Home
         </Link>
         
-        <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">Privacy Policy for AdRollsAI</h1>
+        <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">Privacy Policy for NobogentAI</h1>
         <p className="text-sm text-slate-500 mb-8">Last Updated: December 18, 2025</p>
 
         <div className="space-y-8 leading-relaxed">
           <p>
-            ADROLLS AI ("we," "us," or "our") operates the AdRollsAI application (the "App", available at app.adrolls.in) and the website adrolls.in. We are committed to protecting your privacy and ensuring you have control over your data. This Privacy Policy explains how we collect, use, and disclose information when you use our App, particularly in relation to your Facebook and Instagram data.
+            NOBOGENT AI ("we," "us," or "our") operates the NobogentAI application (the "App", available at app.nobogent.com) and the website nobogent.com. We are committed to protecting your privacy and ensuring you have control over your data. This Privacy Policy explains how we collect, use, and disclose information when you use our App, particularly in relation to your Facebook and Instagram data.
           </p>
 
           <section>
@@ -75,7 +75,7 @@ export default function PrivacyPolicy() {
             <p className="mb-2">You have the right to access, update, or delete your personal information.</p>
             <p className="mb-2"><strong>How to Delete Your Data:</strong> If you wish to remove the App's access to your Facebook data or delete your account entirely:</p>
             <ul className="list-disc pl-5 space-y-2">
-              <li><strong>Via Facebook:</strong> You can remove our App's access at any time by going to your Facebook Settings &gt; Business Integrations and removing "AdRollsAI."</li>
+              <li><strong>Via Facebook:</strong> You can remove our App's access at any time by going to your Facebook Settings &gt; Business Integrations and removing "NobogentAI."</li>
               <li><strong>By Email:</strong> You can contact us at adrollsai@gmail.com with the subject "Data Deletion Request," and we will manually delete your data within 30 days.</li>
             </ul>
           </section>
@@ -92,7 +92,7 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-bold text-white mb-4">7. Contact Us</h2>
             <p className="mb-2">If you have any questions about this Privacy Policy, please contact us:</p>
             <ul className="space-y-1">
-              <li><strong>Entity Name:</strong> ADROLLS AI</li>
+              <li><strong>Entity Name:</strong> NOBOGENT AI</li>
               <li><strong>Email:</strong> <a href="mailto:adrollsai@gmail.com" className="text-amber-500 hover:underline">adrollsai@gmail.com</a></li>
               <li><strong>Location:</strong> India</li>
             </ul>

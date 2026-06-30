@@ -24,9 +24,9 @@ export async function GET(req: Request) {
 
   try {
     const protocol = req.headers.get('x-forwarded-proto') || 'https'
-    const host = req.headers.get('host') || 'app.adrolls.in'
+    const host = req.headers.get('host') || 'app.nobogent.com'
     const currentOrigin = `${protocol}://${host}`
-    const primaryDomain = (host.includes('adrolls.in') || host.includes('localhost') || host.includes('vercel.app'))
+    const primaryDomain = (host.includes('nobogent.com') || host.includes('adrolls.in') || host.includes('localhost') || host.includes('vercel.app'))
       ? currentOrigin
       : (process.env.NEXT_PUBLIC_APP_URL || currentOrigin)
     const redirectUri = `${primaryDomain}/api/auth/linkedin/callback`

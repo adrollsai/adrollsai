@@ -38,7 +38,7 @@ export async function sendDistributionEmail(to: string, agentName: string, image
 export async function sendContactFormEmail(name: string, email: string, phone: string, message: string) {
   try {
     const info = await transporter.sendMail({
-      from: `"AdRolls AI Landing Page" <${process.env.SMTP_USER}>`,
+      from: `"Nobogent AI Landing Page" <${process.env.SMTP_USER}>`,
       to: 'adrollsai@gmail.com, rchopra489@gmail.com',
       subject: `New Lead Query from ${name}`,
       html: `
@@ -66,7 +66,7 @@ export async function sendContactFormEmail(name: string, email: string, phone: s
           </table>
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center;">
             <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
-              Sent automatically by AdRolls AI Platform
+              Sent automatically by Nobogent AI Platform
             </p>
           </div>
         </div>
@@ -110,7 +110,7 @@ export async function sendLandingPageLeadEmail(to: string[], leadDetails: {
     }
 
     const info = await transporter.sendMail({
-      from: `"AdRolls AI Landing Page" <${process.env.SMTP_USER}>`,
+      from: `"Nobogent AI Landing Page" <${process.env.SMTP_USER}>`,
       to: to.join(', '),
       subject: `New Landing Page Lead: ${leadDetails.name}`,
       html: `
@@ -145,7 +145,7 @@ export async function sendLandingPageLeadEmail(to: string[], leadDetails: {
           ${customQuestionsHtml}
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
             <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
-              Sent automatically by AdRolls AI Platform
+              Sent automatically by Nobogent AI Platform
             </p>
           </div>
         </div>
@@ -211,7 +211,7 @@ export async function sendBookingConfirmationEmail(
           <p style="font-size: 14px; color: #64748b; line-height: 1.5; margin-top: 24px;">If you need to make changes or reschedule, please reach out to us directly.</p>
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
             <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
-              AdRolls AI Booking Platform
+              Nobogent AI Booking Platform
             </p>
           </div>
         </div>
@@ -286,7 +286,7 @@ export async function sendBookingReminderEmail(
 
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
             <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
-              AdRolls AI Booking Platform
+              Nobogent AI Booking Platform
             </p>
           </div>
         </div>
@@ -327,7 +327,7 @@ export async function sendFacebookLeadEmail(
     }
 
     const info = await transporter.sendMail({
-      from: `"AdRolls CRM" <${process.env.SMTP_USER}>`,
+      from: `"Nobogent CRM" <${process.env.SMTP_USER}>`,
       to: to.join(', '),
       subject: `🔥 New Facebook Lead: ${leadDetails.name}`,
       html: `
@@ -362,7 +362,7 @@ export async function sendFacebookLeadEmail(
           ${customQuestionsHtml}
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
             <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
-              Sent automatically by AdRolls CRM Platform
+              Sent automatically by Nobogent CRM Platform
             </p>
           </div>
         </div>
@@ -389,7 +389,7 @@ export async function sendLeadAutoResponseEmail(
     const campaignInfo = adName ? ` regarding <strong>${adName}</strong>` : '';
 
     const info = await transporter.sendMail({
-      from: `"${businessName || 'AdRolls'}" <${process.env.SMTP_USER}>`,
+      from: `"${businessName || 'Nobogent'}" <${process.env.SMTP_USER}>`,
       to: to,
       subject: `Thank you for contacting ${businessName || 'us'}!`,
       html: `
@@ -411,7 +411,7 @@ export async function sendLeadAutoResponseEmail(
           </div>
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
             <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
-              Powered by AdRolls
+              Powered by Nobogent
             </p>
           </div>
         </div>

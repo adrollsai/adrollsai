@@ -25,7 +25,7 @@ export default function ChatMascot() {
                            <span className="text-xs">AI</span>
                         </div>
                         <div>
-                           <h4 className="text-white font-bold text-sm">AdRolls Assistant</h4>
+                           <h4 className="text-white font-bold text-sm">Nobogent Assistant</h4>
                            <p className="text-blue-200 text-xs flex items-center gap-1">
                               <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" /> Online
                            </p>

@@ -14,20 +14,20 @@ export async function GET(request: NextRequest) {
   const host = rawHost.split(':')[0].toLowerCase(); 
   const isLocal = host === 'localhost';
 
-  const ADROLLS_LOGO_URL = "https://i.ibb.co/jvxK1B96/logo.png";
+  const NOBOGENT_LOGO_URL = new URL('/logo.png', request.url).toString();
   const FALLBACK_FAVICON = new URL('/favicon.ico', request.url).toString();
 
-  const SYSTEM_HOSTS = ['adrolls.in', 'www.adrolls.in', 'app.adrolls.in', 'localhost'];
+  const SYSTEM_HOSTS = ['nobogent.com', 'www.nobogent.com', 'app.nobogent.com', 'adrolls.in', 'www.adrolls.in', 'app.adrolls.in', 'localhost'];
 
   try {
     const supabase = await createClient();
     let logoUrl = null;
 
     if (SYSTEM_HOSTS.includes(host)) {
-        logoUrl = ADROLLS_LOGO_URL;
+        logoUrl = NOBOGENT_LOGO_URL;
     } else {
         const { data: profile } = await supabase.from('profiles').select('logo_url').eq('custom_domain', host).single();
-        logoUrl = profile?.logo_url || ADROLLS_LOGO_URL;
+        logoUrl = profile?.logo_url || NOBOGENT_LOGO_URL;
     }
 
     // Added a User-Agent header so external image hosts don't block the request
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     });
     
     if (!imageResponse.ok) {
-        return NextResponse.redirect(ADROLLS_LOGO_URL);
+        return NextResponse.redirect(NOBOGENT_LOGO_URL);
     }
 
     const inputBuffer = await imageResponse.arrayBuffer();
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     let pipeline = sharp(buffer);
     
-    const isAdrollsLogo = logoUrl === ADROLLS_LOGO_URL;
+    const isAdrollsLogo = logoUrl === NOBOGENT_LOGO_URL;
     const padding = isAdrollsLogo ? 80 : 0;
     const size = 512 - (padding * 2);
     
@@ -93,6 +93,6 @@ export async function GET(request: NextRequest) {
 
   } catch (err) {
     console.error('[ORG ICON] Error:', err);
-    return NextResponse.redirect(ADROLLS_LOGO_URL);
+    return NextResponse.redirect(NOBOGENT_LOGO_URL);
   }
 }

@@ -554,7 +554,7 @@ export default function ProductsPage() {
     const params = new URLSearchParams()
     if (searchQuery) params.set('q', searchQuery)
     
-    const baseUrl = adminCustomDomain ? `https://${adminCustomDomain}` : "https://app.adrolls.in";
+    const baseUrl = adminCustomDomain ? `https://${adminCustomDomain}` : "https://app.nobogent.com";
     const shareUrl = `${baseUrl}/shared/${ownerId}?${params.toString()}`
     
     navigator.clipboard.writeText(shareUrl)

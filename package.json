@@ -1,5 +1,5 @@
 {
-  "name": "adrollsai",
+  "name": "nobogent-app",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "update-types": "npx supabase gen types typescript --project-id dvygrupphzjitzbrtlve > supabase/database.types.ts"
+    "update-types": "npx supabase gen types typescript --project-id hpssqssdewmkmafxlfud > supabase/database.types.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.66",

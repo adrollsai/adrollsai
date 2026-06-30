@@ -5,10 +5,11 @@ import { headers } from "next/headers";
 import { createClient } from '@/utils/supabase/server';
 
 const inter = Inter({ subsets: ["latin"] });
-const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://adrolls.in";
+const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nobogent.com";
 
 function isSystemHost(host: string) {
   const DEFAULT_HOSTS = [
+    'nobogent.com', 'www.nobogent.com', 'app.nobogent.com',
     'adrolls.in', 'www.adrolls.in', 'app.adrolls.in',
     process.env.NEXT_PUBLIC_DEFAULT_HOST || 'localhost'
   ];
@@ -42,18 +43,18 @@ export async function generateMetadata(): Promise<Metadata> {
     }
   }
 
-  const defaultTitle = "AdRolls AI | Ultimate Marketing Automation for SMBs";
+  const defaultTitle = "Nobogent AI | Ultimate Marketing Automation for SMBs";
   const title = profileData?.business_name || defaultTitle;
   const logoVersion = profileData?.logo_url ? encodeURIComponent(profileData.logo_url.split('/').pop() || 'v1') : 'v1';
   const uidParam = user ? `&uid=${user.id}` : '';
 
   const iconUrl = profileData?.logo_url 
      ? `/api/org-icon?type=icon&v=${logoVersion}${uidParam}` 
-     : "/icon-192x192.png";
+     : "/icon-192x192.png?v=2";
      
   const faviconUrl = profileData?.logo_url 
      ? `/api/org-icon?type=favicon&v=${logoVersion}${uidParam}` 
-     : "/favicon.ico";
+     : "/favicon.ico?v=2";
 
   return {
     metadataBase: new URL(`https://${host}`),
@@ -63,7 +64,7 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     description: profileData?.business_name 
       ? `Welcome to ${title}. Manage your real estate leads and marketing automation effortlessly.` 
-      : "AdRolls AI is the ultimate marketing automation platform for SMBs. Scale your Meta Ads, automate lead management, and grow your business with our agentic AI infrastructure.",
+      : "Nobogent AI is the ultimate marketing automation platform for SMBs. Scale your Meta Ads, automate lead management, and grow your business with our agentic AI infrastructure.",
     // Manifest is injected manually into <head> below to allow dynamic params
     icons: {
       icon: faviconUrl,
@@ -79,7 +80,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title: title,
       description: profileData?.business_name 
         ? `Scale your growth with ${title}. Professional real estate marketing automation.` 
-        : "AdRolls AI - Automate your Meta Ads, lead management, and SMB growth with agentic AI infrastructure.",
+        : "Nobogent AI - Automate your Meta Ads, lead management, and SMB growth with agentic AI infrastructure.",
       url: `https://${host}`,
       siteName: title,
       images: [{ url: iconUrl, width: 512, height: 512, alt: title }],

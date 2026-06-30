@@ -8,7 +8,7 @@ import { createClient } from '@/utils/supabase/client'
 
 export default function LandingNavbar() {
    const [isMenuOpen, setIsMenuOpen] = useState(false)
-   const [partnerLoginUrl, setPartnerLoginUrl] = useState('https://app.adrolls.in')
+   const [partnerLoginUrl, setPartnerLoginUrl] = useState('https://app.nobogent.com')
    const [hasSession, setHasSession] = useState(false)
    const supabase = createClient()
 
@@ -23,7 +23,7 @@ export default function LandingNavbar() {
       if (isDevOrTunnel) {
          setPartnerLoginUrl('/login')
       } else {
-         setPartnerLoginUrl('https://app.adrolls.in')
+         setPartnerLoginUrl('https://app.nobogent.com')
       }
    }, [])
 
@@ -43,8 +43,8 @@ export default function LandingNavbar() {
                {/* Brand Logo */}
                <div className="flex items-center gap-2 shrink-0">
                   <img
-                     src="https://i.ibb.co/7dDJdPgS/bg-removed.png"
-                     alt="AdRolls"
+                     src="/logo.png"
+                     alt="Nobogent"
                      className="h-20 md:h-24 w-auto min-w-[150px] object-contain hover:scale-105 transition-transform duration-300 drop-shadow-sm"
                   />
                </div>

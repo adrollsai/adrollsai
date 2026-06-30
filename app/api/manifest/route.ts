@@ -15,6 +15,9 @@ export async function GET(request: Request) {
   const isLocal = host === 'localhost';
 
   const SYSTEM_HOSTS = [
+    'nobogent.com',
+    'www.nobogent.com',
+    'app.nobogent.com',
     'adrolls.in', 
     'www.adrolls.in', 
     'app.adrolls.in',
@@ -22,12 +25,12 @@ export async function GET(request: Request) {
   ];
 
   // Updated version string to bust your browser's stubborn cache
-  const ADROLLS_LOGO_VERSION = 'v3_cachebuster'; 
+  const NOBOGENT_LOGO_VERSION = 'v3_cachebuster'; 
   
   const defaultManifest = {
-    id: '/?source=adrolls_pwa',
-    name: 'AdRolls AI',
-    short_name: 'AdRolls',
+    id: '/?source=nobogent_pwa',
+    name: 'Nobogent AI',
+    short_name: 'Nobogent',
     description: 'AI-Powered Real Estate Marketing',
     start_url: '/dashboard', 
     scope: '/',
@@ -36,13 +39,13 @@ export async function GET(request: Request) {
     theme_color: '#2563EB',
     icons: [
       { 
-        src: `/api/org-icon?type=icon&v=${ADROLLS_LOGO_VERSION}`, 
+        src: `/api/org-icon?type=icon&v=${NOBOGENT_LOGO_VERSION}`, 
         sizes: '512x512', 
         type: 'image/png',
         purpose: 'any maskable' 
       },
       { 
-        src: `/api/org-icon?type=icon&v=${ADROLLS_LOGO_VERSION}`, 
+        src: `/api/org-icon?type=icon&v=${NOBOGENT_LOGO_VERSION}`, 
         sizes: '192x192', 
         type: 'image/png',
         purpose: 'any maskable'

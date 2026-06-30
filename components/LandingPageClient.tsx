@@ -33,11 +33,11 @@ import ContactForm from '@/components/ContactForm'
 
 const ADMIN_USER_ID = 'bc63c065-9bcc-4793-bedc-f0960406425b'
 const LANDING_PAGE_ID = '906bdd5f-dda6-4f76-9170-4c81e90dc1f5'
-const SLUG_VALUE = 'test-adrolls-1592'
+const SLUG_VALUE = 'test-nobogent-1592'
 const PIXEL_ID = '1344722394272912'
 
 export default function LandingPageClient() {
-   const partnerLoginUrl = 'https://app.adrolls.in'
+   const partnerLoginUrl = 'https://app.nobogent.com'
    
    // Tickers and videos static lists
    const clientLogos = [
@@ -400,7 +400,7 @@ export default function LandingPageClient() {
             <div className="max-w-[1400px] mx-auto px-6">
                <div className="text-center max-w-3xl mx-auto mb-16">
                   <span className="text-[#124376] font-black tracking-wider uppercase text-xs bg-blue-50 border border-blue-100 px-3 py-1 rounded-full">Conversion Optimizers</span>
-                  <h2 className="text-3xl md:text-5xl font-black text-[#124376] mt-4 mb-4">How AdRolls Multiplies Conversions</h2>
+                  <h2 className="text-3xl md:text-5xl font-black text-[#124376] mt-4 mb-4">How Nobogent Multiplies Conversions</h2>
                   <p className="text-slate-500 text-sm font-bold">Custom engineering configured directly under the hood to ensure traffic turns to revenue.</p>
                </div>
 
@@ -480,27 +480,27 @@ export default function LandingPageClient() {
                               <th className="pb-4 font-black text-[#124376] text-xs uppercase tracking-wider">Growth Service</th>
                               <th className="pb-4 font-black text-slate-400 text-xs uppercase tracking-wider">Traditional Agency Cost / Mo</th>
                               <th className="pb-4 font-black text-[#B31B20] text-xs uppercase tracking-wider flex items-center gap-1">
-                                 <Sparkles size={14} className="text-[#DF9E27]" /> In AdRolls
+                                 <Sparkles size={14} className="text-[#DF9E27]" /> In Nobogent
                               </th>
                            </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-bold text-slate-700 text-xs sm:text-sm">
                            {[
-                              { tool: "GEO (Geospatial Targeting)", price: "₹15,000 / $200", adrolls: "✅ Included" },
-                              { tool: "User Clone Video Generation", price: "₹30,000 / $400", adrolls: "✅ Included" },
-                              { tool: "AI Video Editing", price: "₹25,000 / $350", adrolls: "✅ Included" },
-                              { tool: "Static Ads Creation", price: "₹10,000 / $150", adrolls: "✅ Included" },
-                              { tool: "Ads Management & Optimization", price: "₹40,000 / $500", adrolls: "✅ Included" },
-                              { tool: "Retargeting System (Builds TRUST)", price: "₹20,000 / $250", adrolls: "✅ Included" },
-                              { tool: "Social Media Management", price: "₹25,000 / $300", adrolls: "✅ Included" },
-                              { tool: "Inventory Management", price: "₹15,000 / $200", adrolls: "✅ Included" },
-                              { tool: "CAPI Installed CRM", price: "₹15,000 / $200", adrolls: "✅ Included" }
+                              { tool: "GEO (Geospatial Targeting)", price: "₹15,000 / $200", nobogent: "✅ Included" },
+                              { tool: "User Clone Video Generation", price: "₹30,000 / $400", nobogent: "✅ Included" },
+                              { tool: "AI Video Editing", price: "₹25,000 / $350", nobogent: "✅ Included" },
+                              { tool: "Static Ads Creation", price: "₹10,000 / $150", nobogent: "✅ Included" },
+                              { tool: "Ads Management & Optimization", price: "₹40,000 / $500", nobogent: "✅ Included" },
+                              { tool: "Retargeting System (Builds TRUST)", price: "₹20,000 / $250", nobogent: "✅ Included" },
+                              { tool: "Social Media Management", price: "₹25,000 / $300", nobogent: "✅ Included" },
+                              { tool: "Inventory Management", price: "₹15,000 / $200", nobogent: "✅ Included" },
+                              { tool: "CAPI Installed CRM", price: "₹15,000 / $200", nobogent: "✅ Included" }
                            ].map((row, i) => (
                               <tr key={i} className="hover:bg-slate-50/50 transition-colors">
                                  <td className="py-4 text-[#124376] font-black">{row.tool}</td>
                                  <td className="py-4 text-[#B31B20] line-through decoration-[#B31B20]/40 decoration-2">{row.price}</td>
                                  <td className="py-4 text-[#124376] font-black flex items-center gap-1.5">
-                                    <CheckCircle2 size={16} className="text-[#DF9E27] fill-current" /> {row.adrolls}
+                                    <CheckCircle2 size={16} className="text-[#DF9E27] fill-current" /> {row.nobogent}
                                  </td>
                               </tr>
                            ))}
@@ -603,7 +603,7 @@ export default function LandingPageClient() {
                   {/* Left info desk */}
                   <div className="md:col-span-5 bg-[#124376] rounded-2xl p-6 text-white flex flex-col justify-between shadow-xl min-h-[250px]">
                      <div>
-                        <h3 className="text-xl font-black mb-3">AdRolls HQ</h3>
+                        <h3 className="text-xl font-black mb-3">Nobogent HQ</h3>
                         <p className="text-slate-300 text-xs leading-relaxed mb-6">Reach our sales desk or engineering support for quick assistance.</p>
                         
                         <div className="space-y-4">
@@ -642,11 +642,11 @@ export default function LandingPageClient() {
             <div className="max-w-[1400px] mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
                <div className="flex items-center gap-2">
                   <Rocket className="text-[#DF9E27] w-5 h-5" />
-                  <span className="text-lg font-black tracking-tight">AdRolls.in</span>
+                  <span className="text-lg font-black tracking-tight">Nobogent.com</span>
                </div>
                
                <div className="text-slate-400 text-xs font-bold">
-                  ADROLLS AI BUSINESS SOLUTIONS
+                  NOBOGENT BUSINESS SOLUTIONS
                </div>
 
                <div className="flex flex-wrap justify-center gap-6 text-xs font-bold">

@@ -6,7 +6,7 @@ import { CheckCircle2, Sparkles } from 'lucide-react'
 
 export default function PricingSection() {
    const [currency, setCurrency] = useState<'INR' | 'USD'>('INR')
-   const [partnerLoginUrl, setPartnerLoginUrl] = useState('https://app.adrolls.in')
+   const [partnerLoginUrl, setPartnerLoginUrl] = useState('https://app.nobogent.com')
 
    useEffect(() => {
       try {
@@ -32,7 +32,7 @@ export default function PricingSection() {
       if (isDevOrTunnel) {
          setPartnerLoginUrl('/login')
       } else {
-         setPartnerLoginUrl('https://app.adrolls.in')
+         setPartnerLoginUrl('https://app.nobogent.com')
       }
    }, [])
 

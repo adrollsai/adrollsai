@@ -9,7 +9,7 @@ export async function middleware(request: NextRequest) {
   const hostname = rawHostname.split(':')[0]; 
 
   // 2. CUSTOM DOMAIN ROUTING
-  const mainDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'adrolls.in';
+  const mainDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'nobogent.com';
   
   // Safe list for platform-owned domains
   const isPlatformDomain = hostname.includes(mainDomain) || 

@@ -411,7 +411,7 @@ export default function FloatingAgent() {
         {isOpen && (
           <motion.div initial={{ opacity: 0, y: 20, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.95 }} className="fixed bottom-32 right-4 md:right-6 z-[70] w-[340px] md:w-[400px] bg-[#f8fafc] rounded-[32px] shadow-2xl border border-slate-200/60 flex flex-col h-[550px] max-h-[75vh]">
             <div className="bg-white px-5 py-4 flex justify-between items-center border-b border-slate-100">
-              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-[#e0f2fe] rounded-full flex items-center justify-center text-[#003D6F] font-bold"><Sparkles size={18} /></div><h4 className="text-slate-800 font-bold text-base">AdRolls AI</h4></div>
+              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-[#e0f2fe] rounded-full flex items-center justify-center text-[#003D6F] font-bold"><Sparkles size={18} /></div><h4 className="text-slate-800 font-bold text-base">Nobogent AI</h4></div>
               <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-700 bg-slate-50 p-2 rounded-full"><X size={20} /></button>
             </div>
             <div ref={scrollRef} className="p-5 flex-1 overflow-y-auto flex flex-col gap-4">

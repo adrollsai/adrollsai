@@ -15,13 +15,13 @@ export default function RefundPolicy() {
 
         <div className="space-y-8 leading-relaxed">
           <p>
-            At AdRollsAI (available at app.adrolls.in), we strive to provide the best real estate marketing automation tools. However, we understand that circumstances change. Please read our policy carefully regarding refunds and cancellations.
+            At NobogentAI (available at app.nobogent.com), we strive to provide the best real estate marketing automation tools. However, we understand that circumstances change. Please read our policy carefully regarding refunds and cancellations.
           </p>
 
           <section>
             <h2 className="text-xl font-bold text-white mb-4">1. Subscription Cancellations</h2>
             <ul className="list-disc pl-5 space-y-2">
-              <li><strong>Cancel Anytime:</strong> You may cancel your AdRollsAI subscription at any time via the App settings or by contacting adrollsai@gmail.com.</li>
+              <li><strong>Cancel Anytime:</strong> You may cancel your NobogentAI subscription at any time via the App settings or by contacting adrollsai@gmail.com.</li>
               <li><strong>Effect of Cancellation:</strong> Upon cancellation, your access to premium features will continue until the end of your current billing cycle. After the cycle ends, your account will revert to a free version (if available) or be deactivated, and no further charges will be made.</li>
             </ul>
           </section>
@@ -29,7 +29,7 @@ export default function RefundPolicy() {
           <section>
             <h2 className="text-xl font-bold text-white mb-4">2. No Refund Policy</h2>
             <ul className="list-disc pl-5 space-y-2">
-              <li><strong>All Sales Are Final:</strong> As AdRollsAI provides immediate access to digital software and marketing automation tools, <strong>we do not offer refunds</strong> once a subscription has been purchased.</li>
+              <li><strong>All Sales Are Final:</strong> As NobogentAI provides immediate access to digital software and marketing automation tools, <strong>we do not offer refunds</strong> once a subscription has been purchased.</li>
               <li><strong>No Exceptions:</strong> We do not provide refunds for partial months, unused time, or "change of mind" cancellations. Please ensure the software meets your requirements before purchasing a subscription.</li>
               <li><strong>Cancellations:</strong> You can cancel your subscription at any time to prevent future charges, but no refunds will be issued for the current billing cycle.</li>
             </ul>
@@ -37,13 +37,13 @@ export default function RefundPolicy() {
 
           <section className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
             <h2 className="text-xl font-bold text-amber-500 mb-4">3. Important: Facebook Ad Spend</h2>
-            <p className="mb-4">Please distinguish between payments made to AdRollsAI and payments made to Facebook:</p>
+            <p className="mb-4">Please distinguish between payments made to NobogentAI and payments made to Facebook:</p>
             <ul className="list-disc pl-5 space-y-2 mb-4">
-              <li><strong>AdRollsAI Subscription:</strong> Paid to us for the software tool.</li>
+              <li><strong>NobogentAI Subscription:</strong> Paid to us for the software tool.</li>
               <li><strong>Ad Budget:</strong> Paid directly to Meta (Facebook) for displaying your ads.</li>
             </ul>
             <p className="font-semibold text-white">
-              AdRollsAI cannot refund your Ad Budget. If you launch a campaign and spend money on Facebook ads, that money is paid to Meta. We have no control over those funds. If you wish to stop spending on ads, you must pause the campaign inside the AdRollsAI app or your Facebook Ads Manager immediately.
+              NobogentAI cannot refund your Ad Budget. If you launch a campaign and spend money on Facebook ads, that money is paid to Meta. We have no control over those funds. If you wish to stop spending on ads, you must pause the campaign inside the NobogentAI app or your Facebook Ads Manager immediately.
             </p>
           </section>
 

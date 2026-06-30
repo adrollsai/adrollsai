@@ -13,8 +13,8 @@ const supabaseAdmin = createAdminClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const DEFAULT_CHARACTER_URL = "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/character-9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1780563818432-trimmed.mp4";
-const DEFAULT_CHARACTER_AUDIO_URL = "https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/voice-sample-9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1780556476936.mp3";
+const DEFAULT_CHARACTER_URL = "https://hpssqssdewmkmafxlfud.supabase.co/storage/v1/object/public/logos/character-9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1780563818432-trimmed.mp4";
+const DEFAULT_CHARACTER_AUDIO_URL = "https://hpssqssdewmkmafxlfud.supabase.co/storage/v1/object/public/logos/voice-sample-9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1780556476936.mp3";
 const DEFAULT_CHARACTER_DESCRIPTION = "A young Indian female with straight shoulder-length black hair and a calm expression. She wears a striped button-down shirt and brown trousers, standing in a modern white interior with a feather-shaped wall light.";
 
 export async function POST(request: Request) {

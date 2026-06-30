@@ -4,11 +4,11 @@ export async function GET(req: Request) {
     const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID;
     
     // Resolve dynamic baseUrl from host headers to avoid misconfigured NEXT_PUBLIC_APP_URL (e.g. ngrok override in production)
-    const host = req.headers.get('host') || 'app.adrolls.in';
+    const host = req.headers.get('host') || 'app.nobogent.com';
     const protocol = req.headers.get('x-forwarded-proto') || 'https';
     const currentOrigin = `${protocol}://${host}`;
     
-    const baseUrl = (host.includes('adrolls.in') || host.includes('localhost') || host.includes('vercel.app'))
+    const baseUrl = (host.includes('nobogent.com') || host.includes('adrolls.in') || host.includes('localhost') || host.includes('vercel.app'))
         ? currentOrigin
         : (process.env.NEXT_PUBLIC_APP_URL || currentOrigin);
 

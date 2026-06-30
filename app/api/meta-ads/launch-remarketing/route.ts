@@ -107,7 +107,7 @@ export async function POST(request: Request) {
         
         const targetBusinessUrl = targetProfile.custom_domain 
             ? `https://${targetProfile.custom_domain}` 
-            : `https://app.adrolls.in/shared/${targetUserId}`;
+            : `https://app.nobogent.com/shared/${targetUserId}`;
 
         data.linkUrl = data.linkUrl || targetBusinessUrl;
         data.privacyPolicyUrl = data.privacyPolicyUrl || `${targetBusinessUrl}/privacy`;

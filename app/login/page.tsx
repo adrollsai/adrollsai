@@ -92,11 +92,11 @@ export default function LoginPage() {
             <div className="w-20 h-20 mx-auto mb-5 relative drop-shadow-xl hover:scale-105 transition-transform duration-300">
                 <img 
                     src="/icon-512x512.png" 
-                    alt="AdRolls AI Logo" 
+                    alt="Nobogent AI Logo" 
                     className="w-full h-full object-contain rounded-2xl" 
                 />
             </div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">AdRolls AI</h1>
+            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Nobogent AI</h1>
             <p className="text-slate-500 font-medium mt-2">
               {mode === 'login' && 'Welcome back to your workspace'}
               {mode === 'signup' && 'Create your account to get started'}

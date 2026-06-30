@@ -3,11 +3,13 @@ import { headers } from 'next/headers'
 
 export default async function robots(): Promise<MetadataRoute.Robots> {
   const headersList = await headers()
-  const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || 'adrolls.in'
+  const rawHost = headersList.get('x-forwarded-host') || headersList.get('host') || 'nobogent.com'
   const host = rawHost.split(':')[0]
 
-  const mainDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'adrolls.in'
+  const mainDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'nobogent.com'
   const isPlatform = host.includes(mainDomain) || 
+                     host.includes('nobogent.com') || 
+                     host.includes('adrolls.in') || 
                      host.includes('localhost') || 
                      host.includes('vercel.app') || 
                      host.includes('ngrok-free.dev')

@@ -185,7 +185,7 @@ BUSINESS CONTACT INFO:
 - Brand/Business Name: ${profile?.business_name || resolvedProductName || "Premium Listings"}
 - Contact Phone Number: ${profile?.contact_number || "+91 98724 90091"}
 - Contact Email: ${profile?.email || "info@bluesquareinfra.com"}
-- Custom Connected Domain: ${profile?.custom_domain || `app.adrolls.in/shared/${targetUserId}`}
+- Custom Connected Domain: ${profile?.custom_domain || `app.nobogent.com/shared/${targetUserId}`}
 - Brand Base Accent Color: ${profile?.brand_color || "#9e755c"}
 - Business Logo Image URL: ${profile?.logo_url || ""}
 `
@@ -573,7 +573,7 @@ CRITICAL RULES:
             return NextResponse.json({ error: "Failed to persist landing page to database." }, { status: 500 })
         }
 
-        const domainBase = profile?.custom_domain || `app.adrolls.in/shared/${targetUserId}`
+        const domainBase = profile?.custom_domain || `app.nobogent.com/shared/${targetUserId}`
         const publicUrl = `https://${domainBase}/${slug}`
 
         return NextResponse.json({

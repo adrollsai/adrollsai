@@ -251,7 +251,7 @@ export async function POST(req: Request) {
 
                             const targetBusinessUrl = profile.custom_domain 
                                 ? `https://${profile.custom_domain}` 
-                                : `https://app.adrolls.in/shared/${userId}`;
+                                : `https://app.nobogent.com/shared/${userId}`;
 
                             const creativePayload = {
                                 name: `AI Opt - ${propertyTitle || 'Variation'}`,
