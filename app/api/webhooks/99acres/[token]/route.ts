@@ -142,18 +142,43 @@ export async function POST(
             }
         }
 
-        // 4. Check for existing lead by phone to prevent duplicates
+        // 4. Check for existing lead by phone to prevent duplicates (with robust formatting normalization)
         if (phone) {
-            const { data: existingByPhone } = await supabaseAdmin
-                .from('leads')
-                .select('id')
-                .eq('user_id', profile.id)
-                .eq('phone', phone)
-                .maybeSingle();
+            const cleanPhone = phone.replace(/\D/g, '');
+            const phoneSuffix = cleanPhone.slice(-10);
 
-            if (existingByPhone) {
-                console.log(`[99acres Webhook] Lead with phone ${phone} already exists for user ${profile.id}. Skipping duplicate.`);
-                return NextResponse.json({ success: true, message: 'Duplicate lead skipped' }, { status: 200 });
+            if (phoneSuffix.length === 10) {
+                // Fetch potential duplicates using suffix-friendly pattern matching
+                const { data: potentialDuplicates } = await supabaseAdmin
+                    .from('leads')
+                    .select('id, phone')
+                    .eq('user_id', profile.id)
+                    .or(`phone.like.%${phoneSuffix},phone.eq.${phone}`);
+
+                if (potentialDuplicates && potentialDuplicates.length > 0) {
+                    const isDuplicate = potentialDuplicates.some(lead => {
+                        const leadClean = (lead.phone || '').replace(/\D/g, '');
+                        return leadClean.endsWith(phoneSuffix);
+                    });
+
+                    if (isDuplicate) {
+                        console.log(`[99acres Webhook] Lead with phone suffix ${phoneSuffix} already exists for user ${profile.id}. Skipping duplicate.`);
+                        return NextResponse.json({ success: true, message: 'Duplicate lead skipped' }, { status: 200 });
+                    }
+                }
+            } else {
+                // Fallback to exact match check
+                const { data: existingByPhone } = await supabaseAdmin
+                    .from('leads')
+                    .select('id')
+                    .eq('user_id', profile.id)
+                    .eq('phone', phone)
+                    .maybeSingle();
+
+                if (existingByPhone) {
+                    console.log(`[99acres Webhook] Lead with phone ${phone} already exists for user ${profile.id}. Skipping duplicate.`);
+                    return NextResponse.json({ success: true, message: 'Duplicate lead skipped' }, { status: 200 });
+                }
             }
         }
 
@@ -174,6 +199,7 @@ export async function POST(
                 assigned_to: assignedAgentId,
                 budget: typeof budget === 'string' ? budget : String(budget || ''),
                 ad_name: projectName || '99acres Lead',
+                created_at: new Date().toISOString(),
             })
             .select()
             .single()

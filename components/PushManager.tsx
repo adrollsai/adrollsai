@@ -91,29 +91,16 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
           }
       }
 
-      // 2. Force a fresh registration to ensure we have a clean, active worker
-      const registration = await navigator.serviceWorker.register('/sw.js', {
-        scope: '/',
-        updateViaCache: 'none',
-      })
-      
-      // Ensure the service worker is active before trying to subscribe
-      if (!registration.active) {
-        await new Promise<void>((resolve) => {
-          const worker = registration.installing || registration.waiting;
-          if (worker) {
-            const stateChangeHandler = () => {
-              if (worker.state === 'activated') {
-                worker.removeEventListener('statechange', stateChangeHandler);
-                resolve();
-              }
-            };
-            worker.addEventListener('statechange', stateChangeHandler);
-          } else {
-            resolve();
-          }
-        });
+      // 2. Use existing active service worker or wait for ready status
+      let registration = await navigator.serviceWorker.getRegistration()
+      if (!registration) {
+        registration = await navigator.serviceWorker.register('/sw.js', {
+          scope: '/',
+          updateViaCache: 'none',
+        })
       }
+      
+      await navigator.serviceWorker.ready
 
       const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
       if (!vapidKey) {
@@ -130,18 +117,18 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
       setSubscription(sub)
       setPermissionState('granted')
 
-      // Sync with backend
-      const res = await fetch('/api/web-push/subscribe', {
+      toast.success("Notifications Enabled!", {
+        description: "You are now subscribed to real-time updates."
+      })
+
+      // Sync with backend in background
+      fetch('/api/web-push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subscription: sub, ownerId }),
+      }).catch(err => {
+        console.error('Failed to sync subscription with backend:', err)
       })
-
-      if (res.ok) {
-          toast.success("Notifications Enabled!", {
-            description: "You are now subscribed to real-time updates."
-          })
-      }
 
     } catch (error: any) {
       console.error('Failed to subscribe:', error)
@@ -199,10 +186,10 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
            </div>
            <div>
               <p className="text-sm font-bold text-slate-900">Stay Updated</p>
-              <p className="text-xs text-slate-500 leading-tight">Get notified about new products & offers.</p>
+              <p className="text-xs text-slate-500 leading-tight">Get notified about new leads & offers.</p>
            </div>
         </div>
-
+ 
         {isIOS && !isStandalone ? (
            <div className="mt-3 bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs text-slate-600 leading-relaxed">
               Tap <Share size={12} className="inline text-blue-500 mb-0.5"/> then <b>Add to Home Screen</b> to enable alerts.
@@ -210,7 +197,6 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
         ) : (
            <button 
               onClick={() => {
-                setIsDismissed(true);
                 subscribeToPush();
               }} 
               disabled={loading} 

@@ -66,3 +66,25 @@ self.addEventListener('notificationclick', function(event) {
     })
   )
 })
+
+// 4. Intercept and cache org-icon requests to support offline startup and avoid black splash screen
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url)
+  if (url.pathname === '/api/org-icon') {
+    event.respondWith(
+      caches.open('org-icons-cache').then((cache) => {
+        return cache.match(event.request).then((cachedResponse) => {
+          const fetchPromise = fetch(event.request).then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200) {
+              cache.put(event.request, networkResponse.clone())
+            }
+            return networkResponse
+          }).catch((err) => {
+            console.warn('Network fetch failed for org-icon:', err)
+          })
+          return cachedResponse || fetchPromise
+        })
+      })
+    )
+  }
+})
