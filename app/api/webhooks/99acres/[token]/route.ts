@@ -142,7 +142,22 @@ export async function POST(
             }
         }
 
-        // 4. Insert lead into CRM
+        // 4. Check for existing lead by phone to prevent duplicates
+        if (phone) {
+            const { data: existingByPhone } = await supabaseAdmin
+                .from('leads')
+                .select('id')
+                .eq('user_id', profile.id)
+                .eq('phone', phone)
+                .maybeSingle();
+
+            if (existingByPhone) {
+                console.log(`[99acres Webhook] Lead with phone ${phone} already exists for user ${profile.id}. Skipping duplicate.`);
+                return NextResponse.json({ success: true, message: 'Duplicate lead skipped' }, { status: 200 });
+            }
+        }
+
+        // 5. Insert lead into CRM
         const sourceLabel = projectName ? `99acres - ${projectName}` : '99acres'
 
         const { data: savedLead, error: insertErr } = await supabaseAdmin

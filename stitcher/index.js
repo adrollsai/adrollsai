@@ -32,7 +32,7 @@ const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL;
 
 // Configure Web Push Notifications
 webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:hello@adrolls.in',
+    process.env.VAPID_SUBJECT || 'mailto:info@nobogent.com',
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
 );

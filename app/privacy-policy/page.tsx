@@ -24,7 +24,7 @@ export default function PrivacyPolicy() {
             
             <h3 className="font-semibold text-white mb-2">A. Information You Provide</h3>
             <ul className="list-disc pl-5 space-y-2 mb-4">
-              <li><strong>Account Information:</strong> Name, email address (adrollsai@gmail.com), and profile picture when you sign up.</li>
+              <li><strong>Account Information:</strong> Name, email address (info@nobogent.com), and profile picture when you sign up.</li>
               <li><strong>Business Profile:</strong> Your real estate agent profile details (e.g., phone number, business logo, branding colors).</li>
             </ul>
 
@@ -76,7 +76,7 @@ export default function PrivacyPolicy() {
             <p className="mb-2"><strong>How to Delete Your Data:</strong> If you wish to remove the App's access to your Facebook data or delete your account entirely:</p>
             <ul className="list-disc pl-5 space-y-2">
               <li><strong>Via Facebook:</strong> You can remove our App's access at any time by going to your Facebook Settings &gt; Business Integrations and removing "NobogentAI."</li>
-              <li><strong>By Email:</strong> You can contact us at adrollsai@gmail.com with the subject "Data Deletion Request," and we will manually delete your data within 30 days.</li>
+              <li><strong>By Email:</strong> You can contact us at info@nobogent.com with the subject "Data Deletion Request," and we will manually delete your data within 30 days.</li>
             </ul>
           </section>
 
@@ -93,7 +93,7 @@ export default function PrivacyPolicy() {
             <p className="mb-2">If you have any questions about this Privacy Policy, please contact us:</p>
             <ul className="space-y-1">
               <li><strong>Entity Name:</strong> NOBOGENT AI</li>
-              <li><strong>Email:</strong> <a href="mailto:adrollsai@gmail.com" className="text-amber-500 hover:underline">adrollsai@gmail.com</a></li>
+              <li><strong>Email:</strong> <a href="mailto:info@nobogent.com" className="text-amber-500 hover:underline">info@nobogent.com</a></li>
               <li><strong>Location:</strong> India</li>
             </ul>
           </section>

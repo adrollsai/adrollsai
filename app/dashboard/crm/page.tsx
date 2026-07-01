@@ -46,6 +46,7 @@ export default function CRMPage() {
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [enableDistribution, setEnableDistribution] = useState(false)
+  const [assignedCampaigns, setAssignedCampaigns] = useState<string[]>([])
 
   // --- FILTER STATE ---
   const [activeStage, setActiveStage] = useState('New')
@@ -120,8 +121,32 @@ export default function CRMPage() {
       }
       setTargetUserId(targetUserId)
 
-      // Setup caching key
-      const cacheKey = `crm_cache_${targetUserId}`;
+      // Get campaign assignment rules for agents
+      let activeCampaigns: string[] = []
+      if (currentRole === 'agent' && parentId) {
+          const { data: automations } = await supabase
+            .from('automations')
+            .select('title, description')
+            .eq('user_id', parentId)
+            .like('title', 'Campaign-Assignment:%')
+            .eq('is_active', true)
+          
+          if (automations) {
+              for (const aut of automations) {
+                  try {
+                      const agentIds = JSON.parse(aut.description || '[]');
+                      if (Array.isArray(agentIds) && agentIds.includes(user.id)) {
+                          const campName = aut.title.replace('Campaign-Assignment:', '').trim();
+                          activeCampaigns.push(campName);
+                      }
+                  } catch (e) {}
+              }
+          }
+      }
+      setAssignedCampaigns(activeCampaigns)
+
+      // Setup caching key (agent-specific cache key to prevent admin leads leak/conflicts)
+      const cacheKey = currentRole === 'agent' ? `crm_cache_${user.id}` : `crm_cache_${targetUserId}`;
       const cached = force ? [] : getLocalCache<any>(cacheKey);
 
       if (cached.length > 0 && leads.length === 0) {
@@ -202,7 +227,8 @@ export default function CRMPage() {
               } else if (currentRole === 'admin' || currentRole === 'client') {
                   query = query.eq('user_id', targetUserId)
               } else {
-                  query = query.eq('user_id', parentId).eq('assigned_to', user.id) 
+                  // Retrieve all parent leads; agent filtering will be applied client-side
+                  query = query.eq('user_id', parentId) 
               }
 
               const { data, error } = await query
@@ -210,7 +236,7 @@ export default function CRMPage() {
               
               if (data && data.length > 0) {
                   allData.push(...data)
-                  if (data.length < step) hasMore = false;
+                  if (data.length < step || allData.length >= 1000) hasMore = false;
                   else start += step;
               } else {
                   hasMore = false;
@@ -222,11 +248,25 @@ export default function CRMPage() {
       const data = await fetchAllLeads()
       
       if (data) {
-          const merged = force ? data : mergeCacheData<any>(cached, data);
+          const parsedData = data.map(lead => {
+              let parsedCustomFields = lead.custom_fields;
+              if (parsedCustomFields && typeof parsedCustomFields === 'string') {
+                  try {
+                      while (typeof parsedCustomFields === 'string') {
+                          parsedCustomFields = JSON.parse(parsedCustomFields);
+                      }
+                  } catch (e) {
+                      parsedCustomFields = {};
+                  }
+              }
+              return { ...lead, custom_fields: parsedCustomFields };
+          });
+          const merged = force ? parsedData : mergeCacheData<any>(cached, parsedData);
           setLeads(merged);
-          setLocalCache(cacheKey, merged);
+          // Limit cache size to 150 items to avoid localStorage QuotaExceededError
+          setLocalCache(cacheKey, merged.slice(0, 150));
       }
-
+ 
       try {
           const res = await fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
           const campaignData = await res.json()
@@ -243,7 +283,7 @@ export default function CRMPage() {
       setIsRefreshing(false)
     }
   }
-
+ 
   // Trigger initial fetch & silent background auto-sync of Facebook leads
   useEffect(() => { 
     const initCRM = async () => {
@@ -270,15 +310,27 @@ export default function CRMPage() {
     
     initCRM()
   }, [])
-
+ 
   // 2. SUPABASE REAL-TIME (Listen for Webhook Insertions & Updates)
   useEffect(() => {
     if (!userId) return
-
+ 
     const channel = supabase.channel('realtime_leads')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, (payload) => {
         if (payload.eventType === 'INSERT') {
             const newLead = payload.new
+            let parsedCustomFields = newLead.custom_fields;
+            if (parsedCustomFields && typeof parsedCustomFields === 'string') {
+                try {
+                    while (typeof parsedCustomFields === 'string') {
+                        parsedCustomFields = JSON.parse(parsedCustomFields);
+                    }
+                } catch (e) {
+                    parsedCustomFields = {};
+                }
+            }
+            newLead.custom_fields = parsedCustomFields;
+
             // Only inject into UI if this lead belongs to the target (impersonated/agency client), the logged-in user, or assigned to this user
             if (newLead.user_id === targetUserId || newLead.user_id === userId || newLead.assigned_to === userId) {
                  setLeads(prev => {
@@ -286,24 +338,36 @@ export default function CRMPage() {
                       if (prev.find(l => l.id === newLead.id)) return prev;
                       const updated = [newLead, ...prev];
                       
-                      // Update cache silently
+                      // Update cache silently with size limit
                       const cacheKey = `crm_cache_${userId}`
-                      localStorage.setItem(cacheKey, JSON.stringify(updated))
+                      setLocalCache(cacheKey, updated.slice(0, 150))
                       
                       return updated;
                  })
             }
         } else if (payload.eventType === 'UPDATE') {
             const updatedLead = payload.new
+            let parsedCustomFields = updatedLead.custom_fields;
+            if (parsedCustomFields && typeof parsedCustomFields === 'string') {
+                try {
+                    while (typeof parsedCustomFields === 'string') {
+                        parsedCustomFields = JSON.parse(parsedCustomFields);
+                    }
+                } catch (e) {
+                    parsedCustomFields = {};
+                }
+            }
+            updatedLead.custom_fields = parsedCustomFields;
+
             setLeads(prev => {
                 const index = prev.findIndex(l => l.id === updatedLead.id)
                 if (index === -1) return prev;
                 const updated = [...prev]
                 updated[index] = { ...updated[index], ...updatedLead }
                 
-                // Update cache silently
+                // Update cache silently with size limit
                 const cacheKey = `crm_cache_${userId}`
-                localStorage.setItem(cacheKey, JSON.stringify(updated))
+                setLocalCache(cacheKey, updated.slice(0, 150))
                 
                 return updated;
             })
@@ -312,9 +376,9 @@ export default function CRMPage() {
             setLeads(prev => {
                 const updated = prev.filter(l => l.id !== oldId)
                 
-                // Update cache silently
+                // Update cache silently with size limit
                 const cacheKey = `crm_cache_${userId}`
-                localStorage.setItem(cacheKey, JSON.stringify(updated))
+                setLocalCache(cacheKey, updated.slice(0, 150))
                 
                 return updated;
             })
@@ -682,7 +746,15 @@ END:VCARD\n`
   // --- ADVANCED FILTERING ---
   // 1. Leads matching search, campaign, and form filters (but NOT pipeline stage)
   const leadsMatchingFilters = useMemo(() => {
-    return leads.filter(l => {
+    const unfiltered = leads.filter(l => {
+      // RESTRICT AGENTS: Only show leads assigned to them OR leads from campaigns they are assigned to
+      if (role === 'agent') {
+          const isAssignedToMe = l.assigned_to === userId;
+          const campaignName = getLeadCampaignName(l);
+          const isCampaignAssignedToMe = campaignName && assignedCampaigns.some(ac => ac.trim().toLowerCase() === campaignName.trim().toLowerCase());
+          if (!isAssignedToMe && !isCampaignAssignedToMe) return false;
+      }
+
       const matchSearch = !searchQuery || 
                           l.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           l.phone?.includes(searchQuery) || 
@@ -701,7 +773,16 @@ END:VCARD\n`
       
       return matchSearch && matchCampaign && matchForm
     })
-  }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm])
+
+    // Deduplicate leads by unique ID to prevent console key warnings
+    const seen = new Set();
+    return unfiltered.filter(lead => {
+        if (!lead.id) return true;
+        if (seen.has(lead.id)) return false;
+        seen.add(lead.id);
+        return true;
+    });
+  }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm, role, userId, assignedCampaigns, getLeadCampaignName])
 
   // 2. Final filtered list including pipeline stage matching and sorted by newest first
   const filteredLeads = useMemo(() => {

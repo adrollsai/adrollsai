@@ -69,7 +69,6 @@ export default function QuotaManager() {
     const pathname = usePathname();
     const [usage, setUsage] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [checkoutLoading, setCheckoutLoading] = useState(false);
     
     // Warning banner states
     const [warningQuota, setWarningQuota] = useState<any>(null);
@@ -127,29 +126,6 @@ export default function QuotaManager() {
         }
     }, [pathname]);
 
-    const handleBuyAddon = async (addonId: string) => {
-        setCheckoutLoading(true);
-        try {
-            const res = await fetch('/api/payment/initiate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ addonId })
-            });
-
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Failed to start payment checkout");
-
-            if (data.url) {
-                window.location.href = data.url;
-            } else {
-                toast.error("Checkout server configuration issue.");
-                setCheckoutLoading(false);
-            }
-        } catch (err: any) {
-            toast.error("Checkout Failed", { description: err.message });
-            setCheckoutLoading(false);
-        }
-    };
 
     if (loading || pathname === '/dashboard/billing') return null;
 
@@ -213,18 +189,11 @@ export default function QuotaManager() {
                                 </p>
 
                                 <button
-                                    onClick={() => handleBuyAddon(addon.id)}
-                                    disabled={checkoutLoading}
-                                    className="w-full bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white py-3 rounded-2xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2"
-                                >
-                                    {checkoutLoading ? (
-                                        <Loader2 className="animate-spin" size={14} />
-                                    ) : (
-                                        <>
-                                            <ShoppingBag size={14} /> Buy Now with PhonePe
-                                        </>
-                                    )}
-                                </button>
+                                     onClick={() => router.push('/dashboard/billing')}
+                                     className="w-full bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white py-3 rounded-2xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2"
+                                 >
+                                     <ShoppingBag size={14} /> Purchase Add-on
+                                 </button>
                             </div>
                         )}
 

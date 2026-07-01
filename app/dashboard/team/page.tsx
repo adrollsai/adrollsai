@@ -39,6 +39,15 @@ export default function TeamPage() {
   })
 
   const fetchData = async () => {
+    const cacheKey = `team_cache_${impersonateId || 'own'}`;
+    try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+            setTeam(JSON.parse(cached));
+            setLoading(false);
+        }
+    } catch (e) {}
+
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
@@ -56,7 +65,6 @@ export default function TeamPage() {
       setCurrentUser(profile)
 
       // 2. Fetch Team Members (Admin or Agent)
-      // They are linked via parent_id
       const { data: members, error } = await supabase
         .from('profiles')
         .select('*')
@@ -65,7 +73,9 @@ export default function TeamPage() {
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setTeam(members || [])
+      const finalMembers = members || []
+      setTeam(finalMembers)
+      try { localStorage.setItem(cacheKey, JSON.stringify(finalMembers)); } catch (e) {}
     } catch (error: any) {
       console.error("Team fetch error:", error)
       toast.error("Failed to load team")

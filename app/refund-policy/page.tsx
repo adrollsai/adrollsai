@@ -21,7 +21,7 @@ export default function RefundPolicy() {
           <section>
             <h2 className="text-xl font-bold text-white mb-4">1. Subscription Cancellations</h2>
             <ul className="list-disc pl-5 space-y-2">
-              <li><strong>Cancel Anytime:</strong> You may cancel your NobogentAI subscription at any time via the App settings or by contacting adrollsai@gmail.com.</li>
+              <li><strong>Cancel Anytime:</strong> You may cancel your NobogentAI subscription at any time via the App settings or by contacting info@nobogent.com.</li>
               <li><strong>Effect of Cancellation:</strong> Upon cancellation, your access to premium features will continue until the end of your current billing cycle. After the cycle ends, your account will revert to a free version (if available) or be deactivated, and no further charges will be made.</li>
             </ul>
           </section>
@@ -49,7 +49,7 @@ export default function RefundPolicy() {
 
           <section>
             <h2 className="text-xl font-bold text-white mb-4">4. How to Request a Refund</h2>
-            <p className="mb-4">To request a refund for your software subscription, please email <a href="mailto:adrollsai@gmail.com" className="text-amber-500 hover:underline">adrollsai@gmail.com</a> with:</p>
+            <p className="mb-4">To request a refund for your software subscription, please email <a href="mailto:info@nobogent.com" className="text-amber-500 hover:underline">info@nobogent.com</a> with:</p>
             <ul className="list-disc pl-5 space-y-2 mb-4">
               <li>Your registered email address.</li>
               <li>Proof of payment (transaction ID).</li>

@@ -60,7 +60,6 @@ export async function POST(request: Request) {
         const { data: existingLeads } = await supabase
             .from('leads')
             .select('facebook_lead_id')
-            .eq('user_id', targetUserId)
             .in('facebook_lead_id', incomingLeadIds);
             
         const existingSet = new Set(existingLeads?.map(l => l.facebook_lead_id) || []);

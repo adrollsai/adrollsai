@@ -90,7 +90,16 @@ export default function AssetsPage() {
                     })
                 });
 
-                const data = await response.json();
+                const contentType = response.headers.get('content-type') || ''
+                let data: any
+                if (contentType.includes('application/json')) {
+                    data = await response.json()
+                } else {
+                    const htmlText = await response.text()
+                    console.error("[Assets Page] Received non-JSON response from generate-caption:", htmlText.substring(0, 1000))
+                    throw new Error(`Server returned non-JSON response. Status: ${response.status}`)
+                }
+                
                 if (!response.ok) throw new Error(data.error || "Failed to generate captions.");
 
                 if (data.success && data.captions) {
@@ -134,7 +143,7 @@ export default function AssetsPage() {
     const [isUploading, setIsUploading] = useState(false);
 
     // 1. SAFE FETCH WITH LOCAL CACHING
-    const fetchAssets = async (force = false) => {
+    const fetchAssets = async (force = false, isBackground = false) => {
         try {
             // 1. Get current user
             const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -182,7 +191,7 @@ export default function AssetsPage() {
                 setLoading(true);
             }
 
-            if (force) setIsRefreshing(true);
+            if (force && !isBackground) setIsRefreshing(true);
 
             const maxAssetTime = getMaxCreatedAt(cachedAssets as any[]);
             const maxPropTime = getMaxCreatedAt(cachedProps as any[]);
@@ -190,8 +199,18 @@ export default function AssetsPage() {
             // 2. Fetch assets for the organization securely via server API
             const assetUrl = `/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}${maxAssetTime && !force ? `&since=${maxAssetTime}` : ''}`;
             const response = await fetch(assetUrl)
-            const assetData = await response.json()
-            if (assetData.error) throw new Error(assetData.error)
+            
+            const contentType = response.headers.get('content-type') || ''
+            let assetData: any
+            if (contentType.includes('application/json')) {
+                assetData = await response.json()
+            } else {
+                const htmlText = await response.text()
+                console.error("[Assets Page] Received non-JSON response from /api/assets:", htmlText.substring(0, 1000))
+                throw new Error(`Server returned HTML/text instead of JSON. Status: ${response.status}`)
+            }
+            
+            if (assetData?.error) throw new Error(assetData.error)
 
             let propQuery = supabase
                 .from('properties')
@@ -264,7 +283,7 @@ export default function AssetsPage() {
             } catch (err) {
                 console.error("[Assets Polling] Active video tasks sync failed:", err);
             }
-            fetchAssets(true) // force refresh in background
+            fetchAssets(true, true) // force refresh in background
         }, 8000) // Poll every 8 seconds for active rendering/processing
 
         return () => clearInterval(interval)
@@ -285,7 +304,17 @@ export default function AssetsPage() {
                     caption: caption || 'Check out this new listing! 🏡 #RealEstate'
                 })
             })
-            const data = await response.json()
+            
+            const contentType = response.headers.get('content-type') || ''
+            let data: any
+            if (contentType.includes('application/json')) {
+                data = await response.json()
+            } else {
+                const htmlText = await response.text()
+                console.error("[Assets Page] Received non-JSON response from post-social:", htmlText.substring(0, 1000))
+                throw new Error(`Server returned HTML/text instead of JSON. Status: ${response.status}`)
+            }
+            
             if (response.ok) {
                 alert('Successfully posted to Facebook Page!')
                 setSelectedAsset(null)
@@ -293,8 +322,8 @@ export default function AssetsPage() {
             } else {
                 alert('Error: ' + (data.error || 'Failed to post'))
             }
-        } catch (e) {
-            alert('Network error')
+        } catch (e: any) {
+            alert('Error: ' + e.message)
         } finally {
             setIsPosting(false)
         }
@@ -315,7 +344,17 @@ export default function AssetsPage() {
                     caption: caption || 'Created with AI ✨ #RealEstate'
                 })
             })
-            const data = await response.json()
+            
+            const contentType = response.headers.get('content-type') || ''
+            let data: any
+            if (contentType.includes('application/json')) {
+                data = await response.json()
+            } else {
+                const htmlText = await response.text()
+                console.error("[Assets Page] Received non-JSON response from post-instagram:", htmlText.substring(0, 1000))
+                throw new Error(`Server returned HTML/text instead of JSON. Status: ${response.status}`)
+            }
+            
             if (response.ok) {
                 alert('Successfully posted to Instagram!')
                 setSelectedAsset(null)
@@ -323,8 +362,8 @@ export default function AssetsPage() {
             } else {
                 alert('Error: ' + (data.error || 'Failed to post'))
             }
-        } catch (e) {
-            alert('Network error')
+        } catch (e: any) {
+            alert('Error: ' + e.message)
         } finally {
             setIsPosting(false)
         }
@@ -346,7 +385,17 @@ export default function AssetsPage() {
                     type: selectedAsset.type
                 })
             })
-            const data = await response.json()
+            
+            const contentType = response.headers.get('content-type') || ''
+            let data: any
+            if (contentType.includes('application/json')) {
+                data = await response.json()
+            } else {
+                const htmlText = await response.text()
+                console.error("[Assets Page] Received non-JSON response from post/linkedin:", htmlText.substring(0, 1000))
+                throw new Error(`Server returned HTML/text instead of JSON. Status: ${response.status}`)
+            }
+            
             if (response.ok) {
                 toast.success('Successfully posted to LinkedIn!')
                 setSelectedAsset(null)
@@ -354,8 +403,8 @@ export default function AssetsPage() {
             } else {
                 toast.error('LinkedIn Error: ' + (data.error || 'Failed to post'))
             }
-        } catch (e) {
-            toast.error('Network error connecting to LinkedIn')
+        } catch (e: any) {
+            toast.error('LinkedIn Error: ' + e.message)
         } finally {
             setIsPosting(false)
         }
@@ -665,7 +714,15 @@ export default function AssetsPage() {
                 })
             })
 
-            const data = await response.json()
+            const contentType = response.headers.get('content-type') || ''
+            let data: any
+            if (contentType.includes('application/json')) {
+                data = await response.json()
+            } else {
+                const htmlText = await response.text()
+                console.error("[Assets Page] Received non-JSON response from post-universal:", htmlText.substring(0, 1000))
+                throw new Error(`Server returned HTML/text instead of JSON. Status: ${response.status}`)
+            }
 
             if (response.ok) {
                 alert(`Broadcast Complete! \n\n${JSON.stringify(data.results, null, 2)}`)

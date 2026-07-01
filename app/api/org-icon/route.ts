@@ -64,7 +64,6 @@ export async function GET(request: NextRequest) {
         pipeline = pipeline
             .resize(size, size, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
             .extend({ top: padding, bottom: padding, left: padding, right: padding, background: { r: 255, g: 255, b: 255, alpha: 0 } })
-            .composite([{ input: roundedCornersMask, blend: 'dest-in' }])
             .extend({
                 top: 1010, bottom: 1010, left: 329, right: 329,
                 background: { r: 255, g: 255, b: 255, alpha: 1 } 
@@ -75,7 +74,6 @@ export async function GET(request: NextRequest) {
         pipeline = pipeline
             .resize(size, size, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
             .extend({ top: padding, bottom: padding, left: padding, right: padding, background: { r: 255, g: 255, b: 255, alpha: 0 } })
-            .composite([{ input: roundedCornersMask, blend: 'dest-in' }])
             // Flattening the standard PWA icon onto a white background is crucial. 
             // Transparent PNGs break Android's "maskable" splash screen requirements.
             .flatten({ background: { r: 255, g: 255, b: 255 } });

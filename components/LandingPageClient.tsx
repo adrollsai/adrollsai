@@ -618,7 +618,7 @@ export default function LandingPageClient() {
                               <Mail size={16} className="text-[#DF9E27]" />
                               <div>
                                  <p className="text-[9px] text-blue-200 uppercase font-black tracking-wider">Email Support</p>
-                                 <p className="text-xs font-bold">adrollsai@gmail.com</p>
+                                 <p className="text-xs font-bold">info@nobogent.com</p>
                               </div>
                            </div>
                         </div>

@@ -183,8 +183,8 @@ PROPERTY INVENTORY CONTEXT:
         const contactInfoText = `
 BUSINESS CONTACT INFO:
 - Brand/Business Name: ${profile?.business_name || resolvedProductName || "Premium Listings"}
-- Contact Phone Number: ${profile?.contact_number || "+91 98724 90091"}
-- Contact Email: ${profile?.email || "info@bluesquareinfra.com"}
+- Contact Phone Number: ${profile?.contact_number || "+91 98726 69935"}
+- Contact Email: ${profile?.email || "info@nobogent.com"}
 - Custom Connected Domain: ${profile?.custom_domain || `app.nobogent.com/shared/${targetUserId}`}
 - Brand Base Accent Color: ${profile?.brand_color || "#9e755c"}
 - Business Logo Image URL: ${profile?.logo_url || ""}
@@ -494,7 +494,7 @@ ${realEstateDetails}
   - 'brand.heading' = Deep luxury brown/black tone (e.g., '#4a3324')
 - Use elegant Google Fonts (e.g. Outfit, Inter or Georgia) for premium typography.
 - Ensure the page body is fully scrollable and does NOT cap layout height (do NOT use height: 100vh or overflow: hidden on html/body/main elements).
-- Mobile Bottom Floating CTA Bar: Include a fixed bottom bar visible only on mobile screens with a Call Now button (tel:${profile?.contact_number || "+919872490091"}) and WhatsApp button (https://wa.me/${(profile?.contact_number || "919872490091").replace(/[^0-9]/g, "")}) for immediate touch-to-connect conversions.
+- Mobile Bottom Floating CTA Bar: Include a fixed bottom bar visible only on mobile screens with a Call Now button (tel:${profile?.contact_number || "+919872669935"}) and WhatsApp button (https://wa.me/${(profile?.contact_number || "919872669935").replace(/[^0-9]/g, "")}) for immediate touch-to-connect conversions.
 
 ### OUTPUT FORMAT:
 - Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".

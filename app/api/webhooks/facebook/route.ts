@@ -110,18 +110,28 @@ export async function POST(request: Request) {
             const fieldName = field.name.toLowerCase()
             const fieldValue = field.values[0]
 
-            if (fieldName === 'full_name' || fieldName === 'name') name = fieldValue
-            else if (fieldName === 'first_name') firstName = fieldValue
-            else if (fieldName === 'last_name') lastName = fieldValue
-            else if (fieldName === 'email') email = fieldValue
-            else if (fieldName === 'phone_number' || fieldName === 'phone' || fieldName === 'mobile_number' || fieldName === 'whatsapp_number') phone = fieldValue
+            if (fieldName.includes('full_name') || fieldName.includes('fullname') || fieldName === 'name' || fieldName.includes('your_name') || fieldName.includes('your name')) name = fieldValue
+            else if (fieldName.includes('first_name') || fieldName.includes('firstname') || fieldName.includes('first name')) firstName = fieldValue
+            else if (fieldName.includes('last_name') || fieldName.includes('lastname') || fieldName.includes('last name')) lastName = fieldValue
+            else if (fieldName.includes('email') || fieldName.includes('e-mail')) email = fieldValue
+            else if (fieldName.includes('phone') || fieldName.includes('mobile') || fieldName.includes('contact') || fieldName.includes('whatsapp') || fieldName.includes('tel')) phone = fieldValue
             else {
               customFields[field.name] = fieldValue
             }
           })
 
-          if (name === 'Unknown' && (firstName || lastName)) {
+          if ((!name || name === 'Unknown') && (firstName || lastName)) {
             name = `${firstName} ${lastName}`.trim()
+          }
+
+          if (!name || name === 'Unknown') {
+            if (email) {
+              name = email.split('@')[0]
+            } else if (phone) {
+              name = phone
+            } else {
+              name = 'Lead'
+            }
           }
 
           // Fetch Form Name
@@ -191,6 +201,33 @@ export async function POST(request: Request) {
                   const agentIds = teamData.map(t => t.id);
                   assignedAgentId = await getNextRoundRobinAgent(supabaseAdmin, agentIds);
               }
+          }
+
+          // Check for existing lead with this facebook_lead_id to prevent duplicates from webhook retries
+          const { data: existingLead } = await supabaseAdmin
+            .from('leads')
+            .select('id')
+            .eq('facebook_lead_id', leadgen_id)
+            .maybeSingle();
+
+          if (existingLead) {
+            console.log(`[Facebook Webhook] Lead ${leadgen_id} already exists in DB (by leadgen_id). Skipping.`);
+            continue;
+          }
+
+          // Also check by phone number for this user to prevent duplicate people (Meta can send same person with new leadgen_id on resubmission)
+          if (phone) {
+            const { data: existingByPhone } = await supabaseAdmin
+              .from('leads')
+              .select('id')
+              .eq('user_id', profile.id)
+              .eq('phone', phone)
+              .maybeSingle();
+
+            if (existingByPhone) {
+              console.log(`[Facebook Webhook] Lead with phone ${phone} already exists for user ${profile.id}. Skipping duplicate.`);
+              continue;
+            }
           }
 
           // Save to DB using Admin Client

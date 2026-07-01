@@ -190,6 +190,25 @@ export default function PagesDashboard() {
             }
 
             setTargetUserId(resolvedId)
+
+            // Setup Client Caching Load
+            const cacheKey_forms = `pages_forms_cache_${resolvedId}`;
+            const cacheKey_pages = `pages_landing_pages_cache_${resolvedId}`;
+            const cacheKey_props = `pages_properties_cache_${resolvedId}`;
+            try {
+                const cachedForms = localStorage.getItem(cacheKey_forms);
+                const cachedPages = localStorage.getItem(cacheKey_pages);
+                const cachedProps = localStorage.getItem(cacheKey_props);
+                if (cachedForms) setForms(JSON.parse(cachedForms));
+                if (cachedPages) setLandingPages(JSON.parse(cachedPages));
+                if (cachedProps) setProperties(JSON.parse(cachedProps));
+                if (cachedForms && cachedPages) {
+                    setLoading(false);
+                }
+            } catch (e) {
+                console.error("Cache load failed", e);
+            }
+
             await fetchListData(resolvedId)
             if (adAccountId) {
                 await fetchPixels(adAccountId)
@@ -209,7 +228,9 @@ export default function PagesDashboard() {
                 .eq('user_id', userId)
                 .order('created_at', { ascending: false })
             if (formsErr) throw formsErr
-            setForms(formsData || [])
+            const finalForms = formsData || []
+            setForms(finalForms)
+            try { localStorage.setItem(`pages_forms_cache_${userId}`, JSON.stringify(finalForms)); } catch (e) {}
 
             // Load landing pages
             const { data: pagesData, error: pagesErr } = await supabase
@@ -218,7 +239,9 @@ export default function PagesDashboard() {
                 .eq('user_id', userId)
                 .order('created_at', { ascending: false })
             if (pagesErr) throw pagesErr
-            setLandingPages(pagesData || [])
+            const finalPages = pagesData || []
+            setLandingPages(finalPages)
+            try { localStorage.setItem(`pages_landing_pages_cache_${userId}`, JSON.stringify(finalPages)); } catch (e) {}
 
             // Load properties inventory
             const { data: propertiesData, error: propertiesErr } = await supabase
@@ -227,7 +250,9 @@ export default function PagesDashboard() {
                 .eq('user_id', userId)
                 .order('created_at', { ascending: false })
             if (propertiesErr) throw propertiesErr
-            setProperties(propertiesData || [])
+            const finalProps = propertiesData || []
+            setProperties(finalProps)
+            try { localStorage.setItem(`pages_properties_cache_${userId}`, JSON.stringify(finalProps)); } catch (e) {}
         } catch (e: any) {
             setErrorMessage("Failed to load dashboard data: " + e.message)
         } finally {

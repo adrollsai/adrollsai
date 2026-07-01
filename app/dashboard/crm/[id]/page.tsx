@@ -63,7 +63,19 @@ export default function LeadProfilePage() {
 
     const channel = supabase.channel(`lead_detail_${id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads', filter: `id=eq.${id}` }, (payload) => {
-        setLead(payload.new)
+        const updatedLead = payload.new;
+        let parsedCustomFields = updatedLead.custom_fields;
+        if (parsedCustomFields && typeof parsedCustomFields === 'string') {
+            try {
+                while (typeof parsedCustomFields === 'string') {
+                    parsedCustomFields = JSON.parse(parsedCustomFields);
+                }
+            } catch (e) {
+                parsedCustomFields = {};
+            }
+        }
+        updatedLead.custom_fields = parsedCustomFields;
+        setLead(updatedLead)
         fetchLeadHistory()
       })
       .subscribe()
@@ -75,7 +87,20 @@ export default function LeadProfilePage() {
 
   const fetchLeadData = async () => {
     const { data } = await supabase.from('leads').select('*').eq('id', id).single()
-    if (data) setLead(data)
+    if (data) {
+        let parsedCustomFields = data.custom_fields;
+        if (parsedCustomFields && typeof parsedCustomFields === 'string') {
+            try {
+                while (typeof parsedCustomFields === 'string') {
+                    parsedCustomFields = JSON.parse(parsedCustomFields);
+                }
+            } catch (e) {
+                parsedCustomFields = {};
+            }
+        }
+        data.custom_fields = parsedCustomFields;
+        setLead(data)
+    }
     setLoading(false)
   }
 
@@ -292,21 +317,36 @@ END:VCARD`
             )}
 
             {/* Custom Qualification Questions */}
-            {lead.custom_fields && Object.keys(lead.custom_fields).length > 0 && (
-                <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100">
-                    <h3 className="text-[10px] font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
-                        <CheckCircle2 size={12} className="text-emerald-500"/> Qualification Details
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {Object.entries(lead.custom_fields).map(([key, value]) => (
-                            <div key={key} className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">{key.replace(/_/g, ' ')}</span>
-                                <span className="text-xs font-bold text-slate-700">{String(value)}</span>
-                            </div>
-                        ))}
+            {(() => {
+                let customFields = lead.custom_fields;
+                if (customFields && typeof customFields === 'string') {
+                    try {
+                        while (typeof customFields === 'string') {
+                            customFields = JSON.parse(customFields);
+                        }
+                    } catch (e) {
+                        customFields = {};
+                    }
+                }
+                if (!customFields || typeof customFields !== 'object' || Object.keys(customFields).length === 0) {
+                    return null;
+                }
+                return (
+                    <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100">
+                        <h3 className="text-[10px] font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
+                            <CheckCircle2 size={12} className="text-emerald-500"/> Qualification Details
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {Object.entries(customFields).map(([key, value]) => (
+                                <div key={key} className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                    <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">{key.replace(/_/g, ' ')}</span>
+                                    <span className="text-xs font-bold text-slate-700">{String(value)}</span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* Context & Tags */}
             <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100 space-y-4">

@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
 export async function sendDistributionEmail(to: string, agentName: string, imageUrl: string, senderName: string) {
   try {
     const info = await transporter.sendMail({
-      from: `"${senderName}" <${process.env.SMTP_USER}>`,
+      from: `"${senderName}" <no-reply@nobogent.com>`,
       to: to,
       subject: `New Marketing Asset for ${agentName}`,
       html: `
@@ -38,8 +38,8 @@ export async function sendDistributionEmail(to: string, agentName: string, image
 export async function sendContactFormEmail(name: string, email: string, phone: string, message: string) {
   try {
     const info = await transporter.sendMail({
-      from: `"Nobogent AI Landing Page" <${process.env.SMTP_USER}>`,
-      to: 'adrollsai@gmail.com, rchopra489@gmail.com',
+      from: `"Nobogent AI Landing Page" <no-reply@nobogent.com>`,
+      to: 'info@nobogent.com, rchopra489@gmail.com',
       subject: `New Lead Query from ${name}`,
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
@@ -110,7 +110,7 @@ export async function sendLandingPageLeadEmail(to: string[], leadDetails: {
     }
 
     const info = await transporter.sendMail({
-      from: `"Nobogent AI Landing Page" <${process.env.SMTP_USER}>`,
+      from: `"Nobogent AI Landing Page" <no-reply@nobogent.com>`,
       to: to.join(', '),
       subject: `New Landing Page Lead: ${leadDetails.name}`,
       html: `
@@ -178,7 +178,7 @@ export async function sendBookingConfirmationEmail(
     })
 
     const info = await transporter.sendMail({
-      from: `"${businessName || 'Consultation'}" <${process.env.SMTP_USER}>`,
+      from: `"${businessName || 'Consultation'}" <no-reply@nobogent.com>`,
       to: to,
       subject: `Booking Confirmed: Meeting with ${businessName || 'Us'}`,
       html: `
@@ -254,7 +254,7 @@ export async function sendBookingReminderEmail(
       : `You have an upcoming meeting with <strong>${businessName || 'our team'}</strong> in 30 minutes.`
 
     const info = await transporter.sendMail({
-      from: `"${businessName || 'Meeting Reminder'}" <${process.env.SMTP_USER}>`,
+      from: `"${businessName || 'Meeting Reminder'}" <no-reply@nobogent.com>`,
       to: to,
       subject: subject,
       html: `
@@ -327,7 +327,7 @@ export async function sendFacebookLeadEmail(
     }
 
     const info = await transporter.sendMail({
-      from: `"Nobogent CRM" <${process.env.SMTP_USER}>`,
+      from: `"Nobogent CRM" <no-reply@nobogent.com>`,
       to: to.join(', '),
       subject: `🔥 New Facebook Lead: ${leadDetails.name}`,
       html: `
@@ -389,7 +389,7 @@ export async function sendLeadAutoResponseEmail(
     const campaignInfo = adName ? ` regarding <strong>${adName}</strong>` : '';
 
     const info = await transporter.sendMail({
-      from: `"${businessName || 'Nobogent'}" <${process.env.SMTP_USER}>`,
+      from: `"${businessName || 'Nobogent'}" <no-reply@nobogent.com>`,
       to: to,
       subject: `Thank you for contacting ${businessName || 'us'}!`,
       html: `

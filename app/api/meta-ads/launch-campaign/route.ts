@@ -166,15 +166,85 @@ export async function POST(request: Request) {
         }
     } catch (e) { /* ignore parse errors */ }
 
-    // Fallback: if no ad copy provided, generate from inventory
-    if (!adCopy.headline && inventoryIds.length > 0) {
-        const { data: prop } = await supabaseAdmin.from('properties').select('title, description').eq('id', inventoryIds[0]).single();
-        if (prop) {
-            adCopy.headline = (prop.title || 'View Details').substring(0, 40);
-            adCopy.primary_text = (prop.description || 'Exclusive deal. Contact us for details.').substring(0, 400);
-            adCopy.description = 'View pricing & details. Contact us today.';
-            if (data.contact_number) adCopy.primary_text += `\n\n📞 ${data.contact_number}`;
-            if (data.business_name) adCopy.primary_text += `\n🏢 ${data.business_name}`;
+    // Fallback: check if selected asset has a caption in DB
+    let fetchedCaption = "";
+    if ((!adCopy.headline || !adCopy.primary_text) && assetIds && assetIds.length > 0) {
+        try {
+            const { data: asset } = await supabaseAdmin.from('assets').select('caption').eq('id', assetIds[0]).single();
+            if (asset?.caption) {
+                fetchedCaption = asset.caption;
+            }
+        } catch (e) {}
+    }
+
+    if (fetchedCaption && (!adCopy.headline || !adCopy.primary_text)) {
+        try {
+            const parsed = JSON.parse(fetchedCaption);
+            if (parsed.headline) adCopy.headline = parsed.headline;
+            if (parsed.primary_text) adCopy.primary_text = parsed.primary_text;
+            if (parsed.social_post_description) adCopy.description = parsed.social_post_description;
+            else if (parsed.description) adCopy.description = parsed.description;
+        } catch (e) {
+            const lines = fetchedCaption.split('\n').map(l => l.trim()).filter(Boolean);
+            if (lines.length > 0) {
+                adCopy.headline = lines[0].substring(0, 40);
+                adCopy.primary_text = lines.slice(1).join('\n').substring(0, 400) || lines[0];
+                adCopy.description = 'View details and pricing now.';
+            }
+        }
+    }
+
+    // Fallback: if no copy, generate using LLM (Gemini)
+    if (!adCopy.headline || !adCopy.primary_text) {
+        let propertyContext = "";
+        if (inventoryIds && inventoryIds.length > 0) {
+            try {
+                const { data: prop } = await supabaseAdmin.from('properties').select('title, description').eq('id', inventoryIds[0]).single();
+                if (prop) {
+                    propertyContext = `Product Title: ${prop.title || ''}\nProduct Description: ${prop.description || ''}`;
+                }
+            } catch (e) {}
+        }
+
+        const llmPrompt = `You are an elite direct-response ad copywriter. Write a high-converting ad copy for:
+Business Name: ${data.business_name || 'Our Company'}
+Contact: ${data.contact_number || ''}
+${propertyContext}
+
+You must write exactly three fields:
+1. headline (maximum 40 characters) - a catchy, strong hook. Do NOT use markdown.
+2. primary_text (maximum 150 characters) - a compelling, clear direct-response message calling out the buyer. Do NOT use markdown or hashtags.
+3. description (maximum 400 characters) - a description or offer benefits. Must be under 400 characters.
+
+Output ONLY a raw JSON object matching this structure (no markdown wrappers like \`\`\`json):
+{
+  "headline": "...",
+  "primary_text": "...",
+  "description": "..."
+}`;
+
+        try {
+            const { generateKieChat } = await import('@/utils/external-apis');
+            const responseText = await generateKieChat(llmPrompt, "gemini-3-flash-preview");
+            const cleanText = responseText.replace(/```json/i, '').replace(/```/g, '').trim();
+            const parsedCopy = JSON.parse(cleanText);
+            
+            if (parsedCopy.headline) adCopy.headline = parsedCopy.headline;
+            if (parsedCopy.primary_text) adCopy.primary_text = parsedCopy.primary_text;
+            if (parsedCopy.description) adCopy.description = parsedCopy.description;
+        } catch (llmErr) {
+            console.error("[Launch Campaign] LLM ad copy generation failed, using fallback:", llmErr);
+            // Fallback to static text parsing
+            if (inventoryIds.length > 0) {
+                try {
+                    const { data: prop } = await supabaseAdmin.from('properties').select('title, description').eq('id', inventoryIds[0]).single();
+                    if (prop) {
+                        adCopy.headline = (prop.title || 'View Details').substring(0, 40);
+                        adCopy.primary_text = (prop.description || 'Exclusive deal. Contact us for details.').substring(0, 400);
+                        adCopy.description = 'View pricing & details. Contact us today.';
+                    }
+                } catch (e) {}
+            }
         }
     }
 

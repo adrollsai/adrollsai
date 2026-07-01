@@ -136,10 +136,16 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     }
     const igAccountId = igAccountData.instagram_business_account.id;
 
+    // Enforce Instagram's strict 2200 character limit
+    let safeCaption = caption || '';
+    if (safeCaption.length > 2190) {
+        safeCaption = safeCaption.substring(0, 2187) + '...';
+    }
+
     // 2. Detect Media Type
     const isVideo = mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/) || mediaUrl.includes('video');
     const mediaPayload: any = {
-        caption: caption,
+        caption: safeCaption,
         access_token: accessToken,
     };
 
@@ -449,16 +455,26 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
                             
                             const fn = field.name.toLowerCase()
                             const fv = field.values[0]
-                            if (fn === 'full_name' || fn === 'name') name = fv
-                            else if (fn === 'first_name') firstName = fv
-                            else if (fn === 'last_name') lastName = fv
-                            else if (fn === 'email') email = fv
-                            else if (fn === 'phone_number' || fn === 'phone' || fn === 'mobile_number' || fn === 'whatsapp_number') phone = fv
+                            if (fn.includes('full_name') || fn.includes('fullname') || fn === 'name' || fn.includes('your_name') || fn.includes('your name')) name = fv
+                            else if (fn.includes('first_name') || fn.includes('firstname') || fn.includes('first name')) firstName = fv
+                            else if (fn.includes('last_name') || fn.includes('lastname') || fn.includes('last name')) lastName = fv
+                            else if (fn.includes('email') || fn.includes('e-mail')) email = fv
+                            else if (fn.includes('phone') || fn.includes('mobile') || fn.includes('contact') || fn.includes('whatsapp') || fn.includes('tel')) phone = fv
                             else customFields[field.name] = fv
                         })
 
-                        if (name === 'Unknown' && (firstName || lastName)) {
+                        if ((!name || name === 'Unknown') && (firstName || lastName)) {
                             name = `${firstName} ${lastName}`.trim()
+                        }
+
+                        if (!name || name === 'Unknown') {
+                            if (email) {
+                                name = email.split('@')[0]
+                            } else if (phone) {
+                                name = phone
+                            } else {
+                                name = 'Lead'
+                            }
                         }
 
                         const sourceTag = l.ad_name ? `${l.ad_name} | ${form.name}` : form.name;

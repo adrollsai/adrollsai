@@ -49,7 +49,16 @@ export default function AccountsPage() {
   }, [impersonateId])
 
   const fetchData = async () => {
-    setLoading(true)
+    // Setup local storage cache key
+    const cacheKey = `subaccounts_cache_${impersonateId || 'own'}`;
+    try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+            setAccounts(JSON.parse(cached));
+            setLoading(false);
+        }
+    } catch (e) {}
+
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
@@ -117,7 +126,9 @@ export default function AccountsPage() {
       }
     }
 
-    setAccounts(subAccounts || [])
+    const finalAccounts = subAccounts || []
+    setAccounts(finalAccounts)
+    try { localStorage.setItem(cacheKey, JSON.stringify(finalAccounts)); } catch (e) {}
     setLoading(false)
   }
 
@@ -292,7 +303,7 @@ export default function AccountsPage() {
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start border-t border-slate-50 sm:border-0 pt-3 sm:pt-0">
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-between sm:justify-start border-t border-slate-100 sm:border-0 pt-3 sm:pt-0">
                     {currentUser?.role === 'super_admin' && (
                       <div className="flex items-center gap-2 shrink-0 mr-2 border-r border-slate-200 pr-3">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">

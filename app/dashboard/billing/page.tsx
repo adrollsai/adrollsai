@@ -103,30 +103,17 @@ export default function BillingPage() {
         fetchBillingData();
     }, [router, supabase]);
 
-    // Handle Plan / Add-on Purchase Redirection
+    // Handle Plan / Add-on Purchase Inquiry (PhonePe removed)
     const handlePurchase = async (params: { planId?: string; addonId?: string }) => {
-        setIsProcessing(true);
-        try {
-            const res = await fetch('/api/payment/initiate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(params)
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) throw new Error(data.error || 'Failed to initiate checkout');
-
-            if (data.url) {
-                window.location.href = data.url;
-            } else {
-                toast.error("Checkout server configuration issue.");
-                setIsProcessing(false);
-            }
-        } catch (error: any) {
-            toast.error('Payment Error', { description: error.message });
-            setIsProcessing(false);
-        }
+        const selectedItem = params.planId 
+            ? `${params.planId.toUpperCase()} Plan` 
+            : `Add-on: ${params.addonId}`;
+            
+        setLeadForm(prev => ({
+            ...prev,
+            requirements: `Hi! I would like to request an upgrade/purchase for: ${selectedItem}. Please get in touch with me.`
+        }));
+        setShowLeadModal(true);
     };
 
     // Submit Lead Form
@@ -524,19 +511,12 @@ export default function BillingPage() {
                                     ) : (
                                         <button
                                             onClick={() => handlePurchase({ planId: tier.id })}
-                                            disabled={isProcessing}
-                                            className={`w-full text-center py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${tier.highlight
+                                            className={`w-full text-center py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm ${tier.highlight
                                                     ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/10'
                                                     : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-50'
                                                 }`}
                                         >
-                                            {isProcessing ? (
-                                                <Loader2 className="animate-spin" size={14} />
-                                            ) : (
-                                                <>
-                                                    <ShoppingBag size={14} /> Buy Now with PhonePe
-                                                </>
-                                            )}
+                                            <ShoppingBag size={14} /> Upgrade Plan
                                         </button>
                                     )}
                                 </div>
@@ -576,16 +556,14 @@ export default function BillingPage() {
 
                                     <button
                                         onClick={() => handlePurchase({ addonId: addon.id })}
-                                        disabled={isProcessing || isDisabled}
+                                        disabled={isDisabled}
                                         className="w-full bg-slate-900 hover:bg-slate-800 text-white text-center py-3.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        {isProcessing ? (
-                                            <Loader2 className="animate-spin" size={14} />
-                                        ) : isDisabled ? (
+                                        {isDisabled ? (
                                             "Included in Enterprise"
                                         ) : (
                                             <>
-                                                <ShoppingBag size={14} /> Buy Now with PhonePe
+                                                <ShoppingBag size={14} /> Purchase Add-on
                                             </>
                                         )}
                                     </button>
@@ -596,7 +574,7 @@ export default function BillingPage() {
                 </div>
 
                 <div className="mt-16 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
-                    <Lock size={12} /> SSL Secured Payments Powered by PhonePe UPI & Autopay
+                    <Lock size={12} /> Secure Account Upgrades & Subscriptions
                 </div>
 
             </div>

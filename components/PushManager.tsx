@@ -209,7 +209,10 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
            </div>
         ) : (
            <button 
-              onClick={subscribeToPush} 
+              onClick={() => {
+                setIsDismissed(true);
+                subscribeToPush();
+              }} 
               disabled={loading} 
               className="w-full mt-3 bg-slate-900 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors"
            >
