@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -70,6 +72,87 @@ export async function GET(request: Request) {
 
         if (assetError) {
             throw assetError;
+        }
+
+        // --- Auto-Sync processing assets from Kie.ai on GET request ---
+        const processingAssets = (assetData || []).filter(a => a.status === 'Processing' && a.kie_task_id);
+        if (processingAssets.length > 0) {
+            console.log(`[Assets API] Found ${processingAssets.length} processing assets to sync status.`);
+            for (const asset of processingAssets) {
+                try {
+                    const taskId = asset.kie_task_id;
+                    const checkRes = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}`, {
+                        headers: { 'Authorization': `Bearer ${process.env.KIE_API_KEY}` }
+                    });
+                    if (!checkRes.ok) continue;
+
+                    const checkData = await checkRes.json();
+                    if (checkData.code !== 200) continue;
+
+                    const state = checkData.data?.state;
+                    if (state === 'success') {
+                        let imageUrl = null;
+                        const resultJson = checkData.data?.resultJson;
+                        if (resultJson) {
+                            try {
+                                const parsed = JSON.parse(resultJson);
+                                imageUrl = parsed.resultUrls?.[0] || parsed.url;
+                            } catch (e) {}
+                        }
+                        const result = checkData.data?.result || checkData.data;
+                        if (!imageUrl && result) {
+                            imageUrl = result.image_url || result.imageUrl || result.output_url || result.outputUrl || result.url || result.resultUrl;
+                        }
+
+                        if (imageUrl) {
+                            const imgRes = await fetch(imageUrl);
+                            if (imgRes.ok) {
+                                const buffer = Buffer.from(await imgRes.arrayBuffer());
+                                const ext = imageUrl.split('.').pop()?.split('?')[0] || 'png';
+                                const r2Key = `generated/${asset.user_id}/creative_${Date.now()}_${asset.id}.${ext}`;
+
+                                await r2.send(new PutObjectCommand({
+                                    Bucket: R2_BUCKET,
+                                    Key: r2Key,
+                                    Body: buffer,
+                                    ContentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`
+                                }));
+
+                                const r2Url = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
+                                
+                                // Update database record
+                                await supabaseAdmin
+                                    .from('assets')
+                                    .update({
+                                        url: r2Url,
+                                        status: 'Draft',
+                                        created_at: new Date().toISOString()
+                                    })
+                                    .eq('id', asset.id);
+                                
+                                // Update local variable so it returns updated draft state to frontend
+                                asset.url = r2Url;
+                                asset.status = 'Draft';
+                                asset.created_at = new Date().toISOString();
+                            }
+                        }
+                    } else if (state === 'failed' || state === 'error') {
+                        const failReason = checkData.data?.failMsg || "Kie.ai Error";
+                        await supabaseAdmin
+                            .from('assets')
+                            .update({
+                                status: 'Failed',
+                                caption: `Error: ${failReason}`
+                            })
+                            .eq('id', asset.id);
+                        
+                        asset.status = 'Failed';
+                        asset.caption = `Error: ${failReason}`;
+                    }
+                } catch (err) {
+                    console.error(`[Assets API] Sync failed for asset ${asset.id}:`, err);
+                }
+            }
         }
 
         return NextResponse.json(assetData || []);

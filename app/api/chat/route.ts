@@ -108,7 +108,7 @@ export async function POST(request: Request) {
     // Fetch user profile for business context + industry
     const { data: profile } = await supabase
       .from('profiles')
-      .select('business_name, business_info, mission_statement, custom_prompt, industry, brand_color')
+      .select('business_name, business_info, mission_statement, custom_prompt, industry, brand_color, contact_number')
       .eq('id', targetUserId)
       .single() as any;
 
@@ -285,12 +285,13 @@ IMPORTANT: Do NOT transcribe or include any specific text contents, business nam
     }
 
     // Call Master Designer LLM if no reference style is selected and we are NOT in edit mode
+    const finalContactNumber = contactNumber || profile?.contact_number || '';
     let designerPrompt = "";
     if (!hasReference && !isEdit) {
       try {
         logToFile("Calling Gemini Master Designer to compose optimized image generation prompt...");
-        const designComposerPrompt = `You are a Master Advertising Designer with 20+ years of experience in creating high-converting, visually stunning ad creatives.
-Your job is to write a highly detailed, optimized image generation prompt that will be sent to an AI image model (like Stable Diffusion or DALL-E) to produce a professional ad.
+        const designComposerPrompt = `You are a Master Advertising Designer with 20+ years of experience in creating high-converting, visually stunning ad creatives for premium social media campaigns.
+Your job is to write a highly detailed, optimized image generation prompt that will be sent to an AI image model (like Stable Diffusion or DALL-E) to produce a professional, premium ad poster.
 
 Here is the information provided by the user:
 - Product/Property Title: ${propertyTitle || 'N/A'}
@@ -298,16 +299,17 @@ Here is the information provided by the user:
 - Business Name: ${businessName || 'N/A'}
 - Brand/Business Info: ${profile?.business_info || 'N/A'}
 - Target Industry: ${industry || 'N/A'}
+- Contact Number / Call to Action: ${finalContactNumber || 'N/A'}
 - Custom User Instructions: ${userInstructions || 'None'}
 
-Your goal is to synthesize this information and output a detailed prompt for the image generation model.
-Follow these master designer rules:
-1. DO NOT simply copy-paste all descriptions or information. Think on your own: identify what is actually necessary, appealing, and high-converting for this industry. Filter out boring details and focus on the core value proposition.
-2. Design a compelling visual composition. Describe the scene, layout, lighting, colors (brand color is ${profile?.brand_color || 'coordinated'}), camera angles, and overall mood (e.g. professional, luxurious, warm, clean, organic).
-3. Brand Logo: Instruct the image model to place the business logo cleanly and integrate it seamlessly (blending the background smoothly into the surrounding theme/sky).
-4. Image Inputs: Mention that the model is provided with product/property photos, and should identify and use the most relevant/aesthetically appealing ones as the visual hero scene of the ad.
-5. Text Overlays: Keep overlays minimal and high-converting (e.g. a bold, clean headline and subhead). Avoid gibberish or messy text clutter.
-6. The output should be a single cohesive, highly detailed paragraph that describes the visual scene, layout, and instructions for the image model. Output ONLY the prompt text, without any introductory or conversational text.`;
+Your goal is to synthesize this information and output an extremely detailed, descriptive visual prompt for the image generation model.
+Follow these master designer rules to ensure the prompt is premium, attention-grabbing, and informative:
+1. COMPOSITION & DETAIL: Describe a highly detailed, premium, and professional visual layout. Specify the hero scene, composition hierarchy, framing (e.g. eye-level, wide angle, close-up details), cinematic warm or natural lighting, material textures (wood grain, soft fabrics, glass reflections), and overall luxury editorial mood. The description must be rich, concrete, and visually descriptive.
+2. INFORMATION & ATTENTION-GRABBING KEYWORDS: Include clear, high-converting text overlay instructions. Mention that the poster should feature elegant, clean, and legible typography for the primary value proposition, such as "SMART INVESTMENT: PREMIUM STUDENT LIVING" or relevant key benefit statements matching the product.
+3. MANDATORY CONTACT INFO & BRANDING: Unless the user's custom instructions explicitly request to exclude the contact number, you MUST instruct the model to display the contact number "${finalContactNumber || ''}" cleanly, professionally, and prominently. It should be positioned elegantly at the bottom footer or banner of the design (e.g., "For info, contact: ${finalContactNumber || ''}" or "Call ${finalContactNumber || ''}").
+4. LOGO INTEGRATION: Instruct the image model to place the business logo cleanly and integrate it seamlessly (blending the background smoothly into the surrounding theme/sky, avoiding unblended raw shapes).
+5. IMAGE HERO: Instruct the model to analyze the provided product/property photos, select the most relevant hero asset, and place it at the center (taking up 60-70% of the canvas).
+6. OUTPUT FORMAT: The output should be a single cohesive, highly detailed, descriptive paragraph containing the exact scene description, layouts, styling, text overlays, and details for the image model. Do NOT include any intro, conversational text, or metadata in your output. Just output the final prompt.`;
 
         const imageParts: any[] = [];
         for (const imgUrl of validPropImages.slice(0, 4)) {
@@ -380,6 +382,7 @@ Make the edits clean, professional, and blend seamlessly with the original conte
           propertyDescription ? `Details/Description: ${propertyDescription}` : '',
           (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
           (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly. Integrate the brand logo seamlessly with the design and background. Do NOT place it inside a raw, unblended black or white box/circle; blend its background shape smoothly into the background sky/theme.` : '',
+          (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Include the contact number "${finalContactNumber}" clearly and elegantly, placed according to the reference creative layout.` : '',
           `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`,
           `Do NOT add any messy or gibberish text overlays on the image unless explicitly requested. Keep the image clean, professional, and visually focused.`,
           `IMPORTANT NEGATIVE CONSTRAINT: Do NOT copy any text, barcodes, QR codes, website URLs, or license/RERA numbers (such as RERA registration numbers) directly from the reference image. If the reference creative contains a QR code, license number, or specific website address, omit them entirely from the final generated image.`,
@@ -389,13 +392,15 @@ Make the edits clean, professional, and blend seamlessly with the original conte
       finalImagePrompt = promptParts.join("\n");
     } else {
       finalImagePrompt = designerPrompt || [
-          `Create a clean, high quality, professional ad creative design.`,
+          `Create a highly detailed, premium, and professional ad creative design.`,
           propertyTitle ? `Subject: ${propertyTitle}` : '',
           propertyDescription ? `Details/Description: ${propertyDescription}` : '',
           (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
           (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly. Integrate the brand logo seamlessly with the design and background. Do NOT place it inside a raw, unblended black or white box/circle; blend its background shape smoothly into the background sky/theme.` : '',
+          (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Include the contact number "${finalContactNumber}" clearly and elegantly in a banner or footer at the bottom of the poster (e.g. "Call: ${finalContactNumber}").` : '',
           `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`,
-          `Do NOT add any messy or gibberish text overlays on the image unless explicitly requested. Keep the image clean, professional, and visually focused.`,
+          `Ensure the overall composition is highly professional, balanced, featuring cinematic warm lighting, detailed textures, and a luxury editorial aesthetic.`,
+          `Keep overlays minimal, clean, and high-converting (e.g. a bold, clean headline and subhead). Avoid gibberish or messy text clutter.`,
           userInstructions ? `Custom Instructions: ${userInstructions}` : ''
       ].filter(Boolean).join("\n");
     }
