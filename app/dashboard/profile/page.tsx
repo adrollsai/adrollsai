@@ -1282,229 +1282,231 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div>
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Workspace & Presenter Assets</h3>
-                <div className="flex flex-wrap gap-4 items-center justify-start">
-                  {/* Logo Upload */}
-                  <div
-                    onClick={() => !uploadingLogo && !formData.logoUrl && fileInputRef.current?.click()}
-                    className="w-24 h-24 bg-slate-50/80 rounded-full flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 transition-all shadow-sm"
-                    title="Upload Brand Logo"
-                  >
-                    {uploadingLogo ? (
-                      <Loader2 className="animate-spin text-slate-400" size={24} />
-                    ) : formData.logoUrl ? (
-                      <div className="relative w-full h-full group">
-                        <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2 bg-black/40">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                            className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-blue-600 hover:scale-105 transition-all shadow-md"
-                            title="Change Logo"
-                          >
-                            <Upload size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleRemoveAsset('logoUrl'); }}
-                            className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
-                            title="Remove Logo"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+              {authRole !== 'agent' && (
+                <div>
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Workspace & Presenter Assets</h3>
+                  <div className="flex flex-wrap gap-4 items-center justify-start">
+                    {/* Logo Upload */}
+                    <div
+                      onClick={() => !uploadingLogo && !formData.logoUrl && fileInputRef.current?.click()}
+                      className="w-24 h-24 bg-slate-50/80 rounded-full flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 transition-all shadow-sm"
+                      title="Upload Brand Logo"
+                    >
+                      {uploadingLogo ? (
+                        <Loader2 className="animate-spin text-slate-400" size={24} />
+                      ) : formData.logoUrl ? (
+                        <div className="relative w-full h-full group">
+                          <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2 bg-black/40">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                              className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-blue-600 hover:scale-105 transition-all shadow-md"
+                              title="Change Logo"
+                            >
+                              <Upload size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleRemoveAsset('logoUrl'); }}
+                              className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
+                              title="Remove Logo"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-blue-500 transition-colors">
-                        <Upload size={20} />
-                        <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Logo</span>
-                      </div>
-                    )}
-                    <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
-                  </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-blue-500 transition-colors">
+                          <Upload size={20} />
+                          <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Logo</span>
+                        </div>
+                      )}
+                      <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
+                    </div>
 
-                  {/* Avatar Photo Upload */}
-                  <div
-                    onClick={() => !uploadingAvatar && !formData.avatarUrl && avatarInputRef.current?.click()}
-                    className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 transition-all shadow-sm"
-                    title="Upload Static Avatar Photo"
-                  >
-                    {uploadingAvatar ? (
-                      <div className="flex flex-col items-center justify-center p-2 text-center">
-                        <Loader2 className="animate-spin text-indigo-600 mb-1" size={20} />
-                        <span className="text-[8px] font-black text-slate-400">Uploading...</span>
-                      </div>
-                    ) : formData.avatarUrl ? (
-                      <div className="relative w-full h-full group">
-                        <img src={formData.avatarUrl} alt="Avatar" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2 bg-black/40">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); avatarInputRef.current?.click(); }}
-                            className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-indigo-600 hover:scale-105 transition-all shadow-md"
-                            title="Change Avatar"
-                          >
-                            <Upload size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleRemoveAsset('avatarUrl'); }}
-                            className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
-                            title="Remove Avatar"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                    {/* Avatar Photo Upload */}
+                    <div
+                      onClick={() => !uploadingAvatar && !formData.avatarUrl && avatarInputRef.current?.click()}
+                      className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 transition-all shadow-sm"
+                      title="Upload Static Avatar Photo"
+                    >
+                      {uploadingAvatar ? (
+                        <div className="flex flex-col items-center justify-center p-2 text-center">
+                          <Loader2 className="animate-spin text-indigo-600 mb-1" size={20} />
+                          <span className="text-[8px] font-black text-slate-400">Uploading...</span>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-indigo-500 transition-colors">
-                        <User size={20} />
-                        <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Avatar</span>
-                      </div>
-                    )}
-                    <input type="file" ref={avatarInputRef} onChange={handleAvatarUpload} accept="image/*" className="hidden" />
-                  </div>
+                      ) : formData.avatarUrl ? (
+                        <div className="relative w-full h-full group">
+                          <img src={formData.avatarUrl} alt="Avatar" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2 bg-black/40">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); avatarInputRef.current?.click(); }}
+                              className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-indigo-600 hover:scale-105 transition-all shadow-md"
+                              title="Change Avatar"
+                            >
+                              <Upload size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleRemoveAsset('avatarUrl'); }}
+                              className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
+                              title="Remove Avatar"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-indigo-500 transition-colors">
+                          <User size={20} />
+                          <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Avatar</span>
+                        </div>
+                      )}
+                      <input type="file" ref={avatarInputRef} onChange={handleAvatarUpload} accept="image/*" className="hidden" />
+                    </div>
 
-                  {/* Avatar Voice Audio Upload */}
-                  <div
-                    onClick={() => !uploadingAvatarAudio && !formData.avatarAudioUrl && avatarAudioInputRef.current?.click()}
-                    className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 transition-all shadow-sm"
-                    title="Upload Avatar Voice Sample (Upto 15s MP3/WAV)"
-                  >
-                    {uploadingAvatarAudio ? (
-                      <div className="flex flex-col items-center justify-center p-2 text-center animate-pulse">
-                        <Loader2 className="animate-spin text-indigo-600 mb-1" size={20} />
-                        <span className="text-[8px] font-black text-slate-400">Uploading...</span>
-                      </div>
-                    ) : formData.avatarAudioUrl ? (
-                      <div className="flex flex-col items-center gap-1.5 p-3 text-center text-indigo-600 bg-indigo-50/30 w-full h-full justify-center relative group">
-                        <Mic size={24} className="animate-bounce" />
-                        <span className="text-[8px] font-black uppercase tracking-wider leading-none">Voice (Avatar)</span>
-                        <span className="text-[7px] text-slate-400 truncate max-w-full">
-                          {formData.avatarAudioUrl.split('/').pop()?.slice(-15)}
-                        </span>
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 transition-opacity gap-2">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); avatarAudioInputRef.current?.click(); }}
-                            className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-indigo-600 hover:scale-105 transition-all shadow-md"
-                            title="Change Voice"
-                          >
-                            <Upload size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleRemoveAsset('avatarAudioUrl'); }}
-                            className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
-                            title="Remove Voice"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                    {/* Avatar Voice Audio Upload */}
+                    <div
+                      onClick={() => !uploadingAvatarAudio && !formData.avatarAudioUrl && avatarAudioInputRef.current?.click()}
+                      className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 transition-all shadow-sm"
+                      title="Upload Avatar Voice Sample (Upto 15s MP3/WAV)"
+                    >
+                      {uploadingAvatarAudio ? (
+                        <div className="flex flex-col items-center justify-center p-2 text-center animate-pulse">
+                          <Loader2 className="animate-spin text-indigo-600 mb-1" size={20} />
+                          <span className="text-[8px] font-black text-slate-400">Uploading...</span>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-indigo-500 transition-colors">
-                        <Mic size={20} />
-                        <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Voice (Avatar)</span>
-                      </div>
-                    )}
-                    <input type="file" ref={avatarAudioInputRef} onChange={handleAvatarAudioUpload} accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav" className="hidden" />
-                  </div>
+                      ) : formData.avatarAudioUrl ? (
+                        <div className="flex flex-col items-center gap-1.5 p-3 text-center text-indigo-600 bg-indigo-50/30 w-full h-full justify-center relative group">
+                          <Mic size={24} className="animate-bounce" />
+                          <span className="text-[8px] font-black uppercase tracking-wider leading-none">Voice (Avatar)</span>
+                          <span className="text-[7px] text-slate-400 truncate max-w-full">
+                            {formData.avatarAudioUrl.split('/').pop()?.slice(-15)}
+                          </span>
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 transition-opacity gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); avatarAudioInputRef.current?.click(); }}
+                              className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-indigo-600 hover:scale-105 transition-all shadow-md"
+                              title="Change Voice"
+                            >
+                              <Upload size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleRemoveAsset('avatarAudioUrl'); }}
+                              className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
+                              title="Remove Voice"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-indigo-500 transition-colors">
+                          <Mic size={20} />
+                          <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Voice (Avatar)</span>
+                        </div>
+                      )}
+                      <input type="file" ref={avatarAudioInputRef} onChange={handleAvatarAudioUpload} accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav" className="hidden" />
+                    </div>
 
-                  {/* Character Upload */}
-                  <div
-                    onClick={() => !uploadingCharacter && !formData.characterUrl && characterInputRef.current?.click()}
-                    className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-purple-500 hover:bg-purple-50 transition-all shadow-sm"
-                    title="Upload Custom Video Character Reference"
-                  >
-                    {uploadingCharacter ? (
-                      <div className="flex flex-col items-center justify-center p-2 text-center">
-                        <Loader2 className="animate-spin text-purple-600 mb-1" size={20} />
-                        <span className="text-[8px] font-black text-slate-400">Uploading...</span>
-                      </div>
-                    ) : formData.characterUrl ? (
-                      <div className="relative w-full h-full group">
-                        {(/\.(mp4|webm)/i.test(formData.characterUrl) || formData.characterUrl.includes('video')) ? (
-                          <video src={formData.characterUrl} muted loop playsInline autoPlay className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
-                        ) : (
-                          <img src={formData.characterUrl} alt="Character" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
-                        )}
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2 bg-black/40">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); characterInputRef.current?.click(); }}
-                            className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-purple-600 hover:scale-105 transition-all shadow-md"
-                            title="Change Video"
-                          >
-                            <Upload size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleRemoveAsset('characterUrl'); }}
-                            className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
-                            title="Remove Video"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                    {/* Character Upload */}
+                    <div
+                      onClick={() => !uploadingCharacter && !formData.characterUrl && characterInputRef.current?.click()}
+                      className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-purple-500 hover:bg-purple-50 transition-all shadow-sm"
+                      title="Upload Custom Video Character Reference"
+                    >
+                      {uploadingCharacter ? (
+                        <div className="flex flex-col items-center justify-center p-2 text-center">
+                          <Loader2 className="animate-spin text-purple-600 mb-1" size={20} />
+                          <span className="text-[8px] font-black text-slate-400">Uploading...</span>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-purple-500 transition-colors">
-                        <Video size={20} />
-                        <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Video (Ref)</span>
-                      </div>
-                    )}
-                    <input type="file" ref={characterInputRef} onChange={handleCharacterUpload} accept="video/*" className="hidden" />
-                  </div>
+                      ) : formData.characterUrl ? (
+                        <div className="relative w-full h-full group">
+                          {(/\.(mp4|webm)/i.test(formData.characterUrl) || formData.characterUrl.includes('video')) ? (
+                            <video src={formData.characterUrl} muted loop playsInline autoPlay className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                          ) : (
+                            <img src={formData.characterUrl} alt="Character" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                          )}
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2 bg-black/40">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); characterInputRef.current?.click(); }}
+                              className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-purple-600 hover:scale-105 transition-all shadow-md"
+                              title="Change Video"
+                            >
+                              <Upload size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleRemoveAsset('characterUrl'); }}
+                              className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
+                              title="Remove Video"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-purple-500 transition-colors">
+                          <Video size={20} />
+                          <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Video (Ref)</span>
+                        </div>
+                      )}
+                      <input type="file" ref={characterInputRef} onChange={handleCharacterUpload} accept="video/*" className="hidden" />
+                    </div>
  
-                  {/* Voice Audio Upload */}
-                  <div
-                    onClick={() => !uploadingAudio && !formData.characterAudioUrl && audioInputRef.current?.click()}
-                    className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 transition-all shadow-sm"
-                    title="Upload Video Voice Sample (Upto 15s MP3/WAV)"
-                  >
-                    {uploadingAudio ? (
-                      <div className="flex flex-col items-center justify-center p-2 text-center animate-pulse">
-                        <Loader2 className="animate-spin text-emerald-600 mb-1" size={20} />
-                        <span className="text-[8px] font-black text-slate-400">Uploading...</span>
-                      </div>
-                    ) : formData.characterAudioUrl ? (
-                      <div className="flex flex-col items-center gap-1.5 p-3 text-center text-emerald-600 bg-emerald-50/30 w-full h-full justify-center relative group">
-                        <Mic size={24} className="animate-bounce" />
-                        <span className="text-[8px] font-black uppercase tracking-wider leading-none">Voice (Video)</span>
-                        <span className="text-[7px] text-slate-400 truncate max-w-full">
-                          {formData.characterAudioUrl.split('/').pop()?.slice(-15)}
-                        </span>
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 transition-opacity gap-2">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); audioInputRef.current?.click(); }}
-                            className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-emerald-600 hover:scale-105 transition-all shadow-md"
-                            title="Change Voice"
-                          >
-                            <Upload size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleRemoveAsset('characterAudioUrl'); }}
-                            className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
-                            title="Remove Voice"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                    {/* Voice Audio Upload */}
+                    <div
+                      onClick={() => !uploadingAudio && !formData.characterAudioUrl && audioInputRef.current?.click()}
+                      className="w-24 h-24 bg-slate-50/80 rounded-[1.25rem] flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 transition-all shadow-sm"
+                      title="Upload Video Voice Sample (Upto 15s MP3/WAV)"
+                    >
+                      {uploadingAudio ? (
+                        <div className="flex flex-col items-center justify-center p-2 text-center animate-pulse">
+                          <Loader2 className="animate-spin text-emerald-600 mb-1" size={20} />
+                          <span className="text-[8px] font-black text-slate-400">Uploading...</span>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-emerald-500 transition-colors">
-                        <Mic size={20} />
-                        <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Voice (Video)</span>
-                      </div>
-                    )}
-                    <input type="file" ref={audioInputRef} onChange={handleAudioUpload} accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav" className="hidden" />
+                      ) : formData.characterAudioUrl ? (
+                        <div className="flex flex-col items-center gap-1.5 p-3 text-center text-emerald-600 bg-emerald-50/30 w-full h-full justify-center relative group">
+                          <Mic size={24} className="animate-bounce" />
+                          <span className="text-[8px] font-black uppercase tracking-wider leading-none">Voice (Video)</span>
+                          <span className="text-[7px] text-slate-400 truncate max-w-full">
+                            {formData.characterAudioUrl.split('/').pop()?.slice(-15)}
+                          </span>
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 transition-opacity gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); audioInputRef.current?.click(); }}
+                              className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-emerald-600 hover:scale-105 transition-all shadow-md"
+                              title="Change Voice"
+                            >
+                              <Upload size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleRemoveAsset('characterAudioUrl'); }}
+                              className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 hover:scale-105 transition-all shadow-md"
+                              title="Remove Voice"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-emerald-500 transition-colors">
+                          <Mic size={20} />
+                          <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Voice (Video)</span>
+                        </div>
+                      )}
+                      <input type="file" ref={audioInputRef} onChange={handleAudioUpload} accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav" className="hidden" />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Business Profile Form Card */}
@@ -1517,6 +1519,12 @@ export default function ProfilePage() {
               </div>
 
               <div className="space-y-5">
+                {authRole === 'agent' && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-2xl text-xs font-bold leading-relaxed mb-2">
+                    ⚠️ You are viewing your Agency's profile branding. Editing profile details is disabled for Agent accounts.
+                  </div>
+                )}
+
                 <div>
                   <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">
                     {isAdminLike ? 'Business Name' : 'Full Name'}
@@ -1525,7 +1533,8 @@ export default function ProfilePage() {
                     type="text"
                     value={formData.businessName}
                     onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
-                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all"
+                    disabled={authRole === 'agent'}
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                   />
                 </div>
 
@@ -1534,7 +1543,8 @@ export default function ProfilePage() {
                   <select
                     value={formData.currency}
                     onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-bold focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all cursor-pointer"
+                    disabled={authRole === 'agent'}
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-bold focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
                   >
                     <option value="INR">INR (₹) - Indian Rupee</option>
                     <option value="CAD">CAD ($) - Canadian Dollar</option>
@@ -1551,7 +1561,8 @@ export default function ProfilePage() {
                     type="tel"
                     value={formData.contact}
                     onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
-                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all"
+                    disabled={authRole === 'agent'}
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                   />
                 </div>
 
@@ -1561,7 +1572,8 @@ export default function ProfilePage() {
                     type="text"
                     value={formData.address}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all"
+                    disabled={authRole === 'agent'}
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                     placeholder="Enter business address to show on your public catalog"
                   />
                 </div>
@@ -1579,7 +1591,8 @@ export default function ProfilePage() {
                           placeholder="https://facebook.com/..."
                           value={formData.facebookUrl}
                           onChange={(e) => setFormData({ ...formData, facebookUrl: e.target.value })}
-                          className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all"
+                          disabled={authRole === 'agent'}
+                          className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                         />
                       </div>
                       <div className="flex items-center gap-3">
@@ -1591,7 +1604,8 @@ export default function ProfilePage() {
                           placeholder="https://instagram.com/..."
                           value={formData.instagramUrl}
                           onChange={(e) => setFormData({ ...formData, instagramUrl: e.target.value })}
-                          className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all"
+                          disabled={authRole === 'agent'}
+                          className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                         />
                       </div>
                     </div>
@@ -1604,7 +1618,8 @@ export default function ProfilePage() {
                     rows={3}
                     value={formData.mission}
                     onChange={(e) => setFormData({ ...formData, mission: e.target.value })}
-                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-4 px-5 rounded-3xl text-slate-800 text-sm font-medium resize-none focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all"
+                    disabled={authRole === 'agent'}
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-4 px-5 rounded-3xl text-slate-800 text-sm font-medium resize-none focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                     placeholder="Provide a description about your business to showcase on your public catalog..."
                   />
                 </div>
@@ -1617,7 +1632,8 @@ export default function ProfilePage() {
                     rows={4}
                     value={formData.businessInfo}
                     onChange={(e) => setFormData({ ...formData, businessInfo: e.target.value })}
-                    className="w-full bg-purple-50/30 hover:bg-purple-50/50 focus:bg-white py-4 px-5 rounded-3xl text-slate-800 text-sm font-medium resize-none focus:ring-4 focus:ring-blue-500/20 outline-none border border-purple-200 focus:border-blue-400 transition-all"
+                    disabled={authRole === 'agent'}
+                    className="w-full bg-purple-50/30 hover:bg-purple-50/50 focus:bg-white py-4 px-5 rounded-3xl text-slate-800 text-sm font-medium resize-none focus:ring-4 focus:ring-blue-500/20 outline-none border border-purple-200 focus:border-blue-400 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                     placeholder="Provide full context about your business, target audience, pricing models, and key selling propositions. This information is fetched by the LLMs to write highly relevant ad scripts."
                   />
                   <p className="text-[10px] text-slate-400 mt-2 ml-3 font-medium">
@@ -1633,7 +1649,8 @@ export default function ProfilePage() {
                     rows={4}
                     value={formData.customPrompt}
                     onChange={(e) => setFormData({ ...formData, customPrompt: e.target.value })}
-                    className="w-full bg-blue-50/30 hover:bg-blue-50/50 focus:bg-white py-4 px-5 rounded-3xl text-slate-800 text-sm font-medium resize-none focus:ring-4 focus:ring-blue-500/20 outline-none border border-blue-200 focus:border-blue-400 transition-all"
+                    disabled={authRole === 'agent'}
+                    className="w-full bg-blue-50/30 hover:bg-blue-50/50 focus:bg-white py-4 px-5 rounded-3xl text-slate-800 text-sm font-medium resize-none focus:ring-4 focus:ring-blue-500/20 outline-none border border-blue-200 focus:border-blue-400 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                     placeholder="e.g. 'Cinematic lighting, hyper-realistic, professional photography style, vibrant colors...'"
                   />
                   <p className="text-[10px] text-slate-400 mt-2 ml-3 font-medium">
@@ -1652,7 +1669,8 @@ export default function ProfilePage() {
                       type="text"
                       value={formData.color}
                       onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                      className="bg-transparent font-mono text-sm w-full outline-none uppercase text-slate-700 font-medium px-2"
+                      disabled={authRole === 'agent'}
+                      className="bg-transparent font-mono text-sm w-full outline-none uppercase text-slate-700 font-medium px-2 disabled:cursor-not-allowed"
                     />
                   </div>
                 </div>
@@ -1685,14 +1703,16 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              <button
-                onClick={handleSave}
-                disabled={isSaving || uploadingLogo}
-                className="w-full mt-6 bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] sm:rounded-full text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 active:scale-95 transition-all disabled:opacity-70 disabled:scale-100"
-              >
-                {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                {isSaving ? 'Saving Changes...' : 'Save Profile Details'}
-              </button>
+              {authRole !== 'agent' && (
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving || uploadingLogo}
+                  className="w-full mt-6 bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] sm:rounded-full text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 active:scale-95 transition-all disabled:opacity-70 disabled:scale-100"
+                >
+                  {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                  {isSaving ? 'Saving Changes...' : 'Save Profile Details'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -2067,34 +2087,36 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {/* REFERENCE LIBRARY LINK - all users */}
-            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
-              <button 
-                onClick={() => router.push(`/dashboard/reference-library${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
-                className="w-full p-6 sm:p-7 flex items-center justify-between hover:bg-slate-50/50 transition-all group"
-              >
-                <div className="flex items-center gap-4 text-left">
-                  <div className="bg-purple-100 text-purple-600 p-3.5 rounded-2xl group-hover:scale-105 transition-transform">
-                    <ImageIcon size={22} />
+            {/* REFERENCE LIBRARY LINK - all users except agent */}
+            {authRole !== 'agent' && (
+              <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
+                <button 
+                  onClick={() => router.push(`/dashboard/reference-library${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  className="w-full p-6 sm:p-7 flex items-center justify-between hover:bg-slate-50/50 transition-all group"
+                >
+                  <div className="flex items-center gap-4 text-left">
+                    <div className="bg-purple-100 text-purple-600 p-3.5 rounded-2xl group-hover:scale-105 transition-transform">
+                      <ImageIcon size={22} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                        Reference Library
+                        {authRole === 'super_admin' && (
+                          <span className="bg-purple-50 text-purple-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">Super Admin</span>
+                        )}
+                      </h4>
+                      <p className="text-xs text-slate-500 font-medium mt-1">
+                        {authRole === 'super_admin' 
+                          ? "Manage global visual references for Premium & High Converting strategies"
+                          : "Manage your personal visual references for Premium & High Converting strategies"
+                        }
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                      Reference Library
-                      {authRole === 'super_admin' && (
-                        <span className="bg-purple-50 text-purple-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">Super Admin</span>
-                      )}
-                    </h4>
-                    <p className="text-xs text-slate-500 font-medium mt-1">
-                      {authRole === 'super_admin' 
-                        ? "Manage global visual references for Premium & High Converting strategies"
-                        : "Manage your personal visual references for Premium & High Converting strategies"
-                      }
-                    </p>
-                  </div>
-                </div>
-                <ChevronRight size={20} className="text-slate-400 group-hover:translate-x-1 transition-transform" />
-              </button>
-            </div>
+                  <ChevronRight size={20} className="text-slate-400 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </div>
+            )}
 
             <div className="bg-white rounded-[2rem] shadow-sm border border-red-100 overflow-hidden transition-all hover:border-red-200 hover:shadow-md">
               <button

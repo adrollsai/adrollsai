@@ -753,7 +753,8 @@ High-end commercial production quality.
                 type: 'video',
                 status: 'Processing',
                 url: 'https://designs.adrolls.in/processing', // Temporary URL
-                caption: script.finalCaption || `${script.title}\n\n${script.dialogue}`
+                caption: script.finalCaption || `${script.title}\n\n${script.dialogue}`,
+                created_at: new Date().toISOString()
             })
             .select()
             .single();

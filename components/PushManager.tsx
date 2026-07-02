@@ -102,12 +102,13 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
       
       await navigator.serviceWorker.ready
 
-      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+      let vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
       if (!vapidKey) {
         toast.error("Configuration Error: Missing VAPID Key")
         setLoading(false)
         return
       }
+      vapidKey = vapidKey.replace(/^['"]|['"]$/g, '').trim();
 
       const sub = await registration.pushManager.subscribe({
         userVisibleOnly: true,

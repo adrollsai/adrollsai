@@ -23,7 +23,7 @@ export async function POST(req: Request) {
         // - Images: stuck after 10 minutes
         // - Videos: stuck after 45 minutes (to allow parallel scene generations + stitching)
         const stuckAssets = activeAssets?.filter(asset => {
-            const createdAtTime = new Date(asset.created_at).getTime();
+            const createdAtTime = asset.created_at ? new Date(asset.created_at).getTime() : Date.now();
             if (asset.type === 'video') {
                 return createdAtTime < new Date(fortyFiveMinutesAgo).getTime();
             } else {

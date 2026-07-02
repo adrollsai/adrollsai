@@ -419,8 +419,8 @@ export default function CreationPage() {
     }
   }
 
-  // Dynamic Video Duration State (15s, 30s, 45s, 60s)
-  const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 45 | 60>(15)
+  // Dynamic Video Duration State (15s, 30s, 45s, 60s, 90s, 120s)
+  const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 45 | 60 | 90 | 120>(15)
 
   // Language Toggle for Video (Hinglish = Devanagari-English mix, English = pure English)
   const [videoLanguage, setVideoLanguage] = useState<'hinglish' | 'english'>('hinglish')
@@ -1270,14 +1270,14 @@ export default function CreationPage() {
             {/* Ratio or Duration Selector Pill */}
             {creationMode === 'video' ? (
                 <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full animate-in fade-in duration-200">
-                    {([15, 30, 45, 60] as const).map(dur => (
+                    {([15, 30, 45, 60, 90, 120] as const).map(dur => (
                         <button 
                             key={dur}
                             type="button"
                             onClick={() => setSelectedDuration(dur)}
                             className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition-all duration-300 flex items-center justify-center gap-1 ${selectedDuration === dur ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
                         >
-                            <Clock size={12} className="hidden sm:block" /> {dur === 60 ? '1m' : `${dur}s`}
+                            <Clock size={12} className="hidden sm:block" /> {dur === 60 ? '1m' : dur === 90 ? '1.5m' : dur === 120 ? '2m' : `${dur}s`}
                         </button>
                     ))}
                 </div>

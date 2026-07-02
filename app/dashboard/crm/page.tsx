@@ -470,11 +470,12 @@ export default function CRMPage() {
         });
       }
 
-      const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      let vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
       if (!vapidPublicKey) {
         return alert('Configuration Error: Missing VAPID Key');
       }
-
+      vapidPublicKey = vapidPublicKey.replace(/^['"]|['"]$/g, '').trim();
+      
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
