@@ -620,10 +620,10 @@ export async function POST(request: Request) {
                 const scene = scenes[i];
 
                 const characterAppearanceText = isCharacterVideo
-                    ? `Use reference video ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`
-                    : `Use reference image ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`;
+                     ? `Use reference video ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`
+                     : `Use reference image ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`;
 
-                const synthesisPrompt = `You are a professional Video Director and Prompt Engineer for Bytedance/Kie.ai Seedance 2.0.
+                 const synthesisPrompt = `You are a professional Video Director and Prompt Engineer for Bytedance/Kie.ai Seedance 2.0.
 Your task is to write a simple, high-converting video generation prompt for a 15-second UGC scene clip.
 
 CREATOR CHARACTER:
@@ -644,15 +644,28 @@ ${descriptionsText}
 PROMPT STRUCTURE & INSTRUCTIONS:
 Your output MUST follow this exact structure and formatting:
 
-Use the [man/woman] from the provided reference video (or reference image). Preserve [his/her] exact facial features, hairstyle, body language, clothing consistency, expressions, and natural mannerisms throughout the video.
+Use the [man/woman] from the provided reference video (or reference image). Preserve [his/her] exact facial features, facial structure, and identity. However, do NOT preserve the clothing or the background environment from the reference file. The clothing and background setting must be dynamically changed as specified below.
 
 Clone the voice from the provided reference audio. The lip sync must be perfectly synchronized with the dialogue.
 
-[He/She] is wearing [clothing/outfit altered and customized based on the project, e.g. smart business casual blazer, elegant top, etc.] and is standing/sitting in [location description customized based on the project, e.g. a beautiful modern office, a bright luxury penthouse lounge, a cozy warm living room]. [He/She] speaks directly to the camera with confident eye contact. The delivery is natural, conversational, expressive, and professional, emphasizing important words naturally while maintaining realistic facial expressions and gestures.
+[He/She] is wearing [clothing/outfit altered and customized based on the project, e.g. smart business casual blazer, elegant top, etc.] and is standing/sitting in [location description customized based on the project, e.g. a beautiful modern office, a bright luxury penthouse lounge, a cozy warm living room]. Change the setting and clothing in the video from the reference to this newly specified outfit and location. [He/She] speaks directly to the camera with confident eye contact. The delivery is natural, conversational, expressive, and professional, emphasizing important words naturally while maintaining realistic facial expressions and gestures.
 
-[Dialogue section: Define the narration segments with exact timestamps summing to 15 seconds. If this is scene 1, start with Hook. If this is the last scene, end with CTA. Write the Hinglish Roman script dialogue in double quotes under each segment]
+[Dialogue section: Define the narration segments with exact timestamps summing to 15 seconds. If this is scene 1, start with Hook. If this is the last scene, end with CTA. Write the natural Hinglish Roman script dialogue in double quotes under each segment. Hinglish is a casual, conversational blend of Hindi and English commonly spoken in India.
+Strict 3rd Person POV Description: The dialogue MUST be written from a strict 3rd-person perspective, focusing objectively on detailing the product/property features and specifications. Avoid any first-person or second-person commands, calls, or conversational host words like 'dekhiye', 'check out', 'aapko milega', 'yahan', etc. Describe the property name and features objectively (e.g. 'IT City Mohaali ka ye luxury penthouse modern architecture aur spacious layout ke sath aata hai').
+Hinglish Vocabulary Rule: Use natural English loanwords instead of complex or formal Hindi words (e.g., use 'located' instead of 'sthit', 'design' instead of 'nirmaan', etc.).
+Dialogue Pacing & Length Rule: Ensure dialogue lengths fill the 15-second duration naturally without large gaps or rushing. For a 15-second scene, the dialogue MUST be between 36 and 44 words total. Distribute dialogue proportionally to timestamps:
+- If a single-scene video (15s total): Hook (0-3s) uses ~8-10 words, Body (3-11s) uses ~18-22 words, CTA (11-15s) uses ~10-12 words.
+- If a multi-scene video: Scene 1 Hook (0-3s) uses ~8-10 words, Body (3-15s) uses ~28-34 words; middle scene Body (0-15s) uses ~36-44 words; final scene Body (0-11s) uses ~26-32 words, CTA (11-15s) uses ~10-12 words.
+Crucial Pronunciation Formatting: Any proper names or local terms (like 'Mohali', 'Panchkula', 'Zirakpur', 'Kharar', 'Ghar') must be spelled phonetically in the dialogue text so that a standard English TTS synthesizer pronounces them perfectly (e.g. write 'Mohali' as 'Mohaali' or 'Mohaalee', 'Panchkula' as 'Panch-koola', 'Zirakpur' as 'Zeerak-poor', 'Kharar' as 'Kharrar', 'Ghar' as 'Gharr'). Do NOT leave them in standard dictionary spelling if they are commonly mispronounced by English TTS systems.]
 For example:
-${i === 0 ? `Hook (0-3 sec):
+${scenes.length === 1 ? `Hook (0-3 sec):
+"[Hook dialogue]"
+
+Body (3-11 sec):
+"[Body dialogue]"
+
+CTA (11-15 sec):
+"[CTA dialogue]"` : (i === 0 ? `Hook (0-3 sec):
 "[Hook dialogue]"
 
 Body (3-15 sec):
@@ -661,16 +674,11 @@ Body (3-15 sec):
 
 CTA (11-15 sec):
 "[CTA dialogue]"` : `Body (0-15 sec):
-"[Body dialogue]"`)}
+"[Body dialogue]"`))}
 
 Important Instructions:
-- Generate only the reference character speaking directly to the camera as a continuous talking head, cutting to b-rolls when appropriate.
-- Cut to B-roll scenes showing [describe property/product details based on the project features and reference images, referencing reference images like Image_X if any] during the Body segment while the presenter's voice narration continues in the background, then cut back to the presenter speaking directly to the camera.
-- No property visuals containing garbled text.
-- No maps, no graphics, no text overlays, no subtitles.
-- Keep the entire video as a single locked-off shot when the presenter is on screen.
-- Maintain realistic lighting and cinematic quality throughout.
-- Perfect lip sync with the cloned voice when the presenter is on camera.
+- There should be no captions, logos, text overlays, or AI artifacts on screen.
+- Cut to B-roll scenes using the attached product images (Image_1, Image_2, etc.) while the character describes the product features.
 
 Output ONLY the final prompt text. Do NOT wrap it in markdown code blocks or backticks, just print the raw text.`;
 

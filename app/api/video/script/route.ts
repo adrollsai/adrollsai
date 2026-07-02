@@ -239,7 +239,7 @@ Amenities/Features: ${property.amenities || "N/A"}
         } else if (userText.includes('in hindi') || userText.includes('only hindi')) {
             languageInstruction = "The script dialogue MUST be written in HINDI using native Devanagari script (Hindi characters).";
         } else {
-            languageInstruction = "The script dialogue MUST be written in Roman Hinglish (mixing Hindi words written in English/Latin letters and standard English words, e.g. 'Mohali mein apna dream home dhoondh rahe ho?'). Specifically, do NOT use Devanagari characters (like 'क्या', 'है') anywhere in the script. The dialogue must be written entirely in Roman characters. Everyday English loanwords (like 'dream home', 'perfect space', 'luxury flat', 'living room', 'security', 'location', 'get in touch') must remain in standard English letters.";
+            languageInstruction = "The script dialogue MUST be written in Roman Hinglish (mixing Hindi words written in English/Latin letters and standard English words) from a strict 3rd-person perspective, focusing objectively on detailing product/property features and specifications. Avoid any first-person or second-person commands, calls, or conversational host words like 'dekhiye', 'check out', 'aapko milega', 'yahan', etc. Describe the property name and features objectively (e.g. 'IT City Mohaali ka ye luxury penthouse modern architecture aur spacious layout ke sath aata hai'). Specifically, do NOT use Devanagari characters anywhere in the script. The dialogue must be written entirely in Roman characters. Everyday English loanwords (like 'dream home', 'perfect space', 'luxury flat', 'living room', 'security', 'location', 'get in touch') must remain in standard English letters.";
         }
 
         const variationInstruction = variation 
@@ -342,7 +342,7 @@ ${isEnglish ? `4.2. PRONUNCIATION: Use clear, standard English vocabulary. Keep 
 8. STRICT ENVIRONMENT CONSTRAINT (Prevents Hallucinations): Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images. Do NOT invent, assume, or hallucinate rooms, structures, product features, or details that are not shown in the reference photos.
 9. Visual scene descriptions: Refer to the reference images by their actual visual descriptions naturally so the video generator knows exactly which image is used in each scene. Do NOT use abstract placeholders like "@Image 1", "@Image 2", "Image 1", or "Image 2" in the script or visual description.
 10. NEVER instruct to display any text overlay, subtitles, captions, watermarks, or logos on screen in any script or visuals section, as the video AI generates garbled text and distorted logos.
-11. Speech length & Word Count limits: Keep the dialogue for EACH scene strictly under 30 words so it can be comfortably spoken in 15 seconds. Ensure that only that amount of words are in the dialogue that can easily fit in a 15-second clip, and this must be strictly done for all clips.
+11. Speech length & Word Count limits: Keep the dialogue for EACH scene strictly between 36 and 44 words so it can be naturally and comfortably spoken in 15 seconds, filling the scene time without feeling empty. Ensure dialogue is distributed proportionally to scene timestamps.
 12. ${variationInstruction}
 
 Output format must be a single, valid JSON object:
