@@ -609,7 +609,7 @@ export async function POST(request: Request) {
             // Extrapolate ethnicity based on where the business is based
             const extrapolatedEthnicity = extrapolateEthnicity(profile, property, customInstructions);
             
-            const profileDesc = presenterType === 'video' ? profile.character_description : (presenterType === 'avatar' ? profile.avatar_description : null);
+const profileDesc = presenterType === 'video' ? profile.character_description : (presenterType === 'avatar' ? profile.avatar_description : null);
 
             // Character description — fed directly to Gemini
             const characterDescription = presenterType !== 'none'
@@ -624,7 +624,7 @@ export async function POST(request: Request) {
                      : `Use reference image ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`;
 
                  const synthesisPrompt = `You are a professional Video Director and Prompt Engineer for Bytedance/Kie.ai Seedance 2.0.
-Your task is to write a simple, high-converting video generation prompt for a 15-second UGC scene clip.
+Your task is to write an extremely detailed, high-fidelity video generation prompt for a 15-second UGC scene clip.
 
 CREATOR CHARACTER:
 - Description: "${characterDescription}"
@@ -638,25 +638,29 @@ SCENE DETAILS:
 - Product Info: "${productInfo}"
 - Current Scene Index: ${i + 1} (out of ${scenes.length} scenes)
 
-REFERENCE IMAGES MAPPING:
+REFERENCE IMAGES MAPPING (Product/property images to cut to as B-rolls):
 ${descriptionsText}
 
 PROMPT STRUCTURE & INSTRUCTIONS:
-Your output MUST follow this exact structure and formatting:
+Your output MUST strictly follow this layout and instruction format:
 
-Use the [man/woman] from the provided reference video (or reference image). Preserve [his/her] exact facial features, facial structure, and identity. However, do NOT preserve the clothing or the background environment from the reference file. The clothing and background setting must be dynamically changed as specified below.
+1. CLONING AND IDENTITY PRESERVATION:
+Use the reference video (or reference image) to faithfully clone both the person's face and voice. Preserve the person's identity, facial features, hairstyle, skin tone, clothing style, body language, facial expressions, and speaking style exactly as seen in the reference. Clone the voice with the same accent, tone, pitch, pacing, pronunciation, and emotional delivery.
 
-Clone the voice from the provided reference audio. The lip sync must be perfectly synchronized with the dialogue.
+2. PRESENTATION ENVIRONMENT & OUTFIT:
+Describe the presenter's outfit and setting (which must be relevant to this specific product, e.g., "in a highstreet walking across the street" or "in a bright luxury penthouse lounge"). Ensure that the presenter's outfit and the scene environment are consistent across all scenes of this video, but altered appropriately from the reference. The camera angle should be a camera tracking shot close up in which half of [his/her] body is visible.
 
-[He/She] is wearing [clothing/outfit altered and customized based on the project, e.g. smart business casual blazer, elegant top, etc.] and is standing/sitting in [location description customized based on the project, e.g. a beautiful modern office, a bright luxury penthouse lounge, a cozy warm living room]. Change the setting and clothing in the video from the reference to this newly specified outfit and location. [He/She] speaks directly to the camera with confident eye contact. The delivery is natural, conversational, expressive, and professional, emphasizing important words naturally while maintaining realistic facial expressions and gestures.
+3. VIDEO SPECIFICATIONS:
+Generate a highly photorealistic talking-head video with accurate lip synchronization. The speaker should maintain direct eye contact with the camera, use natural blinking, subtle head movements, and realistic hand gestures. Deliver the dialogue confidently like a professional investment advisor. Naturally emphasize key words (e.g. proper nouns or brand names) while keeping the speech conversational, expressive, and human-like. Avoid robotic delivery or exaggerated acting.
 
-[Dialogue section: Define the narration segments with exact timestamps summing to 15 seconds. If this is scene 1, start with Hook. If this is the last scene, end with CTA. Write the natural Hinglish Roman script dialogue in double quotes under each segment. Hinglish is a casual, conversational blend of Hindi and English commonly spoken in India.
-Strict 3rd Person POV Description: The dialogue MUST be written from a strict 3rd-person perspective, focusing objectively on detailing the product/property features and specifications. Avoid any first-person or second-person commands, calls, or conversational host words like 'dekhiye', 'check out', 'aapko milega', 'yahan', etc. Describe the property name and features objectively (e.g. 'IT City Mohaali ka ye luxury penthouse modern architecture aur spacious layout ke sath aata hai').
-Hinglish Vocabulary Rule: Use natural English loanwords instead of complex or formal Hindi words (e.g., use 'located' instead of 'sthit', 'design' instead of 'nirmaan', etc.).
-Dialogue Pacing & Length Rule: Ensure dialogue lengths fill the 15-second duration naturally without large gaps or rushing. For a 15-second scene, the dialogue MUST be between 36 and 44 words total. Distribute dialogue proportionally to timestamps:
-- If a single-scene video (15s total): Hook (0-3s) uses ~8-10 words, Body (3-11s) uses ~18-22 words, CTA (11-15s) uses ~10-12 words.
-- If a multi-scene video: Scene 1 Hook (0-3s) uses ~8-10 words, Body (3-15s) uses ~28-34 words; middle scene Body (0-15s) uses ~36-44 words; final scene Body (0-11s) uses ~26-32 words, CTA (11-15s) uses ~10-12 words.
-Crucial Pronunciation Formatting: Any proper names or local terms (like 'Mohali', 'Panchkula', 'Zirakpur', 'Kharar', 'Ghar') must be spelled phonetically in the dialogue text so that a standard English TTS synthesizer pronounces them perfectly (e.g. write 'Mohali' as 'Mohaali' or 'Mohaalee', 'Panchkula' as 'Panch-koola', 'Zirakpur' as 'Zeerak-poor', 'Kharar' as 'Kharrar', 'Ghar' as 'Gharr'). Do NOT leave them in standard dictionary spelling if they are commonly mispronounced by English TTS systems.]
+4. B-ROLL CUTS & VISUAL INTEGRATION:
+Instruct the model to cleanly cut to the relevant product/property listing photos (e.g., Image_1, Image_2, etc. from reference_image_urls mapping) as visual B-rolls during descriptions of features, temporarily showing the property on-screen before cutting back to the presenter.
+
+5. NEGATIVE CONSTRAINT:
+There should be absolutely no text captions, subtitles, logos, watermarks, or AI artifacts on screen.
+
+6. DIALOGUE SEGMENTS:
+Define the narration segments with exact timestamps summing to 15 seconds. If this is scene 1, start with Hook. If this is the last scene, end with CTA. Under each segment, write the exact dialogue in double quotes. Keep Hindi script proper nouns or complex terms written in Devanagari script where necessary to ensure perfect pronunciation.
 For example:
 ${scenes.length === 1 ? `Hook (0-3 sec):
 "[Hook dialogue]"
@@ -675,10 +679,6 @@ Body (3-15 sec):
 CTA (11-15 sec):
 "[CTA dialogue]"` : `Body (0-15 sec):
 "[Body dialogue]"`))}
-
-Important Instructions:
-- There should be no captions, logos, text overlays, or AI artifacts on screen.
-- Cut to B-roll scenes using the attached product images (Image_1, Image_2, etc.) while the character describes the product features.
 
 Output ONLY the final prompt text. Do NOT wrap it in markdown code blocks or backticks, just print the raw text.`;
 
@@ -795,7 +795,7 @@ High-end commercial production quality.
         
         const launchPromises = prompts.map(async (promptText, index) => {
             const payload: any = {
-                model: "bytedance/seedance-2-mini",
+                model: "bytedance/seedance-2-fast",
                 callBackUrl: callbackUrl,
                 input: {
                     prompt: promptText,

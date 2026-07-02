@@ -121,6 +121,7 @@ export default function CreationPage() {
   const [isUploadingChat, setIsUploadingChat] = useState(false)
   const chatFileInputRef = useRef<HTMLInputElement>(null)
 
+  const [isChatWorkspaceOpen, setIsChatWorkspaceOpen] = useState(false)
   const [existingAssets, setExistingAssets] = useState<any[]>([])
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false)
   const [loadingAssets, setLoadingAssets] = useState(false)
@@ -1002,6 +1003,7 @@ export default function CreationPage() {
         return
     }
 
+    setIsChatWorkspaceOpen(true)
     const displayText = userText || (selectedPropId ? "Generate a creative design for this product." : "Surprise me.")
     const userMsg: Message = { id: Date.now(), role: 'user', text: displayText }
     setMessages(prev => [...prev, userMsg])
@@ -1632,7 +1634,58 @@ export default function CreationPage() {
         )}
       </div>
 
-      {/* --- CHAT AREA --- */}
+      
+
+      {/* PLACEHOLDER OR CHAT LAUNCHER ON MAIN PAGE */}
+      {!isChatWorkspaceOpen && (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50/50 text-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center animate-bounce shadow-md">
+                <Sparkles size={32} />
+            </div>
+            <div>
+                <h2 className="text-base font-extrabold text-slate-800">AI Creator Workspace</h2>
+                <p className="text-xs text-slate-500 max-w-sm mt-1 leading-relaxed">
+                    Configure your presenter model, aspect ratio, duration, and property assets above. Then type your prompt below to start the creative process in the overlay workspace modal!
+                </p>
+            </div>
+            {messages.length > 0 && (
+                <button
+                    onClick={() => setIsChatWorkspaceOpen(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-2xl text-xs flex items-center gap-2 shadow-lg shadow-blue-500/20 active:scale-95 transition-all"
+                >
+                    <Bot size={14} /> Open Active Chat ({messages.length} messages)
+                </button>
+            )}
+        </div>
+      )}
+
+
+      {/* CHAT WORKSPACE OVERLAY MODAL */}
+      {isChatWorkspaceOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-4xl rounded-[2rem] shadow-2xl flex flex-col h-[85vh] max-h-[750px] overflow-hidden border border-slate-100 animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-white flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <Sparkles className="text-blue-600 animate-pulse" size={20} />
+                <div>
+                  <h3 className="text-sm font-black text-slate-800">AI Creator Workspace</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-0.5">
+                    {isThinking ? 'AI is thinking...' : 'Interactive Script & Concept Editor'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsChatWorkspaceOpen(false)}
+                className="bg-slate-50 hover:bg-red-50 p-2 rounded-full text-slate-400 hover:text-red-600 transition-all active:scale-95"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Central Chat area */}
+            {/* --- CHAT AREA --- */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 bg-[#F8FAFC]">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex w-full animate-in fade-in slide-in-from-bottom-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -2013,9 +2066,9 @@ export default function CreationPage() {
         <div ref={chatEndRef} className="h-6" />
       </div>
 
-      {/* --- FLOATING INPUT AREA --- */}
-      {/* ADDED PADDING (pb-24 sm:pb-32) SO IT FLOATS ABOVE THE NAVIGATION BAR */}
-      <div className="bg-gradient-to-t from-[#F8FAFC] via-[#F8FAFC] to-transparent p-4 pb-24 sm:pb-32 border-t-0 flex-shrink-0 z-20">
+            {/* Floating Input (nested inside modal) */}
+            <div className="bg-white p-4 border-t border-slate-100 flex-shrink-0 z-20 rounded-b-[2rem]">
+                
         {(() => {
           const currentProperty = properties.find(p => p.id === selectedPropId);
           let currentPropImages: string[] = [];
@@ -2171,7 +2224,176 @@ export default function CreationPage() {
               {isThinking ? <Loader2 size={18} className="animate-spin" /> : <Send size={16} className="ml-0.5" />}
             </button>
         </form>
-      </div>
+      
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* --- FLOATING INPUT AREA (Main page settings view) --- */}
+      {!isChatWorkspaceOpen && (
+        <div className="bg-gradient-to-t from-[#F8FAFC] via-[#F8FAFC] to-transparent p-4 pb-24 sm:pb-32 border-t-0 flex-shrink-0 z-20">
+          
+        {(() => {
+          const currentProperty = properties.find(p => p.id === selectedPropId);
+          let currentPropImages: string[] = [];
+          if (currentProperty) {
+            if (currentProperty.images && currentProperty.images.length > 0) {
+              currentPropImages = currentProperty.images.slice(0, 10);
+            } else if (currentProperty.image_url) {
+              currentPropImages = [currentProperty.image_url];
+            }
+          }
+
+          const selectedTemplateObj = TEMPLATES.find(t => t.id === selectedTemplate);
+          const currentActiveReferenceUrl = uploadedRefUrl || selectedTemplateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || null;
+          const currentAccountLogo = profile?.logo_url || "";
+
+          const potentialInputImages = [
+            ...currentPropImages,
+            currentAccountLogo,
+            ...chatAttachments
+          ].filter((url): url is string => !!(url && typeof url === 'string' && url.startsWith('http') && !url.includes('placehold.co') && !url.toLowerCase().endsWith('.svg')));
+
+          const uniquePotentialInputImages = Array.from(new Set(potentialInputImages));
+          const imagesBeingSent = uniquePotentialInputImages.filter(url => !excludedImages.includes(url));
+          const excludedImagesList = uniquePotentialInputImages.filter(url => excludedImages.includes(url));
+
+          return (
+            <>
+              {imagesBeingSent.length > 0 && (
+                <div className="max-w-4xl mx-auto mb-3 px-4">
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1.5">
+                    Images Sent to Image Model ({imagesBeingSent.length}/16):
+                  </span>
+                  <div className="flex flex-wrap gap-2.5">
+                    {imagesBeingSent.map((url, i) => {
+                      let badge = "Asset";
+                      if (url === currentAccountLogo) badge = "Logo";
+                      else if (url === currentActiveReferenceUrl) badge = "Style";
+                      else if (currentPropImages.includes(url)) badge = "Property";
+
+                      return (
+                        <div key={i} className="relative group w-16 h-16 rounded-2xl overflow-hidden border-2 border-slate-200 shadow-sm flex-shrink-0 bg-slate-50 transition-all hover:scale-95 duration-200">
+                          <img src={url} className="w-full h-full object-cover" alt="asset" />
+                          <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[8px] font-black text-center py-0.5 uppercase tracking-wide">
+                            {badge}
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              setExcludedImages(prev => [...prev, url]);
+                              if (chatAttachments.includes(url)) {
+                                setChatAttachments(prev => prev.filter(u => u !== url));
+                              }
+                            }}
+                            className="absolute top-1 right-1 bg-rose-500 hover:bg-rose-600 text-white p-0.5 rounded-full shadow-sm z-10 transition-colors"
+                            title="Exclude from generation"
+                          >
+                            <X size={10} strokeWidth={3} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {imagesBeingSent.length > 16 && (
+                    <p className="text-[10px] text-rose-500 font-extrabold mt-1">
+                      ⚠️ Warning: Max images limit is 16. Only the first 16 images will be sent.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {excludedImagesList.length > 0 && (
+                <div className="max-w-4xl mx-auto mb-3 px-4 flex flex-wrap gap-1.5 items-center">
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                    Excluded (Click to Add Back):
+                  </span>
+                  {excludedImagesList.map((url, i) => {
+                    let badge = "Asset";
+                    if (url === currentAccountLogo) badge = "Logo";
+                    else if (url === currentActiveReferenceUrl) badge = "Style";
+                    else if (currentPropImages.includes(url)) badge = "Property";
+
+                    return (
+                      <button
+                        type="button"
+                        key={i}
+                        onClick={() => setExcludedImages(prev => prev.filter(u => u !== url))}
+                        className="text-[9px] font-bold text-slate-500 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 border border-slate-200 hover:border-blue-100 rounded-full px-2 py-0.5 flex items-center gap-1 transition-all active:scale-95"
+                        title="Click to include back"
+                      >
+                        <span>{badge}</span>
+                        <Plus size={8} strokeWidth={3} />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          );
+        })()}
+
+        <form 
+            onSubmit={(e) => { e.preventDefault(); handleSend(); }}
+            className="flex items-end gap-2 max-w-4xl mx-auto relative shadow-lg shadow-slate-200/50 rounded-[1.75rem] bg-white border border-slate-200/60 transition-all focus-within:ring-4 focus-within:ring-blue-500/10 focus-within:border-blue-300 p-1.5"
+        >
+            <input 
+              type="file" 
+              ref={chatFileInputRef} 
+              onChange={handleChatFileChange} 
+              className="hidden" 
+              accept="image/*" 
+              multiple 
+            />
+            <button 
+              type="button"
+              onClick={() => chatFileInputRef.current?.click()}
+              disabled={isThinking || isUploadingChat}
+              className="p-3 text-slate-400 hover:text-blue-600 transition-colors rounded-full mb-0.5 ml-0.5"
+              title="Upload Photo"
+            >
+              {isUploadingChat ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
+            </button>
+            <button 
+              type="button"
+              onClick={handleOpenAssetModal}
+              disabled={isThinking || isUploadingChat}
+              className="p-3 text-slate-400 hover:text-blue-600 transition-colors rounded-full mb-0.5"
+              title="Select from created photo assets"
+            >
+              <ImageIcon size={20} />
+            </button>
+
+            <textarea 
+              value={input} 
+              onChange={(e) => setInput(e.target.value)} 
+              placeholder={selectedPropId ? "Add a prompt (e.g. 'Make it luxurious')..." : "Describe what to generate..."} 
+              disabled={isThinking} 
+              rows={1}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!isThinking && !isUploadingChat && (input.trim() || selectedPropId || chatAttachments.length > 0)) {
+                    handleSend();
+                  }
+                }
+              }}
+              className="flex-1 bg-transparent py-3 pl-1 pr-14 text-sm text-slate-800 font-medium outline-none transition-all disabled:opacity-50 placeholder-slate-400 resize-none max-h-36 overflow-y-auto custom-scrollbar min-h-[44px]" 
+            />
+            <button 
+              type="submit" 
+              disabled={isThinking || isUploadingChat || (!input.trim() && !selectedPropId && chatAttachments.length === 0)} 
+              className="w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center rounded-full transition-all duration-300 disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400 shadow-sm active:scale-90 flex-shrink-0 mb-0.5 mr-0.5"
+            >
+              {isThinking ? <Loader2 size={18} className="animate-spin" /> : <Send size={16} className="ml-0.5" />}
+            </button>
+        </form>
+      
+        </div>
+      )}
+
 
       {/* SELECT EXISTING ASSETS MODAL */}
       <AnimatePresence>
