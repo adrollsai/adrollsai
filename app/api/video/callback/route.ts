@@ -466,12 +466,19 @@ export async function POST(request: Request) {
             const functionName = speculateFunctionName({
                 diskSizeInMb: 512,
                 memorySizeInMb: 2048,
-                timeoutInSeconds: 240,
+                timeoutInSeconds: 900,
             });
 
             const bucketName = process.env.REMOTION_AWS_BUCKET_NAME || 'remotionlambda-useast1-k8ta4ch4gl';
-            const siteName = process.env.REMOTION_AWS_SITE_NAME || 'n5io53mlsr';
+            const siteName = process.env.REMOTION_AWS_SITE_NAME || 'nobogent-site';
             const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
+
+            // Dynamically calculate framesPerLambda to stay below the AWS account concurrency limit (10)
+            const totalFrames = siblings.length * 15 * 30;
+            const maxLambdas = 4;
+            const framesPerLambda = Math.max(200, Math.ceil(totalFrames / maxLambdas));
+
+            console.log(`[Video Callback] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambda} frames per lambda (total frames: ${totalFrames})`);
 
             const renderResult = await renderMediaOnLambda({
                 region,
@@ -485,8 +492,8 @@ export async function POST(request: Request) {
                 imageFormat: 'jpeg',
                 maxRetries: 2,
                 privacy: 'public',
-                framesPerLambda: 120,
-                forceDurationInFrames: siblings.length * 15 * 30, // Override duration dynamically
+                framesPerLambda,
+                forceDurationInFrames: totalFrames, // Override duration dynamically
                 webhook: {
                     url: callbackUrl,
                     secret: null,

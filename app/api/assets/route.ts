@@ -48,7 +48,15 @@ export async function GET(request: Request) {
             }
         }
 
-        const since = url.searchParams.get('since');
+        let since = url.searchParams.get('since');
+        if (since && since.includes(' ') && !since.includes('+')) {
+            const parts = since.split(' ');
+            const lastPart = parts[parts.length - 1];
+            if (lastPart.includes(':')) {
+                since = parts.slice(0, -1).join(' ') + '+' + lastPart;
+            }
+        }
+
         let query = supabaseAdmin
             .from('assets')
             .select('*')

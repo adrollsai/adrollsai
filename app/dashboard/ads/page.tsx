@@ -603,7 +603,7 @@ export default function AdsPage() {
           supabase.from('leads').select('campaign_id').eq('user_id', targetUserId),
           pageQuery.order('created_at', { ascending: false }),
           formQuery.order('created_at', { ascending: false }),
-          fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}${maxAssetTime && !force ? `&since=${maxAssetTime}` : ''}`).then(r => r.json()).catch(e => {
+          fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}${maxAssetTime && !force ? `${impersonateId ? '&' : '?'}since=${encodeURIComponent(maxAssetTime)}` : ''}`).then(r => r.json()).catch(e => {
               console.error("Failed to load assets from API", e);
               return [];
           }),

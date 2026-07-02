@@ -197,7 +197,7 @@ export default function AssetsPage() {
             const maxPropTime = getMaxCreatedAt(cachedProps as any[]);
 
             // 2. Fetch assets for the organization securely via server API
-            const assetUrl = `/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}${maxAssetTime && !force ? `&since=${maxAssetTime}` : ''}`;
+            const assetUrl = `/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}${maxAssetTime && !force ? `${impersonateId ? '&' : '?'}since=${encodeURIComponent(maxAssetTime)}` : ''}`;
             const response = await fetch(assetUrl)
             
             const contentType = response.headers.get('content-type') || ''

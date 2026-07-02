@@ -285,7 +285,7 @@ const RemotionOutro: React.FC<{
     });
 
     const logoUrl = profile?.logo_url;
-    const businessName = profile?.business_name || "AdRolls Partner";
+    const businessName = profile?.business_name || "Nobogent Partner";
     const contactNumber = profile?.contact_number;
     const address = profile?.address;
 
