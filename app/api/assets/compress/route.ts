@@ -8,6 +8,8 @@ import os from 'os'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import ffmpegPath from 'ffmpeg-static'
+import { generateAndUploadVideoThumbnail } from '@/utils/video-thumbnail-helper'
+import crypto from 'crypto'
 
 export const maxDuration = 300 // 5 minutes execution timeout
 export const dynamic = 'force-dynamic'
@@ -108,6 +110,13 @@ export async function POST(request: Request) {
 
                 await r2.send(new PutObjectCommand(uploadParams))
 
+                let thumbnailUrl = null
+                try {
+                    thumbnailUrl = await generateAndUploadVideoThumbnail(outputPath, targetUserId, crypto.randomUUID())
+                } catch (thumbErr) {
+                    console.error("[VideoCompress API] Thumbnail generation failed:", thumbErr)
+                }
+
                 // 4. Save asset in Supabase assets database
                 const { data: insertedAsset, error: insertError } = await supabase
                     .from('assets')
@@ -116,7 +125,8 @@ export async function POST(request: Request) {
                         type: 'video',
                         url: finalPublicUrl,
                         status: 'Ready',
-                        caption: `Uploaded: ${fileName}`
+                        caption: `Uploaded: ${fileName}`,
+                        metadata: thumbnailUrl ? { thumbnailUrl } : {}
                     })
                     .select()
                     .single()
@@ -164,6 +174,15 @@ export async function POST(request: Request) {
                     Key: permanentKey
                 }))
 
+                let thumbnailUrl = null
+                if (inputCreated && fs.existsSync(inputPath)) {
+                    try {
+                        thumbnailUrl = await generateAndUploadVideoThumbnail(inputPath, targetUserId, crypto.randomUUID())
+                    } catch (thumbErr) {
+                        console.error("[VideoCompress API] Fallback thumbnail generation failed:", thumbErr)
+                    }
+                }
+
                 const { data: insertedAsset, error: insertError } = await supabase
                     .from('assets')
                     .insert({
@@ -171,7 +190,8 @@ export async function POST(request: Request) {
                         type: 'video',
                         url: finalPublicUrl,
                         status: 'Ready',
-                        caption: `Uploaded: ${fileName} (Original)`
+                        caption: `Uploaded: ${fileName} (Original)`,
+                        metadata: thumbnailUrl ? { thumbnailUrl } : {}
                     })
                     .select()
                     .single()

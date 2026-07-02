@@ -3,6 +3,10 @@ import { createClient } from '@supabase/supabase-js';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { sendPushNotification } from '@/utils/notification-helper';
+import { generateAndUploadVideoThumbnail } from '@/utils/video-thumbnail-helper';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -91,13 +95,29 @@ export async function POST(request: Request) {
         const r2Url = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
         console.log(`[Lambda Callback] Upload complete. R2 URL: ${r2Url}`);
 
+        // Generate video thumbnail
+        let thumbnailUrl = null;
+        const tempDir = os.tmpdir();
+        const tempVideoPath = path.join(tempDir, `stitch-${assetId}-${Date.now()}.mp4`);
+        try {
+            fs.writeFileSync(tempVideoPath, buffer);
+            thumbnailUrl = await generateAndUploadVideoThumbnail(tempVideoPath, asset.user_id, assetId);
+        } catch (thumbErr) {
+            console.error("[Lambda Callback] Failed to generate thumbnail:", thumbErr);
+        } finally {
+            if (fs.existsSync(tempVideoPath)) {
+                try { fs.unlinkSync(tempVideoPath); } catch (e) {}
+            }
+        }
+
         // 4. Update asset status and url
         const updatedMetadata = {
             ...(asset.metadata || {}),
             timeToRenderInMs: payload.timeToRenderInMs,
             lambdasUsed: payload.lambdasUsed,
             renderId: payload.renderId,
-            renderTimeSeconds: payload.timeToRenderInMs ? (payload.timeToRenderInMs / 1000) : undefined
+            renderTimeSeconds: payload.timeToRenderInMs ? (payload.timeToRenderInMs / 1000) : undefined,
+            ...(thumbnailUrl ? { thumbnailUrl } : {})
         };
 
         const { error: updateErr } = await supabaseAdmin

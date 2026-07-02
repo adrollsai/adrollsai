@@ -11,6 +11,7 @@ import { exec } from 'child_process';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import { generateAndUploadVideoThumbnail } from '@/utils/video-thumbnail-helper';
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -362,6 +363,7 @@ export async function POST(request: Request) {
             console.log(`[Video Callback] Single-clip video detected (15s). Finalizing asset and applying faststart: ${clipUrl}`);
             
             let finalUrl = clipUrl;
+            let thumbnailUrl = null;
             
             // Run faststart pass to fix WhatsApp thumbnail issue
             const tempDir = path.join(os.tmpdir(), `faststart_${videoTask.asset_id}`);
@@ -408,6 +410,13 @@ export async function POST(request: Request) {
                 }));
                 finalUrl = `${R2_PUBLIC_URL}/adrolls-storage/${finalFileName}`;
                 console.log(`[Video Callback] Faststart single video uploaded to R2: ${finalUrl}`);
+
+                // Generate video thumbnail
+                try {
+                    thumbnailUrl = await generateAndUploadVideoThumbnail(outputPath, videoTask.user_id, videoTask.asset_id);
+                } catch (thumbErr) {
+                    console.error("[Video Callback] Thumbnail generation failed:", thumbErr);
+                }
             } catch (faststartErr) {
                 console.error("[Video Callback] Faststart process failed, falling back to original clip URL:", faststartErr);
             } finally {
@@ -423,7 +432,8 @@ export async function POST(request: Request) {
             if (videoTask.asset_id) {
                 await supabaseAdmin.from('assets').update({
                     url: finalUrl,
-                    status: 'Draft'
+                    status: 'Draft',
+                    metadata: thumbnailUrl ? { thumbnailUrl } : {}
                 }).eq('id', videoTask.asset_id);
             }
             

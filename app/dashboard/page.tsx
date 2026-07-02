@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { uploadToR2, compressImage } from '@/utils/upload-helper'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
+import LazyVideo from '@/components/LazyVideo'
 
 
 // Custom WhatsApp SVG Icon
@@ -47,6 +48,7 @@ type Asset = {
   type: 'image' | 'video'
   url: string
   status: string
+  metadata?: any
 }
 
 export default function ProductsPage() {
@@ -1100,7 +1102,11 @@ export default function ProductsPage() {
                                    {propertyAssets.map(asset => (
                                        <div key={asset.id} className="aspect-square bg-slate-200 rounded-[1.5rem] overflow-hidden relative shadow-sm border border-slate-200 group cursor-pointer">
                                            {asset.type === 'video' ? (
-                                               <video src={`${asset.url}#t=0.001`} preload="metadata" playsInline muted className="w-full h-full object-cover" />
+                                                <LazyVideo 
+                                                    src={asset.url} 
+                                                    poster={asset.metadata?.thumbnailUrl ? asset.metadata.thumbnailUrl : undefined} 
+                                                    className="w-full h-full object-cover" 
+                                                />
                                            ) : (
                                                <img src={asset.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="Creative" />
                                            )}

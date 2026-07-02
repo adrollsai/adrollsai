@@ -7,9 +7,10 @@ import { toast } from 'sonner'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
+import LazyVideo from '@/components/LazyVideo'
 
 type Property = { id: string; title: string; price: string; image_url: string; description?: string }
-type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string; status?: string }
+type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string; status?: string; metadata?: any }
 type Campaign = { id: string; name: string; status: string; objective: string }
 type LocationOption = { key: string; name: string; type: string; region?: string; country_code?: string; }
 type CustomQuestion = { label: string; type: 'SHORT_ANSWER' | 'MULTIPLE_CHOICE'; options?: string[]; disqualifyingOptions?: string[] }
@@ -22,6 +23,7 @@ type SelectedCreative = {
   previewUrl: string;
   name: string;
   type?: 'image' | 'video';
+  thumbnailUrl?: string;
 }
 
 const GENDERS = ['All', 'Male', 'Female']
@@ -2017,14 +2019,19 @@ export default function AdsPage() {
                                                         primary_text: primaryText,
                                                         description: description,
                                                         caption: a.caption,
-                                                        title: 'Selected Asset'
+                                                        title: 'Selected Asset',
+                                                        thumbnailUrl: a.metadata?.thumbnailUrl
                                                     };
                                                     const newVariations = [...prev.variations, newVar];
                                                     return { ...prev, variations: newVariations, selectedVariations: newVariations.map((_, i) => i) };
                                                 });
                                             }} className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${isSelected ? 'border-blue-500 shadow-md ring-2 ring-blue-500/20' : 'border-slate-100 hover:border-slate-200'}`}>
                                                 {a.type === 'video' ? (
-                                                    <video src={`${fixR2Url(a.url)}#t=0.1`} preload="metadata" className="w-full h-full object-cover" muted playsInline />
+                                                    <LazyVideo
+                                                        src={fixR2Url(a.url)}
+                                                        poster={a.metadata?.thumbnailUrl ? fixR2Url(a.metadata.thumbnailUrl) : undefined}
+                                                        className="w-full h-full object-cover"
+                                                    />
                                                 ) : (
                                                     <img src={fixR2Url(a.url)} className="w-full h-full object-cover" />
                                                 )}
@@ -2049,7 +2056,11 @@ export default function AdsPage() {
                                             <div className="flex gap-4 items-start">
                                                 <div className="w-20 h-20 rounded-2xl overflow-hidden border border-slate-100 shrink-0 shadow-inner">
                                                     {v.type === 'video' ? (
-                                                        <video src={`${fixR2Url(v.image_url)}#t=0.1`} preload="metadata" className="w-full h-full object-cover" muted playsInline />
+                                                        <LazyVideo 
+                                                            src={fixR2Url(v.image_url)} 
+                                                            poster={(v as any).thumbnailUrl ? fixR2Url((v as any).thumbnailUrl) : undefined} 
+                                                            className="w-full h-full object-cover" 
+                                                        />
                                                     ) : (
                                                         <img src={fixR2Url(v.image_url)} className="w-full h-full object-cover" />
                                                     )}
@@ -3227,7 +3238,11 @@ export default function AdsPage() {
                                             >
                                               {ad.creative?.isVideo && ad.creative?.videoSourceUrl ? (
                                                 <div className="relative w-full h-full">
-                                                  <video src={`${ad.creative.videoSourceUrl}#t=0.1`} preload="metadata" className="w-full h-full object-cover" muted playsInline />
+                                                  <LazyVideo 
+                                                      src={ad.creative.videoSourceUrl} 
+                                                      poster={ad.creative.imageUrl ? fixR2Url(ad.creative.imageUrl) : undefined} 
+                                                      className="w-full h-full object-cover" 
+                                                  />
                                                   <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                                                     <PlayCircle size={16} className="text-white drop-shadow-md" />
                                                   </div>
@@ -3675,7 +3690,10 @@ export default function AdsPage() {
                                                                       {ad.thumbnail ? (
                                                                           ad.thumbnail.includes('.mp4') || ad.thumbnail.includes('.mov') ? (
                                                                               <div className="relative w-full h-full">
-                                                                                  <video src={`${ad.thumbnail}#t=0.1`} preload="metadata" className="w-full h-full object-cover" muted playsInline />
+                                                                                  <LazyVideo 
+                                                                                      src={ad.thumbnail} 
+                                                                                      className="w-full h-full object-cover" 
+                                                                                  />
                                                                                   <div className="absolute inset-0 flex items-center justify-center bg-black/25">
                                                                                       <PlayCircle size={14} className="text-white" />
                                                                                   </div>
@@ -3946,7 +3964,11 @@ export default function AdsPage() {
                         onClick={() => setPreviewImage({ isOpen: true, url: c.previewUrl, title: c.name, type: (c.sourceType === 'local' && c.file && isVideoFile(c.file)) || c.type === 'video' ? 'video' : 'image' })}
                       >
                         {(c.sourceType === 'local' && c.file && isVideoFile(c.file)) || c.type === 'video' ? (
-                          <video src={`${fixR2Url(c.previewUrl)}#t=0.1`} preload="metadata" className="w-full h-full object-cover rounded-[1.25rem]" muted playsInline />
+                          <LazyVideo 
+                              src={fixR2Url(c.previewUrl)} 
+                              poster={c.thumbnailUrl ? fixR2Url(c.thumbnailUrl) : undefined} 
+                              className="w-full h-full object-cover rounded-[1.25rem]" 
+                          />
                         ) : (
                           <img src={fixR2Url(c.previewUrl)} className="w-full h-full object-cover rounded-[1.25rem]" />
                         )}
@@ -4408,11 +4430,15 @@ export default function AdsPage() {
                                                 return;
                                             }
                                             if (isSelected) removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid); 
-                                            else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Library', type: a.type }]); 
+                                            else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Library', type: a.type, thumbnailUrl: a.metadata?.thumbnailUrl }]); 
                                         }} className={`relative aspect-square rounded-[1.5rem] overflow-hidden border-[3px] transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}>
                                             {a.type === 'video' ? (
                                                 <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
-                                                    <video src={`${fixR2Url(a.url)}#t=0.1`} preload="metadata" playsInline muted className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+                                                    <LazyVideo 
+                                                        src={fixR2Url(a.url)} 
+                                                        poster={a.metadata?.thumbnailUrl ? fixR2Url(a.metadata.thumbnailUrl) : undefined} 
+                                                        className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" 
+                                                    />
                                                     <div className="absolute inset-0 flex items-center justify-center bg-black/10 pointer-events-none">
                                                         <div className="bg-white/20 backdrop-blur-md p-2.5 rounded-full shadow-sm">
                                                             <Video className="text-white" size={20} />
@@ -4459,11 +4485,15 @@ export default function AdsPage() {
                                                             return;
                                                         }
                                                         if (isSelected) removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid); 
-                                                        else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Batch Asset', type: a.type }]); 
+                                                        else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Batch Asset', type: a.type, thumbnailUrl: a.metadata?.thumbnailUrl }]); 
                                                     }} className={`relative aspect-square rounded-xl overflow-hidden border-[3px] transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}>
                                                         {a.type === 'video' ? (
                                                             <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
-                                                                <video src={`${fixR2Url(a.url)}#t=0.1`} preload="metadata" playsInline muted className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+                                                                <LazyVideo 
+                                                                    src={fixR2Url(a.url)} 
+                                                                    poster={a.metadata?.thumbnailUrl ? fixR2Url(a.metadata.thumbnailUrl) : undefined} 
+                                                                    className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" 
+                                                                />
                                                                 <div className="absolute inset-0 flex items-center justify-center bg-black/10 pointer-events-none">
                                                                     <div className="bg-white/20 backdrop-blur-md p-1.5 rounded-full shadow-sm">
                                                                         <Video className="text-white" size={14} />

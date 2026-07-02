@@ -12,6 +12,7 @@ import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { toast } from 'sonner'
 import { useUpload } from '@/utils/UploadContext'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
+import LazyVideo from '@/components/LazyVideo'
 
 type Asset = {
     id: string
@@ -1208,7 +1209,11 @@ export default function AssetsPage() {
                                     </div>
                                 ) : asset.type === 'video' ? (
                                     <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
-                                        <video src={`${asset.url}#t=0.1`} preload="metadata" playsInline muted className="w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity" />
+                                        <LazyVideo 
+                                            src={fixR2Url(asset.url)} 
+                                            poster={asset.metadata?.thumbnailUrl ? fixR2Url(asset.metadata.thumbnailUrl) : undefined} 
+                                            className="w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity" 
+                                        />
                                         <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-transparent transition-colors">
                                             <div className="bg-white/20 backdrop-blur-md p-3 rounded-full shadow-sm">
                                                 <Film className="text-white" size={24} />
@@ -1307,7 +1312,13 @@ export default function AssetsPage() {
                                 {/* Media Preview */}
                                 <div className="rounded-[1.5rem] overflow-hidden bg-slate-100 mb-6 border border-slate-200/60 shadow-inner">
                                     {selectedAsset.type === 'video' ? (
-                                        <video src={`${selectedAsset.url}#t=0.001`} controls preload="metadata" className="w-full max-h-[250px] object-contain bg-black" />
+                                        <video 
+                                            src={`${selectedAsset.url}#t=0.001`} 
+                                            poster={selectedAsset.metadata?.thumbnailUrl ? fixR2Url(selectedAsset.metadata.thumbnailUrl) : undefined}
+                                            controls 
+                                            preload="none" 
+                                            className="w-full max-h-[250px] object-contain bg-black" 
+                                        />
                                     ) : (
                                         <img src={fixR2Url(selectedAsset.url)} className="w-full max-h-[250px] object-contain" alt="Preview" />
                                     )}
