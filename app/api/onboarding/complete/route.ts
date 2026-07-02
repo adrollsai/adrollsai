@@ -260,7 +260,7 @@ AVOID
                 aspect_ratio: "9:16",
                 duration: 15,
                 generate_audio: true,
-                resolution: "720p",
+                resolution: "480p",
                 nsfw_checker: true,
                 web_search: false
             }

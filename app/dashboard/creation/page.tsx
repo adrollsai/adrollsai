@@ -998,7 +998,10 @@ export default function CreationPage() {
     if (isThinking) return
     
     const userText = input.trim()
-    if (!userText && !selectedPropId) {
+    if (isChatWorkspaceOpen && !userText && chatAttachments.length === 0) {
+        return
+    }
+    if (!userText && !selectedPropId && chatAttachments.length === 0) {
         alert("Please enter instructions or select a product.")
         return
     }
@@ -1662,7 +1665,7 @@ export default function CreationPage() {
 
       {/* CHAT WORKSPACE OVERLAY MODAL */}
       {isChatWorkspaceOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-950/60 backdrop-blur-sm flex items-start justify-center p-4 pt-10 sm:pt-16 overflow-y-auto">
           <div className="bg-white w-full max-w-4xl rounded-[2rem] shadow-2xl flex flex-col h-[85vh] max-h-[750px] overflow-hidden border border-slate-100 animate-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-white flex-shrink-0">
@@ -2209,7 +2212,7 @@ export default function CreationPage() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  if (!isThinking && !isUploadingChat && (input.trim() || selectedPropId || chatAttachments.length > 0)) {
+                  if (!isThinking && !isUploadingChat && (input.trim() || chatAttachments.length > 0)) {
                     handleSend();
                   }
                 }
@@ -2218,7 +2221,7 @@ export default function CreationPage() {
             />
             <button 
               type="submit" 
-              disabled={isThinking || isUploadingChat || (!input.trim() && !selectedPropId && chatAttachments.length === 0)} 
+              disabled={isThinking || isUploadingChat || (!input.trim() && chatAttachments.length === 0)} 
               className="w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center rounded-full transition-all duration-300 disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400 shadow-sm active:scale-90 flex-shrink-0 mb-0.5 mr-0.5"
             >
               {isThinking ? <Loader2 size={18} className="animate-spin" /> : <Send size={16} className="ml-0.5" />}
@@ -2402,7 +2405,7 @@ export default function CreationPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-[100] bg-slate-950/60 backdrop-blur-sm flex items-start justify-center p-4 pt-10 sm:pt-16 overflow-y-auto"
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}

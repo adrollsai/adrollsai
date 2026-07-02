@@ -288,23 +288,66 @@ export async function POST(request: Request) {
             script.dialogue = script.dialogue.replace(/\b\d{4,}\b/g, 'get in touch');
         }
 
-        // Only replace 'Mohali' with Devanagari 'मोहाली' when in Hinglish mode (prevents mispronunciation by TTS)
+        // Replace English spelling of Indian cities and proper nouns with Devanagari equivalents when in Hinglish/Hindi mode (prevents mispronunciation by TTS)
         if (language !== 'english') {
-            const replaceMohali = (text: string) => {
+            const cityReplacements: { [key: string]: string } = {
+                'Mohali': 'मोहाली',
+                'Mohaali': 'मोहाली',
+                'Chandigarh': 'चंडीगढ़',
+                'New Chandigarh': 'न्यू चंडीगढ़',
+                'Noida': 'नोएडा',
+                'Gurgaon': 'गुड़गांव',
+                'Gurugram': 'गुरुग्राम',
+                'Delhi': 'दिल्ली',
+                'Mumbai': 'मुंबई',
+                'Bangalore': 'बेंगलुरु',
+                'Bengaluru': 'बेंगलुरु',
+                'Pune': 'पुणे',
+                'Hyderabad': 'हैदराबाद',
+                'Chennai': 'चेन्नई',
+                'Kolkata': 'कोलकाता',
+                'Zirakpur': 'ज़िरकपुर',
+                'Panchkula': 'पंचकुला',
+                'Ludhiana': 'लुधियाना',
+                'Amritsar': 'अमृतसर',
+                'Lucknow': 'लखनऊ',
+                'Jaipur': 'जयपुर',
+                'Goa': 'गोवा',
+                'Ghaziabad': 'गाजियाबाद',
+                'Faridabad': 'फरीदाबाद',
+                'Rayat Bahra': 'रयात बहरा',
+                'Rayat': 'रयात',
+                'Bahra': 'बहरा',
+                'Chitkara': 'चितकारा',
+                'Amayra Sky City': 'अमायरा स्काई सिटी',
+                'Amayra Sky': 'अमायरा स्काई',
+                'Amayra': 'अमायरा',
+                'Sky City': 'स्काई सिटी',
+                'Kharar': 'खरड़',
+                'University': 'यूनिवर्सिटी'
+            };
+
+            const replaceIndianCities = (text: string) => {
                 if (!text) return text;
-                return text.replace(/\bMohali\b/gi, 'मोहाली');
+                let processed = text;
+                const sortedCities = Object.keys(cityReplacements).sort((a, b) => b.length - a.length);
+                for (const city of sortedCities) {
+                    const regex = new RegExp(`\\b${city}\\b`, 'gi');
+                    processed = processed.replace(regex, cityReplacements[city]);
+                }
+                return processed;
             };
 
             if (script.dialogue) {
-                script.dialogue = replaceMohali(script.dialogue);
+                script.dialogue = replaceIndianCities(script.dialogue);
             }
             if (script.scenes && Array.isArray(script.scenes)) {
                 script.scenes = script.scenes.map((scene: any) => {
                     if (scene.dialogue) {
-                        scene.dialogue = replaceMohali(scene.dialogue);
+                        scene.dialogue = replaceIndianCities(scene.dialogue);
                     }
                     if (scene.visuals) {
-                        scene.visuals = replaceMohali(scene.visuals);
+                        scene.visuals = replaceIndianCities(scene.visuals);
                     }
                     return scene;
                 });
@@ -623,64 +666,27 @@ const profileDesc = presenterType === 'video' ? profile.character_description : 
                      ? `Use reference video ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`
                      : `Use reference image ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`;
 
-                 const synthesisPrompt = `You are a professional Video Director and Prompt Engineer for Bytedance/Kie.ai Seedance 2.0.
-Your task is to write an extremely detailed, high-fidelity video generation prompt for a 15-second UGC scene clip.
+                const synthesisPrompt = `You are a video generation prompt engineer for Bytedance/Kie.ai Seedance 2.0.
+Your task is to write a highly cohesive, concise prompt (around 120-150 words) for a 15-second UGC talking-head video scene.
 
 CREATOR CHARACTER:
 - Description: "${characterDescription}"
-- Gender: "${presenterType === 'video' ? 'man/woman' : 'person'}"
-- Reference Video/Image: ${isCharacterVideo ? 'Reference video supplied' : 'Reference image supplied'}
 
 SCENE DETAILS:
 - Dialogue: "${scene.dialogue}"
-- Visuals/Action Description from Script: "${scene.visuals || ''}"
-- Business: "${businessName}"
-- Product Info: "${productInfo}"
-- Current Scene Index: ${i + 1} (out of ${scenes.length} scenes)
+- Visuals/Camera: "${scene.visuals || 'closeup tracking shot looking directly at the camera'}"
 
-REFERENCE IMAGES MAPPING (Product/property images to cut to as B-rolls):
-${descriptionsText}
-
-PROMPT STRUCTURE & INSTRUCTIONS:
-Your output MUST strictly follow this layout and instruction format:
-
-1. CLONING AND IDENTITY PRESERVATION:
-Use the reference video (or reference image) to faithfully clone both the person's face and voice. Preserve the person's identity, facial features, hairstyle, skin tone, clothing style, body language, facial expressions, and speaking style exactly as seen in the reference. Clone the voice with the same accent, tone, pitch, pacing, pronunciation, and emotional delivery.
-
-2. PRESENTATION ENVIRONMENT & OUTFIT:
-Describe the presenter's outfit and setting (which must be relevant to this specific product, e.g., "in a highstreet walking across the street" or "in a bright luxury penthouse lounge"). Ensure that the presenter's outfit and the scene environment are consistent across all scenes of this video, but altered appropriately from the reference. The camera angle should be a camera tracking shot close up in which half of [his/her] body is visible.
-
-3. VIDEO SPECIFICATIONS:
-Generate a highly photorealistic talking-head video with accurate lip synchronization. The speaker should maintain direct eye contact with the camera, use natural blinking, subtle head movements, and realistic hand gestures. Deliver the dialogue confidently like a professional investment advisor. Naturally emphasize key words (e.g. proper nouns or brand names) while keeping the speech conversational, expressive, and human-like. Avoid robotic delivery or exaggerated acting.
-
-4. B-ROLL CUTS & VISUAL INTEGRATION:
-Instruct the model to cleanly cut to the relevant product/property listing photos (e.g., Image_1, Image_2, etc. from reference_image_urls mapping) as visual B-rolls during descriptions of features, temporarily showing the property on-screen before cutting back to the presenter.
-
-5. NEGATIVE CONSTRAINT:
-There should be absolutely no text captions, subtitles, logos, watermarks, or AI artifacts on screen.
-
-6. DIALOGUE SEGMENTS:
-Define the narration segments with exact timestamps summing to 15 seconds. If this is scene 1, start with Hook. If this is the last scene, end with CTA. Under each segment, write the exact dialogue in double quotes. Keep Hindi script proper nouns or complex terms written in Devanagari script where necessary to ensure perfect pronunciation.
+Write the prompt following this exact structure and length:
+1. Cloning: "Use the reference video to faithfully clone both the person's face and voice. Preserve the person's identity, facial features, hairstyle, skin tone, clothing style, body language, facial expressions, and speaking style exactly as seen in the reference. Clone the voice with the same accent, tone, pitch, pacing, pronunciation, and emotional delivery."
+2. Setting/Camera/Actions: Describe the scene setting and actions. You MUST strictly base this description on the scene visuals instruction: "${scene.visuals || 'closeup tracking shot'}". Do NOT make up default settings or generic offices if "${scene.visuals || ''}" specifies walking, a highstreet, B-rolls, or specific movements. Make the presenter walk, gesturate, or sit exactly as "${scene.visuals || ''}" describes, matching the character style.
+3. Video specifications: "There should be no text captions on screen. Generate a highly photorealistic talking-head video with accurate lip synchronization. The speaker should maintain direct eye contact with the camera, use natural blinking, subtle head movements, and realistic hand gestures. Deliver the dialogue confidently and naturally like a professional advisor. Keep the speech conversational, expressive, and human-like. Avoid robotic delivery or exaggerated acting."
+4. Dialogue: Add a newline, then "Dialogue", then a newline, then print the exact dialogue wrapped in quotes.
 For example:
-${scenes.length === 1 ? `Hook (0-3 sec):
-"[Hook dialogue]"
+Dialogue
 
-Body (3-11 sec):
-"[Body dialogue]"
+"${scene.dialogue}"
 
-CTA (11-15 sec):
-"[CTA dialogue]"` : (i === 0 ? `Hook (0-3 sec):
-"[Hook dialogue]"
-
-Body (3-15 sec):
-"[Body dialogue]"` : (i === scenes.length - 1 ? `Body (0-11 sec):
-"[Body dialogue]"
-
-CTA (11-15 sec):
-"[CTA dialogue]"` : `Body (0-15 sec):
-"[Body dialogue]"`))}
-
-Output ONLY the final prompt text. Do NOT wrap it in markdown code blocks or backticks, just print the raw text.`;
+Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or backticks.`;
 
                 let finalPrompt = "";
                 try {
@@ -802,7 +808,7 @@ High-end commercial production quality.
                     aspect_ratio: "9:16",
                     duration: 15,
                     generate_audio: true,
-                    resolution: "720p",
+                    resolution: "480p",
                     nsfw_checker: true,
                     web_search: false
                 }
