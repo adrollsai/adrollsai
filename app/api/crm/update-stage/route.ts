@@ -37,8 +37,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Forbidden: Unauthorized lead access' }, { status: 403 })
     }
 
-    // 2. Update DB
-    const { data: lead, error } = await supabase
+    // 2. Update DB using admin client to bypass RLS policies
+    const { createClient: createAdminClient } = await import('@supabase/supabase-js');
+    const supabaseAdmin = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const { data: lead, error } = await supabaseAdmin
         .from('leads')
         .update({ 
             pipeline_stage: newStage, 
@@ -52,11 +58,6 @@ export async function POST(request: Request) {
 
     // 2. Trigger CAPI if stage warrants it
     // We use the admin client to bypass any potential RLS restrictions on reading the lead owner's tokens.
-    const { createClient: createAdminClient } = await import('@supabase/supabase-js');
-    const supabaseAdmin = createAdminClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
 
     const { data: profile } = await supabaseAdmin
         .from('profiles')

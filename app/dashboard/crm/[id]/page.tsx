@@ -147,12 +147,20 @@ export default function LeadProfilePage() {
 
   const handleNotesChange = async (newNotes: string) => {
     setLead({ ...lead, notes: newNotes })
-    await supabase.from('leads').update({ notes: newNotes }).eq('id', id)
+    await fetch('/api/crm/update-lead', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ leadId: id, updates: { notes: newNotes } }) 
+    })
   }
 
   const handleFieldUpdate = async (field: string, value: any) => {
     setLead({ ...lead, [field]: value })
-    await supabase.from('leads').update({ [field]: value }).eq('id', id)
+    await fetch('/api/crm/update-lead', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ leadId: id, updates: { [field]: value } }) 
+    })
   }
 
   const downloadVCard = () => {

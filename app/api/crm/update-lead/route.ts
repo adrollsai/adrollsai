@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { leadId, actionType, description, nextFollowup } = await request.json()
+    const { leadId, updates } = await request.json()
 
     // 1. Check access: Caller must be owner, assigned agent, or staff of the owner
     const { data: checkLead, error: checkError } = await supabase
@@ -36,29 +36,24 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Forbidden: Unauthorized lead access' }, { status: 403 })
     }
 
+    // 2. Update DB using admin client to bypass RLS policies
     const { createClient: createAdminClient } = await import('@supabase/supabase-js');
     const supabaseAdmin = createAdminClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // 2. Save History Log using admin client
-    const { error: historyError } = await supabaseAdmin.from('lead_history').insert({
-        lead_id: leadId,
-        user_id: user.id,
-        action_type: actionType,
-        description: description
-    })
+    const { data: lead, error } = await supabaseAdmin
+        .from('leads')
+        .update(updates)
+        .eq('id', leadId)
+        .select()
+        .single()
 
-    if (historyError) throw historyError;
+    if (error) throw error;
 
-    // 3. If it's a reminder setting, update the lead table using admin client
-    if (nextFollowup) {
-        const { error: updateError } = await supabaseAdmin.from('leads').update({ next_followup: nextFollowup }).eq('id', leadId)
-        if (updateError) throw updateError;
-    }
+    return NextResponse.json({ success: true, lead })
 
-    return NextResponse.json({ success: true })
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }

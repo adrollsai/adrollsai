@@ -351,12 +351,13 @@ export default function CRMPage() {
 
   const updateLeadPixel = async (leadId: string, pixelId: string | null) => {
     try {
-      const { error } = await supabase
-        .from('leads')
-        .update({ pixel_id: pixelId })
-        .eq('id', leadId)
-      
-      if (error) throw error
+      const res = await fetch('/api/crm/update-lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId, updates: { pixel_id: pixelId } })
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
     } catch (e: any) {
       alert("Failed to update lead pixel: " + e.message)
     }
