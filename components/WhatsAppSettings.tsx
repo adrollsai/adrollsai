@@ -1,0 +1,1491 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { 
+  MessageCircle, 
+  CalendarClock, 
+  BellRing, 
+  ArrowLeft, 
+  Loader2, 
+  Info, 
+  Copy, 
+  ExternalLink, 
+  CheckCircle2, 
+  AlertCircle,
+  HelpCircle,
+  Plus,
+  Send,
+  Trash2,
+  Clock,
+  ChevronDown,
+  Layers,
+  Settings
+} from 'lucide-react'
+import { createClient } from '@/utils/supabase/client'
+import { toast } from 'sonner'
+
+// Map template icon names to actual Lucide Icon components
+const iconMap: Record<string, any> = {
+  'MessageCircle': MessageCircle,
+  'CalendarClock': CalendarClock,
+  'BellRing': BellRing
+}
+
+type WhatsAppFlow = {
+  id: string
+  title: string
+  description: string
+  icon_name: string
+  is_active: boolean
+  template_name: string
+  template_body: string
+  delay_minutes: number
+  campaign_name?: string
+  variables_mapping?: Record<string, string>
+  header_media_url?: string
+}
+
+type MetaTemplate = {
+  name: string
+  status: string
+  category: string
+  language: string
+  components: any[]
+}
+
+type BroadcastCampaign = {
+  id: string
+  title: string
+  template_name: string
+  recipient_stage: string
+  recipient_property_id: string | null
+  scheduled_at: string | null
+  sent_at: string | null
+  status: string
+  created_at: string
+  stats?: { total: number; sent: number; failed: number }
+}
+
+interface WhatsAppSettingsProps {
+  userId: string | null
+  onBack: () => void
+}
+
+export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsProps) {
+  const supabase = createClient()
+  const [activeTab, setActiveTab] = useState<'drips' | 'templates' | 'broadcasts'>('drips')
+  
+  // Data lists
+  const [flows, setFlows] = useState<WhatsAppFlow[]>([])
+  const [templates, setTemplates] = useState<MetaTemplate[]>([])
+  const [broadcasts, setBroadcasts] = useState<BroadcastCampaign[]>([])
+  const [properties, setProperties] = useState<{ id: string; title: string }[]>([])
+  
+  // Loading states
+  const [loading, setLoading] = useState(true)
+  const [loadingTemplates, setLoadingTemplates] = useState(false)
+  const [loadingBroadcasts, setLoadingBroadcasts] = useState(false)
+  
+  // Meta credentials state
+  const [whatsappConnected, setWhatsappConnected] = useState(false)
+  const [whatsappNumber, setWhatsappNumber] = useState('')
+  const [whatsappWabaId, setWhatsappWabaId] = useState('')
+  const [whatsappPhoneId, setWhatsappPhoneId] = useState('')
+  const [isDisconnecting, setIsDisconnecting] = useState(false)
+  const [isConnecting, setIsConnecting] = useState(false)
+
+  // Modals & New Form states
+  // Modals & New Form states
+  const [isCreateFlowOpen, setIsCreateFlowOpen] = useState(false)
+  const [newFlow, setNewFlow] = useState({
+    title: '',
+    description: '',
+    template_name: '',
+    template_body: '',
+    delay_minutes: 2,
+    campaign_name: 'All',
+    variables_mapping: {} as Record<string, string>,
+    header_media_url: ''
+  })
+  const [campaigns, setCampaigns] = useState<string[]>([])
+  const [templateQuery, setTemplateQuery] = useState('')
+  const [filteredTemplates, setFilteredTemplates] = useState<any[]>([])
+  
+  const [isCreateTemplateOpen, setIsCreateTemplateOpen] = useState(false)
+  const [newTemplate, setNewTemplate] = useState({
+    name: '',
+    category: 'MARKETING',
+    bodyText: ''
+  })
+  const [submittingTemplate, setSubmittingTemplate] = useState(false)
+
+  const [isCreateBroadcastOpen, setIsCreateBroadcastOpen] = useState(false)
+  const [newBroadcast, setNewBroadcast] = useState({
+    title: '',
+    templateName: '',
+    recipientStage: 'All',
+    recipientPropertyId: '',
+    scheduledAt: ''
+  })
+  const [submittingBroadcast, setSubmittingBroadcast] = useState(false)
+
+  // Fetch initial profile & properties
+  const fetchData = async () => {
+    if (!userId) return
+
+    try {
+      // Fetch properties
+      const { data: propData } = await supabase
+        .from('properties')
+        .select('id, title')
+        .eq('user_id', userId)
+      if (propData) setProperties(propData)
+
+      // Fetch unique campaigns from leads
+      const { data: leadCampaigns } = await supabase
+        .from('leads')
+        .select('ad_name')
+        .eq('user_id', userId)
+
+      const uniqueCamps = new Set<string>()
+      if (leadCampaigns) {
+        leadCampaigns.forEach((l: any) => {
+          if (l.ad_name) uniqueCamps.add(l.ad_name)
+        })
+      }
+      setCampaigns(Array.from(uniqueCamps))
+
+      // Fetch profile credentials
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('whatsapp_access_token, whatsapp_phone_number, whatsapp_waba_id, whatsapp_phone_number_id')
+        .eq('id', userId)
+        .single()
+
+      if (profileData) {
+        setWhatsappConnected(!!profileData.whatsapp_access_token)
+        setWhatsappNumber(profileData.whatsapp_phone_number || '')
+        setWhatsappWabaId(profileData.whatsapp_waba_id || '')
+        setWhatsappPhoneId(profileData.whatsapp_phone_number_id || '')
+      }
+
+      // Fetch flows
+      await fetchFlows()
+    } catch (err: any) {
+      console.error('[WHATSAPP SETTINGS] Init Fetch Error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Fetch flows from CRUD API
+  const fetchFlows = async () => {
+    try {
+      const res = await fetch('/api/whatsapp/flows')
+      const data = await res.json()
+      if (data.success) {
+        setFlows(data.flows)
+      }
+    } catch (e) {
+      console.error('Failed to fetch custom flows:', e)
+    }
+  }
+
+  // Fetch templates from Meta API
+  const fetchTemplates = async () => {
+    setLoadingTemplates(true)
+    try {
+      const res = await fetch('/api/whatsapp/templates')
+      const data = await res.json()
+      if (data.success) {
+        setTemplates(data.templates)
+        if (data.warning) {
+          toast.warning(data.warning)
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch Meta templates:', e)
+    } finally {
+      setLoadingTemplates(false)
+    }
+  }
+
+  const handleSelectTemplate = (template: any) => {
+    const bodyComponent = template.components?.find((c: any) => c.type === 'BODY');
+    const bodyText = bodyComponent?.text || '';
+    
+    const headerComponent = template.components?.find((c: any) => c.type === 'HEADER');
+    const hasMediaHeader = headerComponent?.format === 'IMAGE' || headerComponent?.format === 'VIDEO';
+    
+    const matches = bodyText.match(/{{\s*(\d+)\s*}}/g) || [];
+    const vars = Array.from(new Set(matches.map((m: string) => m.replace(/\D/g, '')))) as string[];
+    
+    const initialMapping: Record<string, string> = {};
+    vars.forEach((v: string) => {
+      if (v === '1') initialMapping[v] = 'lead_name';
+      else if (v === '2') initialMapping[v] = 'campaign_name';
+      else if (v === '3') initialMapping[v] = 'company_name';
+      else initialMapping[v] = 'custom_text';
+    });
+
+    setNewFlow({
+      ...newFlow,
+      template_name: template.name,
+      template_body: bodyText,
+      variables_mapping: initialMapping,
+      header_media_url: hasMediaHeader ? (newFlow.header_media_url || '') : ''
+    });
+    setTemplateQuery(template.name);
+    setFilteredTemplates([]);
+  };
+
+  // Fetch broadcasts from scheduler API
+  const fetchBroadcasts = async () => {
+    setLoadingBroadcasts(true)
+    try {
+      const res = await fetch(`/api/whatsapp/broadcasts?impersonate=${userId || ''}`)
+      const data = await res.json()
+      if (data.success) {
+        setBroadcasts(data.broadcasts)
+      }
+    } catch (e) {
+      console.error('Failed to fetch broadcasts:', e)
+    } finally {
+      setLoadingBroadcasts(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [userId])
+
+  // Refetch lists depending on active tab
+  useEffect(() => {
+    if (activeTab === 'templates') fetchTemplates()
+    if (activeTab === 'broadcasts') fetchBroadcasts()
+    if (activeTab === 'drips') fetchFlows()
+  }, [activeTab])
+
+  // Facebook SDK Load (Standard Onboarding)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!document.getElementById('facebook-jssdk')) {
+      const js = document.createElement('script')
+      js.id = 'facebook-jssdk'
+      js.src = 'https://connect.facebook.net/en_US/sdk.js'
+      const fjs = document.getElementsByTagName('script')[0]
+      if (fjs && fjs.parentNode) {
+        fjs.parentNode.insertBefore(js, fjs)
+      } else {
+        document.head.appendChild(js)
+      }
+    }
+    (window as any).fbAsyncInit = function () {
+      (window as any).FB.init({
+        appId: process.env.NEXT_PUBLIC_FACEBOOK_APP_ID,
+        cookie: true,
+        xfbml: true,
+        version: 'v20.0'
+      })
+    }
+  }, [])
+
+  const handleWhatsAppConnect = () => {
+    if (!(window as any).FB) {
+      toast.error("Facebook SDK is loading. Try again in a moment.")
+      return
+    }
+
+    setIsConnecting(true)
+    let code: string | null = null
+    let metadata: { wabaId?: string; phone_number_id?: string } | null = null
+    let submitted = false
+
+    const checkAndSubmit = async (forceSubmit = false) => {
+      if (submitted) return
+      if (code && (metadata || forceSubmit)) {
+        submitted = true
+        window.removeEventListener('message', messageListener)
+        const finalMetadata = metadata || {}
+        try {
+          const res = await fetch('/api/whatsapp/onboard', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              code,
+              wabaId: finalMetadata.wabaId,
+              phone_number_id: finalMetadata.phone_number_id
+            })
+          })
+
+          const result = await res.json()
+          if (res.ok) {
+            setWhatsappConnected(true)
+            setWhatsappNumber(result.phone || 'Connected')
+            setWhatsappWabaId(result.wabaId || finalMetadata.wabaId || '')
+            setWhatsappPhoneId(result.phone_number_id || finalMetadata.phone_number_id || '')
+            toast.success("WhatsApp Business connected! ✨")
+            fetchData()
+          } else {
+            toast.error(`Onboarding failed: ${result.error}`)
+            submitted = false
+          }
+        } catch (err: any) {
+          toast.error("Onboarding failed completely.")
+          submitted = false
+        } finally {
+          setIsConnecting(false)
+        }
+      }
+    }
+
+    const messageListener = (event: MessageEvent) => {
+      if (event.origin !== 'https://www.facebook.com' && event.origin !== 'https://web.facebook.com') return
+      try {
+        const data = JSON.parse(event.data)
+        let wabaId = ''
+        let phone_number_id = ''
+        if (data.type === 'WA_EMBEDDED_SIGNUP' && data.event === 'FINISH') {
+          wabaId = data.data?.waba_id || ''
+          phone_number_id = data.data?.phone_number_id || ''
+        } else if (data.action === 'whatsapp-embedded-signup-complete') {
+          wabaId = data.payload?.wabaId || ''
+          phone_number_id = data.payload?.phone_number_id || ''
+        }
+        if (wabaId || phone_number_id) {
+          metadata = { wabaId, phone_number_id }
+          checkAndSubmit()
+        }
+      } catch (e) {}
+    }
+
+    window.addEventListener('message', messageListener);
+
+    (window as any).FB.login((response: any) => {
+      if (response.authResponse) {
+        code = response.authResponse.code
+        checkAndSubmit()
+        setTimeout(() => checkAndSubmit(true), 1500)
+      } else {
+        window.removeEventListener('message', messageListener)
+        setIsConnecting(false)
+      }
+    }, {
+      config_id: process.env.NEXT_PUBLIC_FACEBOOK_LOGIN_CONFIG_ID || '4311232925804423',
+      response_type: 'code',
+      override_default_response_type: true
+    })
+  }
+
+  const handleDisconnect = async () => {
+    if (!userId) return
+    if (!confirm("Are you sure you want to disconnect WhatsApp? Drips will stop triggering.")) return
+
+    setIsDisconnecting(true)
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          whatsapp_access_token: null,
+          whatsapp_waba_id: null,
+          whatsapp_phone_number_id: null,
+          whatsapp_phone_number: null,
+          whatsapp_connected_at: null
+        })
+        .eq('id', userId)
+
+      if (error) throw error
+      setWhatsappConnected(false)
+      setWhatsappNumber('')
+      setWhatsappWabaId('')
+      setWhatsappPhoneId('')
+      toast.success("Disconnected successfully.")
+    } catch (err: any) {
+      toast.error("Disconnection failed.")
+    } finally {
+      setIsDisconnecting(false)
+    }
+  }
+
+  // Toggle drip campaign active state
+  const toggleFlow = async (id: string, currentStatus: boolean) => {
+    setFlows(prev => prev.map(f => f.id === id ? { ...f, is_active: !currentStatus } : f))
+    try {
+      const res = await fetch('/api/whatsapp/flows', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, is_active: !currentStatus })
+      })
+      if (!res.ok) throw new Error()
+      toast.success(`Flow updated successfully!`)
+    } catch {
+      toast.error("Failed to toggle flow state")
+      setFlows(prev => prev.map(f => f.id === id ? { ...f, is_active: currentStatus } : f))
+    }
+  }
+
+  // Update drip delay minutes
+  const handleSaveDelay = async (id: string, newDelay: number) => {
+    try {
+      const res = await fetch('/api/whatsapp/flows', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, delay_minutes: newDelay })
+      })
+      if (res.ok) {
+        toast.success("Timing delay updated!")
+        setFlows(prev => prev.map(f => f.id === id ? { ...f, delay_minutes: newDelay } : f))
+      }
+    } catch {
+      toast.error("Failed to update timing delay")
+    }
+  }
+
+  // Update drip campaign mapping
+  const updateFlowCampaign = async (id: string, campaignName: string) => {
+    try {
+      const res = await fetch('/api/whatsapp/flows', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, campaign_name: campaignName })
+      })
+      if (res.ok) {
+        toast.success("Campaign association updated!")
+        await fetchFlows()
+      }
+    } catch {
+      toast.error("Failed to update campaign mapping")
+    }
+  }
+
+  // Create custom flow
+  const handleCreateFlow = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      const res = await fetch('/api/whatsapp/flows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...newFlow,
+          campaign_name: newFlow.campaign_name || 'All',
+          variables_mapping: newFlow.variables_mapping,
+          header_media_url: newFlow.header_media_url || null
+        })
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success("Custom Flow created!")
+        setIsCreateFlowOpen(false)
+        setNewFlow({ 
+          title: '', 
+          description: '', 
+          template_name: '', 
+          template_body: '', 
+          delay_minutes: 2, 
+          campaign_name: 'All',
+          variables_mapping: {},
+          header_media_url: ''
+        })
+        setTemplateQuery('')
+        await fetchFlows()
+      } else {
+        toast.error(data.error || "Failed to create flow")
+      }
+    } catch {
+      toast.error("Failed to create custom flow")
+    }
+  }
+
+  // Delete custom flow
+  const handleDeleteFlow = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this custom flow?")) return
+    try {
+      const res = await fetch(`/api/whatsapp/flows?id=${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success("Flow deleted")
+        await fetchFlows()
+      }
+    } catch {
+      toast.error("Failed to delete flow")
+    }
+  }
+
+  // Submit template to Meta for approval
+  const handleCreateTemplate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmittingTemplate(true)
+    try {
+      const res = await fetch('/api/whatsapp/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTemplate)
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success("Template submitted to Meta successfully! 🎉")
+        setIsCreateTemplateOpen(false)
+        setNewTemplate({ name: '', category: 'MARKETING', bodyText: '' })
+        await fetchTemplates()
+      } else {
+        toast.error(data.error || "Submission failed.")
+      }
+    } catch {
+      toast.error("Failed to submit template.")
+    } finally {
+      setSubmittingTemplate(false)
+    }
+  }
+
+  // Trigger broadcast campaign
+  const handleCreateBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmittingBroadcast(true)
+    try {
+      const res = await fetch('/api/whatsapp/broadcasts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...newBroadcast,
+          recipientPropertyId: newBroadcast.recipientPropertyId || null,
+          scheduledAt: newBroadcast.scheduledAt || null,
+          impersonateId: userId
+        })
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(data.message || "Broadcast campaign scheduled successfully!")
+        setIsCreateBroadcastOpen(false)
+        setNewBroadcast({ title: '', templateName: '', recipientStage: 'All', recipientPropertyId: '', scheduledAt: '' })
+        await fetchBroadcasts()
+      } else {
+        toast.error(data.error || "Failed to create campaign")
+      }
+    } catch {
+      toast.error("Failed to create campaign")
+    } finally {
+      setSubmittingBroadcast(false)
+    }
+  }
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    toast.success("Copied to clipboard!")
+  }
+
+  // Render template preview bubble
+  const renderMockBubble = (templateBody: string, title: string, mapping: Record<string, string> = {}, headerUrl: string = '') => {
+    let replacedText = templateBody || '';
+
+    const displayMap: Record<string, string> = {
+      lead_name: '[Lead Name]',
+      lead_phone: '[Lead Phone]',
+      campaign_name: '[Campaign Name]',
+      company_name: '[Business Name]'
+    };
+
+    const maxVarIndex = 20;
+    for (let i = 1; i <= maxVarIndex; i++) {
+      const variablePlaceholder = `{{${i}}}`;
+      if (replacedText.includes(variablePlaceholder)) {
+        const field = mapping[String(i)];
+        let replacement = `[Var ${i}]`;
+        if (field) {
+          replacement = displayMap[field] || field;
+        } else {
+          if (i === 1) replacement = '[Lead Name]';
+          else if (i === 2) replacement = '[Campaign Name]';
+          else if (i === 3) replacement = '[Business Name]';
+        }
+        replacedText = replacedText.replaceAll(variablePlaceholder, replacement);
+      }
+    }
+
+    return (
+      <div className="bg-[#E2F4C5] text-slate-800 p-4 rounded-3xl rounded-tr-none max-w-[95%] self-end text-[11px] sm:text-xs leading-relaxed font-medium shadow-sm ml-auto border border-emerald-100/50 relative flex flex-col gap-2.5">
+        {headerUrl && (
+          <div className="w-full h-28 rounded-2xl overflow-hidden relative border border-slate-200/50 bg-white">
+            <img src={headerUrl} alt="Header Preview" className="w-full h-full object-cover" onError={(e) => {
+              (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=400&q=80';
+            }} />
+          </div>
+        )}
+        <p className="whitespace-pre-wrap">{replacedText}</p>
+        <span className="text-[9px] text-emerald-700/80 font-black float-right uppercase self-end tracking-wider">Preview</span>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[40vh] text-slate-400 gap-4">
+        <Loader2 className="animate-spin text-slate-300" size={32} />
+        <p className="text-sm font-medium animate-pulse">Syncing WhatsApp settings...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+      
+      {/* Back Button */}
+      <button
+        onClick={onBack}
+        className="flex items-center gap-2 mb-6 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors uppercase tracking-wider bg-white px-4 py-2.5 rounded-full shadow-sm border border-slate-200"
+      >
+        <ArrowLeft size={14} /> Back to Settings
+      </button>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+        
+        {/* Left Column: Connection Status & Developer Sandbox */}
+        <div className="lg:col-span-4 space-y-6">
+          
+          {/* Connection Card */}
+          <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm hover:shadow-md transition-all">
+            <div className="flex items-center gap-4 mb-6">
+              <div className={`p-3.5 rounded-2xl flex items-center justify-center shadow-sm ${whatsappConnected ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-slate-50 text-slate-400 border border-slate-200'}`}>
+                <MessageCircle size={24} />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-slate-950">WhatsApp Connection</h3>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium leading-normal">
+                  Connect your business line to configure auto drip agents
+                </p>
+              </div>
+            </div>
+
+            {whatsappConnected ? (
+              <div className="space-y-4">
+                <div className="bg-emerald-50/40 border border-emerald-100 rounded-3xl p-4 space-y-3">
+                  <div className="flex justify-between items-center pb-2 border-b border-emerald-100/50">
+                    <span className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider">Status</span>
+                    <span className="text-xs text-emerald-600 font-black flex items-center gap-1">● Connected</span>
+                  </div>
+                  {whatsappNumber && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase">Number</span>
+                      <span className="font-bold text-slate-700">{whatsappNumber}</span>
+                    </div>
+                  )}
+                  {whatsappWabaId && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase">WABA ID</span>
+                      <div className="flex items-center gap-1 font-mono text-[9px] bg-slate-100 px-1.5 py-0.5 rounded">
+                        <span>{whatsappWabaId}</span>
+                        <button onClick={() => copyToClipboard(whatsappWabaId)} className="text-slate-400 hover:text-slate-600"><Copy size={10} /></button>
+                      </div>
+                    </div>
+                  )}
+                  {whatsappPhoneId && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase">Phone ID</span>
+                      <div className="flex items-center gap-1 font-mono text-[9px] bg-slate-100 px-1.5 py-0.5 rounded">
+                        <span>{whatsappPhoneId}</span>
+                        <button onClick={() => copyToClipboard(whatsappPhoneId)} className="text-slate-400 hover:text-slate-600"><Copy size={10} /></button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={handleDisconnect}
+                  disabled={isDisconnecting}
+                  className="w-full py-3.5 px-4 rounded-full border border-red-100 text-red-600 hover:bg-red-50 text-xs font-bold transition-all flex items-center justify-center gap-2"
+                >
+                  {isDisconnecting && <Loader2 size={12} className="animate-spin" />}
+                  Disconnect Integration
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleWhatsAppConnect}
+                disabled={isConnecting}
+                className="w-full py-3.5 px-4 rounded-full bg-slate-950 text-white hover:bg-slate-900 text-xs font-black transition-all flex items-center justify-center gap-2 shadow-md"
+              >
+                {isConnecting ? <Loader2 size={14} className="animate-spin text-white" /> : <MessageCircle size={14} />}
+                Connect business account
+              </button>
+            )}
+          </div>
+
+          {/* Sandbox Testing Guide Banner */}
+          <div className="bg-indigo-50/60 border border-indigo-100 rounded-[2rem] p-6 shadow-sm">
+            <h4 className="font-extrabold text-sm text-indigo-900 flex items-center gap-2 mb-2">
+              <HelpCircle size={16} className="text-indigo-600" /> Developer Sandbox Guide
+            </h4>
+            <p className="text-[11px] text-indigo-950 leading-relaxed font-semibold opacity-90">
+              When in Sandbox Mode:
+            </p>
+            <ul className="space-y-2 mt-2 text-[10px] text-indigo-900 font-bold list-decimal pl-4">
+              <li>Must register and verify recipients on Meta console first.</li>
+              <li>Only standard mock templates deliver instantly without prior Meta review.</li>
+            </ul>
+          </div>
+
+          {/* Developer Override Form */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-6 shadow-sm">
+              <h4 className="font-extrabold text-sm text-slate-800 flex items-center gap-2 mb-2">🛠️ Manual Sandbox Override</h4>
+              <p className="text-[11px] text-slate-500 mb-3 leading-normal">Override Meta API credentials manually to bypass signup locks.</p>
+              <DevOverrideForm userId={userId} onSave={fetchData} />
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Tabbed Settings Control */}
+        <div className="lg:col-span-8 space-y-6">
+          
+          {/* Tabs Navigation Header */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-2 flex gap-1 shadow-sm">
+            {(['drips', 'templates', 'broadcasts'] as const).map(tabId => {
+              const label = tabId === 'drips' ? 'Drips Automations' : tabId === 'templates' ? 'Template Approvals' : 'Bulk Broadcasts';
+              const Icon = tabId === 'drips' ? MessageCircle : tabId === 'templates' ? CheckCircle2 : Send;
+              const active = activeTab === tabId;
+              return (
+                <button
+                  key={tabId}
+                  onClick={() => setActiveTab(tabId)}
+                  className={`flex-1 py-3 px-4 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${active ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                >
+                  <Icon size={14} />
+                  <span className="hidden sm:inline">{label}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* TAB CONTENT: DRIP AUTOMATIONS */}
+          {activeTab === 'drips' && (
+            <div className="bg-white border border-slate-200 rounded-[2rem] p-6 sm:p-8 shadow-sm space-y-6">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900">Follow-up Drip Campaigns</h3>
+                  <p className="text-xs text-slate-500 font-medium">Automatic campaigns triggered when new leads are registered</p>
+                </div>
+                <button 
+                  onClick={() => setIsCreateFlowOpen(!isCreateFlowOpen)}
+                  className="bg-slate-950 hover:bg-slate-900 text-white rounded-full p-2.5 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                >
+                  <Plus size={14} /> Create Drip
+                </button>
+              </div>
+
+              {/* Create Custom Flow Form */}
+              {isCreateFlowOpen && (
+                <form onSubmit={handleCreateFlow} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-widest">New Follow-up Drip Setup</span>
+                    <button type="button" onClick={() => setIsCreateFlowOpen(false)} className="text-xs text-red-500 font-bold hover:underline">Cancel</button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Flow Name / Title</label>
+                      <input 
+                        type="text" 
+                        value={newFlow.title}
+                        onChange={(e) => setNewFlow({ ...newFlow, title: e.target.value })}
+                        placeholder="e.g. Instant Lead Welcome" 
+                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Mapped Facebook Campaign</label>
+                      <select 
+                        value={newFlow.campaign_name}
+                        onChange={(e) => setNewFlow({ ...newFlow, campaign_name: e.target.value })}
+                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                      >
+                        <option value="All">All Campaigns</option>
+                        {campaigns.map((camp, i) => <option key={i} value={camp}>{camp}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Internal Description</label>
+                    <input 
+                      type="text" 
+                      value={newFlow.description}
+                      onChange={(e) => setNewFlow({ ...newFlow, description: e.target.value })}
+                      placeholder="e.g. Triggered immediately after lead capture on real estate landing page" 
+                      className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5 relative">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Meta Approved Template Name</label>
+                      <input 
+                        type="text" 
+                        value={templateQuery}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setTemplateQuery(val);
+                          setNewFlow({ ...newFlow, template_name: val });
+                          if (val.trim()) {
+                            const filtered = templates.filter(t => t.name.toLowerCase().includes(val.toLowerCase()));
+                            setFilteredTemplates(filtered);
+                          } else {
+                            setFilteredTemplates([]);
+                          }
+                        }}
+                        onFocus={() => {
+                          if (templates.length > 0) {
+                            setFilteredTemplates(templates);
+                          }
+                        }}
+                        placeholder="Type to search or select a template..." 
+                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all font-mono"
+                        required
+                      />
+                      {filteredTemplates.length > 0 && (
+                        <div className="absolute left-0 right-0 z-50 bg-white border border-slate-200 rounded-2xl shadow-xl mt-1 max-h-48 overflow-y-auto custom-scrollbar">
+                          {filteredTemplates.map(t => (
+                            <button
+                              key={t.name}
+                              type="button"
+                              onClick={() => handleSelectTemplate(t)}
+                              className="w-full px-4 py-2 text-left text-[11px] font-bold hover:bg-slate-50 transition-colors flex items-center justify-between"
+                            >
+                              <span className="font-mono text-slate-700 truncate mr-2">{t.name}</span>
+                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase shrink-0 ${t.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+                                {t.status}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Auto Trigger Delay Time</label>
+                      <div className="flex items-center bg-white border border-slate-200 rounded-xl px-4 py-2.5">
+                        <input 
+                          type="number" 
+                          value={newFlow.delay_minutes}
+                          onChange={(e) => setNewFlow({ ...newFlow, delay_minutes: parseInt(e.target.value) || 0 })}
+                          min={0}
+                          className="w-12 text-center text-xs font-bold outline-none border-none mr-2"
+                        />
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Minutes</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Header Media URL */}
+                  {(() => {
+                    const selectedTemplate = templates.find(t => t.name === newFlow.template_name);
+                    const headerComponent = selectedTemplate?.components?.find((c: any) => c.type === 'HEADER');
+                    const isMedia = headerComponent?.format === 'IMAGE' || headerComponent?.format === 'VIDEO';
+                    if (isMedia) {
+                      return (
+                        <div className="space-y-1.5 animate-in fade-in duration-200">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Header Image / Media URL (Optional)</label>
+                          <input 
+                            type="url" 
+                            value={newFlow.header_media_url}
+                            onChange={(e) => setNewFlow({ ...newFlow, header_media_url: e.target.value })}
+                            placeholder="e.g. https://yourdomain.com/hero-image.jpg" 
+                            className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all"
+                          />
+                          <span className="text-[9px] text-slate-400 block ml-1 font-semibold leading-normal">This template supports a header media parameter. Provide an image URL to include it.</span>
+                        </div>
+                      )
+                    }
+                    return null;
+                  })()}
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Template Content Body</label>
+                    <textarea 
+                      value={newFlow.template_body}
+                      onChange={(e) => setNewFlow({ ...newFlow, template_body: e.target.value })}
+                      placeholder="Select a template above or paste template content..." 
+                      rows={3}
+                      className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all resize-none"
+                      required
+                    />
+                  </div>
+
+                  {/* Dynamic Parameter Mappings block */}
+                  {(() => {
+                    const matches = (newFlow.template_body || '').match(/{{\s*(\d+)\s*}}/g) || [];
+                    const variables = Array.from(new Set(matches.map((m: string) => m.replace(/\D/g, '')))).sort((a, b) => parseInt(a) - parseInt(b));
+                    if (variables.length === 0) return null;
+                    return (
+                      <div className="space-y-3 pt-2">
+                        <span className="text-[10px] font-black text-slate-500 block uppercase tracking-widest ml-1">Map Template Variables</span>
+                        <div className="grid grid-cols-1 gap-3">
+                          {variables.map((v) => {
+                            const currentVal = newFlow.variables_mapping[v] || '';
+                            const isStandard = ['lead_name', 'lead_phone', 'campaign_name', 'company_name'].includes(currentVal);
+                            return (
+                              <div key={v} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-2.5">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-[10px] font-black text-slate-700">Variable <code>{"{{" + v + "}}"}</code> maps to:</span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <select
+                                    value={isStandard ? currentVal : (currentVal ? 'custom_text' : '')}
+                                    onChange={(e) => {
+                                      const selectVal = e.target.value;
+                                      const updatedMapping = { ...newFlow.variables_mapping };
+                                      if (selectVal === 'custom_text') {
+                                        updatedMapping[v] = ''; // empty custom text initially
+                                      } else {
+                                        updatedMapping[v] = selectVal;
+                                      }
+                                      setNewFlow({ ...newFlow, variables_mapping: updatedMapping });
+                                    }}
+                                    className="w-full bg-slate-50 border border-slate-200 py-2 px-3 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                                  >
+                                    <option value="">Choose Mapping...</option>
+                                    <option value="lead_name">Lead Name</option>
+                                    <option value="lead_phone">Lead Phone</option>
+                                    <option value="campaign_name">Campaign Name</option>
+                                    <option value="company_name">Company Name (Your Business Name)</option>
+                                    <option value="custom_text">Static Custom Text</option>
+                                  </select>
+
+                                  {(!isStandard || currentVal === 'custom_text') && (
+                                    <input
+                                      type="text"
+                                      value={isStandard ? '' : currentVal}
+                                      onChange={(e) => {
+                                        const updatedMapping = { ...newFlow.variables_mapping };
+                                        updatedMapping[v] = e.target.value;
+                                        setNewFlow({ ...newFlow, variables_mapping: updatedMapping });
+                                      }}
+                                      placeholder="Type static custom text here..."
+                                      className="w-full bg-slate-50 border border-slate-200 py-2 px-3 rounded-xl text-xs font-bold outline-none focus:border-blue-400"
+                                      required
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  <button 
+                    type="submit"
+                    className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition-all"
+                  >
+                    Save & Enable Drip Flow
+                  </button>
+                </form>
+              )}
+
+              {flows.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 font-medium text-xs flex flex-col items-center justify-center gap-2 border border-dashed border-slate-200 rounded-3xl">
+                  <AlertCircle size={28} className="text-slate-300" />
+                  <p>No follow-up flows found. Submit custom templates or toggle default ones.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {flows.map(flow => {
+                    const IconComponent = iconMap[flow.icon_name] || MessageCircle
+                    return (
+                      <div 
+                        key={flow.id} 
+                        className={`p-5 rounded-3xl border transition-all duration-300 flex flex-col gap-4 relative overflow-hidden ${
+                          flow.is_active 
+                            ? 'bg-white border-blue-200 shadow-md ring-2 ring-blue-500/5' 
+                            : 'bg-slate-50/80 border-slate-100 opacity-90'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start gap-4">
+                          <div className="flex gap-3">
+                            <div className={`p-3 rounded-2xl flex items-center justify-center border shadow-sm transition-all ${
+                              flow.is_active ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-slate-200 text-slate-400 border-slate-300'
+                            }`}>
+                              <IconComponent size={20} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className={`font-black text-sm ${flow.is_active ? 'text-slate-900' : 'text-slate-500'}`}>
+                                  {flow.title}
+                                </h4>
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${flow.campaign_name && flow.campaign_name !== 'All' ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-600'}`}>
+                                  Campaign: {flow.campaign_name || 'All'}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-400 font-medium max-w-sm mt-0.5">{flow.description}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2.5">
+                            {/* Toggle switch */}
+                            <button 
+                              onClick={() => toggleFlow(flow.id, flow.is_active)}
+                              className={`w-11 h-6 rounded-full flex items-center transition-all duration-300 px-0.5 shadow-inner cursor-pointer ${
+                                flow.is_active ? 'bg-slate-950' : 'bg-slate-300'
+                              }`}
+                            >
+                              <div className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-300 ${
+                                flow.is_active ? 'translate-x-5' : 'translate-x-0'
+                              }`} />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteFlow(flow.id)} 
+                              className="text-slate-300 hover:text-red-500 p-1 rounded-lg hover:bg-red-50 transition-colors"
+                              title="Delete Flow"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {renderMockBubble(flow.template_body, flow.title, flow.variables_mapping || {}, flow.header_media_url || '')}
+
+                        {/* Configurations row */}
+                        <div className="flex flex-wrap items-center justify-between gap-4 pt-3.5 border-t border-slate-100">
+                          {/* Campaign Selector */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Campaign Map:</span>
+                            <select 
+                              value={flow.campaign_name || 'All'} 
+                              onChange={(e) => updateFlowCampaign(flow.id, e.target.value)}
+                              className="bg-slate-50 hover:bg-slate-100 border border-slate-200/60 text-slate-700 text-[10px] font-bold rounded-lg py-1 px-2 outline-none cursor-pointer transition-colors"
+                            >
+                              <option value="All">All Campaigns</option>
+                              {campaigns.map((camp, i) => <option key={i} value={camp}>{camp}</option>)}
+                            </select>
+                          </div>
+
+                          <DelayInput 
+                            initialDelay={flow.delay_minutes} 
+                            onSave={(newDelay) => handleSaveDelay(flow.id, newDelay)} 
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB CONTENT: TEMPLATE APPROVALS */}
+          {activeTab === 'templates' && (
+            <div className="bg-white border border-slate-200 rounded-[2rem] p-6 sm:p-8 shadow-sm space-y-6">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900">Meta Template Approvals</h3>
+                  <p className="text-xs text-slate-500 font-medium">Verify verification states or register new message templates directly</p>
+                </div>
+                <button 
+                  onClick={() => setIsCreateTemplateOpen(!isCreateTemplateOpen)}
+                  className="bg-slate-950 hover:bg-slate-900 text-white rounded-full p-2.5 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm animate-pulse"
+                >
+                  <Plus size={14} /> Register Template
+                </button>
+              </div>
+
+              {isCreateTemplateOpen && (
+                <form onSubmit={handleCreateTemplate} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-widest">Register New WhatsApp Template</span>
+                    <button type="button" onClick={() => setIsCreateTemplateOpen(false)} className="text-xs text-red-500 font-bold hover:underline">Cancel</button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Template Name</label>
+                      <input 
+                        type="text" 
+                        value={newTemplate.name}
+                        onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
+                        placeholder="e.g. project_visit_invite" 
+                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-mono outline-none focus:border-blue-400"
+                        required
+                      />
+                      <span className="text-[9px] text-slate-400 block ml-1 font-semibold leading-normal">Use lowercase letters, numbers, and underscores only.</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Template Category</label>
+                      <select 
+                        value={newTemplate.category}
+                        onChange={(e) => setNewTemplate({ ...newTemplate, category: e.target.value })}
+                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                      >
+                        <option value="MARKETING">Marketing Campaign</option>
+                        <option value="UTILITY">Utility / Reminders</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Body Text Content</label>
+                    <textarea 
+                      value={newTemplate.bodyText}
+                      onChange={(e) => setNewTemplate({ ...newTemplate, bodyText: e.target.value })}
+                      placeholder="Hi {{1}}, thanks for booking a site visit to {{2}} tomorrow at {{3}}." 
+                      rows={4}
+                      className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all resize-none"
+                      required
+                    />
+                    <span className="text-[9px] text-slate-400 block ml-1 font-semibold leading-normal">{"Include placeholders like {{1}} for variables. Values are mapped dynamically on send."}</span>
+                  </div>
+                  <button 
+                    type="submit"
+                    disabled={submittingTemplate}
+                    className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {submittingTemplate && <Loader2 size={12} className="animate-spin" />}
+                    Submit for Approval
+                  </button>
+                </form>
+              )}
+
+              {loadingTemplates ? (
+                <div className="py-12 flex justify-center"><Loader2 size={24} className="animate-spin text-slate-300" /></div>
+              ) : templates.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 font-medium text-xs flex flex-col items-center justify-center gap-2 border border-dashed border-slate-200 rounded-3xl">
+                  <AlertCircle size={28} className="text-slate-300" />
+                  <p>No Meta templates found. Connect credentials or submit a new one.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {templates.map(t => {
+                    const isApproved = t.status === 'APPROVED';
+                    const isPending = t.status === 'PENDING';
+                    const isRejected = t.status === 'REJECTED';
+                    const bodyText = t.components?.find((c: any) => c.type === 'BODY')?.text || '';
+                    return (
+                      <div key={t.name} className="border border-slate-100 rounded-3xl p-4 bg-slate-50 flex flex-col justify-between gap-3 relative shadow-sm">
+                        <div>
+                          <div className="flex justify-between items-start gap-2 mb-2">
+                            <span className="font-mono text-xs font-black text-slate-800 truncate pr-2" title={t.name}>{t.name}</span>
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${
+                              isApproved ? 'bg-emerald-100 text-emerald-700' : isPending ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {t.status}
+                            </span>
+                          </div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t.category} • {t.language}</p>
+                          <p className="text-[11px] font-medium text-slate-600 leading-normal line-clamp-3 bg-white p-2 rounded-xl border border-slate-200/50">{bodyText}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB CONTENT: BULK BROADCASTS */}
+          {activeTab === 'broadcasts' && (
+            <div className="bg-white border border-slate-200 rounded-[2rem] p-6 sm:p-8 shadow-sm space-y-6">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900">Broadcast Campaigns</h3>
+                  <p className="text-xs text-slate-500 font-medium">Send templates manual bursts or schedule broadcasts to lead segments</p>
+                </div>
+                <button 
+                  onClick={() => setIsCreateBroadcastOpen(!isCreateBroadcastOpen)}
+                  className="bg-slate-950 hover:bg-slate-900 text-white rounded-full p-2.5 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                >
+                  <Plus size={14} /> New Broadcast
+                </button>
+              </div>
+
+              {isCreateBroadcastOpen && (
+                <form onSubmit={handleCreateBroadcast} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-widest">New Broadcast Configuration</span>
+                    <button type="button" onClick={() => setIsCreateBroadcastOpen(false)} className="text-xs text-red-500 font-bold hover:underline">Cancel</button>
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Campaign Title (Internal Reference)</label>
+                    <input 
+                      type="text" 
+                      value={newBroadcast.title}
+                      onChange={(e) => setNewBroadcast({ ...newBroadcast, title: e.target.value })}
+                      placeholder="e.g. Summer Launch Alert - Phase 2" 
+                      className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-blue-400"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Target Template</label>
+                      <select 
+                        value={newBroadcast.templateName}
+                        onChange={(e) => setNewBroadcast({ ...newBroadcast, templateName: e.target.value })}
+                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                        required
+                      >
+                        <option value="">Select an approved template</option>
+                        {templates.map(t => (
+                          <option key={t.name} value={t.name}>{t.name} ({t.status})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Scheduler (Leave blank for Send Now)</label>
+                      <input 
+                        type="datetime-local" 
+                        value={newBroadcast.scheduledAt}
+                        onChange={(e) => setNewBroadcast({ ...newBroadcast, scheduledAt: e.target.value })}
+                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Target Pipeline Stage</label>
+                      <select 
+                        value={newBroadcast.recipientStage}
+                        onChange={(e) => setNewBroadcast({ ...newBroadcast, recipientStage: e.target.value })}
+                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                      >
+                        <option value="All">All Leads (No stage filter)</option>
+                        <option value="New">New</option>
+                        <option value="Qualified">Qualified</option>
+                        <option value="Appointment booked">Appointment booked</option>
+                        <option value="Appointment done">Appointment done</option>
+                        <option value="Closed">Closed</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Target Project Interest</label>
+                      <select 
+                        value={newBroadcast.recipientPropertyId}
+                        onChange={(e) => setNewBroadcast({ ...newBroadcast, recipientPropertyId: e.target.value })}
+                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                      >
+                        <option value="">All Leads (No project filter)</option>
+                        {properties.map(p => (
+                          <option key={p.id} value={p.id}>{p.title}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <button 
+                    type="submit"
+                    disabled={submittingBroadcast}
+                    className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {submittingBroadcast && <Loader2 size={12} className="animate-spin" />}
+                    {newBroadcast.scheduledAt ? 'Schedule Broadcast' : 'Launch Broadcast Blast Now'}
+                  </button>
+                </form>
+              )}
+
+              {loadingBroadcasts ? (
+                <div className="py-12 flex justify-center"><Loader2 size={24} className="animate-spin text-slate-300" /></div>
+              ) : broadcasts.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 font-medium text-xs flex flex-col items-center justify-center gap-2 border border-dashed border-slate-200 rounded-3xl">
+                  <AlertCircle size={28} className="text-slate-300" />
+                  <p>No broadcast campaigns found. Create one to send template blasts.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {broadcasts.map(b => {
+                    const stats = b.stats || { total: 0, sent: 0, failed: 0 }
+                    const percent = stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0
+                    return (
+                      <div key={b.id} className="border border-slate-100 rounded-3xl p-5 bg-slate-50 space-y-3 shadow-sm">
+                        <div className="flex justify-between items-start gap-4">
+                          <div>
+                            <h4 className="font-extrabold text-sm text-slate-900">{b.title}</h4>
+                            <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
+                              Template: {b.template_name} • Audience: Stage ({b.recipient_stage})
+                            </p>
+                          </div>
+                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                            b.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : b.status === 'processing' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {b.status}
+                          </span>
+                        </div>
+
+                        {/* Progress Bar */}
+                        {stats.total > 0 && (
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
+                              <span>Delivery status: {stats.sent} / {stats.total} Sent</span>
+                              <span>{percent}% Complete</span>
+                            </div>
+                            <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                              <div className="bg-emerald-500 h-full rounded-full transition-all" style={{ width: `${percent}%` }} />
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold">
+                          <span>Created at: {new Date(b.created_at).toLocaleDateString()}</span>
+                          {b.sent_at && <span>Executed: {new Date(b.sent_at).toLocaleTimeString()}</span>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Timing delay input sub-component
+interface DelayInputProps {
+  initialDelay: number
+  onSave: (newDelay: number) => void
+}
+
+function DelayInput({ initialDelay, onSave }: DelayInputProps) {
+  const [val, setVal] = useState(initialDelay.toString())
+
+  useEffect(() => {
+    setVal(initialDelay.toString())
+  }, [initialDelay])
+
+  const handleBlur = () => {
+    const parsed = parseInt(val)
+    if (isNaN(parsed) || parsed < 0) {
+      setVal(initialDelay.toString())
+    } else if (parsed !== initialDelay) {
+      onSave(parsed)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      (e.target as HTMLInputElement).blur()
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-[10px] sm:text-xs font-bold text-slate-500 bg-slate-50 border border-slate-200/60 py-1.5 px-3 rounded-2xl">
+      <span>Trigger Delay:</span>
+      <input 
+        type="number" 
+        value={val}
+        min={0}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+        className="w-10 text-center bg-white border border-slate-200 rounded-lg py-0.5 text-slate-800 font-extrabold focus:border-blue-500 outline-none transition-all"
+      />
+      <span className="text-slate-400">minutes</span>
+    </div>
+  )
+}
+
+// Credentials manual setup sub-form
+interface DevOverrideFormProps {
+  userId: string | null
+  onSave: () => void
+}
+
+function DevOverrideForm({ userId, onSave }: DevOverrideFormProps) {
+  const supabase = createClient()
+  const [token, setToken] = useState('')
+  const [wabaId, setWabaId] = useState('')
+  const [phoneId, setPhoneId] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!userId) return
+
+    if (!token.trim() || !wabaId.trim() || !phoneId.trim() || !phoneNumber.trim()) {
+      toast.error("All fields are required")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          whatsapp_access_token: token.trim(),
+          whatsapp_waba_id: wabaId.trim(),
+          whatsapp_phone_number_id: phoneId.trim(),
+          whatsapp_phone_number: phoneNumber.trim(),
+          whatsapp_connected_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+
+      if (error) throw error
+
+      toast.success("Sandbox credentials saved! ✨")
+      onSave()
+      setToken('')
+      setWabaId('')
+      setPhoneId('')
+      setPhoneNumber('')
+    } catch (err: any) {
+      toast.error(`Override failed: ${err.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3 bg-white border border-slate-200/60 p-4 rounded-2xl">
+      <div className="space-y-1">
+        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block ml-0.5">Temporary Access Token</label>
+        <textarea 
+          rows={2}
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="EAAMa..."
+          className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 py-1.5 px-3 rounded-xl text-xs font-mono outline-none text-slate-800 focus:border-indigo-500 transition-all resize-none"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block ml-0.5">WABA ID</label>
+          <input 
+            type="text" 
+            value={wabaId}
+            onChange={(e) => setWabaId(e.target.value)}
+            placeholder="177739..."
+            className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 py-1.5 px-3 rounded-xl text-xs font-mono outline-none text-slate-800 focus:border-indigo-500 transition-all"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block ml-0.5">Phone ID</label>
+          <input 
+            type="text" 
+            value={phoneId}
+            onChange={(e) => setPhoneId(e.target.value)}
+            placeholder="114095..."
+            className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 py-1.5 px-3 rounded-xl text-xs font-mono outline-none text-slate-800 focus:border-indigo-500 transition-all"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block ml-0.5">Sender Number</label>
+        <input 
+          type="text" 
+          value={phoneNumber}
+          onChange={(e) => setPhoneNumber(e.target.value)}
+          placeholder="+1 555 663 3659"
+          className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 py-1.5 px-3 rounded-xl text-xs font-bold outline-none text-slate-800 focus:border-indigo-500 transition-all"
+        />
+      </div>
+
+      <button
+        type="submit"
+        disabled={loading}
+        className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95"
+      >
+        {loading && <Loader2 size={12} className="animate-spin" />}
+        Save Sandbox Credentials
+      </button>
+    </form>
+  )
+}

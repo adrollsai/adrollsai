@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
 import { sendCAPIEvent } from '@/utils/external-apis'
+import { triggerWelcomeDrip } from '@/utils/whatsapp/drips'
 
 async function getNextRoundRobinAgent(supabaseAdmin: any, agentIds: string[]) {
     if (!agentIds || agentIds.length === 0) return null;
@@ -94,16 +95,18 @@ export async function POST(request: Request) {
             }
         }
 
-        // Fetch custom landing page pixel if available
+        // Fetch custom landing page details
         let customPixelId: string | null = null
+        let pagePropertyId: string | null = null
         if (landing_page_id) {
             const { data: pageData } = await supabaseAdmin
                 .from('landing_pages')
-                .select('pixel_id')
+                .select('pixel_id, property_id')
                 .eq('id', landing_page_id)
                 .maybeSingle()
-            if (pageData?.pixel_id) {
-                customPixelId = pageData.pixel_id
+            if (pageData) {
+                customPixelId = pageData.pixel_id || null
+                pagePropertyId = pageData.property_id || null
             }
         }
 
@@ -122,7 +125,8 @@ export async function POST(request: Request) {
                 assigned_to: assignedAgentId,
                 budget: body.custom_question_0 || '',
                 timeline: body.custom_question_1 || '',
-                pixel_id: customPixelId || null
+                pixel_id: customPixelId || null,
+                property_id: pagePropertyId || null
             })
             .select()
             .single()
@@ -219,6 +223,13 @@ export async function POST(request: Request) {
             )
         } catch (notifErr: any) {
             console.error("[Lander Lead API] Failed to send push notification:", notifErr)
+        }
+
+        // Trigger welcome drip campaign in background
+        if (newLead && phone) {
+            triggerWelcomeDrip(supabaseAdmin, newLead.id, name, phone, user_id, newLead.source || 'All').catch(err => {
+                console.error('[DRIP TRIGGER] Exception triggering welcome flow:', err)
+            })
         }
 
         return NextResponse.json({ 

@@ -32,9 +32,11 @@ import {
   Plus,
   ImageIcon,
   Calendar,
-  Plug
+  Plug,
+  MessageCircle
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import WhatsAppSettings from '@/components/WhatsAppSettings'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import PushManager from '@/components/PushManager'
@@ -281,6 +283,7 @@ export default function ProfilePage() {
 
   // --- STATE ---
   const [loading, setLoading] = useState(true)
+  const [activeSection, setActiveSection] = useState<'main' | 'whatsapp'>('main')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [targetUserId, setTargetUserId] = useState<string | null>(null)
@@ -1249,9 +1252,17 @@ export default function ProfilePage() {
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
 
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-8 ml-1">Workspace Settings</h1>
+        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-8 ml-1">
+          {activeSection === 'whatsapp' ? 'WhatsApp Automation' : 'Workspace Settings'}
+        </h1>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
+        {activeSection === 'whatsapp' ? (
+          <WhatsAppSettings 
+            userId={targetUserId || userId} 
+            onBack={() => setActiveSection('main')} 
+          />
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
 
           <div className="lg:col-span-7 space-y-6">
 
@@ -2074,13 +2085,26 @@ export default function ProfilePage() {
 
                 <button 
                   onClick={() => router.push(`/dashboard/plugins${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
-                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all"
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"
                 >
                   <div className="flex items-center gap-4">
                     <div className="bg-gradient-to-br from-amber-100 to-orange-100 text-orange-600 p-3 rounded-2xl">
                       <Plug size={20} />
                     </div>
                     <span className="font-bold text-sm text-slate-900">Plugins & Integrations</span>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400" />
+                </button>
+
+                <button 
+                  onClick={() => setActiveSection('whatsapp')} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-emerald-100 text-emerald-600 p-3 rounded-2xl">
+                      <MessageCircle size={20} />
+                    </div>
+                    <span className="font-bold text-sm text-slate-900">WhatsApp Automation</span>
                   </div>
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>
@@ -2149,6 +2173,7 @@ export default function ProfilePage() {
 
           </div>
         </div>
+        )}
       </div>
 
       {uploadingCharacter && (
