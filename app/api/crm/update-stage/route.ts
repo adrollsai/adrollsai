@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { sendCAPIEvent } from '@/utils/external-apis'
 
 export async function POST(request: Request) {
@@ -10,6 +11,12 @@ export async function POST(request: Request) {
   const { leadId, newStage, notes } = await request.json()
 
   try {
+    // Initialize admin client to securely bypass RLS for hierarchical checks and updates
+    const supabaseAdmin = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
     // 1. Check access: Caller must be owner, assigned agent, or staff of the owner
     const { data: checkLead, error: checkError } = await supabase
         .from('leads')
@@ -21,28 +28,56 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Lead not found or access denied' }, { status: 404 })
     }
 
-    const isOwner = checkLead.user_id === user.id;
-    const isAssigned = checkLead.assigned_to === user.id;
-
-    // Fetch caller's profile to verify if they are staff under the lead's owner (user_id)
-    const { data: callerProfile } = await supabase
+    // Fetch caller's profile and lead owner's profile using admin client to securely verify hierarchy
+    const { data: callerProfile } = await supabaseAdmin
         .from('profiles')
-        .select('parent_id, agency_id')
+        .select('parent_id, agency_id, role')
         .eq('id', user.id)
         .single();
 
-    const isStaff = callerProfile && (callerProfile.parent_id === checkLead.user_id || callerProfile.agency_id === checkLead.user_id);
+    const { data: ownerProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('parent_id, agency_id, role')
+        .eq('id', checkLead.user_id)
+        .single();
 
-    if (!isOwner && !isAssigned && !isStaff) {
+    const isOwner = checkLead.user_id === user.id;
+    const isAssigned = checkLead.assigned_to === user.id;
+    
+    let isAuthorized = isOwner || isAssigned;
+
+    if (!isAuthorized && callerProfile) {
+        const callerRole = callerProfile.role;
+        const callerParentId = callerProfile.parent_id;
+        const callerAgencyId = callerProfile.agency_id;
+
+        if (callerRole === 'super_admin') {
+            isAuthorized = true;
+        } else if (ownerProfile) {
+            const ownerParentId = ownerProfile.parent_id;
+            const ownerAgencyId = ownerProfile.agency_id;
+
+            // 1. Check if caller is the agency owner/admin of the lead's owner
+            const isAgencyOwner = (ownerAgencyId === user.id || ownerParentId === user.id);
+
+            // 2. Check if caller is staff directly under the lead's owner
+            const isDirectStaff = (callerParentId === checkLead.user_id || callerAgencyId === checkLead.user_id);
+
+            // 3. Check if caller and lead's owner share the same parent or agency root
+            const callerRoot = callerParentId || callerAgencyId || user.id;
+            const ownerRoot = ownerParentId || ownerAgencyId || checkLead.user_id;
+            const isCoStaff = callerRoot === ownerRoot;
+
+            if (isAgencyOwner || isDirectStaff || isCoStaff) {
+                isAuthorized = true;
+            }
+        }
+    }
+
+    if (!isAuthorized) {
         return NextResponse.json({ error: 'Forbidden: Unauthorized lead access' }, { status: 403 })
     }
 
-    // 2. Update DB using admin client to bypass RLS (we verified access above)
-    const { createClient: createAdminClient } = await import('@supabase/supabase-js');
-    const supabaseAdmin = createAdminClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
 
     const { data: lead, error } = await supabaseAdmin
         .from('leads')
