@@ -41,6 +41,7 @@ type Property = {
   user_id: string 
   auto_generate?: boolean 
   youtube_url?: string | null
+  show_on_landing_page?: boolean
 }
 
 type Asset = {
@@ -69,6 +70,7 @@ export default function ProductsPage() {
   // Interaction State
   const [isSharingId, setIsSharingId] = useState<string | null>(null)
   const [isTogglingId, setIsTogglingId] = useState<string | null>(null) 
+  const [isTogglingLandingId, setIsTogglingLandingId] = useState<string | null>(null)
   const [generatingProps, setGeneratingProps] = useState<string[]>([]) 
 
   // Deletion State
@@ -94,7 +96,7 @@ export default function ProductsPage() {
   const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string, type?: 'image' | 'video' }>({ isOpen: false, url: '', title: '' })
   
   // Add Form State
-  const [newProp, setNewProp] = useState({ title: '', description: '', youtube_url: '' })
+  const [newProp, setNewProp] = useState({ title: '', description: '', youtube_url: '', show_on_landing_page: true })
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
 
@@ -319,7 +321,8 @@ export default function ProductsPage() {
             description: editProp.description,
             image_url: finalMainImage,
             images: finalImages,
-            youtube_url: editProp.youtube_url || null
+            youtube_url: editProp.youtube_url || null,
+            show_on_landing_page: editProp.show_on_landing_page !== false
           }
         })
       })
@@ -334,7 +337,8 @@ export default function ProductsPage() {
           description: editProp.description,
           image_url: finalMainImage,
           images: finalImages,
-          youtube_url: editProp.youtube_url || null
+          youtube_url: editProp.youtube_url || null,
+          show_on_landing_page: editProp.show_on_landing_page !== false
       } : p)
       
       setProperties(updatedProps)
@@ -475,6 +479,47 @@ export default function ProductsPage() {
     }
   }
 
+  const handleToggleShowLanding = async (e: React.MouseEvent, prop: Property) => {
+    e.stopPropagation()
+    setIsTogglingLandingId(prop.id)
+    const newStatus = prop.show_on_landing_page === false // toggle from false (or undefined) to true, or vice versa
+
+    try {
+      const apiRes = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          propertyId: prop.id,
+          propertyData: {
+            title: prop.title,
+            description: prop.description,
+            image_url: prop.image_url,
+            images: prop.images,
+            youtube_url: prop.youtube_url,
+            show_on_landing_page: newStatus
+          }
+        })
+      })
+
+      const apiData = await apiRes.json()
+      if (!apiRes.ok) throw new Error(apiData.error || 'Failed to update landing page status')
+      
+      const updated = properties.map(p => p.id === prop.id ? { ...p, show_on_landing_page: newStatus } : p)
+      setProperties(updated)
+      
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+          localStorage.setItem(`inventory_cache_${user.id}`, JSON.stringify(updated))
+      }
+      toast.success(newStatus ? "Enabled on Landing Page" : "Hidden from Landing Page")
+    } catch (error: any) {
+      toast.error("Failed to update status: " + error.message)
+    } finally {
+      setIsTogglingLandingId(null)
+    }
+  }
+
   const handleAddProperty = async () => {
     if (!newProp.title) {
         toast.error("Please enter a Product/Service Name.")
@@ -530,7 +575,8 @@ export default function ProductsPage() {
             status: 'Active',
             image_url: uploadedUrls[0],
             images: uploadedUrls,
-            youtube_url: newProp.youtube_url || null
+            youtube_url: newProp.youtube_url || null,
+            show_on_landing_page: newProp.show_on_landing_page !== false
           }
         })
       })
@@ -540,7 +586,7 @@ export default function ProductsPage() {
 
       await fetchProperties(true)
       setShowAddModal(false)
-      setNewProp({ title: '', description: '', youtube_url: '' })
+      setNewProp({ title: '', description: '', youtube_url: '', show_on_landing_page: true })
       setSelectedFiles([])
       setPreviews([])
 
@@ -779,20 +825,36 @@ export default function ProductsPage() {
                   {prop.description || 'No description provided.'}
                 </p>
 
-                {/* Auto Generate Toggle */}
+                {/* Auto Generate & Landing Page Toggles */}
                 {isAdminLike && (
-                  <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
-                    <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
-                      <Sparkles size={14} className={prop.auto_generate ? "text-amber-500" : "text-slate-400"} />
-                      Auto-Gen Daily
-                    </span>
-                    <button
-                      onClick={(e) => handleToggleAutoGenerate(e, prop.id, !!prop.auto_generate)}
-                      disabled={isTogglingId === prop.id}
-                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-500/20 ${prop.auto_generate ? 'bg-blue-600' : 'bg-slate-300'} ${isTogglingId === prop.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-300 ease-out ${prop.auto_generate ? 'translate-x-5' : 'translate-x-0'}`} />
-                    </button>
+                  <div className="mt-4 pt-4 border-t border-slate-100 space-y-2.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
+                        <Sparkles size={14} className={prop.auto_generate ? "text-amber-500" : "text-slate-400"} />
+                        Auto-Gen Daily
+                      </span>
+                      <button
+                        onClick={(e) => handleToggleAutoGenerate(e, prop.id, !!prop.auto_generate)}
+                        disabled={isTogglingId === prop.id}
+                        className={`relative inline-flex h-5 w-10 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none ${prop.auto_generate ? 'bg-blue-600' : 'bg-slate-300'} ${isTogglingId === prop.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-300 ease-out ${prop.auto_generate ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
+                        <LayoutGrid size={14} className={prop.show_on_landing_page !== false ? "text-blue-500" : "text-slate-400"} />
+                        On Landing Page
+                      </span>
+                      <button
+                        onClick={(e) => handleToggleShowLanding(e, prop)}
+                        disabled={isTogglingLandingId === prop.id}
+                        className={`relative inline-flex h-5 w-10 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none ${prop.show_on_landing_page !== false ? 'bg-blue-600' : 'bg-slate-300'} ${isTogglingLandingId === prop.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-300 ease-out ${prop.show_on_landing_page !== false ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -900,6 +962,19 @@ export default function ProductsPage() {
                   placeholder="e.g. https://www.youtube.com/watch?v=..." 
                 />
               </div>
+
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 mt-2">
+                <input 
+                  type="checkbox" 
+                  id="add-show-landing"
+                  checked={newProp.show_on_landing_page}
+                  onChange={(e) => setNewProp({...newProp, show_on_landing_page: e.target.checked})}
+                  className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 border-slate-300 cursor-pointer"
+                />
+                <label htmlFor="add-show-landing" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                  Show on Custom Landing Page
+                </label>
+              </div>
               
               <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center mt-4 disabled:opacity-50 disabled:scale-100">
                 {isSubmitting ? <><Loader2 size={18} className="animate-spin mr-2" /> Saving...</> : 'Save Product'}
@@ -988,6 +1063,19 @@ export default function ProductsPage() {
                   className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-medium text-slate-900 transition-all" 
                   placeholder="e.g. https://www.youtube.com/watch?v=..." 
                 />
+              </div>
+
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 mt-2">
+                <input 
+                  type="checkbox" 
+                  id="edit-show-landing"
+                  checked={editProp.show_on_landing_page !== false}
+                  onChange={(e) => setEditProp({...editProp, show_on_landing_page: e.target.checked})}
+                  className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 border-slate-300 cursor-pointer"
+                />
+                <label htmlFor="edit-show-landing" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                  Show on Custom Landing Page
+                </label>
               </div>
               
               <button onClick={handleSaveEdit} disabled={isSubmitting} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-lg shadow-blue-600/20 active:scale-[0.98] transition-all flex items-center justify-center mt-4 disabled:opacity-50 disabled:scale-100">

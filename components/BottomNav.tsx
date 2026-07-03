@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe } from 'lucide-react'
+import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe, MessageCircle } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -69,6 +69,7 @@ export default function BottomNav() {
     // { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
     { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
+    { name: 'WhatsApp', icon: MessageCircle, path: '/dashboard/whatsapp' },
     { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
     ...(showDistribute ? [{ name: 'Distribute', icon: Share2, path: '/dashboard/distribute' }] : []),
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
@@ -99,7 +100,7 @@ export default function BottomNav() {
     }
 
     if (role === 'agent') {
-      return ['Inventory', 'CRM', 'Assets', 'Profile'].includes(item.name)
+      return ['Inventory', 'CRM', 'Assets', 'Profile', 'WhatsApp'].includes(item.name)
     }
     return true
   })

@@ -24,6 +24,10 @@ type Profile = {
   address?: string
   pixel_id?: string | null
   currency?: string | null
+  business_landing_enabled?: boolean
+  business_landing_hero_title?: string
+  business_landing_hero_subtitle?: string
+  business_landing_show_products?: boolean
 }
 
 type Property = {
@@ -36,6 +40,7 @@ type Property = {
   images: string[]
   status: string
   property_type?: string
+  show_on_landing_page?: boolean
 }
 
 type Post = {
@@ -296,6 +301,9 @@ export default function SharedCataloguePage() {
   }
 
   const filteredProperties = properties.filter(p => {
+    if (profile?.business_landing_enabled && p.show_on_landing_page === false) {
+        return false;
+    }
     const priceVal = parsePrice(p.price)
     const min = minPrice ? parseInt(minPrice) : 0
     const max = maxPrice ? parseInt(maxPrice) : Infinity
@@ -510,9 +518,15 @@ export default function SharedCataloguePage() {
             </div>
 
             <div className="flex-1 w-full max-w-2xl mx-auto md:mx-0">
-                <h1 className="text-2xl sm:text-3xl md:text-5xl font-black text-slate-900 tracking-tight mb-3 sm:mb-4 leading-tight">{profile?.business_name || 'Portfolio'}</h1>
+                <h1 className="text-2xl sm:text-3xl md:text-5xl font-black text-slate-900 tracking-tight mb-3 sm:mb-4 leading-tight">
+                    {profile?.business_landing_enabled && profile.business_landing_hero_title
+                      ? profile.business_landing_hero_title
+                      : (profile?.business_name || 'Portfolio')}
+                </h1>
                 <p className="text-slate-500 font-medium text-sm sm:text-base leading-relaxed mb-6">
-                    {profile?.mission_statement || "Discover premium real estate opportunities tailored for you."}
+                    {profile?.business_landing_enabled && profile.business_landing_hero_subtitle
+                      ? profile.business_landing_hero_subtitle
+                      : (profile?.mission_statement || "Discover premium real estate opportunities tailored for you.")}
                 </p>
                 
                 {profile?.address && (
@@ -549,12 +563,14 @@ export default function SharedCataloguePage() {
         {/* PILL TABS (Feed Disabled) */}
 
         {/* CONTENT AREA */}
-        {activeTab === 'inventory' && (
+        {activeTab === 'inventory' && (!profile?.business_landing_enabled || profile?.business_landing_show_products !== false) && (
             <div className="animate-in fade-in duration-500">
                 
                 {/* Search & Filter Controls */}
                 <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center mb-6 gap-3 sm:gap-4">
-                    <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight px-1 hidden lg:block">Featured Catalog</h2>
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight px-1 hidden lg:block">
+                        {profile?.business_landing_enabled ? "Featured Products" : "Featured Catalog"}
+                    </h2>
                     
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 lg:flex-none">
                         <div className="relative flex-1 md:w-80">

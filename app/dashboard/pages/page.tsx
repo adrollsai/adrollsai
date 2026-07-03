@@ -53,7 +53,14 @@ export default function PagesDashboard() {
     const impersonateId = searchParams.get('impersonate')
 
     // Tab state
-    const [activeTab, setActiveTab] = useState<'landing_pages' | 'forms'>('landing_pages')
+    const [activeTab, setActiveTab] = useState<'landing_pages' | 'forms' | 'business_landing'>('landing_pages')
+    
+    // Main Business Landing Page States
+    const [businessLandingEnabled, setBusinessLandingEnabled] = useState(false)
+    const [businessLandingHeroTitle, setBusinessLandingHeroTitle] = useState('')
+    const [businessLandingHeroSubtitle, setBusinessLandingHeroSubtitle] = useState('')
+    const [businessLandingShowProducts, setBusinessLandingShowProducts] = useState(true)
+    const [savingBusinessLanding, setSavingBusinessLanding] = useState(false)
     
     // Core States
     const [loading, setLoading] = useState(true)
@@ -172,20 +179,28 @@ export default function PagesDashboard() {
 
             // Resolve target client account if impersonating
             if (impersonateId && ['super_admin', 'agency', 'admin'].includes(caller?.role || '')) {
-                const { data: clientProfile } = await supabase.from('profiles').select('id, business_name, custom_domain, brand_color, ad_account_id').eq('id', impersonateId).single()
+                const { data: clientProfile } = await supabase.from('profiles').select('id, business_name, custom_domain, brand_color, ad_account_id, business_landing_enabled, business_landing_hero_title, business_landing_hero_subtitle, business_landing_show_products').eq('id', impersonateId).single()
                 if (clientProfile) {
                     resolvedId = clientProfile.id
                     setSubAccountName(clientProfile.business_name || 'Client')
                     setCustomDomain(clientProfile.custom_domain || '')
                     setBrandColor(clientProfile.brand_color || '#2563eb')
                     adAccountId = clientProfile.ad_account_id
+                    setBusinessLandingEnabled(!!clientProfile.business_landing_enabled)
+                    setBusinessLandingHeroTitle(clientProfile.business_landing_hero_title || '')
+                    setBusinessLandingHeroSubtitle(clientProfile.business_landing_hero_subtitle || '')
+                    setBusinessLandingShowProducts(clientProfile.business_landing_show_products !== false)
                 }
             } else {
-                const { data: ownProfile } = await supabase.from('profiles').select('business_name, custom_domain, brand_color, ad_account_id').eq('id', session.user.id).single()
+                const { data: ownProfile } = await supabase.from('profiles').select('business_name, custom_domain, brand_color, ad_account_id, business_landing_enabled, business_landing_hero_title, business_landing_hero_subtitle, business_landing_show_products').eq('id', session.user.id).single()
                 if (ownProfile) {
                     setCustomDomain(ownProfile.custom_domain || '')
                     setBrandColor(ownProfile.brand_color || '#2563eb')
                     adAccountId = ownProfile.ad_account_id
+                    setBusinessLandingEnabled(!!ownProfile.business_landing_enabled)
+                    setBusinessLandingHeroTitle(ownProfile.business_landing_hero_title || '')
+                    setBusinessLandingHeroSubtitle(ownProfile.business_landing_hero_subtitle || '')
+                    setBusinessLandingShowProducts(ownProfile.business_landing_show_products !== false)
                 }
             }
 
@@ -290,6 +305,31 @@ export default function PagesDashboard() {
             setErrorMessage(msg)
             setTimeout(() => setErrorMessage(''), 4000)
         }
+    }
+
+    const handleSaveBusinessLanding = async () => {
+        setSavingBusinessLanding(true)
+        try {
+            const { data: { session } } = await supabase.auth.getSession()
+            if (!session?.user) throw new Error('Unauthenticated')
+
+            const targetId = impersonateId || session.user.id
+            const { error } = await supabase
+                .from('profiles')
+                .update({
+                    business_landing_enabled: businessLandingEnabled,
+                    business_landing_hero_title: businessLandingHeroTitle,
+                    business_landing_hero_subtitle: businessLandingHeroSubtitle,
+                    business_landing_show_products: businessLandingShowProducts
+                })
+                .eq('id', targetId)
+
+            if (error) throw error
+            showToast('Business landing settings saved successfully!', 'success')
+        } catch (e: any) {
+            showToast('Failed to save settings: ' + e.message, 'error')
+        }
+        setSavingBusinessLanding(false)
     }
 
 
@@ -1167,7 +1207,13 @@ export default function PagesDashboard() {
                             <List size={18} /> Qualification Forms
                             {activeTab === 'forms' && <span className="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-full animate-in slide-in-from-left duration-200"></span>}
                         </button>
-
+                        <button 
+                            onClick={() => setActiveTab('business_landing')}
+                            className={`pb-4 text-sm font-black flex items-center gap-2 relative transition-colors ${activeTab === 'business_landing' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <Sparkles size={18} /> Business Landing Page
+                            {activeTab === 'business_landing' && <span className="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-full animate-in slide-in-from-left duration-200"></span>}
+                        </button>
                     </div>
 
                     {/* Tab Panels */}
@@ -1662,6 +1708,85 @@ export default function PagesDashboard() {
                             className="bg-slate-900 text-white w-full py-4 rounded-full font-black text-sm shadow-lg shadow-slate-900/10 hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 mt-auto shrink-0"
                         >
                             {actionLoading ? <Loader2 className="animate-spin" size={16} /> : 'Save Qualification Form'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'business_landing' && (
+                <div className="animate-in fade-in duration-300">
+                    <div className="bg-white border border-slate-200/80 rounded-[3rem] p-6 sm:p-8 shadow-xl max-w-2xl mx-auto space-y-6">
+                        <div>
+                            <h2 className="text-lg font-black text-slate-800 flex items-center gap-2"><Sparkles className="text-blue-600" /> Business Landing Page Settings</h2>
+                            <p className="text-[11px] font-semibold text-slate-400 mt-1">Configure your primary business profile landing page served on your main custom domain.</p>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            {/* Toggle: Enable Main Business Landing Page */}
+                            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                <div>
+                                    <div className="text-xs font-bold text-slate-800">Enable Custom Landing Page</div>
+                                    <p className="text-[10px] text-slate-400 mt-0.5 font-medium leading-relaxed">Turn on to serve a premium lead-capturing landing page instead of a raw catalog feed.</p>
+                                </div>
+                                <button 
+                                  onClick={() => setBusinessLandingEnabled(!businessLandingEnabled)}
+                                  className={`w-10 h-6 rounded-full flex items-center transition-all duration-300 px-0.5 ${businessLandingEnabled ? 'bg-blue-600' : 'bg-slate-300'}`}
+                                >
+                                  <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-300 ${businessLandingEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                                </button>
+                            </div>
+
+                            {businessLandingEnabled && (
+                                <div className="space-y-4 pt-2 animate-in fade-in duration-200">
+                                    {/* Hero Title */}
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Hero Headline Title</label>
+                                        <input 
+                                            type="text"
+                                            value={businessLandingHeroTitle}
+                                            onChange={e => setBusinessLandingHeroTitle(e.target.value)}
+                                            placeholder="e.g. Find Your Dream Property with Homcom Realtors"
+                                            className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all"
+                                        />
+                                    </div>
+
+                                    {/* Hero Subtitle */}
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Hero Subheadline / Description</label>
+                                        <textarea 
+                                            value={businessLandingHeroSubtitle}
+                                            onChange={e => setBusinessLandingHeroSubtitle(e.target.value)}
+                                            placeholder="Describe your value proposition, locations served, or special hooks..."
+                                            rows={3}
+                                            className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all resize-none leading-relaxed"
+                                        />
+                                    </div>
+
+                                    {/* Checkbox: Include Products */}
+                                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                        <div>
+                                            <div className="text-xs font-bold text-slate-800">Show Inventory Products</div>
+                                            <p className="text-[10px] text-slate-400 mt-0.5 font-medium leading-relaxed">Display products/properties having "Show on Landing Page" active.</p>
+                                        </div>
+                                        <button 
+                                          onClick={() => setBusinessLandingShowProducts(!businessLandingShowProducts)}
+                                          className={`w-10 h-6 rounded-full flex items-center transition-all duration-300 px-0.5 ${businessLandingShowProducts ? 'bg-blue-600' : 'bg-slate-300'}`}
+                                        >
+                                          <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-300 ${businessLandingShowProducts ? 'translate-x-4' : 'translate-x-0'}`} />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
+
+                        {/* Save Button */}
+                        <button
+                            onClick={handleSaveBusinessLanding}
+                            disabled={savingBusinessLanding}
+                            className="bg-slate-900 text-white w-full py-4 rounded-full font-black text-sm shadow-lg shadow-slate-900/10 hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 transition-all shrink-0 mt-4"
+                        >
+                            {savingBusinessLanding ? <Loader2 className="animate-spin" size={16} /> : 'Save Landing Page Settings'}
                         </button>
                     </div>
                 </div>

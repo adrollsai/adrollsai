@@ -85,7 +85,236 @@ export async function POST(request: Request) {
       });
     }
 
-    if (body.object !== 'page') return NextResponse.json({ success: true }, { status: 200 })
+    if (body.object !== 'page' && body.object !== 'whatsapp_business_account') {
+      return NextResponse.json({ success: true }, { status: 200 })
+    }
+
+    if (body.object === 'whatsapp_business_account') {
+        console.log("🟢 WhatsApp Webhook matched whatsapp_business_account");
+        for (const entry of body.entry) {
+            for (const change of entry.changes) {
+                if (change.field === 'messages') {
+                    const val = change.value;
+                    const messages = val.messages || [];
+                    
+                    for (const message of messages) {
+                        const fromPhone = message.from; 
+                        const messageText = message.text?.body || '';
+                        
+                        console.log(`💬 Received message from ${fromPhone}: "${messageText}"`);
+                        if (!messageText) continue;
+                        
+                        const cleanFrom = fromPhone.replace(/\D/g, '');
+                        
+                        // Look up matched profile by personal notification number
+                        const { data: profiles } = await supabaseAdmin
+                            .from('profiles')
+                            .select('id, role, business_name, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id')
+                            .not('whatsapp_personal_number', 'is', null);
+                            
+                        const matchedProfile = profiles?.find((p: any) => {
+                            const cleanPersonal = p.whatsapp_personal_number.replace(/\D/g, '');
+                            return cleanPersonal === cleanFrom || 
+                                   (cleanPersonal.length >= 10 && cleanFrom.endsWith(cleanPersonal)) ||
+                                   (cleanFrom.length >= 10 && cleanPersonal.endsWith(cleanFrom));
+                        });
+                        
+                        if (matchedProfile) {
+                            console.log(`🤖 MATCHED PROFILE: ${matchedProfile.business_name} (User: ${matchedProfile.id})`);
+                            
+                            // Query Context
+                            const { data: properties } = await supabaseAdmin
+                                .from('properties')
+                                .select('title, price, status, property_type')
+                                .eq('user_id', matchedProfile.id)
+                                .limit(10);
+                                
+                            const { data: leads } = await supabaseAdmin
+                                .from('leads')
+                                .select('name, stage, created_at')
+                                .eq('user_id', matchedProfile.id);
+                                
+                            const { data: campaigns } = await supabaseAdmin
+                                .from('campaign_jobs')
+                                .select('status, created_at')
+                                .eq('user_id', matchedProfile.id)
+                                .limit(5);
+
+                            let systemWideStats = '';
+                            if (matchedProfile.role === 'super_admin') {
+                                const { count: totalUsers } = await supabaseAdmin
+                                    .from('profiles')
+                                    .select('id', { count: 'exact', head: true });
+                                const { count: totalCampaigns } = await supabaseAdmin
+                                    .from('campaign_jobs')
+                                    .select('id', { count: 'exact', head: true });
+                                const { count: totalLeads } = await supabaseAdmin
+                                    .from('leads')
+                                    .select('id', { count: 'exact', head: true });
+                                    
+                                systemWideStats = `
+System-Wide Super Admin Stats:
+- Total Platform Users: ${totalUsers || 0}
+- Total Campaigns Launched: ${totalCampaigns || 0}
+- Total CRM Leads Captured: ${totalLeads || 0}
+`;
+                            }
+                            
+                            const totalLeadsCount = leads?.length || 0;
+                            const stageCounts: Record<string, number> = {};
+                            leads?.forEach((l: any) => {
+                                stageCounts[l.stage] = (stageCounts[l.stage] || 0) + 1;
+                            });
+                            
+                            const recentLeadsText = leads
+                                ?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                                ?.slice(0, 5)
+                                ?.map((l: any) => `- ${l.name} (Stage: ${l.stage})`)
+                                ?.join('\n') || 'None';
+                                
+                            const propertiesText = properties
+                                ?.map((p: any) => `- ${p.title} (${p.price || 'No Price'}, Status: ${p.status || 'Active'})`)
+                                ?.join('\n') || 'No products in inventory';
+                                
+                            const campaignsText = campaigns
+                                ?.map((c: any) => `- Created: ${new Date(c.created_at).toLocaleDateString()}, Status: ${c.status}`)
+                                ?.join('\n') || 'No campaigns launched';
+                                
+                            const systemContext = `
+Account Context for "${matchedProfile.business_name}" (Role: ${matchedProfile.role}):
+- Business Name: ${matchedProfile.business_name}
+- Total Products in Inventory: ${properties?.length || 0}
+- Inventory Products:
+${propertiesText}
+
+- CRM Leads (Total: ${totalLeadsCount}):
+  * Stage breakdown: ${JSON.stringify(stageCounts)}
+  * Recent 5 Leads:
+${recentLeadsText}
+
+- Campaigns Launched:
+${campaignsText}
+${systemWideStats}
+`;
+
+                            const botPrompt = `You are "Nobogent AI Assistant", a smart personal assistant for the Nobogent CRM and ads dashboard.
+You are communicating via WhatsApp with the business owner/user.
+
+Here is the real-time data context from their account:
+${systemContext}
+
+The user's query: "${messageText}"
+
+Answer their query accurately, directly, and concisely. Keep formatting neat and clean for WhatsApp (use asterisks for bolding). Keep the response friendly but professional. Do NOT mention internal database names or ID strings.`;
+
+                            let botResponseText = "Hello! I received your message, but I encountered an error while processing your request. Please try again.";
+                            try {
+                                const { generateKieChat } = await import('@/utils/external-apis');
+                                botResponseText = await generateKieChat(botPrompt, "gemini-3.5-flash-preview");
+                            } catch (llmErr: any) {
+                                console.error("❌ Gemini response generation failed:", llmErr);
+                                botResponseText = "Hi! I matched your number, but I had trouble fetching the Gemini AI response. Please check back shortly.";
+                            }
+                            
+                            const recipientNumber = cleanFrom;
+                            const whatsappToken = matchedProfile.whatsapp_access_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN;
+                            const whatsappPhoneId = matchedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID;
+                            
+                            if (whatsappToken && whatsappPhoneId) {
+                                try {
+                                    const metaUrl = `https://graph.facebook.com/v20.0/${whatsappPhoneId}/messages`;
+                                    console.log(`📤 Sending WhatsApp reply to ${recipientNumber} via phone ID ${whatsappPhoneId}`);
+                                    console.log(`📝 Bot response (first 200 chars): ${botResponseText.substring(0, 200)}`);
+                                    const sendRes = await fetch(metaUrl, {
+                                        method: 'POST',
+                                        headers: {
+                                            'Authorization': `Bearer ${whatsappToken}`,
+                                            'Content-Type': 'application/json'
+                                        },
+                                        body: JSON.stringify({
+                                            messaging_product: 'whatsapp',
+                                            recipient_type: 'individual',
+                                            to: recipientNumber,
+                                            type: 'text',
+                                            text: { body: botResponseText }
+                                        })
+                                    });
+                                    const sendResData = await sendRes.json();
+                                    if (!sendRes.ok) {
+                                        console.error("❌ WhatsApp send failed:", JSON.stringify(sendResData));
+                                    } else {
+                                        console.log("✅ WhatsApp message sent successfully:", JSON.stringify(sendResData));
+                                    }
+                                } catch (sendErr: any) {
+                                    console.error("❌ Failed to send WhatsApp message back:", sendErr);
+                                }
+                            }
+                        } else {
+                            // Customer/Lead incoming message
+                            console.log(`📬 Message from customer/lead: ${fromPhone}`);
+                            const { data: leads } = await supabaseAdmin
+                                .from('leads')
+                                .select('id, user_id, name')
+                                .ilike('phone', `%${cleanFrom.slice(-10)}%`);
+                                
+                            const matchedLead = leads?.[0];
+                            if (matchedLead) {
+                                let { data: chat } = await supabaseAdmin
+                                    .from('whatsapp_chats')
+                                    .select('id')
+                                    .eq('user_id', matchedLead.user_id)
+                                    .eq('recipient_phone', cleanFrom)
+                                    .maybeSingle();
+                                    
+                                if (!chat) {
+                                    const { data: newChat } = await supabaseAdmin
+                                        .from('whatsapp_chats')
+                                        .insert({
+                                            user_id: matchedLead.user_id,
+                                            recipient_phone: cleanFrom,
+                                            recipient_name: matchedLead.name,
+                                            last_message_text: messageText,
+                                            unread_count: 1
+                                        })
+                                        .select('id')
+                                        .single();
+                                    chat = newChat;
+                                } else {
+                                    await supabaseAdmin
+                                        .from('whatsapp_chats')
+                                        .update({
+                                            last_message_text: messageText,
+                                            unread_count: 1,
+                                            updated_at: new Date().toISOString()
+                                        })
+                                        .eq('id', chat.id);
+                                }
+                                
+                                if (chat) {
+                                    await supabaseAdmin
+                                        .from('whatsapp_messages')
+                                        .insert({
+                                            chat_id: chat.id,
+                                            direction: 'inbound',
+                                            message_text: messageText
+                                        });
+                                    
+                                    try {
+                                        await sendPushNotification(
+                                            matchedLead.user_id,
+                                            `New WhatsApp from ${matchedLead.name}`,
+                                            messageText.substring(0, 100)
+                                        );
+                                    } catch (pushErr) {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return NextResponse.json({ success: true }, { status: 200 });
+    }
 
     for (const entry of body.entry) {
       for (const change of entry.changes) {

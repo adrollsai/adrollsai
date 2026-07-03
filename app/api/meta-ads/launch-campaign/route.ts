@@ -83,6 +83,7 @@ export async function POST(request: Request) {
         data.campaignType = formData.get('campaignType')?.toString();
         data.pixelId = formData.get('pixelId')?.toString();
         data.adCopyJson = formData.get('adCopy')?.toString();
+        data.adCopiesJson = formData.get('adCopies')?.toString();
 
         const ageMinVal = formData.get('ageMin');
         if (ageMinVal) data.ageMin = parseInt(ageMinVal.toString());
@@ -158,11 +159,20 @@ export async function POST(request: Request) {
 
     // --- Parse pre-generated ad copy ---
     let adCopy = { primary_text: '', headline: '', description: '' };
+    let adCopies = [];
     try {
         if (data.adCopyJson) {
             adCopy = JSON.parse(data.adCopyJson);
         } else if (data.adCopy && typeof data.adCopy === 'object') {
             adCopy = data.adCopy;
+        }
+    } catch (e) { /* ignore parse errors */ }
+
+    try {
+        if (data.adCopiesJson) {
+            adCopies = JSON.parse(data.adCopiesJson);
+        } else if (data.adCopies && Array.isArray(data.adCopies)) {
+            adCopies = data.adCopies;
         }
     } catch (e) { /* ignore parse errors */ }
 
@@ -274,6 +284,7 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         ageMax,
         customAudienceIds,
         adCopy,
+        adCopies,
         businessName: data.business_name || "Our Business",
         contactNumber: data.contact_number || "",
         currency,

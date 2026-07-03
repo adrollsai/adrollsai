@@ -86,6 +86,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             ageMax,
             customAudienceIds,
             adCopy,
+            adCopies,
             businessName,
             contactNumber,
             currency,
@@ -313,10 +314,11 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         // --- Step 3: Use Pre-Generated Ad Copy ---
         const copyVariations = [];
         for (let i = 0; i < uploadedCreatives.length; i++) {
+            const specificCopy = adCopies && adCopies[i] ? adCopies[i] : null;
             copyVariations.push({
-                primary_text: adCopy?.primary_text || "View pricing & details now.",
-                headline: adCopy?.headline || "View Details",
-                description: adCopy?.description || "Contact us today."
+                primary_text: specificCopy?.primary_text || adCopy?.primary_text || "View pricing & details now.",
+                headline: specificCopy?.headline || adCopy?.headline || "View Details",
+                description: specificCopy?.description || adCopy?.description || "Contact us today."
             });
         }
 

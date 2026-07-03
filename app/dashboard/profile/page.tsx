@@ -363,7 +363,8 @@ export default function ProfilePage() {
     instagramUrl: '',
     customPrompt: '',
     currency: 'INR',
-    industry: ''
+    industry: '',
+    whatsappPersonalNumber: ''
   })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -669,7 +670,8 @@ export default function ProfilePage() {
           instagramUrl: profileData.instagram_url || '',
           customPrompt: profileData.custom_prompt || '',
           currency: profileData.currency || 'INR',
-          industry: profileData.industry || ''
+          industry: profileData.industry || '',
+          whatsappPersonalNumber: profileData.whatsapp_personal_number || ''
         })
 
         if (profileData.facebook_token && isValidFacebookToken(profileData.facebook_token)) {
@@ -1204,7 +1206,8 @@ export default function ProfilePage() {
       facebook_url: isAdminLike ? formData.facebookUrl : undefined,
       instagram_url: isAdminLike ? formData.instagramUrl : undefined,
       custom_prompt: formData.customPrompt,
-      currency: formData.currency
+      currency: formData.currency,
+      whatsapp_personal_number: formData.whatsappPersonalNumber
     }
 
     const res = await fetch('/api/profile/update', {
@@ -1575,6 +1578,24 @@ export default function ProfilePage() {
                     disabled={authRole === 'agent'}
                     className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                   />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">
+                    <span className="flex items-center gap-1.5">
+                      <MessageCircle size={14} className="text-[#25D366]" />
+                      WhatsApp Number (for AI Bot)
+                    </span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.whatsappPersonalNumber}
+                    onChange={(e) => setFormData({ ...formData, whatsappPersonalNumber: e.target.value })}
+                    disabled={authRole === 'agent'}
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                    placeholder="e.g. +91 82888 35235"
+                  />
+                  <p className="text-[10px] text-slate-400 font-medium mt-1.5 ml-2">Messages from this number to your WABA will get AI-powered responses with your account data.</p>
                 </div>
 
                 <div>

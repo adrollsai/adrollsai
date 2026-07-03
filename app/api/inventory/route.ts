@@ -123,7 +123,8 @@ export async function POST(request: Request) {
           image_url: propertyData.image_url || '',
           images: propertyData.images || [],
           youtube_url: propertyData.youtube_url || null,
-          auto_generate: false
+          auto_generate: false,
+          show_on_landing_page: propertyData.show_on_landing_page !== false
         })
         .select()
         .single()
@@ -143,7 +144,8 @@ export async function POST(request: Request) {
           description: propertyData.description,
           image_url: propertyData.image_url,
           images: propertyData.images,
-          youtube_url: propertyData.youtube_url
+          youtube_url: propertyData.youtube_url,
+          show_on_landing_page: propertyData.show_on_landing_page !== false
         })
         .eq('id', propertyId)
         .select()

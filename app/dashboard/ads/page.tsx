@@ -8,6 +8,7 @@ import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 import LazyVideo from '@/components/LazyVideo'
+import { uploadToR2 } from '@/utils/upload-helper'
 
 type Property = { id: string; title: string; price: string; image_url: string; description?: string }
 type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string; status?: string; metadata?: any }
@@ -24,6 +25,7 @@ type SelectedCreative = {
   name: string;
   type?: 'image' | 'video';
   thumbnailUrl?: string;
+  mappedProductId?: string;
 }
 
 const GENDERS = ['All', 'Male', 'Female']
@@ -322,6 +324,7 @@ export default function AdsPage() {
 
   // Mandatory Product Selection for Campaign Launch
   const [selectedProduct, setSelectedProduct] = useState<Property | null>(null)
+  const [selectedProducts, setSelectedProducts] = useState<Property[]>([])
   // Job-based launch tracking
   const [launchJobId, setLaunchJobId] = useState<string | null>(null)
   const [launchJobStatus, setLaunchJobStatus] = useState<'idle' | 'queued' | 'processing' | 'completed' | 'failed'>('idle')
@@ -1415,8 +1418,20 @@ export default function AdsPage() {
   const handleLaunchCampaign = async () => {
     if (isSubmitting) return
     if (!adForm.pageId || !selectedAdAccountId) { alert("Missing Profile data."); return }
-    if (!selectedProduct) { alert("Please select a product from your inventory."); return; }
+    
+    const activeProducts = selectedProducts.length > 0 ? selectedProducts : (selectedProduct ? [selectedProduct] : []);
+    if (activeProducts.length === 0) { alert("Please select at least one product from your inventory."); return; }
     if (selectedCreatives.length === 0) { alert("Select at least one creative."); return; }
+    
+    // If multiple products selected, verify mapping
+    if (activeProducts.length > 1) {
+        const hasUnmapped = selectedCreatives.some(c => !c.mappedProductId);
+        if (hasUnmapped) {
+            alert("Please map all selected creatives to a specific product.");
+            return;
+        }
+    }
+    
     if (adForm.metaLocations.length === 0 || adForm.dailyBudgetINR < 100) { alert("Set valid location and budget."); return }
     
     setIsSubmitting(true)
@@ -1445,9 +1460,6 @@ export default function AdsPage() {
 
     const autoPrivacyUrl = `https://app.nobogent.com/privacy/${tUserId}`;
 
-    // Generate ad copy from selected product using target profile info
-    const adCopy = generateAdCopy(selectedProduct, targetProfile?.business_name, targetProfile?.contact_number);
-    
     // Resolve final follow-up link url
     let finalLinkUrl = adForm.linkUrl;
     if (campaignType === 'instant_form' && leadLandingType === 'whatsapp' && selectedWhatsAppNumber) {
@@ -1456,43 +1468,85 @@ export default function AdsPage() {
         finalLinkUrl = `https://wa.me/${cleanPhone}`;
     }
 
-    const formPayload = new FormData();
-    formPayload.append('adAccountId', selectedAdAccountId);
-    formPayload.append('facebookToken', facebookToken || '');
-    formPayload.append('pageId', adForm.pageId);
-    formPayload.append('metaLocations', JSON.stringify(adForm.metaLocations));
-    formPayload.append('gender', adForm.gender);
-    formPayload.append('dailyBudgetINR', adForm.dailyBudgetINR.toString()); 
-    formPayload.append('linkUrl', finalLinkUrl);
-    formPayload.append('privacyPolicyUrl', autoPrivacyUrl);
-    formPayload.append('optimizeForConversions', adForm.optimizeForConversions.toString());
-    formPayload.append('customQuestions', JSON.stringify(formQuestions));
-    formPayload.append('campaignType', campaignType);
-    formPayload.append('ageMin', adForm.ageMin.toString());
-    formPayload.append('ageMax', adForm.ageMax.toString());
-    formPayload.append('adCopy', JSON.stringify(adCopy));
-    if (pixelId) {
-        formPayload.append('pixelId', pixelId);
-    }
-
-    // Always send the selected product's inventory ID
-    formPayload.append('inventoryIds', selectedProduct.id);
-
-    if (runAsRemarketing && selectedCustomAudienceIds.length > 0) {
-        formPayload.append('customAudienceIds', JSON.stringify(selectedCustomAudienceIds));
-    }
-
-    if (remarketSourceCampaign) {
-      formPayload.append('sourceCampaignId', remarketSourceCampaign.id);
-      formPayload.append('sourceCampaignName', remarketSourceCampaign.name);
-    }
-
-    // Send asset IDs from selected creatives
-    selectedCreatives.forEach((c) => {
-      if (c.sourceType === 'asset') formPayload.append('assetIds', c.id!);
-    });
-    
     try {
+      const finalAssetIds: string[] = [];
+      const adCopies: any[] = [];
+      
+      // Upload local files in-place and build copy mappings
+      for (const c of selectedCreatives) {
+          let assetId = c.id;
+          if (c.sourceType === 'local' && c.file) {
+              toast.info(`Uploading creative ${c.name}...`);
+              const publicUrl = await uploadToR2(c.file, 'campaign_creatives');
+              // Insert asset record into Supabase
+              const { data: newAsset, error: assetErr } = await supabase
+                  .from('assets')
+                  .insert({
+                      url: publicUrl,
+                      type: c.type || 'image',
+                      user_id: tUserId,
+                      status: 'Active'
+                  })
+                  .select('id')
+                  .single();
+                  
+              if (assetErr || !newAsset) {
+                  throw new Error(`Failed to save uploaded creative database entry: ${assetErr?.message || 'unknown'}`);
+              }
+              assetId = newAsset.id;
+          }
+          
+          if (assetId) {
+              finalAssetIds.push(assetId);
+              
+              // Resolve mapped product for this creative
+              const mappedProduct = activeProducts.find(ap => ap.id === c.mappedProductId) || activeProducts[0];
+              const copy = generateAdCopy(mappedProduct, targetProfile?.business_name, targetProfile?.contact_number);
+              adCopies.push(copy);
+          }
+      }
+
+      const formPayload = new FormData();
+      formPayload.append('adAccountId', selectedAdAccountId);
+      formPayload.append('facebookToken', facebookToken || '');
+      formPayload.append('pageId', adForm.pageId);
+      formPayload.append('metaLocations', JSON.stringify(adForm.metaLocations));
+      formPayload.append('gender', adForm.gender);
+      formPayload.append('dailyBudgetINR', adForm.dailyBudgetINR.toString()); 
+      formPayload.append('linkUrl', finalLinkUrl);
+      formPayload.append('privacyPolicyUrl', autoPrivacyUrl);
+      formPayload.append('optimizeForConversions', adForm.optimizeForConversions.toString());
+      formPayload.append('customQuestions', JSON.stringify(formQuestions));
+      formPayload.append('campaignType', campaignType);
+      formPayload.append('ageMin', adForm.ageMin.toString());
+      formPayload.append('ageMax', adForm.ageMax.toString());
+      
+      formPayload.append('adCopy', JSON.stringify(adCopies[0] || generateAdCopy(activeProducts[0], targetProfile?.business_name, targetProfile?.contact_number)));
+      formPayload.append('adCopies', JSON.stringify(adCopies));
+
+      if (pixelId) {
+          formPayload.append('pixelId', pixelId);
+      }
+
+      // Append all selected product IDs
+      activeProducts.forEach(ap => {
+          formPayload.append('inventoryIds', ap.id);
+      });
+
+      // Append all final asset IDs
+      finalAssetIds.forEach(id => {
+          formPayload.append('assetIds', id);
+      });
+
+      if (runAsRemarketing && selectedCustomAudienceIds.length > 0) {
+          formPayload.append('customAudienceIds', JSON.stringify(selectedCustomAudienceIds));
+      }
+
+      if (remarketSourceCampaign) {
+        formPayload.append('sourceCampaignId', remarketSourceCampaign.id);
+        formPayload.append('sourceCampaignName', remarketSourceCampaign.name);
+      }
+
       const endpoint = remarketSourceCampaign 
         ? `/api/meta-ads/launch-remarketing${impersonateId ? `?impersonate=${impersonateId}` : ''}`
         : `/api/meta-ads/launch-campaign${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
@@ -1512,6 +1566,7 @@ export default function AdsPage() {
           setIsModalOpen(false);
           setRemarketSourceCampaign(null);
           setSelectedProduct(null);
+          setSelectedProducts([]);
           setAdForm(prev => ({ ...prev, metaLocations: [], dailyBudgetINR: 500, ageMin: 18, ageMax: 65 }));
           setSelectedCreatives([]);
           setFormQuestions([]);
@@ -1521,6 +1576,7 @@ export default function AdsPage() {
           setIsModalOpen(false);
           setRemarketSourceCampaign(null);
           setSelectedProduct(null);
+          setSelectedProducts([]);
           setAdForm(prev => ({ ...prev, metaLocations: [], dailyBudgetINR: 500, ageMin: 18, ageMax: 65 }));
           setSelectedCreatives([]);
           setFormQuestions([]);
@@ -3921,28 +3977,66 @@ export default function AdsPage() {
                 </div>
               )}
 
-              {/* MANDATORY: Select Product from Inventory */}
+              {/* MANDATORY: Select Products from Inventory (Multi-Product Select support) */}
               <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-5 rounded-[2rem] border border-amber-200/60">
-                <label className="text-xs font-bold text-amber-800 uppercase tracking-widest flex items-center gap-2 mb-3"><Zap size={16} className="text-amber-600" /> Select Product *</label>
-                <p className="text-[11px] text-amber-700 font-medium mb-3">Choose the product this campaign is for. Ad copy will be auto-generated from its description.</p>
-                <select
-                  value={selectedProduct?.id || ''}
-                  onChange={(e) => {
-                    const product = properties.find(p => p.id === e.target.value) || null;
-                    setSelectedProduct(product);
-                  }}
-                  className="w-full bg-white py-3.5 px-4 rounded-2xl text-slate-800 text-sm font-semibold outline-none focus:ring-4 focus:ring-amber-500/20 border border-amber-200 transition-all cursor-pointer"
-                >
-                  <option value="">-- Select a Product --</option>
-                  {properties.map(p => (
-                    <option key={p.id} value={p.id}>{p.title}{p.price ? ` — ${p.price}` : ''}</option>
-                  ))}
-                </select>
-                {selectedProduct && selectedProduct.description && (
+                <label className="text-xs font-bold text-amber-800 uppercase tracking-widest flex items-center gap-2 mb-3"><Zap size={16} className="text-amber-600" /> Select Products for Campaign *</label>
+                <p className="text-[11px] text-amber-700 font-medium mb-3">Choose one or more products this campaign is for. Creatives will be mapped to their corresponding product context.</p>
+                
+                <div className="max-h-48 overflow-y-auto space-y-2 pr-2 scrollbar-thin">
+                  {properties.map(p => {
+                    const isSelected = selectedProducts.some(sp => sp.id === p.id);
+                    return (
+                      <div 
+                        key={p.id} 
+                        onClick={() => {
+                          if (isSelected) {
+                            const updated = selectedProducts.filter(sp => sp.id !== p.id);
+                            setSelectedProducts(updated);
+                            // Also update legacy selectedProduct fallback if it matches
+                            if (selectedProduct?.id === p.id) {
+                              setSelectedProduct(updated[0] || null);
+                            }
+                          } else {
+                            const updated = [...selectedProducts, p];
+                            setSelectedProducts(updated);
+                            if (!selectedProduct) setSelectedProduct(p);
+                          }
+                        }}
+                        className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer bg-white ${isSelected ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-slate-200 hover:border-amber-300'}`}
+                      >
+                        <input 
+                          type="checkbox" 
+                          checked={isSelected}
+                          readOnly
+                          className="rounded text-amber-600 focus:ring-amber-500 h-4 w-4 border-slate-300 cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold text-slate-800 truncate">{p.title}</div>
+                          {p.price && <div className="text-[10px] text-amber-600 font-bold">{p.price}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {selectedProducts.length > 0 && (
                   <div className="mt-3 bg-white border border-amber-100 p-4 rounded-2xl">
-                    <div className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-1.5">Auto-Generated Ad Copy Preview</div>
-                    <div className="text-xs font-bold text-slate-800 mb-1">{selectedProduct.title}</div>
-                    <div className="text-[11px] text-slate-600 leading-relaxed line-clamp-3">{selectedProduct.description}</div>
+                    <div className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-1.5">Selected Products ({selectedProducts.length})</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedProducts.map(p => (
+                        <span key={p.id} className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[10px] font-bold px-2.5 py-1 rounded-full border border-amber-200">
+                          {p.title.substring(0, 25)}{p.title.length > 25 ? '...' : ''}
+                          <button onClick={(e) => {
+                            e.stopPropagation();
+                            const updated = selectedProducts.filter(sp => sp.id !== p.id);
+                            setSelectedProducts(updated);
+                            if (selectedProduct?.id === p.id) {
+                              setSelectedProduct(updated[0] || null);
+                            }
+                          }} className="hover:text-amber-950 font-black">×</button>
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -3956,33 +4050,64 @@ export default function AdsPage() {
                 <input type="file" ref={fileInputRef} onChange={handleLocalFiles} accept="image/*,video/*" className="hidden" multiple />
                 <button onClick={() => fileInputRef.current?.click()} className="w-full mb-4 py-3.5 border-2 border-dashed border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50 rounded-2xl text-sm font-bold text-slate-500 hover:text-blue-600 flex items-center justify-center gap-2 transition-all"><Upload size={18} /> Upload Custom Files</button>
                 {selectedCreatives.length > 0 && (
-                  <div className="flex gap-3 overflow-x-auto pb-2 pt-2 custom-scrollbar">
-                    {selectedCreatives.map((c) => (
-                      <div 
-                        key={c.uid} 
-                        className="relative w-20 h-20 rounded-[1.25rem] flex-shrink-0 bg-white shadow-sm border border-slate-200 group cursor-pointer" 
-                        onClick={() => setPreviewImage({ isOpen: true, url: c.previewUrl, title: c.name, type: (c.sourceType === 'local' && c.file && isVideoFile(c.file)) || c.type === 'video' ? 'video' : 'image' })}
-                      >
-                        {(c.sourceType === 'local' && c.file && isVideoFile(c.file)) || c.type === 'video' ? (
-                          <LazyVideo 
-                              src={fixR2Url(c.previewUrl)} 
-                              poster={c.thumbnailUrl ? fixR2Url(c.thumbnailUrl) : undefined} 
-                              className="w-full h-full object-cover rounded-[1.25rem]" 
-                          />
-                        ) : (
-                          <img src={fixR2Url(c.previewUrl)} className="w-full h-full object-cover rounded-[1.25rem]" />
-                        )}
-                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-[1.25rem]">
-                          <Maximize2 size={16} className="text-white"/>
-                        </div>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); removeCreative(c.uid); }} 
-                          className="absolute -top-2 -right-2 bg-white rounded-full p-1 text-red-500 shadow-md border border-slate-100 hover:bg-red-50 transition-colors z-10"
+                  <div className="space-y-3 mt-2 max-h-60 overflow-y-auto pr-1">
+                    {selectedCreatives.map((c) => {
+                      const isVideo = (c.sourceType === 'local' && c.file && isVideoFile(c.file)) || c.type === 'video';
+                      return (
+                        <div 
+                          key={c.uid} 
+                          className="flex items-center gap-3 p-3 rounded-2xl bg-white shadow-sm border border-slate-100/80 hover:border-slate-200/80 transition-all animate-in fade-in duration-200"
                         >
-                          <X size={14}/>
-                        </button>
-                      </div>
-                    ))}
+                          <div 
+                            className="relative w-14 h-14 rounded-xl bg-slate-50 border border-slate-100 flex-shrink-0 group cursor-pointer overflow-hidden"
+                            onClick={() => setPreviewImage({ isOpen: true, url: c.previewUrl, title: c.name, type: isVideo ? 'video' : 'image' })}
+                          >
+                            {isVideo ? (
+                              <LazyVideo 
+                                  src={fixR2Url(c.previewUrl)} 
+                                  poster={c.thumbnailUrl ? fixR2Url(c.thumbnailUrl) : undefined} 
+                                  className="w-full h-full object-cover" 
+                              />
+                            ) : (
+                              <img src={fixR2Url(c.previewUrl)} className="w-full h-full object-cover" />
+                            )}
+                            <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                              <Maximize2 size={12} className="text-white"/>
+                            </div>
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[11px] font-bold text-slate-800 truncate">{c.name}</div>
+                            <div className="text-[9px] text-slate-400 capitalize">{c.sourceType} {c.type || 'creative'}</div>
+                            
+                            {selectedProducts.length > 1 && (
+                              <div className="mt-1">
+                                <select
+                                  value={c.mappedProductId || ''}
+                                  onChange={(e) => {
+                                    const prodId = e.target.value;
+                                    setSelectedCreatives(prev => prev.map(item => item.uid === c.uid ? { ...item, mappedProductId: prodId } : item));
+                                  }}
+                                  className="w-full max-w-[220px] bg-slate-50 border border-slate-200 text-slate-700 py-1 px-2 rounded-lg text-[10px] font-bold outline-none cursor-pointer hover:bg-slate-100 transition-all"
+                                >
+                                  <option value="">-- Map to Product --</option>
+                                  {selectedProducts.map(p => (
+                                    <option key={p.id} value={p.id}>{p.title}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                          </div>
+
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); removeCreative(c.uid); }} 
+                            className="bg-slate-50 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full p-2 border border-slate-100 transition-all"
+                          >
+                            <X size={14}/>
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
