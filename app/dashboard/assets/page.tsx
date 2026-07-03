@@ -60,6 +60,7 @@ export default function AssetsPage() {
     const [isPosting, setIsPosting] = useState(false)
     const [caption, setCaption] = useState('')
     const [userRole, setUserRole] = useState<string | null>(null)
+    const [userEmail, setUserEmail] = useState<string | null>(null)
 
     // Single Tap Download State
     const [isDownloading, setIsDownloading] = useState(false)
@@ -149,6 +150,7 @@ export default function AssetsPage() {
             // 1. Get current user
             const { data: { user }, error: userError } = await supabase.auth.getUser()
             if (userError || !user) return
+            if (user.email) setUserEmail(user.email)
 
             // Fetch profile to check role and parent_id
             const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
@@ -1471,7 +1473,7 @@ export default function AssetsPage() {
                                     </button>
 
                                     {/* AI Video Editor Action */}
-                                    {selectedAsset.type === 'video' && userRole === 'super_admin' && (
+                                    {selectedAsset.type === 'video' && (userRole === 'super_admin' || userEmail === 'infobluesquareinfra@gmail.com') && (
                                         <button
                                             onClick={() => {
                                                 const urlParams = new URLSearchParams(window.location.search);
