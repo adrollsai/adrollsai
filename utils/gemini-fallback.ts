@@ -9,9 +9,10 @@ export async function generateContentWithFallback(
     genAI: GoogleGenerativeAI,
     contents: any,
     primaryModel = "gemini-3.5-flash",
-    fallbackModel: string | null = "gemini-3-flash-preview",
+    fallbackModel: string | null = null,
     maxRetries = 4,
-    initialDelay = 2000
+    initialDelay = 2000,
+    generationConfig?: any
 ) {
     let currentModelName = primaryModel;
     let delay = initialDelay;
@@ -20,7 +21,10 @@ export async function generateContentWithFallback(
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             console.log(`[Gemini Helper] Attempt ${attempt}/${maxRetries} using model: ${currentModelName}`);
-            const model = genAI.getGenerativeModel({ model: currentModelName });
+            const model = genAI.getGenerativeModel({ 
+                model: currentModelName,
+                generationConfig: generationConfig
+            });
             
             let result;
             if (typeof contents === "string") {

@@ -30,6 +30,14 @@ export default function VideoEditorPage() {
     const impersonate = searchParams?.get('impersonate')
     const supabase = createClient()
 
+    const fixR2Url = (url: string) => {
+        if (!url) return ''
+        if (url.includes('.r2.dev') && !url.includes('/adrolls-storage/')) {
+            return url.replace('.r2.dev/', '.r2.dev/adrolls-storage/')
+        }
+        return url
+    }
+
     const [loading, setLoading] = useState(true)
     const [asset, setAsset] = useState<any>(null)
     const [captions, setCaptions] = useState<Caption[]>([])
@@ -82,7 +90,7 @@ export default function VideoEditorPage() {
             // 3. Load Video Duration dynamically in browser
             if (assetData.url) {
                 const video = document.createElement('video')
-                video.src = assetData.url
+                video.src = fixR2Url(assetData.url)
                 video.addEventListener('loadedmetadata', () => {
                     const videoDuration = video.duration
                     // add 4 seconds for the outro (4 * 30fps = 120 frames)
@@ -102,7 +110,7 @@ export default function VideoEditorPage() {
         try {
             const res = await fetch('/api/video/captions/generate', {
                 method: 'POST',
-                body: JSON.stringify({ videoUrl: asset.url, assetId: asset.id })
+                body: JSON.stringify({ videoUrl: fixR2Url(asset.url), assetId: asset.id })
             })
             const data = await res.json()
             if (data.success) {
@@ -128,7 +136,7 @@ export default function VideoEditorPage() {
                 body: JSON.stringify({
                     assetId: asset.id,
                     theme: SUBTITLE_THEMES[selectedTheme],
-                    videoUrl: asset.url,
+                    videoUrl: fixR2Url(asset.url),
                     captions,
                     effects, // Pass the visual effects as well
                     durationInFrames
@@ -184,7 +192,7 @@ export default function VideoEditorPage() {
                         controls
                         style={{ width: '100%', height: '100%' }}
                         inputProps={{
-                            videoUrl: asset.url,
+                            videoUrl: fixR2Url(asset.url),
                             captions: captions,
                             effects: effects,
                             theme: SUBTITLE_THEMES[selectedTheme],

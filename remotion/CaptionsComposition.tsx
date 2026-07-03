@@ -102,7 +102,7 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                 position: 'absolute',
                 inset: 0,
             }}>
-                <Video src={videoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <Video src={videoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} crossOrigin="anonymous" />
             </div>
 
             {/* Glowing Neon Vignette Border */}

@@ -40,7 +40,26 @@ export async function transcribeVideoWithGemini(videoUrl: string) {
 
         console.log(`[Gemini Video] File ready. Generating transcript...`);
 
-        // 4. Generate Transcript with word-level timestamps using Gemini 3 Flash Preview (with fallback to 1.5-flash)
+        const videoTranscriptionSchema = {
+            type: "OBJECT",
+            properties: {
+                segments: {
+                    type: "ARRAY",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            start: { type: "NUMBER" },
+                            end: { type: "NUMBER" },
+                            text: { type: "STRING" }
+                        },
+                        required: ["start", "end", "text"]
+                    }
+                }
+            },
+            required: ["segments"]
+        };
+
+        // 4. Generate Transcript using Gemini 3.5 Flash
         const result = await generateContentWithFallback(
             genAI,
             [
@@ -50,20 +69,20 @@ export async function transcribeVideoWithGemini(videoUrl: string) {
                         fileUri: file.uri,
                     },
                 },
-                { text: "Generate a precise transcript of this video. For every segment of speech, provide the start time, end time, and text. Return the result in a clean JSON format like this: { \"segments\": [ { \"start\": 0.2, \"end\": 2.5, \"text\": \"Hello world\" } ] }. Only return the JSON." },
+                { text: "Generate a precise transcript of this video. For every segment of speech, provide the start time, end time, and text. Return the result in a clean JSON format matching the schema." },
             ],
-            "gemini-3-flash-preview",
-            null
+            "gemini-3.5-flash",
+            null,
+            4,
+            2000,
+            {
+                responseMimeType: "application/json",
+                responseSchema: videoTranscriptionSchema
+            }
         );
 
         const transcriptText = result.response.text();
-        const jsonMatch = transcriptText.match(/\{[\s\S]*\}/);
-        
-        if (!jsonMatch) {
-            throw new Error("Failed to parse JSON from Gemini response");
-        }
-
-        const data = JSON.parse(jsonMatch[0]);
+        const data = JSON.parse(transcriptText);
 
         // Cleanup
         fs.unlinkSync(localTempPath);

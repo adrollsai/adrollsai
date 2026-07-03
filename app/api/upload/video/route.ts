@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       // Run FFmpeg to compress the video
       // libx264, crf 28 (very high compression, visual difference is practically unnoticeable), preset superfast
       const ffmpeg = ffmpegPath || 'ffmpeg';
-      const command = `"${ffmpeg}" -y -i "${inputPath}" -c:v libx264 -crf 28 -preset superfast -c:a aac -b:a 128k "${outputPath}"`;
+      const command = `"${ffmpeg}" -y -i "${inputPath}" -filter:v fps=30 -vsync cfr -c:v libx264 -pix_fmt yuv420p -crf 28 -preset superfast -c:a aac -b:a 128k "${outputPath}"`;
       
       console.log(`[VideoUpload API] Executing video compression command: ${command}`);
       await execPromise(command);
