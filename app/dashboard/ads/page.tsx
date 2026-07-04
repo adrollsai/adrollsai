@@ -96,7 +96,7 @@ export default function AdsPage() {
   const [landingPages, setLandingPages] = useState<any[]>([])
   const [forms, setForms] = useState<any[]>([])
   const [metaLeadForms, setMetaLeadForms] = useState<any[]>([])
-  const [campaignType, setCampaignType] = useState<'instant_form' | 'website_conversion'>('instant_form')
+  const [campaignType, setCampaignType] = useState<'instant_form' | 'website_conversion' | 'whatsapp_chat'>('instant_form')
   const [selectedLandingPageId, setSelectedLandingPageId] = useState<string>('')
   const [attachedFormName, setAttachedFormName] = useState<string>('')
   const [targetUserId, setTargetUserId] = useState<string>('')
@@ -1433,6 +1433,10 @@ export default function AdsPage() {
     }
     
     if (adForm.metaLocations.length === 0 || adForm.dailyBudgetINR < 100) { alert("Set valid location and budget."); return }
+    if (campaignType === 'whatsapp_chat' && !selectedWhatsAppNumber) {
+        alert("Please select a connected WhatsApp number for the campaign.");
+        return;
+    }
     
     setIsSubmitting(true)
     const { data: { user } } = await supabase.auth.getUser();
@@ -1466,6 +1470,8 @@ export default function AdsPage() {
         // Clean phone number (keep only digits)
         const cleanPhone = selectedWhatsAppNumber.replace(/[^0-9]/g, '');
         finalLinkUrl = `https://wa.me/${cleanPhone}`;
+    } else if (campaignType === 'whatsapp_chat') {
+        finalLinkUrl = `https://www.facebook.com/${adForm.pageId}`;
     }
 
     try {
@@ -1545,6 +1551,10 @@ export default function AdsPage() {
       creativeProductIds.forEach(id => {
           formPayload.append('creativeProductIds', id);
       });
+
+      if (campaignType === 'whatsapp_chat' && selectedWhatsAppNumber) {
+          formPayload.append('whatsappNumber', selectedWhatsAppNumber);
+      }
 
       if (runAsRemarketing && selectedCustomAudienceIds.length > 0) {
           formPayload.append('customAudienceIds', JSON.stringify(selectedCustomAudienceIds));
@@ -4138,10 +4148,41 @@ export default function AdsPage() {
                                   onClick={() => setCampaignType('website_conversion')}
                                   className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${campaignType === 'website_conversion' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                               >
-                                  Website Conversion
+                                  Website
+                              </button>
+                              <button 
+                                  type="button"
+                                  onClick={() => setCampaignType('whatsapp_chat')}
+                                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${campaignType === 'whatsapp_chat' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                              >
+                                  WhatsApp Chat
                               </button>
                           </div>
                       </div>
+
+                      {campaignType === 'whatsapp_chat' && (
+                          <div className="space-y-4 bg-slate-50 p-4 rounded-2xl border border-slate-100/60 mt-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                              <div>
+                                  <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider font-semibold">Select Connected WhatsApp Number</label>
+                                  {availableWhatsAppNumbers.length > 0 ? (
+                                      <select 
+                                          value={selectedWhatsAppNumber} 
+                                          onChange={(e) => setSelectedWhatsAppNumber(e.target.value)}
+                                          className="w-full bg-white py-3 px-4 rounded-2xl text-slate-800 text-sm font-semibold outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200 transition-all cursor-pointer"
+                                      >
+                                          <option value="">-- Select WhatsApp Number --</option>
+                                          {availableWhatsAppNumbers.map(num => (
+                                              <option key={num} value={num}>{num}</option>
+                                          ))}
+                                      </select>
+                                  ) : (
+                                      <div className="text-xs text-rose-600 font-semibold p-2 bg-rose-50 rounded-xl border border-rose-100">
+                                          ⚠️ No connected WhatsApp number found. Please connect your WABA in Profile settings.
+                                      </div>
+                                  )}
+                              </div>
+                          </div>
+                      )}
 
                       {campaignType === 'instant_form' && (
                           <div className="space-y-4 bg-slate-50 p-4 rounded-2xl border border-slate-100/60 mt-3 animate-in fade-in slide-in-from-top-2 duration-300">

@@ -19,7 +19,11 @@ import {
   Clock,
   ChevronDown,
   Layers,
-  Settings
+  Settings,
+  ListChecks,
+  GripVertical,
+  Pencil,
+  Link2
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
@@ -73,7 +77,26 @@ interface WhatsAppSettingsProps {
 
 export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsProps) {
   const supabase = createClient()
-  const [activeTab, setActiveTab] = useState<'drips' | 'templates' | 'broadcasts'>('drips')
+  const [activeTab, setActiveTab] = useState<'drips' | 'templates' | 'broadcasts' | 'qualification'>('drips')
+  
+  // Qualification Flows state
+  type QuestionFlow = {
+    id: string
+    name: string
+    questions: { question: string; field_name: string }[]
+    is_active: boolean
+    linked_campaign_id: string | null
+    created_at: string
+  }
+  const [questionFlows, setQuestionFlows] = useState<QuestionFlow[]>([])
+  const [isCreateQFlowOpen, setIsCreateQFlowOpen] = useState(false)
+  const [editingQFlowId, setEditingQFlowId] = useState<string | null>(null)
+  const [qFlowForm, setQFlowForm] = useState({
+    name: '',
+    questions: [{ question: '', field_name: '' }] as { question: string; field_name: string }[],
+    linked_campaign_id: '',
+    is_active: false
+  })
   
   // Data lists
   const [flows, setFlows] = useState<WhatsAppFlow[]>([])
@@ -171,6 +194,18 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
 
       // Fetch flows
       await fetchFlows()
+
+      // Fetch qualification flows
+      try {
+        const qfRes = await fetch('/api/whatsapp/question-flows')
+        const qfData = await qfRes.json()
+        if (qfData.success) setQuestionFlows(qfData.flows || [])
+      } catch (e) {
+        console.error('Failed to fetch question flows:', e)
+      }
+
+      // Fetch Meta approved templates
+      await fetchTemplates()
     } catch (err: any) {
       console.error('[WHATSAPP SETTINGS] Init Fetch Error:', err)
     } finally {
@@ -736,9 +771,9 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
           
           {/* Tabs Navigation Header */}
           <div className="bg-white border border-slate-200 rounded-3xl p-2 flex gap-1 shadow-sm">
-            {(['drips', 'templates', 'broadcasts'] as const).map(tabId => {
-              const label = tabId === 'drips' ? 'Drips Automations' : tabId === 'templates' ? 'Template Approvals' : 'Bulk Broadcasts';
-              const Icon = tabId === 'drips' ? MessageCircle : tabId === 'templates' ? CheckCircle2 : Send;
+            {(['drips', 'templates', 'broadcasts', 'qualification'] as const).map(tabId => {
+              const label = tabId === 'drips' ? 'Drips' : tabId === 'templates' ? 'Templates' : tabId === 'broadcasts' ? 'Broadcasts' : 'Flows';
+              const Icon = tabId === 'drips' ? MessageCircle : tabId === 'templates' ? CheckCircle2 : tabId === 'broadcasts' ? Send : ListChecks;
               const active = activeTab === tabId;
               return (
                 <button
@@ -1325,6 +1360,274 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                       </div>
                     )
                   })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB CONTENT: QUALIFICATION FLOWS */}
+          {activeTab === 'qualification' && (
+            <div className="bg-white border border-slate-200 rounded-[2rem] p-6 sm:p-8 shadow-sm space-y-6">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900">Qualification Flows</h3>
+                  <p className="text-xs text-slate-500 font-medium">Automated question sequences for new WhatsApp leads</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setIsCreateQFlowOpen(!isCreateQFlowOpen)
+                    setEditingQFlowId(null)
+                    setQFlowForm({ name: '', questions: [{ question: '', field_name: '' }], linked_campaign_id: '', is_active: false })
+                  }}
+                  className="bg-slate-950 hover:bg-slate-900 text-white rounded-full p-2.5 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                >
+                  <Plus size={14} /> New Flow
+                </button>
+              </div>
+
+              {/* Info Banner */}
+              <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-4">
+                <p className="text-[11px] text-blue-900 font-bold leading-relaxed">
+                  💡 When someone messages your WhatsApp number, they'll first be asked for their name. 
+                  If an active flow exists, they'll go through the qualification questions. 
+                  After completion, a lead is automatically created in your CRM.
+                </p>
+              </div>
+
+              {/* Create / Edit Flow Form */}
+              {isCreateQFlowOpen && (
+                <form onSubmit={async (e) => {
+                  e.preventDefault()
+                  const validQuestions = qFlowForm.questions.filter(q => q.question.trim() && q.field_name.trim())
+                  if (!qFlowForm.name.trim() || validQuestions.length === 0) {
+                    toast.error('Please provide a flow name and at least one question.')
+                    return
+                  }
+                  try {
+                    const payload = {
+                      ...( editingQFlowId ? { id: editingQFlowId } : {}),
+                      name: qFlowForm.name,
+                      questions: validQuestions,
+                      linked_campaign_id: qFlowForm.linked_campaign_id || null,
+                      is_active: qFlowForm.is_active
+                    }
+                    const res = await fetch('/api/whatsapp/question-flows', {
+                      method: editingQFlowId ? 'PUT' : 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(payload)
+                    })
+                    const data = await res.json()
+                    if (data.success) {
+                      toast.success(editingQFlowId ? 'Flow updated!' : 'Flow created!')
+                      setIsCreateQFlowOpen(false)
+                      setEditingQFlowId(null)
+                      setQFlowForm({ name: '', questions: [{ question: '', field_name: '' }], linked_campaign_id: '', is_active: false })
+                      // Refresh flows
+                      const refreshRes = await fetch('/api/whatsapp/question-flows')
+                      const refreshData = await refreshRes.json()
+                      if (refreshData.success) setQuestionFlows(refreshData.flows)
+                    } else {
+                      toast.error(data.error || 'Failed to save flow')
+                    }
+                  } catch {
+                    toast.error('Failed to save flow')
+                  }
+                }} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-widest">{editingQFlowId ? 'Edit Flow' : 'New Qualification Flow'}</span>
+                    <button type="button" onClick={() => { setIsCreateQFlowOpen(false); setEditingQFlowId(null) }} className="text-xs text-red-500 font-bold hover:underline">Cancel</button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Flow Name</label>
+                      <input 
+                        type="text" 
+                        value={qFlowForm.name}
+                        onChange={(e) => setQFlowForm({ ...qFlowForm, name: e.target.value })}
+                        placeholder="e.g. Real Estate Qualification" 
+                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5 min-w-0">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Link to Campaign (Optional)</label>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Link2 size={14} className="text-slate-400 shrink-0" />
+                        <select 
+                          value={qFlowForm.linked_campaign_id}
+                          onChange={(e) => setQFlowForm({ ...qFlowForm, linked_campaign_id: e.target.value })}
+                          className="flex-1 w-full min-w-0 bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer truncate"
+                        >
+                          <option value="">No Campaign (Default Flow)</option>
+                          {campaigns.map((camp, i) => <option key={i} value={camp}>{camp}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Questions Builder */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Questions</label>
+                      <button 
+                        type="button" 
+                        onClick={() => setQFlowForm({ ...qFlowForm, questions: [...qFlowForm.questions, { question: '', field_name: '' }] })}
+                        className="text-[10px] font-black text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                      >
+                        <Plus size={12} /> Add Question
+                      </button>
+                    </div>
+
+                    {qFlowForm.questions.map((q, idx) => (
+                      <div key={idx} className="flex gap-2 items-start bg-white border border-slate-200/70 rounded-2xl p-3 group">
+                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-slate-500 text-[10px] font-black mt-1 shrink-0">{idx + 1}</div>
+                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input 
+                            type="text" 
+                            value={q.question}
+                            onChange={(e) => {
+                              const updated = [...qFlowForm.questions]
+                              updated[idx].question = e.target.value
+                              setQFlowForm({ ...qFlowForm, questions: updated })
+                            }}
+                            placeholder="Question text (e.g. What's your budget?)" 
+                            className="bg-slate-50 border border-slate-200 py-2 px-3 rounded-xl text-xs font-medium outline-none focus:border-blue-400 transition-all"
+                          />
+                          <input 
+                            type="text" 
+                            value={q.field_name}
+                            onChange={(e) => {
+                              const updated = [...qFlowForm.questions]
+                              updated[idx].field_name = e.target.value.replace(/\s/g, '_').toLowerCase()
+                              setQFlowForm({ ...qFlowForm, questions: updated })
+                            }}
+                            placeholder="Field name (e.g. budget)" 
+                            className="bg-slate-50 border border-slate-200 py-2 px-3 rounded-xl text-xs font-mono font-medium outline-none focus:border-blue-400 transition-all"
+                          />
+                        </div>
+                        {qFlowForm.questions.length > 1 && (
+                          <button 
+                            type="button" 
+                            onClick={() => {
+                              const updated = qFlowForm.questions.filter((_, i) => i !== idx)
+                              setQFlowForm({ ...qFlowForm, questions: updated })
+                            }}
+                            className="text-red-400 hover:text-red-600 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Activate Toggle */}
+                  <label className="flex items-center gap-3 cursor-pointer bg-emerald-50/50 border border-emerald-100 rounded-2xl p-3">
+                    <input 
+                      type="checkbox" 
+                      checked={qFlowForm.is_active}
+                      onChange={(e) => setQFlowForm({ ...qFlowForm, is_active: e.target.checked })}
+                      className="w-4 h-4 rounded accent-emerald-600"
+                    />
+                    <span className="text-xs font-bold text-emerald-800">Activate this flow immediately</span>
+                    <span className="text-[9px] text-emerald-600 font-medium">(activating will deactivate other flows)</span>
+                  </label>
+
+                  <button type="submit" className="w-full bg-slate-950 text-white text-xs font-black py-3 rounded-2xl hover:bg-slate-900 transition-all shadow-sm">
+                    {editingQFlowId ? 'Update Flow' : 'Create Flow'}
+                  </button>
+                </form>
+              )}
+
+              {/* Flow List */}
+              {questionFlows.length === 0 && !isCreateQFlowOpen ? (
+                <div className="text-center py-12 text-slate-400">
+                  <ListChecks size={40} className="mx-auto mb-3 text-slate-200" />
+                  <p className="text-xs font-bold">No qualification flows yet</p>
+                  <p className="text-[10px] font-medium mt-1">Create your first flow to start qualifying WhatsApp leads automatically.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {questionFlows.map(flow => (
+                    <div key={flow.id} className={`border rounded-2xl p-4 transition-all ${flow.is_active ? 'bg-emerald-50/30 border-emerald-200 shadow-sm' : 'bg-white border-slate-200'}`}>
+                      <div className="flex justify-between items-start gap-3 min-w-0">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <h4 className="text-sm font-extrabold text-slate-900 truncate">{flow.name}</h4>
+                            {flow.is_active && (
+                              <span className="text-[8px] font-black bg-emerald-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">Active</span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-500 font-medium break-all">
+                            {flow.questions.length} question{flow.questions.length !== 1 ? 's' : ''}
+                            {flow.linked_campaign_id && <span className="ml-2 block sm:inline font-bold text-blue-600">• Linked to: <span className="break-all">{flow.linked_campaign_id}</span></span>}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {flow.questions.map((q, qi) => (
+                              <span key={qi} className="text-[9px] bg-slate-100 text-slate-600 px-2 py-1 rounded-lg font-bold">{q.field_name}</span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Toggle Active */}
+                          <button
+                            onClick={async () => {
+                              try {
+                                const res = await fetch('/api/whatsapp/question-flows', {
+                                  method: 'PUT',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ id: flow.id, is_active: !flow.is_active })
+                                })
+                                const data = await res.json()
+                                if (data.success) {
+                                  toast.success(flow.is_active ? 'Flow deactivated' : 'Flow activated!')
+                                  const refreshRes = await fetch('/api/whatsapp/question-flows')
+                                  const refreshData = await refreshRes.json()
+                                  if (refreshData.success) setQuestionFlows(refreshData.flows)
+                                }
+                              } catch { toast.error('Failed to toggle flow') }
+                            }}
+                            className={`w-10 h-5 rounded-full transition-all relative cursor-pointer ${flow.is_active ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                          >
+                            <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all shadow-sm ${flow.is_active ? 'left-5' : 'left-0.5'}`} />
+                          </button>
+                          {/* Edit */}
+                          <button
+                            onClick={() => {
+                              setEditingQFlowId(flow.id)
+                              setQFlowForm({
+                                name: flow.name,
+                                questions: flow.questions.length > 0 ? flow.questions : [{ question: '', field_name: '' }],
+                                linked_campaign_id: flow.linked_campaign_id || '',
+                                is_active: flow.is_active
+                              })
+                              setIsCreateQFlowOpen(true)
+                            }}
+                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition-colors"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          {/* Delete */}
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Delete this flow? This cannot be undone.')) return
+                              try {
+                                const res = await fetch(`/api/whatsapp/question-flows?id=${flow.id}`, { method: 'DELETE' })
+                                if (res.ok) {
+                                  toast.success('Flow deleted')
+                                  setQuestionFlows(prev => prev.filter(f => f.id !== flow.id))
+                                }
+                              } catch { toast.error('Failed to delete flow') }
+                            }}
+                            className="p-1.5 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

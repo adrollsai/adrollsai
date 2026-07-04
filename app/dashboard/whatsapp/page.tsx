@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft } from 'lucide-react'
+import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { toast } from 'sonner'
 
 // Map String names to Actual Icons
 const iconMap: Record<string, LucideIcon> = {
@@ -28,6 +29,8 @@ type Chat = {
   last_message_text?: string
   unread_count: number
   updated_at: string
+  lead_id?: string | null
+  flow_completed?: boolean
 }
 
 type Message = {
@@ -58,6 +61,35 @@ export default function AutomationPage() {
   const [customTemplateName, setCustomTemplateName] = useState('')
   const [customTemplateLang, setCustomTemplateLang] = useState('en_US')
   const [sendingMessage, setSendingMessage] = useState(false)
+  const [showTemplateInput, setShowTemplateInput] = useState(false)
+
+  type MetaTemplate = {
+    name: string
+    status: string
+    category: string
+    language: string
+    components: any[]
+  }
+  const [templates, setTemplates] = useState<MetaTemplate[]>([])
+  const [loadingTemplates, setLoadingTemplates] = useState(false)
+  
+  // Lead info panel
+  type LeadInfo = {
+    id: string
+    name: string
+    phone: string
+    email: string
+    pipeline_stage: string
+    remarks: string
+    custom_fields: Record<string, any>
+    source: string
+    created_at: string
+  }
+  const [leadInfo, setLeadInfo] = useState<LeadInfo | null>(null)
+  const [showLeadPanel, setShowLeadPanel] = useState(false)
+  const [editingLead, setEditingLead] = useState(false)
+  const [leadEditForm, setLeadEditForm] = useState({ name: '', email: '', pipeline_stage: '', remarks: '' })
+  const [savingLead, setSavingLead] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -68,9 +100,10 @@ export default function AutomationPage() {
     }
   }, [chats])
 
-  // Fetch chats on mount
+  // Fetch chats and templates on mount
   useEffect(() => {
     fetchChats()
+    fetchTemplates()
   }, [])
 
   // Fetch messages (and load cache first) when a chat is selected
@@ -83,8 +116,17 @@ export default function AutomationPage() {
         }
       }
       fetchMessages(selectedChatId)
+      // Fetch lead info if chat has a lead_id
+      const chat = chats.find(c => c.id === selectedChatId)
+      if (chat?.lead_id) {
+        fetchLeadInfo(chat.lead_id)
+      } else {
+        setLeadInfo(null)
+      }
     } else {
       setMessages([])
+      setLeadInfo(null)
+      setShowLeadPanel(false)
     }
   }, [selectedChatId])
 
@@ -145,6 +187,21 @@ export default function AutomationPage() {
     setLoadingChats(false)
   }
 
+  const fetchTemplates = async () => {
+    setLoadingTemplates(true)
+    try {
+      const res = await fetch('/api/whatsapp/templates')
+      const data = await res.json()
+      if (data.success) {
+        setTemplates(data.templates || [])
+      }
+    } catch (e) {
+      console.error('Failed to fetch Meta templates:', e)
+    } finally {
+      setLoadingTemplates(false)
+    }
+  }
+
   const fetchMessages = async (chatId: string) => {
     setLoadingMessages(true)
     try {
@@ -159,6 +216,58 @@ export default function AutomationPage() {
       console.error(e)
     }
     setLoadingMessages(false)
+  }
+
+  const fetchLeadInfo = async (leadId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('id, name, phone, email, pipeline_stage, remarks, custom_fields, source, created_at')
+        .eq('id', leadId)
+        .single()
+      if (data && !error) {
+        setLeadInfo(data as LeadInfo)
+        setLeadEditForm({
+          name: data.name || '',
+          email: data.email || '',
+          pipeline_stage: data.pipeline_stage || 'New',
+          remarks: data.remarks || ''
+        })
+      }
+    } catch (e) {
+      console.error('Failed to fetch lead info:', e)
+    }
+  }
+
+  const saveLeadInfo = async () => {
+    if (!leadInfo) return
+    setSavingLead(true)
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .update({
+          name: leadEditForm.name,
+          email: leadEditForm.email,
+          pipeline_stage: leadEditForm.pipeline_stage,
+          remarks: leadEditForm.remarks
+        })
+        .eq('id', leadInfo.id)
+      if (error) throw error
+      setLeadInfo({ ...leadInfo, ...leadEditForm })
+      setEditingLead(false)
+      toast.success('Lead info updated!')
+      // Also update the chat name if it changed
+      if (leadEditForm.name !== leadInfo.name && selectedChatId) {
+        await supabase
+          .from('whatsapp_chats')
+          .update({ recipient_name: leadEditForm.name })
+          .eq('id', selectedChatId)
+        setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, recipient_name: leadEditForm.name } : c))
+      }
+    } catch (e: any) {
+      toast.error('Failed to update lead: ' + (e.message || ''))
+    }
+    setSavingLead(false)
   }
 
   const handleSendMessage = async () => {
@@ -321,7 +430,86 @@ export default function AutomationPage() {
                       <p className="text-[9px] font-bold text-emerald-600 mt-0.5">● Connected to {selectedChat.recipient_phone}</p>
                     </div>
                   </div>
+                  <div className="flex items-center gap-2">
+                    {leadInfo && (
+                      <button
+                        onClick={() => setShowLeadPanel(!showLeadPanel)}
+                        className="flex items-center gap-1.5 text-[10px] font-bold bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-100 transition-colors border border-blue-100"
+                      >
+                        <User size={12} /> Lead Info
+                        {showLeadPanel ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {/* Collapsible Lead Info Panel */}
+                {showLeadPanel && leadInfo && (
+                  <div className="bg-blue-50/40 border-b border-blue-100 p-4 animate-in slide-in-from-top-2 duration-200">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">CRM Lead Details</span>
+                      <div className="flex gap-2">
+                        {editingLead ? (
+                          <>
+                            <button onClick={() => setEditingLead(false)} className="text-[10px] font-bold text-slate-500 hover:text-slate-700"><X size={12} /></button>
+                            <button onClick={saveLeadInfo} disabled={savingLead} className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 hover:text-emerald-700">
+                              {savingLead ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} Save
+                            </button>
+                          </>
+                        ) : (
+                          <button onClick={() => setEditingLead(true)} className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-700">
+                            <Pencil size={10} /> Edit
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {editingLead ? (
+                        <>
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase">Name</label>
+                            <input type="text" value={leadEditForm.name} onChange={(e) => setLeadEditForm({...leadEditForm, name: e.target.value})} className="w-full bg-white border border-slate-200 py-1.5 px-2.5 rounded-lg text-[11px] font-bold outline-none focus:border-blue-400" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase">Email</label>
+                            <input type="email" value={leadEditForm.email} onChange={(e) => setLeadEditForm({...leadEditForm, email: e.target.value})} className="w-full bg-white border border-slate-200 py-1.5 px-2.5 rounded-lg text-[11px] font-bold outline-none focus:border-blue-400" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase">Stage</label>
+                            <select value={leadEditForm.pipeline_stage} onChange={(e) => setLeadEditForm({...leadEditForm, pipeline_stage: e.target.value})} className="w-full bg-white border border-slate-200 py-1.5 px-2.5 rounded-lg text-[11px] font-bold outline-none cursor-pointer">
+                              {['New', 'Contacted', 'Qualified', 'Negotiation', 'Won', 'Lost'].map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase">Remarks</label>
+                            <input type="text" value={leadEditForm.remarks} onChange={(e) => setLeadEditForm({...leadEditForm, remarks: e.target.value})} placeholder="Add a note..." className="w-full bg-white border border-slate-200 py-1.5 px-2.5 rounded-lg text-[11px] font-bold outline-none focus:border-blue-400" />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div><span className="text-[8px] font-black text-slate-400 uppercase block">Name</span><span className="text-[11px] font-bold text-slate-800">{leadInfo.name}</span></div>
+                          <div><span className="text-[8px] font-black text-slate-400 uppercase block">Phone</span><span className="text-[11px] font-bold text-slate-800">{leadInfo.phone}</span></div>
+                          <div><span className="text-[8px] font-black text-slate-400 uppercase block">Email</span><span className="text-[11px] font-bold text-slate-800">{leadInfo.email || '—'}</span></div>
+                          <div><span className="text-[8px] font-black text-slate-400 uppercase block">Stage</span><span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${leadInfo.pipeline_stage === 'Won' ? 'bg-emerald-100 text-emerald-700' : leadInfo.pipeline_stage === 'Lost' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{leadInfo.pipeline_stage}</span></div>
+                          <div><span className="text-[8px] font-black text-slate-400 uppercase block">Source</span><span className="text-[11px] font-bold text-slate-800">{leadInfo.source}</span></div>
+                          <div><span className="text-[8px] font-black text-slate-400 uppercase block">Remarks</span><span className="text-[11px] font-bold text-slate-800">{leadInfo.remarks || '—'}</span></div>
+                          {leadInfo.custom_fields && Object.keys(leadInfo.custom_fields).length > 0 && (
+                            <div className="col-span-2 mt-1 pt-2 border-t border-blue-100">
+                              <span className="text-[8px] font-black text-slate-400 uppercase block mb-1">Flow Answers</span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {Object.entries(leadInfo.custom_fields).map(([k, v]) => (
+                                  <span key={k} className="text-[9px] bg-white border border-slate-200 px-2 py-1 rounded-lg font-bold text-slate-700">
+                                    <span className="text-slate-400">{k}:</span> {String(v)}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Messages View */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#f0f2f5]/40 scrollbar-thin">
@@ -369,23 +557,66 @@ export default function AutomationPage() {
                 {/* Message Entry Input */}
                 <div className="p-3 border-t border-slate-100 bg-white flex flex-col gap-3">
                   {isWindowActive ? (
-                    <div className="flex gap-2 items-center w-full">
-                      <input 
-                        type="text"
-                        value={newMessageText}
-                        onChange={(e) => setNewMessageText(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage() }}
-                        placeholder="Type a WhatsApp message..."
-                        className="flex-1 bg-slate-50 border border-slate-200/80 px-4 py-2.5 rounded-full text-xs font-medium outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-slate-800"
-                      />
-                      <button
-                        onClick={handleSendMessage}
-                        disabled={!newMessageText.trim() || sendingMessage}
-                        className="p-2.5 rounded-full bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:hover:bg-emerald-500 transition-colors shadow-sm shrink-0"
-                      >
-                        {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
-                      </button>
-                    </div>
+                    <>
+                      <div className="flex gap-2 items-center w-full">
+                        <input 
+                          type="text"
+                          value={newMessageText}
+                          onChange={(e) => setNewMessageText(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage() }}
+                          placeholder="Type a WhatsApp message..."
+                          className="flex-1 bg-slate-50 border border-slate-200/80 px-4 py-2.5 rounded-full text-xs font-medium outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-slate-800"
+                        />
+                        <button
+                          onClick={() => setShowTemplateInput(!showTemplateInput)}
+                          className={`p-2.5 rounded-full transition-colors shadow-sm shrink-0 ${showTemplateInput ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                          title="Send Template Message"
+                        >
+                          <FileText size={16} />
+                        </button>
+                        <button
+                          onClick={handleSendMessage}
+                          disabled={!newMessageText.trim() || sendingMessage}
+                          className="p-2.5 rounded-full bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:hover:bg-emerald-500 transition-colors shadow-sm shrink-0"
+                        >
+                          {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
+                        </button>
+                      </div>
+                      {showTemplateInput && (
+                        <div className="flex flex-col sm:flex-row gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                          <div className="flex-1">
+                            <select 
+                              value={selectedTemplate}
+                              onChange={(e) => setSelectedTemplate(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 cursor-pointer"
+                            >
+                              <option value="hello_world">Welcome (hello_world)</option>
+                              {templates.filter(t => t.status === 'APPROVED').map(t => (
+                                <option key={t.name} value={t.name}>{t.name} ({t.category})</option>
+                              ))}
+                              <option value="custom">Custom Template...</option>
+                            </select>
+                          </div>
+                          {selectedTemplate === 'custom' && (
+                            <input 
+                              type="text"
+                              value={customTemplateName}
+                              onChange={(e) => setCustomTemplateName(e.target.value)}
+                              placeholder="Template name"
+                              className="flex-1 bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800"
+                            />
+                          )}
+                          <button
+                            onClick={handleSendTemplate}
+                            disabled={sendingMessage || (selectedTemplate === 'custom' && !customTemplateName.trim())}
+                            className="py-2.5 px-4 rounded-xl bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5"
+                          >
+                            {sendingMessage ? <Loader2 className="animate-spin" size={14} /> : <Send size={12} />}
+                            Send Template
+                          </button>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div className="flex flex-col gap-2.5 w-full">
                       <div className="flex flex-col sm:flex-row gap-2">
@@ -397,6 +628,9 @@ export default function AutomationPage() {
                             className="w-full bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 cursor-pointer"
                           >
                             <option value="hello_world">Welcome (hello_world)</option>
+                            {templates.filter(t => t.status === 'APPROVED').map(t => (
+                              <option key={t.name} value={t.name}>{t.name} ({t.category})</option>
+                            ))}
                             <option value="custom">Custom Template...</option>
                           </select>
                         </div>

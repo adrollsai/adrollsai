@@ -85,6 +85,7 @@ export async function POST(request: Request) {
         data.pixelId = formData.get('pixelId')?.toString();
         data.adCopyJson = formData.get('adCopy')?.toString();
         data.adCopiesJson = formData.get('adCopies')?.toString();
+        data.whatsappNumber = formData.get('whatsappNumber')?.toString();
 
         const ageMinVal = formData.get('ageMin');
         if (ageMinVal) data.ageMin = parseInt(ageMinVal.toString());
@@ -287,6 +288,7 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         adCopy,
         adCopies,
         creativeProductIds: data.creativeProductIds || [],
+        whatsappNumber: data.whatsappNumber || "",
         businessName: data.business_name || "Our Business",
         contactNumber: data.contact_number || "",
         currency,

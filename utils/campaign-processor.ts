@@ -138,6 +138,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             inventoryIds,
             assetIds,
             creativeProductIds,
+            whatsappNumber,
             campaignType,
             pixelId,
             ageMin,
@@ -509,7 +510,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
         const campaignPayload = {
             name: campaignName,
-            objective: 'OUTCOME_LEADS',
+            objective: campaignType === 'whatsapp_chat' ? 'OUTCOME_ENGAGEMENT' : 'OUTCOME_LEADS',
             status: 'ACTIVE',
             buying_type: 'AUCTION',
             daily_budget: Math.round(dailyBudget * 100),
@@ -588,6 +589,10 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             adSetPayload.destination_type = 'WEBSITE';
             adSetPayload.optimization_goal = 'OFFSITE_CONVERSIONS';
             adSetPayload.promoted_object = { pixel_id: finalPixelId, custom_event_type: 'LEAD' };
+        } else if (campaignType === 'whatsapp_chat') {
+            adSetPayload.destination_type = 'WHATSAPP';
+            adSetPayload.optimization_goal = 'REPLIES';
+            adSetPayload.promoted_object = { page_id: pageId };
         } else {
             adSetPayload.destination_type = 'ON_AD';
             adSetPayload.optimization_goal = optimizeForConversions ? 'QUALITY_LEAD' : 'LEAD_GENERATION';
@@ -615,8 +620,11 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             const creativeItem = uploadedCreatives[i];
             const copy = copyVariations[i % copyVariations.length];
 
+            const ctaType = campaignType === 'whatsapp_chat' ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
             const ctaValue: any = {};
             if (isWebsiteCampaign) {
+                ctaValue.link = linkUrl;
+            } else if (campaignType === 'whatsapp_chat') {
                 ctaValue.link = linkUrl;
             } else {
                 ctaValue.lead_gen_form_id = leadFormId;
@@ -635,7 +643,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     message: copy.primary_text,
                     title: copy.headline,
                     image_hash: globalThumbHash,
-                    call_to_action: { type: 'LEARN_MORE', value: ctaValue }
+                    call_to_action: { type: ctaType, value: ctaValue }
                 };
             } else {
                 creativePayload.object_story_spec.link_data = {
@@ -644,7 +652,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     description: copy.description,
                     link: linkUrl,
                     image_hash: creativeItem.hash,
-                    call_to_action: { type: 'LEARN_MORE', value: ctaValue }
+                    call_to_action: { type: ctaType, value: ctaValue }
                 };
             }
 

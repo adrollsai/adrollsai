@@ -50,22 +50,25 @@ export async function GET() {
         // Fetch WhatsApp credentials
         const { data: profile } = await supabase
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_waba_id')
+            .select('whatsapp_access_token, whatsapp_waba_id, facebook_token')
             .eq('id', user.id)
             .single()
 
-        if (!profile || !profile.whatsapp_access_token || !profile.whatsapp_waba_id) {
+        const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
+        const whatsappWabaId = profile?.whatsapp_waba_id || process.env.DEV_WHATSAPP_WABA_ID
+
+        if (!whatsappToken || !whatsappWabaId) {
             // No credentials = return standard templates so setup wizard works
             return NextResponse.json({ success: true, templates: FALLBACK_TEMPLATES, source: 'mock_unconfigured' })
         }
 
-        const metaUrl = `https://graph.facebook.com/v20.0/${profile.whatsapp_waba_id}/message_templates?limit=100`
+        const metaUrl = `https://graph.facebook.com/v20.0/${whatsappWabaId}/message_templates?limit=100`
         
         try {
             const metaRes = await fetch(metaUrl, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${profile.whatsapp_access_token}`
+                    'Authorization': `Bearer ${whatsappToken}`
                 }
             })
 
@@ -130,11 +133,14 @@ export async function POST(req: Request) {
         // Fetch credentials
         const { data: profile } = await supabase
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_waba_id')
+            .select('whatsapp_access_token, whatsapp_waba_id, facebook_token')
             .eq('id', user.id)
             .single()
 
-        if (!profile || !profile.whatsapp_access_token || !profile.whatsapp_waba_id) {
+        const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
+        const whatsappWabaId = profile?.whatsapp_waba_id || process.env.DEV_WHATSAPP_WABA_ID
+
+        if (!whatsappToken || !whatsappWabaId) {
             return NextResponse.json({ 
                 error: 'WhatsApp integration not configured. Please connect your credentials first.' 
             }, { status: 400 })
@@ -153,11 +159,11 @@ export async function POST(req: Request) {
             ]
         }
 
-        const metaUrl = `https://graph.facebook.com/v20.0/${profile.whatsapp_waba_id}/message_templates`
+        const metaUrl = `https://graph.facebook.com/v20.0/${whatsappWabaId}/message_templates`
         const metaRes = await fetch(metaUrl, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${profile.whatsapp_access_token}`,
+                'Authorization': `Bearer ${whatsappToken}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(templatePayload)

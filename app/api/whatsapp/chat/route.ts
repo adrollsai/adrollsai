@@ -69,11 +69,11 @@ export async function POST(req: Request) {
         // Fetch user WABA credentials
         const { data: profile } = await supabase
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_phone_number_id')
+            .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
             .eq('id', user.id)
             .single()
 
-        const whatsappToken = profile?.whatsapp_access_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
+        const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
         const whatsappPhoneId = profile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID
 
         if (!whatsappToken || !whatsappPhoneId) {
