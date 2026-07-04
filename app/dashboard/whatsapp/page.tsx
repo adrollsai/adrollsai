@@ -40,74 +40,89 @@ type Message = {
 
 export default function AutomationPage() {
   const supabase = createClient()
-  const [activeTab, setActiveTab] = useState<'automations' | 'chat'>('automations')
   
-  // Settings & Automations states
-  const [flows, setFlows] = useState<Automation[]>([])
-  const [loading, setLoading] = useState(true)
-  const [whatsappConnected, setWhatsappConnected] = useState(false)
-  const [whatsappNumber, setWhatsappNumber] = useState('')
-  const [whatsappWabaId, setWhatsappWabaId] = useState('')
-  const [whatsappPhoneId, setWhatsappPhoneId] = useState('')
-
-  // Live Chat Inbox states
-  const [chats, setChats] = useState<Chat[]>([])
+  // Live Chat Inbox states (Cached in localStorage)
+  const [chats, setChats] = useState<Chat[]>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem('wa_cached_chats')
+      if (cached) return JSON.parse(cached)
+    }
+    return []
+  })
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessageText, setNewMessageText] = useState('')
   const [loadingChats, setLoadingChats] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [selectedTemplate, setSelectedTemplate] = useState('hello_world')
+  const [customTemplateName, setCustomTemplateName] = useState('')
+  const [customTemplateLang, setCustomTemplateLang] = useState('en_US')
   const [sendingMessage, setSendingMessage] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Fetch automations and WABA configs on load
+  // Cache chats updates
   useEffect(() => {
-    const fetchData = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      // Fetch automations
-      const { data: flowData } = await supabase
-        .from('automations')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true })
-
-      if (flowData) setFlows(flowData)
-
-      // Fetch profile data
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('whatsapp_access_token, whatsapp_phone_number, whatsapp_waba_id, whatsapp_phone_number_id')
-        .eq('id', user.id)
-        .single()
-
-      if (profileData) {
-        setWhatsappConnected(!!profileData.whatsapp_access_token)
-        setWhatsappNumber(profileData.whatsapp_phone_number || '')
-        setWhatsappWabaId(profileData.whatsapp_waba_id || '')
-        setWhatsappPhoneId(profileData.whatsapp_phone_number_id || '')
-      }
-
-      setLoading(false)
+    if (chats.length > 0) {
+      localStorage.setItem('wa_cached_chats', JSON.stringify(chats))
     }
-    fetchData()
+  }, [chats])
+
+  // Fetch chats on mount
+  useEffect(() => {
+    fetchChats()
   }, [])
 
-  // Fetch chats when switching to chat tab
-  useEffect(() => {
-    if (activeTab === 'chat') {
-      fetchChats()
-    }
-  }, [activeTab])
-
-  // Fetch messages when a chat is selected
+  // Fetch messages (and load cache first) when a chat is selected
   useEffect(() => {
     if (selectedChatId) {
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem(`wa_cached_msgs_${selectedChatId}`)
+        if (cached) {
+          setMessages(JSON.parse(cached))
+        }
+      }
       fetchMessages(selectedChatId)
     } else {
       setMessages([])
+    }
+  }, [selectedChatId])
+
+  // Cache messages updates
+  useEffect(() => {
+    if (selectedChatId && messages.length > 0) {
+      localStorage.setItem(`wa_cached_msgs_${selectedChatId}`, JSON.stringify(messages))
+    }
+  }, [selectedChatId, messages])
+
+  // Realtime Messages Subscription
+  useEffect(() => {
+    if (!selectedChatId) return
+
+    const channel = supabase
+      .channel(`chat-realtime-${selectedChatId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'whatsapp_messages',
+          filter: `chat_id=eq.${selectedChatId}`
+        },
+        (payload) => {
+          const newMsg = payload.new as Message
+          setMessages(prev => {
+            if (prev.some(m => m.id === newMsg.id)) return prev
+            return [...prev, newMsg]
+          })
+          // Keep sidebar updated
+          fetchChats()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
     }
   }, [selectedChatId])
 
@@ -170,289 +185,68 @@ export default function AutomationPage() {
     setSendingMessage(false)
   }
 
-  // Load Facebook SDK
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
+  const handleSendTemplate = async () => {
+    if (!selectedChatId || sendingMessage) return
+    setSendingMessage(true)
 
-    (function (d, s, id) {
-      var js, fjs = d.getElementsByTagName(s)[0] as any;
-      if (d.getElementById(id)) return;
-      js = d.createElement(s) as any; js.id = id;
-      js.src = "https://connect.facebook.net/en_US/sdk.js";
-      fjs.parentNode.insertBefore(js, fjs);
-    }(document, 'script', 'facebook-jssdk'));
+    const templateName = selectedTemplate === 'custom' ? customTemplateName.trim() : selectedTemplate
+    const language = selectedTemplate === 'custom' ? customTemplateLang.trim() : 'en_US'
 
-    (window as any).fbAsyncInit = function () {
-      (window as any).FB.init({
-        appId: process.env.NEXT_PUBLIC_FACEBOOK_APP_ID,
-        cookie: true,
-        xfbml: true,
-        version: 'v20.0'
-      });
-    };
-  }, []);
-
-  const handleWhatsAppConnect = () => {
-    if (!(window as any).FB) {
-      alert("Facebook SDK is still loading. Please wait a moment and try again.");
-      return;
+    if (!templateName) {
+      alert("Please enter a valid template name.")
+      setSendingMessage(false)
+      return
     }
 
-    let code: string | null = null;
-    let metadata: { wabaId?: string; phone_number_id?: string } | null = null;
-    let submitted = false;
-
-    const checkAndSubmit = async (force = false) => {
-      if (submitted) return;
-
-      if (code && (metadata || force)) {
-        submitted = true;
-        window.removeEventListener('message', messageListener);
-
-        const finalMetadata = metadata || {};
-        try {
-          const res = await fetch('/api/whatsapp/onboard', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              code,
-              wabaId: finalMetadata.wabaId,
-              phone_number_id: finalMetadata.phone_number_id
-            })
-          });
-
-          const result = await res.json();
-          if (res.ok) {
-            setWhatsappConnected(true);
-            setWhatsappNumber(result.phone || 'Connected');
-            setWhatsappWabaId(result.wabaId || finalMetadata.wabaId || '');
-            setWhatsappPhoneId(result.phone_number_id || finalMetadata.phone_number_id || '');
-            alert("WhatsApp API connected successfully!");
-          } else {
-            alert(`Onboarding failed: ${result.error}`);
-            submitted = false;
-          }
-        } catch (err: any) {
-          console.error(err);
-          alert("Failed to complete onboarding.");
-          submitted = false;
-        }
-      }
-    };
-
-    const messageListener = (event: MessageEvent) => {
-      if (event.origin !== 'https://www.facebook.com' && event.origin !== 'https://web.facebook.com') {
-        return;
-      }
-
-      try {
-        const data = JSON.parse(event.data);
-        let wabaId = '';
-        let phone_number_id = '';
-
-        if (data.type === 'WA_EMBEDDED_SIGNUP' && data.event === 'FINISH') {
-          wabaId = data.data?.waba_id || '';
-          phone_number_id = data.data?.phone_number_id || '';
-        } else if (data.action === 'whatsapp-embedded-signup-complete') {
-          wabaId = data.payload?.wabaId || '';
-          phone_number_id = data.payload?.phone_number_id || '';
-        }
-
-        if (wabaId || phone_number_id) {
-          metadata = { wabaId, phone_number_id };
-          checkAndSubmit();
-        }
-      } catch (e) {}
-    };
-
-    window.addEventListener('message', messageListener);
-
-    (window as any).FB.login((response: any) => {
-      if (response.authResponse) {
-        code = response.authResponse.code;
-        checkAndSubmit();
-        setTimeout(() => {
-          checkAndSubmit(true);
-        }, 1500);
-      } else {
-        window.removeEventListener('message', messageListener);
-      }
-    }, {
-      config_id: process.env.NEXT_PUBLIC_FACEBOOK_LOGIN_CONFIG_ID || '4311232925804423',
-      response_type: 'code',
-      override_default_response_type: true
-    });
-  };
-
-  const handleDisconnect = async () => {
-    if (!confirm("Are you sure you want to disconnect WhatsApp API? Your automations will stop working.")) {
-      return;
-    }
-
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return;
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        whatsapp_access_token: null,
-        whatsapp_waba_id: null,
-        whatsapp_phone_number_id: null,
-        whatsapp_phone_number: null,
-        whatsapp_connected_at: null
+    try {
+      const res = await fetch('/api/whatsapp/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatId: selectedChatId,
+          templateName,
+          language
+        })
       })
-      .eq('id', user.id);
-
-    if (!error) {
-      setWhatsappConnected(false);
-      setWhatsappNumber('');
-      setWhatsappWabaId('');
-      setWhatsappPhoneId('');
-      alert("WhatsApp API disconnected.");
-    } else {
-      alert("Failed to disconnect: " + error.message);
+      const data = await res.json()
+      if (data.success) {
+        setMessages(prev => [...prev, data.message])
+        setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, last_message_text: `Sent Template: ${templateName}`, updated_at: new Date().toISOString() } : c))
+        setCustomTemplateName('')
+      } else {
+        alert("Failed to send template: " + data.error)
+      }
+    } catch (e) {
+      console.error(e)
+      alert("Error sending template message.")
     }
-  };
-
-  const toggleFlow = async (id: string, currentStatus: boolean) => {
-    setFlows(flows.map(f => f.id === id ? { ...f, is_active: !currentStatus } : f))
-    const { error } = await supabase
-      .from('automations')
-      .update({ is_active: !currentStatus })
-      .eq('id', id)
-
-    if (error) {
-      setFlows(flows.map(f => f.id === id ? { ...f, is_active: currentStatus } : f))
-    }
+    setSendingMessage(false)
   }
 
-  if (loading) return <div className="p-10 text-center text-slate-400 text-sm flex items-center justify-center gap-2"><Loader2 className="animate-spin text-blue-600" size={16} /> Loading Automations...</div>
-
   const selectedChat = chats.find(c => c.id === selectedChatId)
+  
+  const lastInboundMessage = [...messages].reverse().find(m => m.direction === 'inbound')
+  const isWindowActive = (() => {
+    if (!lastInboundMessage) return false
+    const lastInboundTime = new Date(lastInboundMessage.created_at).getTime()
+    const now = Date.now()
+    const elapsedMs = now - lastInboundTime
+    const hours = elapsedMs / (1000 * 60 * 60)
+    return hours < 24
+  })()
 
   return (
-    <div className={`p-5 mx-auto min-h-screen pb-24 transition-all duration-300 ${activeTab === 'chat' ? 'max-w-5xl' : 'max-w-md'}`}>
+    <div className="p-5 mx-auto min-h-screen pb-24 max-w-5xl">
       
-      {/* Header & Tabs */}
+      {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">WhatsApp Portal</h1>
-          <p className="text-slate-500 text-xs mt-1">Manage automations & live conversations</p>
+          <p className="text-slate-500 text-xs mt-1">Live customer and bot conversations</p>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex bg-slate-100 p-1 rounded-2xl mb-6">
-        <button 
-          onClick={() => setActiveTab('automations')}
-          className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${activeTab === 'automations' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-        >
-          Settings & Automations
-        </button>
-        <button 
-          onClick={() => setActiveTab('chat')}
-          className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${activeTab === 'chat' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-        >
-          Conversations Inbox
-        </button>
-      </div>
-
-      {/* TAB 1: AUTOMATIONS & CONNECTION */}
-      {activeTab === 'automations' && (
-        <div className="space-y-6">
-          {/* WhatsApp Connection Status Card */}
-          <div className="bg-white border border-slate-100 rounded-[1.5rem] p-4 shadow-md shadow-slate-100/50 mb-6 transition-all">
-            <div className="flex items-center gap-3 mb-4">
-              <div className={`p-2.5 rounded-xl flex items-center justify-center ${whatsappConnected ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                <MessageCircle size={20} />
-              </div>
-              <div>
-                <h2 className="font-bold text-sm text-slate-800">WhatsApp API Integration</h2>
-                <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">Connect your business number to automate customer follow-ups</p>
-              </div>
-            </div>
-
-            {whatsappConnected ? (
-              <div className="space-y-3">
-                <div className="flex justify-between items-center bg-emerald-50/50 border border-emerald-100/50 p-3 rounded-2xl">
-                  <div>
-                    <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Status</p>
-                    <p className="text-xs text-emerald-600 font-bold mt-0.5">● Connected</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Number</p>
-                    <p className="text-xs text-slate-700 font-semibold mt-0.5">{whatsappNumber || 'N/A'}</p>
-                  </div>
-                </div>
-                
-                <button
-                  onClick={() => handleDisconnect()}
-                  className="w-full py-2.5 px-4 rounded-xl border border-rose-100 text-rose-600 hover:bg-rose-50/50 text-xs font-semibold transition-all text-center"
-                >
-                  Disconnect WhatsApp API
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => handleWhatsAppConnect()}
-                className="w-full py-2.5 px-4 rounded-xl bg-slate-900 text-white hover:bg-slate-800 text-xs font-semibold transition-all text-center flex items-center justify-center gap-2 shadow-sm"
-              >
-                <MessageCircle size={16} />
-                Connect WhatsApp API
-              </button>
-            )}
-          </div>
-
-          {/* Automations List */}
-          <div className="space-y-3">
-            {flows.map((flow) => {
-              const IconComponent = iconMap[flow.icon_name] || MessageCircle
-              return (
-                <div 
-                  key={flow.id}
-                  className={`relative p-4 rounded-[1.5rem] border transition-all duration-300 ${flow.is_active ? 'bg-white border-blue-100 shadow-md shadow-blue-50/50' : 'bg-slate-50 border-slate-100 opacity-80'}`}
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex gap-3">
-                      <div className={`p-2.5 rounded-xl flex items-center justify-center transition-colors ${flow.is_active ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-400'}`}>
-                        <IconComponent size={20} />
-                      </div>
-                      <div>
-                        <h3 className={`font-bold text-sm ${flow.is_active ? 'text-slate-800' : 'text-slate-500'}`}>
-                          {flow.title}
-                        </h3>
-                        <p className="text-[11px] text-slate-400 mt-0.5 max-w-[200px] leading-relaxed">
-                          {flow.description}
-                        </p>
-                      </div>
-                    </div>
-
-                    <button 
-                      onClick={() => toggleFlow(flow.id, flow.is_active)}
-                      className={`w-10 h-6 rounded-full flex items-center transition-all duration-300 px-0.5 ${flow.is_active ? 'bg-slate-900' : 'bg-slate-300'}`}
-                    >
-                      <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-300 ${flow.is_active ? 'translate-x-4' : 'translate-x-0'}`} />
-                    </button>
-                  </div>
-
-                  <div className="flex justify-between items-center pt-3 border-t border-slate-100/50">
-                    <span className={`text-[10px] font-bold ${flow.is_active ? 'text-green-600' : 'text-slate-400'}`}>
-                      {flow.is_active ? '● Active' : '○ Inactive'}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-medium">
-                      {flow.stats}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: LIVE CHAT INBOX */}
-      {activeTab === 'chat' && (
-        <div className="bg-white border border-slate-200/80 rounded-[2rem] shadow-xl overflow-hidden h-[600px] flex">
+      <div className="bg-white border border-slate-200/80 rounded-[2rem] shadow-xl overflow-hidden h-[600px] flex">
           
           {/* Chats Sidebar */}
           <div className="w-1/3 border-r border-slate-100 flex flex-col bg-slate-50/50">
@@ -541,7 +335,7 @@ export default function AutomationPage() {
                       return (
                         <div 
                           key={m.id}
-                          className={`flex ${isOutbound ? 'justify-end' : 'justify-start'} animate-in fade-in duration-200`}
+                          className={`flex ${isOutbound ? 'justify-end' : 'justify-start'}`}
                         >
                           <div className={`
                             max-w-[70%] p-3 rounded-2xl text-xs shadow-sm leading-relaxed
@@ -562,23 +356,85 @@ export default function AutomationPage() {
                   <div ref={messagesEndRef} />
                 </div>
 
+                {/* 24h Window Notice */}
+                {!isWindowActive && (
+                  <div className="bg-amber-50 border-t border-b border-amber-100 px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-slate-700">
+                    <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
+                      ⚠️ 24h Customer Service Window Closed
+                    </span>
+                    <span className="text-[9px] text-slate-500 font-medium">To resume this chat, send a pre-approved WhatsApp template.</span>
+                  </div>
+                )}
+
                 {/* Message Entry Input */}
-                <div className="p-3 border-t border-slate-100 bg-white flex gap-2 items-center">
-                  <input 
-                    type="text"
-                    value={newMessageText}
-                    onChange={(e) => setNewMessageText(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage() }}
-                    placeholder="Type a WhatsApp message..."
-                    className="flex-1 bg-slate-50 border border-slate-200/80 px-4 py-2.5 rounded-full text-xs font-medium outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-slate-800"
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    disabled={!newMessageText.trim() || sendingMessage}
-                    className="p-2.5 rounded-full bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:hover:bg-emerald-500 transition-colors shadow-sm"
-                  >
-                    {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
-                  </button>
+                <div className="p-3 border-t border-slate-100 bg-white flex flex-col gap-3">
+                  {isWindowActive ? (
+                    <div className="flex gap-2 items-center w-full">
+                      <input 
+                        type="text"
+                        value={newMessageText}
+                        onChange={(e) => setNewMessageText(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage() }}
+                        placeholder="Type a WhatsApp message..."
+                        className="flex-1 bg-slate-50 border border-slate-200/80 px-4 py-2.5 rounded-full text-xs font-medium outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-slate-800"
+                      />
+                      <button
+                        onClick={handleSendMessage}
+                        disabled={!newMessageText.trim() || sendingMessage}
+                        className="p-2.5 rounded-full bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:hover:bg-emerald-500 transition-colors shadow-sm shrink-0"
+                      >
+                        {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2.5 w-full">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="flex-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Select Template</label>
+                          <select 
+                            value={selectedTemplate}
+                            onChange={(e) => setSelectedTemplate(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 cursor-pointer"
+                          >
+                            <option value="hello_world">Welcome (hello_world)</option>
+                            <option value="custom">Custom Template...</option>
+                          </select>
+                        </div>
+                        {selectedTemplate === 'custom' && (
+                          <>
+                            <div className="flex-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Template Name</label>
+                              <input 
+                                type="text"
+                                value={customTemplateName}
+                                onChange={(e) => setCustomTemplateName(e.target.value)}
+                                placeholder="e.g. follow_up_offer"
+                                className="w-full bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800"
+                              />
+                            </div>
+                            <div className="w-24">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Language</label>
+                              <input 
+                                type="text"
+                                value={customTemplateLang}
+                                onChange={(e) => setCustomTemplateLang(e.target.value)}
+                                placeholder="en_US"
+                                className="w-full bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800"
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <button
+                        onClick={handleSendTemplate}
+                        disabled={sendingMessage || (selectedTemplate === 'custom' && !customTemplateName.trim())}
+                        className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5"
+                      >
+                        {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={14} />}
+                        Send WhatsApp Template Message
+                      </button>
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
@@ -592,10 +448,8 @@ export default function AutomationPage() {
                 </div>
               </div>
             )}
-          </div>
-          
         </div>
-      )}
+      </div>
 
     </div>
   )

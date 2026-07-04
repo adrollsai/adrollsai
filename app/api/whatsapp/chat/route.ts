@@ -49,9 +49,9 @@ export async function POST(req: Request) {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-        const { chatId, messageText } = await req.json()
-        if (!chatId || !messageText) {
-            return NextResponse.json({ error: 'Missing required parameters (chatId, messageText)' }, { status: 400 })
+        const { chatId, messageText, templateName, language } = await req.json()
+        if (!chatId || (!messageText && !templateName)) {
+            return NextResponse.json({ error: 'Missing required parameters (chatId, and either messageText or templateName)' }, { status: 400 })
         }
 
         // Fetch chat details
@@ -73,30 +73,54 @@ export async function POST(req: Request) {
             .eq('id', user.id)
             .single()
 
-        if (!profile || !profile.whatsapp_access_token || !profile.whatsapp_phone_number_id) {
+        const whatsappToken = profile?.whatsapp_access_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
+        const whatsappPhoneId = profile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID
+
+        if (!whatsappToken || !whatsappPhoneId) {
             return NextResponse.json({ error: 'WhatsApp integration not configured.' }, { status: 400 })
         }
 
         const cleanRecipient = chat.recipient_phone.replace(/\D/g, '')
 
+        // Construct Meta payload based on type
+        const payload: any = {
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: cleanRecipient
+        }
+
+        if (templateName) {
+            payload.type = 'template'
+            payload.template = {
+                name: templateName,
+                language: {
+                    code: language || 'en_US'
+                }
+            }
+        } else {
+            payload.type = 'text'
+            payload.text = { body: messageText }
+        }
+
+        console.log(`[CHAT API] Dispatching message: recipient=${cleanRecipient}, type=${payload.type}, phoneId=${whatsappPhoneId}`);
+        console.log(`[CHAT API] Token Source - DB: ${!!profile?.whatsapp_access_token}, Env: ${!!process.env.DEV_WHATSAPP_ACCESS_TOKEN}`);
+        if (whatsappToken) {
+            console.log(`[CHAT API] Token Snippet: ${whatsappToken.substring(0, 15)}...${whatsappToken.substring(whatsappToken.length - 15)}`);
+        }
+
         // Send to Meta API
-        const metaUrl = `https://graph.facebook.com/v20.0/${profile.whatsapp_phone_number_id}/messages`
+        const metaUrl = `https://graph.facebook.com/v20.0/${whatsappPhoneId}/messages`
         const metaRes = await fetch(metaUrl, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${profile.whatsapp_access_token}`,
+                'Authorization': `Bearer ${whatsappToken}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                messaging_product: 'whatsapp',
-                recipient_type: 'individual',
-                to: cleanRecipient,
-                type: 'text',
-                text: { body: messageText }
-            })
+            body: JSON.stringify(payload)
         })
 
         const metaData = await metaRes.json()
+        console.log(`[CHAT API] Meta API Response Status: ${metaRes.status}, Body: ${JSON.stringify(metaData)}`);
 
         if (!metaRes.ok) {
             console.error('[CHAT API] Meta API failed:', metaData)
@@ -106,12 +130,13 @@ export async function POST(req: Request) {
         }
 
         // Save to whatsapp_messages
+        const logText = templateName ? `Sent Template: ${templateName}` : messageText
         const { data: insertedMsg, error: insertErr } = await supabase
             .from('whatsapp_messages')
             .insert({
                 chat_id: chatId,
                 direction: 'outbound',
-                message_text: messageText
+                message_text: logText
             })
             .select('*')
             .single()
@@ -124,7 +149,7 @@ export async function POST(req: Request) {
         await supabase
             .from('whatsapp_chats')
             .update({
-                last_message_text: messageText,
+                last_message_text: logText,
                 unread_count: 0,
                 updated_at: new Date().toISOString()
             })

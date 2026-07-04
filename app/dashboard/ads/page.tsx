@@ -511,7 +511,7 @@ export default function AdsPage() {
         setAdForm(prev => ({
           ...prev, 
           pageId: targetProfile.selected_page_id || '',
-          linkUrl: prev.linkUrl === 'https://nobogent.com' ? catalogueUrl : prev.linkUrl
+          linkUrl: (!prev.linkUrl || prev.linkUrl === 'https://nobogent.com' || prev.linkUrl === 'https://adrolls.in' || prev.linkUrl === '') ? catalogueUrl : prev.linkUrl
         }))
         setCustomDomain(targetProfile.custom_domain || '')
         if (targetProfile.ad_account_id && !force) {
@@ -1472,6 +1472,7 @@ export default function AdsPage() {
       const finalAssetIds: string[] = [];
       const adCopies: any[] = [];
       
+      const creativeProductIds: string[] = [];
       // Upload local files in-place and build copy mappings
       for (const c of selectedCreatives) {
           let assetId = c.id;
@@ -1501,6 +1502,8 @@ export default function AdsPage() {
               
               // Resolve mapped product for this creative
               const mappedProduct = activeProducts.find(ap => ap.id === c.mappedProductId) || activeProducts[0];
+              creativeProductIds.push(mappedProduct.id);
+              
               const copy = generateAdCopy(mappedProduct, targetProfile?.business_name, targetProfile?.contact_number);
               adCopies.push(copy);
           }
@@ -1536,6 +1539,11 @@ export default function AdsPage() {
       // Append all final asset IDs
       finalAssetIds.forEach(id => {
           formPayload.append('assetIds', id);
+      });
+
+      // Append mapped creative product IDs in order
+      creativeProductIds.forEach(id => {
+          formPayload.append('creativeProductIds', id);
       });
 
       if (runAsRemarketing && selectedCustomAudienceIds.length > 0) {

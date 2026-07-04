@@ -65,16 +65,12 @@ export default function BottomNav() {
 
   const allNavItems = [
     { name: 'Inventory', icon: LayoutGrid, path: '/dashboard' },
-    { name: 'Pages', icon: Globe, path: '/dashboard/pages' },
     // { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
     { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
     { name: 'WhatsApp', icon: MessageCircle, path: '/dashboard/whatsapp' },
-    { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
     ...(showDistribute ? [{ name: 'Distribute', icon: Share2, path: '/dashboard/distribute' }] : []),
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
-    { name: 'Accounts', icon: Share2, path: '/dashboard/accounts' },
-    { name: 'Team', icon: Shield, path: '/dashboard/team' },
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
   ]
 

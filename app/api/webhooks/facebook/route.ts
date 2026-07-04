@@ -122,6 +122,51 @@ export async function POST(request: Request) {
                         if (matchedProfile) {
                             console.log(`🤖 MATCHED PROFILE: ${matchedProfile.business_name} (User: ${matchedProfile.id})`);
                             
+                            let ownerChat: any = null;
+                            try {
+                                const { data: existingChat } = await supabaseAdmin
+                                    .from('whatsapp_chats')
+                                    .select('id')
+                                    .eq('user_id', matchedProfile.id)
+                                    .eq('recipient_phone', cleanFrom)
+                                    .maybeSingle();
+
+                                if (!existingChat) {
+                                    const { data: newChat } = await supabaseAdmin
+                                        .from('whatsapp_chats')
+                                        .insert({
+                                            user_id: matchedProfile.id,
+                                            recipient_phone: cleanFrom,
+                                            recipient_name: matchedProfile.business_name + " (Owner)",
+                                            last_message_text: messageText,
+                                            unread_count: 0
+                                        })
+                                        .select('id')
+                                        .single();
+                                    ownerChat = newChat;
+                                } else {
+                                    await supabaseAdmin
+                                        .from('whatsapp_chats')
+                                        .update({
+                                            last_message_text: messageText,
+                                            updated_at: new Date().toISOString()
+                                        })
+                                        .eq('id', existingChat.id);
+                                    ownerChat = existingChat;
+                                }
+
+                                if (ownerChat) {
+                                    await supabaseAdmin
+                                        .from('whatsapp_messages')
+                                        .insert({
+                                            chat_id: ownerChat.id,
+                                            direction: 'inbound',
+                                            message_text: messageText
+                                        });
+                                }
+                            } catch (dbErr) {
+                                console.error("❌ Failed to log owner message to DB:", dbErr);
+                            }
                             // Query Context
                             const { data: properties } = await supabaseAdmin
                                 .from('properties')
@@ -131,7 +176,7 @@ export async function POST(request: Request) {
                                 
                             const { data: leads } = await supabaseAdmin
                                 .from('leads')
-                                .select('name, stage, created_at')
+                                .select('name, pipeline_stage, created_at')
                                 .eq('user_id', matchedProfile.id);
                                 
                             const { data: campaigns } = await supabaseAdmin
@@ -163,17 +208,17 @@ System-Wide Super Admin Stats:
                             const totalLeadsCount = leads?.length || 0;
                             const stageCounts: Record<string, number> = {};
                             leads?.forEach((l: any) => {
-                                stageCounts[l.stage] = (stageCounts[l.stage] || 0) + 1;
+                                stageCounts[l.pipeline_stage] = (stageCounts[l.pipeline_stage] || 0) + 1;
                             });
                             
                             const recentLeadsText = leads
                                 ?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                                 ?.slice(0, 5)
-                                ?.map((l: any) => `- ${l.name} (Stage: ${l.stage})`)
+                                ?.map((l: any) => `- ${l.name} (Stage: ${l.pipeline_stage})`)
                                 ?.join('\n') || 'None';
                                 
                             const propertiesText = properties
-                                ?.map((p: any) => `- ${p.title} (${p.price || 'No Price'}, Status: ${p.status || 'Active'})`)
+                                ?.map((p: any) => `- Name: "${p.title}", Price: ${p.price || 'Not Set'}, Type: ${p.property_type || 'General'}, Status: ${p.status || 'Active'}`)
                                 ?.join('\n') || 'No products in inventory';
                                 
                             const campaignsText = campaigns
@@ -205,7 +250,12 @@ ${systemContext}
 
 The user's query: "${messageText}"
 
-Answer their query accurately, directly, and concisely. Keep formatting neat and clean for WhatsApp (use asterisks for bolding). Keep the response friendly but professional. Do NOT mention internal database names or ID strings.`;
+IMPORTANT RULES:
+- Answer their query accurately using ONLY the data provided above. Do NOT invent, estimate, or hallucinate any fields (like quantity, stock count, revenue, etc.) that are not explicitly present in the context data.
+- If a field is not available in the data, say "not available" instead of guessing.
+- Keep formatting neat and clean for WhatsApp (use asterisks for bolding).
+- Keep the response friendly but professional.
+- Do NOT mention internal database names, table names, or ID strings.`;
 
                             let botResponseText = "Hello! I received your message, but I encountered an error while processing your request. Please try again.";
                             try {
@@ -219,6 +269,11 @@ Answer their query accurately, directly, and concisely. Keep formatting neat and
                             const recipientNumber = cleanFrom;
                             const whatsappToken = matchedProfile.whatsapp_access_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN;
                             const whatsappPhoneId = matchedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID;
+                            
+                            console.log(`🔐 Token resolution - DB Token exists: ${!!matchedProfile.whatsapp_access_token}, Env Token exists: ${!!process.env.DEV_WHATSAPP_ACCESS_TOKEN}`);
+                            if (whatsappToken) {
+                                console.log(`🔑 Token string: ${whatsappToken.substring(0, 15)}...${whatsappToken.substring(whatsappToken.length - 15)}`);
+                            }
                             
                             if (whatsappToken && whatsappPhoneId) {
                                 try {
@@ -244,6 +299,23 @@ Answer their query accurately, directly, and concisely. Keep formatting neat and
                                         console.error("❌ WhatsApp send failed:", JSON.stringify(sendResData));
                                     } else {
                                         console.log("✅ WhatsApp message sent successfully:", JSON.stringify(sendResData));
+                                        if (ownerChat) {
+                                            await supabaseAdmin
+                                                .from('whatsapp_messages')
+                                                .insert({
+                                                    chat_id: ownerChat.id,
+                                                    direction: 'outbound',
+                                                    message_text: botResponseText
+                                                });
+
+                                            await supabaseAdmin
+                                                .from('whatsapp_chats')
+                                                .update({
+                                                    last_message_text: botResponseText,
+                                                    updated_at: new Date().toISOString()
+                                                })
+                                                .eq('id', ownerChat.id);
+                                        }
                                     }
                                 } catch (sendErr: any) {
                                     console.error("❌ Failed to send WhatsApp message back:", sendErr);

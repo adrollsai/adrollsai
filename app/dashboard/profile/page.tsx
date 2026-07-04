@@ -33,7 +33,9 @@ import {
   ImageIcon,
   Calendar,
   Plug,
-  MessageCircle
+  MessageCircle,
+  Share2,
+  Zap
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import WhatsAppSettings from '@/components/WhatsAppSettings'
@@ -1690,22 +1692,6 @@ export default function ProfilePage() {
                   </p>
                 </div>
 
-                <div className="pb-2">
-                  <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">Brand Color</label>
-                  <div className="flex items-center gap-3 bg-slate-50 hover:bg-slate-100/50 focus-within:bg-white p-2.5 rounded-2xl border border-slate-200/60 focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-500/20 transition-all">
-                    <div
-                      className="w-8 h-8 rounded-xl shadow-inner border-2 border-white"
-                      style={{ backgroundColor: formData.color }}
-                    />
-                    <input
-                      type="text"
-                      value={formData.color}
-                      onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                      disabled={authRole === 'agent'}
-                      className="bg-transparent font-mono text-sm w-full outline-none uppercase text-slate-700 font-medium px-2 disabled:cursor-not-allowed"
-                    />
-                  </div>
-                </div>
 
                 {/* Custom Domains Section */}
                 {isAdminLike && (
@@ -2091,18 +2077,69 @@ export default function ProfilePage() {
                   </div>
                 </button>
 
-                <button 
-                  onClick={() => router.push(`/dashboard/team${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
-                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="bg-emerald-100 text-emerald-600 p-3 rounded-2xl">
-                      <Shield size={20} />
+                {/* Team Management - Only for Admins / Super Admins / Agencies */}
+                {['super_admin', 'agency', 'admin'].includes(authRole || role) && (
+                  <button 
+                    onClick={() => router.push(`/dashboard/team${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                    className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="bg-emerald-50 text-emerald-600 p-3 rounded-2xl">
+                        <Shield size={20} />
+                      </div>
+                      <span className="font-bold text-sm text-slate-900">Team Management</span>
                     </div>
-                    <span className="font-bold text-sm text-slate-900">Team Management</span>
-                  </div>
-                  <ChevronRight size={20} className="text-slate-400" />
-                </button>
+                    <ChevronRight size={20} className="text-slate-400" />
+                  </button>
+                )}
+
+                {/* Ads Launcher - Only for non-agents */}
+                {authRole !== 'agent' && (
+                  <button 
+                    onClick={() => router.push(`/dashboard/ads${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                    className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="bg-blue-50 text-blue-600 p-3 rounded-2xl">
+                        <Zap size={20} />
+                      </div>
+                      <span className="font-bold text-sm text-slate-900">Ads campaigns</span>
+                    </div>
+                    <ChevronRight size={20} className="text-slate-400" />
+                  </button>
+                )}
+
+                {/* Accounts Management - Only for Super Admin / Agency */}
+                {['super_admin', 'agency'].includes(authRole || role) && (
+                  <button 
+                    onClick={() => router.push(`/dashboard/accounts${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                    className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="bg-indigo-50 text-indigo-600 p-3 rounded-2xl">
+                        <Share2 size={20} />
+                      </div>
+                      <span className="font-bold text-sm text-slate-900">Connected Accounts</span>
+                    </div>
+                    <ChevronRight size={20} className="text-slate-400" />
+                  </button>
+                )}
+
+                {/* Landing Pages Manager - Only for Super Admin / Agency */}
+                {['super_admin', 'agency'].includes(authRole || role) && (
+                  <button 
+                    onClick={() => router.push(`/dashboard/pages${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                    className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="bg-blue-50 text-blue-600 p-3 rounded-2xl">
+                        <Globe size={20} />
+                      </div>
+                      <span className="font-bold text-sm text-slate-900">Landing Pages Manager</span>
+                    </div>
+                    <ChevronRight size={20} className="text-slate-400" />
+                  </button>
+                )}
 
                 <button 
                   onClick={() => router.push(`/dashboard/plugins${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 

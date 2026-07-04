@@ -15,6 +15,63 @@ export type UploadedCreative = {
     videoId?: string;
 };
 
+async function generateAICampaignCopy(product: any, businessName: string, contactNumber: string): Promise<{ primary_text: string; headline: string; description: string }> {
+    try {
+        const { callGemini } = await import('./external-apis');
+        
+        const prompt = `
+You are an expert real estate copywriter specialized in creating high-converting Facebook and Meta lead generation ads.
+
+Product Details:
+- Title: ${product.title || 'Exclusive Property'}
+- Description: ${product.description || ''}
+- Price: ${product.price || 'Contact for Price'}
+- Location: ${product.location || ''}
+- Features: Bed: ${product.beds || 'N/A'}, Bath: ${product.baths || 'N/A'}, Area: ${product.area || 'N/A'}
+- Business Name: ${businessName || 'Our Agency'}
+- Contact Number: ${contactNumber || ''}
+
+Task:
+Generate a compelling, attractive, and highly engaging real estate ad copy and headline for this property.
+Follow these rules:
+1. Primary Text: Write an engaging description (1-2 paragraphs). Highlight key selling points (e.g. location, park-facing, luxury finishes, pricing). Use professional real estate tone, bullet points for features, and include a clear call-to-action (e.g., "Tap 'Learn More' to view images and pricing details!"). Keep it under 800 characters. Append the contact number 📞 ${contactNumber} and business name 🏢 ${businessName} at the bottom.
+2. Headline: Create a click-worthy, brief headline (under 40 characters) showcasing value (e.g., "Luxury 10 Marla House in Sector 7" or "Park-Facing covered area").
+3. Description: Write a brief subtext under the headline (under 30 characters) like "View details & pricing".
+
+Return the response in JSON format matching this schema:
+{
+  "primary_text": "...",
+  "headline": "...",
+  "description": "..."
+}
+`;
+
+        const aiResponse = await callGemini(prompt);
+        // Clean JSON formatting
+        const cleanJson = aiResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+        const copy = JSON.parse(cleanJson);
+        if (copy.primary_text && copy.headline) {
+            return {
+                primary_text: copy.primary_text,
+                headline: copy.headline.substring(0, 40),
+                description: (copy.description || 'View details & pricing').substring(0, 30)
+            };
+        }
+    } catch (err: any) {
+        console.error("[Processor] Failed to generate AI copy, falling back to static:", err.message);
+    }
+    
+    // Fallback static copy if AI fails
+    let primaryText = `${product.title || 'Exclusive Property'}\n\n${product.description || ''}`.substring(0, 600);
+    if (contactNumber) primaryText += `\n\n📞 ${contactNumber}`;
+    if (businessName) primaryText += `\n🏢 ${businessName}`;
+    return {
+        headline: (product.title || 'View Details').substring(0, 40),
+        primary_text: primaryText,
+        description: 'View details & pricing'
+    };
+}
+
 export async function runCampaignJob(jobId: string, incomingPayload?: any): Promise<{ campaignId: string; message: string } | undefined> {
     let job: any = null;
     let payload = incomingPayload || null;
@@ -80,6 +137,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             customQuestionsStr,
             inventoryIds,
             assetIds,
+            creativeProductIds,
             campaignType,
             pixelId,
             ageMin,
@@ -107,11 +165,16 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
         // 1. First, build creative items from assetIds (explicitly selected assets)
         if (assetIds && assetIds.length > 0) {
-            const { data: assets } = await supabaseAdmin
+            const { data: rawAssets } = await supabaseAdmin
                 .from('assets')
-                .select('url, type')
+                .select('id, url, type')
                 .in('id', assetIds);
-            if (assets) {
+            
+            if (rawAssets) {
+                // Reorder according to the assetIds array parameter to preserve mapped order
+                const assetsMap = new Map(rawAssets.map((a: any) => [a.id, a]));
+                const assets = assetIds.map((id: string) => assetsMap.get(id)).filter(Boolean);
+                
                 assets.forEach((asset: any) => {
                     if (asset.url) {
                         const isVideo = asset.type === 'video' || asset.url.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/);
@@ -311,14 +374,34 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         }
         logToFile(`Uploaded ${uploadedCreatives.length} creatives to Meta.`);
 
-        // --- Step 3: Use Pre-Generated Ad Copy ---
+        // --- Step 3: Generate AI copies using Gemini ---
+        logToFile("--- GENERATING AI AD COPIES WITH GEMINI ---");
+        const allProductIds = creativeProductIds || inventoryIds || [];
+        const { data: propertiesList } = await supabaseAdmin
+            .from('properties')
+            .select('*')
+            .in('id', allProductIds);
+        
+        const propertiesMap = new Map(propertiesList?.map((p: any) => [p.id, p]) || []);
+
         const copyVariations = [];
         for (let i = 0; i < uploadedCreatives.length; i++) {
+            // Find corresponding productId for this creative
+            const prodId = creativeProductIds && creativeProductIds[i] ? creativeProductIds[i] : (inventoryIds && inventoryIds[0]);
+            const product = propertiesMap.get(prodId);
+            
+            let aiCopy = null;
+            if (product) {
+                logToFile(`[Processor] Generating AI copy for Creative ${i+1} using Product: ${product.title}`);
+                aiCopy = await generateAICampaignCopy(product, businessName, contactNumber);
+            }
+            
             const specificCopy = adCopies && adCopies[i] ? adCopies[i] : null;
+            
             copyVariations.push({
-                primary_text: specificCopy?.primary_text || adCopy?.primary_text || "View pricing & details now.",
-                headline: specificCopy?.headline || adCopy?.headline || "View Details",
-                description: specificCopy?.description || adCopy?.description || "Contact us today."
+                primary_text: aiCopy?.primary_text || specificCopy?.primary_text || adCopy?.primary_text || "View pricing & details now.",
+                headline: aiCopy?.headline || specificCopy?.headline || "View Details",
+                description: aiCopy?.description || specificCopy?.description || "Contact us today."
             });
         }
 
@@ -403,13 +486,26 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
         // --- Step 5: Create Campaign ---
         logToFile("--- CREATING CAMPAIGN ---");
-        let propertyTitle = "";
+        let campaignSubject = "AI Smart Campaign";
         if (inventoryIds && inventoryIds.length > 0) {
-            const { data: prop } = await supabaseAdmin.from('properties').select('title').eq('id', inventoryIds[0]).single();
-            if (prop?.title) propertyTitle = prop.title;
+            const { data: props } = await supabaseAdmin
+                .from('properties')
+                .select('title')
+                .in('id', inventoryIds);
+            
+            if (props && props.length > 0) {
+                const titles = props.map((p: any) => p.title).filter(Boolean);
+                if (titles.length === 1) {
+                    campaignSubject = titles[0];
+                } else if (titles.length > 1) {
+                    const firstPart = titles[0];
+                    const remaining = titles.length - 1;
+                    campaignSubject = `${firstPart} + ${remaining} other${remaining > 1 ? 's' : ''}`;
+                }
+            }
         }
 
-        const campaignName = `${businessName} - ${customAudienceIds?.length > 0 ? 'Retargeting' : (propertyTitle || "AI Smart Campaign")} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
+        const campaignName = `${businessName} - ${customAudienceIds?.length > 0 ? 'Retargeting' : campaignSubject} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
 
         const campaignPayload = {
             name: campaignName,

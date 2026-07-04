@@ -80,6 +80,7 @@ export async function POST(request: Request) {
         data.customQuestions = formData.get('customQuestions')?.toString();
         data.inventoryIds = formData.getAll('inventoryIds').map(String);
         data.assetIds = formData.getAll('assetIds').map(String);
+        data.creativeProductIds = formData.getAll('creativeProductIds').map(String);
         data.campaignType = formData.get('campaignType')?.toString();
         data.pixelId = formData.get('pixelId')?.toString();
         data.adCopyJson = formData.get('adCopy')?.toString();
@@ -285,6 +286,7 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         customAudienceIds,
         adCopy,
         adCopies,
+        creativeProductIds: data.creativeProductIds || [],
         businessName: data.business_name || "Our Business",
         contactNumber: data.contact_number || "",
         currency,
