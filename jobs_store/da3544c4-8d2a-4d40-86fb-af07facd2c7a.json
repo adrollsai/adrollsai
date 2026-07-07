@@ -1,6 +1,7 @@
 {
   "id": "da3544c4-8d2a-4d40-86fb-af07facd2c7a",
   "created_at": "2026-06-27T07:30:02.644Z",
-  "updated_at": "2026-06-27T07:30:02.644Z",
-  "status": "processing"
+  "updated_at": "2026-06-27T08:16:41.271Z",
+  "status": "failed",
+  "message": "Creative upload failed: Unexpected end of JSON input"
 }

@@ -66,3 +66,7 @@ FOR DELETE USING (
     )
   )
 );
+
+-- NOTE: In July 2026, to allow agents/team members to delete their assigned leads,
+-- lead deletion is now routed through the secure server-side endpoint `/api/crm/delete-lead`
+-- which checks permissions (owner, assigned agent, or staff) and executes the delete using the admin client.

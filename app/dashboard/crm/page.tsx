@@ -56,10 +56,92 @@ export default function CRMPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const leadsPerPage = 50
 
-  // Reset page when filters change
+  const isRestored = useRef(false)
+
+  // 1. Initial State Restoration
   useEffect(() => {
+    const savedStage = sessionStorage.getItem('crm_activeStage')
+    if (savedStage) setActiveStage(savedStage)
+    
+    const savedQuery = sessionStorage.getItem('crm_searchQuery')
+    if (savedQuery) setSearchQuery(savedQuery)
+    
+    const savedCampaign = sessionStorage.getItem('crm_selectedCampaign')
+    if (savedCampaign) setSelectedCampaign(savedCampaign)
+    
+    const savedForm = sessionStorage.getItem('crm_selectedForm')
+    if (savedForm) setSelectedForm(savedForm)
+    
+    const savedShowFilters = sessionStorage.getItem('crm_showFilters')
+    if (savedShowFilters) setShowFilters(savedShowFilters === 'true')
+    
+    const savedPage = sessionStorage.getItem('crm_currentPage')
+    if (savedPage) {
+        setCurrentPage(parseInt(savedPage, 10))
+    }
+    
+    isRestored.current = true
+  }, [])
+
+  // 2. Reset page when filters change (ONLY after initial restoration is complete)
+  useEffect(() => {
+      if (!isRestored.current) return
       setCurrentPage(1)
+      sessionStorage.setItem('crm_currentPage', '1')
   }, [activeStage, searchQuery, selectedCampaign, selectedForm])
+
+  // 3. Persist individual states on change
+  useEffect(() => {
+    if (!isRestored.current) return
+    sessionStorage.setItem('crm_activeStage', activeStage)
+  }, [activeStage])
+
+  useEffect(() => {
+    if (!isRestored.current) return
+    sessionStorage.setItem('crm_searchQuery', searchQuery)
+  }, [searchQuery])
+
+  useEffect(() => {
+    if (!isRestored.current) return
+    sessionStorage.setItem('crm_selectedCampaign', selectedCampaign)
+  }, [selectedCampaign])
+
+  useEffect(() => {
+    if (!isRestored.current) return
+    sessionStorage.setItem('crm_selectedForm', selectedForm)
+  }, [selectedForm])
+
+  useEffect(() => {
+    if (!isRestored.current) return
+    sessionStorage.setItem('crm_showFilters', String(showFilters))
+  }, [showFilters])
+
+  useEffect(() => {
+    if (!isRestored.current) return
+    sessionStorage.setItem('crm_currentPage', String(currentPage))
+  }, [currentPage])
+
+  // 4. Save scroll position continuously
+  useEffect(() => {
+    const handleScroll = () => {
+      sessionStorage.setItem('crm_scroll', window.scrollY.toString())
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // 5. Restore scroll position once leads are loaded and states are restored
+  useEffect(() => {
+    if (!loading && isRestored.current) {
+      const savedScroll = sessionStorage.getItem('crm_scroll')
+      if (savedScroll) {
+        const timer = setTimeout(() => {
+          window.scrollTo({ top: parseInt(savedScroll, 10), behavior: 'instant' })
+        }, 100)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [loading])
 
   // --- MODAL STATE ---
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
@@ -127,12 +209,6 @@ export default function CRMPage() {
       if (cached.length > 0 && leads.length === 0) {
           setLeads(cached);
           setLoading(false);
-          
-          // Restore scroll position gracefully
-          const savedScroll = sessionStorage.getItem('crm_scroll');
-          if (savedScroll) {
-              setTimeout(() => window.scrollTo({ top: parseInt(savedScroll, 10), behavior: 'instant' }), 50);
-          }
       } else if (leads.length === 0 && !force) {
           setLoading(true);
       }
@@ -153,7 +229,7 @@ export default function CRMPage() {
           fetchPixels(adAccountId, impersonateId)
       }
 
-      if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
+      if (['super_admin', 'agency', 'admin', 'agent'].includes(currentRole)) {
           // Fetch all staff members under this agency/organization
           const { data: teamData } = await supabase.from('profiles')
             .select('id, business_name, role')
@@ -459,8 +535,18 @@ export default function CRMPage() {
   const handleDeleteLead = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation() 
     if (!confirm("Are you sure you want to delete this lead?")) return
-    await supabase.from('leads').delete().eq('id', id)
-    fetchLeads(true)
+    try {
+        const res = await fetch('/api/crm/delete-lead', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ leadId: id })
+        })
+        const data = await res.json()
+        if (data.error) throw new Error(data.error)
+        fetchLeads(true)
+    } catch (err: any) {
+        alert("Failed to delete lead: " + err.message)
+    }
   }
 
   const assignLead = async (leadId: string, agentId: string, e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -746,7 +832,7 @@ END:VCARD\n`
             </div>
             
             <div className="flex gap-2.5 flex-wrap w-full md:w-auto">
-                {isAdminLike && role !== 'agent' && (
+                {isAdminLike && (
                     <>
                         <button onClick={toggleGlobalDistribution} disabled={isAssigning} className={`flex-1 md:flex-none p-3 rounded-2xl shadow-sm border active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 ${enableDistribution ? 'bg-violet-600 border-violet-600 text-white hover:bg-violet-700' : 'bg-violet-50 border-violet-200 text-violet-600 hover:bg-violet-100'}`}>
                             {isAssigning ? <Loader2 size={16} className="animate-spin" /> : <Shuffle size={16} />}
@@ -898,9 +984,7 @@ END:VCARD\n`
                                         <a href={`tel:${displayPhone}`} onClick={e => e.stopPropagation()} className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Phone size={16} /></a>
                                     </>
                                 )}
-                                {role !== 'agent' && (
-                                    <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Trash2 size={16} /></button>
-                                )}
+                                <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Trash2 size={16} /></button>
                             </div>
                         </div>
 
