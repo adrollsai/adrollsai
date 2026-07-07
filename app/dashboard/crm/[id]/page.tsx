@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2 } from 'lucide-react'
+import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2, History } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { toast } from 'sonner'
 
-const STAGES = ['New', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
+const STAGES = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
 
 export default function LeadProfilePage() {
     const { id } = useParams()
@@ -21,6 +22,13 @@ export default function LeadProfilePage() {
     const [reminderDate, setReminderDate] = useState('')
     const [pixels, setPixels] = useState<any[]>([])
     const [isLoadingPixels, setIsLoadingPixels] = useState(false)
+    const [isCalling, setIsCalling] = useState(false)
+    const [showTranscript, setShowTranscript] = useState(false)
+
+    // Call history states
+    const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
+    const [selectedHistoryCall, setSelectedHistoryCall] = useState<any>(null)
+    const [isAllHistoryModalOpen, setIsAllHistoryModalOpen] = useState(false)
 
     // WhatsApp template states
     const [isSendTemplateOpen, setIsSendTemplateOpen] = useState(false)
@@ -159,6 +167,37 @@ export default function LeadProfilePage() {
         }
     }, [id, supabase])
 
+    // Polling fallback to check status when a call is in progress
+    useEffect(() => {
+        if (!id || lead?.voice_call_status !== 'calling') return
+
+        const interval = setInterval(async () => {
+            const { data } = await supabase
+                .from('leads')
+                .select('*')
+                .eq('id', id)
+                .single()
+
+            if (data && data.voice_call_status !== 'calling') {
+                let parsedCustomFields = data.custom_fields;
+                if (parsedCustomFields && typeof parsedCustomFields === 'string') {
+                    try {
+                        while (typeof parsedCustomFields === 'string') {
+                            parsedCustomFields = JSON.parse(parsedCustomFields);
+                        }
+                    } catch (e) {
+                        parsedCustomFields = {};
+                    }
+                }
+                data.custom_fields = parsedCustomFields;
+                setLead(data)
+                fetchLeadHistory()
+            }
+        }, 4000)
+
+        return () => clearInterval(interval)
+    }, [id, lead?.voice_call_status, supabase])
+
     const fetchLeadData = async () => {
         const { data } = await supabase.from('leads').select('*').eq('id', id).single()
         if (data) {
@@ -247,6 +286,28 @@ export default function LeadProfilePage() {
     const handleNotesChange = async (newNotes: string) => {
         setLead({ ...lead, notes: newNotes })
         await supabase.from('leads').update({ notes: newNotes }).eq('id', id)
+    }
+
+    const handleTriggerCall = async () => {
+        setIsCalling(true)
+        try {
+            const res = await fetch('/api/voice/call', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ leadId: id })
+            })
+            const data = await res.json()
+            if (data.success) {
+                toast.success('Outbound voice call initiated successfully! 🎙️')
+                fetchLeadData()
+            } else {
+                toast.error(data.error || 'Failed to initiate call.')
+            }
+        } catch (err: any) {
+            toast.error(err.message || 'An error occurred triggering call.')
+        } finally {
+            setIsCalling(false)
+        }
     }
 
     const handleFieldUpdate = async (field: string, value: any) => {
@@ -426,6 +487,101 @@ END:VCARD`
                         );
                     })()}
 
+                    {/* Voice Agent Call Details Card */}
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                        <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                🎙️ Voice Agent Call Details
+                            </h3>
+                            {lead.phone && (
+                                <div className="flex gap-2">
+                                    {leadHistory.some(h => h.description && h.description.startsWith('🎙️ CALL_JSON:')) && (
+                                        <button 
+                                            onClick={() => setIsAllHistoryModalOpen(true)}
+                                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black px-4.5 py-2 rounded-full transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
+                                        >
+                                            <History size={12} /> Call History
+                                        </button>
+                                    )}
+                                    <button 
+                                        onClick={handleTriggerCall}
+                                        disabled={isCalling || lead.voice_call_status === 'calling'}
+                                        className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-black px-4 py-2 rounded-full transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
+                                    >
+                                        {isCalling || lead.voice_call_status === 'calling' ? (
+                                            <>
+                                                <Loader2 size={12} className="animate-spin text-white" /> Calling...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Phone size={12} /> Call via AI
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/50">
+                                <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Call Status</span>
+                                <span className={`font-black uppercase tracking-wider ${lead.voice_call_status === 'completed' ? 'text-emerald-600' : lead.voice_call_status === 'calling' ? 'text-indigo-600 animate-pulse' : lead.voice_call_status === 'failed' ? 'text-red-500' : 'text-slate-500'}`}>
+                                    ● {lead.voice_call_status || 'not_called'}
+                                </span>
+                            </div>
+                            {lead.voice_call_scheduled_at && (
+                                <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100">
+                                    <span className="block text-[9px] font-bold text-amber-800 uppercase tracking-wider mb-1">Scheduled Callback</span>
+                                    <span className="font-extrabold text-amber-950">
+                                        {new Date(lead.voice_call_scheduled_at).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+
+                        {lead.voice_call_summary && (
+                            <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+                                <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Call AI Summary</span>
+                                <p className="text-xs font-semibold text-slate-700 leading-relaxed">
+                                    {lead.voice_call_summary}
+                                </p>
+                            </div>
+                        )}
+
+                        {lead.voice_recording_url && (
+                            <div className="space-y-1.5">
+                                <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Listen to Call Recording</span>
+                                <audio controls src={lead.voice_recording_url} className="w-full h-9 rounded-lg outline-none" />
+                            </div>
+                        )}
+
+                        {lead.voice_call_transcript && Array.isArray(lead.voice_call_transcript) && lead.voice_call_transcript.length > 0 && (
+                            <div className="pt-3 border-t border-slate-100">
+                                <button 
+                                    type="button"
+                                    onClick={() => setShowTranscript(!showTranscript)}
+                                    className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1.5 transition-colors"
+                                >
+                                    💬 {showTranscript ? 'Hide' : 'View'} full transcript ({lead.voice_call_transcript.length} messages)
+                                </button>
+                                {showTranscript && (
+                                    <div className="mt-3 p-4 bg-slate-50 border border-slate-100/50 rounded-2xl max-h-60 overflow-y-auto space-y-3.5 custom-scrollbar">
+                                        {lead.voice_call_transcript.map((msg: any, index: number) => (
+                                            <div key={index} className={`flex flex-col ${msg.role === 'agent' ? 'items-start' : 'items-end'}`}>
+                                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
+                                                    {msg.role === 'agent' ? 'AI Voice Agent' : 'Lead'}
+                                                </span>
+                                                <span className={`text-xs p-3 rounded-2xl max-w-[85%] font-semibold leading-relaxed ${msg.role === 'agent' ? 'bg-white text-slate-800 border border-slate-200/50 rounded-tl-none' : 'bg-indigo-600 text-white rounded-tr-none shadow-sm'}`}>
+                                                    {msg.message}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
                     {/* Context & Tags */}
                     <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
                         <div>
@@ -517,7 +673,33 @@ END:VCARD`
                                                     <div className="font-bold text-xs text-slate-900 capitalize truncate pr-2">{item.action_type.replace('_', ' ')}</div>
                                                     <time className="text-[10px] font-bold text-slate-400 bg-white px-1.5 py-0.5 rounded-md border border-slate-100 shrink-0">{new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</time>
                                                 </div>
-                                                <div className="text-xs text-slate-600 leading-relaxed break-words font-medium">{item.description}</div>
+                                                <div className="text-xs text-slate-600 leading-relaxed break-words font-medium">
+                                                    {(() => {
+                                                        if (item.description && item.description.startsWith('🎙️ CALL_JSON:')) {
+                                                            try {
+                                                                const parsed = JSON.parse(item.description.replace('🎙️ CALL_JSON:', ''))
+                                                                return (
+                                                                    <div className="space-y-2">
+                                                                        <span className="font-extrabold text-indigo-600 block">🎙️ AI Voice Call Summary:</span>
+                                                                        <p className="font-semibold text-slate-700">{parsed.summary}</p>
+                                                                        <button 
+                                                                            onClick={() => {
+                                                                                setSelectedHistoryCall(parsed)
+                                                                                setIsHistoryModalOpen(true)
+                                                                            }}
+                                                                            className="text-xs text-indigo-600 hover:text-indigo-800 font-extrabold flex items-center gap-1 mt-1 underline transition-colors"
+                                                                        >
+                                                                            Listen & View Transcript
+                                                                        </button>
+                                                                    </div>
+                                                                )
+                                                            } catch (e) {
+                                                                return item.description
+                                                            }
+                                                        }
+                                                        return item.description
+                                                    })()}
+                                                </div>
                                             </div>
                                         </div>
                                     )
@@ -593,6 +775,103 @@ END:VCARD`
                                 {isSendingTemplate ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
                                 {isSendingTemplate ? 'Sending Message...' : 'Send Message'}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* SINGLE CALL HISTORY LOG DETAIL MODAL */}
+            {isHistoryModalOpen && selectedHistoryCall && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
+                    <div className="bg-white w-full max-w-2xl rounded-t-[1.75rem] xs:rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 flex flex-col overflow-hidden max-h-[85vh]">
+                        <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white">
+                            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                                🎙️ Call Record Detail
+                            </h2>
+                            <button onClick={() => setIsHistoryModalOpen(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={18} /></button>
+                        </div>
+
+                        <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+                            {/* Summary */}
+                            <div className="bg-slate-50 p-4.5 rounded-2xl border border-slate-100">
+                                <span className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">AI Summary</span>
+                                <p className="text-xs font-semibold text-slate-700 leading-relaxed">{selectedHistoryCall.summary}</p>
+                            </div>
+
+                            {/* Audio Player */}
+                            {selectedHistoryCall.recording_url && (
+                                <div className="space-y-2">
+                                    <span className="block text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Call Recording</span>
+                                    <audio controls src={selectedHistoryCall.recording_url} className="w-full h-10 rounded-xl outline-none" />
+                                </div>
+                            )}
+
+                            {/* Transcript */}
+                            {selectedHistoryCall.transcript && Array.isArray(selectedHistoryCall.transcript) && selectedHistoryCall.transcript.length > 0 ? (
+                                <div className="space-y-3">
+                                    <span className="block text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Conversation Transcript</span>
+                                    <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-2xl space-y-3.5 max-h-[35vh] overflow-y-auto custom-scrollbar">
+                                        {selectedHistoryCall.transcript.map((t: any, idx: number) => {
+                                            const isAgent = t.role === 'agent'
+                                            return (
+                                                <div key={idx} className={`flex ${isAgent ? 'justify-start' : 'justify-end'}`}>
+                                                    <div className={`max-w-[80%] p-3.5 rounded-2xl text-xs leading-relaxed font-semibold ${isAgent ? 'bg-white text-slate-800 border border-slate-100' : 'bg-indigo-600 text-white'}`}>
+                                                        <span className="block text-[8px] font-bold uppercase opacity-60 mb-1">{isAgent ? 'Agent' : 'Lead'}</span>
+                                                        {t.message || t.text || ''}
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-center text-xs font-bold text-slate-400 py-6">No transcript details available for this call.</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ALL CALL HISTORY LIST MODAL */}
+            {isAllHistoryModalOpen && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
+                    <div className="bg-white w-full max-w-xl rounded-t-[1.75rem] xs:rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 flex flex-col overflow-hidden max-h-[80vh]">
+                        <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white">
+                            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                                📜 Call History Log
+                            </h2>
+                            <button onClick={() => setIsAllHistoryModalOpen(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={18} /></button>
+                        </div>
+
+                        <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
+                            {leadHistory
+                                .filter(h => h.description && h.description.startsWith('🎙️ CALL_JSON:'))
+                                .map((item) => {
+                                    let parsed: any = {}
+                                    try {
+                                        parsed = JSON.parse(item.description.replace('🎙️ CALL_JSON:', ''))
+                                    } catch (e) {
+                                        return null
+                                    }
+                                    return (
+                                        <div key={item.id} className="bg-slate-50 p-4.5 rounded-2xl border border-slate-200/60 flex flex-col gap-3">
+                                            <div className="flex justify-between items-center">
+                                                <time className="text-[10px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md border border-slate-150">{new Date(item.created_at || Date.now()).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</time>
+                                                <button 
+                                                    onClick={() => {
+                                                        setSelectedHistoryCall(parsed)
+                                                        setIsHistoryModalOpen(true)
+                                                    }}
+                                                    className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-[10px] font-black px-3.5 py-1.5 rounded-lg transition-all"
+                                                >
+                                                    Open Details
+                                                </button>
+                                            </div>
+                                            <p className="text-xs font-semibold text-slate-700 leading-relaxed">{parsed.summary}</p>
+                                        </div>
+                                    )
+                                })
+                            }
                         </div>
                     </div>
                 </div>

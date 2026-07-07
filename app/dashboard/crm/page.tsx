@@ -12,7 +12,7 @@ import TestNotificationBtn from '@/components/TestNotificationBtn'
 
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
-const STAGES = ['New', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
+const STAGES = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
 
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -49,17 +49,56 @@ export default function CRMPage() {
   const [assignedCampaigns, setAssignedCampaigns] = useState<string[]>([])
 
   // --- FILTER STATE ---
-  const [activeStage, setActiveStage] = useState('New')
+  const [activeStage, setActiveStageState] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('crm_stage') || 'New'
+    }
+    return 'New'
+  })
+  
+  const setActiveStage = (stage: string) => {
+    setActiveStageState(stage)
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('crm_stage', stage)
+    }
+  }
+
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCampaign, setSelectedCampaign] = useState('')
   const [selectedForm, setSelectedForm] = useState('')
   const [showFilters, setShowFilters] = useState(false)
-  const [currentPage, setCurrentPage] = useState(1)
+  
+  const [currentPage, setCurrentPageState] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const p = sessionStorage.getItem('crm_page')
+      return p ? parseInt(p, 10) : 1
+    }
+    return 1
+  })
+  
+  const setCurrentPage = (page: number) => {
+    setCurrentPageState(page)
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('crm_page', page.toString())
+    }
+  }
+
+  const [pageInputVal, setPageInputVal] = useState(String(currentPage))
   const leadsPerPage = 50
+  const isFirstRender = useRef(true)
+
+  // Sync page input value when currentPage changes
+  useEffect(() => {
+    setPageInputVal(currentPage.toString())
+  }, [currentPage])
 
   // Reset page when filters change
   useEffect(() => {
-      setCurrentPage(1)
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    setCurrentPage(1)
   }, [activeStage, searchQuery, selectedCampaign, selectedForm])
 
   // --- MODAL STATE ---
@@ -90,6 +129,7 @@ export default function CRMPage() {
   const [selectedTemplateName, setSelectedTemplateName] = useState('')
   const [selectedTemplateBody, setSelectedTemplateBody] = useState('')
   const [isSendingTemplates, setIsSendingTemplates] = useState(false)
+  const [isCallingCampaign, setIsCallingCampaign] = useState(false)
 
   const fetchApprovedTemplates = async () => {
     try {
@@ -156,6 +196,32 @@ export default function CRMPage() {
     setSelectedLeadIds([])
     alert(`WhatsApp blast complete! Sent: ${sentCount}, Failed: ${failedCount}`)
     fetchLeads(true)
+  }
+
+  const handleBulkVoiceCampaign = async () => {
+    if (selectedLeadIds.length === 0) return
+    setIsCallingCampaign(true)
+    try {
+      const res = await fetch('/api/voice/call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadIds: selectedLeadIds })
+      })
+      const data = await res.json()
+      if (data.success) {
+        const successes = data.results?.filter((r: any) => r.success).length || 0
+        const total = data.results?.length || 0
+        alert(`🎙️ AI Voice Agent Campaign triggered! Initiated calls to ${successes}/${total} leads.`)
+        setSelectedLeadIds([])
+        fetchLeads(true)
+      } else {
+        alert(data.error || 'Failed to trigger voice campaign.')
+      }
+    } catch (err: any) {
+      alert(err.message || 'An error occurred triggering the campaign.')
+    } finally {
+      setIsCallingCampaign(false)
+    }
   }
 
   // 1. SAFE FETCH WITH LOCAL CACHING
@@ -302,8 +368,8 @@ export default function CRMPage() {
               } else if (currentRole === 'admin' || currentRole === 'client') {
                   query = query.eq('user_id', targetUserId)
               } else {
-                  // Retrieve all parent leads; agent filtering will be applied client-side
-                  query = query.eq('user_id', parentId) 
+                  // Retrieve only leads assigned to the agent
+                  query = query.eq('assigned_to', user.id) 
               }
 
               const { data, error } = await query
@@ -580,7 +646,8 @@ export default function CRMPage() {
         const leadPayload: any = {
             user_id: targetUserId || userId,
             name: newLead.name, phone: newLead.phone, email: newLead.email, notes: newLead.notes,
-            source: 'Manual', pipeline_stage: 'New'
+            source: 'Manual', pipeline_stage: 'New',
+            created_at: new Date().toISOString()
         }
         if (role === 'agent') leadPayload.assigned_to = userId
 
@@ -747,7 +814,8 @@ export default function CRMPage() {
         const rows = (event.target?.result as string).split('\n').slice(1)
         const newLeads = rows.map(r => r.split(',')).filter(c => c.length >= 2).map(cols => ({ 
             user_id: effectiveUserId, name: cols[0]?.trim(), phone: cols[1]?.trim(), 
-            email: cols[2]?.trim(), source: 'CSV Import', pipeline_stage: 'New' 
+            email: cols[2]?.trim(), source: 'CSV Import', pipeline_stage: 'New',
+            created_at: new Date().toISOString()
         }))
         if (newLeads.length > 0) {
             await supabase.from('leads').insert(newLeads)
@@ -823,12 +891,9 @@ END:VCARD\n`
   // 1. Leads matching search, campaign, and form filters (but NOT pipeline stage)
   const leadsMatchingFilters = useMemo(() => {
     const unfiltered = leads.filter(l => {
-      // RESTRICT AGENTS: Only show leads assigned to them OR leads from campaigns they are assigned to
+      // RESTRICT AGENTS: Only show leads assigned to them
       if (role === 'agent') {
-          const isAssignedToMe = l.assigned_to === userId;
-          const campaignName = getLeadCampaignName(l);
-          const isCampaignAssignedToMe = campaignName && assignedCampaigns.some(ac => ac.trim().toLowerCase() === campaignName.trim().toLowerCase());
-          if (!isAssignedToMe && !isCampaignAssignedToMe) return false;
+          if (l.assigned_to !== userId) return false;
       }
 
       const matchSearch = !searchQuery || 
@@ -872,6 +937,80 @@ END:VCARD\n`
 
   const totalPages = Math.ceil(filteredLeads.length / leadsPerPage)
   const currentLeads = filteredLeads.slice((currentPage - 1) * leadsPerPage, currentPage * leadsPerPage)
+
+  const renderPagination = (position: 'top' | 'bottom') => {
+    if (totalPages <= 1) return null
+    return (
+        <div className={`flex flex-col sm:flex-row justify-center items-center gap-4 ${position === 'top' ? 'mb-6' : 'mt-8'}`}>
+            <div className="flex items-center gap-3">
+                <button 
+                    onClick={() => {
+                        const newPage = Math.max(1, currentPage - 1)
+                        setCurrentPage(newPage)
+                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}
+                    disabled={currentPage === 1}
+                    type="button"
+                    className="px-5 py-2.5 rounded-2xl bg-white border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                    Previous
+                </button>
+                <span className="text-sm font-bold text-slate-500">
+                    Page {currentPage} of {totalPages}
+                </span>
+                <button 
+                    type="button"
+                    onClick={() => {
+                        const newPage = Math.min(totalPages, currentPage + 1)
+                        setCurrentPage(newPage)
+                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}
+                    disabled={currentPage === totalPages}
+                    className="px-5 py-2.5 rounded-2xl bg-white border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                    Next
+                </button>
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500">Go to page:</span>
+                <input 
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    value={pageInputVal}
+                    onChange={(e) => setPageInputVal(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                            const val = parseInt(pageInputVal, 10)
+                            if (val >= 1 && val <= totalPages) {
+                                setCurrentPage(val)
+                                window.scrollTo({ top: 0, behavior: 'smooth' })
+                            } else {
+                                alert(`Please enter a page between 1 and ${totalPages}`)
+                            }
+                        }
+                    }}
+                    className="w-16 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 text-center outline-none focus:border-blue-400 transition-all shadow-sm"
+                />
+                <button
+                    type="button"
+                    onClick={() => {
+                        const val = parseInt(pageInputVal, 10)
+                        if (val >= 1 && val <= totalPages) {
+                            setCurrentPage(val)
+                            window.scrollTo({ top: 0, behavior: 'smooth' })
+                        } else {
+                            alert(`Please enter a page between 1 and ${totalPages}`)
+                        }
+                    }}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all shadow-sm"
+                >
+                    Go
+                </button>
+            </div>
+        </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-32 pt-16 relative">
@@ -1038,6 +1177,8 @@ END:VCARD\n`
                 )}
             </div>
 
+            {renderPagination('top')}
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
                 {currentLeads.map(lead => {
                     const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
@@ -1089,13 +1230,36 @@ END:VCARD\n`
                                         >
                                             <UserPlus size={16} />
                                         </button>
-                                        <a href={`https://wa.me/${displayPhone.replace(/[^0-9]/g, '')}`} onClick={e => e.stopPropagation()} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-slate-50 text-slate-600 hover:bg-[#25D366] hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><MessageCircle size={16} /></a>
-                                        <a href={`tel:${displayPhone}`} onClick={e => e.stopPropagation()} className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Phone size={16} /></a>
+                                        <a 
+                                            href={`https://wa.me/${displayPhone.replace(/[^0-9]/g, '')}`} 
+                                            onClick={e => { 
+                                                e.stopPropagation(); 
+                                                sessionStorage.setItem('crm_scroll', window.scrollY.toString()); 
+                                            }} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="p-2.5 bg-slate-50 text-slate-600 hover:bg-[#25D366] hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
+                                        >
+                                            <MessageCircle size={16} />
+                                        </a>
+                                        <a 
+                                            href={`tel:${displayPhone}`} 
+                                            onClick={e => { 
+                                                e.stopPropagation(); 
+                                                sessionStorage.setItem('crm_scroll', window.scrollY.toString()); 
+                                            }} 
+                                            className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
+                                        >
+                                            <Phone size={16} />
+                                        </a>
                                     </>
                                 )}
-                                {role !== 'agent' && (
-                                    <button onClick={(e) => handleDeleteLead(lead.id, e)} className="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"><Trash2 size={16} /></button>
-                                )}
+                                <button 
+                                    onClick={(e) => handleDeleteLead(lead.id, e)} 
+                                    className="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
                             </div>
                         </div>
 
@@ -1222,33 +1386,7 @@ END:VCARD\n`
                 })}
             </div>
 
-            {totalPages > 1 && (
-                <div className="mt-8 flex justify-center items-center gap-4">
-                    <button 
-                        onClick={() => {
-                            setCurrentPage(Math.max(1, currentPage - 1))
-                            window.scrollTo({ top: 0, behavior: 'smooth' })
-                        }}
-                        disabled={currentPage === 1}
-                        className="px-5 py-2.5 rounded-2xl bg-white border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                    >
-                        Previous
-                    </button>
-                    <span className="text-sm font-bold text-slate-500">
-                        Page {currentPage} of {totalPages}
-                    </span>
-                    <button 
-                        onClick={() => {
-                            setCurrentPage(Math.min(totalPages, currentPage + 1))
-                            window.scrollTo({ top: 0, behavior: 'smooth' })
-                        }}
-                        disabled={currentPage === totalPages}
-                        className="px-5 py-2.5 rounded-2xl bg-white border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                    >
-                        Next
-                    </button>
-                </div>
-            )}
+            {renderPagination('bottom')}
             </>
         )}
 
@@ -1411,9 +1549,16 @@ END:VCARD\n`
               <div className="flex gap-2">
                   <button 
                       onClick={() => setIsSendTemplateModalOpen(true)}
-                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md animate-pulse"
+                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
                   >
                       <MessageCircle size={14} /> Send WhatsApp Template
+                  </button>
+                  <button 
+                      onClick={handleBulkVoiceCampaign}
+                      disabled={isCallingCampaign}
+                      className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+                  >
+                      {isCallingCampaign ? <Loader2 size={12} className="animate-spin text-white" /> : <Phone size={12} />} Run Voice Campaign
                   </button>
                   <button 
                       onClick={() => setSelectedLeadIds([])}

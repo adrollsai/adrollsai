@@ -1279,6 +1279,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                       >
                         <option value="All">All Leads (No stage filter)</option>
                         <option value="New">New</option>
+                        <option value="Contacted">Contacted</option>
                         <option value="Qualified">Qualified</option>
                         <option value="Appointment booked">Appointment booked</option>
                         <option value="Appointment done">Appointment done</option>

@@ -864,7 +864,7 @@ IMPORTANT RULES:
           // Find the User based on the Page ID using Admin Client
           const { data: profile, error: profileErr } = await supabaseAdmin
             .from('profiles')
-            .select('id, email, business_name, selected_page_token, pixel_id, enable_distribution')
+            .select('id, email, business_name, selected_page_token, pixel_id, enable_distribution, auto_call_new_leads')
             .eq('selected_page_id', page_id)
             .single()
 
@@ -1127,6 +1127,72 @@ IMPORTANT RULES:
               ).catch(err => {
                   console.error('[DRIP TRIGGER] Facebook lead welcome drip failed:', err);
               });
+          }
+
+          // Trigger automated Voice Dialing if enabled
+          if (savedLead && phone && profile.auto_call_new_leads) {
+              (async () => {
+                  try {
+                      // Fetch credentials
+                      const { data: voiceProfile } = await supabaseAdmin
+                          .from('profiles')
+                          .select('elevenlabs_api_key, elevenlabs_agent_id, voice_twilio_sid, voice_twilio_token, voice_twilio_number')
+                          .eq('id', profile.id)
+                          .single();
+
+                      const twilioSid = process.env.MASTER_TWILIO_SID || voiceProfile?.voice_twilio_sid || process.env.DEV_TWILIO_SID;
+                      const twilioToken = process.env.MASTER_TWILIO_TOKEN || voiceProfile?.voice_twilio_token || process.env.DEV_TWILIO_TOKEN;
+                      const voiceNumber = voiceProfile?.voice_twilio_number || process.env.MASTER_TWILIO_NUMBER;
+
+                      if (twilioSid && twilioToken && voiceNumber) {
+                          let cleanPhone = phone.replace(/\D/g, '');
+                          if (!cleanPhone.startsWith('+')) {
+                              if (cleanPhone.length === 10) {
+                                  cleanPhone = '+91' + cleanPhone;
+                              } else {
+                                  cleanPhone = '+' + cleanPhone;
+                              }
+                          }
+
+                          await supabaseAdmin
+                              .from('leads')
+                              .update({ voice_call_status: 'calling' })
+                              .eq('id', savedLead.id);
+
+                          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+                          const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Calls.json`;
+                          const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64');
+
+                          const params = new URLSearchParams();
+                          params.append('Url', `${appUrl}/api/voice/twiml?leadId=${savedLead.id}&profileId=${profile.id}`);
+                          params.append('To', cleanPhone);
+                          params.append('From', voiceNumber.trim());
+                          params.append('StatusCallback', `${appUrl}/api/voice/status-callback?leadId=${savedLead.id}`);
+
+                          const twilioRes = await fetch(twilioUrl, {
+                              method: 'POST',
+                              headers: {
+                                  'Authorization': `Basic ${twilioAuth}`,
+                                  'Content-Type': 'application/x-www-form-urlencoded'
+                              },
+                              body: params
+                          });
+                          
+                          if (!twilioRes.ok) {
+                              const errData = await twilioRes.json();
+                              console.error('[AUTO CALL] Auto Twilio Call failed:', errData);
+                              await supabaseAdmin
+                                  .from('leads')
+                                  .update({ voice_call_status: 'failed' })
+                                  .eq('id', savedLead.id);
+                          } else {
+                              console.log(`[AUTO CALL] Auto Voice Call initiated successfully for lead: ${savedLead.id}`);
+                          }
+                      }
+                  } catch (callErr: any) {
+                      console.error('[AUTO CALL] Auto calling exception:', callErr);
+                  }
+              })();
           }
         }
       }
