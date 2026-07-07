@@ -12,7 +12,7 @@ import TestNotificationBtn from '@/components/TestNotificationBtn'
 
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
-const STAGES = ['New', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
+const STAGES = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
 
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -55,6 +55,11 @@ export default function CRMPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const leadsPerPage = 50
+  const [pageInput, setPageInput] = useState(String(currentPage))
+
+  useEffect(() => {
+    setPageInput(String(currentPage))
+  }, [currentPage])
 
   const isRestored = useRef(false)
 
@@ -800,6 +805,61 @@ END:VCARD\n`
     })
   }, [leadsMatchingFilters, activeStage])
 
+  const renderPagination = () => {
+    if (totalPages <= 1) return null;
+    return (
+        <div className="flex flex-col sm:flex-row justify-between items-center bg-white p-4 rounded-2xl border border-slate-200/60 shadow-sm gap-4">
+            <div className="flex gap-2">
+                <button 
+                    onClick={() => {
+                        setCurrentPage(Math.max(1, currentPage - 1))
+                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}
+                    disabled={currentPage === 1}
+                    className="px-4 py-2 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                    Previous
+                </button>
+                <button 
+                    onClick={() => {
+                        setCurrentPage(Math.min(totalPages, currentPage + 1))
+                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}
+                    disabled={currentPage === totalPages}
+                    className="px-4 py-2 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                    Next
+                </button>
+            </div>
+            
+            <div className="flex items-center gap-4 flex-wrap justify-center">
+                <span className="text-xs font-bold text-slate-500">
+                    Page {currentPage} of {totalPages}
+                </span>
+                
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-400">Go to:</span>
+                    <input 
+                        type="number"
+                        min={1}
+                        max={totalPages}
+                        value={pageInput}
+                        onChange={(e) => {
+                            setPageInput(e.target.value)
+                            const p = parseInt(e.target.value, 10)
+                            if (p >= 1 && p <= totalPages) {
+                                setCurrentPage(p)
+                                window.scrollTo({ top: 0, behavior: 'smooth' })
+                            }
+                        }}
+                        className="w-14 bg-slate-50 border border-slate-200 text-center font-bold text-xs text-slate-700 py-1.5 px-2 rounded-xl focus:bg-white focus:border-blue-400 focus:outline-none transition-all"
+                    />
+                </div>
+            </div>
+        </div>
+    )
+  }
+
   const totalPages = Math.ceil(filteredLeads.length / leadsPerPage)
   const currentLeads = filteredLeads.slice((currentPage - 1) * leadsPerPage, currentPage * leadsPerPage)
 
@@ -944,6 +1004,9 @@ END:VCARD\n`
             </div>
         ) : (
             <>
+            <div className="mb-6">
+                {renderPagination()}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
                 {currentLeads.map(lead => {
                     const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
@@ -1111,33 +1174,9 @@ END:VCARD\n`
                 })}
             </div>
 
-            {totalPages > 1 && (
-                <div className="mt-8 flex justify-center items-center gap-4">
-                    <button 
-                        onClick={() => {
-                            setCurrentPage(Math.max(1, currentPage - 1))
-                            window.scrollTo({ top: 0, behavior: 'smooth' })
-                        }}
-                        disabled={currentPage === 1}
-                        className="px-5 py-2.5 rounded-2xl bg-white border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                    >
-                        Previous
-                    </button>
-                    <span className="text-sm font-bold text-slate-500">
-                        Page {currentPage} of {totalPages}
-                    </span>
-                    <button 
-                        onClick={() => {
-                            setCurrentPage(Math.min(totalPages, currentPage + 1))
-                            window.scrollTo({ top: 0, behavior: 'smooth' })
-                        }}
-                        disabled={currentPage === totalPages}
-                        className="px-5 py-2.5 rounded-2xl bg-white border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                    >
-                        Next
-                    </button>
-                </div>
-            )}
+            <div className="mt-8">
+                {renderPagination()}
+            </div>
             </>
         )}
 
