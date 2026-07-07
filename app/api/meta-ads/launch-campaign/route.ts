@@ -332,8 +332,8 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         const protocol = host.includes('localhost') ? 'http' : 'https';
         const processUrl = `${protocol}://${host}/api/meta-ads/process-campaign-job`;
 
-        // Fire and forget — we don't await this in cloud production
-        fetch(processUrl, {
+        // Execute the processing job, keeping serverless execution context alive with request.waitUntil if supported
+        const processPromise = fetch(processUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ jobId, payload: jobPayload })
@@ -345,6 +345,13 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         }).catch(err => {
             logToFile("Failed to trigger job processor:", err.message);
         });
+
+        if (typeof (request as any).waitUntil === 'function') {
+            (request as any).waitUntil(processPromise);
+        } else {
+            // Await the promise to ensure the Vercel function is not frozen/terminated mid-execution
+            await processPromise;
+        }
     }
 
     // --- RETURN IMMEDIATELY ---
