@@ -20,7 +20,7 @@ export async function GET(request: Request, { params }: RouteProps) {
         console.log(`[Shared Route GET] Starting diagnostics... identifier="${identifier}", slug="${slug}"`)
 
         // 1. Resolve business profile
-        let profileQuery = supabase.from('profiles').select('id, business_name, logo_url, custom_domain, pixel_id, brand_color, google_refresh_token, google_booking_enabled, contact_number')
+        let profileQuery = supabase.from('profiles').select('id, business_name, logo_url, custom_domain, pixel_id, brand_color, google_refresh_token, google_booking_enabled, contact_number, business_landing_show_products')
         if (identifier.includes('.')) {
             profileQuery = profileQuery.eq('custom_domain', identifier)
         } else {
@@ -1577,6 +1577,69 @@ export async function GET(request: Request, { params }: RouteProps) {
                 /></noscript>
                 <!-- End Meta Pixel Code -->
             `
+        }
+
+        // Fix any hallucinated "open-shared-space" portal links dynamically, converting them to ?catalog=true and forcing breakout target="_parent"
+        const openSpaceRegex = /(<a\s+[^>]*href=["'])(?:https?:\/\/[^\/]+)?\/?(?:shared\/)?(?:open-shared-space|bc63c065-9bcc-4793-bedc-f0960406425b)(?:[\w\/-]*)?\/?(["'][^>]*>)/gi;
+        finalHtml = finalHtml.replace(openSpaceRegex, (match: string, p1: string, p2: string) => {
+            let tag = `${p1}/shared/${profile.id}?catalog=true${p2}`
+            if (tag.includes('target="_blank"')) {
+                tag = tag.replace('target="_blank"', 'target="_parent"')
+            } else if (!tag.includes('target=')) {
+                tag = tag.replace('<a ', '<a target="_parent" ')
+            }
+            return tag
+        })
+
+        const prodContainerRegex = /<div\s+[^>]*id="business-products-container"[^>]*>([\s\S]*?)<\/div>/gi
+        if (finalHtml.match(prodContainerRegex) || slug === 'index') {
+            let productsHtml = ''
+            if (profile.business_landing_show_products !== false) {
+                const { data: propertiesData } = await supabase
+                    .from('properties')
+                    .select('*')
+                    .eq('user_id', profile.id)
+                    .neq('show_on_landing_page', false)
+
+                if (propertiesData && propertiesData.length > 0) {
+                    productsHtml = `
+                        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16" style="font-family: system-ui, -apple-system, sans-serif;">
+                            <h2 class="text-3xl font-black text-slate-900 text-center mb-10">Our Featured Listings</h2>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                                ${propertiesData.map(p => `
+                                    <div class="bg-white rounded-3xl overflow-hidden shadow-md hover:shadow-xl transition-all border border-slate-100 flex flex-col h-full" style="box-sizing: border-box; display: flex; flex-direction: column;">
+                                        <div class="relative aspect-[16/10] bg-slate-100" style="position: relative; aspect-ratio: 1.6; overflow: hidden;">
+                                            <img src="${p.image_url || 'https://i.ibb.co/NdSPkfxQ/3bhk.webp'}" alt="${p.title}" class="w-full h-full object-cover" style="width: 100%; height: 100%; object-fit: cover;" />
+                                            ${p.price ? `<span class="absolute bottom-4 left-4 bg-white/90 backdrop-blur text-slate-900 font-extrabold text-xs px-3 py-1.5 rounded-full shadow-sm" style="position: absolute; bottom: 1rem; left: 1rem; background: rgba(255, 255, 255, 0.9); font-weight: 800; font-size: 0.75rem; padding: 0.375rem 0.75rem; border-radius: 9999px;">${p.price}</span>` : ''}
+                                        </div>
+                                        <div class="p-6 flex-1 flex flex-col" style="padding: 1.5rem; display: flex; flex-direction: column; flex-grow: 1;">
+                                            <h3 class="font-extrabold text-slate-900 text-lg mb-2" style="font-weight: 800; font-size: 1.125rem; margin: 0 0 0.5rem; color: #0f172a;">${p.title}</h3>
+                                            <p class="text-slate-500 font-medium text-xs mb-4" style="color: #64748b; font-size: 0.75rem; line-height: 1.5; margin: 0 0 1rem; flex-grow: 1;">${p.description || ''}</p>
+                                            ${p.address ? `
+                                                <div class="flex items-center gap-1.5 text-slate-400 text-xs mb-4" style="display: flex; align-items: center; gap: 0.375rem; color: #94a3b8; font-size: 0.75rem; margin-bottom: 1rem;">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                                                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${p.address}</span>
+                                                </div>
+                                            ` : ''}
+                                            <div class="mt-auto pt-4 border-t border-slate-100" style="margin-top: auto; padding-top: 1rem; border-top: 1px solid #f1f5f9; display: flex;">
+                                                <a href="/shared/${profile.id}?property=${p.id}" target="_parent" class="flex-1 bg-slate-900 text-white font-extrabold text-xs text-center py-2.5 rounded-xl hover:bg-slate-800 transition-colors" style="flex: 1; background: #0f172a; color: #ffffff; font-weight: 800; font-size: 0.75rem; text-align: center; text-decoration: none; padding: 0.625rem; border-radius: 0.75rem; display: block;">
+                                                    View Listing
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `
+                }
+            }
+
+            if (finalHtml.match(prodContainerRegex)) {
+                finalHtml = finalHtml.replace(prodContainerRegex, `<div id="business-products-container">${productsHtml}</div>`)
+            } else if (finalHtml.includes('</body>')) {
+                finalHtml = finalHtml.replace('</body>', `<div id="business-products-container">${productsHtml}</div></body>`)
+            }
         }
 
         const containerRegex = /<div\s+[^>]*id="qualification-form-container"[^>]*>([\s\S]*?)<\/div>/gi

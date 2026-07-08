@@ -85,6 +85,7 @@ export default function SharedCataloguePage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [properties, setProperties] = useState<Property[]>([])
   const [posts, setPosts] = useState<Post[]>([])
+  const [hasBusinessLanding, setHasBusinessLanding] = useState(false)
   
   // Modals
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
@@ -157,6 +158,18 @@ export default function SharedCataloguePage() {
           setProperties(activeProps)
           
           // Auto-switch to feed disabled
+      }
+
+      if (profileData.business_landing_enabled) {
+          const { data: bizPage } = await supabase
+              .from('landing_pages')
+              .select('id')
+              .eq('user_id', profileData.id)
+              .eq('slug', 'index')
+              .maybeSingle()
+          setHasBusinessLanding(!!bizPage)
+      } else {
+          setHasBusinessLanding(false)
       }
 
       const { data: blogPosts } = await supabase
@@ -444,6 +457,20 @@ export default function SharedCataloguePage() {
 
   if (loading) return <div className="flex h-screen items-center justify-center text-slate-400 bg-[#F8FAFC]"><Loader2 className="animate-spin w-10 h-10 text-blue-500" /></div>
   if (errorMsg) return <div className="flex h-screen w-full items-center justify-center p-6 text-slate-400 bg-[#F8FAFC]"><p className="bg-white px-8 py-5 rounded-3xl shadow-sm font-bold border border-slate-200 text-center w-full max-w-md">{errorMsg}</p></div>
+
+  const selectedPropertyId = searchParams.get('property')
+  const showCatalogMode = searchParams.get('catalog') === 'true' || !!selectedPropertyId
+
+  if (profile?.business_landing_enabled && hasBusinessLanding && !showCatalogMode) {
+    return (
+      <div className="fixed inset-0 w-screen h-screen z-[999999] bg-white overflow-hidden">
+        <iframe 
+          src={`/shared/${profile.id}/index`} 
+          className="w-full h-full border-none"
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24 font-sans selection:bg-blue-200 relative">

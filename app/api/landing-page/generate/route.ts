@@ -113,7 +113,14 @@ export async function POST(request: Request) {
             pageType = 'standard'
         } = body
 
-        if (mode === 'generate' && !productName && !propertyId) {
+        // 1. Fetch business profile details for automatic contact pre-fill & branding
+        const { data: profile } = await supabaseAdmin
+            .from('profiles')
+            .select('business_name, contact_number, email, custom_domain, brand_color, logo_url, mission_statement')
+            .eq('id', targetUserId)
+            .maybeSingle()
+
+        if (mode === 'generate' && !productName && !propertyId && pageType !== 'business') {
             return NextResponse.json({ error: "Product name or inventory listing selection is required for page generation." }, { status: 400 })
         }
 
@@ -121,17 +128,41 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Conversational edit instructions and current HTML code are required." }, { status: 400 })
         }
 
-        // 1. Fetch Selected Property Inventory details if propertyId is provided
+        // 2. Fetch Selected Property Inventory details if propertyId is provided or page is for entire business
         let propertyDataText = ""
         let propertyImagesList: string[] = []
-        let resolvedProductName = productName || ""
-        let resolvedContext = context || ""
+        let resolvedProductName = productName || (pageType === 'business' ? (profile?.business_name || '') : "")
+        let resolvedContext = context || (pageType === 'business' ? (profile?.mission_statement || '') : "")
         let propertyRera = ""
         let propertyFloorPlan = "https://i.ibb.co/NdSPkfxQ/3bhk.webp"
         let propertyPrice = "₹ 1.7 Cr"
         let propertyYoutubeUrl = ""
 
-        if (propertyId) {
+        if (pageType === 'business') {
+            const { data: activeProps } = await supabaseAdmin
+                .from('properties')
+                .select('*')
+                .eq('user_id', targetUserId)
+                .neq('show_on_landing_page', false)
+
+            let propertyDetails = ""
+            if (activeProps && activeProps.length > 0) {
+                propertyDetails = activeProps.map((p, idx) => `
+Listing ${idx + 1}:
+- Title: ${p.title}
+- Description: ${p.description || "N/A"}
+- Price: ${p.price || "N/A"}
+- Location: ${p.address || "N/A"}
+- Image: ${p.image_url || "N/A"}
+`).join('\n')
+                propertyImagesList = activeProps.map(p => p.image_url).filter(Boolean) as string[]
+            }
+
+            propertyDataText = `
+ACTIVE BUSINESS PRODUCTS/LISTINGS INVENTORY:
+${propertyDetails || "No listings currently active."}
+`
+        } else if (propertyId) {
             const { data: property } = await supabaseAdmin
                 .from('properties')
                 .select('*')
@@ -172,13 +203,6 @@ PROPERTY INVENTORY CONTEXT:
 `
             }
         }
-
-        // 2. Fetch business profile details for automatic contact pre-fill & branding
-        const { data: profile } = await supabaseAdmin
-            .from('profiles')
-            .select('business_name, contact_number, email, custom_domain, brand_color, logo_url')
-            .eq('id', targetUserId)
-            .maybeSingle()
 
         const contactInfoText = `
 BUSINESS CONTACT INFO:
@@ -414,8 +438,46 @@ ${imageAnalysisSection}
 
 ### OUTPUT FORMAT:
 - Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
-- ABSOLUTELY DO NOT wrap the output in markdown code blocks (e.g., do NOT start with \`\`\`html or end with \`\`\`).
-- Output ONLY the pure raw HTML string. No intro, conversational chat, or outro.`
+- ABSOLUTELY DO NOT wrap the output in markdown code blocks (e.g., do NOT start with \`\`\`html or end with \`\`\`).`
+            } else if (pageType === 'business') {
+                systemPrompt = `You are a world-class front-end developer and elite copywriter.
+Create a complete, responsive, premium business portfolio and lead-generation landing page in HTML for the business "${resolvedProductName}" based on the details below.
+
+### CRITICAL ACCURACY RULE (MANDATORY):
+- You must ONLY include, describe, or reference the exact information passed as context in this prompt (such as business names, description context, and actual assets).
+- Absolutely DO NOT hallucinate, assume, or generate registration numbers, RERA IDs, approvals, or any parameters/specifications not explicitly provided.
+
+### INPUT VARIABLES
+* Business Name: "${resolvedProductName}"
+* Business Mission/About: "${resolvedContext}"
+* Contact & Brand Info: 
+${contactInfoText}
+${propertyDataText}
+${imageAnalysisSection}
+
+### LAYOUT STRUCTURE:
+1. **Hero Section (Top)**:
+   - Display a bold, premium headline showcasing the business's value proposition.
+   - Elegant button to scroll to featured listings or open the contact modal.
+2. **About / Services Section**:
+   - Highlight the business value, locations served, expertise, and benefits of working with them.
+3. **Products Showcase Container (CRITICAL - MANDATORY)**:
+   - You MUST place EXACTLY this empty div where you want the active listings/products catalog to render:
+     '<div id="business-products-container"></div>'
+   - The platform will dynamically inject the portfolio product catalog grid inside this container. Do not write cards or lists inside it.
+4. **Lead Capturing Form Section**:
+   - Embed the qualification form container EXACTLY like this:
+     '<div id="qualification-form-container" data-page-type="standard" data-button-text="Submit Enquiry"></div>'
+   - Do NOT write form inputs or submit button HTML inside this container.
+
+### STYLING & DESIGN GUIDELINES (LIGHT THEME BY DEFAULT):
+- Use a soft, clean light theme background (no dark themes unless explicitly requested).
+- Configured Tailwind via CDN with custom brand color accents based on '${profile?.brand_color || "#9e755c"}'.
+- Ensure the page body is fully scrollable and does NOT cap layout height.
+
+### OUTPUT FORMAT:
+- Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
+- ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output ONLY the pure raw HTML string.`
             } else {
                 // Determine if this is a real estate listing
                 let realEstateDetails = ""
@@ -534,16 +596,20 @@ CRITICAL RULES:
         // Resolve slug
         let slug = requestSlug
         if (!slug) {
-            const baseSlug = resolvedProductName
-                ? resolvedProductName
-                    .toLowerCase()
-                    .replace(/[^a-z0-9]+/g, '-')
-                    .replace(/(^-|-$)/g, '')
-                : 'listing'
-                
-            slug = mode === 'generate' 
-                ? `${baseSlug}-${Date.now().toString().slice(-4)}` 
-                : baseSlug
+            if (pageType === 'business') {
+                slug = 'index'
+            } else {
+                const baseSlug = resolvedProductName
+                    ? resolvedProductName
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, '-')
+                        .replace(/(^-|-$)/g, '')
+                    : 'listing'
+                    
+                slug = mode === 'generate' 
+                    ? `${baseSlug}-${Date.now().toString().slice(-4)}` 
+                    : baseSlug
+            }
         }
 
         const payload: any = {

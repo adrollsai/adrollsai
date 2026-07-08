@@ -101,7 +101,7 @@ export default function PagesDashboard() {
     const [properties, setProperties] = useState<any[]>([])
     const [selectedPropertyId, setSelectedPropertyId] = useState('')
     const [customInstructions, setCustomInstructions] = useState('')
-    const [pageType, setPageType] = useState<'standard' | 'survey' | 'raw_survey'>('standard')
+    const [pageType, setPageType] = useState<'standard' | 'survey' | 'raw_survey' | 'business'>('standard')
 
     // Edit/Chat Console state
     const [activeEditorPage, setActiveEditorPage] = useState<LandingPage | null>(null)
@@ -119,6 +119,21 @@ export default function PagesDashboard() {
             setEditorView('preview')
         }
     }, [activeEditorPage?.id, activeEditorPage?.html_content])
+
+    // Listen for visual edits inside the iframe
+    useEffect(() => {
+        const handleMessage = (e: MessageEvent) => {
+            if (e.data && e.data.type === 'html-visually-updated') {
+                setEditedHtml(e.data.html)
+                if (activeEditorPage) {
+                    setActiveEditorPage(prev => prev ? { ...prev, html_content: e.data.html } : null)
+                }
+                showToast("Visual changes captured! Click Save Code to save permanently.", "success")
+            }
+        }
+        window.addEventListener('message', handleMessage)
+        return () => window.removeEventListener('message', handleMessage)
+    }, [activeEditorPage])
 
     // Slug inline editing states
     const [editingSlugPageId, setEditingSlugPageId] = useState<string | null>(null)
@@ -283,6 +298,13 @@ export default function PagesDashboard() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ adAccountId, impersonateId })
             })
+            if (!res.ok) {
+                throw new Error(`Request failed with status ${res.status}`)
+            }
+            const contentType = res.headers.get('content-type') || ''
+            if (!contentType.includes('application/json')) {
+                throw new Error(`Expected JSON response, but got ${contentType}`)
+            }
             const data = await res.json()
             if (data.pixels) {
                 setPixels(data.pixels)
@@ -522,7 +544,7 @@ export default function PagesDashboard() {
 
     // --- 4. LANDING PAGE GENERATION ---
     const handleGenerateLandingPage = async () => {
-        if (!pageProductName.trim() && !selectedPropertyId) {
+        if (!pageProductName.trim() && !selectedPropertyId && pageType !== 'business') {
             showToast("Please enter a product name or select a property from your inventory.", 'error')
             return
         }
@@ -547,7 +569,15 @@ export default function PagesDashboard() {
                 })
             })
 
-            const resData = await response.json()
+            const contentType = response.headers.get('content-type') || ''
+            let resData: any = null
+            if (contentType.includes('application/json')) {
+                resData = await response.json()
+            } else {
+                const text = await response.text()
+                throw new Error(text || `Request failed with status ${response.status}`)
+            }
+
             if (!response.ok) throw new Error(resData.error || "Generation failed")
 
             showToast(`Landing page for "${pageProductName || 'your property'}" created successfully!`)
@@ -947,6 +977,107 @@ export default function PagesDashboard() {
             html = html.replace('</body>', `<div style="max-width: 600px; margin: 4rem auto; padding: 0 1rem;">${formHtml}</div></body>`)
         } else {
             html = `${html}<div style="max-width: 600px; margin: 4rem auto; padding: 0 1rem;">${formHtml}</div>`
+        }
+
+        // If it is a business landing page, inject products preview
+        if (page.slug === 'index') {
+            const activeProps = properties.filter(p => p.show_on_landing_page !== false)
+            let productsHtml = ''
+            if (activeProps.length > 0) {
+                productsHtml = `
+                    <div style="max-width: 1200px; margin: 4rem auto; padding: 0 1.5rem; font-family: system-ui, sans-serif;">
+                        <h2 style="font-size: 1.875rem; font-weight: 900; text-align: center; color: #0f172a; margin-bottom: 2rem;">Our Featured Listings</h2>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 2rem;">
+                            ${activeProps.map(p => `
+                                <div style="background: #ffffff; border-radius: 1.5rem; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); border: 1px solid #f1f5f9; display: flex; flex-direction: column; height: 100%;">
+                                    <div style="position: relative; aspect-ratio: 1.6; background: #f8fafc; overflow: hidden;">
+                                        <img src="${p.image_url || 'https://i.ibb.co/NdSPkfxQ/3bhk.webp'}" alt="${p.title}" style="width: 100%; height: 100%; object-fit: cover;" />
+                                    </div>
+                                    <div style="padding: 1.5rem; flex-grow: 1; display: flex; flex-direction: column;">
+                                        <h3 style="font-weight: 800; font-size: 1.125rem; color: #0f172a; margin: 0 0 0.5rem; line-clamp: 1;">${p.title}</h3>
+                                        <p style="color: #64748b; font-size: 0.75rem; line-height: 1.5; margin: 0 0 1rem; flex-grow: 1;">${p.description || ''}</p>
+                                        <div style="margin-top: auto; padding-top: 1rem; border-top: 1px solid #f1f5f9;">
+                                            <span style="display: inline-block; background: #0f172a; color: #ffffff; font-weight: 800; font-size: 0.75rem; padding: 0.5rem 1rem; border-radius: 0.75rem;">${p.price || 'Contact us'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `
+            }
+            const prodContainerRegex = /<div\s+[^>]*id="business-products-container"[^>]*>([\s\S]*?)<\/div>/gi
+            if (html.match(prodContainerRegex)) {
+                html = html.replace(prodContainerRegex, `<div id="business-products-container">${productsHtml}</div>`)
+            } else if (html.includes('</body>')) {
+                html = html.replace('</body>', `<div id="business-products-container">${productsHtml}</div></body>`)
+            }
+        }
+
+        // Inject contenteditable scripts for visual text editing
+        const editableScript = `
+            <script id="preview-visual-edit-script">
+            (function() {
+                document.addEventListener("DOMContentLoaded", () => {
+                    const editableSelectors = 'h1, h2, h3, h4, h5, h6, p, span, a, li, button, label, strong, em';
+                    document.querySelectorAll(editableSelectors).forEach(el => {
+                        if (el.closest('#qualification-form-container') || 
+                            el.closest('#survey-wizard-container') || 
+                            el.closest('#business-products-container') || 
+                            el.closest('#eligibility-modal-overlay')) {
+                            return;
+                        }
+                        
+                        el.contentEditable = "true";
+                        el.style.outline = "none";
+                        
+                        el.addEventListener('mouseover', (e) => {
+                            e.stopPropagation();
+                            el.style.boxShadow = "0 0 0 2px rgba(37, 99, 235, 0.4)";
+                            el.style.borderRadius = "4px";
+                            el.style.cursor = "text";
+                        });
+                        
+                        el.addEventListener('mouseout', (e) => {
+                            e.stopPropagation();
+                            el.style.boxShadow = "none";
+                        });
+                        
+                        el.addEventListener('blur', () => {
+                            const docClone = document.documentElement.cloneNode(true);
+                            
+                            docClone.querySelectorAll('[contenteditable]').forEach(cloneEl => {
+                                cloneEl.removeAttribute('contenteditable');
+                                cloneEl.style.boxShadow = '';
+                                cloneEl.style.borderRadius = '';
+                                cloneEl.style.cursor = '';
+                                if (cloneEl.getAttribute('style') === '') {
+                                    cloneEl.removeAttribute('style');
+                                }
+                            });
+                            
+                            const formCont = docClone.querySelector('#qualification-form-container');
+                            if (formCont) formCont.innerHTML = '';
+                            const prodCont = docClone.querySelector('#business-products-container');
+                            if (prodCont) prodCont.innerHTML = '';
+                            
+                            const previewScript = docClone.querySelector('#preview-visual-edit-script');
+                            if (previewScript) previewScript.remove();
+                            
+                            window.parent.postMessage({
+                                type: 'html-visually-updated',
+                                html: '<!DOCTYPE html>\\n' + docClone.outerHTML
+                            }, '*');
+                        });
+                    });
+                });
+            })();
+            </script>
+        `
+        if (html.includes('</body>')) {
+            html = html.replace('</body>', `${editableScript}</body>`)
+        } else {
+            html = html + editableScript
         }
 
         return html
@@ -1714,7 +1845,7 @@ export default function PagesDashboard() {
             )}
 
             {activeTab === 'business_landing' && (
-                <div className="animate-in fade-in duration-300">
+                <div className="animate-in fade-in duration-300 space-y-6">
                     <div className="bg-white border border-slate-200/80 rounded-[3rem] p-6 sm:p-8 shadow-xl max-w-2xl mx-auto space-y-6">
                         <div>
                             <h2 className="text-lg font-black text-slate-800 flex items-center gap-2"><Sparkles className="text-blue-600" /> Business Landing Page Settings</h2>
@@ -1789,6 +1920,83 @@ export default function PagesDashboard() {
                             {savingBusinessLanding ? <Loader2 className="animate-spin" size={16} /> : 'Save Landing Page Settings'}
                         </button>
                     </div>
+
+                    <div className="bg-white border border-slate-200/80 rounded-[3rem] p-6 sm:p-8 shadow-xl max-w-2xl mx-auto">
+                        {(() => {
+                            const bizPage = landingPages.find(p => p.slug === 'index')
+                            if (bizPage) {
+                                return (
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h3 className="text-base font-black text-slate-800">AI Generated Business Homepage</h3>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Live at: /{bizPage.slug}</p>
+                                            </div>
+                                            <span className="bg-green-50 text-green-700 text-[10px] font-extrabold px-3 py-1 rounded-full border border-green-200">Active</span>
+                                        </div>
+                                        <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+                                            A custom business landing page has been generated for your agency. You can visually edit any text elements directly in the preview pane, use the Conversational Editor to guide AI edits, or re-generate the homepage from scratch.
+                                        </p>
+                                        <div className="flex gap-2 pt-2">
+                                            <button 
+                                                onClick={() => {
+                                                    setActiveEditorPage(bizPage)
+                                                    setChatLogs([
+                                                        { sender: 'ai', message: "Hi! I'm ready to update your business landing page. Click elements to edit them visually, or type what adjustments you'd like me to apply!" }
+                                                    ])
+                                                }}
+                                                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black py-3 rounded-full transition-all text-center"
+                                            >
+                                                Edit Page (AI & Visual)
+                                            </button>
+                                            <button 
+                                                onClick={() => {
+                                                    setPageProductName(subAccountName || '')
+                                                    setPageContext('')
+                                                    setSelectedPropertyId('')
+                                                    setCustomInstructions('')
+                                                    setSelectedFormId(bizPage.form_id || '')
+                                                    setPageType('business')
+                                                    setShowPageGenerator(true)
+                                                }}
+                                                className="flex-1 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black py-3 rounded-full transition-all text-center"
+                                            >
+                                                Re-generate with AI
+                                            </button>
+                                        </div>
+                                    </div>
+                                )
+                            } else {
+                                return (
+                                    <div className="space-y-4 text-center py-6">
+                                        <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                                            <Sparkles size={22} className="text-blue-600" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-base font-black text-slate-800">Generate Custom Business Landing Page</h3>
+                                            <p className="text-xs font-semibold text-slate-400 mt-1 max-w-[340px] mx-auto leading-relaxed">
+                                                Create a premium, high-converting homepage showcasing your brand mission, services, active listings, and lead-capturing forms.
+                                            </p>
+                                        </div>
+                                        <button 
+                                            onClick={() => {
+                                                setPageProductName(subAccountName || '')
+                                                setPageContext('')
+                                                setSelectedPropertyId('')
+                                                setCustomInstructions('')
+                                                setSelectedFormId('')
+                                                setPageType('business')
+                                                setShowPageGenerator(true)
+                                            }}
+                                            className="bg-slate-900 text-white font-extrabold text-xs px-6 py-3.5 rounded-full hover:bg-slate-800 transition-colors shadow-md shadow-slate-900/10 inline-flex items-center gap-2 active:scale-95"
+                                        >
+                                            <Sparkles size={14} className="text-purple-400" /> Generate Business Homepage
+                                        </button>
+                                    </div>
+                                )
+                            }
+                        })()}
+                    </div>
                 </div>
             )}
 
@@ -1803,53 +2011,96 @@ export default function PagesDashboard() {
                             </button>
                         </div>
 
-                        {/* Select Product from Inventory */}
+                        {/* Scope Selection */}
                         <div className="mb-6">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Select Product from Inventory</label>
-                            <select 
-                                value={selectedPropertyId}
-                                onChange={e => {
-                                    const val = e.target.value
-                                    setSelectedPropertyId(val)
-                                    if (val === '') {
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Scope of Landing Page</label>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => {
+                                        setPageType('standard')
+                                        setSelectedPropertyId('')
                                         setPageProductName('')
                                         setPageContext('')
-                                    } else {
-                                        const found = properties.find(p => p.id === val)
-                                        if (found) {
-                                            setPageProductName(found.title || '')
-                                            setPageContext(found.description || '')
-                                        }
-                                    }
-                                }}
-                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
-                            >
-                                <option value="">Custom Product / Raw Input</option>
-                                {properties.map(p => (
-                                    <option key={p.id} value={p.id}>{p.title}</option>
-                                ))}
-                            </select>
+                                    }}
+                                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all ${
+                                        pageType !== 'business' 
+                                            ? 'bg-slate-900 text-white border-slate-900' 
+                                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                    }`}
+                                >
+                                    Specific Product / Property
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setPageType('business')
+                                        setSelectedPropertyId('')
+                                        setPageProductName(subAccountName || '')
+                                        setPageContext('')
+                                    }}
+                                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all ${
+                                        pageType === 'business' 
+                                            ? 'bg-slate-900 text-white border-slate-900' 
+                                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                    }`}
+                                >
+                                    Entire Business Homepage
+                                </button>
+                            </div>
                         </div>
 
-                        {/* Product Name */}
+                        {/* Select Product from Inventory */}
+                        {pageType !== 'business' && (
+                            <div className="mb-6">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Select Product from Inventory</label>
+                                <select 
+                                    value={selectedPropertyId}
+                                    onChange={e => {
+                                        const val = e.target.value
+                                        setSelectedPropertyId(val)
+                                        if (val === '') {
+                                            setPageProductName('')
+                                            setPageContext('')
+                                        } else {
+                                            const found = properties.find(p => p.id === val)
+                                            if (found) {
+                                                setPageProductName(found.title || '')
+                                                setPageContext(found.description || '')
+                                            }
+                                        }
+                                    }}
+                                    className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
+                                >
+                                    <option value="">Custom Product / Raw Input</option>
+                                    {properties.map(p => (
+                                        <option key={p.id} value={p.id}>{p.title}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+
+                        {/* Product/Business Name */}
                         <div className="mb-6">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Product Name / Title</label>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">
+                                {pageType === 'business' ? 'Business Name' : 'Product Name / Title'}
+                            </label>
                             <input 
                                 type="text"
                                 value={pageProductName}
                                 onChange={e => setPageProductName(e.target.value)}
-                                placeholder="e.g. Homeland Regalia Luxury Apartments"
+                                placeholder={pageType === 'business' ? 'e.g. Homcom Realtors' : 'e.g. Homeland Regalia Luxury Apartments'}
                                 className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all"
                             />
                         </div>
 
-                        {/* Product Details context */}
+                        {/* Product/Business Details context */}
                         <div className="mb-6">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Product Details & Context</label>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">
+                                {pageType === 'business' ? 'Business Description & Mission' : 'Product Details & Context'}
+                            </label>
                             <textarea 
                                 value={pageContext}
                                 onChange={e => setPageContext(e.target.value)}
-                                placeholder="Describe product details, location, pricing, special hooks, aesthetics, and premium benefits to guide the copywriting..."
+                                placeholder={pageType === 'business' ? 'Describe your business services, value proposition, areas served, and overall mission...' : 'Describe product details, location, pricing, special hooks, aesthetics, and premium benefits to guide the copywriting...'}
                                 rows={4}
                                 className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all resize-none leading-relaxed"
                             />
@@ -1868,18 +2119,20 @@ export default function PagesDashboard() {
                         </div>
 
                         {/* Page Type Selection */}
-                        <div className="mb-6">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Generation Format / Type</label>
-                            <select 
-                                value={pageType}
-                                onChange={e => setPageType(e.target.value as 'standard' | 'survey' | 'raw_survey')}
-                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
-                            >
-                                <option value="standard">Standard Landing Page (Conversion Copy + Modal Form)</option>
-                                <option value="survey">Survey Form Only (Super Fast + Direct Inline Form)</option>
-                                <option value="raw_survey">Raw Survey Card (Photos + Form Callout, No extra info)</option>
-                            </select>
-                        </div>
+                        {pageType !== 'business' && (
+                            <div className="mb-6">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Generation Format / Type</label>
+                                <select 
+                                    value={pageType}
+                                    onChange={e => setPageType(e.target.value as 'standard' | 'survey' | 'raw_survey')}
+                                    className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
+                                >
+                                    <option value="standard">Standard Landing Page (Conversion Copy + Modal Form)</option>
+                                    <option value="survey">Survey Form Only (Super Fast + Direct Inline Form)</option>
+                                    <option value="raw_survey">Raw Survey Card (Photos + Form Callout, No extra info)</option>
+                                </select>
+                            </div>
+                        )}
 
                         {/* Connect Form */}
                         <div className="mb-8">
