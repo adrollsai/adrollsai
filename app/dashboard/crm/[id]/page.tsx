@@ -16,6 +16,10 @@ export default function LeadProfilePage() {
     const supabase = createClient()
 
     const [lead, setLead] = useState<any>(null)
+    const [nextLeadId, setNextLeadId] = useState<string | null>(null)
+    const [isAddingCustomField, setIsAddingCustomField] = useState(false)
+    const [newFieldKey, setNewFieldKey] = useState('')
+    const [newFieldValue, setNewFieldValue] = useState('')
     const [leadHistory, setLeadHistory] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [remarkInput, setRemarkInput] = useState('')
@@ -84,7 +88,9 @@ export default function LeadProfilePage() {
             })
             if (res.ok) {
                 const desc = `💬 WhatsApp template sent: "${selectedTemplateName}"`
-                setLeadHistory([{ id: Date.now(), action_type: 'REMARK', description: desc, created_at: new Date().toISOString() }, ...leadHistory])
+                const newHist = { id: Date.now(), action_type: 'REMARK', description: desc, created_at: new Date().toISOString() }
+                setLeadHistory([newHist, ...leadHistory])
+                updateLocalCRMCacheWithHistory(newHist)
 
                 await fetch('/api/crm/lead-action', {
                     method: 'POST',
@@ -158,6 +164,7 @@ export default function LeadProfilePage() {
                 }
                 updatedLead.custom_fields = parsedCustomFields;
                 setLead(updatedLead)
+                updateLocalCRMCache(updatedLead)
                 fetchLeadHistory()
             })
             .subscribe()
@@ -191,6 +198,7 @@ export default function LeadProfilePage() {
                 }
                 data.custom_fields = parsedCustomFields;
                 setLead(data)
+                updateLocalCRMCache(data)
                 fetchLeadHistory()
             }
         }, 4000)
@@ -198,7 +206,149 @@ export default function LeadProfilePage() {
         return () => clearInterval(interval)
     }, [id, lead?.voice_call_status, supabase])
 
+    const fetchNextLeadId = async (currentLead: any) => {
+        try {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return
+
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single()
+
+            const currentRole = profile?.role || 'admin'
+
+            let query = supabase
+                .from('leads')
+                .select('id, created_at, facebook_created_at')
+                .eq('pipeline_stage', currentLead.pipeline_stage)
+
+            if (currentRole === 'super_admin') {
+                query = query.eq('user_id', currentLead.user_id)
+            } else if (currentRole === 'agency') {
+                const urlParams = new URLSearchParams(window.location.search)
+                const impId = urlParams.get('impersonate')
+                if (impId) {
+                    query = query.eq('user_id', impId)
+                } else {
+                    const { data: clientIds } = await supabase.from('profiles').select('id').eq('agency_id', user.id)
+                    const allIds = [user.id, ...(clientIds?.map((c: any) => c.id) || [])]
+                    query = query.in('user_id', allIds)
+                }
+            } else if (currentRole === 'admin' || currentRole === 'client') {
+                query = query.eq('user_id', currentLead.user_id)
+            } else {
+                query = query.eq('assigned_to', user.id)
+            }
+
+            const { data: siblingData } = await query
+            if (siblingData && siblingData.length > 0) {
+                const siblingLeads = [...siblingData].sort((a: any, b: any) => {
+                    const timeA = new Date(a.facebook_created_at || a.created_at).getTime()
+                    const timeB = new Date(b.facebook_created_at || b.created_at).getTime()
+                    return timeB - timeA
+                })
+
+                const currentIndex = siblingLeads.findIndex((l: any) => l.id === currentLead.id)
+                if (currentIndex !== -1 && currentIndex + 1 < siblingLeads.length) {
+                    setNextLeadId(siblingLeads[currentIndex + 1].id)
+                } else if (siblingLeads.length > 1) {
+                    setNextLeadId(siblingLeads[0].id) // Wrap around
+                } else {
+                    setNextLeadId(null)
+                }
+            } else {
+                setNextLeadId(null)
+            }
+        } catch (e) {
+            console.error("Failed to fetch sibling leads:", e)
+        }
+    }
+
+    const handleNextLead = () => {
+        if (nextLeadId) {
+            router.push(`/dashboard/crm/${nextLeadId}${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+        }
+    }
+
+    const updateLocalCRMCache = async (updatedLead: any) => {
+        try {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return
+
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single()
+
+            const currentRole = profile?.role || 'admin'
+            
+            const keysToTry = [
+                `crm_cache_${user.id}`,
+                `crm_cache_${updatedLead.user_id}`
+            ]
+            
+            for (const key of keysToTry) {
+                const cachedStr = localStorage.getItem(key)
+                if (cachedStr) {
+                    try {
+                        const cached = JSON.parse(cachedStr)
+                        if (Array.isArray(cached)) {
+                            const idx = cached.findIndex((l: any) => l.id === updatedLead.id)
+                            if (idx !== -1) {
+                                cached[idx] = { ...cached[idx], ...updatedLead }
+                                localStorage.setItem(key, JSON.stringify(cached))
+                                console.log(`[CRM Cache] Updated lead ${updatedLead.id} in cache ${key}`)
+                            }
+                        }
+                    } catch (e) {
+                        console.error(`Failed to parse cache for key ${key}:`, e)
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Failed to update CRM local cache:", e)
+        }
+    }
+
+    const updateLocalCRMCacheWithHistory = async (newHistoryItem: any) => {
+        try {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return
+
+            const keysToTry = [
+                `crm_cache_${user.id}`,
+                `crm_cache_${lead?.user_id}`
+            ]
+
+            for (const key of keysToTry) {
+                const cachedStr = localStorage.getItem(key)
+                if (cachedStr) {
+                    try {
+                        const cached = JSON.parse(cachedStr)
+                        if (Array.isArray(cached)) {
+                            const idx = cached.findIndex((l: any) => l.id === id)
+                            if (idx !== -1) {
+                                const currentHistory = cached[idx].lead_history || []
+                                cached[idx].lead_history = [newHistoryItem, ...currentHistory]
+                                localStorage.setItem(key, JSON.stringify(cached))
+                                console.log(`[CRM Cache] Added history item to lead ${id} in cache ${key}`)
+                            }
+                        }
+                    } catch (e) {
+                        console.error(`Failed to parse cache for key ${key}:`, e)
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Failed to update CRM local cache history:", e)
+        }
+    }
+
     const fetchLeadData = async () => {
+        setNextLeadId(null)
         const { data } = await supabase.from('leads').select('*').eq('id', id).single()
         if (data) {
             let parsedCustomFields = data.custom_fields;
@@ -213,6 +363,8 @@ export default function LeadProfilePage() {
             }
             data.custom_fields = parsedCustomFields;
             setLead(data)
+            updateLocalCRMCache(data)
+            fetchNextLeadId(data)
         }
         setLoading(false)
     }
@@ -222,8 +374,75 @@ export default function LeadProfilePage() {
         if (data) setLeadHistory(data)
     }
 
+    const handleAddCustomField = async () => {
+        if (!newFieldKey.trim() || !newFieldValue.trim()) {
+            return alert("Both field name and value are required")
+        }
+
+        let currentFields = lead.custom_fields || {}
+        if (typeof currentFields === 'string') {
+            try {
+                currentFields = JSON.parse(currentFields)
+            } catch (e) {
+                currentFields = {}
+            }
+        }
+
+        const updatedFields = {
+            ...currentFields,
+            [newFieldKey.trim()]: newFieldValue.trim()
+        }
+
+        setLead({ ...lead, custom_fields: updatedFields })
+
+        const { error } = await supabase
+            .from('leads')
+            .update({ custom_fields: updatedFields })
+            .eq('id', id)
+
+        if (error) {
+            toast.error("Failed to add custom field")
+        } else {
+            toast.success("Custom field added!")
+            setIsAddingCustomField(false)
+            setNewFieldKey('')
+            setNewFieldValue('')
+        }
+    }
+
+    const handleDeleteCustomField = async (keyToDelete: string) => {
+        if (!confirm(`Are you sure you want to delete the field "${keyToDelete}"?`)) return
+
+        let currentFields = lead.custom_fields || {}
+        if (typeof currentFields === 'string') {
+            try {
+                currentFields = JSON.parse(currentFields)
+            } catch (e) {
+                currentFields = {}
+            }
+        }
+
+        const updatedFields = { ...currentFields }
+        delete updatedFields[keyToDelete]
+
+        setLead({ ...lead, custom_fields: updatedFields })
+
+        const { error } = await supabase
+            .from('leads')
+            .update({ custom_fields: updatedFields })
+            .eq('id', id)
+
+        if (error) {
+            toast.error("Failed to delete custom field")
+        } else {
+            toast.success("Custom field deleted!")
+        }
+    }
+
     const updateStage = async (newStage: string) => {
-        setLead({ ...lead, pipeline_stage: newStage })
+        const nextLead = { ...lead, pipeline_stage: newStage }
+        setLead(nextLead)
+        updateLocalCRMCache(nextLead)
         const desc = `Moved to ${newStage}`
         setLeadHistory([{ id: Date.now(), action_type: 'STATUS_CHANGE', description: desc, created_at: new Date().toISOString() }, ...leadHistory])
 
@@ -243,7 +462,9 @@ export default function LeadProfilePage() {
     const handleAddRemark = async () => {
         if (!remarkInput.trim()) return
         const text = remarkInput
-        setLeadHistory([{ id: Date.now(), action_type: 'REMARK', description: text, created_at: new Date().toISOString() }, ...leadHistory])
+        const newHist = { id: Date.now(), action_type: 'REMARK', description: text, created_at: new Date().toISOString() }
+        setLeadHistory([newHist, ...leadHistory])
+        updateLocalCRMCacheWithHistory(newHist)
         setRemarkInput('')
 
         await fetch('/api/crm/lead-action', {
@@ -268,7 +489,9 @@ export default function LeadProfilePage() {
         setLeadHistory([{ id: Date.now(), action_type: 'REMINDER_SET', description: desc, created_at: new Date().toISOString() }, ...leadHistory])
 
         // Update local state with the precise UTC string
-        setLead({ ...lead, next_followup: utcIsoString })
+        const nextLead = { ...lead, next_followup: utcIsoString }
+        setLead(nextLead)
+        updateLocalCRMCache(nextLead)
         setReminderDate('')
 
         await fetch('/api/crm/lead-action', {
@@ -284,7 +507,9 @@ export default function LeadProfilePage() {
     }
 
     const handleNotesChange = async (newNotes: string) => {
-        setLead({ ...lead, notes: newNotes })
+        const nextLead = { ...lead, notes: newNotes }
+        setLead(nextLead)
+        updateLocalCRMCache(nextLead)
         await supabase.from('leads').update({ notes: newNotes }).eq('id', id)
     }
 
@@ -311,7 +536,9 @@ export default function LeadProfilePage() {
     }
 
     const handleFieldUpdate = async (field: string, value: any) => {
-        setLead({ ...lead, [field]: value })
+        const nextLead = { ...lead, [field]: value }
+        setLead(nextLead)
+        updateLocalCRMCache(nextLead)
         await supabase.from('leads').update({ [field]: value }).eq('id', id)
     }
 
@@ -357,6 +584,9 @@ END:VCARD`
                             <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md border border-blue-200 shrink-0">
                                 {lead.pipeline_stage || 'New'}
                             </span>
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 border border-slate-200/60 px-2 py-0.5 rounded-md shrink-0">
+                                📅 Created: {new Date(lead.facebook_created_at || lead.created_at).toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}
+                            </span>
                             {lead.booked_time && (
                                 <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1 shadow-sm shrink-0">
                                     📆 Booked: {new Date(lead.booked_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -365,17 +595,30 @@ END:VCARD`
                         </div>
                     </div>
                 </div>
-                {lead.phone && (
+                {(lead.phone || nextLeadId) && (
                     <div className="flex gap-2 w-full sm:w-auto justify-end sm:justify-start pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 items-center">
-                        <button onClick={downloadVCard} className="p-3 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-full shadow-sm transition-colors" title="Save to Contacts">
-                            <UserPlus size={18} />
-                        </button>
-                        <button onClick={() => setIsSendTemplateOpen(true)} className="p-3 bg-[#25D366] text-white hover:bg-[#22c35e] rounded-full shadow-sm transition-colors flex items-center gap-1.5 px-4 font-bold text-xs animate-pulse" title="Send WhatsApp Template">
-                            <MessageCircle size={18} />
-                            <span>Send Template</span>
-                        </button>
-                        <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-3 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors" title="Direct WhatsApp Chat"><MessageCircle size={18} /></a>
-                        <a href={`tel:${lead.phone}`} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full shadow-sm transition-colors" title="Call Lead"><Phone size={18} /></a>
+                        {nextLeadId && (
+                            <button 
+                                onClick={handleNextLead} 
+                                className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shrink-0 transition-colors shadow-sm active:scale-95"
+                                title="Go to next lead in this stage"
+                            >
+                                Next Lead →
+                            </button>
+                        )}
+                        {lead.phone && (
+                            <>
+                                <button onClick={downloadVCard} className="p-3 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-full shadow-sm transition-colors" title="Save to Contacts">
+                                    <UserPlus size={18} />
+                                </button>
+                                <button onClick={() => setIsSendTemplateOpen(true)} className="p-3 bg-[#25D366] text-white hover:bg-[#22c35e] rounded-full shadow-sm transition-colors flex items-center gap-1.5 px-4 font-bold text-xs animate-pulse" title="Send WhatsApp Template">
+                                    <MessageCircle size={18} />
+                                    <span>Send Template</span>
+                                </button>
+                                <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-3 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors" title="Direct WhatsApp Chat"><MessageCircle size={18} /></a>
+                                <a href={`tel:${lead.phone}`} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full shadow-sm transition-colors" title="Call Lead"><Phone size={18} /></a>
+                            </>
+                        )}
                     </div>
                 )}
             </div>
@@ -455,37 +698,105 @@ END:VCARD`
                         </div>
                     )}
 
-                    {/* Custom Qualification Questions */}
-                    {(() => {
-                        let customFields = lead.custom_fields;
-                        if (customFields && typeof customFields === 'string') {
-                            try {
-                                while (typeof customFields === 'string') {
-                                    customFields = JSON.parse(customFields);
+                    {/* Qualification & Custom Fields Card */}
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                        <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                <CheckCircle2 size={14} className="text-emerald-500" /> Qualification Details
+                            </h3>
+                            {!isAddingCustomField && (
+                                <button 
+                                    onClick={() => setIsAddingCustomField(true)}
+                                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black px-3.5 py-1.5 rounded-full transition-all active:scale-95 shadow-sm"
+                                >
+                                    + Add Custom Field
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Inline Add Field Form */}
+                        {isAddingCustomField && (
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60 space-y-3 animate-in slide-in-from-top-2 duration-200">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Field Name</label>
+                                        <input 
+                                            type="text" 
+                                            value={newFieldKey}
+                                            onChange={(e) => setNewFieldKey(e.target.value)}
+                                            placeholder="e.g. City, Preferred Location"
+                                            className="w-full bg-white border border-slate-200/80 p-2 py-1.5 rounded-lg text-xs font-semibold outline-none focus:border-blue-400"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Value</label>
+                                        <input 
+                                            type="text" 
+                                            value={newFieldValue}
+                                            onChange={(e) => setNewFieldValue(e.target.value)}
+                                            placeholder="e.g. Delhi, 3 BHK"
+                                            className="w-full bg-white border border-slate-200/80 p-2 py-1.5 rounded-lg text-xs font-semibold outline-none focus:border-blue-400"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex justify-end gap-2 pt-1">
+                                    <button 
+                                        onClick={() => { setIsAddingCustomField(false); setNewFieldKey(''); setNewFieldValue(''); }}
+                                        className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-black rounded-lg transition-all"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button 
+                                        onClick={handleAddCustomField}
+                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black rounded-lg transition-all"
+                                    >
+                                        Add Field
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Custom Fields Grid */}
+                        {(() => {
+                            let customFields = lead.custom_fields || {};
+                            if (customFields && typeof customFields === 'string') {
+                                try {
+                                    while (typeof customFields === 'string') {
+                                        customFields = JSON.parse(customFields);
+                                    }
+                                } catch (e) {
+                                    customFields = {};
                                 }
-                            } catch (e) {
-                                customFields = {};
                             }
-                        }
-                        if (!customFields || typeof customFields !== 'object' || Object.keys(customFields).length === 0) {
-                            return null;
-                        }
-                        return (
-                            <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100">
-                                <h3 className="text-[10px] font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
-                                    <CheckCircle2 size={12} className="text-emerald-500" /> Qualification Details
-                                </h3>
+                            const entries = Object.entries(customFields);
+                            if (entries.length === 0) {
+                                return (
+                                    <div className="text-center py-6 text-xs text-slate-400 font-medium">
+                                        No custom fields added yet.
+                                    </div>
+                                );
+                            }
+                            return (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    {Object.entries(customFields).map(([key, value]) => (
-                                        <div key={key} className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                            <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">{key.replace(/_/g, ' ')}</span>
-                                            <span className="text-xs font-bold text-slate-700">{String(value)}</span>
+                                    {entries.map(([key, value]) => (
+                                        <div key={key} className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex justify-between items-start group">
+                                            <div className="min-w-0 flex-1">
+                                                <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">{key.replace(/_/g, ' ')}</span>
+                                                <span className="text-xs font-bold text-slate-700 break-words whitespace-normal">{String(value)}</span>
+                                            </div>
+                                            <button 
+                                                onClick={() => handleDeleteCustomField(key)}
+                                                className="text-slate-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2"
+                                                title="Delete custom field"
+                                            >
+                                                <X size={14} />
+                                            </button>
                                         </div>
                                     ))}
                                 </div>
-                            </div>
-                        );
-                    })()}
+                            );
+                        })()}
+                    </div>
 
                     {/* Voice Agent Call Details Card */}
                     <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
@@ -588,46 +899,7 @@ END:VCARD`
                         )}
                     </div>
 
-                    {/* Context & Tags */}
-                    <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
-                        <div>
-                            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-2">Priority Status</label>
-                            <div className="flex flex-wrap gap-2">
-                                {['Hot', 'Warm', 'Cold'].map(status => (
-                                    <button
-                                        key={status}
-                                        onClick={() => handleFieldUpdate('priority_status', status)}
-                                        className={`py-1.5 px-3 rounded-xl text-xs font-bold border transition-all ${lead.priority_status === status ? (status === 'Hot' ? 'bg-red-500 text-white border-red-500' : status === 'Warm' ? 'bg-amber-500 text-white border-amber-500' : 'bg-blue-500 text-white border-blue-500') : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
-                                    >
-                                        {status}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
 
-                        <div className="flex flex-col sm:flex-row gap-3">
-                            <div className="flex-1">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1.5">Budget</label>
-                                <input
-                                    type="text"
-                                    defaultValue={lead.budget || ''}
-                                    onBlur={(e) => handleFieldUpdate('budget', e.target.value)}
-                                    className="w-full bg-slate-50 p-2.5 rounded-xl text-sm border border-slate-100 outline-none focus:border-blue-300"
-                                    placeholder="e.g. 50L - 1Cr"
-                                />
-                            </div>
-                            <div className="flex-1">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1.5">Timeline</label>
-                                <input
-                                    type="text"
-                                    defaultValue={lead.timeline || ''}
-                                    onBlur={(e) => handleFieldUpdate('timeline', e.target.value)}
-                                    className="w-full bg-slate-50 p-2.5 rounded-xl text-sm border border-slate-100 outline-none focus:border-blue-300"
-                                    placeholder="e.g. 1 Month"
-                                />
-                            </div>
-                        </div>
-                    </div>
 
                     {/* Stages */}
                     <div>

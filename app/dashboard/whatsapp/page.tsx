@@ -137,36 +137,77 @@ export default function AutomationPage() {
     }
   }, [selectedChatId, messages])
 
-  // Realtime Messages Subscription
+  // Realtime Chats & Messages Subscriptions
+  const selectedChatIdRef = useRef<string | null>(null)
+  
   useEffect(() => {
-    if (!selectedChatId) return
+    selectedChatIdRef.current = selectedChatId
+  }, [selectedChatId])
 
-    const channel = supabase
-      .channel(`chat-realtime-${selectedChatId}`)
+  useEffect(() => {
+    // 1. Global subscription to whatsapp_chats
+    const chatsChannel = supabase
+      .channel('whatsapp-chats-global-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'whatsapp_chats'
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newChat = payload.new as Chat
+            setChats(prev => {
+              if (prev.some(c => c.id === newChat.id)) return prev
+              return [newChat, ...prev].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+            })
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedChat = payload.new as Chat
+            setChats(prev => {
+              const idx = prev.findIndex(c => c.id === updatedChat.id)
+              if (idx === -1) {
+                return [updatedChat, ...prev].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+              }
+              const nextChats = [...prev]
+              nextChats[idx] = { ...nextChats[idx], ...updatedChat }
+              return nextChats.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+            })
+          } else if (payload.eventType === 'DELETE') {
+            const deletedChat = payload.old as Chat
+            setChats(prev => prev.filter(c => c.id !== deletedChat.id))
+          }
+        }
+      )
+      .subscribe()
+
+    // 2. Global subscription to whatsapp_messages to stream active chat messages in real time
+    const messagesChannel = supabase
+      .channel('whatsapp-messages-global-realtime')
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'whatsapp_messages',
-          filter: `chat_id=eq.${selectedChatId}`
+          table: 'whatsapp_messages'
         },
         (payload) => {
           const newMsg = payload.new as Message
-          setMessages(prev => {
-            if (prev.some(m => m.id === newMsg.id)) return prev
-            return [...prev, newMsg]
-          })
-          // Keep sidebar updated
-          fetchChats()
+          if (selectedChatIdRef.current && newMsg.chat_id === selectedChatIdRef.current) {
+            setMessages(prev => {
+              if (prev.some(m => m.id === newMsg.id)) return prev
+              return [...prev, newMsg]
+            })
+          }
         }
       )
       .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      supabase.removeChannel(chatsChannel)
+      supabase.removeChannel(messagesChannel)
     }
-  }, [selectedChatId])
+  }, [])
 
   // Scroll messages list to bottom
   useEffect(() => {

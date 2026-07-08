@@ -1202,8 +1202,13 @@ END:VCARD\n`
                                     className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer"
                                 />
                                 <div className="min-w-0 flex-1">
-                                    <h3 className="font-extrabold text-slate-900 text-lg pr-2 truncate group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
+                                    <h3 className="font-extrabold text-slate-900 text-lg pr-2 break-words whitespace-normal group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
                                     <p className="text-[11px] font-bold text-slate-500 mt-0.5">{displayPhone || 'No phone number'}</p>
+                                    {(getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name) && (
+                                        <p className="text-[10px] font-extrabold text-slate-400/80 mt-1 break-words whitespace-normal bg-slate-50 border border-slate-100 rounded-lg px-2 py-0.5 inline-block max-w-full" title={getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name}>
+                                            📢 {getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name}
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                             <div className="flex gap-2 shrink-0">
@@ -1299,28 +1304,36 @@ END:VCARD\n`
                             {/* Right Column */}
                             <div className="flex flex-col gap-1 justify-center">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lead Source</span>
-                                <span className="text-xs font-bold text-slate-700 truncate">{lead.source || '--'}</span>
+                                <span className="text-xs font-bold text-slate-700 break-words whitespace-normal">{lead.source || '--'}</span>
                             </div>
 
                             <div className="flex flex-col gap-1">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Source Detail</span>
-                                <span className="text-xs font-bold text-slate-700 truncate">{getLeadCampaignName(lead) || lead.form_name || lead.ad_name || '--'}</span>
+                                <span className="text-xs font-bold text-slate-700 break-words whitespace-normal" title={getLeadCampaignName(lead) || lead.form_name || lead.ad_name}>{getLeadCampaignName(lead) || lead.form_name || lead.ad_name || '--'}</span>
                             </div>
 
-                            <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Budget</span>
-                                <span className="text-xs font-bold text-slate-700 truncate">{lead.budget || '--'}</span>
-                            </div>
-
-                            <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Requirement</span>
-                                <span className="text-xs font-bold text-slate-700 truncate">{lead.priority_status || '--'}</span>
-                            </div>
-                            
-                            <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Timeline</span>
-                                <span className="text-xs font-bold text-slate-700 truncate">{lead.timeline || '--'}</span>
-                            </div>
+                            {/* Qualification Details dynamically from custom_fields */}
+                            {(() => {
+                                let customFields = lead.custom_fields;
+                                if (customFields && typeof customFields === 'string') {
+                                    try {
+                                        while (typeof customFields === 'string') {
+                                            customFields = JSON.parse(customFields);
+                                        }
+                                    } catch (e) {
+                                        customFields = {};
+                                    }
+                                }
+                                if (!customFields || typeof customFields !== 'object') {
+                                    return null;
+                                }
+                                return Object.entries(customFields).map(([key, value]) => (
+                                    <div key={key} className="flex flex-col gap-1">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider break-words">{key.replace(/_/g, ' ')}</span>
+                                        <span className="text-xs font-bold text-slate-700 break-words whitespace-normal">{String(value || '--')}</span>
+                                    </div>
+                                ));
+                            })()}
 
                             <div className="flex flex-col gap-1">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Meta Pixel</span>
