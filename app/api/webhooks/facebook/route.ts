@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
-import { sendCAPIEvent } from '@/utils/external-apis'
+import { sendCAPIEvent, callGemini } from '@/utils/external-apis'
 import { triggerWelcomeDrip } from '@/utils/whatsapp/drips'
+import { bookAppointment } from '@/utils/voice-helper'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -606,12 +609,13 @@ IMPORTANT RULES:
 
                                     // STEP A: Name not yet provided — ask for name
                                     if (!hasName) {
-                                        // Check if we already asked for the name by looking at outbound messages
+                                        // Check if we already asked for the name by looking at outbound messages (exclude templates)
                                         const { count: outboundCount } = await supabaseAdmin
                                             .from('whatsapp_messages')
                                             .select('id', { count: 'exact', head: true })
                                             .eq('chat_id', chat.id)
-                                            .eq('direction', 'outbound');
+                                            .eq('direction', 'outbound')
+                                            .not('message_text', 'like', 'Sent Template:%');
 
                                         if (!outboundCount || outboundCount === 0) {
                                             // First message ever — ask for name
@@ -626,13 +630,37 @@ IMPORTANT RULES:
                                             return;
                                         }
 
+                                        // Get the response through LLM (Gemini) to extract clean name
+                                        let parsedName = providedName;
+                                        try {
+                                            const namePrompt = `
+You are an expert name parser. Your job is to extract a clean, professional recipient name from a user's conversational input to a WhatsApp chatbot.
+
+Guidelines:
+1. Extract the person's name accurately.
+2. If they provide a nickname alongside their real name (e.g. "Rahul, nick name is manu" or "my name is John but you can call me Johnny"), format it as: "RealName (Nickname)" (e.g., "Rahul (Manu)", "John (Johnny)").
+3. Remove conversational filler (e.g., "my name is", "I am", "this is", spaces, weird characters).
+4. If they give a full name, return the full name (e.g. "Rahul Chopra").
+5. Return ONLY the clean extracted name string. Do not include any other text, explanation, or punctuation.
+
+User Input: "${providedName}"
+Clean Name:`;
+                                            const rawRes = await callGemini(namePrompt);
+                                            const cleanName = rawRes.trim();
+                                            if (cleanName && cleanName.length > 0 && cleanName.length <= 100) {
+                                                parsedName = cleanName;
+                                            }
+                                        } catch (geminiErr) {
+                                            console.error("[Flow] Gemini name parsing failed, fallback to raw name:", geminiErr);
+                                        }
+
                                         // Save the name
                                         await supabaseAdmin
                                             .from('whatsapp_chats')
-                                            .update({ recipient_name: providedName })
+                                            .update({ recipient_name: parsedName })
                                             .eq('id', chat.id);
 
-                                        chat.recipient_name = providedName;
+                                        chat.recipient_name = parsedName;
                                         console.log(`[Flow] Name captured: ${providedName} for chat ${chat.id}`);
 
                                         // Now find an active qualification flow
@@ -828,16 +856,149 @@ IMPORTANT RULES:
                                         return;
                                     }
 
-                                    // STEP C: Flow completed or no flow — normal message, just log it
-                                    await supabaseAdmin
-                                        .from('whatsapp_chats')
-                                        .update({ unread_count: 1, updated_at: new Date().toISOString() })
-                                        .eq('id', chat.id);
+                                    // STEP C: Flow completed or no flow — AI assistant conversation
+                                    console.log(`[WhatsApp AI Assistant] Processing message from customer ${cleanFrom} for owner ${ownerUserId}...`);
+                                     
+                                    // 1. Resolve business context from owner profile
+                                    const { data: ownerProfile } = await supabaseAdmin
+                                        .from('profiles')
+                                        .select('business_name, business_info')
+                                        .eq('id', ownerUserId)
+                                        .maybeSingle();
 
+                                    const companyName = ownerProfile?.business_name || 'our business';
+                                    const companyInfo = ownerProfile?.business_info || 'A professional business service.';
+
+                                    // 2. Fetch recent WhatsApp message history for this chat
+                                    let chatHistory = 'No previous messages.';
+                                    try {
+                                        const { data: historyMsgs } = await supabaseAdmin
+                                            .from('whatsapp_messages')
+                                            .select('direction, message_text')
+                                            .eq('chat_id', chat.id)
+                                            .order('created_at', { ascending: true })
+                                            .limit(12);
+
+                                        if (historyMsgs && historyMsgs.length > 0) {
+                                            chatHistory = historyMsgs
+                                                .map((m: any) => `${m.direction === 'inbound' ? 'User' : 'Assistant'}: ${m.message_text}`)
+                                                .join('\n');
+                                        }
+                                    } catch (histErr) {
+                                        console.error('[WhatsApp AI Assistant] Failed to retrieve history:', histErr);
+                                    }
+
+                                    // 3. Prompt Gemini to generate dynamic reply and extract appointment schedule
+                                    const aiPrompt = `
+You are an AI sales and booking assistant for "${companyName}".
+Here is information about our business:
+${companyInfo}
+
+Current Date & Time: ${new Date().toLocaleString()}
+
+Guidelines:
+1. Speak in a natural, polite, and professional English language when responding.
+2. Answer the user's queries accurately based ONLY on the provided business profile. If you don't know the answer, politely offer to book a consultation so our representative can answer.
+3. Gently encourage the user to book a meeting or consultation slot (e.g., "Would you like me to book a quick consultation call for you?").
+4. Keep all responses brief (under 50 words) and suitable for a WhatsApp text.
+5. If the user explicitly proposes, confirms, or agrees to a meeting time/day (e.g., "book for tomorrow at 2 pm", "yes 5 pm works", "sure let's talk at 3 tomorrow"), extract that timestamp as an ISO-8601 string. Otherwise, set it to null.
+
+Recent Chat History:
+${chatHistory}
+
+Incoming User Message: "${messageText}"
+
+Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
+{
+  "reply": "Your message reply in English",
+  "booking_time": "ISO-8601 string of agreed meeting slot or null"
+}
+`;
+
+                                    let replyText = "Thank you! Our representative will get back to you shortly.";
+                                    let extractedBookingTime: string | null = null;
+
+                                    try {
+                                        const rawRes = await callGemini(aiPrompt);
+                                        const cleanJson = rawRes.replace(/```json/g, '').replace(/```/g, '').trim();
+                                        const parsed = JSON.parse(cleanJson);
+                                        replyText = parsed.reply || replyText;
+                                        extractedBookingTime = parsed.booking_time || null;
+                                        console.log('[WhatsApp AI Assistant] Gemini parsed response:', { replyText, extractedBookingTime });
+                                    } catch (geminiErr) {
+                                        console.error('[WhatsApp AI Assistant] Gemini generation/parsing failed:', geminiErr);
+                                    }
+
+                                    // 4. Send the reply via WhatsApp
+                                    await sendWAMessage(replyText);
+
+                                    // 5. Update CRM lead notes/remarks with this exchange
+                                    const { data: latestChat } = await supabaseAdmin
+                                        .from('whatsapp_chats')
+                                        .select('lead_id, recipient_name')
+                                        .eq('id', chat.id)
+                                        .single();
+
+                                    const leadId = latestChat?.lead_id;
+                                    const leadName = latestChat?.recipient_name || 'WhatsApp Lead';
+
+                                    if (leadId) {
+                                        try {
+                                            const { data: lead } = await supabaseAdmin
+                                                .from('leads')
+                                                .select('notes')
+                                                .eq('id', leadId)
+                                                .single();
+
+                                            const dateStr = new Date().toLocaleDateString();
+                                            const notesAddition = `[💬 WhatsApp Message - ${dateStr}]: User: "${messageText}" | Assistant: "${replyText}"`;
+                                            let newNotes = notesAddition;
+                                            if (lead?.notes) {
+                                                newNotes = `${notesAddition}\n\n${lead.notes}`;
+                                            }
+
+                                            await supabaseAdmin
+                                                .from('leads')
+                                                .update({ notes: newNotes })
+                                                .eq('id', leadId);
+                                        } catch (notesErr) {
+                                            console.error('[WhatsApp AI Assistant] Failed to update lead notes:', notesErr);
+                                        }
+
+                                        // 5b. Log conversation to lead_history for Activity Log display
+                                        try {
+                                            const waHistoryPayload = JSON.stringify({
+                                                user_msg: messageText,
+                                                bot_reply: replyText,
+                                                booking_time: extractedBookingTime || null
+                                            });
+                                            await supabaseAdmin
+                                                .from('lead_history')
+                                                .insert({
+                                                    lead_id: leadId,
+                                                    action_type: 'WHATSAPP_CHAT',
+                                                    description: `💬 WA_JSON:${waHistoryPayload}`
+                                                });
+                                        } catch (histErr) {
+                                            console.error('[WhatsApp AI Assistant] Failed to log to lead_history:', histErr);
+                                        }
+
+                                        // 6. Handle automatic booking if a slot was confirmed by user
+                                        if (extractedBookingTime) {
+                                            try {
+                                                console.log(`[WhatsApp AI Assistant] Booking slot ${extractedBookingTime} for lead ${leadId}...`);
+                                                await bookAppointment(supabaseAdmin, leadId, extractedBookingTime, ownerUserId);
+                                            } catch (bookErr) {
+                                                console.error('[WhatsApp AI Assistant] Appointment booking failed:', bookErr);
+                                            }
+                                        }
+                                    }
+
+                                    // 7. Send standard push notification to business owner
                                     try {
                                         await sendPushNotification(
                                             ownerUserId!,
-                                            `New WhatsApp from ${chat.recipient_name || cleanFrom}`,
+                                            `New WhatsApp from ${leadName || cleanFrom}`,
                                             messageText.substring(0, 100)
                                         );
                                     } catch (pushErr) {}

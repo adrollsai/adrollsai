@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { callGemini } from '@/utils/external-apis'
+import { bookAppointment } from '@/utils/voice-helper'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,11 +34,69 @@ export async function POST(req: Request) {
         }
 
         if (dbStatus === 'failed') {
-            await supabaseAdmin
+            const { data: leadData } = await supabaseAdmin
                 .from('leads')
-                .update({ voice_call_status: 'failed' })
+                .select('voice_call_retry_count, notes')
                 .eq('id', leadId)
-            console.log(`[TWILIO STATUS CALLBACK] Updated lead ${leadId} to failed because call status is:`, callStatus)
+                .single()
+
+            const currentRetries = leadData?.voice_call_retry_count || 0
+            if (currentRetries < 3) {
+                const nextRetryCount = currentRetries + 1
+                let delayMinutes = 30
+                if (nextRetryCount === 2) delayMinutes = 120
+                if (nextRetryCount === 3) delayMinutes = 360
+
+                const scheduledTime = new Date(Date.now() + delayMinutes * 60000).toISOString()
+                let updatedNotes = `[⚠️ Call Rescheduled]: Call retry #${nextRetryCount} scheduled for ${new Date(scheduledTime).toLocaleString()} (Reason: ${callStatus})`
+                if (leadData?.notes) {
+                    updatedNotes += `\n\n${leadData.notes}`
+                }
+
+                await supabaseAdmin
+                    .from('leads')
+                    .update({
+                        voice_call_status: 'scheduled_retry',
+                        voice_call_scheduled_at: scheduledTime,
+                        voice_call_retry_count: nextRetryCount,
+                        notes: updatedNotes
+                    })
+                    .eq('id', leadId)
+
+                await supabaseAdmin
+                    .from('lead_history')
+                    .insert({
+                        lead_id: leadId,
+                        action_type: 'REMARK',
+                        description: `⚠️ Outbound call was unanswered/busy (${callStatus}). Scheduled retry #${nextRetryCount} in ${delayMinutes} minutes.`
+                    })
+
+                console.log(`[TWILIO STATUS CALLBACK] Rescheduled lead ${leadId} to retry #${nextRetryCount} in ${delayMinutes} mins.`)
+            } else {
+                let updatedNotes = `[❌ Call Failed]: Max calling retry limit reached (3 attempts). Auto-calling stopped.`
+                if (leadData?.notes) {
+                    updatedNotes += `\n\n${leadData.notes}`
+                }
+
+                await supabaseAdmin
+                    .from('leads')
+                    .update({
+                        voice_call_status: 'failed',
+                        voice_call_scheduled_at: null,
+                        notes: updatedNotes
+                    })
+                    .eq('id', leadId)
+
+                await supabaseAdmin
+                    .from('lead_history')
+                    .insert({
+                        lead_id: leadId,
+                        action_type: 'REMARK',
+                        description: `❌ Call failed after maximum retry attempts (3).`
+                    })
+
+                console.log(`[TWILIO STATUS CALLBACK] Updated lead ${leadId} to final failed status. Max retries reached.`)
+            }
             return NextResponse.json({ success: true })
         }
 
@@ -67,6 +126,7 @@ export async function POST(req: Request) {
             let transcript = []
             let summary = 'Call completed.'
             let callbackTime: string | null = null
+            let bookingTime: string | null = null
             let isQualified = false
             let publicRecordingUrl = null
 
@@ -74,7 +134,7 @@ export async function POST(req: Request) {
                 console.log('[TWILIO STATUS CALLBACK] Searching ElevenLabs for conversation logs...')
                 
                 // Retry loop to find the conversation as ElevenLabs finishes the session
-                for (let attempt = 1; attempt <= 4; attempt++) {
+                for (let attempt = 1; attempt <= 6; attempt++) {
                     try {
                         // Wait a short delay on retry attempts for ElevenLabs to write the logs
                         if (attempt > 1) await delay(3000)
@@ -112,15 +172,23 @@ export async function POST(req: Request) {
                             )
 
                             if (isLeadMatch || isPhoneMatch) {
-                                conversationId = conv.conversation_id
-                                transcript = details.transcript || []
-                                break
+                                const detailsTranscript = details.transcript || []
+                                if (detailsTranscript.length > 0) {
+                                    conversationId = conv.conversation_id
+                                    transcript = detailsTranscript
+                                    break
+                                } else {
+                                    console.log(`[TWILIO STATUS CALLBACK] Matched conversation ${conv.conversation_id} but transcript is not yet populated. Retrying...`)
+                                }
                             }
                         }
 
-                        if (conversationId) {
-                            console.log(`[TWILIO STATUS CALLBACK] Matched conversation ID: ${conversationId} on attempt ${attempt}`)
+                        if (conversationId && transcript.length > 0) {
+                            console.log(`[TWILIO STATUS CALLBACK] Matched conversation ID: ${conversationId} with transcript on attempt ${attempt}`)
                             break
+                        } else {
+                            // Clear conversationId to continue retry attempts if transcript is empty
+                            conversationId = null
                         }
                     } catch (err: any) {
                         console.error(`[TWILIO STATUS CALLBACK] Attempt ${attempt} failed:`, err.message)
@@ -143,7 +211,8 @@ ${formattedTranscript}
 Extract the following details as a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
 {
   "summary": "A clear, concise paragraph summary of the call",
-  "callback_time": "ISO-8601 string of requested callback date/time if the lead explicitly asked to be called back at a specific time, otherwise null. Current system UTC time is: ${new Date().toISOString()}",
+  "callback_time": "ISO-8601 string of requested callback date/time if the lead asked or agreed to be called back at a specific time (including accepting or saying 'okay', 'thank you', 'theek hai' after a callback time is proposed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
+  "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot if the lead agreed to, confirmed, or accepted a proposed meeting slot (including saying 'okay', 'thank you', 'theek hai', or saying goodbye/thank you after a meeting slot is proposed/confirmed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified)
 }
 `
@@ -154,6 +223,7 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
 
                     summary = extracted.summary || summary
                     callbackTime = extracted.callback_time || null
+                    bookingTime = extracted.booking_time || null
                     isQualified = !!extracted.is_qualified
                 } catch (err: any) {
                     console.error('[TWILIO STATUS CALLBACK] Gemini analysis extraction failed:', err)
@@ -201,7 +271,8 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                 voice_call_id: conversationId || undefined,
                 voice_call_summary: conversationId ? summary : undefined,
                 voice_call_transcript: conversationId ? transcript : undefined,
-                voice_recording_url: publicRecordingUrl || undefined
+                voice_recording_url: publicRecordingUrl || undefined,
+                voice_call_retry_count: 0 // Reset retry count since they picked up and call is completed
             }
 
             // Prepend call summary to notes
@@ -212,14 +283,14 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
             }
             updateData.notes = updatedNotes
 
-            // Schedule callback if requested
+            // Schedule callback if requested, otherwise clear the past scheduled time
+            updateData.voice_call_scheduled_at = callbackTime || null
             if (callbackTime) {
-                updateData.voice_call_scheduled_at = callbackTime
                 updateData.notes = `[⚠️ Scheduled Callback]: For ${new Date(callbackTime).toLocaleString()}\n\n` + updateData.notes
             }
 
             // Transition pipeline stage if qualified
-            if (isQualified && lead.pipeline_stage !== 'Won') {
+            if (isQualified && lead.pipeline_stage !== 'Won' && !bookingTime) {
                 updateData.pipeline_stage = 'Qualified'
             }
 
@@ -227,6 +298,11 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                 .from('leads')
                 .update(updateData)
                 .eq('id', leadId)
+
+            if (!updateErr && bookingTime) {
+                console.log(`[TWILIO STATUS CALLBACK] Call led to booking slot ${bookingTime}. Triggering bookAppointment...`)
+                await bookAppointment(supabaseAdmin, leadId, bookingTime, lead.user_id)
+            }
 
             if (updateErr) {
                 console.error('[TWILIO STATUS CALLBACK] Database update failed:', updateErr)

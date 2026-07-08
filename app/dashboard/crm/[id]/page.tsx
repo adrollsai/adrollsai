@@ -525,8 +525,14 @@ END:VCARD`
                         <div className="grid grid-cols-2 gap-4 text-xs">
                             <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/50">
                                 <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Call Status</span>
-                                <span className={`font-black uppercase tracking-wider ${lead.voice_call_status === 'completed' ? 'text-emerald-600' : lead.voice_call_status === 'calling' ? 'text-indigo-600 animate-pulse' : lead.voice_call_status === 'failed' ? 'text-red-500' : 'text-slate-500'}`}>
-                                    ● {lead.voice_call_status || 'not_called'}
+                                <span className={`font-black uppercase tracking-wider ${
+                                    lead.voice_call_status === 'completed' ? 'text-emerald-600' : 
+                                    lead.voice_call_status === 'calling' ? 'text-indigo-600 animate-pulse' : 
+                                    lead.voice_call_status === 'scheduled_retry' ? 'text-amber-500 animate-pulse' :
+                                    ['failed', 'failed_max_retries'].includes(lead.voice_call_status || '') ? 'text-red-500' : 
+                                    'text-slate-500'
+                                }`}>
+                                    ● {(lead.voice_call_status || 'not_called').replace(/_/g, ' ')}
                                 </span>
                             </div>
                             {lead.voice_call_scheduled_at && (
@@ -663,6 +669,56 @@ END:VCARD`
                                 {leadHistory.map((item, index) => {
                                     const isRemark = item.action_type === 'REMARK'
                                     const isReminder = item.action_type === 'REMINDER_SET'
+                                    const isWhatsApp = item.action_type === 'WHATSAPP_CHAT'
+
+                                    // WhatsApp chat bubble rendering
+                                    if (isWhatsApp && item.description?.startsWith('💬 WA_JSON:')) {
+                                        try {
+                                            const parsed = JSON.parse(item.description.replace('💬 WA_JSON:', ''))
+                                            return (
+                                                <div key={item.id} className="relative flex items-start gap-4">
+                                                    <div className="flex items-center justify-center w-11 h-11 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm bg-emerald-100 text-emerald-600">
+                                                        <MessageCircle size={16} />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0 bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/60 mt-0.5">
+                                                        <div className="flex items-center justify-between mb-2.5">
+                                                            <div className="font-bold text-xs text-emerald-700 flex items-center gap-1.5">
+                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.612.638l4.685-1.322A11.944 11.944 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.16 0-4.163-.67-5.813-1.813l-.406-.264-2.809.793.828-2.652-.287-.44A9.96 9.96 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
+                                                                WhatsApp Chat
+                                                            </div>
+                                                            <time className="text-[10px] font-bold text-emerald-500 bg-white px-1.5 py-0.5 rounded-md border border-emerald-100 shrink-0">{new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</time>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            {/* User message bubble */}
+                                                            <div className="flex justify-end">
+                                                                <div className="bg-slate-200/80 text-slate-800 px-3 py-2 rounded-2xl rounded-tr-md max-w-[85%] text-[11px] leading-relaxed font-medium shadow-sm">
+                                                                    {parsed.user_msg}
+                                                                </div>
+                                                            </div>
+                                                            {/* Bot reply bubble */}
+                                                            <div className="flex justify-start">
+                                                                <div className="bg-emerald-500 text-white px-3 py-2 rounded-2xl rounded-tl-md max-w-[85%] text-[11px] leading-relaxed font-medium shadow-sm">
+                                                                    {parsed.bot_reply}
+                                                                </div>
+                                                            </div>
+                                                            {/* Booking badge */}
+                                                            {parsed.booking_time && (
+                                                                <div className="flex items-center gap-1.5 bg-emerald-600/10 border border-emerald-200 rounded-xl px-3 py-1.5 mt-1 w-fit">
+                                                                    <Clock size={12} className="text-emerald-600" />
+                                                                    <span className="text-[10px] font-extrabold text-emerald-700">
+                                                                        📅 Booked: {new Date(parsed.booking_time).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )
+                                        } catch (e) {
+                                            // fallthrough to default rendering
+                                        }
+                                    }
+
                                     return (
                                         <div key={item.id} className="relative flex items-start gap-4">
                                             <div className={`flex items-center justify-center w-11 h-11 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm ${isRemark ? 'bg-blue-100 text-blue-600' : isReminder ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>

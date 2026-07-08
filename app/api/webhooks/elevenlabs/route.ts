@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { callGemini } from '@/utils/external-apis'
+import { bookAppointment } from '@/utils/voice-helper'
+import crypto from 'crypto'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,7 +11,34 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
     try {
-        const body = await req.json()
+        const bodyText = await req.text()
+
+        // Webhook signature verification if secret and header are present
+        const signature = req.headers.get('ElevenLabs-Signature') || req.headers.get('elevenlabs-signature')
+        const webhookSecret = process.env.ELEVENLABS_WEBHOOK_SECRET
+
+        if (webhookSecret && signature) {
+            const secrets = webhookSecret.split(',').map(s => s.trim())
+            let isValid = false
+            for (const secret of secrets) {
+                const computedSig = crypto
+                    .createHmac('sha256', secret)
+                    .update(bodyText)
+                    .digest('hex')
+                if (computedSig === signature) {
+                    isValid = true
+                    break
+                }
+            }
+
+            if (!isValid) {
+                console.error('[ELEVENLABS WEBHOOK] Signature verification failed.')
+                return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+            }
+            console.log('[ELEVENLABS WEBHOOK] Signature verified successfully.')
+        }
+
+        const body = JSON.parse(bodyText)
         console.log('[ELEVENLABS WEBHOOK] Received payload event:', body.type)
 
         // Only process post-call transcriptions
@@ -92,6 +121,7 @@ export async function POST(req: Request) {
         // 2. Perform Agentic Analysis using Gemini on the transcript
         let summary = 'Call completed.'
         let callbackTime: string | null = null
+        let bookingTime: string | null = null
         let isQualified = false
 
         if (transcript.length > 0) {
@@ -108,7 +138,8 @@ ${formattedTranscript}
 Extract the following details as a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
 {
   "summary": "A clear, concise paragraph summary of the call",
-  "callback_time": "ISO-8601 string of requested callback date/time if the lead explicitly asked to be called back at a specific time, otherwise null. Current system UTC time is: ${new Date().toISOString()}",
+  "callback_time": "ISO-8601 string of requested callback date/time if the lead asked or agreed to be called back at a specific time (including accepting or saying 'okay', 'thank you', 'theek hai' after a callback time is proposed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
+  "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot if the lead agreed to, confirmed, or accepted a proposed meeting slot (including saying 'okay', 'thank you', 'theek hai', or saying goodbye/thank you after a meeting slot is proposed/confirmed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified)
 }
 `
@@ -119,6 +150,7 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
 
                 summary = extracted.summary || summary
                 callbackTime = extracted.callback_time || null
+                bookingTime = extracted.booking_time || null
                 isQualified = !!extracted.is_qualified
             } catch (err: any) {
                 console.error('[ELEVENLABS WEBHOOK] Gemini analysis extraction failed:', err)
@@ -168,7 +200,8 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
             voice_call_id: conversationId,
             voice_call_summary: summary,
             voice_call_transcript: transcript,
-            voice_recording_url: publicRecordingUrl || undefined
+            voice_recording_url: publicRecordingUrl || undefined,
+            voice_call_retry_count: 0 // Reset retry count since they picked up and call is completed
         }
 
         // Prepend call summary to notes
@@ -179,14 +212,14 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
         }
         updateData.notes = updatedNotes
 
-        // Schedule callback if requested
+        // Schedule callback if requested, otherwise clear the past scheduled time
+        updateData.voice_call_scheduled_at = callbackTime || null
         if (callbackTime) {
-            updateData.voice_call_scheduled_at = callbackTime
             updateData.notes = `[⚠️ Scheduled Callback]: For ${new Date(callbackTime).toLocaleString()}\n\n` + updateData.notes
         }
 
         // Transition pipeline stage if qualified
-        if (isQualified && lead.pipeline_stage !== 'Won') {
+        if (isQualified && lead.pipeline_stage !== 'Won' && !bookingTime) {
             updateData.pipeline_stage = 'Qualified'
         }
 
@@ -194,6 +227,11 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
             .from('leads')
             .update(updateData)
             .eq('id', leadId)
+
+        if (!updateErr && bookingTime) {
+            console.log(`[ELEVENLABS WEBHOOK] Call led to booking slot ${bookingTime}. Triggering bookAppointment...`)
+            await bookAppointment(supabaseAdmin, leadId, bookingTime, lead.user_id)
+        }
 
         if (updateErr) {
             console.error('[ELEVENLABS WEBHOOK] Database update failed:', updateErr)

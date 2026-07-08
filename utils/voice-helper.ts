@@ -1,0 +1,312 @@
+import { refreshGoogleAccessToken, getCalendarTimezone } from '@/utils/google-calendar'
+import { sendCAPIEvent } from '@/utils/external-apis'
+import { sendBookingConfirmationEmail } from '@/utils/email-helper'
+
+/**
+ * Triggers an automated outbound AI call for a lead via Twilio and ElevenLabs.
+ */
+export async function triggerOutboundCall(
+    supabaseAdmin: any,
+    leadId: string,
+    profileId: string
+): Promise<{ success: boolean; error?: string; callSid?: string }> {
+    try {
+        // 1. Fetch credentials from user profile
+        const { data: profile, error: profErr } = await supabaseAdmin
+            .from('profiles')
+            .select('elevenlabs_api_key, elevenlabs_agent_id, voice_twilio_sid, voice_twilio_token, voice_twilio_number')
+            .eq('id', profileId)
+            .single()
+
+        if (profErr || !profile) {
+            return { success: false, error: 'Failed to fetch user voice configuration.' }
+        }
+
+        const twilioSid = process.env.MASTER_TWILIO_SID || profile.voice_twilio_sid || process.env.DEV_TWILIO_SID
+        const twilioToken = process.env.MASTER_TWILIO_TOKEN || profile.voice_twilio_token || process.env.DEV_TWILIO_TOKEN
+        const voiceNumber = profile.voice_twilio_number || process.env.MASTER_TWILIO_NUMBER
+
+        if (!twilioSid || !twilioToken || !voiceNumber) {
+            return { success: false, error: 'Voice calling credentials or phone number are not configured.' }
+        }
+
+        // 2. Fetch lead details
+        const { data: lead, error: leadErr } = await supabaseAdmin
+            .from('leads')
+            .select('id, name, phone')
+            .eq('id', leadId)
+            .single()
+
+        if (leadErr || !lead || !lead.phone) {
+            return { success: false, error: 'Lead not found or has no phone number.' }
+        }
+
+        // 3. Format phone number to E.164
+        let cleanPhone = lead.phone.replace(/\D/g, '')
+        if (!cleanPhone.startsWith('+')) {
+            if (cleanPhone.length === 10) {
+                cleanPhone = '+91' + cleanPhone // Default to India country code if 10 digits
+            } else {
+                cleanPhone = '+' + cleanPhone
+            }
+        }
+
+        console.log(`[VOICE HELPER] Dialing lead ${lead.name} (${cleanPhone}) from caller ID ${voiceNumber}...`)
+
+        // 4. Update status to calling
+        await supabaseAdmin
+            .from('leads')
+            .update({ voice_call_status: 'calling' })
+            .eq('id', lead.id)
+
+        // 5. Call Twilio REST API
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://local.nobogent.com'
+        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Calls.json`
+        const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64')
+
+        const params = new URLSearchParams()
+        params.append('Url', `${appUrl}/api/voice/twiml?leadId=${lead.id}&profileId=${profileId}`)
+        params.append('To', cleanPhone)
+        params.append('From', voiceNumber.trim())
+        params.append('StatusCallback', `${appUrl}/api/voice/status-callback?leadId=${lead.id}`)
+        params.append('TimeLimit', '300') // Set hard limit of 5 minutes (300 seconds) for the call
+
+        const twilioRes = await fetch(twilioUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Basic ${twilioAuth}`,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: params
+        })
+
+        const twilioData = await twilioRes.json()
+
+        if (!twilioRes.ok) {
+            console.error('[VOICE HELPER] Twilio REST API failed:', twilioData)
+            await supabaseAdmin
+                .from('leads')
+                .update({ voice_call_status: 'failed' })
+                .eq('id', lead.id)
+
+            return { success: false, error: twilioData.message || 'Twilio calling failed.' }
+        }
+
+        console.log(`[VOICE HELPER] Call initiated successfully. Sid: ${twilioData.sid}`)
+        return { success: true, callSid: twilioData.sid }
+    } catch (e: any) {
+        console.error('[VOICE HELPER] Error initiating call:', e)
+        return { success: false, error: e.message || 'Internal error' }
+    }
+}
+
+/**
+ * Automates booking an appointment for a lead, integrating Google Calendar,
+ * CRM updates, email confirmation, history logging, and Meta CAPI tracking.
+ */
+export async function bookAppointment(
+    supabaseAdmin: any,
+    leadId: string,
+    slot: string,
+    profileId: string
+): Promise<{ success: boolean; meetLink?: string; error?: string }> {
+    try {
+        console.log(`[VOICE HELPER] Booking appointment for lead ${leadId} at slot ${slot}...`)
+
+        // 1. Fetch Lead Details
+        const { data: lead, error: leadError } = await supabaseAdmin
+            .from('leads')
+            .select('*')
+            .eq('id', leadId)
+            .maybeSingle()
+
+        if (leadError) throw leadError
+        if (!lead) {
+            return { success: false, error: 'Lead not found' }
+        }
+
+        // 2. Fetch Host Settings
+        const { data: profile, error: profileError } = await supabaseAdmin
+            .from('profiles')
+            .select('google_refresh_token, google_booking_enabled, google_booking_duration, business_name, google_calendar_id, facebook_token, selected_page_token, pixel_id')
+            .eq('id', profileId)
+            .maybeSingle()
+
+        if (profileError) throw profileError
+
+        let hangoutLink = ''
+        let calendarEventCreated = false
+
+        // 3. Create Calendar Event on Google Calendar (if integrated)
+        if (profile && profile.google_refresh_token && profile.google_booking_enabled) {
+            try {
+                const refreshToken = profile.google_refresh_token
+                const duration = profile.google_booking_duration || 30
+
+                const accessToken = await refreshGoogleAccessToken(refreshToken)
+                const timeZone = await getCalendarTimezone(accessToken)
+
+                const start = new Date(slot)
+                const end = new Date(start.getTime() + (duration * 60000))
+
+                let leadEmail = lead.email || ''
+                if (!leadEmail && lead.custom_fields) {
+                    const customKeys = Object.keys(lead.custom_fields)
+                    const emailKey = customKeys.find(k => k.toLowerCase().includes('email'))
+                    if (emailKey) {
+                        leadEmail = lead.custom_fields[emailKey]
+                    }
+                }
+
+                const eventBody: any = {
+                    summary: `Meeting with ${lead.name}`,
+                    description: `Google Calendar Booking via Voice Agent.\nName: ${lead.name}\nPhone: ${lead.phone || 'N/A'}\nGenerated via AdRolls CRM.`,
+                    start: {
+                        dateTime: start.toISOString(),
+                        timeZone
+                    },
+                    end: {
+                        dateTime: end.toISOString(),
+                        timeZone
+                    },
+                    reminders: {
+                        useDefault: true
+                    },
+                    conferenceData: {
+                        createRequest: {
+                            requestId: `booking-voice-${lead.id}-${start.getTime()}`,
+                            conferenceSolutionKey: {
+                                type: 'hangoutsMeet'
+                            }
+                        }
+                    }
+                }
+
+                if (leadEmail) {
+                    eventBody.attendees = [{ email: leadEmail }]
+                }
+
+                const calendarId = encodeURIComponent(profile.google_calendar_id || 'primary')
+                const calendarEventRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?sendUpdates=all&conferenceDataVersion=1`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(eventBody)
+                })
+
+                const eventResult = await calendarEventRes.json()
+
+                if (eventResult.error) {
+                    console.warn('[VOICE HELPER] Google Calendar API Error:', eventResult.error)
+                } else {
+                    hangoutLink = eventResult.hangoutLink || ''
+                    calendarEventCreated = true
+                    console.log(`[VOICE HELPER] Google Calendar event created successfully. Link: ${hangoutLink}`)
+                }
+            } catch (calErr: any) {
+                console.warn('[VOICE HELPER] Failed to book via Google Calendar:', calErr.message || calErr)
+            }
+        } else {
+            console.log('[VOICE HELPER] Google Calendar integration not configured for user. Falling back to basic CRM booking.')
+        }
+
+        // 4. Update Lead in Supabase
+        const { error: updateError } = await supabaseAdmin
+            .from('leads')
+            .update({
+                booked_time: slot,
+                pipeline_stage: 'Appointment booked',
+                meet_link: hangoutLink || null
+            })
+            .eq('id', leadId)
+
+        if (updateError) throw updateError
+
+        // 5. Send confirmation email to lead
+        let leadEmail = lead.email || ''
+        if (!leadEmail && lead.custom_fields) {
+            const customKeys = Object.keys(lead.custom_fields)
+            const emailKey = customKeys.find(k => k.toLowerCase().includes('email'))
+            if (emailKey) {
+                leadEmail = lead.custom_fields[emailKey]
+            }
+        }
+
+        if (leadEmail) {
+            try {
+                await sendBookingConfirmationEmail(
+                    leadEmail,
+                    lead.name,
+                    slot,
+                    hangoutLink,
+                    profile?.business_name || 'Consultation'
+                )
+                console.log(`[VOICE HELPER] Sent confirmation email to lead: ${leadEmail}`)
+            } catch (emailErr) {
+                console.error('[VOICE HELPER] Failed to send confirmation email:', emailErr)
+            }
+        }
+
+        // 6. Save History Log
+        try {
+            const localSlotDate = new Date(slot)
+            const formattedDate = localSlotDate.toLocaleString([], {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+            })
+            const historyDesc = `📆 Appointment booked automatically by Voice AI for ${formattedDate}${hangoutLink ? ` (Google Meet: ${hangoutLink})` : ''}`
+
+            await supabaseAdmin.from('lead_history').insert({
+                lead_id: leadId,
+                user_id: profileId,
+                action_type: 'STATUS_CHANGE',
+                description: historyDesc
+            })
+        } catch (histErr) {
+            console.error('[VOICE HELPER] Failed to log lead history:', histErr)
+        }
+
+        // 7. Trigger Conversions API (CAPI) Schedule Event
+        const pixelId = lead?.pixel_id || profile?.pixel_id
+        const fbToken = profile?.facebook_token || profile?.selected_page_token
+        if (pixelId && fbToken) {
+            try {
+                const nameParts = (lead.name || '').trim().split(/\s+/)
+                const firstName = nameParts[0] || ''
+                const lastName = nameParts.slice(1).join(' ') || ''
+
+                console.log(`[VOICE HELPER] Dispatching Meta CAPI Schedule event for Pixel: ${pixelId}`)
+                await sendCAPIEvent(
+                    fbToken,
+                    pixelId,
+                    'Schedule',
+                    {
+                        email: leadEmail || undefined,
+                        phone: lead.phone,
+                        firstName: firstName,
+                        lastName: lastName,
+                        externalId: lead.id
+                    },
+                    0,
+                    '127.0.0.1',
+                    'VoiceAgent',
+                    ''
+                )
+            } catch (capiErr) {
+                console.error('[VOICE HELPER] Failed to send Meta CAPI Schedule event:', capiErr)
+            }
+        }
+
+        return { success: true, meetLink: hangoutLink }
+    } catch (e: any) {
+        console.error('[VOICE HELPER] bookAppointment Exception:', e)
+        return { success: false, error: e.message || 'Internal error' }
+    }
+}
