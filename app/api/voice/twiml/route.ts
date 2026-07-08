@@ -185,7 +185,7 @@ Lead Name: ${lead.name || 'Unknown'}
 Source: ${lead.source || 'Direct Registration'}
 Email: ${lead.email || 'None'}
 Attributed Details: ${JSON.stringify(lead.custom_fields || {})}
-Current Time: ${new Date().toLocaleString()}
+Current Time: ${new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
 
 --- BUSINESS PROFILE INFO ---
 Company/Business Name: ${profile?.business_name || 'N/A'}
@@ -220,7 +220,7 @@ CRITICAL RULES:
 Lead Name: ${leadName}
 Email: ${lead.email || 'None'}
 Attributed Details: ${JSON.stringify(lead.custom_fields || {})}
-Current Time: ${new Date().toLocaleString()}
+Current Time: ${new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
 
 Business Profile:
 ${profile?.business_info || 'N/A'}

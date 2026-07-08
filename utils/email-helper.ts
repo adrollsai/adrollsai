@@ -163,11 +163,13 @@ export async function sendBookingConfirmationEmail(
   leadName: string,
   slot: string,
   meetLink: string,
-  businessName: string
+  businessName: string,
+  timeZone?: string
 ) {
   try {
     const localDate = new Date(slot)
-    const formattedDate = localDate.toLocaleString([], {
+    const formattedDate = localDate.toLocaleString('en-US', {
+      timeZone: timeZone || 'Asia/Kolkata',
       weekday: 'long',
       month: 'long',
       day: 'numeric',
@@ -230,11 +232,13 @@ export async function sendBookingReminderEmail(
   leadName: string,
   slot: string,
   meetLink: string,
-  businessName: string
+  businessName: string,
+  timeZone?: string
 ) {
   try {
     const localDate = new Date(slot)
-    const formattedDate = localDate.toLocaleString([], {
+    const formattedDate = localDate.toLocaleString('en-US', {
+      timeZone: timeZone || 'Asia/Kolkata',
       weekday: 'long',
       month: 'long',
       day: 'numeric',

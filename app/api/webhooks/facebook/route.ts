@@ -894,7 +894,7 @@ You are an AI sales and booking assistant for "${companyName}".
 Here is information about our business:
 ${companyInfo}
 
-Current Date & Time: ${new Date().toLocaleString()}
+Current Date & Time: ${new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
 
 Guidelines:
 1. Speak in a natural, polite, and professional English language when responding.

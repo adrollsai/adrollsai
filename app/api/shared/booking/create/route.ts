@@ -133,7 +133,8 @@ export async function POST(request: Request) {
           lead.name,
           slot,
           hangoutLink,
-          profile.business_name || 'Consultation'
+          profile.business_name || 'Consultation',
+          timeZone
         )
         console.log(`[Booking Create API] Sent confirmation email to lead: ${leadEmail}`)
       } catch (emailErr) {
@@ -144,7 +145,8 @@ export async function POST(request: Request) {
     // 5.5. Save History Log
     try {
       const localSlotDate = new Date(slot)
-      const formattedDate = localSlotDate.toLocaleString([], {
+      const formattedDate = localSlotDate.toLocaleString('en-US', {
+         timeZone: timeZone,
          weekday: 'long',
          month: 'long',
          day: 'numeric',

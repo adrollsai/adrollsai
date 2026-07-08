@@ -136,6 +136,50 @@ export async function bookAppointment(
 
         let hangoutLink = ''
         let calendarEventCreated = false
+        let timeZone = 'Asia/Kolkata' // Default fallback timezone
+
+        // Resolve calendar timezone if integrated
+        if (profile && profile.google_refresh_token && profile.google_booking_enabled) {
+            try {
+                const refreshToken = profile.google_refresh_token
+                const accessToken = await refreshGoogleAccessToken(refreshToken)
+                timeZone = await getCalendarTimezone(accessToken)
+            } catch (tzErr: any) {
+                console.warn('[VOICE HELPER] Failed to fetch calendar timezone:', tzErr.message)
+            }
+        }
+
+        // Convert slot to correct UTC ISO-8601 string based on timezone if it lacks offset
+        let formattedSlot = slot
+        if (slot && !/Z|[+-]\d{2}:?\d{2}$/.test(slot)) {
+            try {
+                const parts = slot.split(/[T:-]/)
+                if (parts.length >= 5) {
+                    const yr = parseInt(parts[0])
+                    const mo = parseInt(parts[1]) - 1
+                    const dy = parseInt(parts[2])
+                    const hr = parseInt(parts[3])
+                    const mi = parseInt(parts[4])
+                    const se = parts[5] ? parseInt(parts[5]) : 0
+                    
+                    const utcTs = Date.UTC(yr, mo, dy, hr, mi, se)
+                    
+                    const getOffset = (tz: string, d: Date) => {
+                        const tzStr = d.toLocaleString('en-US', { timeZone: tz })
+                        const locD = new Date(tzStr)
+                        const utcD = new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }))
+                        return (locD.getTime() - utcD.getTime()) / 60000
+                    }
+                    
+                    const offsetMin = getOffset(timeZone, new Date(utcTs))
+                    const actualUtc = new Date(utcTs - offsetMin * 60000)
+                    formattedSlot = actualUtc.toISOString()
+                    console.log(`[VOICE HELPER] Local slot ${slot} converted to UTC: ${formattedSlot} for timezone ${timeZone}`)
+                }
+            } catch (err: any) {
+                console.error('[VOICE HELPER] Failed to convert local slot to UTC timezone:', err.message)
+            }
+        }
 
         // 3. Create Calendar Event on Google Calendar (if integrated)
         if (profile && profile.google_refresh_token && profile.google_booking_enabled) {
@@ -144,9 +188,8 @@ export async function bookAppointment(
                 const duration = profile.google_booking_duration || 30
 
                 const accessToken = await refreshGoogleAccessToken(refreshToken)
-                const timeZone = await getCalendarTimezone(accessToken)
 
-                const start = new Date(slot)
+                const start = new Date(formattedSlot)
                 const end = new Date(start.getTime() + (duration * 60000))
 
                 let leadEmail = lead.email || ''
@@ -216,7 +259,7 @@ export async function bookAppointment(
         const { error: updateError } = await supabaseAdmin
             .from('leads')
             .update({
-                booked_time: slot,
+                booked_time: formattedSlot,
                 pipeline_stage: 'Appointment booked',
                 meet_link: hangoutLink || null
             })
@@ -239,9 +282,10 @@ export async function bookAppointment(
                 await sendBookingConfirmationEmail(
                     leadEmail,
                     lead.name,
-                    slot,
+                    formattedSlot,
                     hangoutLink,
-                    profile?.business_name || 'Consultation'
+                    profile?.business_name || 'Consultation',
+                    timeZone
                 )
                 console.log(`[VOICE HELPER] Sent confirmation email to lead: ${leadEmail}`)
             } catch (emailErr) {
@@ -251,8 +295,9 @@ export async function bookAppointment(
 
         // 6. Save History Log
         try {
-            const localSlotDate = new Date(slot)
-            const formattedDate = localSlotDate.toLocaleString([], {
+            const localSlotDate = new Date(formattedSlot)
+            const formattedDate = localSlotDate.toLocaleString('en-US', {
+                timeZone: timeZone,
                 weekday: 'long',
                 month: 'long',
                 day: 'numeric',
