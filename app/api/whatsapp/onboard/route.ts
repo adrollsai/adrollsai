@@ -103,6 +103,54 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Failed to save WhatsApp credentials to database.' }, { status: 500 });
         }
 
+        // 3b. Register the phone number with WhatsApp Cloud API
+        // This is REQUIRED — without it the number exists in Meta's WABA but is not active on WhatsApp's messaging network.
+        // Users trying to message this number will see "this number does not exist on WhatsApp".
+        if (finalPhoneId && accessToken) {
+            try {
+                const registerRes = await fetch(`https://graph.facebook.com/v20.0/${finalPhoneId}/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        messaging_product: 'whatsapp',
+                        pin: '123456'
+                    })
+                });
+                const registerData = await registerRes.json();
+                if (registerRes.ok && registerData.success) {
+                    console.log('[WHATSAPP ONBOARD] ✅ Phone number registered successfully with WhatsApp Cloud API.');
+                } else {
+                    console.error('[WHATSAPP ONBOARD] ⚠️ Phone registration response:', registerData);
+                }
+            } catch (regErr) {
+                console.error('[WHATSAPP ONBOARD] ⚠️ Phone registration failed (non-fatal):', regErr);
+            }
+        }
+
+        // 3c. Subscribe the WABA to the app's webhooks so we receive incoming messages
+        if (finalWabaId && accessToken) {
+            try {
+                const subscribeRes = await fetch(`https://graph.facebook.com/v20.0/${finalWabaId}/subscribed_apps`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const subscribeData = await subscribeRes.json();
+                if (subscribeRes.ok && subscribeData.success) {
+                    console.log('[WHATSAPP ONBOARD] ✅ WABA webhook subscription activated successfully.');
+                } else {
+                    console.error('[WHATSAPP ONBOARD] ⚠️ WABA webhook subscription response:', subscribeData);
+                }
+            } catch (subErr) {
+                console.error('[WHATSAPP ONBOARD] ⚠️ WABA webhook subscription failed (non-fatal):', subErr);
+            }
+        }
+
         // 4. Auto-seed default WhatsApp real-estate flows
         try {
             const { count } = await supabase

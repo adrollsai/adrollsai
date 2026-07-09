@@ -128,7 +128,11 @@ export async function POST(request: Request) {
                             .select('id, role, parent_id, agency_id, business_name, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, ad_account_id')
                             .not('whatsapp_personal_number', 'is', null);
                             
+                        const wabaPhoneId = val.metadata?.phone_number_id || '';
                         const matchedProfile = profiles?.find((p: any) => {
+                            // Ensure the message was received on the phone number ID registered to this profile
+                            if (p.whatsapp_phone_number_id !== wabaPhoneId) return false;
+                            
                             const cleanPersonal = p.whatsapp_personal_number.replace(/\D/g, '');
                             return cleanPersonal === cleanFrom || 
                                    (cleanPersonal.length >= 10 && cleanFrom.endsWith(cleanPersonal)) ||
@@ -836,6 +840,9 @@ Clean Name:`;
                                                     lead_id: newLead?.id || null
                                                 })
                                                 .eq('id', chat.id);
+                                            chat.flow_completed = true;
+                                            chat.lead_id = newLead?.id || null;
+                                            chat.flow_answers = currentAnswers;
 
                                             await sendWAMessage(`Thank you for your responses, ${leadName}! ✅ Our team will reach out to you very soon. Feel free to ask any questions in the meantime!`);
 
@@ -869,6 +876,66 @@ Clean Name:`;
                                     const companyName = ownerProfile?.business_name || 'our business';
                                     const companyInfo = ownerProfile?.business_info || 'A professional business service.';
 
+                                    // 1b. Fetch active listings / properties
+                                    let propertiesText = 'No active listings in inventory.';
+                                    try {
+                                        const { data: properties } = await supabaseAdmin
+                                            .from('properties')
+                                            .select('title, price, address, property_type, description, configurations')
+                                            .eq('user_id', ownerUserId);
+                                        if (properties && properties.length > 0) {
+                                            propertiesText = properties
+                                                .map((p: any) => {
+                                                    const desc = p.description || 'No description available.';
+                                                    const priceInfo = p.price ? `, Price: ${p.price}` : '';
+                                                    const addrInfo = p.address ? `, Location/Address: ${p.address}` : '';
+                                                    const typeInfo = p.property_type ? `, Type: ${p.property_type}` : '';
+                                                    return `- Property: "${p.title}"${priceInfo}${addrInfo}${typeInfo}\n  Description/Details: ${desc}`;
+                                                })
+                                                .join('\n\n');
+                                        }
+                                    } catch (propErr) {
+                                        console.error('[WhatsApp AI Assistant] Failed to retrieve properties inventory:', propErr);
+                                    }
+
+                                    // 1c. Fetch voice call history and transcripts for this lead (if lead exists)
+                                    let voiceCallHistory = 'No previous voice calls.';
+                                    const leadIdForCtx = chat.lead_id;
+                                    if (leadIdForCtx) {
+                                        try {
+                                            const { data: histories } = await supabaseAdmin
+                                                .from('lead_history')
+                                                .select('description, created_at')
+                                                .eq('lead_id', leadIdForCtx)
+                                                .eq('action_type', 'REMARK')
+                                                .order('created_at', { ascending: true });
+
+                                            if (histories && histories.length > 0) {
+                                                const voiceCalls: string[] = [];
+                                                histories.forEach((h: any) => {
+                                                    if (h.description && h.description.startsWith('🎙️ CALL_JSON:')) {
+                                                        try {
+                                                            const jsonStr = h.description.substring('🎙️ CALL_JSON:'.length);
+                                                            const callData = JSON.parse(jsonStr);
+                                                            if (callData.transcript) {
+                                                                voiceCalls.push(`[Voice Call at ${new Date(h.created_at).toLocaleString()}] Transcript:\n${callData.transcript}`);
+                                                            } else if (callData.summary) {
+                                                                voiceCalls.push(`[Voice Call at ${new Date(h.created_at).toLocaleString()}] Summary:\n${callData.summary}`);
+                                                            }
+                                                        } catch (parseErr) {
+                                                            // Ignore malformed json
+                                                        }
+                                                    }
+                                                });
+                                                if (voiceCalls.length > 0) {
+                                                    voiceCallHistory = voiceCalls.join('\n\n');
+                                                }
+                                            }
+                                        } catch (historyErr) {
+                                            console.error('[WhatsApp AI Assistant] Failed to retrieve voice call history:', historyErr);
+                                        }
+                                    }
+
                                     // 2. Fetch recent WhatsApp message history for this chat
                                     let chatHistory = 'No previous messages.';
                                     try {
@@ -889,22 +956,30 @@ Clean Name:`;
                                     }
 
                                     // 3. Prompt Gemini to generate dynamic reply and extract appointment schedule
+                                    const customerName = chat.recipient_name || 'Rahul';
                                     const aiPrompt = `
 You are an AI sales and booking assistant for "${companyName}".
 Here is information about our business:
 ${companyInfo}
 
+Available Properties/Listings in our active inventory:
+${propertiesText}
+
 Current Date & Time: ${new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
 
 Guidelines:
 1. Speak in a natural, polite, and professional English language when responding.
-2. Answer the user's queries accurately based ONLY on the provided business profile. If you don't know the answer, politely offer to book a consultation so our representative can answer.
+2. Answer the user's queries accurately based ONLY on the provided business profile and active inventory details. If they ask about listings or price, refer to the available properties list. If you don't know the answer, politely offer to book a consultation so our representative can answer.
 3. Gently encourage the user to book a meeting or consultation slot (e.g., "Would you like me to book a quick consultation call for you?").
 4. Keep all responses brief (under 50 words) and suitable for a WhatsApp text.
 5. If the user explicitly proposes, confirms, or agrees to a meeting time/day (e.g., "book for tomorrow at 2 pm", "yes 5 pm works", "sure let's talk at 3 tomorrow"), extract that timestamp as an ISO-8601 string. Otherwise, set it to null.
+6. The user's name is "${customerName}". Address them by name ONLY if this is the start of the conversation (i.e. first 1-2 messages in history). For subsequent replies, do NOT repeat greetings like "Hi [Name]" or "Hello [Name]" at the beginning of every message.
 
-Recent Chat History:
+Recent WhatsApp Chat History:
 ${chatHistory}
+
+Recent Voice Call History / Transcript Context:
+${voiceCallHistory}
 
 Incoming User Message: "${messageText}"
 

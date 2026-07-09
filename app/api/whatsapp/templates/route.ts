@@ -11,33 +11,6 @@ const FALLBACK_TEMPLATES = [
         components: [
             { type: 'BODY', text: 'Hello! This is a standard welcome message from Meta Sandbox.' }
         ]
-    },
-    {
-        name: 'real_estate_welcome_1',
-        status: 'APPROVED',
-        category: 'MARKETING',
-        language: 'en_US',
-        components: [
-            { type: 'BODY', text: 'Hi {{1}}, thanks for showing interest in {{2}}! I am Harman from {{3}}. Would you like to receive the digital brochure or schedule a quick site visit?' }
-        ]
-    },
-    {
-        name: 'real_estate_reminder_1',
-        status: 'APPROVED',
-        category: 'UTILITY',
-        language: 'en_US',
-        components: [
-            { type: 'BODY', text: 'Hello {{1}}, this is a quick reminder for our scheduled site visit to {{2}} tomorrow at {{3}}. Let me know if you need location details!' }
-        ]
-    },
-    {
-        name: 'real_estate_alert_1',
-        status: 'APPROVED',
-        category: 'MARKETING',
-        language: 'en_US',
-        components: [
-            { type: 'BODY', text: 'Hi {{1}}, we just launched a new inventory phase at {{2}} with starting prices at {{3}}. Would you like to get the floor plans?' }
-        ]
     }
 ]
 
