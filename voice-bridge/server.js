@@ -119,7 +119,7 @@ wss.on('connection', (wsConnection) => {
     let twilioCallSid = null;
     let geminiSocket = null;
     let geminiReady = false;
-    let geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    let geminiApiKey = null; // Resolved dynamically from tenant profile or env
     
     let leadId = null;
     let profileId = null;
@@ -128,6 +128,26 @@ wss.on('connection', (wsConnection) => {
     let leadName = 'there';
 
     const transcriptTurns = [];
+
+    // Connection health check (heartbeat to prevent lingering ghost connections)
+    let isAlive = true;
+    wsConnection.on('pong', () => { isAlive = true; });
+
+    const pingInterval = setInterval(() => {
+        if (!isAlive) {
+            console.log('[BRIDGE] Twilio WS connection timed out. Closing...');
+            clearInterval(pingInterval);
+            wsConnection.terminate();
+            if (geminiSocket && geminiSocket.readyState === ws.OPEN) {
+                geminiSocket.close();
+            }
+            return;
+        }
+        isAlive = false;
+        if (wsConnection.readyState === ws.OPEN) {
+            wsConnection.ping();
+        }
+    }, 15000);
 
     // Helper to process and forward media packets
     function sendMediaToGemini(payload) {
@@ -261,7 +281,7 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                 }
 
                 // 2. Initialize connection to Gemini Multimodal Live API
-                const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+                geminiApiKey = profileData?.gemini_api_key || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
                 if (!geminiApiKey) {
                     console.error('[BRIDGE] Missing GEMINI_API_KEY.');
                     wsConnection.close(4002, 'Missing Gemini API Key.');
@@ -307,13 +327,24 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                     geminiSocket.send(JSON.stringify(setupPayload));
                 });
 
-                geminiSocket.on('message', async (data) => {
-                    try {
-                        const serverMsg = JSON.parse(data.toString());
-                        console.log('[BRIDGE] Received from Gemini:', JSON.stringify(serverMsg));
-                        
-                        // Handle setup complete before sending greeting
-                        if (serverMsg.setupComplete) {
+                 geminiSocket.on('message', async (data) => {
+                     try {
+                         const serverMsg = JSON.parse(data.toString());
+                         console.log('[BRIDGE] Received from Gemini:', JSON.stringify(serverMsg));
+                         
+                         // Handle user interruption (barge-in)
+                         if (serverMsg.serverContent?.interrupted) {
+                             console.log('[BRIDGE] Gemini detected user interruption. Clearing Twilio audio buffer...');
+                             if (wsConnection.readyState === ws.OPEN && twilioStreamSid) {
+                                 wsConnection.send(JSON.stringify({
+                                     event: 'clear',
+                                     streamSid: twilioStreamSid
+                                 }));
+                             }
+                         }
+                         
+                         // Handle setup complete before sending greeting
+                         if (serverMsg.setupComplete) {
                             console.log('[BRIDGE] Gemini Setup Complete received. Injecting greeting turn...');
                             const initialTurn = {
                                 clientContent: {
@@ -462,6 +493,7 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
     });
 
      wsConnection.on('close', async (code, reason) => {
+        clearInterval(pingInterval);
         console.log(`[BRIDGE] Twilio Stream closed. Code: ${code}, Reason: ${reason ? reason.toString() : 'none'}. Performing cleanups and summary logs...`);
         if (geminiSocket && geminiSocket.readyState === ws.OPEN) {
             geminiSocket.close();
