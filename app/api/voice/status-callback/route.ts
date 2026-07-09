@@ -115,10 +115,11 @@ export async function POST(req: Request) {
 
             const { data: profile } = await supabaseAdmin
                 .from('profiles')
-                .select('id, elevenlabs_api_key, elevenlabs_agent_id, business_name')
+                .select('id, elevenlabs_api_key, elevenlabs_agent_id, business_name, voice_provider, voice_twilio_sid, voice_twilio_token')
                 .eq('id', lead.user_id)
                 .single()
 
+            const voiceProvider = profile?.voice_provider || 'elevenlabs'
             const elevenlabsApiKey = process.env.MASTER_ELEVENLABS_KEY || profile?.elevenlabs_api_key
             const elevenlabsAgentId = process.env.MASTER_ELEVENLABS_AGENT_ID || profile?.elevenlabs_agent_id
 
@@ -130,7 +131,8 @@ export async function POST(req: Request) {
             let isQualified = false
             let publicRecordingUrl = null
 
-            if (elevenlabsApiKey && elevenlabsAgentId) {
+            // 1. Fetch ElevenLabs logs if provider is ElevenLabs
+            if (voiceProvider !== 'gemini' && elevenlabsApiKey && elevenlabsAgentId) {
                 console.log('[TWILIO STATUS CALLBACK] Searching ElevenLabs for conversation logs...')
                 
                 // Retry loop to find the conversation as ElevenLabs finishes the session
@@ -196,8 +198,8 @@ export async function POST(req: Request) {
                 }
             }
 
-            // 1. Perform Agentic Analysis using Gemini on the transcript if found
-            if (conversationId && transcript.length > 0) {
+            // 2. Perform Agentic Analysis using Gemini on the transcript if ElevenLabs transcript was found
+            if (voiceProvider !== 'gemini' && conversationId && transcript.length > 0) {
                 try {
                     const formattedTranscript = transcript
                         .map((t: any) => `${t.role === 'agent' ? 'Agent' : 'Lead'}: ${t.message}`)
@@ -230,8 +232,8 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                 }
             }
 
-            // 2. Download the audio recording from ElevenLabs if found
-            if (conversationId && elevenlabsApiKey) {
+            // 3. Download the audio recording from ElevenLabs if provider is ElevenLabs
+            if (voiceProvider !== 'gemini' && conversationId && elevenlabsApiKey) {
                 try {
                     const audioUrl = `https://api.elevenlabs.io/v1/convai/conversations/${conversationId}/audio`
                     const audioRes = await fetch(audioUrl, {
@@ -265,33 +267,85 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                 }
             }
 
-            // 3. Update the Lead Details in CRM
+            // 4. Download recording from Twilio if provider is Gemini
+            if (voiceProvider === 'gemini') {
+                const recordingUrl = formData.get('RecordingUrl') as string
+                if (recordingUrl) {
+                    console.log('[TWILIO STATUS CALLBACK] Twilio Call Recording found. Downloading...', recordingUrl)
+                    try {
+                        const twilioSid = process.env.MASTER_TWILIO_SID || profile?.voice_twilio_sid
+                        const twilioToken = process.env.MASTER_TWILIO_TOKEN || profile?.voice_twilio_token
+                        const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64')
+
+                        const recordingRes = await fetch(recordingUrl, {
+                            headers: {
+                                'Authorization': `Basic ${twilioAuth}`
+                            }
+                        })
+
+                        if (recordingRes.ok) {
+                            const audioBuffer = await recordingRes.arrayBuffer()
+                            const callSid = formData.get('CallSid') as string || 'gemini_call'
+                            const uploadPath = `${leadId}/${callSid}.wav`
+
+                            const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
+                                .from('lead-voice-recordings')
+                                .upload(uploadPath, Buffer.from(audioBuffer), {
+                                    contentType: 'audio/wav',
+                                    upsert: true
+                                })
+
+                            if (uploadErr) {
+                                console.error('[TWILIO STATUS CALLBACK] Gemini audio upload error:', uploadErr)
+                            } else if (uploadData) {
+                                const { data: { publicUrl } } = supabaseAdmin.storage
+                                    .from('lead-voice-recordings')
+                                    .getPublicUrl(uploadPath)
+                                publicRecordingUrl = publicUrl
+                                console.log('[TWILIO STATUS CALLBACK] Gemini call recording saved to Supabase Storage:', publicRecordingUrl)
+                            }
+                        } else {
+                            console.error('[TWILIO STATUS CALLBACK] Failed to download audio from Twilio:', recordingRes.statusText)
+                        }
+                    } catch (audioErr) {
+                        console.error('[TWILIO STATUS CALLBACK] Gemini audio download exception:', audioErr)
+                    }
+                }
+            }
+
+            // 5. Update the Lead Details in CRM
             const updateData: any = {
                 voice_call_status: 'completed',
-                voice_call_id: conversationId || undefined,
-                voice_call_summary: conversationId ? summary : undefined,
-                voice_call_transcript: conversationId ? transcript : undefined,
-                voice_recording_url: publicRecordingUrl || undefined,
-                voice_call_retry_count: 0 // Reset retry count since they picked up and call is completed
+                voice_call_retry_count: 0 // Reset retry count since call was picked up
             }
 
-            // Prepend call summary to notes
-            const dateStr = new Date().toLocaleDateString()
-            let updatedNotes = `[🎙️ Voice Call - ${dateStr}]: ${summary}`
-            if (lead.notes) {
-                updatedNotes += `\n\n${lead.notes}`
-            }
-            updateData.notes = updatedNotes
-
-            // Schedule callback if requested, otherwise clear the past scheduled time
-            updateData.voice_call_scheduled_at = callbackTime || null
-            if (callbackTime) {
-                updateData.notes = `[⚠️ Scheduled Callback]: For ${new Date(callbackTime).toLocaleString()}\n\n` + updateData.notes
+            if (publicRecordingUrl) {
+                updateData.voice_recording_url = publicRecordingUrl
             }
 
-            // Transition pipeline stage if qualified
-            if (isQualified && lead.pipeline_stage !== 'Won' && !bookingTime) {
-                updateData.pipeline_stage = 'Qualified'
+            if (voiceProvider !== 'gemini') {
+                updateData.voice_call_id = conversationId || undefined
+                updateData.voice_call_summary = conversationId ? summary : undefined
+                updateData.voice_call_transcript = conversationId ? transcript : undefined
+
+                // Prepend call summary to notes
+                const dateStr = new Date().toLocaleDateString()
+                let updatedNotes = `[🎙️ Voice Call - ${dateStr}]: ${summary}`
+                if (lead.notes) {
+                    updatedNotes += `\n\n${lead.notes}`
+                }
+                updateData.notes = updatedNotes
+
+                // Schedule callback if requested, otherwise clear the past scheduled time
+                updateData.voice_call_scheduled_at = callbackTime || null
+                if (callbackTime) {
+                    updateData.notes = `[⚠️ Scheduled Callback]: For ${new Date(callbackTime).toLocaleString()}\n\n` + updateData.notes
+                }
+
+                // Transition pipeline stage if qualified
+                if (isQualified && lead.pipeline_stage !== 'Won' && !bookingTime) {
+                    updateData.pipeline_stage = 'Qualified'
+                }
             }
 
             const { error: updateErr } = await supabaseAdmin
@@ -299,7 +353,7 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                 .update(updateData)
                 .eq('id', leadId)
 
-            if (!updateErr && bookingTime) {
+            if (voiceProvider !== 'gemini' && !updateErr && bookingTime) {
                 console.log(`[TWILIO STATUS CALLBACK] Call led to booking slot ${bookingTime}. Triggering bookAppointment...`)
                 await bookAppointment(supabaseAdmin, leadId, bookingTime, lead.user_id)
             }
@@ -309,25 +363,58 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                 return NextResponse.json({ error: 'Database update failed.' }, { status: 500 })
             }
 
-            // 4. Insert into lead_history so it displays on the Activity Log timeline
-            try {
-                const historyData = {
-                    summary,
-                    recording_url: publicRecordingUrl,
-                    transcript
+            // 6. Save or update timeline history logs
+            if (voiceProvider === 'gemini' && publicRecordingUrl) {
+                try {
+                    // Update latest REMARK timeline event with Gemini recording URL
+                    const { data: histRecords } = await supabaseAdmin
+                        .from('lead_history')
+                        .select('id, description')
+                        .eq('lead_id', leadId)
+                        .eq('action_type', 'REMARK')
+                        .order('created_at', { ascending: false })
+                        .limit(3)
+
+                    if (histRecords) {
+                        const targetRecord = histRecords.find(r => r.description.startsWith('🎙️ CALL_JSON:'))
+                        if (targetRecord) {
+                            const rawJson = targetRecord.description.replace('🎙️ CALL_JSON:', '')
+                            const parsed = JSON.parse(rawJson)
+                            parsed.recording_url = publicRecordingUrl
+                            
+                            await supabaseAdmin
+                                .from('lead_history')
+                                .update({
+                                    description: `🎙️ CALL_JSON:${JSON.stringify(parsed)}`
+                                })
+                                .eq('id', targetRecord.id)
+                            
+                            console.log('[TWILIO STATUS CALLBACK] Updated lead history record with Gemini recording URL.')
+                        }
+                    }
+                } catch (histErr) {
+                    console.error('[TWILIO STATUS CALLBACK] Failed to update lead history with Gemini recording URL:', histErr)
                 }
-                const { error: historyErr } = await supabaseAdmin
-                    .from('lead_history')
-                    .insert({
-                        lead_id: leadId,
-                        action_type: 'REMARK',
-                        description: `🎙️ CALL_JSON:${JSON.stringify(historyData)}`
-                    })
-                if (historyErr) {
-                    console.error('[TWILIO STATUS CALLBACK] Failed to insert lead history:', historyErr)
+            } else if (voiceProvider !== 'gemini') {
+                try {
+                    const historyData = {
+                        summary,
+                        recording_url: publicRecordingUrl,
+                        transcript
+                    }
+                    const { error: historyErr } = await supabaseAdmin
+                        .from('lead_history')
+                        .insert({
+                            lead_id: leadId,
+                            action_type: 'REMARK',
+                            description: `🎙️ CALL_JSON:${JSON.stringify(historyData)}`
+                        })
+                    if (historyErr) {
+                        console.error('[TWILIO STATUS CALLBACK] Failed to insert lead history:', historyErr)
+                    }
+                } catch (histErr) {
+                    console.error('[TWILIO STATUS CALLBACK] Exception inserting lead history:', histErr)
                 }
-            } catch (histErr) {
-                console.error('[TWILIO STATUS CALLBACK] Exception inserting lead history:', histErr)
             }
 
             console.log(`[TWILIO STATUS CALLBACK] Successfully processed post-call details for lead ${leadId}`)

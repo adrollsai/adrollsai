@@ -10,7 +10,7 @@ export async function POST(req: Request) {
         // Fetch credentials
         const { data: profile, error: profErr } = await supabase
             .from('profiles')
-            .select('elevenlabs_api_key, elevenlabs_agent_id, voice_twilio_sid, voice_twilio_token, voice_twilio_number')
+            .select('*')
             .eq('id', user.id)
             .single()
 
@@ -83,6 +83,7 @@ export async function POST(req: Request) {
                 params.append('Url', `${appUrl}/api/voice/twiml?leadId=${lead.id}&profileId=${user.id}`)
                 params.append('To', cleanPhone)
                 params.append('From', voiceNumber.trim())
+                params.append('Record', 'true')
                 // Notify when the call hangs up or fails to prevent status getting stuck
                 params.append('StatusCallback', `${appUrl}/api/voice/status-callback?leadId=${lead.id}`)
 
