@@ -908,100 +908,93 @@ Clean Name:`;
                                     // STEP C: Flow completed or no flow — AI assistant conversation
                                     console.log(`[WhatsApp AI Assistant] Processing message from customer ${cleanFrom} for owner ${ownerUserId}...`);
                                      
-                                    // 1. Resolve business context from owner profile
-                                    const { data: ownerProfile } = await supabaseAdmin
-                                        .from('profiles')
-                                        .select('business_name, business_info')
-                                        .eq('id', ownerUserId)
-                                        .maybeSingle();
-
-                                    const companyName = ownerProfile?.business_name || 'our business';
-                                    const companyInfo = ownerProfile?.business_info || 'A professional business service.';
-
-                                    // 1b. Fetch active listings / properties
-                                    let propertiesText = 'No active listings in inventory.';
-                                    try {
-                                        const { data: properties } = await supabaseAdmin
+                                    // Run all independent context queries in parallel for speed
+                                    const [profileResult, propertiesResult, historyResult, chatHistoryResult] = await Promise.all([
+                                        // 1. Business profile
+                                        supabaseAdmin
+                                            .from('profiles')
+                                            .select('business_name, business_info')
+                                            .eq('id', ownerUserId)
+                                            .maybeSingle(),
+                                        // 2. Properties/listings
+                                        supabaseAdmin
                                             .from('properties')
                                             .select('title, price, address, property_type, description, configurations')
-                                            .eq('user_id', ownerUserId);
-                                        if (properties && properties.length > 0) {
-                                            propertiesText = properties
-                                                .map((p: any) => {
-                                                    const desc = p.description || 'No description available.';
-                                                    const priceInfo = p.price ? `, Price: ${p.price}` : '';
-                                                    const addrInfo = p.address ? `, Location/Address: ${p.address}` : '';
-                                                    const typeInfo = p.property_type ? `, Type: ${p.property_type}` : '';
-                                                    return `- Property: "${p.title}"${priceInfo}${addrInfo}${typeInfo}\n  Description/Details: ${desc}`;
-                                                })
-                                                .join('\n\n');
-                                        }
-                                    } catch (propErr) {
-                                        console.error('[WhatsApp AI Assistant] Failed to retrieve properties inventory:', propErr);
-                                    }
-
-                                    // 1c. Fetch voice call history and transcripts for this lead (if lead exists)
-                                    let voiceCallHistory = 'No previous voice calls.';
-                                    try {
-                                        const { data: matchedLeads } = await supabaseAdmin
-                                            .from('leads')
-                                            .select('id')
-                                            .eq('user_id', ownerUserId)
-                                            .ilike('phone', `%${cleanFrom.slice(-10)}%`);
-
-                                        const matchedLeadIds = matchedLeads?.map((l: any) => l.id) || [];
-                                        
-                                        if (matchedLeadIds.length > 0) {
-                                            const { data: histories } = await supabaseAdmin
-                                                .from('lead_history')
-                                                .select('description, created_at')
-                                                .in('lead_id', matchedLeadIds)
-                                                .eq('action_type', 'REMARK')
-                                                .order('created_at', { ascending: true });
-
-                                            if (histories && histories.length > 0) {
-                                                const voiceCalls: string[] = [];
-                                                histories.forEach((h: any) => {
-                                                    if (h.description && h.description.startsWith('🎙️ CALL_JSON:')) {
-                                                        try {
-                                                            const jsonStr = h.description.substring('🎙️ CALL_JSON:'.length);
-                                                            const callData = JSON.parse(jsonStr);
-                                                            if (callData.transcript) {
-                                                                voiceCalls.push(`[Voice Call at ${new Date(h.created_at).toLocaleString()}] Transcript:\n${callData.transcript}`);
-                                                            } else if (callData.summary) {
-                                                                voiceCalls.push(`[Voice Call at ${new Date(h.created_at).toLocaleString()}] Summary:\n${callData.summary}`);
-                                                            }
-                                                        } catch (parseErr) {
-                                                            // Ignore malformed json
-                                                        }
-                                                    }
-                                                });
-                                                if (voiceCalls.length > 0) {
-                                                    voiceCallHistory = voiceCalls.join('\n\n');
+                                            .eq('user_id', ownerUserId),
+                                        // 3. Voice call history (lead_history for matched leads)
+                                        (async () => {
+                                            try {
+                                                const { data: matchedLeads } = await supabaseAdmin
+                                                    .from('leads')
+                                                    .select('id')
+                                                    .eq('user_id', ownerUserId)
+                                                    .ilike('phone', `%${cleanFrom.slice(-10)}%`);
+                                                const matchedLeadIds = matchedLeads?.map((l: any) => l.id) || [];
+                                                if (matchedLeadIds.length > 0) {
+                                                    const { data: histories } = await supabaseAdmin
+                                                        .from('lead_history')
+                                                        .select('description, created_at')
+                                                        .in('lead_id', matchedLeadIds)
+                                                        .eq('action_type', 'REMARK')
+                                                        .order('created_at', { ascending: true });
+                                                    return histories;
                                                 }
-                                            }
-                                        }
-                                    } catch (historyErr) {
-                                        console.error('[WhatsApp AI Assistant] Failed to retrieve voice call history:', historyErr);
-                                    }
-
-                                    // 2. Fetch recent WhatsApp message history for this chat
-                                    let chatHistory = 'No previous messages.';
-                                    try {
-                                        const { data: historyMsgs } = await supabaseAdmin
+                                                return null;
+                                            } catch { return null; }
+                                        })(),
+                                        // 4. Chat message history
+                                        supabaseAdmin
                                             .from('whatsapp_messages')
                                             .select('direction, message_text')
                                             .eq('chat_id', chat.id)
                                             .order('created_at', { ascending: true })
-                                            .limit(12);
+                                            .limit(12)
+                                    ]);
 
-                                        if (historyMsgs && historyMsgs.length > 0) {
-                                            chatHistory = historyMsgs
-                                                .map((m: any) => `${m.direction === 'inbound' ? 'User' : 'Assistant'}: ${m.message_text}`)
-                                                .join('\n');
+                                    const companyName = profileResult.data?.business_name || 'our business';
+                                    const companyInfo = profileResult.data?.business_info || 'A professional business service.';
+
+                                    let propertiesText = 'No active listings in inventory.';
+                                    if (propertiesResult.data && propertiesResult.data.length > 0) {
+                                        propertiesText = propertiesResult.data
+                                            .map((p: any) => {
+                                                const desc = p.description || 'No description available.';
+                                                const priceInfo = p.price ? `, Price: ${p.price}` : '';
+                                                const addrInfo = p.address ? `, Location/Address: ${p.address}` : '';
+                                                const typeInfo = p.property_type ? `, Type: ${p.property_type}` : '';
+                                                return `- Property: "${p.title}"${priceInfo}${addrInfo}${typeInfo}\n  Description/Details: ${desc}`;
+                                            })
+                                            .join('\n\n');
+                                    }
+
+                                    let voiceCallHistory = 'No previous voice calls.';
+                                    if (historyResult && Array.isArray(historyResult) && historyResult.length > 0) {
+                                        const voiceCalls: string[] = [];
+                                        historyResult.forEach((h: any) => {
+                                            if (h.description && h.description.startsWith('🎙️ CALL_JSON:')) {
+                                                try {
+                                                    const jsonStr = h.description.substring('🎙️ CALL_JSON:'.length);
+                                                    const callData = JSON.parse(jsonStr);
+                                                    if (callData.transcript) {
+                                                        voiceCalls.push(`[Voice Call at ${new Date(h.created_at).toLocaleString()}] Transcript:\n${callData.transcript}`);
+                                                    } else if (callData.summary) {
+                                                        voiceCalls.push(`[Voice Call at ${new Date(h.created_at).toLocaleString()}] Summary:\n${callData.summary}`);
+                                                    }
+                                                } catch (parseErr) {
+                                                    // Ignore malformed json
+                                                }
+                                            }
+                                        });
+                                        if (voiceCalls.length > 0) {
+                                            voiceCallHistory = voiceCalls.join('\n\n');
                                         }
-                                    } catch (histErr) {
-                                        console.error('[WhatsApp AI Assistant] Failed to retrieve history:', histErr);
+                                    }
+
+                                    let chatHistory = 'No previous messages.';
+                                    if (chatHistoryResult.data && chatHistoryResult.data.length > 0) {
+                                        chatHistory = chatHistoryResult.data
+                                            .map((m: any) => `${m.direction === 'inbound' ? 'User' : 'Assistant'}: ${m.message_text}`)
+                                            .join('\n');
                                     }
 
                                     // 3. Prompt Gemini to generate dynamic reply and extract appointment schedule
@@ -1056,76 +1049,55 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                     // 4. Send the reply via WhatsApp
                                     await sendWAMessage(replyText);
 
-                                    // 5. Update CRM lead notes/remarks with this exchange
-                                    const { data: latestChat } = await supabaseAdmin
-                                        .from('whatsapp_chats')
-                                        .select('lead_id, recipient_name')
-                                        .eq('id', chat.id)
-                                        .single();
-
-                                    const leadId = latestChat?.lead_id;
-                                    const leadName = latestChat?.recipient_name || 'WhatsApp Lead';
-
-                                    if (leadId) {
+                                    // 5. Post-reply operations: update notes, log history, push notification — fire-and-forget for speed
+                                    const postReplyLeadId = chat.lead_id;
+                                    const postReplyLeadName = chat.recipient_name || 'WhatsApp Lead';
+                                    (async () => {
                                         try {
-                                            const { data: lead } = await supabaseAdmin
-                                                .from('leads')
-                                                .select('notes')
-                                                .eq('id', leadId)
-                                                .single();
+                                            if (postReplyLeadId) {
+                                                const dateStr = new Date().toLocaleDateString();
+                                                const notesAddition = `[💬 WhatsApp Message - ${dateStr}]: User: "${messageText}" | Assistant: "${replyText}"`;
 
-                                            const dateStr = new Date().toLocaleDateString();
-                                            const notesAddition = `[💬 WhatsApp Message - ${dateStr}]: User: "${messageText}" | Assistant: "${replyText}"`;
-                                            let newNotes = notesAddition;
-                                            if (lead?.notes) {
-                                                newNotes = `${notesAddition}\n\n${lead.notes}`;
-                                            }
-
-                                            await supabaseAdmin
-                                                .from('leads')
-                                                .update({ notes: newNotes })
-                                                .eq('id', leadId);
-                                        } catch (notesErr) {
-                                            console.error('[WhatsApp AI Assistant] Failed to update lead notes:', notesErr);
-                                        }
-
-                                        // 5b. Log conversation to lead_history for Activity Log display
-                                        try {
-                                            const waHistoryPayload = JSON.stringify({
-                                                user_msg: messageText,
-                                                bot_reply: replyText,
-                                                booking_time: extractedBookingTime || null
-                                            });
-                                            await supabaseAdmin
-                                                .from('lead_history')
-                                                .insert({
-                                                    lead_id: leadId,
-                                                    action_type: 'WHATSAPP_CHAT',
-                                                    description: `💬 WA_JSON:${waHistoryPayload}`
+                                                const waHistoryPayload = JSON.stringify({
+                                                    user_msg: messageText,
+                                                    bot_reply: replyText,
+                                                    booking_time: extractedBookingTime || null
                                                 });
-                                        } catch (histErr) {
-                                            console.error('[WhatsApp AI Assistant] Failed to log to lead_history:', histErr);
-                                        }
 
-                                        // 6. Handle automatic booking if a slot was confirmed by user
-                                        if (extractedBookingTime) {
-                                            try {
-                                                console.log(`[WhatsApp AI Assistant] Booking slot ${extractedBookingTime} for lead ${leadId}...`);
-                                                await bookAppointment(supabaseAdmin, leadId, extractedBookingTime, ownerUserId);
-                                            } catch (bookErr) {
-                                                console.error('[WhatsApp AI Assistant] Appointment booking failed:', bookErr);
+                                                // Run notes update, history log, and booking in parallel
+                                                await Promise.all([
+                                                    // Update lead notes
+                                                    (async () => {
+                                                        try {
+                                                            const { data: lead } = await supabaseAdmin
+                                                                .from('leads')
+                                                                .select('notes')
+                                                                .eq('id', postReplyLeadId)
+                                                                .single();
+                                                            const newNotes = lead?.notes ? `${notesAddition}\n\n${lead.notes}` : notesAddition;
+                                                            await supabaseAdmin.from('leads').update({ notes: newNotes }).eq('id', postReplyLeadId);
+                                                        } catch (e) { console.error('[WA AI] Notes update failed:', e); }
+                                                    })(),
+                                                    // Log to lead_history
+                                                    (async () => {
+                                                        try {
+                                                            await supabaseAdmin.from('lead_history').insert({
+                                                                lead_id: postReplyLeadId,
+                                                                action_type: 'WHATSAPP_CHAT',
+                                                                description: `💬 WA_JSON:${waHistoryPayload}`
+                                                            });
+                                                        } catch (e: any) { console.error('[WA AI] History log failed:', e); }
+                                                    })(),
+                                                    // Booking if extracted
+                                                    extractedBookingTime ? bookAppointment(supabaseAdmin, postReplyLeadId, extractedBookingTime, ownerUserId).catch(e => console.error('[WA AI] Booking failed:', e)) : Promise.resolve()
+                                                ]);
                                             }
+                                            // Push notification
+                                            await sendPushNotification(ownerUserId!, `New WhatsApp from ${postReplyLeadName || cleanFrom}`, messageText.substring(0, 100)).catch(() => {});
+                                        } catch (postErr) {
+                                            console.error('[WA AI] Post-reply operations error:', postErr);
                                         }
-                                    }
-
-                                    // 7. Send standard push notification to business owner
-                                    try {
-                                        await sendPushNotification(
-                                            ownerUserId!,
-                                            `New WhatsApp from ${leadName || cleanFrom}`,
-                                            messageText.substring(0, 100)
-                                        );
-                                    } catch (pushErr) {}
+                                    })();
 
                                 } catch (bgErr) {
                                     console.error('[Flow] Background customer message processing error:', bgErr);
