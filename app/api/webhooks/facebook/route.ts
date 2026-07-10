@@ -142,8 +142,8 @@ export async function POST(request: Request) {
                         if (matchedProfile) {
                             console.log(`🤖 MATCHED PROFILE: ${matchedProfile.business_name} (User: ${matchedProfile.id})`);
                             
-                            // Process in background to immediately return 200 OK to Meta and prevent webhook timeout retries
-                            (async () => {
+                            // Process and wait to ensure Vercel does not freeze execution before completion
+                            await (async () => {
                                 try {
                                     let ownerChat: any = null;
                                     try {
@@ -466,7 +466,7 @@ IMPORTANT RULES:
                             console.log(`📬 Message from customer/lead: ${fromPhone}`);
 
                             // Process in background to immediately return 200 to Meta
-                            (async () => {
+                            await (async () => {
                                 try {
                                     // 1. Resolve owner. First try matching via existing leads phone (specific to a business/user)
                                     const wabaPhoneId = val.metadata?.phone_number_id || '';
