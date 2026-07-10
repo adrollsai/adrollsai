@@ -263,6 +263,7 @@ CRITICAL RULES:
 4. Your single goal is to find a suitable date and time slot for a meeting.
 5. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish) when responding to the user.
 6. ENDING THE CALL: Once the call objective is met or the lead wants to end, say a brief polite goodbye and trigger your "end_call" tool to hang up the call immediately.
+7. GENDER & PRONOUNS: You are a female assistant. You must always use female grammar and pronouns when speaking Hindi/Hinglish (e.g., use "karti hoon" instead of "karta hoon", "karungi" instead of "karunga", "baat kar rahi hoon" instead of "baat kar raha hoon", "de sakti hoon" instead of "de sakta hoon", "bhejti hoon" instead of "bhejta hoon").
 
 --- BUSINESS CONTEXT ---
 Business Name: ${companyName}
@@ -274,7 +275,7 @@ ${productContext ? `--- LEAD INTEREST ---\n${productContext}\n` : ''}
 ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
 `.trim();
 
-                        greetingMessage = `Hi ${leadName}! Main ${companyName} se AI booking assistant baat kar raha hoon. Maine dekha aap hamare products me interest le rahe the, to kya hum ek quick consultation call schedule kar sakte hain? Aap kaise hain?`;
+                        greetingMessage = `Hi ${leadName}! Main ${companyName} se AI booking assistant baat kar rahi hoon. Maine dekha aap hamare products me interest le rahe the, to kya hum ek quick consultation call schedule kar sakte hain? Aap kaise hain?`;
                     }
                 } catch (dbErr) {
                     console.error('[BRIDGE] DB context fetch error:', dbErr);
