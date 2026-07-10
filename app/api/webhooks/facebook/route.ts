@@ -468,50 +468,15 @@ IMPORTANT RULES:
                             // Process in background to immediately return 200 to Meta
                             await (async () => {
                                 try {
-                                    // 1. Resolve owner. First try matching via existing leads phone (specific to a business/user)
+                                    // 1. Resolve owner — ALWAYS prioritize the webhook's phone_number_id first
+                                    // This tells us exactly which WhatsApp business number received the message
                                     const wabaPhoneId = val.metadata?.phone_number_id || '';
                                     let ownerUserId: string | null = null;
                                     let ownerWaToken: string | null = null;
                                     let ownerWaPhoneId: string | null = null;
 
-                                    const { data: matchedLeads } = await supabaseAdmin
-                                        .from('leads')
-                                        .select('id, user_id, name')
-                                        .ilike('phone', `%${cleanFrom.slice(-10)}%`);
-
-                                    if (matchedLeads && matchedLeads.length > 0) {
-                                        // If multiple leads match, choose the one whose owner has the matching wabaPhoneId
-                                        let selectedLead = matchedLeads[0];
-                                        if (wabaPhoneId && matchedLeads.length > 1) {
-                                            const ownerIds = matchedLeads.map((l: any) => l.user_id);
-                                            const { data: matchedProfiles } = await supabaseAdmin
-                                                .from('profiles')
-                                                .select('id, whatsapp_phone_number_id')
-                                                .in('id', ownerIds);
-                                            
-                                            const profileWithPhoneId = matchedProfiles?.find((p: any) => p.whatsapp_phone_number_id === wabaPhoneId);
-                                            if (profileWithPhoneId) {
-                                                const leadForProfile = matchedLeads.find((l: any) => l.user_id === profileWithPhoneId.id);
-                                                if (leadForProfile) {
-                                                    selectedLead = leadForProfile;
-                                                }
-                                            }
-                                        }
-                                        
-                                        ownerUserId = selectedLead.user_id;
-                                        const { data: ownerProfile } = await supabaseAdmin
-                                            .from('profiles')
-                                            .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
-                                            .eq('id', ownerUserId)
-                                            .maybeSingle();
-                                        if (ownerProfile) {
-                                            ownerWaToken = ownerProfile.whatsapp_access_token || ownerProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN || null;
-                                            ownerWaPhoneId = ownerProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
-                                        }
-                                    }
-
-                                    // Fallback: If no existing lead matches, resolve owning user from the WABA phone_number_id in webhook metadata
-                                    if (!ownerUserId && wabaPhoneId) {
+                                    // PRIMARY: Resolve from webhook phone_number_id (most reliable)
+                                    if (wabaPhoneId) {
                                         const { data: ownerProfiles } = await supabaseAdmin
                                             .from('profiles')
                                             .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role')
@@ -526,6 +491,46 @@ IMPORTANT RULES:
                                             ownerUserId = selectedProfile.id;
                                             ownerWaToken = selectedProfile.whatsapp_access_token || selectedProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN || null;
                                             ownerWaPhoneId = selectedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
+                                            console.log(`[Flow] Owner resolved from wabaPhoneId: ${selectedProfile.business_name} (${ownerUserId})`);
+                                        }
+                                    }
+
+                                    // FALLBACK: If wabaPhoneId didn't resolve, try matching via existing leads phone
+                                    if (!ownerUserId) {
+                                        const { data: matchedLeads } = await supabaseAdmin
+                                            .from('leads')
+                                            .select('id, user_id, name')
+                                            .ilike('phone', `%${cleanFrom.slice(-10)}%`);
+
+                                        if (matchedLeads && matchedLeads.length > 0) {
+                                            let selectedLead = matchedLeads[0];
+                                            if (wabaPhoneId && matchedLeads.length > 1) {
+                                                const ownerIds = matchedLeads.map((l: any) => l.user_id);
+                                                const { data: matchedProfiles } = await supabaseAdmin
+                                                    .from('profiles')
+                                                    .select('id, whatsapp_phone_number_id')
+                                                    .in('id', ownerIds);
+                                                
+                                                const profileWithPhoneId = matchedProfiles?.find((p: any) => p.whatsapp_phone_number_id === wabaPhoneId);
+                                                if (profileWithPhoneId) {
+                                                    const leadForProfile = matchedLeads.find((l: any) => l.user_id === profileWithPhoneId.id);
+                                                    if (leadForProfile) {
+                                                        selectedLead = leadForProfile;
+                                                    }
+                                                }
+                                            }
+                                            
+                                            ownerUserId = selectedLead.user_id;
+                                            const { data: ownerProfile } = await supabaseAdmin
+                                                .from('profiles')
+                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
+                                                .eq('id', ownerUserId)
+                                                .maybeSingle();
+                                            if (ownerProfile) {
+                                                ownerWaToken = ownerProfile.whatsapp_access_token || ownerProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN || null;
+                                                ownerWaPhoneId = ownerProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
+                                            }
+                                            console.log(`[Flow] Owner resolved from lead match: ${selectedLead.name} -> user ${ownerUserId}`);
                                         }
                                     }
 
