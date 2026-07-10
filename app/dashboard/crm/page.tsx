@@ -980,12 +980,14 @@ END:VCARD\n`
       return matchSearch && matchCampaign && matchForm
     })
 
-    // Deduplicate leads by unique ID to prevent console key warnings
+    // Deduplicate leads by unique phone number (or ID if no phone) to keep CRM clean of duplicate contacts
     const seen = new Set();
     return unfiltered.filter(lead => {
-        if (!lead.id) return true;
-        if (seen.has(lead.id)) return false;
-        seen.add(lead.id);
+        const cleanPhone = lead.phone ? lead.phone.replace(/\D/g, '') : '';
+        const key = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : lead.id;
+        if (!key) return true;
+        if (seen.has(key)) return false;
+        seen.add(key);
         return true;
     });
   }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm, role, userId, assignedCampaigns, getLeadCampaignName])
