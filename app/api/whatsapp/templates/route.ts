@@ -120,7 +120,7 @@ export async function POST(req: Request) {
         }
 
         // Structure standard Meta message template creation payload
-        const templatePayload = {
+        const templatePayload: any = {
             name: cleanName,
             category: category.toUpperCase(), // 'MARKETING' or 'UTILITY'
             language: 'en_US',
@@ -130,6 +130,19 @@ export async function POST(req: Request) {
                     text: bodyText
                 }
             ]
+        }
+
+        // If bodyText contains variables like {{1}}, {{2}}, extract and inject required Meta examples
+        const matches = bodyText.match(/\{\{(\d+)\}\}/g)
+        if (matches && matches.length > 0) {
+            // Deduplicate matching indices to construct correct order list
+            const uniqueIndices = Array.from<number>(new Set(matches.map((m: string) => parseInt(m.replace(/\D/g, '')))))
+                .sort((a, b) => a - b)
+            
+            const examplesList = uniqueIndices.map(index => `Sample ${index}`)
+            templatePayload.components[0].example = {
+                body_text: [examplesList]
+            }
         }
 
         const metaUrl = `https://graph.facebook.com/v20.0/${whatsappWabaId}/message_templates`
