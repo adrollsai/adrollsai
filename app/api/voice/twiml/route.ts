@@ -247,7 +247,7 @@ ${whatsappHistory ? `Previous WhatsApp History:\n${whatsappHistory}` : ''}
             
             const geminiTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say language="en-IN" voice="Polly.Aditi">Hello, please wait while we connect your call.</Say>
+    <Say language="en-IN" voice="Polly.Aditi">Connecting.</Say>
     <Connect>
         <Stream url="${streamUrl}">
             <Parameter name="leadId" value="${leadId}" />
