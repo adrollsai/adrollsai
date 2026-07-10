@@ -61,8 +61,26 @@ export async function POST(req: Request) {
                     const phoneData = await phoneRes.json();
                     
                     if (phoneData && phoneData.data && phoneData.data.length > 0) {
-                        finalPhoneId = phoneData.data[0].id;
-                        displayPhoneNumber = phoneData.data[0].display_phone_number || '';
+                        let selectedPhone = phoneData.data[0];
+                        if (phoneData.data.length > 1) {
+                            // Find all registered phone IDs in the profiles table to avoid duplicates
+                            const { data: existingProfiles } = await supabase
+                                .from('profiles')
+                                .select('whatsapp_phone_number_id')
+                                .not('whatsapp_phone_number_id', 'is', null);
+                            
+                            const usedPhoneIds = new Set(existingProfiles?.map(p => p.whatsapp_phone_number_id) || []);
+                            
+                            // Find the first phone ID that is NOT already used by another profile
+                            const unusedPhone = phoneData.data.find((p: any) => !usedPhoneIds.has(p.id));
+                            if (unusedPhone) {
+                                selectedPhone = unusedPhone;
+                                console.log('[WHATSAPP ONBOARD] Multiple phone IDs found. Picked unused Phone ID:', selectedPhone.id);
+                            }
+                        }
+                        
+                        finalPhoneId = selectedPhone.id;
+                        displayPhoneNumber = selectedPhone.display_phone_number || '';
                         console.log('[WHATSAPP ONBOARD] Discovered Phone ID & Number:', finalPhoneId, displayPhoneNumber);
                     }
                 }

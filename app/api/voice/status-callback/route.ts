@@ -135,15 +135,24 @@ export async function POST(req: Request) {
             // Wait briefly for it to finish, then read the saved data.
             if (voiceProvider === 'gemini') {
                 console.log('[TWILIO STATUS CALLBACK] Gemini provider detected. Waiting for voice bridge to save transcript...')
-                await delay(6000) // Give voice bridge time to summarize and save
+                
+                let updatedLead: any = null
+                for (let attempt = 1; attempt <= 12; attempt++) {
+                    const { data } = await supabaseAdmin
+                        .from('leads')
+                        .select('voice_call_summary, voice_call_transcript, voice_recording_url')
+                        .eq('id', leadId)
+                        .single()
+                    
+                    if (data?.voice_call_transcript && Array.isArray(data.voice_call_transcript) && data.voice_call_transcript.length > 0) {
+                        updatedLead = data
+                        break
+                    }
+                    console.log(`[TWILIO STATUS CALLBACK] Gemini transcript not ready yet. Attempt ${attempt}/12. Retrying in 1s...`)
+                    await delay(1000)
+                }
 
-                const { data: updatedLead } = await supabaseAdmin
-                    .from('leads')
-                    .select('voice_call_summary, voice_call_transcript, voice_recording_url')
-                    .eq('id', leadId)
-                    .single()
-
-                if (updatedLead?.voice_call_transcript && Array.isArray(updatedLead.voice_call_transcript) && updatedLead.voice_call_transcript.length > 0) {
+                if (updatedLead) {
                     transcript = updatedLead.voice_call_transcript
                     summary = updatedLead.voice_call_summary || summary
                     publicRecordingUrl = updatedLead.voice_recording_url || null

@@ -498,7 +498,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
       if (response.authResponse) {
         code = response.authResponse.code
         checkAndSubmit()
-        setTimeout(() => checkAndSubmit(true), 1500)
+        setTimeout(() => checkAndSubmit(true), 4000)
       } else {
         window.removeEventListener('message', messageListener)
         setIsConnecting(false)
