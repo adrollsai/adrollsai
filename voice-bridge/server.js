@@ -202,25 +202,30 @@ wss.on('connection', (wsConnection) => {
                     return;
                 }
 
-                // 1. Fetch details from Supabase to prepare Gemini system instruction prompt
+                // 1. Fetch details from Supabase and connect to Gemini in parallel
                 let systemInstruction = 'You are a helpful representative. Focus on booking an appointment.';
                 let greetingMessage = 'Hello, how are you?';
 
-                try {
-                    // Fetch profile
-                    const { data: profile } = await supabaseAdmin
-                        .from('profiles')
-                        .select('*')
-                        .eq('id', profileId)
-                        .single();
-                    profileData = profile;
+                const dbPromise = Promise.all([
+                    supabaseAdmin.from('profiles').select('*').eq('id', profileId).maybeSingle(),
+                    supabaseAdmin.from('leads').select('*').eq('id', leadId).maybeSingle(),
+                    supabaseAdmin.from('properties').select('*').eq('user_id', profileId).limit(5)
+                ]);
 
-                    // Fetch lead
-                    const { data: lead } = await supabaseAdmin
-                        .from('leads')
-                        .select('*')
-                        .eq('id', leadId)
-                        .single();
+                const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+                console.log('[BRIDGE] Connecting to Gemini Live WebSocket concurrently...');
+                let tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${defaultApiKey || ''}`);
+
+                let profile = null;
+                let lead = null;
+                let props = null;
+
+                try {
+                    const [profileRes, leadRes, propsRes] = await dbPromise;
+                    profile = profileRes.data;
+                    profileData = profile;
+                    lead = leadRes.data;
+                    props = propsRes.data;
 
                     if (lead) {
                         leadPhone = lead.phone;
@@ -233,7 +238,7 @@ wss.on('connection', (wsConnection) => {
                                 .from('properties')
                                 .select('*')
                                 .eq('id', lead.property_id)
-                                .single();
+                                .maybeSingle();
                             if (prop) {
                                 productContext = `Primary Interest Property: ${prop.title || 'N/A'}\nDetails: ${prop.description || 'N/A'}\nPrice: ${prop.price || 'N/A'}`;
                             }
@@ -241,11 +246,6 @@ wss.on('connection', (wsConnection) => {
 
                         // Build Catalog Context
                         let catalogContext = '';
-                        const { data: props } = await supabaseAdmin
-                            .from('properties')
-                            .select('*')
-                            .eq('user_id', profileId)
-                            .limit(5);
                         if (props && props.length > 0) {
                             catalogContext = props.map((p, i) => `${i + 1}. ${p.title} (${p.property_type || 'General'}): Price ${p.price || 'Contact us'}, Details: ${p.description || ''}`).join('\n');
                         }
@@ -280,52 +280,54 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                     console.error('[BRIDGE] DB context fetch error:', dbErr);
                 }
 
-                // 2. Initialize connection to Gemini Multimodal Live API
-                geminiApiKey = profileData?.gemini_api_key || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-                if (!geminiApiKey) {
-                    console.error('[BRIDGE] Missing GEMINI_API_KEY.');
-                    wsConnection.close(4002, 'Missing Gemini API Key.');
-                    return;
+                // Check if custom key needs reconnection
+                const customApiKey = profile?.gemini_api_key;
+                if (customApiKey && customApiKey !== defaultApiKey) {
+                    console.log('[BRIDGE] Custom API Key found in profile. Reconnecting with tenant key...');
+                    tempSocket.close();
+                    tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${customApiKey}`);
+                }
+                geminiSocket = tempSocket;
+
+                // Wait for socket to open if it hasn't already
+                if (geminiSocket.readyState !== ws.OPEN) {
+                    await new Promise((resolve) => {
+                        geminiSocket.once('open', resolve);
+                    });
                 }
 
-                const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
+                console.log('[BRIDGE] Gemini Socket opened. Sending setup config...');
                 
-                console.log('[BRIDGE] Connecting to Gemini Live WebSocket...');
-                geminiSocket = new ws(geminiUrl);
-
-                geminiSocket.on('open', () => {
-                    console.log('[BRIDGE] Gemini Socket opened. Sending setup config...');
-                    
-                    const setupPayload = {
-                        setup: {
-                            model: "models/gemini-3.1-flash-live-preview",
-                            generationConfig: {
-                                responseModalities: ["AUDIO"],
-                                speechConfig: {
-                                    voiceConfig: {
-                                        prebuiltVoiceConfig: {
-                                            voiceName: "Aoede" // Warm female voice config
-                                        }
+                const setupPayload = {
+                    setup: {
+                        model: "models/gemini-3.1-flash-live-preview",
+                        generationConfig: {
+                            responseModalities: ["AUDIO"],
+                            speechConfig: {
+                                voiceConfig: {
+                                    prebuiltVoiceConfig: {
+                                        voiceName: "Aoede" // Warm female voice config
                                     }
                                 }
-                            },
-                            systemInstruction: {
-                                parts: [{ text: systemInstruction }]
-                            },
-                            tools: [
-                                {
-                                    functionDeclarations: [
-                                        {
-                                            name: "end_call",
-                                            description: "Ends the phone call when the conversation is finished, meeting is booked, or client wishes to hang up."
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    };
-                    geminiSocket.send(JSON.stringify(setupPayload));
-                });
+                            }
+                        },
+                        systemInstruction: {
+                            parts: [{ text: systemInstruction }]
+                        },
+                        tools: [
+                            {
+                                functionDeclarations: [
+                                    {
+                                        name: "end_call",
+                                        description: "Ends the phone call when the conversation is finished, meeting is booked, or client wishes to hang up."
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                };
+                geminiSocket.send(JSON.stringify(setupPayload));
+            });
 
                  geminiSocket.on('message', async (data) => {
                      try {
@@ -351,7 +353,7 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                                     turns: [
                                         {
                                             role: "user",
-                                            parts: [{ text: "Hello! Call has connected. Greet the customer using your greeting configuration message immediately." }]
+                                            parts: [{ text: `Hello! Call has connected. Please speak this exact greeting message now in a warm, welcoming tone: "${greetingMessage}"` }]
                                         }
                                     ],
                                     turnComplete: true

@@ -96,12 +96,13 @@ export async function triggerWelcomeDrip(
             }
         }
 
-        const components: any[] = [
-            {
+        const components: any[] = [];
+        if (flow.template_name !== 'hello_world') {
+            components.push({
                 type: 'body',
                 parameters
-            }
-        ];
+            });
+        }
 
         // Handle Image Header / Media Template support
         if (flow.header_media_url) {
