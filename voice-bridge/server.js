@@ -311,9 +311,7 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                                         voiceName: "Aoede" // Warm female voice config
                                     }
                                 }
-                            },
-                            outputAudioTranscription: {},
-                            inputAudioTranscription: {}
+                            }
                         },
                         systemInstruction: {
                             parts: [{ text: systemInstruction }]
