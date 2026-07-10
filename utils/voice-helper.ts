@@ -3,6 +3,30 @@ import { sendCAPIEvent } from '@/utils/external-apis'
 import { sendBookingConfirmationEmail } from '@/utils/email-helper'
 
 /**
+ * Warms up the Cloud Run Voice Bridge container to prevent cold-start websocket timeouts in Twilio.
+ */
+export async function warmupVoiceBridge(): Promise<void> {
+    const bridgeUrl = process.env.GEMINI_VOICE_BRIDGE_URL || 'ws://localhost:5050';
+    if (bridgeUrl.startsWith('ws')) {
+        const healthUrl = bridgeUrl.replace(/^ws/, 'http') + '/health';
+        console.log(`[VOICE HELPER] Warming up Voice Bridge container at: ${healthUrl}`);
+        try {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), 8000);
+            const warmupRes = await fetch(healthUrl, { signal: controller.signal });
+            clearTimeout(id);
+            if (warmupRes.ok) {
+                console.log(`[VOICE HELPER] Voice Bridge container warmed up successfully.`);
+            } else {
+                console.warn(`[VOICE HELPER] Voice Bridge warmup returned status: ${warmupRes.status}`);
+            }
+        } catch (warmupErr: any) {
+            console.warn(`[VOICE HELPER] Voice Bridge warmup failed or timed out:`, warmupErr.message);
+        }
+    }
+}
+
+/**
  * Triggers an automated outbound AI call for a lead via Twilio and ElevenLabs.
  */
 export async function triggerOutboundCall(
@@ -50,6 +74,9 @@ export async function triggerOutboundCall(
                 cleanPhone = '+' + cleanPhone
             }
         }
+
+        // Warm up the Cloud Run voice bridge container before placing the call
+        await warmupVoiceBridge();
 
         console.log(`[VOICE HELPER] Dialing lead ${lead.name} (${cleanPhone}) from caller ID ${voiceNumber}...`)
 

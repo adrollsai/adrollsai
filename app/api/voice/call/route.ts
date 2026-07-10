@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { warmupVoiceBridge } from '@/utils/voice-helper'
 
 export async function POST(req: Request) {
     try {
@@ -73,6 +74,9 @@ export async function POST(req: Request) {
                     .from('leads')
                     .update({ voice_call_status: 'calling' })
                     .eq('id', lead.id)
+
+                // Warm up the Cloud Run voice bridge container before placing the call
+                await warmupVoiceBridge();
 
                 // Call Twilio REST API using native fetch
                 const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Calls.json`
