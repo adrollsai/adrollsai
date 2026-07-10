@@ -514,6 +514,15 @@ IMPORTANT RULES:
                                     }
 
                                     // 2. Find or create chat record
+                                    const { data: latestLead } = await supabaseAdmin
+                                        .from('leads')
+                                        .select('id, name')
+                                        .eq('user_id', ownerUserId)
+                                        .ilike('phone', `%${cleanFrom.slice(-10)}%`)
+                                        .order('created_at', { ascending: false, nullsFirst: false })
+                                        .limit(1)
+                                        .maybeSingle();
+
                                     let { data: chat } = await supabaseAdmin
                                         .from('whatsapp_chats')
                                         .select('id, recipient_name, current_flow_id, current_question_index, flow_answers, flow_completed, lead_id')
@@ -527,7 +536,8 @@ IMPORTANT RULES:
                                             .insert({
                                                 user_id: ownerUserId,
                                                 recipient_phone: cleanFrom,
-                                                recipient_name: null,
+                                                recipient_name: latestLead?.name || null,
+                                                lead_id: latestLead?.id || null,
                                                 last_message_text: messageText,
                                                 unread_count: 1,
                                                 current_flow_id: null,
@@ -539,13 +549,24 @@ IMPORTANT RULES:
                                             .single();
                                         chat = newChat;
                                     } else {
+                                        const updates: any = {
+                                            last_message_text: messageText,
+                                            unread_count: (chat as any).flow_completed ? 1 : 0,
+                                            updated_at: new Date().toISOString()
+                                        };
+                                        if (latestLead) {
+                                            if (chat.lead_id !== latestLead.id) {
+                                                updates.lead_id = latestLead.id;
+                                                chat.lead_id = latestLead.id;
+                                            }
+                                            if (!chat.recipient_name || chat.recipient_name !== latestLead.name) {
+                                                updates.recipient_name = latestLead.name;
+                                                chat.recipient_name = latestLead.name;
+                                            }
+                                        }
                                         await supabaseAdmin
                                             .from('whatsapp_chats')
-                                            .update({
-                                                last_message_text: messageText,
-                                                unread_count: (chat as any).flow_completed ? 1 : 0,
-                                                updated_at: new Date().toISOString()
-                                            })
+                                            .update(updates)
                                             .eq('id', chat.id);
                                     }
 
@@ -900,13 +921,20 @@ Clean Name:`;
 
                                     // 1c. Fetch voice call history and transcripts for this lead (if lead exists)
                                     let voiceCallHistory = 'No previous voice calls.';
-                                    const leadIdForCtx = chat.lead_id;
-                                    if (leadIdForCtx) {
-                                        try {
+                                    try {
+                                        const { data: matchedLeads } = await supabaseAdmin
+                                            .from('leads')
+                                            .select('id')
+                                            .eq('user_id', ownerUserId)
+                                            .ilike('phone', `%${cleanFrom.slice(-10)}%`);
+
+                                        const matchedLeadIds = matchedLeads?.map((l: any) => l.id) || [];
+                                        
+                                        if (matchedLeadIds.length > 0) {
                                             const { data: histories } = await supabaseAdmin
                                                 .from('lead_history')
                                                 .select('description, created_at')
-                                                .eq('lead_id', leadIdForCtx)
+                                                .in('lead_id', matchedLeadIds)
                                                 .eq('action_type', 'REMARK')
                                                 .order('created_at', { ascending: true });
 
@@ -931,9 +959,9 @@ Clean Name:`;
                                                     voiceCallHistory = voiceCalls.join('\n\n');
                                                 }
                                             }
-                                        } catch (historyErr) {
-                                            console.error('[WhatsApp AI Assistant] Failed to retrieve voice call history:', historyErr);
                                         }
+                                    } catch (historyErr) {
+                                        console.error('[WhatsApp AI Assistant] Failed to retrieve voice call history:', historyErr);
                                     }
 
                                     // 2. Fetch recent WhatsApp message history for this chat

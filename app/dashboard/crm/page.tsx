@@ -37,6 +37,7 @@ export default function CRMPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [targetUserId, setTargetUserId] = useState<string | null>(null)
   const [isAssigning, setIsAssigning] = useState(false)
+  const [autoCallNewLeads, setAutoCallNewLeads] = useState(false)
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(role)
 
@@ -232,10 +233,11 @@ export default function CRMPage() {
       setUserId(user.id)
 
       // Fetch Fresh Profile Data first to get targetUserId
-      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id, auto_call_new_leads').eq('id', user.id).single()
       const currentRole = profile?.role as any || 'admin'
       setRole(currentRole)
       setEnableDistribution(!!profile?.enable_distribution)
+      setAutoCallNewLeads(!!profile?.auto_call_new_leads)
       
       const parentId = profile?.parent_id || profile?.agency_id
       if (parentId) setParentAdminId(parentId)
@@ -348,7 +350,7 @@ export default function CRMPage() {
           while (hasMore) {
               let query = supabase.from('leads')
                 .select('*, lead_history(action_type, description, created_at)')
-                .order('created_at', { ascending: false })
+                .order('created_at', { ascending: false, nullsFirst: false })
                 .range(start, start + step - 1)
 
               if (maxCreatedAt && !force) {
@@ -642,7 +644,32 @@ export default function CRMPage() {
     if (!newLead.name || !newLead.phone) return alert("Name and Phone required")
     setIsAdding(true)
     
-    if (userId) {
+    try {
+        if (!userId) {
+            alert("Error: You must be logged in to add a lead (userId is null).");
+            setIsAdding(false);
+            return;
+        }
+
+        const searchPhone = newLead.phone.trim()
+        const cleanSearchPhone = searchPhone.replace(/\D/g, '')
+        
+        const orFilter = `phone.eq."${searchPhone}",phone.eq."${cleanSearchPhone}"`
+        const { data: existingLead } = await supabase
+            .from('leads')
+            .select('id, name, phone')
+            .eq('user_id', targetUserId || userId)
+            .or(orFilter)
+            .maybeSingle()
+
+        if (existingLead) {
+            const proceed = confirm(`A lead with this phone number already exists: ${existingLead.name} (${existingLead.phone}). Do you want to create a duplicate lead anyway?`);
+            if (!proceed) {
+                setIsAdding(false);
+                return;
+            }
+        }
+
         const leadPayload: any = {
             user_id: targetUserId || userId,
             name: newLead.name, phone: newLead.phone, email: newLead.email, notes: newLead.notes,
@@ -651,18 +678,53 @@ export default function CRMPage() {
         }
         if (role === 'agent') leadPayload.assigned_to = userId
 
-        const { error } = await supabase.from('leads').insert(leadPayload)
-        if (!error) {
+        console.log("[CRM] Inserting manual lead payload:", leadPayload);
+
+        const { data: savedLead, error } = await supabase.from('leads').insert(leadPayload).select().single()
+        if (!error && savedLead) {
+            console.log("[CRM] Lead inserted successfully!", savedLead);
+            
+            // 1. Trigger automated WhatsApp welcome template send (defaults to hello_world sandbox template)
+            fetch('/api/whatsapp/test-send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    recipient: leadPayload.phone,
+                    templateName: 'hello_world',
+                    isSandboxTest: true
+                })
+            }).then(async (res) => {
+                const data = await res.json()
+                console.log("[CRM] WhatsApp auto-trigger status:", data)
+            }).catch(err => console.error("[CRM] WhatsApp auto-trigger failed:", err))
+
+            // 2. Trigger outbound voice call if auto call setting is enabled
+            if (autoCallNewLeads) {
+                console.log("[CRM] auto_call_new_leads is enabled. Triggering outbound voice call for lead ID:", savedLead.id)
+                fetch('/api/voice/call', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ leadId: savedLead.id })
+                }).then(async (res) => {
+                    const data = await res.json()
+                    console.log("[CRM] Outbound voice call auto-trigger status:", data)
+                }).catch(err => console.error("[CRM] Outbound voice call auto-trigger failed:", err))
+            }
+
             // Force cache refresh
             await fetchLeads(true)
             setIsAddModalOpen(false)
             setNewLead({ name: '', phone: '', email: '', notes: '' })
         } else {
-            console.error("Manual lead insert error:", error);
-            alert("Error adding lead: " + (error.message || JSON.stringify(error)));
+            console.error("[CRM] Manual lead insert database error:", error);
+            alert("Error adding lead: " + (error ? error.message : "Unknown error"));
         }
+    } catch (err: any) {
+        console.error("[CRM] Unhandled error in handleAddLead:", err);
+        alert("Unhandled error: " + (err.message || err));
+    } finally {
+        setIsAdding(false)
     }
-    setIsAdding(false)
   }
 
   const handleDeleteLead = async (id: string, e: React.MouseEvent) => {
