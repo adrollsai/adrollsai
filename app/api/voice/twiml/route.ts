@@ -38,6 +38,25 @@ export async function POST(req: Request) {
 
         const voiceProvider = profile?.voice_provider || 'elevenlabs'
 
+        if (voiceProvider === 'gemini') {
+            const bridgeHost = process.env.GEMINI_VOICE_BRIDGE_URL || 'ws://localhost:5050'
+            const streamUrl = `${bridgeHost}/gemini-live-stream`
+            console.log(`[TWIML BRIDGE] Redirecting Twilio Media Stream to Gemini Live Bridge: ${streamUrl}`)
+            
+            const geminiTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Connect>
+        <Stream url="${streamUrl}">
+            <Parameter name="leadId" value="${leadId}" />
+            <Parameter name="profileId" value="${profileId}" />
+        </Stream>
+    </Connect>
+</Response>`
+            return new NextResponse(geminiTwiml, {
+                headers: { 'Content-Type': 'application/xml' }
+            })
+        }
+
         if (voiceProvider === 'elevenlabs') {
             const elevenlabsApiKey = process.env.MASTER_ELEVENLABS_KEY || profile?.elevenlabs_api_key
             const elevenlabsAgentId = process.env.MASTER_ELEVENLABS_AGENT_ID || profile?.elevenlabs_agent_id
@@ -240,25 +259,7 @@ ${whatsappHistory ? `Previous WhatsApp History:\n${whatsappHistory}` : ''}
 
         const dynamicFirstMessage = `Hi ${leadName}! Main ${companyName} se AI booking assistant baat kar raha hoon. Maine dekha aap hamare products me interest le rahe the, to kya hum ek quick consultation call schedule kar sakte hain? Aap kaise hain?`
 
-        if (voiceProvider === 'gemini') {
-            const bridgeHost = process.env.GEMINI_VOICE_BRIDGE_URL || 'ws://localhost:5050'
-            const streamUrl = `${bridgeHost}/gemini-live-stream`
-            console.log(`[TWIML BRIDGE] Redirecting Twilio Media Stream to Gemini Live Bridge: ${streamUrl}`)
-            
-            const geminiTwiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say language="en-IN" voice="Polly.Aditi">Connecting.</Say>
-    <Connect>
-        <Stream url="${streamUrl}">
-            <Parameter name="leadId" value="${leadId}" />
-            <Parameter name="profileId" value="${profileId}" />
-        </Stream>
-    </Connect>
-</Response>`
-            return new NextResponse(geminiTwiml, {
-                headers: { 'Content-Type': 'application/xml' }
-            })
-        }
+
 
         const elevenlabsApiKey = process.env.MASTER_ELEVENLABS_KEY || profile?.elevenlabs_api_key
         const elevenlabsAgentId = process.env.MASTER_ELEVENLABS_AGENT_ID || profile?.elevenlabs_agent_id

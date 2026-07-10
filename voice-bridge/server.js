@@ -214,7 +214,7 @@ wss.on('connection', (wsConnection) => {
 
                 const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
                 console.log('[BRIDGE] Connecting to Gemini Live WebSocket concurrently...');
-                let tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${defaultApiKey || ''}`);
+                let tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${defaultApiKey || ''}`);
 
                 let profile = null;
                 let lead = null;
@@ -251,10 +251,17 @@ wss.on('connection', (wsConnection) => {
                         }
 
                         const companyName = profile?.business_name || 'our company';
+                        const firstName = leadName.split(' ')[0] || 'there';
+                        
                         systemInstruction = `
 You are a helpful AI Voice calling assistant for "${companyName}".
 Your name is a booking representative.
 Your primary objective is to make the lead, ${leadName}, book an appointment/consultation with the business.
+
+CONVERSATION FLOW:
+1. Your first greeting is: "Hi ${firstName} ji, kaise ho aap?". (This is already spoken initially).
+2. Once the lead responds to your greeting, your immediate next response must be to ask if they have availability to talk right now (e.g., "Kya aapke paas abhi baat karne ke liye time hai?").
+3. After they confirm availability or agree to speak, proceed with the rest of the conversation (introduce yourself as the AI booking assistant from ${companyName}, and guide them to schedule a consultation/appointment).
 
 CRITICAL RULES:
 1. ONLY speak about the provided business profile info, catalog, and the lead's details.
@@ -275,7 +282,7 @@ ${productContext ? `--- LEAD INTEREST ---\n${productContext}\n` : ''}
 ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
 `.trim();
 
-                        greetingMessage = `Hi ${leadName}! Main ${companyName} se AI booking assistant baat kar rahi hoon. Maine dekha aap hamare products me interest le rahe the, to kya hum ek quick consultation call schedule kar sakte hain? Aap kaise hain?`;
+                        greetingMessage = `Hi ${firstName} ji, kaise ho aap?`;
                     }
                 } catch (dbErr) {
                     console.error('[BRIDGE] DB context fetch error:', dbErr);
@@ -286,7 +293,7 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                 if (customApiKey && customApiKey !== defaultApiKey) {
                     console.log('[BRIDGE] Custom API Key found in profile. Reconnecting with tenant key...');
                     tempSocket.close();
-                    tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${customApiKey}`);
+                    tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${customApiKey}`);
                 }
                 geminiSocket = tempSocket;
                 geminiApiKey = customApiKey || defaultApiKey;
@@ -325,7 +332,9 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                                     }
                                 ]
                             }
-                        ]
+                        ],
+                        inputAudioTranscription: {},
+                        outputAudioTranscription: {}
                     }
                 };
                 geminiSocket.send(JSON.stringify(setupPayload));
@@ -543,7 +552,7 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
 Generate a quick, concise one-sentence summary of the following phone conversation between our sales assistant and the lead:
 ${fullTranscript}
 `.trim();
-                    const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash:generateContent?key=${geminiApiKey}`;
+                    const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${geminiApiKey}`;
                     const summaryRes = await fetch(restUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
