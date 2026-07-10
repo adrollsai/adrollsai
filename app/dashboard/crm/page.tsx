@@ -657,6 +657,9 @@ export default function CRMPage() {
             await fetchLeads(true)
             setIsAddModalOpen(false)
             setNewLead({ name: '', phone: '', email: '', notes: '' })
+        } else {
+            console.error("Manual lead insert error:", error);
+            alert("Error adding lead: " + (error.message || JSON.stringify(error)));
         }
     }
     setIsAdding(false)
