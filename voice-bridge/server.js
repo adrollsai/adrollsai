@@ -327,7 +327,6 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                     }
                 };
                 geminiSocket.send(JSON.stringify(setupPayload));
-            });
 
                  geminiSocket.on('message', async (data) => {
                      try {
