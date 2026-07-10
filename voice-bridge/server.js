@@ -289,6 +289,7 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                     tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${customApiKey}`);
                 }
                 geminiSocket = tempSocket;
+                geminiApiKey = customApiKey || defaultApiKey;
 
                 // Wait for socket to open if it hasn't already
                 if (geminiSocket.readyState !== ws.OPEN) {
@@ -310,7 +311,9 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                                         voiceName: "Aoede" // Warm female voice config
                                     }
                                 }
-                            }
+                            },
+                            outputAudioTranscription: {},
+                            inputAudioTranscription: {}
                         },
                         systemInstruction: {
                             parts: [{ text: systemInstruction }]
@@ -405,6 +408,13 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                             }
                         }
 
+                        // Record agent text transcription from outputTranscription
+                        const agentText = serverMsg.serverContent?.outputTranscription?.text;
+                        if (agentText) {
+                            console.log(`[Gemini Agent]: ${agentText}`);
+                            transcriptTurns.push({ role: 'agent', message: agentText });
+                        }
+
                         // Record user text turns if transcribed by Gemini
                         if (serverMsg.serverContent?.userTurn?.parts) {
                             for (const part of serverMsg.serverContent.userTurn.parts) {
@@ -413,6 +423,13 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                                     transcriptTurns.push({ role: 'user', message: part.text });
                                 }
                             }
+                        }
+
+                        // Record user text transcription from inputTranscription
+                        const userText = serverMsg.serverContent?.inputTranscription?.text;
+                        if (userText) {
+                            console.log(`[User]: ${userText}`);
+                            transcriptTurns.push({ role: 'user', message: userText });
                         }
 
                         // 2. Handle function call tool executions (like end_call)

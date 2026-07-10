@@ -124,12 +124,65 @@ export async function POST(req: Request) {
             const elevenlabsAgentId = process.env.MASTER_ELEVENLABS_AGENT_ID || profile?.elevenlabs_agent_id
 
             let conversationId = null
-            let transcript = []
+            let transcript: any[] = []
             let summary = 'Call completed.'
             let callbackTime: string | null = null
             let bookingTime: string | null = null
             let isQualified = false
             let publicRecordingUrl = null
+
+            // For Gemini provider, the voice bridge saves transcript/summary to leads table on WS close.
+            // Wait briefly for it to finish, then read the saved data.
+            if (voiceProvider === 'gemini') {
+                console.log('[TWILIO STATUS CALLBACK] Gemini provider detected. Waiting for voice bridge to save transcript...')
+                await delay(6000) // Give voice bridge time to summarize and save
+
+                const { data: updatedLead } = await supabaseAdmin
+                    .from('leads')
+                    .select('voice_call_summary, voice_call_transcript, voice_recording_url')
+                    .eq('id', leadId)
+                    .single()
+
+                if (updatedLead?.voice_call_transcript && Array.isArray(updatedLead.voice_call_transcript) && updatedLead.voice_call_transcript.length > 0) {
+                    transcript = updatedLead.voice_call_transcript
+                    summary = updatedLead.voice_call_summary || summary
+                    publicRecordingUrl = updatedLead.voice_recording_url || null
+                    conversationId = 'gemini-live' // Mark as valid to trigger analysis below
+
+                    console.log(`[TWILIO STATUS CALLBACK] Read ${transcript.length} transcript turns from voice bridge.`)
+
+                    // Perform agentic analysis on the bridge-saved transcript
+                    try {
+                        const formattedTranscript = transcript
+                            .map((t: any) => `${t.role === 'agent' ? 'Agent' : 'Lead'}: ${t.message}`)
+                            .join('\n')
+
+                        const geminiPrompt = `
+You are analyzing a phone call transcript between our AI voice assistant and a lead.
+Here is the transcript:
+${formattedTranscript}
+
+Extract the following details as a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
+{
+  "callback_time": "ISO-8601 string of requested callback date/time if the lead asked or agreed to be called back at a specific time (including accepting or saying 'okay', 'thank you', 'theek hai' after a callback time is proposed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
+  "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot if the lead agreed to, confirmed, or accepted a proposed meeting slot (including saying 'okay', 'thank you', 'theek hai', or saying goodbye/thank you after a meeting slot is proposed/confirmed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
+  "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified)
+}
+`
+                        const rawGeminiRes = await callGemini(geminiPrompt)
+                        const cleanJson = rawGeminiRes.replace(/```json/g, '').replace(/```/g, '').trim()
+                        const extracted = JSON.parse(cleanJson)
+
+                        callbackTime = extracted.callback_time || null
+                        bookingTime = extracted.booking_time || null
+                        isQualified = !!extracted.is_qualified
+                    } catch (err: any) {
+                        console.error('[TWILIO STATUS CALLBACK] Gemini transcript analysis failed:', err)
+                    }
+                } else {
+                    console.log('[TWILIO STATUS CALLBACK] Voice bridge transcript not yet available. Skipping analysis.')
+                }
+            }
 
             // 1. Fetch ElevenLabs logs if provider is ElevenLabs
             if (voiceProvider !== 'gemini' && elevenlabsApiKey && elevenlabsAgentId) {
@@ -267,89 +320,6 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                 }
             }
 
-            // 4. Download recording from Twilio if provider is Gemini
-            if (voiceProvider === 'gemini') {
-                const recordingUrl = formData.get('RecordingUrl') as string
-                if (recordingUrl) {
-                    console.log('[TWILIO STATUS CALLBACK] Twilio Call Recording found. Downloading...', recordingUrl)
-                    try {
-                        const twilioSid = process.env.MASTER_TWILIO_SID || profile?.voice_twilio_sid
-                        const twilioToken = process.env.MASTER_TWILIO_TOKEN || profile?.voice_twilio_token
-                        const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64')
-
-                        const recordingRes = await fetch(recordingUrl, {
-                            headers: {
-                                'Authorization': `Basic ${twilioAuth}`
-                            }
-                        })
-
-                        if (recordingRes.ok) {
-                            const audioBuffer = await recordingRes.arrayBuffer()
-                            const callSid = formData.get('CallSid') as string || 'gemini_call'
-                            const uploadPath = `${leadId}/${callSid}.wav`
-
-                            const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
-                                .from('lead-voice-recordings')
-                                .upload(uploadPath, Buffer.from(audioBuffer), {
-                                    contentType: 'audio/wav',
-                                    upsert: true
-                                })
-
-                            if (uploadErr) {
-                                console.error('[TWILIO STATUS CALLBACK] Gemini audio upload error:', uploadErr)
-                            } else if (uploadData) {
-                                const { data: { publicUrl } } = supabaseAdmin.storage
-                                    .from('lead-voice-recordings')
-                                    .getPublicUrl(uploadPath)
-                                publicRecordingUrl = publicUrl
-                                console.log('[TWILIO STATUS CALLBACK] Gemini call recording saved to Supabase Storage:', publicRecordingUrl)
-                                conversationId = callSid
-                            }
-                        } else {
-                            console.error('[TWILIO STATUS CALLBACK] Failed to download audio from Twilio:', recordingRes.statusText)
-                        }
-                    } catch (audioErr) {
-                        console.error('[TWILIO STATUS CALLBACK] Gemini audio download exception:', audioErr)
-                    }
-                }
-            }
-
-            // 4.5. Perform Agentic Analysis using Gemini on the recording if provider is Gemini and we have a recording
-            if (voiceProvider === 'gemini' && publicRecordingUrl) {
-                console.log('[TWILIO STATUS CALLBACK] Performing Gemini analysis on the audio recording...', publicRecordingUrl)
-                try {
-                    const geminiPrompt = `
-You are analyzing a recorded phone call between our AI voice assistant and a lead.
-Listen to the audio recording carefully and extract the transcript, summary, and metadata.
-
-Generate a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
-{
-  "summary": "A clear, concise paragraph summary of the call",
-  "transcript": [
-    { "role": "agent", "message": "agent spoken text" },
-    { "role": "user", "message": "user spoken text" }
-  ],
-  "callback_time": "ISO-8601 string of requested callback date/time if the lead asked or agreed to be called back at a specific time (including accepting or saying 'okay', 'thank you', 'theek hai' after a callback time is proposed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
-  "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot if the lead agreed to, confirmed, or accepted a proposed meeting slot (including saying 'okay', 'thank you', 'theek hai', or saying goodbye/thank you after a meeting slot is proposed/confirmed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
-  "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified)
-}
-`
-
-                    const rawGeminiRes = await callGemini(geminiPrompt, [publicRecordingUrl])
-                    console.log('[TWILIO STATUS CALLBACK] Gemini recording analysis raw response:', rawGeminiRes)
-                    const cleanJson = rawGeminiRes.replace(/```json/g, '').replace(/```/g, '').trim()
-                    const extracted = JSON.parse(cleanJson)
-
-                    summary = extracted.summary || summary
-                    transcript = extracted.transcript || []
-                    callbackTime = extracted.callback_time || null
-                    bookingTime = extracted.booking_time || null
-                    isQualified = !!extracted.is_qualified
-                } catch (err: any) {
-                    console.error('[TWILIO STATUS CALLBACK] Gemini audio analysis extraction failed:', err)
-                }
-            }
-
             // 5. Update the Lead Details in CRM
             const updateData: any = {
                 voice_call_status: 'completed',
@@ -400,25 +370,27 @@ Generate a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks
                 return NextResponse.json({ error: 'Database update failed.' }, { status: 500 })
             }
 
-            // 6. Save or update timeline history logs
-            try {
-                const historyData = {
-                    summary,
-                    recording_url: publicRecordingUrl,
-                    transcript
+            // 6. Save or update timeline history logs (skip for Gemini — voice bridge already saved it)
+            if (voiceProvider !== 'gemini') {
+                try {
+                    const historyData = {
+                        summary,
+                        recording_url: publicRecordingUrl,
+                        transcript
+                    }
+                    const { error: historyErr } = await supabaseAdmin
+                        .from('lead_history')
+                        .insert({
+                            lead_id: leadId,
+                            action_type: 'REMARK',
+                            description: `🎙️ CALL_JSON:${JSON.stringify(historyData)}`
+                        })
+                    if (historyErr) {
+                        console.error('[TWILIO STATUS CALLBACK] Failed to insert lead history:', historyErr)
+                    }
+                } catch (histErr) {
+                    console.error('[TWILIO STATUS CALLBACK] Exception inserting lead history:', histErr)
                 }
-                const { error: historyErr } = await supabaseAdmin
-                    .from('lead_history')
-                    .insert({
-                        lead_id: leadId,
-                        action_type: 'REMARK',
-                        description: `🎙️ CALL_JSON:${JSON.stringify(historyData)}`
-                    })
-                if (historyErr) {
-                    console.error('[TWILIO STATUS CALLBACK] Failed to insert lead history:', historyErr)
-                }
-            } catch (histErr) {
-                console.error('[TWILIO STATUS CALLBACK] Exception inserting lead history:', histErr)
             }
 
             console.log(`[TWILIO STATUS CALLBACK] Successfully processed post-call details for lead ${leadId}`)
