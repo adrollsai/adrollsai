@@ -10,26 +10,23 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-    console.log("=== SEARCHING FOR BLUESQUARE PROFILES ===");
-    const { data: profiles, error } = await supabaseAdmin
-        .from('profiles')
-        .select('id, email, business_name, role')
-        .or('business_name.ilike.%bluesquare%,email.ilike.%bluesquare%');
+    console.log("=== CHECKING ALL HISTORIES FOR RAHUL ===");
+    const { data: history, error } = await supabaseAdmin
+        .from('lead_history')
+        .select('*')
+        .eq('lead_id', '5282f7a4-c3af-45bf-899f-0c55d2fc7120')
+        .order('created_at', { ascending: false });
 
     if (error) {
-        console.error("Query failed:", error);
+        console.error(error);
         return;
     }
 
-    if (!profiles || profiles.length === 0) {
-        console.log("No profiles found matching 'bluesquare'. Listing first 5 profiles instead:");
-        const { data: first5 } = await supabaseAdmin.from('profiles').select('id, email, business_name').limit(5);
-        console.log(JSON.stringify(first5, null, 2));
-        return;
-    }
-
-    console.log("Matched profiles:");
-    console.log(JSON.stringify(profiles, null, 2));
+    console.log("Found history items:", history.length);
+    history.forEach(h => {
+        console.log(`- ID: ${h.id}, Type: ${h.action_type}, CreatedAt: ${h.created_at}`);
+        console.log(`  Desc: ${h.description.substring(0, 150)}`);
+    });
 }
 
 run().catch(console.error);
