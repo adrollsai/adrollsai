@@ -1036,6 +1036,11 @@ END:VCARD`
                                                                     <div className="space-y-2">
                                                                         <span className="font-extrabold text-indigo-600 block">🎙️ AI Voice Call Summary:</span>
                                                                         <p className="font-semibold text-slate-700">{parsed.summary}</p>
+                                                                        {parsed.recording_url && (
+                                                                            <div className="my-1.5">
+                                                                                <audio controls src={parsed.recording_url} className="w-full h-8 outline-none" />
+                                                                            </div>
+                                                                        )}
                                                                         <button 
                                                                             onClick={() => {
                                                                                 setSelectedHistoryCall(parsed)
@@ -1222,6 +1227,11 @@ END:VCARD`
                                                 </button>
                                             </div>
                                             <p className="text-xs font-semibold text-slate-700 leading-relaxed">{parsed.summary}</p>
+                                            {parsed.recording_url && (
+                                                <div className="mt-2">
+                                                    <audio controls src={parsed.recording_url} className="w-full h-8 outline-none" />
+                                                </div>
+                                            )}
                                         </div>
                                     )
                                 })

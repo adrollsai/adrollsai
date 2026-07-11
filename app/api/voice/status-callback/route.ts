@@ -535,6 +535,35 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                 } catch (histErr) {
                     console.error('[TWILIO STATUS CALLBACK] Exception inserting lead history:', histErr)
                 }
+            } else if (publicRecordingUrl) {
+                try {
+                    const { data: recentLogs, error: logErr } = await supabaseAdmin
+                        .from('lead_history')
+                        .select('id, description')
+                        .eq('lead_id', leadId)
+                        .like('description', '🎙️ CALL_JSON:%')
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+
+                    if (!logErr && recentLogs && recentLogs.length > 0) {
+                        const logRecord = recentLogs[0]
+                        const rawJson = logRecord.description.replace('🎙️ CALL_JSON:', '').trim()
+                        const parsed = JSON.parse(rawJson)
+                        
+                        parsed.recording_url = publicRecordingUrl
+                        
+                        await supabaseAdmin
+                            .from('lead_history')
+                            .update({
+                                description: `🎙️ CALL_JSON:${JSON.stringify(parsed)}`
+                            })
+                            .eq('id', logRecord.id)
+                        
+                        console.log('[TWILIO STATUS CALLBACK] Successfully updated Gemini lead_history recording_url!')
+                    }
+                } catch (updateLogErr) {
+                    console.error('[TWILIO STATUS CALLBACK] Failed to update Gemini lead_history recording_url:', updateLogErr)
+                }
             }
 
             console.log(`[TWILIO STATUS CALLBACK] Successfully processed post-call details for lead ${leadId}`)

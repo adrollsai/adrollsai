@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { warmupVoiceBridge } from '@/utils/voice-helper'
+import { triggerOutboundCall } from '@/utils/voice-helper'
 
 export async function POST(req: Request) {
     try {
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json()
-        const { leadId, leadIds } = body
+        const { leadId, leadIds, isAutoTrigger } = body
 
         const targets: string[] = []
         if (leadId) targets.push(leadId)
@@ -41,81 +41,11 @@ export async function POST(req: Request) {
         }
 
         const results = []
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        const isAuto = !!isAutoTrigger
 
         for (const targetId of targets) {
-            try {
-                // Fetch lead details
-                const { data: lead, error: leadErr } = await supabase
-                    .from('leads')
-                    .select('id, name, phone')
-                    .eq('id', targetId)
-                    .single()
-
-                if (leadErr || !lead || !lead.phone) {
-                    results.push({ leadId: targetId, success: false, error: 'Lead not found or has no phone number.' })
-                    continue
-                }
-
-                // Format phone number to E.164 (Twilio requirement)
-                let cleanPhone = lead.phone.replace(/\D/g, '')
-                if (!cleanPhone.startsWith('+')) {
-                    if (cleanPhone.length === 10) {
-                        cleanPhone = '+91' + cleanPhone // Default to India country code if 10 digits
-                    } else if (!cleanPhone.startsWith('91') && cleanPhone.length > 10) {
-                        cleanPhone = '+' + cleanPhone
-                    } else {
-                        cleanPhone = '+' + cleanPhone
-                    }
-                }
-
-                // Update lead call status to calling
-                await supabase
-                    .from('leads')
-                    .update({ voice_call_status: 'calling' })
-                    .eq('id', lead.id)
-
-                // Warm up the Cloud Run voice bridge container before placing the call
-                await warmupVoiceBridge();
-
-                // Call Twilio REST API using native fetch
-                const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Calls.json`
-                const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64')
-
-                const params = new URLSearchParams()
-                // Direct Twilio to request the TWIML bridge configuration when call starts
-                params.append('Url', `${appUrl}/api/voice/twiml?leadId=${lead.id}&profileId=${user.id}`)
-                params.append('To', cleanPhone)
-                params.append('From', voiceNumber.trim())
-                params.append('Record', 'true')
-                // Notify when the call hangs up or fails to prevent status getting stuck
-                params.append('StatusCallback', `${appUrl}/api/voice/status-callback?leadId=${lead.id}`)
-
-                const twilioRes = await fetch(twilioUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Basic ${twilioAuth}`,
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    body: params
-                })
-
-                const twilioData = await twilioRes.json()
-
-                if (!twilioRes.ok) {
-                    console.error('[OUTBOUND CALL] Twilio Error:', twilioData)
-                    await supabase
-                        .from('leads')
-                        .update({ voice_call_status: 'failed' })
-                        .eq('id', lead.id)
-
-                    results.push({ leadId: targetId, success: false, error: twilioData.message || 'Twilio calling failed.' })
-                } else {
-                    results.push({ leadId: targetId, success: true, callSid: twilioData.sid })
-                }
-            } catch (err: any) {
-                results.push({ leadId: targetId, success: false, error: err.message })
-            }
+            const res = await triggerOutboundCall(supabase, targetId, user.id, isAuto)
+            results.push({ leadId: targetId, ...res })
         }
 
         return NextResponse.json({ success: true, results })
@@ -123,3 +53,4 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 })
     }
 }
+

@@ -1300,7 +1300,7 @@ export default function ProfilePage() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
 
         <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-8 ml-1">
-          {activeSection === 'whatsapp' ? 'WhatsApp Automation' : activeSection === 'voice' ? 'Voice Agent (ElevenLabs)' : activeSection === 'calendar' ? 'Calendar Settings' : activeSection === 'flagged' ? 'Flagged Questions' : 'Workspace Settings'}
+          {activeSection === 'whatsapp' ? 'WhatsApp Automation' : activeSection === 'voice' ? 'Voice Agent' : activeSection === 'calendar' ? 'Calendar Settings' : activeSection === 'flagged' ? 'Flagged Questions' : 'Workspace Settings'}
         </h1>
 
         {activeSection === 'whatsapp' ? (
@@ -2526,7 +2526,7 @@ export default function ProfilePage() {
                     <div className="bg-indigo-100 text-indigo-600 p-3 rounded-2xl">
                       <Phone size={20} />
                     </div>
-                    <span className="font-bold text-sm text-slate-900">Voice Agent (ElevenLabs)</span>
+                    <span className="font-bold text-sm text-slate-900">Voice Agent</span>
                   </div>
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>

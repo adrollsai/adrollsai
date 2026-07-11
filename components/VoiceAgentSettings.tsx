@@ -35,7 +35,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
     voice_twilio_token: '',
     voice_twilio_number: '',
     auto_call_new_leads: false,
-    voice_provider: 'elevenlabs'
+    voice_provider: 'gemini'
   })
 
   const [connected, setConnected] = useState(false)
@@ -62,9 +62,9 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
           voice_twilio_token: data.voice_twilio_token || '',
           voice_twilio_number: phoneNum,
           auto_call_new_leads: !!data.auto_call_new_leads,
-          voice_provider: data.voice_provider || 'elevenlabs'
+          voice_provider: data.voice_provider || 'gemini'
         })
-        setConnected(!!((data.elevenlabs_api_key && data.elevenlabs_agent_id && data.voice_twilio_sid) || phoneNum))
+        setConnected(!!(data.voice_twilio_sid || phoneNum))
       }
 
       // 2. Fetch server SaaS status
@@ -119,8 +119,6 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       }
 
       if (!saasMode) {
-        updateData.elevenlabs_api_key = settings.elevenlabs_api_key.trim() || null
-        updateData.elevenlabs_agent_id = settings.elevenlabs_agent_id.trim() || null
         updateData.voice_twilio_sid = settings.voice_twilio_sid.trim() || null
         updateData.voice_twilio_token = settings.voice_twilio_token.trim() || null
       }
@@ -133,9 +131,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       if (error) throw error
 
       toast.success('Voice agent settings saved successfully! 🎙️')
-      const isCustomConnected = settings.voice_provider === 'gemini' 
-        ? !!(settings.voice_twilio_sid || settings.voice_twilio_number)
-        : !!((settings.elevenlabs_api_key && settings.elevenlabs_agent_id && settings.voice_twilio_sid) || settings.voice_twilio_number);
+      const isCustomConnected = !!(settings.voice_twilio_sid || settings.voice_twilio_number);
       setConnected(isCustomConnected)
     } catch (err: any) {
       toast.error(`Save failed: ${err.message}`)
@@ -176,7 +172,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
               <div>
                 <h3 className="font-extrabold text-base text-slate-950">Voice Calling</h3>
                 <p className="text-xs text-slate-500 mt-0.5 font-medium leading-normal">
-                  Connect ElevenLabs & Twilio to automate voice qualification
+                  Connect Twilio to automate voice qualification
                 </p>
               </div>
             </div>
@@ -222,31 +218,6 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
             </h3>
 
             <form onSubmit={handleSave} className="space-y-5">
-              
-              {/* Voice Calling Provider Selector */}
-              <div className="space-y-4">
-                <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
-                  <Settings size={14} className="text-slate-500" /> Voice Provider
-                </h4>
-                <div className="flex gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setSettings({ ...settings, voice_provider: 'elevenlabs' })}
-                    className={`flex-1 py-3 px-4 rounded-xl border text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${settings.voice_provider === 'elevenlabs' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}
-                  >
-                    ElevenLabs Agent
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSettings({ ...settings, voice_provider: 'gemini' })}
-                    className={`flex-1 py-3 px-4 rounded-xl border text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${settings.voice_provider === 'gemini' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}
-                  >
-                    Gemini 3.1 Flash Live API
-                  </button>
-                </div>
-              </div>
-
-              <hr className="border-slate-100 my-2" />
 
               {saasMode ? (
                 /* SaaS Platform Managed Mode UI */
@@ -301,45 +272,15 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                 <>
 
                   {/* Provider Config Details */}
-                  {settings.voice_provider === 'elevenlabs' ? (
-                    <div className="space-y-4 animate-in fade-in duration-200">
-                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
-                        <Sparkles size={14} className="text-indigo-500" /> ElevenLabs Config
-                      </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Account API Key</label>
-                          <input 
-                            type="password" 
-                            value={settings.elevenlabs_api_key}
-                            onChange={(e) => setSettings({ ...settings, elevenlabs_api_key: e.target.value })}
-                            placeholder="xi-api-key..."
-                            className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-mono outline-none focus:border-blue-400 transition-all"
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Conversational Agent ID</label>
-                          <input 
-                            type="text" 
-                            value={settings.elevenlabs_agent_id}
-                            onChange={(e) => setSettings({ ...settings, elevenlabs_agent_id: e.target.value })}
-                            placeholder="e.g. agent_7101k5..."
-                            className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-mono outline-none focus:border-blue-400 transition-all"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-emerald-50/40 border border-emerald-100/50 rounded-2xl p-4 space-y-2 animate-in fade-in duration-200">
-                      <h4 className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
-                        <Sparkles size={14} className="text-emerald-600" /> Gemini Live Config
-                      </h4>
-                      <p className="text-[11px] text-emerald-800 leading-relaxed font-medium">
-                        Using Google's low-latency <strong>Gemini 3.1 Multimodal Live API</strong> for natural bidirectional voice conversations. 
-                        No additional configuration is required here. The voice agent will run using your master Google Generative AI credentials on the WebSocket bridge.
-                      </p>
-                    </div>
-                  )}
+                  <div className="bg-emerald-50/40 border border-emerald-100/50 rounded-2xl p-4 space-y-2 animate-in fade-in duration-200">
+                    <h4 className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-emerald-600" /> Voice Agent Config
+                    </h4>
+                    <p className="text-[11px] text-emerald-800 leading-relaxed font-medium">
+                      Using our low-latency multimodal voice stream for natural bidirectional voice conversations. 
+                      No additional configuration is required here. The voice agent will run using your master Generative AI credentials on the WebSocket bridge.
+                    </p>
+                  </div>
 
                   <hr className="border-slate-100 my-2" />
 

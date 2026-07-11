@@ -704,7 +704,7 @@ export default function CRMPage() {
                 fetch('/api/voice/call', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ leadId: savedLead.id })
+                    body: JSON.stringify({ leadId: savedLead.id, isAutoTrigger: true })
                 }).then(async (res) => {
                     const data = await res.json()
                     console.log("[CRM] Outbound voice call auto-trigger status:", data)

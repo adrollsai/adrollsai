@@ -32,18 +32,112 @@ export async function warmupVoiceBridge(): Promise<void> {
 export async function triggerOutboundCall(
     supabaseAdmin: any,
     leadId: string,
-    profileId: string
-): Promise<{ success: boolean; error?: string; callSid?: string }> {
+    profileId: string,
+    isAutoTrigger = false
+): Promise<{ success: boolean; error?: string; callSid?: string; scheduled?: boolean; scheduledTime?: Date }> {
     try {
         // 1. Fetch credentials from user profile
         const { data: profile, error: profErr } = await supabaseAdmin
             .from('profiles')
-            .select('elevenlabs_api_key, elevenlabs_agent_id, voice_twilio_sid, voice_twilio_token, voice_twilio_number')
+            .select('elevenlabs_api_key, elevenlabs_agent_id, voice_twilio_sid, voice_twilio_token, voice_twilio_number, google_refresh_token, google_booking_enabled')
             .eq('id', profileId)
             .single()
 
         if (profErr || !profile) {
             return { success: false, error: 'Failed to fetch user voice configuration.' }
+        }
+
+        if (isAutoTrigger) {
+            // Resolve timezone
+            let timeZone = 'Asia/Kolkata' // Default fallback timezone
+            if (profile && profile.google_refresh_token && profile.google_booking_enabled) {
+                try {
+                    const refreshToken = profile.google_refresh_token
+                    const accessToken = await refreshGoogleAccessToken(refreshToken)
+                    timeZone = await getCalendarTimezone(accessToken)
+                } catch (tzErr: any) {
+                    console.warn('[VOICE HELPER] Failed to fetch calendar timezone, defaulting to Asia/Kolkata:', tzErr.message)
+                }
+            }
+
+            // Check if within window (9 AM to 7 PM business local time)
+            const now = new Date()
+            const formatter = new Intl.DateTimeFormat('en-US', {
+                timeZone,
+                hour: 'numeric',
+                minute: 'numeric',
+                hour12: false
+            })
+            const formattedStr = formatter.format(now)
+            const [hStr, mStr] = formattedStr.split(':')
+            const hourVal = parseInt(hStr, 10)
+            const minuteVal = parseInt(mStr, 10)
+            
+            const timeInMinutes = hourVal * 60 + minuteVal
+            const startMinutes = 9 * 60     // 9:00 AM
+            const endMinutes = 19 * 60       // 7:00 PM
+
+            const isWithinWindow = timeInMinutes >= startMinutes && timeInMinutes < endMinutes
+
+            if (!isWithinWindow) {
+                // Calculate next valid 9 AM slot in local time and convert to UTC Date
+                const parts = new Intl.DateTimeFormat('en-US', {
+                    timeZone,
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    hour12: false
+                }).formatToParts(now)
+                const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]))
+                
+                const year = parseInt(partMap.year, 10)
+                const month = parseInt(partMap.month, 10) - 1
+                const day = parseInt(partMap.day, 10)
+                const hour = parseInt(partMap.hour, 10)
+                
+                let targetDay = day
+                if (hour >= 19) {
+                    // After 7 PM -> schedule for tomorrow at 9 AM
+                    targetDay += 1
+                }
+                // Before 9 AM -> schedule for today at 9 AM (targetDay stays same)
+
+                const localUtcTs = Date.UTC(year, month, targetDay, 9, 0, 0, 0)
+                
+                const getOffset = (tz: string, d: Date) => {
+                    const tzStr = d.toLocaleString('en-US', { timeZone: tz })
+                    const locD = new Date(tzStr)
+                    const utcD = new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }))
+                    return (locD.getTime() - utcD.getTime()) / 60000
+                }
+                
+                const offsetMin = getOffset(timeZone, new Date(localUtcTs))
+                const scheduledTime = new Date(localUtcTs - offsetMin * 60000)
+
+                // Update lead in DB
+                await supabaseAdmin
+                    .from('leads')
+                    .update({ 
+                        voice_call_scheduled_at: scheduledTime.toISOString(),
+                        voice_call_status: 'scheduled_callback'
+                    })
+                    .eq('id', leadId)
+
+                // Log to history
+                try {
+                    await supabaseAdmin.from('lead_history').insert({
+                        lead_id: leadId,
+                        action_type: 'REMARK',
+                        description: `🕒 Auto-call scheduled for ${scheduledTime.toLocaleString('en-US', { timeZone })} (${timeZone}) because the lead arrived outside business hours (9 AM - 7 PM).`
+                    })
+                } catch (histErr) {
+                    console.error('[VOICE HELPER] Failed to insert lead history for scheduling outside hours:', histErr)
+                }
+
+                console.log(`[VOICE HELPER] Lead ${leadId} call scheduled for ${scheduledTime.toISOString()} due to outside hours (9 AM - 7 PM).`)
+                return { success: true, scheduled: true, scheduledTime }
+            }
         }
 
         const twilioSid = process.env.MASTER_TWILIO_SID || profile.voice_twilio_sid || process.env.DEV_TWILIO_SID

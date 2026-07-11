@@ -629,7 +629,7 @@ ${fullTranscript}
                 const historyData = {
                     summary,
                     recording_url: null, // Will be filled dynamically by status callback
-                    transcript: fullTranscript
+                    transcript: mergedTurns
                 };
 
                 const { error: histErr } = await supabaseAdmin
