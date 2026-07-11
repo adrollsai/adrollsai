@@ -118,8 +118,23 @@ export async function GET() {
                     limit: storageLimitGB,
                     label: "Cloud Storage (GB)"
                 }
-            }
+            },
+            credits: primaryProfile.credits || 0,
+            isUnlimited: (primaryProfile.business_name?.toLowerCase().includes('bluesquare')) || (primaryProfile.role?.toLowerCase() === 'super_admin'),
+            transactions: [] as any[]
         };
+
+        // Query credit transactions ledger
+        const { data: txs } = await supabase
+            .from('credit_transactions')
+            .select('*')
+            .eq('user_id', primaryUserId)
+            .order('created_at', { ascending: false })
+            .limit(50);
+
+        if (txs) {
+            usageData.transactions = txs;
+        }
 
         return NextResponse.json(usageData);
     } catch (error: any) {

@@ -40,14 +40,27 @@ export async function hasEnoughCredits(
 ): Promise<boolean> {
   try {
     const primaryUserId = await getPrimaryUserId(supabaseAdmin, userId)
-    const { data, error } = await supabaseAdmin
+    const { data: profile, error } = await supabaseAdmin
       .from('profiles')
-      .select('credits')
+      .select('credits, business_name, role, subscription_status')
       .eq('id', primaryUserId)
       .single()
 
-    if (error || !data) return false
-    return (data.credits || 0) >= requiredAmount
+    if (error || !profile) return false
+
+    // Unlimited bypass check (bluesquare infra / super_admin)
+    const isUnlimited = (profile.business_name?.toLowerCase().includes('bluesquare')) || (profile.role?.toLowerCase() === 'super_admin')
+    if (isUnlimited) return true
+
+    // Check if base subscription plan is active
+    const subscriptionStatus = profile.subscription_status?.toLowerCase() || ''
+    const isSubscriptionActive = ['active', 'trialing', 'pro', 'growth'].includes(subscriptionStatus)
+    if (!isSubscriptionActive) {
+      console.warn(`[CREDITS HELPER] Action blocked. User ${primaryUserId} has credits but no active base subscription plan. Status: ${subscriptionStatus}`)
+      return false
+    }
+
+    return (profile.credits || 0) >= requiredAmount
   } catch (e) {
     console.error('[CREDITS HELPER] hasEnoughCredits error:', e)
     return false
@@ -72,7 +85,7 @@ export async function deductCredits(
     // 1. Fetch current credits
     const { data: profile, error: fetchErr } = await supabaseAdmin
       .from('profiles')
-      .select('credits')
+      .select('credits, business_name, role')
       .eq('id', primaryUserId)
       .single()
 
@@ -82,7 +95,9 @@ export async function deductCredits(
     }
 
     const currentCredits = profile.credits || 0
-    if (currentCredits < amount) {
+    const isUnlimited = (profile.business_name?.toLowerCase().includes('bluesquare')) || (profile.role?.toLowerCase() === 'super_admin')
+
+    if (!isUnlimited && currentCredits < amount) {
       console.warn(`[CREDITS HELPER] Overdraft prevented. User ${primaryUserId} has ${currentCredits} credits; trying to deduct ${amount}.`)
       return false
     }
@@ -182,3 +197,51 @@ export async function addCredits(
     return false
   }
 }
+
+export const MODEL_RATES: Record<string, { inputPerK: number; outputPerK: number }> = {
+  'gemini-1.5-flash': { inputPerK: 0.0063, outputPerK: 0.0252 },
+  'gemini-2.0-flash': { inputPerK: 0.0063, outputPerK: 0.0252 },
+  'gemini-3.5-flash': { inputPerK: 0.0063, outputPerK: 0.0252 },
+  'gemini-3.5-flash-preview': { inputPerK: 0.0063, outputPerK: 0.0252 },
+  'default': { inputPerK: 0.0063, outputPerK: 0.0252 }
+};
+
+/**
+ * Calculates LLM generation cost in INR based on input and output token counts.
+ */
+export function calculateLLMCost(
+  modelName: string,
+  promptTokens: number,
+  completionTokens: number
+): number {
+  const model = (modelName || 'default').toLowerCase();
+  let rates = MODEL_RATES.default;
+  for (const key of Object.keys(MODEL_RATES)) {
+    if (model.includes(key)) {
+      rates = MODEL_RATES[key];
+      break;
+    }
+  }
+  const inputCost = (promptTokens / 1000) * rates.inputPerK;
+  const outputCost = (completionTokens / 1000) * rates.outputPerK;
+  return inputCost + outputCost; // Cost in INR
+}
+
+/**
+ * Deducts credits based on actual rupee cost (1 Rupee cost to us = 20 Credits deducted).
+ */
+export async function deductCreditsByCost(
+  supabaseAdmin: any,
+  userId: string,
+  rupeeCost: number,
+  category: 'calling' | 'whatsapp' | 'ai_generation' | 'campaign_launch' | 'topup' | 'subscription',
+  description: string
+): Promise<boolean> {
+  if (rupeeCost <= 0) return false;
+  // Convert actual rupee cost to credits (1 rupee cost = 20 credits)
+  const creditsToDeduct = rupeeCost * 20;
+  // Round to 2 decimal places to keep ledger neat
+  const roundedCredits = Math.round(creditsToDeduct * 100) / 100;
+  return deductCredits(supabaseAdmin, userId, roundedCredits, category, description);
+}
+

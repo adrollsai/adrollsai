@@ -68,16 +68,57 @@ export async function POST(req: Request) {
 
                 if (planId) {
                     const planKey = planId.toLowerCase();
-                    const plan = PLANS[planKey as keyof typeof PLANS];
-                    if (plan) {
-                        await supabaseAdmin.from('profiles').update({
-                            subscription_plan: planKey,
-                            subscription_status: 'active',
-                            subscription_id: subscriptionId || null,
-                            subscription_valid_until: validUntil.toISOString()
-                        }).eq('id', userId);
-                        console.log(`✅ Webhook: Plan updated to ${planKey} for user ${userId}`);
+                    
+                    let creditsToAdd = 0;
+                    let monthsValid = 1;
+                    let planLabel = planId;
+
+                    if (planKey.includes('monthly') || planKey === 'growth') {
+                        creditsToAdd = 10000;
+                        monthsValid = 1;
+                        planLabel = "Pro Plan - Monthly";
+                    } else if (planKey.includes('quarterly') || planKey === 'pro') {
+                        creditsToAdd = 25000;
+                        monthsValid = 3;
+                        planLabel = "Pro Plan - Quarterly";
+                    } else if (planKey.includes('yearly') || planKey === 'enterprise') {
+                        creditsToAdd = 100000;
+                        monthsValid = 12;
+                        planLabel = "Pro Plan - Yearly";
                     }
+
+                    const planValidUntil = new Date();
+                    planValidUntil.setMonth(planValidUntil.getMonth() + monthsValid);
+
+                    // Fetch current user profile to get credits
+                    const { data: profile } = await supabaseAdmin
+                        .from('profiles')
+                        .select('credits')
+                        .eq('id', userId)
+                        .single();
+
+                    const currentCredits = profile?.credits || 0;
+                    const newCredits = currentCredits + creditsToAdd;
+
+                    await supabaseAdmin.from('profiles').update({
+                        subscription_plan: planKey,
+                        subscription_status: 'active',
+                        subscription_id: subscriptionId || null,
+                        subscription_valid_until: planValidUntil.toISOString(),
+                        credits: newCredits
+                    }).eq('id', userId);
+
+                    // Log subscription transaction
+                    if (creditsToAdd > 0) {
+                        await supabaseAdmin.from('credit_transactions').insert({
+                            user_id: userId,
+                            amount: creditsToAdd,
+                            category: 'subscription',
+                            description: `Activated ${planLabel} (Included Credits)`
+                        });
+                    }
+
+                    console.log(`✅ Webhook: Plan updated to ${planKey} with +${creditsToAdd} credits for user ${userId}`);
                 } else if (addonId) {
                     const addon = ADDONS[addonId as keyof typeof ADDONS];
                     if (addon) {

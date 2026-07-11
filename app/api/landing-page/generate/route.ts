@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
-import { callGemini, createKieImageTask } from '@/utils/external-apis'
+import { callGemini, callGeminiWithUsage, createKieImageTask } from '@/utils/external-apis'
+import { hasEnoughCredits, calculateLLMCost, deductCreditsByCost } from '@/utils/credits'
 
 const supabaseAdmin = createSupabaseAdmin(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -95,6 +96,12 @@ export async function POST(request: Request) {
             } else {
                 return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 })
             }
+        }
+
+        // Check credit balance (must have at least 1 credit to perform AI page generation)
+        const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, 1)
+        if (!hasCredits) {
+            return NextResponse.json({ error: 'Insufficient credits. Please top up your Nobo Credits to perform AI generation.' }, { status: 402 })
         }
 
         const body = await request.json()
@@ -336,8 +343,13 @@ ${propertyImagesList.map((url, idx) => `Image ${idx}: ${url}`).join('\n')}
 
 Format your response as a detailed summary that a frontend developer can easily follow.`
                 
-                imageAnalysisResults = await callGemini(analysisPrompt, propertyImagesList)
+                const analysisRes = await callGeminiWithUsage(analysisPrompt, propertyImagesList)
+                imageAnalysisResults = analysisRes.text
                 console.log("[Lander API] Image Analysis Successful:", imageAnalysisResults)
+                
+                // Deduct credits dynamically
+                const analysisInr = calculateLLMCost(analysisRes.modelName, analysisRes.promptTokens, analysisRes.completionTokens)
+                await deductCreditsByCost(supabaseAdmin, targetUserId, analysisInr, 'ai_generation', `AI Landing Page - Multimodal Image Analysis`)
             } catch (e: any) {
                 console.error("[Lander API] Failed to perform image analysis:", e)
                 imageAnalysisResults = "Failed to perform automated image analysis. Place the images logically within the layout based on general best practices."
@@ -584,7 +596,12 @@ CRITICAL RULES:
         }
 
         console.log(`[Lander API] Calling Gemini in mode: ${mode}...`)
-        const aiRawResult = await callGemini(systemPrompt, imageUrls)
+        const generateRes = await callGeminiWithUsage(systemPrompt, imageUrls)
+        const aiRawResult = generateRes.text
+        
+        // Deduct credits dynamically
+        const generateInr = calculateLLMCost(generateRes.modelName, generateRes.promptTokens, generateRes.completionTokens)
+        await deductCreditsByCost(supabaseAdmin, targetUserId, generateInr, 'ai_generation', `AI Landing Page - Page Copy Generation (${mode})`)
         
         // Clean markdown formatting if LLM failed to follow the instruction
         const htmlResult = aiRawResult

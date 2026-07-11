@@ -117,9 +117,9 @@ export async function checkLimitAndIncrement(
         used = 0; // Reset local value for this check
     }
 
-    // 3. Check if over limit
+    // 3. Check if over limit (Lifted package restriction: log warning but do not throw)
     if (used >= limit) {
-        throw new Error(`Monthly quota reached for ${type.replace('_', ' ')}. Please upgrade your plan or purchase an add-on.`);
+        console.warn(`[Subscription Server] Package limit exceeded for ${type} (${used}/${limit}), proceeding under lifted restrictions.`);
     }
 
     // 4. Increment both new and legacy columns for complete backward and forward compatibility
@@ -255,7 +255,7 @@ export async function checkStorageLimit(userId: string) {
     const storageLimitBytes = storageLimitGb * 1024 * 1024 * 1024;
 
     if (totalBytesUsed >= storageLimitBytes) {
-        throw new Error(`Cloud storage limit reached (${storageLimitGb}GB). Please manage your assets or upgrade your plan.`);
+        console.warn(`[Subscription Server] Storage limit reached (${storageLimitGb}GB), proceeding under lifted restrictions.`);
     }
 
     return true;

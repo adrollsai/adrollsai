@@ -2,8 +2,24 @@
 
 -- 1. Enable Realtime for WhatsApp tables
 -- Add tables to the supabase_realtime publication so postgres_changes events fire
-ALTER PUBLICATION supabase_realtime ADD TABLE public.whatsapp_chats;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.whatsapp_messages;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_publication_tables 
+            WHERE pubname = 'supabase_realtime' AND tablename = 'whatsapp_chats'
+        ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.whatsapp_chats;
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_publication_tables 
+            WHERE pubname = 'supabase_realtime' AND tablename = 'whatsapp_messages'
+        ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.whatsapp_messages;
+        END IF;
+    END IF;
+END $$;
 
 -- Set REPLICA IDENTITY FULL so UPDATE/DELETE events include the full row data
 ALTER TABLE public.whatsapp_chats REPLICA IDENTITY FULL;

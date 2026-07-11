@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
-import { sendCAPIEvent, callGemini } from '@/utils/external-apis'
+import { sendCAPIEvent, callGemini, callGeminiWithUsage } from '@/utils/external-apis'
 import { triggerWelcomeDrip } from '@/utils/whatsapp/drips'
 import { bookAppointment, triggerOutboundCall } from '@/utils/voice-helper'
+import { deductCreditsByCost, calculateLLMCost } from '@/utils/credits'
 
 export const dynamic = 'force-dynamic'
 
@@ -393,13 +394,20 @@ IMPORTANT RULES:
   * If a campaign lists "None" or has no conversions under the requested type, state "0" or "None".`;
 
                                     let botResponseText = "Hello! I received your message, but I encountered an error while processing your request. Please try again.";
+                                    let ownerUsage = { promptTokens: 0, completionTokens: 0, modelName: 'gemini-3.5-flash' };
                                     try {
-                                        const { generateKieChat } = await import('@/utils/external-apis');
-                                        botResponseText = await generateKieChat(botPrompt, "gemini-3.5-flash-preview");
+                                        const genRes = await callGeminiWithUsage(botPrompt);
+                                        botResponseText = genRes.text;
+                                        ownerUsage = genRes;
                                     } catch (llmErr: any) {
                                         console.error("❌ Gemini response generation failed:", llmErr);
                                         botResponseText = "Hi! I matched your number, but I had trouble fetching the Gemini AI response. Please check back shortly.";
                                     }
+                                    
+                                    // Dynamic billing for owner query
+                                    const ownerTokensCost = calculateLLMCost(ownerUsage.modelName, ownerUsage.promptTokens, ownerUsage.completionTokens);
+                                    const totalOwnerCost = 0.05 + ownerTokensCost; // Rs. 0.05 infra base + LLM cost
+                                    await deductCreditsByCost(supabaseAdmin, matchedProfile.id, totalOwnerCost, 'whatsapp', 'WhatsApp Owner Chat - AI Assistant Query');
                                     
                                     const recipientNumber = cleanFrom;
                                     const whatsappToken = matchedProfile.whatsapp_access_token || matchedProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN;
@@ -719,13 +727,19 @@ Guidelines:
 
 User Input: "${providedName}"
 Clean Name:`;
-                                            const rawRes = await callGemini(namePrompt);
-                                            const cleanName = rawRes.trim();
+                                            const nameRes = await callGeminiWithUsage(namePrompt);
+                                            const cleanName = nameRes.text.trim();
                                             if (cleanName && cleanName.length > 0 && cleanName.length <= 100) {
                                                 parsedName = cleanName;
                                             }
+                                            // Dynamic billing for name parse
+                                            const nameTokensCost = calculateLLMCost(nameRes.modelName, nameRes.promptTokens, nameRes.completionTokens);
+                                            const totalNameCost = 0.05 + nameTokensCost;
+                                            await deductCreditsByCost(supabaseAdmin, ownerUserId, totalNameCost, 'whatsapp', 'WhatsApp Customer Flow - Name Parsing');
                                         } catch (geminiErr) {
                                             console.error("[Flow] Gemini name parsing failed, fallback to raw name:", geminiErr);
+                                            // Fallback billing for webhook processing
+                                            await deductCreditsByCost(supabaseAdmin, ownerUserId, 0.05, 'whatsapp', 'WhatsApp Customer Flow - Name Parsing (Fallback)');
                                         }
 
                                         // Save the name
@@ -1070,17 +1084,26 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                     let triggerCallRequested = false;
                                     let unansweredQuestionToFlag: string | null = null;
 
+                                    let assistantUsage = { promptTokens: 0, completionTokens: 0, modelName: 'gemini-3.5-flash' };
                                     try {
-                                        const rawRes = await callGemini(aiPrompt);
-                                        const cleanJson = rawRes.replace(/```json/g, '').replace(/```/g, '').trim();
+                                        const aiRes = await callGeminiWithUsage(aiPrompt);
+                                        const cleanJson = aiRes.text.replace(/```json/g, '').replace(/```/g, '').trim();
                                         const parsed = JSON.parse(cleanJson);
                                         replyText = parsed.reply || replyText;
                                         extractedBookingTime = parsed.booking_time || null;
                                         triggerCallRequested = !!parsed.trigger_call;
                                         unansweredQuestionToFlag = parsed.flag_unanswered_question || null;
+                                        assistantUsage = aiRes;
                                         console.log('[WhatsApp AI Assistant] Gemini parsed response:', { replyText, extractedBookingTime, triggerCallRequested, unansweredQuestionToFlag });
+                                        
+                                        // Dynamic billing for customer AI reply
+                                        const aiTokensCost = calculateLLMCost(assistantUsage.modelName, assistantUsage.promptTokens, assistantUsage.completionTokens);
+                                        const totalAiCost = 0.05 + aiTokensCost;
+                                        await deductCreditsByCost(supabaseAdmin, ownerUserId, totalAiCost, 'whatsapp', 'WhatsApp Customer AI Assistant response');
                                     } catch (geminiErr) {
                                         console.error('[WhatsApp AI Assistant] Gemini generation/parsing failed:', geminiErr);
+                                        // Fallback billing for webhook processing
+                                        await deductCreditsByCost(supabaseAdmin, ownerUserId, 0.05, 'whatsapp', 'WhatsApp Customer AI Assistant response (Fallback)');
                                     }
 
                                     // 4. Send the reply via WhatsApp

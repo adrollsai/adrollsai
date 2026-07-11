@@ -124,6 +124,18 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'WhatsApp integration not configured.' }, { status: 400 })
         }
 
+        // Pre-flight credits check (manual outbound message = Rs. 0.10 cost = 2 credits)
+        const { createClient: createSupabaseAdmin } = await import('@supabase/supabase-js')
+        const supabaseAdmin = createSupabaseAdmin(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+        )
+        const { hasEnoughCredits, deductCreditsByCost } = await import('@/utils/credits')
+        const hasCredits = await hasEnoughCredits(supabaseAdmin, ownerUserId, 2)
+        if (!hasCredits) {
+            return NextResponse.json({ error: 'Insufficient credits. Please top up your Nobo Credits to send WhatsApp messages.' }, { status: 402 })
+        }
+
         const cleanRecipient = chat.recipient_phone.replace(/\D/g, '')
 
         // Construct Meta payload based on type
@@ -168,6 +180,15 @@ export async function POST(req: Request) {
                 error: metaData.error?.message || 'Meta API failed to send message.' 
             }, { status: 400 })
         }
+
+        // Deduct manual sending credits (Rs. 0.10 cost = 2 credits)
+        await deductCreditsByCost(
+            supabaseAdmin,
+            ownerUserId,
+            0.10,
+            'whatsapp',
+            `Manual WhatsApp outbound message to ${chat.recipient_name || 'Prospect'} (${cleanRecipient})`
+        )
 
         // Save to whatsapp_messages
         const logText = templateName ? `Sent Template: ${templateName}` : messageText

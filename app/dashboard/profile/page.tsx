@@ -38,7 +38,8 @@ import {
   Share2,
   Zap,
   Mail,
-  ExternalLink
+  ExternalLink,
+  Coins
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import WhatsAppSettings from '@/components/WhatsAppSettings'
@@ -302,6 +303,7 @@ export default function ProfilePage() {
   const [flaggedQuestions, setFlaggedQuestions] = useState<any[]>([])
   const [loadingFlagged, setLoadingFlagged] = useState(false)
   const [enableEodReport, setEnableEodReport] = useState(true)
+  const [credits, setCredits] = useState<number>(0)
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(authRole || role)
 
@@ -653,6 +655,7 @@ export default function ProfilePage() {
 
       if (profileData) {
         setRole(profileData.role as any || 'admin')
+        setCredits(profileData.credits || 0)
 
         setDomainData({
           domain: profileData.custom_domain || '',
@@ -1571,6 +1574,36 @@ export default function ProfilePage() {
 
           <div className="lg:col-span-7 space-y-6">
 
+            {/* Nobo Credits Balance Card */}
+            <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 text-white rounded-[2rem] p-6 shadow-md relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.08),transparent_50%)]" />
+              <div className="relative z-10 flex items-center gap-4">
+                <div className="p-3 bg-white/10 rounded-2xl border border-white/10">
+                  <Coins size={22} className="text-yellow-300" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest block">Nobo Credits Balance</span>
+                  <h3 className="text-2xl font-black tracking-tight mt-0.5">
+                    {(formData.businessName?.toLowerCase().includes('bluesquare') || role === 'super_admin' || authRole === 'super_admin') ? '∞' : `${credits.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Credits`}
+                  </h3>
+                </div>
+              </div>
+              <div className="relative z-10 flex gap-3 w-full sm:w-auto shrink-0 mt-3 sm:mt-0">
+                <button
+                  onClick={() => router.push('/dashboard/usage')}
+                  className="w-full sm:w-auto text-center px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-xs font-bold text-white transition-all active:scale-95 cursor-pointer shadow-sm"
+                >
+                  View Ledger
+                </button>
+                <button
+                  onClick={() => router.push('/dashboard/billing')}
+                  className="w-full sm:w-auto text-center px-4 py-2 bg-white text-indigo-600 hover:bg-indigo-50 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
+                >
+                  Buy Packages
+                </button>
+              </div>
+            </div>
+
             {/* Header Identity Card */}
             <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-200/60 flex flex-col gap-8 transition-all hover:shadow-md">
               <div className="flex flex-col sm:flex-row items-start justify-between gap-6 pb-6 border-b border-slate-100">
@@ -2422,10 +2455,7 @@ export default function ProfilePage() {
                     </div>
                     <span className="font-bold text-sm text-slate-900">Track Usage & Quotas</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="bg-blue-50 text-blue-600 text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-wider">Early Bird</span>
-                    <ChevronRight size={20} className="text-slate-400" />
-                  </div>
+                  <ChevronRight size={20} className="text-slate-400" />
                 </button>
 
                 {/* Team Management - Only for Admins / Super Admins / Agencies */}

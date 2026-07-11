@@ -113,24 +113,6 @@ export async function POST(req: Request) {
                 return NextResponse.json({ success: false, error: 'Lead not found' })
             }
 
-            // Deduct call credits based on CallDuration
-            const callDurationStr = formData.get('CallDuration') as string || '0'
-            const durationSeconds = parseInt(callDurationStr, 10) || 0
-            if (durationSeconds > 0) {
-                const minutes = Math.ceil(durationSeconds / 60)
-                const creditsToDeduct = minutes * 40
-                
-                console.log(`[TWILIO STATUS CALLBACK] Call duration was ${durationSeconds}s (${minutes} mins). Deducting ${creditsToDeduct} credits...`)
-                const { deductCredits } = await import('@/utils/credits')
-                await deductCredits(
-                    supabaseAdmin,
-                    lead.user_id,
-                    creditsToDeduct,
-                    'calling',
-                    `Outbound AI voice call to ${lead.name || 'Lead'} (${lead.phone || ''}) - Duration: ${minutes} min(s)`
-                )
-            }
-
             const { data: profile } = await supabaseAdmin
                 .from('profiles')
                 .select('id, elevenlabs_api_key, elevenlabs_agent_id, business_name, voice_provider, voice_twilio_sid, voice_twilio_token')
@@ -138,6 +120,70 @@ export async function POST(req: Request) {
                 .single()
 
             const voiceProvider = profile?.voice_provider || 'elevenlabs'
+            const targetLeadId = lead.id
+            const targetUserId = lead.user_id
+
+            // Trigger delayed billing calculation (QStash or background setTimeout)
+            const callSid = formData.get('CallSid') as string || ''
+            if (callSid) {
+                const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://local.nobogent.com'
+                const qstashToken = process.env.QSTASH_TOKEN
+                
+                console.log(`[TWILIO STATUS CALLBACK] Scheduling delayed billing for call ${callSid}...`)
+
+                const useQStash = qstashToken && !appUrl.includes('localhost') && !appUrl.includes('local.nobogent.com')
+
+                if (useQStash) {
+                    try {
+                        const billUrl = `${appUrl}/api/voice/bill-call`
+                        const qstashPublishUrl = `https://qstash.upstash.io/v2/publish/${billUrl}`
+                        
+                        await fetch(qstashPublishUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${qstashToken}`,
+                                'Content-Type': 'application/json',
+                                'Upstash-Delay': '60s'
+                            },
+                            body: JSON.stringify({
+                                leadId: targetLeadId,
+                                userId: targetUserId,
+                                callSid,
+                                voiceProvider
+                            })
+                        })
+                        console.log(`[TWILIO STATUS CALLBACK] Scheduled delayed QStash billing for call ${callSid}`);
+                    } catch (qstashErr: any) {
+                        console.error('[TWILIO STATUS CALLBACK] QStash scheduling failed, falling back to local setTimeout:', qstashErr.message)
+                        triggerLocalTimeout();
+                    }
+                } else {
+                    triggerLocalTimeout();
+                }
+
+                function triggerLocalTimeout() {
+                    console.log(`[TWILIO STATUS CALLBACK] Using setTimeout delay for call ${callSid}`);
+                    setTimeout(async () => {
+                        try {
+                            const billUrl = `${appUrl}/api/voice/bill-call`
+                            const res = await fetch(billUrl, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    leadId: targetLeadId,
+                                    userId: targetUserId,
+                                    callSid,
+                                    voiceProvider
+                                })
+                            })
+                            const resData = await res.json()
+                            console.log(`[TWILIO STATUS CALLBACK] Delayed billing response:`, resData);
+                        } catch (err: any) {
+                            console.error('[TWILIO STATUS CALLBACK] Background billing setTimeout call failed:', err.message)
+                        }
+                    }, 60000)
+                }
+            }
             const elevenlabsApiKey = process.env.MASTER_ELEVENLABS_KEY || profile?.elevenlabs_api_key
             const elevenlabsAgentId = process.env.MASTER_ELEVENLABS_AGENT_ID || profile?.elevenlabs_agent_id
 

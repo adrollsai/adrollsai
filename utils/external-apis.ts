@@ -309,12 +309,11 @@ import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { generateContentWithFallback } from "./gemini-fallback";
 
-export async function callGemini(prompt: string, imageUrls?: string[]): Promise<string> {
+export async function callGeminiWithUsage(prompt: string, imageUrls?: string[]): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {
     const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
     
     try {
-        
         const contents: any[] = [prompt];
         
         if (imageUrls && imageUrls.length > 0) {
@@ -396,12 +395,24 @@ export async function callGemini(prompt: string, imageUrls?: string[]): Promise<
             "gemini-3-flash-preview"
         );
         const response = await result.response;
-        return response.text();
+        const text = response.text();
+        
+        const usage = (response as any).usageMetadata || {};
+        const promptTokens = (usage as any).promptTokenCount || 0;
+        const completionTokens = (usage as any).candidatesTokenCount || 0;
+        const modelName = (response as any).model || "gemini-3.5-flash";
+
+        return { text, promptTokens, completionTokens, modelName };
 
     } catch (e: any) {
         console.error("[Gemini Native Error]", e);
         throw new Error(`Gemini Native Error: ${e.message}`);
     }
+}
+
+export async function callGemini(prompt: string, imageUrls?: string[]): Promise<string> {
+    const res = await callGeminiWithUsage(prompt, imageUrls);
+    return res.text;
 }
 
 /**

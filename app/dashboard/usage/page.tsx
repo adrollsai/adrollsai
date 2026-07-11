@@ -1,7 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { PieChart, Users, HardDrive, Zap, Rocket, Search, MessageSquare, ShieldCheck, RefreshCw, ChevronRight } from 'lucide-react'
+import { 
+    Coins, 
+    Phone, 
+    MessageSquare, 
+    Zap, 
+    Rocket, 
+    RefreshCw, 
+    PlusCircle, 
+    Calendar, 
+    ShieldCheck
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 export default function UsagePage() {
@@ -26,12 +36,18 @@ export default function UsagePage() {
         fetchUsage()
     }, [])
 
+    const handleRecharge = (planName: string, amount: number) => {
+        toast.info(`Redirecting to our secure WhatsApp payment desk for ${planName}...`)
+        const message = encodeURIComponent(`Hi! I would like to recharge my Nobo Credits account with the ${planName} (Rs. ${amount.toLocaleString('en-IN')}).`)
+        window.open(`https://wa.me/919872669935?text=${message}`, '_blank')
+    }
+
     if (loading) {
         return (
             <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
-                    <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-slate-500 font-bold animate-pulse">Calculating Usage...</p>
+                    <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                    <p className="text-slate-500 font-semibold animate-pulse">Loading Credits Ledger...</p>
                 </div>
             </div>
         )
@@ -39,190 +55,239 @@ export default function UsagePage() {
 
     if (!usage) return null
 
-    const getProgressColor = (used: number, limit: number) => {
-        const percent = (used / limit) * 100
-        if (percent >= 90) return 'bg-red-500'
-        if (percent >= 70) return 'bg-amber-500'
-        return 'bg-blue-600'
+    const getCategoryIcon = (category: string) => {
+        switch (category) {
+            case 'calling':
+                return <Phone size={18} className="text-blue-600" />
+            case 'whatsapp':
+                return <MessageSquare size={18} className="text-emerald-600" />
+            case 'ai_generation':
+                return <Zap size={18} className="text-purple-600" />
+            case 'campaign_launch':
+                return <Rocket size={18} className="text-orange-600" />
+            case 'topup':
+            case 'subscription':
+                return <PlusCircle size={18} className="text-emerald-600" />
+            default:
+                return <Coins size={18} className="text-slate-600" />
+        }
     }
 
-    const getBgColor = (used: number, limit: number) => {
-        const percent = (used / limit) * 100
-        if (percent >= 90) return 'bg-red-50'
-        if (percent >= 70) return 'bg-amber-50'
-        return 'bg-blue-50'
+    const getCategoryBg = (category: string) => {
+        switch (category) {
+            case 'calling':
+                return 'bg-blue-50 border-blue-100'
+            case 'whatsapp':
+                return 'bg-emerald-50 border-emerald-100'
+            case 'ai_generation':
+                return 'bg-purple-50 border-purple-100'
+            case 'campaign_launch':
+                return 'bg-orange-50 border-orange-100'
+            case 'topup':
+            case 'subscription':
+                return 'bg-emerald-50 border-emerald-100'
+            default:
+                return 'bg-slate-50 border-slate-100'
+        }
+    }
+
+    const formatCategoryName = (category: string) => {
+        if (category === 'ai_generation') return 'AI Agent Generation'
+        if (category === 'campaign_launch') return 'Meta Campaign'
+        return category.charAt(0).toUpperCase() + category.slice(1)
     }
 
     return (
         <div className="min-h-screen bg-[#F8FAFC] pb-32 pt-16">
-            <div className="max-w-4xl mx-auto px-6 pt-8">
+            <div className="max-w-6xl mx-auto px-6 pt-8">
 
                 {/* Header */}
-                <div className="flex justify-between items-end mb-10">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-10">
                     <div>
-                        <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight">Usage & Quota</h1>
-                        <p className="text-slate-500 mt-2 font-medium">Tracking your "{usage.planName}" resources</p>
+                        <h1 className="text-4xl font-black text-slate-900 tracking-tight">Nobo Credits</h1>
+                        <p className="text-slate-500 mt-2 font-medium">Manage your prepaid credits balance, buy packages, and view billing ledger.</p>
                     </div>
+                    
                     <button
                         onClick={fetchUsage}
-                        className="p-3 bg-white rounded-2xl shadow-sm border border-slate-200 text-slate-400 hover:text-blue-600 transition-all active:scale-95"
+                        className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer"
                     >
-                        <RefreshCw size={20} />
+                        <RefreshCw size={14} /> Refresh Balance
                     </button>
                 </div>
 
-                {/* Reset Banner */}
-                <div className="bg-slate-900 rounded-[2rem] p-8 mb-8 text-white relative overflow-hidden shadow-2xl shadow-slate-900/20">
-                    <div className="relative z-10">
-                        <div className="flex items-center gap-2 mb-2">
-                            <ShieldCheck className="text-blue-400" size={18} />
-                            <span className="text-xs font-bold uppercase tracking-widest text-blue-400">Fair Usage Active</span>
+                <div className="space-y-12">
+                    {/* Top Section: Balance Card & Recharge Quick Actions */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        
+                        {/* Glassmorphic Balance Card */}
+                        <div className="lg:col-span-1 bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 rounded-[2.5rem] p-8 text-white relative overflow-hidden shadow-xl shadow-indigo-600/10 flex flex-col justify-between min-h-[300px] group">
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_50%)]" />
+                            <div className="relative z-10 flex justify-between items-start">
+                                <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-md border border-white/10">
+                                    <Coins size={24} className="text-yellow-300" />
+                                </div>
+                                <span className="text-[10px] font-extrabold uppercase tracking-widest bg-emerald-500/90 text-white px-3 py-1 rounded-full shadow-sm">
+                                    Active Balance
+                                </span>
+                            </div>
+                            <div className="relative z-10 my-6">
+                                <span className="text-white/70 text-xs font-semibold block mb-1">Prepaid Balance</span>
+                                <h2 className="text-5xl font-black tracking-tight mb-2">
+                                    {usage.isUnlimited ? '∞' : (usage.credits || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                </h2>
+                                <span className="text-indigo-200/90 text-sm font-bold block">
+                                    {usage.isUnlimited ? 'Unlimited Account Plan' : `≈ ₹ ${(usage.credits / 10).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR`}
+                                </span>
+                            </div>
+                            <div className="relative z-10 pt-4 border-t border-white/10 text-xs text-indigo-200/80 font-medium">
+                                Prepaid rates calculated live. Deducted after action execution.
+                            </div>
+                            <div className="absolute right-0 bottom-0 translate-x-12 translate-y-12 w-48 h-48 rounded-full bg-white/5 blur-3xl pointer-events-none group-hover:scale-110 transition-transform duration-700" />
                         </div>
-                        <h2 className="text-2xl font-bold mb-1">
-                            Your limits reset on {usage.resetDate ? new Date(usage.resetDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Next Billing Cycle'}
-                        </h2>
-                        <p className="text-slate-400 text-sm font-medium">Unused credits do not roll over to the next month.</p>
-                    </div>
-                    <Zap className="absolute -right-8 -bottom-8 text-white/5 w-64 h-64 rotate-12" />
-                </div>
 
-                {/* Usage Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-
-                    {/* Storage Card */}
-                    <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200/60 flex flex-col justify-between group hover:shadow-md transition-all">
-                        <div className="flex justify-between items-start mb-6">
-                            <div className="p-4 bg-indigo-50 text-indigo-600 rounded-3xl group-hover:scale-110 transition-transform">
-                                <HardDrive size={24} />
-                            </div>
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Storage</span>
-                        </div>
-                        <div>
-                            <div className="flex justify-between items-end mb-2">
-                                <h3 className="text-2xl font-black text-slate-900">{usage.limits.storage.used} <span className="text-sm text-slate-400 font-bold">/ {usage.limits.storage.limit} GB</span></h3>
-                                <span className="text-xs font-bold text-slate-500">{((usage.limits.storage.used / usage.limits.storage.limit) * 100).toFixed(1)}%</span>
-                            </div>
-                            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                    className={`h-full transition-all duration-1000 ${getProgressColor(usage.limits.storage.used, usage.limits.storage.limit)}`}
-                                    style={{ width: `${(usage.limits.storage.used / usage.limits.storage.limit) * 100}%` }}
-                                />
-                            </div>
-                            <p className="mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Includes Media Assets & Lead Database</p>
-                        </div>
-                    </div>
-
-                    {/* AI Videos Card */}
-                    <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200/60 flex flex-col justify-between group hover:shadow-md transition-all">
-                        <div className="flex justify-between items-start mb-6">
-                            <div className="p-4 bg-blue-50 text-blue-600 rounded-3xl group-hover:scale-110 transition-transform">
-                                <Zap size={24} />
-                            </div>
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">AI Videos</span>
-                        </div>
-                        <div>
-                            <div className="flex justify-between items-end mb-2">
-                                <h3 className="text-2xl font-black text-slate-900">{usage.limits.videos.used} <span className="text-sm text-slate-400 font-bold">/ {usage.limits.videos.limit}</span></h3>
-                                <span className="text-xs font-bold text-slate-500">{usage.limits.videos.limit > 0 ? Math.round((usage.limits.videos.used / usage.limits.videos.limit) * 100) : 0}%</span>
-                            </div>
-                            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                    className={`h-full transition-all duration-1000 ${getProgressColor(usage.limits.videos.used, usage.limits.videos.limit)}`}
-                                    style={{ width: `${usage.limits.videos.limit > 0 ? (usage.limits.videos.used / usage.limits.videos.limit) * 100 : 0}%` }}
-                                />
-                            </div>
-                            <p className="mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">AI Video Generation Quota</p>
-                        </div>
-                    </div>
-
-                    {/* AI Images Card */}
-                    <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200/60 flex flex-col justify-between group hover:shadow-md transition-all">
-                        <div className="flex justify-between items-start mb-6">
-                            <div className="p-4 bg-indigo-50 text-indigo-600 rounded-3xl group-hover:scale-110 transition-transform">
-                                <PieChart size={24} />
-                            </div>
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">AI Images</span>
-                        </div>
-                        <div>
-                            <div className="flex justify-between items-end mb-2">
-                                <h3 className="text-2xl font-black text-slate-900">{usage.limits.images.used} <span className="text-sm text-slate-400 font-bold">/ {usage.limits.images.limit}</span></h3>
-                                <span className="text-xs font-bold text-slate-500">{usage.limits.images.limit > 0 ? Math.round((usage.limits.images.used / usage.limits.images.limit) * 100) : 0}%</span>
-                            </div>
-                            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                    className={`h-full transition-all duration-1000 ${getProgressColor(usage.limits.images.used, usage.limits.images.limit)}`}
-                                    style={{ width: `${usage.limits.images.limit > 0 ? (usage.limits.images.used / usage.limits.images.limit) * 100 : 0}%` }}
-                                />
-                            </div>
-                            <p className="mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">AI Image Design Quota</p>
-                        </div>
-                    </div>
-
-                    {/* Other limits as list */}
-                    <div className="sm:col-span-2 space-y-4 mt-4">
-                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] ml-4 mb-4">Other Plan Resources</h4>
-
-                        {[
-                            { key: 'campaign_launches', icon: Rocket, color: 'text-orange-600', bg: 'bg-orange-50' },
-                            { key: 'campaign_optimizations', icon: ShieldCheck, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                            { key: 'retargeting_campaigns', icon: RefreshCw, color: 'text-purple-600', bg: 'bg-purple-50' },
-                            { key: 'seo_articles', icon: Search, color: 'text-rose-600', bg: 'bg-rose-50' }
-                        ].map((item) => {
-                            const data = usage.limits[item.key]
-                            const Icon = item.icon
-                            return (
-                                <div key={item.key} className="bg-white p-6 rounded-3xl border border-slate-200/60 shadow-sm flex items-center justify-between group hover:border-slate-300 transition-all">
-                                    <div className="flex items-center gap-4">
-                                        <div className={`p-3 ${item.bg} ${item.color} rounded-2xl`}>
-                                            <Icon size={20} />
+                        {/* Recharge packages section */}
+                        <div className="lg:col-span-2 space-y-6">
+                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Top-Up Credit Packages</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {[
+                                    { name: 'Starter Pack', amount: 2000, credits: 20000, desc: 'For growing campaigns', color: 'border-slate-200' },
+                                    { name: 'Growth Pack', amount: 5000, credits: 50000, desc: 'Calling & manual chat combo', color: 'border-indigo-600 ring-2 ring-indigo-600/10 scale-102', recommended: true },
+                                    { name: 'Enterprise Pack', amount: 10000, credits: 100000, desc: 'High volume voice calling', color: 'border-slate-200' }
+                                ].map((pkg, idx) => (
+                                    <div 
+                                        key={idx} 
+                                        className={`bg-white p-6 rounded-[2rem] border relative overflow-hidden flex flex-col justify-between shadow-sm transition-all hover:shadow-md hover:scale-[1.03] duration-300 ${pkg.color}`}
+                                    >
+                                        {pkg.recommended && (
+                                            <span className="absolute top-3 right-3 text-[9px] font-black uppercase tracking-wider bg-indigo-600 text-white px-2 py-0.5 rounded-md shadow-sm">
+                                                Best Value
+                                            </span>
+                                        )}
+                                        <div>
+                                            <h4 className="text-sm font-bold text-slate-800 mb-1">{pkg.name}</h4>
+                                            <p className="text-[10px] text-slate-400 font-medium mb-4">{pkg.desc}</p>
+                                            <div className="mb-4">
+                                                <span className="text-2xl font-black text-slate-900">
+                                                    {pkg.credits.toLocaleString()}
+                                                </span>
+                                                <span className="text-xs font-bold text-slate-400 block mt-0.5">Credits</span>
+                                            </div>
                                         </div>
                                         <div>
-                                            <p className="text-sm font-bold text-slate-900">{data.label}</p>
-                                            <p className="text-xs text-slate-500 font-medium">Monthly allocation</p>
+                                            <div className="text-xs font-bold text-slate-500 mb-4">
+                                                Rs. {pkg.amount.toLocaleString()}
+                                            </div>
+                                            <button
+                                                onClick={() => handleRecharge(pkg.name, pkg.amount)}
+                                                className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer ${pkg.recommended ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700'}`}
+                                            >
+                                                <PlusCircle size={14} />
+                                                Recharge Now
+                                            </button>
                                         </div>
                                     </div>
-                                    <div className="text-right">
-                                        <p className="text-lg font-black text-slate-900">{data.used} <span className="text-xs text-slate-400 font-bold">/ {data.limit}</span></p>
-                                        <div className="w-24 h-1.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
-                                            <div
-                                                className={`h-full ${getProgressColor(data.used, data.limit)}`}
-                                                style={{ width: `${(data.used / data.limit) * 100}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            )
-                        })}
-
-                        {/* UNLIMITED FEATURES SECTION */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
-                            {[
-                                { label: 'CRM & Leads Sync', icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                                { label: 'Team Members', icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50' },
-                                { label: 'Ad Performance Tracking', icon: Zap, color: 'text-amber-600', bg: 'bg-amber-50' },
-                                { label: 'Whitelabeled Catalog', icon: ShieldCheck, color: 'text-indigo-600', bg: 'bg-indigo-50' }
-                            ].map((feat, idx) => (
-                                <div key={idx} className="bg-white/60 p-5 rounded-3xl border border-slate-100 flex items-center gap-4">
-                                    <div className={`p-3 ${feat.bg} ${feat.color} rounded-2xl`}>
-                                        <feat.icon size={18} />
-                                    </div>
-                                    <div>
-                                        <p className="text-xs font-bold text-slate-900">{feat.label}</p>
-                                        <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Unlimited</span>
-                                    </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                {/* Info Card instead of Upgrade CTA */}
-                <div className="mt-12 bg-slate-900 rounded-[2.5rem] p-10 text-center relative overflow-hidden shadow-2xl shadow-slate-900/20">
-                    <h3 className="text-2xl font-bold text-white mb-2">You're on the "Early Bird" Plan</h3>
-                    <p className="text-slate-400 font-medium max-w-md mx-auto">You have full access to all Andromeda AI features as a founding member.</p>
-                    <PieChart className="absolute -left-10 -bottom-10 text-white/5 w-48 h-48 -rotate-12" />
-                </div>
+                    {/* Credits rates information banner */}
+                    <div className="bg-slate-900 text-white p-6 rounded-[2rem] border border-slate-800 shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                        <div className="z-10 max-w-2xl">
+                            <h4 className="text-sm font-extrabold tracking-wide uppercase text-indigo-400 flex items-center gap-1.5 mb-1">
+                                <ShieldCheck size={16} /> Live Billing Structure Active
+                            </h4>
+                            <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                                Prepaid billing calculates cost values dynamically. AI text and image generation are charged based on token inputs. Outbound Voice Calls are billed per minute based on actual Twilio carrier cost plus speech/LLM engine runtimes. WhatsApp messages incur a micro-infra process rate.
+                            </p>
+                        </div>
+                        <div className="z-10 flex gap-4 text-xs font-bold shrink-0">
+                            <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-2 text-center backdrop-blur-sm">
+                                <span className="text-slate-400 block text-[9px] uppercase tracking-wider mb-0.5">WhatsApp Outbound</span>
+                                <span>2 Credits</span>
+                            </div>
+                            <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-2 text-center backdrop-blur-sm">
+                                <span className="text-slate-400 block text-[9px] uppercase tracking-wider mb-0.5">Voice Minutes</span>
+                                <span>Actual Cost × 20</span>
+                            </div>
+                        </div>
+                    </div>
 
+                    {/* Ledger / Transaction history */}
+                    <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200/60 p-8">
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h3 className="text-lg font-black text-slate-800">Credits Transactions Ledger</h3>
+                                <p className="text-xs text-slate-400 mt-1 font-medium">Real-time ledger events representing your account usage</p>
+                            </div>
+                        </div>
+
+                        {(!usage.transactions || usage.transactions.length === 0) ? (
+                            <div className="text-center py-16 flex flex-col items-center gap-4">
+                                <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center border border-slate-100">
+                                    <Coins className="text-slate-300" size={20} />
+                                </div>
+                                <div className="max-w-xs">
+                                    <p className="text-sm font-bold text-slate-700">No Transactions Found</p>
+                                    <p className="text-xs text-slate-400 font-medium mt-1">Recharge your balance or use calling, chat, or campaign builder to write events to the ledger.</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="border-b border-slate-100 text-[10px] uppercase tracking-widest text-slate-400 font-extrabold">
+                                            <th className="pb-4 pl-2">Event Description</th>
+                                            <th className="pb-4">Category</th>
+                                            <th className="pb-4">Date</th>
+                                            <th className="pb-4 text-right pr-2">Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50 text-xs">
+                                        {usage.transactions.map((tx: any) => {
+                                            const isDeduction = tx.amount < 0
+                                            return (
+                                                <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors group">
+                                                    <td className="py-4 pl-2 font-semibold text-slate-700 max-w-sm truncate group-hover:text-slate-900">
+                                                        {tx.description}
+                                                    </td>
+                                                    <td className="py-4">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className={`p-2 rounded-xl border ${getCategoryBg(tx.category)}`}>
+                                                                {getCategoryIcon(tx.category)}
+                                                            </div>
+                                                            <span className="font-semibold text-slate-600 text-[11px]">
+                                                                {formatCategoryName(tx.category)}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-4 font-medium text-slate-400">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <Calendar size={12} />
+                                                            {new Date(tx.created_at).toLocaleString('en-IN', {
+                                                                day: 'numeric',
+                                                                month: 'short',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-4 text-right pr-2">
+                                                        <span className={`font-black text-sm ${isDeduction ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                                            {isDeduction ? '' : '+'}{tx.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                                        </span>
+                                                        <span className="text-[10px] font-bold text-slate-400 ml-1">Credits</span>
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
     )
