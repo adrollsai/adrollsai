@@ -66,7 +66,7 @@ export async function POST(req: Request) {
         if (leadId) {
             const { data: matchedLead, error: matchErr } = await supabaseAdmin
                 .from('leads')
-                .select('id, user_id, notes, pipeline_stage')
+                .select('id, user_id, notes, pipeline_stage, voice_call_retry_count')
                 .eq('id', leadId)
                 .single()
             
@@ -86,7 +86,7 @@ export async function POST(req: Request) {
                 const cleanPhone = callerPhone.replace(/\D/g, '')
                 const { data: matchedLeads } = await supabaseAdmin
                     .from('leads')
-                    .select('id, user_id, notes, pipeline_stage')
+                    .select('id, user_id, notes, pipeline_stage, voice_call_retry_count')
                     .ilike('phone', `%${cleanPhone.slice(-10)}%`)
                     .limit(1)
 
@@ -207,13 +207,16 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
         }
 
         // 4. Update the Lead Details in CRM
+        const currentRetryCount = lead.voice_call_retry_count || 0
+        const MAX_TOTAL_ATTEMPTS = 5
+
         const updateData: any = {
             voice_call_status: 'completed',
             voice_call_id: conversationId,
             voice_call_summary: summary,
             voice_call_transcript: transcript,
             voice_recording_url: publicRecordingUrl || undefined,
-            voice_call_retry_count: 0 // Reset retry count since they picked up and call is completed
+            voice_call_retry_count: 0 // Default: reset retry count since they picked up and call is completed
         }
 
         // Prepend call summary to notes
@@ -225,9 +228,24 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
         updateData.notes = updatedNotes
 
         // Schedule callback if requested, otherwise clear the past scheduled time
-        updateData.voice_call_scheduled_at = callbackTime || null
-        if (callbackTime) {
+        if (callbackTime && currentRetryCount + 1 < MAX_TOTAL_ATTEMPTS) {
+            // Callback requested and we haven't hit the total attempt cap
+            updateData.voice_call_scheduled_at = callbackTime
+            updateData.voice_call_status = 'scheduled_callback'
+            updateData.voice_call_retry_count = currentRetryCount + 1 // Preserve & increment across callback chains
             updateData.notes = `[⚠️ Scheduled Callback]: For ${new Date(callbackTime).toLocaleString()}\n\n` + updateData.notes
+            console.log(`[ELEVENLABS WEBHOOK] Callback scheduled for lead ${leadId}. Total attempt count: ${currentRetryCount + 1}/${MAX_TOTAL_ATTEMPTS}`)
+        } else if (callbackTime) {
+            // Callback requested but max total attempts reached — stop calling
+            updateData.voice_call_scheduled_at = null
+            updateData.voice_call_status = 'completed'
+            updateData.voice_call_retry_count = currentRetryCount + 1
+            updateData.notes = `[⚠️ Callback Skipped]: Lead requested callback but max total call attempts (${MAX_TOTAL_ATTEMPTS}) reached. Auto-calling stopped.\n\n` + updateData.notes
+            console.log(`[ELEVENLABS WEBHOOK] Callback requested but max attempts (${MAX_TOTAL_ATTEMPTS}) reached for lead ${leadId}. Not scheduling.`)
+        } else {
+            // No callback requested — call is truly done
+            updateData.voice_call_scheduled_at = null
+            updateData.voice_call_retry_count = 0
         }
 
         // Transition pipeline stage if qualified

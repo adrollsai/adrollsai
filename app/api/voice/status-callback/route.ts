@@ -104,7 +104,7 @@ export async function POST(req: Request) {
             // Fetch lead details and owner profile credentials
             const { data: lead } = await supabaseAdmin
                 .from('leads')
-                .select('id, name, phone, email, source, custom_fields, notes, pipeline_stage, user_id')
+                .select('id, name, phone, email, source, custom_fields, notes, pipeline_stage, user_id, voice_call_retry_count')
                 .eq('id', leadId)
                 .single()
 
@@ -447,9 +447,12 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
             }
 
             // 5. Update the Lead Details in CRM
+            const currentRetryCount = lead.voice_call_retry_count || 0
+            const MAX_TOTAL_ATTEMPTS = 5
+
             const updateData: any = {
                 voice_call_status: 'completed',
-                voice_call_retry_count: 0 // Reset retry count since call was picked up
+                voice_call_retry_count: 0 // Default: reset retry count since call was picked up
             }
 
             if (publicRecordingUrl) {
@@ -470,9 +473,24 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                 updateData.notes = updatedNotes
 
                 // Schedule callback if requested, otherwise clear the past scheduled time
-                updateData.voice_call_scheduled_at = callbackTime || null
-                if (callbackTime) {
+                if (callbackTime && currentRetryCount + 1 < MAX_TOTAL_ATTEMPTS) {
+                    // Callback requested and we haven't hit the total attempt cap
+                    updateData.voice_call_scheduled_at = callbackTime
+                    updateData.voice_call_status = 'scheduled_callback'
+                    updateData.voice_call_retry_count = currentRetryCount + 1 // Preserve & increment across callback chains
                     updateData.notes = `[⚠️ Scheduled Callback]: For ${new Date(callbackTime).toLocaleString()}\n\n` + updateData.notes
+                    console.log(`[TWILIO STATUS CALLBACK] Callback scheduled for lead ${leadId}. Total attempt count: ${currentRetryCount + 1}/${MAX_TOTAL_ATTEMPTS}`)
+                } else if (callbackTime) {
+                    // Callback requested but max total attempts reached — stop calling
+                    updateData.voice_call_scheduled_at = null
+                    updateData.voice_call_status = 'completed'
+                    updateData.voice_call_retry_count = currentRetryCount + 1
+                    updateData.notes = `[⚠️ Callback Skipped]: Lead requested callback but max total call attempts (${MAX_TOTAL_ATTEMPTS}) reached. Auto-calling stopped.\n\n` + updateData.notes
+                    console.log(`[TWILIO STATUS CALLBACK] Callback requested but max attempts (${MAX_TOTAL_ATTEMPTS}) reached for lead ${leadId}. Not scheduling.`)
+                } else {
+                    // No callback requested — call is truly done
+                    updateData.voice_call_scheduled_at = null
+                    updateData.voice_call_retry_count = 0
                 }
 
                 // Transition pipeline stage if qualified

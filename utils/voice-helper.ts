@@ -398,7 +398,11 @@ export async function bookAppointment(
                 reminder_24h_sent: false,
                 reminder_4h_sent: false,
                 reminder_1h_sent: false,
-                reminder_15m_sent: false
+                reminder_15m_sent: false,
+                // Clear any pending AI voice call — human agent handles booked meetings
+                voice_call_scheduled_at: null,
+                voice_call_status: 'completed',
+                voice_call_retry_count: 0
             })
             .eq('id', leadId)
 

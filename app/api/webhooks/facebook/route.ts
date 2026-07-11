@@ -475,12 +475,13 @@ IMPORTANT RULES:
                                     let ownerWaToken: string | null = null;
                                     let ownerWaPhoneId: string | null = null;
                                     let catalogueBtnText = 'View Products';
+                                    let ownerCustomDomain: string | null = null;
 
                                     // PRIMARY: Resolve from webhook phone_number_id (most reliable)
                                     if (wabaPhoneId) {
                                         const { data: ownerProfiles } = await supabaseAdmin
                                             .from('profiles')
-                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role, whatsapp_catalogue_button_text')
+                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role, whatsapp_catalogue_button_text, custom_domain')
                                             .eq('whatsapp_phone_number_id', wabaPhoneId);
                                         
                                         if (ownerProfiles && ownerProfiles.length > 0) {
@@ -493,6 +494,7 @@ IMPORTANT RULES:
                                             ownerWaToken = selectedProfile.whatsapp_access_token || selectedProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN || null;
                                             ownerWaPhoneId = selectedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
                                             catalogueBtnText = selectedProfile.whatsapp_catalogue_button_text || 'View Products';
+                                            ownerCustomDomain = selectedProfile.custom_domain || null;
                                             console.log(`[Flow] Owner resolved from wabaPhoneId: ${selectedProfile.business_name} (${ownerUserId})`);
                                         }
                                     }
@@ -525,13 +527,14 @@ IMPORTANT RULES:
                                             ownerUserId = selectedLead.user_id;
                                             const { data: ownerProfile } = await supabaseAdmin
                                                 .from('profiles')
-                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text')
+                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, custom_domain')
                                                 .eq('id', ownerUserId)
                                                 .maybeSingle();
                                             if (ownerProfile) {
                                                 ownerWaToken = ownerProfile.whatsapp_access_token || ownerProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN || null;
                                                 ownerWaPhoneId = ownerProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
                                                 catalogueBtnText = ownerProfile.whatsapp_catalogue_button_text || 'View Products';
+                                                ownerCustomDomain = ownerProfile.custom_domain || null;
                                             }
                                             console.log(`[Flow] Owner resolved from lead match: ${selectedLead.name} -> user ${ownerUserId}`);
                                         }
@@ -618,7 +621,9 @@ IMPORTANT RULES:
                                         try {
                                             const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
                                             const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
-                                            const catalogueLink = `${appUrl}/shared/${ownerUserId}`;
+                                            const catalogueLink = ownerCustomDomain 
+                                                ? `https://${ownerCustomDomain}` 
+                                                : `${appUrl}/shared/${ownerUserId}`;
 
                                             const sendRes = await fetch(metaUrl, {
                                                 method: 'POST',

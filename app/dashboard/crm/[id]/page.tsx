@@ -865,6 +865,7 @@ END:VCARD`
                                     lead.voice_call_status === 'completed' ? 'text-emerald-600' : 
                                     lead.voice_call_status === 'calling' ? 'text-indigo-600 animate-pulse' : 
                                     lead.voice_call_status === 'scheduled_retry' ? 'text-amber-500 animate-pulse' :
+                                    lead.voice_call_status === 'scheduled_callback' ? 'text-blue-500 animate-pulse' :
                                     ['failed', 'failed_max_retries'].includes(lead.voice_call_status || '') ? 'text-red-500' : 
                                     'text-slate-500'
                                 }`}>

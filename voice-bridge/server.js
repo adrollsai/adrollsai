@@ -608,14 +608,16 @@ ${fullTranscript}
                 }
 
                 // Update leads table with summary, transcript, and completed status
+                // Note: voice_call_retry_count is intentionally NOT reset here.
+                // The Twilio status-callback handles retry count logic correctly,
+                // and resetting it here would cause a race condition.
                 try {
                     await supabaseAdmin
                         .from('leads')
                         .update({
                             voice_call_status: 'completed',
                             voice_call_summary: summary,
-                            voice_call_transcript: mergedTurns,
-                            voice_call_retry_count: 0
+                            voice_call_transcript: mergedTurns
                         })
                         .eq('id', leadId);
                     console.log('[BRIDGE] Leads table summary and transcript updated successfully!');

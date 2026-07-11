@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X } from 'lucide-react'
+import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 
@@ -62,6 +62,18 @@ export default function AutomationPage() {
   const [customTemplateLang, setCustomTemplateLang] = useState('en_US')
   const [sendingMessage, setSendingMessage] = useState(false)
   const [showTemplateInput, setShowTemplateInput] = useState(false)
+  const [sendingProducts, setSendingProducts] = useState(false)
+  type Property = {
+    id: string
+    title: string
+    price?: string
+    address?: string
+    configurations?: string
+  }
+  const [properties, setProperties] = useState<Property[]>([])
+  const [selectedPropertyId, setSelectedPropertyId] = useState('')
+  const [showProductDropdown, setShowProductDropdown] = useState(false)
+  const [loadingProperties, setLoadingProperties] = useState(false)
 
   type MetaTemplate = {
     name: string
@@ -100,10 +112,11 @@ export default function AutomationPage() {
     }
   }, [chats])
 
-  // Fetch chats and templates on mount
+  // Fetch chats, templates and properties on mount
   useEffect(() => {
     fetchChats()
     fetchTemplates()
+    fetchProperties()
   }, [])
 
   // Fetch messages (and load cache first) when a chat is selected
@@ -243,6 +256,24 @@ export default function AutomationPage() {
     }
   }
 
+  const fetchProperties = async () => {
+    setLoadingProperties(true)
+    try {
+      const res = await fetch('/api/whatsapp/send-products')
+      const data = await res.json()
+      if (data.success) {
+        setProperties(data.properties || [])
+        if (data.properties && data.properties.length > 0) {
+          setSelectedPropertyId(data.properties[0].id)
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch properties:', e)
+    } finally {
+      setLoadingProperties(false)
+    }
+  }
+
   const fetchMessages = async (chatId: string) => {
     setLoadingMessages(true)
     try {
@@ -371,6 +402,31 @@ export default function AutomationPage() {
       alert("Error sending template message.")
     }
     setSendingMessage(false)
+  }
+
+  const handleSendProducts = async () => {
+    if (!selectedChatId || !selectedPropertyId || sendingProducts) return
+    setSendingProducts(true)
+    try {
+      const res = await fetch('/api/whatsapp/send-products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: selectedChatId, propertyId: selectedPropertyId })
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`📦 Sent product successfully!`)
+        // Refresh messages to show the new product messages
+        fetchMessages(selectedChatId)
+        setShowProductDropdown(false)
+      } else {
+        toast.error('Failed to send product: ' + (data.error || 'Unknown error'))
+      }
+    } catch (e) {
+      console.error(e)
+      toast.error('Error sending product.')
+    }
+    setSendingProducts(false)
   }
 
   const selectedChat = chats.find(c => c.id === selectedChatId)
@@ -609,7 +665,15 @@ export default function AutomationPage() {
                           className="flex-1 bg-slate-50 border border-slate-200/80 px-4 py-2.5 rounded-full text-xs font-medium outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-slate-800"
                         />
                         <button
-                          onClick={() => setShowTemplateInput(!showTemplateInput)}
+                          onClick={() => { setShowProductDropdown(!showProductDropdown); setShowTemplateInput(false); }}
+                          disabled={sendingProducts}
+                          className={`p-2.5 rounded-full transition-colors shadow-sm shrink-0 ${showProductDropdown ? 'bg-violet-500 text-white' : 'bg-violet-100 text-violet-600 hover:bg-violet-200'} disabled:opacity-50`}
+                          title="Select & Send Product Details"
+                        >
+                          {sendingProducts ? <Loader2 className="animate-spin" size={16} /> : <Package size={16} />}
+                        </button>
+                        <button
+                          onClick={() => { setShowTemplateInput(!showTemplateInput); setShowProductDropdown(false); }}
                           className={`p-2.5 rounded-full transition-colors shadow-sm shrink-0 ${showTemplateInput ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                           title="Send Template Message"
                         >
@@ -623,6 +687,35 @@ export default function AutomationPage() {
                           {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
                         </button>
                       </div>
+                      {showProductDropdown && (
+                        <div className="flex flex-col sm:flex-row gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                          <div className="flex-1">
+                            <select 
+                              value={selectedPropertyId}
+                              onChange={(e) => setSelectedPropertyId(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-violet-500/20 text-slate-800 cursor-pointer"
+                            >
+                              {properties.length === 0 ? (
+                                <option value="">No products found in inventory</option>
+                              ) : (
+                                properties.map(p => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.title} {p.price ? `(${p.price})` : ''}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          </div>
+                          <button
+                            onClick={handleSendProducts}
+                            disabled={sendingProducts || !selectedPropertyId}
+                            className="py-2.5 px-4 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5"
+                          >
+                            {sendingProducts ? <Loader2 className="animate-spin" size={14} /> : <Package size={12} />}
+                            Send Product
+                          </button>
+                        </div>
+                      )}
                       {showTemplateInput && (
                         <div className="flex flex-col sm:flex-row gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
                           <div className="flex-1">
