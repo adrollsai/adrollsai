@@ -1,6 +1,7 @@
 import { refreshGoogleAccessToken, getCalendarTimezone } from '@/utils/google-calendar'
 import { sendCAPIEvent } from '@/utils/external-apis'
 import { sendBookingConfirmationEmail } from '@/utils/email-helper'
+import { hasEnoughCredits } from '@/utils/credits'
 
 /**
  * Warms up the Cloud Run Voice Bridge container to prevent cold-start websocket timeouts in Twilio.
@@ -138,6 +139,27 @@ export async function triggerOutboundCall(
                 console.log(`[VOICE HELPER] Lead ${leadId} call scheduled for ${scheduledTime.toISOString()} due to outside hours (9 AM - 7 PM).`)
                 return { success: true, scheduled: true, scheduledTime }
             }
+        }
+        
+        // Check credit balance (must have at least 40 credits to dial 1 minute)
+        const hasCredits = await hasEnoughCredits(supabaseAdmin, profileId, 40)
+        if (!hasCredits) {
+            console.warn(`[VOICE HELPER] Outbound call aborted for lead ${leadId}: Insufficient credits for user ${profileId}`)
+            await supabaseAdmin
+                .from('leads')
+                .update({ voice_call_status: 'failed' })
+                .eq('id', leadId)
+            
+            try {
+                await supabaseAdmin.from('lead_history').insert({
+                    lead_id: leadId,
+                    action_type: 'REMARK',
+                    description: `❌ Outbound call aborted: Insufficient credit balance. Please recharge your Nobo Credits to make voice calls.`
+                })
+            } catch (hErr) {
+                console.error('[VOICE HELPER] Failed to write out-of-credits history entry:', hErr)
+            }
+            return { success: false, error: 'Insufficient credits' }
         }
 
         const twilioSid = process.env.MASTER_TWILIO_SID || profile.voice_twilio_sid || process.env.DEV_TWILIO_SID

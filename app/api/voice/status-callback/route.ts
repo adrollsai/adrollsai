@@ -113,6 +113,24 @@ export async function POST(req: Request) {
                 return NextResponse.json({ success: false, error: 'Lead not found' })
             }
 
+            // Deduct call credits based on CallDuration
+            const callDurationStr = formData.get('CallDuration') as string || '0'
+            const durationSeconds = parseInt(callDurationStr, 10) || 0
+            if (durationSeconds > 0) {
+                const minutes = Math.ceil(durationSeconds / 60)
+                const creditsToDeduct = minutes * 40
+                
+                console.log(`[TWILIO STATUS CALLBACK] Call duration was ${durationSeconds}s (${minutes} mins). Deducting ${creditsToDeduct} credits...`)
+                const { deductCredits } = await import('@/utils/credits')
+                await deductCredits(
+                    supabaseAdmin,
+                    lead.user_id,
+                    creditsToDeduct,
+                    'calling',
+                    `Outbound AI voice call to ${lead.name || 'Lead'} (${lead.phone || ''}) - Duration: ${minutes} min(s)`
+                )
+            }
+
             const { data: profile } = await supabaseAdmin
                 .from('profiles')
                 .select('id, elevenlabs_api_key, elevenlabs_agent_id, business_name, voice_provider, voice_twilio_sid, voice_twilio_token')
