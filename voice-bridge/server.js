@@ -240,14 +240,26 @@ wss.on('connection', (wsConnection) => {
                                 .eq('id', lead.property_id)
                                 .maybeSingle();
                             if (prop) {
-                                productContext = `Primary Interest Property: ${prop.title || 'N/A'}\nDetails: ${prop.description || 'N/A'}\nPrice: ${prop.price || 'N/A'}`;
+                                productContext = `<interested_property>
+  <title>${prop.title || 'N/A'}</title>
+  <type>${prop.property_type || 'N/A'}</type>
+  <price>${prop.price || 'N/A'}</price>
+  <description>${prop.description || 'N/A'}</description>
+</interested_property>`;
                             }
                         }
 
                         // Build Catalog Context
                         let catalogContext = '';
                         if (props && props.length > 0) {
-                            catalogContext = props.map((p, i) => `${i + 1}. ${p.title} (${p.property_type || 'General'}): Price ${p.price || 'Contact us'}, Details: ${p.description || ''}`).join('\n');
+                            catalogContext = props.map((p) => {
+                                return `<property>
+  <title>${p.title || 'N/A'}</title>
+  <type>${p.property_type || 'N/A'}</type>
+  <price>${p.price || 'N/A'}</price>
+  <description>${p.description || 'N/A'}</description>
+</property>`;
+                            }).join('\n');
                         }
 
                         const companyName = profile?.business_name || 'our company';
@@ -263,14 +275,16 @@ CONVERSATION FLOW:
 2. Once the lead responds to your greeting, your immediate next response must be to ask if they have availability to talk right now (e.g., "Kya aapke paas abhi baat karne ke liye time hai?").
 3. After they confirm availability or agree to speak, proceed with the rest of the conversation (introduce yourself as the AI booking assistant from ${companyName}, and guide them to schedule a consultation/appointment).
 
-CRITICAL RULES:
-1. ONLY speak about the provided business profile info, catalog, and the lead's details.
-2. DO NOT make up, assume, or hallucinate details. If you don't know an answer, say: "That is a great question. I don't have that detail on hand, but let's book a quick consultation call so our representative can answer that for you."
-3. Be polite, friendly, and brief in your responses. Keep responses under 45 words.
-4. Your single goal is to find a suitable date and time slot for a meeting.
-5. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish) when responding to the user.
-6. ENDING THE CALL: Once the call objective is met or the lead wants to end, say a brief polite goodbye and trigger your "end_call" tool to hang up the call immediately.
-7. GENDER & PRONOUNS: You are a female assistant. You must always use female grammar and pronouns when speaking Hindi/Hinglish (e.g., use "karti hoon" instead of "karta hoon", "karungi" instead of "karunga", "baat kar rahi hoon" instead of "baat kar raha hoon", "de sakti hoon" instead of "de sakta hoon", "bhejti hoon" instead of "bhejta hoon").
+CRITICAL RULES (CLOSED-WORLD GROUNDING):
+1. STRICT CLOSED-WORLD ASSUMPTION: You must ONLY speak about the facts explicitly provided in the business profile info, catalog, and lead details.
+2. NO HALLUCINATIONS: Do NOT assume, extrapolate, guess, or invent any information (such as builder/developer names, completion dates, materials used, amenities, or specific project features) if they are not explicitly written in the description or details for that specific property.
+3. PROPERTY INDEPENDENCE: Keep property information completely separate. Do NOT mix details (like price, location, or builder) from one property (e.g., Homeland) and apply them to another property (e.g., Ananta).
+4. UNANSWERABLE QUESTIONS: If a user asks a question about a property, project, or business that is not explicitly answered in the context provided below, you MUST reply: "That is a great question. I don't have that specific detail on hand, but let's book a quick consultation call so our representative can get that exact info for you."
+5. Be polite, friendly, and brief in your responses. Keep responses under 45 words.
+6. Your single goal is to find a suitable date and time slot for a meeting.
+7. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish) when responding to the user.
+8. ENDING THE CALL: Once the call objective is met or the lead wants to end, say a brief polite goodbye and trigger your "end_call" tool to hang up the call immediately.
+9. GENDER & PRONOUNS: You are a female assistant. You must always use female grammar and pronouns when speaking Hindi/Hinglish (e.g., use "karti hoon" instead of "karta hoon", "karungi" instead of "karunga", "baat kar rahi hoon" instead of "baat kar raha hoon", "de sakti hoon" instead of "de sakta hoon", "bhejti hoon" instead of "bhejta hoon").
 
 --- BUSINESS CONTEXT ---
 Business Name: ${companyName}
@@ -538,8 +552,32 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
         // Save Call logs & Transcript summary to lead_history and leads table
         if (transcriptTurns.length > 0) {
             try {
-                // Compile raw text transcript
-                const fullTranscript = transcriptTurns
+                // Merge consecutive turns of the same role for clean DB storage
+                const mergedTurns = [];
+                let currentTurn = null;
+                for (const turn of transcriptTurns) {
+                    if (!turn.message || !turn.message.trim()) continue;
+                    const msg = turn.message.trim();
+                    const role = turn.role;
+                    if (!currentTurn) {
+                        currentTurn = { role, message: msg };
+                    } else if (currentTurn.role === role) {
+                        if (/^[.,!?;:]/.test(msg)) {
+                            currentTurn.message += msg;
+                        } else {
+                            currentTurn.message += ' ' + msg;
+                        }
+                    } else {
+                        mergedTurns.push(currentTurn);
+                        currentTurn = { role, message: msg };
+                    }
+                }
+                if (currentTurn) {
+                    mergedTurns.push(currentTurn);
+                }
+
+                // Compile raw text transcript from merged turns
+                const fullTranscript = mergedTurns
                     .map(t => `${t.role === 'user' ? (leadName || 'User') : 'Assistant'}: ${t.message}`)
                     .join('\n');
                 
@@ -576,7 +614,7 @@ ${fullTranscript}
                         .update({
                             voice_call_status: 'completed',
                             voice_call_summary: summary,
-                            voice_call_transcript: transcriptTurns,
+                            voice_call_transcript: mergedTurns,
                             voice_call_retry_count: 0
                         })
                         .eq('id', leadId);

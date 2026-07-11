@@ -140,7 +140,8 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
   "summary": "A clear, concise paragraph summary of the call",
   "callback_time": "ISO-8601 string of requested callback date/time if the lead asked or agreed to be called back at a specific time (including accepting or saying 'okay', 'thank you', 'theek hai' after a callback time is proposed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot if the lead agreed to, confirmed, or accepted a proposed meeting slot (including saying 'okay', 'thank you', 'theek hai', or saying goodbye/thank you after a meeting slot is proposed/confirmed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
-  "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified)
+  "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified),
+  "unanswered_questions": ["array of raw question strings that the AI assistant was unable to answer because it lacked info in context, or empty array if none"]
 }
 `
 
@@ -152,6 +153,17 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                 callbackTime = extracted.callback_time || null
                 bookingTime = extracted.booking_time || null
                 isQualified = !!extracted.is_qualified
+
+                if (extracted.unanswered_questions && Array.isArray(extracted.unanswered_questions) && extracted.unanswered_questions.length > 0) {
+                    const inserts = extracted.unanswered_questions.map((q: string) => ({
+                        user_id: lead.user_id,
+                        lead_id: leadId,
+                        channel: 'voice',
+                        question: q
+                    }));
+                    await supabaseAdmin.from('flagged_questions').insert(inserts);
+                    console.log('[ELEVENLABS WEBHOOK] Inserted flagged questions from ElevenLabs transcript:', inserts);
+                }
             } catch (err: any) {
                 console.error('[ELEVENLABS WEBHOOK] Gemini analysis extraction failed:', err)
             }

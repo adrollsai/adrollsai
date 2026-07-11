@@ -8,6 +8,31 @@ import { toast } from 'sonner'
 
 const STAGES = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
 
+function cleanTranscript(transcript: any[]) {
+    if (!Array.isArray(transcript)) return []
+    const merged: any[] = []
+    let current: any = null
+    for (const item of transcript) {
+        if (!item || !item.message) continue
+        const msg = item.message.trim()
+        const role = item.role
+        if (!current) {
+            current = { role, message: msg }
+        } else if (current.role === role) {
+            if (/^[.,!?;:]/.test(msg)) {
+                current.message += msg
+            } else {
+                current.message += ' ' + msg
+            }
+        } else {
+            merged.push(current)
+            current = { role, message: msg }
+        }
+    }
+    if (current) merged.push(current)
+    return merged
+}
+
 export default function LeadProfilePage() {
     const { id } = useParams()
     const router = useRouter()
@@ -883,7 +908,7 @@ END:VCARD`
                                 </button>
                                 {showTranscript && (
                                     <div className="mt-3 p-4 bg-slate-50 border border-slate-100/50 rounded-2xl max-h-60 overflow-y-auto space-y-3.5 custom-scrollbar">
-                                        {lead.voice_call_transcript.map((msg: any, index: number) => (
+                                        {cleanTranscript(lead.voice_call_transcript).map((msg: any, index: number) => (
                                             <div key={index} className={`flex flex-col ${msg.role === 'agent' ? 'items-start' : 'items-end'}`}>
                                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
                                                     {msg.role === 'agent' ? 'AI Voice Agent' : 'Lead'}

@@ -36,7 +36,9 @@ import {
   Plug,
   MessageCircle,
   Share2,
-  Zap
+  Zap,
+  Mail,
+  ExternalLink
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import WhatsAppSettings from '@/components/WhatsAppSettings'
@@ -287,13 +289,19 @@ export default function ProfilePage() {
 
   // --- STATE ---
   const [loading, setLoading] = useState(true)
-  const [activeSection, setActiveSection] = useState<'main' | 'whatsapp' | 'voice'>('main')
+  const [activeSection, setActiveSection] = useState<'main' | 'whatsapp' | 'voice' | 'calendar' | 'flagged'>('main')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [targetUserId, setTargetUserId] = useState<string | null>(null)
   const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent'>('agent')
   const [authRole, setAuthRole] = useState<string | null>(null)
   const [authUserName, setAuthUserName] = useState<string | null>(null)
+
+  const [bookingEnabled, setBookingEnabled] = useState(false)
+  const [flaggedCount, setFlaggedCount] = useState(0)
+  const [flaggedQuestions, setFlaggedQuestions] = useState<any[]>([])
+  const [loadingFlagged, setLoadingFlagged] = useState(false)
+  const [enableEodReport, setEnableEodReport] = useState(true)
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(authRole || role)
 
@@ -709,14 +717,17 @@ export default function ProfilePage() {
           setLinkedinName('')
         }
 
-        // Handle Google Status
+        // Handle Google & Booking Status
+        setBookingEnabled(profileData.google_booking_enabled || false)
+        setGoogleBookingDuration(profileData.google_booking_duration || 30)
+        setGoogleCalendarId(profileData.google_calendar_id || 'primary')
+        const hours = profileData.google_booking_hours || { start: '09:00', end: '17:00' }
+        setGoogleBookingStart(hours.start || '09:00')
+        setGoogleBookingEnd(hours.end || '17:00')
+        setEnableEodReport(profileData.enable_eod_report !== false)
+
         if (profileData.google_refresh_token) {
           setIsGoogleConnected(true)
-          setGoogleBookingDuration(profileData.google_booking_duration || 30)
-          setGoogleCalendarId(profileData.google_calendar_id || 'primary')
-          const hours = profileData.google_booking_hours || { start: '09:00', end: '17:00' }
-          setGoogleBookingStart(hours.start || '09:00')
-          setGoogleBookingEnd(hours.end || '17:00')
         } else {
           setIsGoogleConnected(false)
         }
@@ -844,23 +855,52 @@ export default function ProfilePage() {
     }
   }, [isGoogleConnected, targetUserId, userId])
 
+  const fetchFlaggedQuestions = async (uId: string) => {
+    setLoadingFlagged(true)
+    try {
+      const { data, error } = await supabase
+        .from('flagged_questions')
+        .select('*')
+        .eq('user_id', uId)
+        .eq('resolved', false)
+        .order('created_at', { ascending: false })
+      if (!error && data) {
+        setFlaggedQuestions(data)
+        setFlaggedCount(data.length)
+      }
+    } catch (err) {
+      console.error("Failed to load flagged questions:", err)
+    } finally {
+      setLoadingFlagged(false)
+    }
+  }
+
+  useEffect(() => {
+    const effectiveUserId = targetUserId || userId;
+    if (effectiveUserId) {
+      fetchFlaggedQuestions(effectiveUserId)
+    }
+  }, [targetUserId, userId])
+
   const handleSaveGoogleSettings = async () => {
     setIsSavingGoogleSettings(true)
     const effectiveUserId = targetUserId || userId;
     try {
       if (effectiveUserId) {
         const { error } = await supabase.from('profiles').update({
+          google_booking_enabled: bookingEnabled,
           google_booking_duration: googleBookingDuration,
           google_booking_hours: { start: googleBookingStart, end: googleBookingEnd },
           google_calendar_id: googleCalendarId
         }).eq('id', effectiveUserId)
         if (error) throw error
         updateLocalCache({
+          google_booking_enabled: bookingEnabled,
           google_booking_duration: googleBookingDuration,
           google_booking_hours: { start: googleBookingStart, end: googleBookingEnd },
           google_calendar_id: googleCalendarId
         })
-        toast.success("Google Calendar settings saved successfully!")
+        toast.success("Calendar booking settings saved successfully!")
       }
     } catch (e: any) {
       toast.error("Failed to save settings: " + e.message)
@@ -1260,7 +1300,7 @@ export default function ProfilePage() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
 
         <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-8 ml-1">
-          {activeSection === 'whatsapp' ? 'WhatsApp Automation' : activeSection === 'voice' ? 'Voice Agent (ElevenLabs)' : 'Workspace Settings'}
+          {activeSection === 'whatsapp' ? 'WhatsApp Automation' : activeSection === 'voice' ? 'Voice Agent (ElevenLabs)' : activeSection === 'calendar' ? 'Calendar Settings' : activeSection === 'flagged' ? 'Flagged Questions' : 'Workspace Settings'}
         </h1>
 
         {activeSection === 'whatsapp' ? (
@@ -1273,6 +1313,259 @@ export default function ProfilePage() {
             userId={targetUserId || userId || ''} 
             onBack={() => setActiveSection('main')} 
           />
+        ) : activeSection === 'calendar' ? (
+          <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200/60 max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="bg-red-100 text-red-600 p-3 rounded-2xl">
+                  <Calendar size={22} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Calendar & Booking Settings</h2>
+                  <p className="text-xs text-slate-500 font-medium">Set slot durations and availability for appointment bookings.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <a 
+                  href={
+                    domainData.domain 
+                      ? `https://${domainData.domain}/booking/preview`
+                      : `${typeof window !== 'undefined' ? window.location.origin : ''}/shared/${targetUserId || userId}/booking/preview`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-red-50 text-red-600 hover:bg-red-100/70 border border-red-150 px-4 py-2 rounded-full text-xs font-extrabold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                >
+                  <span>Preview Booking Page</span>
+                  <ExternalLink size={12} className="stroke-[2.5px]" />
+                </a>
+                <button 
+                  onClick={() => setActiveSection('main')}
+                  className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest px-2"
+                >
+                  Back
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              {/* Enable Booking Toggle */}
+              <div className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                <div>
+                  <h4 className="font-bold text-sm text-slate-800">Enable Slots Booking</h4>
+                  <p className="text-xs text-slate-500 mt-1 max-w-xs font-medium">Allow AI Voice and WhatsApp agents to book meetings with leads.</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={bookingEnabled} 
+                    onChange={(e) => setBookingEnabled(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                </label>
+              </div>
+
+              {/* Google Calendar Connection Status */}
+              <div className="p-6 rounded-3xl border border-slate-150 bg-white/50 backdrop-blur-md space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-red-100 text-red-600 p-2.5 rounded-full">
+                      <Plug size={18} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-800">Google Calendar Sync</h4>
+                      <p className="text-xs text-slate-500 font-medium">{isGoogleConnected ? 'Syncing active' : 'Sync schedule to prevent double-booking'}</p>
+                    </div>
+                  </div>
+                  {isGoogleConnected ? (
+                    <button 
+                      onClick={handleDisconnectGoogle} 
+                      disabled={isDisconnectingGoogle} 
+                      className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-full font-bold transition-all"
+                    >
+                      {isDisconnectingGoogle ? '...' : 'Disconnect'}
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={handleConnectGoogle} 
+                      disabled={isConnectingGoogle} 
+                      className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-full text-xs font-bold shadow-sm transition-all"
+                    >
+                      {isConnectingGoogle ? 'Connecting...' : 'Connect Google'}
+                    </button>
+                  )}
+                </div>
+
+                {isGoogleConnected && (
+                  <div className="pt-2 animate-in fade-in slide-in-from-top-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block font-black">Target Calendar</label>
+                    {isLoadingCalendars ? (
+                      <div className="text-xs text-slate-400 py-2.5 font-medium">Syncing calendar lists...</div>
+                    ) : (
+                      <select
+                        value={googleCalendarId}
+                        onChange={(e) => setGoogleCalendarId(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-2xl text-xs font-bold outline-none cursor-pointer text-slate-800 focus:border-red-500 transition-all"
+                      >
+                        <option value="primary">Primary Calendar (Default)</option>
+                        {googleCalendars
+                          .filter(c => c.id !== 'primary')
+                          .map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.summary}
+                            </option>
+                          ))}
+                      </select>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Slot Config fields */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 block mb-2 font-black">Meeting Call Duration</label>
+                  <select
+                    value={googleBookingDuration}
+                    onChange={(e) => setGoogleBookingDuration(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 py-3.5 px-4 rounded-2xl text-xs font-bold outline-none cursor-pointer text-slate-800 focus:border-red-500 transition-all"
+                  >
+                    <option value={15}>15 Minutes</option>
+                    <option value={30}>30 Minutes</option>
+                    <option value={45}>45 Minutes</option>
+                    <option value={60}>60 Minutes</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 block mb-2 font-black">Start Hours</label>
+                    <input
+                      type="time"
+                      value={googleBookingStart}
+                      onChange={(e) => setGoogleBookingStart(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 py-3 px-3 rounded-2xl text-xs font-bold outline-none text-slate-800 focus:border-red-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 block mb-2 font-black">End Hours</label>
+                    <input
+                      type="time"
+                      value={googleBookingEnd}
+                      onChange={(e) => setGoogleBookingEnd(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 py-3 px-3 rounded-2xl text-xs font-bold outline-none text-slate-800 focus:border-red-500 transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button 
+              onClick={handleSaveGoogleSettings}
+              disabled={isSavingGoogleSettings}
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm py-4 rounded-[1.5rem] sm:rounded-full shadow-lg shadow-slate-950/10 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+            >
+              {isSavingGoogleSettings ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              {isSavingGoogleSettings ? 'Saving...' : 'Save Calendar Settings'}
+            </button>
+          </div>
+        ) : activeSection === 'flagged' ? (
+          <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200/60 max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="bg-amber-100 text-amber-600 p-3 rounded-2xl">
+                  <AlertCircle size={22} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Flagged Questions</h2>
+                  <p className="text-xs text-slate-500 font-medium">Questions the AI could not answer. Update your Business Info context with these answers to train the AI.</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setActiveSection('main')}
+                className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest"
+              >
+                Back
+              </button>
+            </div>
+
+            {loadingFlagged ? (
+              <div className="flex justify-center py-12"><Loader2 size={24} className="animate-spin text-slate-300" /></div>
+            ) : flaggedQuestions.length === 0 ? (
+              <div className="text-center py-16 space-y-4">
+                <div className="bg-slate-50 text-slate-400 p-4 rounded-full inline-block">
+                  <CheckCircle size={32} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 text-sm">All Questions Resolved!</h4>
+                  <p className="text-xs text-slate-500 mt-1">Your AI bot has been answering everything successfully.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {flaggedQuestions.map((fq) => (
+                  <div key={fq.id} className="p-5 bg-slate-50 border border-slate-100 rounded-3xl space-y-3 shadow-sm transition-all hover:bg-slate-50/80">
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="space-y-1">
+                        <span className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                          {fq.channel === 'whatsapp' ? (
+                            <>
+                              <MessageCircle size={10} className="text-emerald-500" /> WhatsApp
+                            </>
+                          ) : (
+                            <>
+                              <Phone size={10} className="text-indigo-500" /> Voice Call
+                            </>
+                          )}
+                          • {new Date(fq.created_at).toLocaleDateString()}
+                        </span>
+                        <h4 className="text-sm font-semibold text-slate-800">"{fq.question}"</h4>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          const { error } = await supabase.from('flagged_questions').update({ resolved: true }).eq('id', fq.id)
+                          if (!error) {
+                            toast.success("Question resolved")
+                            fetchFlaggedQuestions(targetUserId || userId || '')
+                          } else {
+                            toast.error("Failed to resolve")
+                          }
+                        }}
+                        className="text-[10px] bg-white border border-slate-200 text-slate-500 hover:text-slate-700 font-bold px-3 py-1.5 rounded-full active:scale-95 transition-all shadow-xs"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex gap-2">
+                      <button
+                        onClick={() => {
+                          const answer = prompt(`Write your answer for: "${fq.question}"\n\nThis answer will be appended to your Business Info (AI Context) so the AI agent knows it next time.`);
+                          if (answer) {
+                            const updatedInfo = `${formData.businessInfo}\n\nQ: ${fq.question}\nA: ${answer}`;
+                            setFormData(prev => ({ ...prev, businessInfo: updatedInfo }));
+                            supabase.from('profiles').update({ business_info: updatedInfo }).eq('id', targetUserId || userId).then(({ error }) => {
+                              if (!error) {
+                                supabase.from('flagged_questions').update({ resolved: true }).eq('id', fq.id).then(() => {
+                                  toast.success("Context updated and question resolved!");
+                                  fetchFlaggedQuestions(targetUserId || userId || '');
+                                  updateLocalCache({ business_info: updatedInfo });
+                                });
+                              }
+                            });
+                          }
+                        }}
+                        className="text-[10px] bg-purple-50 text-purple-600 hover:bg-purple-100 font-bold px-3 py-1.5 rounded-full active:scale-95 transition-all flex items-center gap-1.5"
+                      >
+                        <Sparkles size={11} /> Save Answer to AI Context
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
 
@@ -1746,6 +2039,57 @@ export default function ProfilePage() {
               <PushManager variant="inline" ownerId={targetUserId || userId || undefined} />
             </div>
 
+            {/* Email Notification Settings Card */}
+            {isAdminLike && authRole !== 'agent' && (
+              <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
+                <div className="p-6 sm:p-7 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3.5">
+                      <div className="bg-blue-100 text-blue-600 p-3 rounded-full shadow-md shadow-blue-500/5">
+                        <Mail size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-base text-slate-900">Email Reports</h4>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5">
+                          Daily summaries of your operations
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                    <div className="pr-4">
+                      <span className="text-xs font-bold text-slate-700 block">Daily EOD Report Email</span>
+                      <span className="text-[10px] text-slate-400 font-medium">Send daily EOD metrics and leads analysis.</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input 
+                        type="checkbox" 
+                        checked={enableEodReport} 
+                        onChange={async (e) => {
+                          const val = e.target.checked
+                          setEnableEodReport(val)
+                          try {
+                            const { error } = await supabase
+                              .from('profiles')
+                              .update({ enable_eod_report: val })
+                              .eq('id', targetUserId || userId)
+                            if (error) throw error
+                            updateLocalCache({ enable_eod_report: val })
+                            toast.success("EOD report settings updated!")
+                          } catch (err: any) {
+                            toast.error("Failed to save settings: " + err.message)
+                          }
+                        }}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {isAdminLike && authRole !== 'agent' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
                 <div className="p-6 sm:p-7">
@@ -2176,13 +2520,44 @@ export default function ProfilePage() {
 
                 <button 
                   onClick={() => setActiveSection('voice')} 
-                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all"
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100"
                 >
                   <div className="flex items-center gap-4">
                     <div className="bg-indigo-100 text-indigo-600 p-3 rounded-2xl">
                       <Phone size={20} />
                     </div>
                     <span className="font-bold text-sm text-slate-900">Voice Agent (ElevenLabs)</span>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400" />
+                </button>
+
+                <button 
+                  onClick={() => setActiveSection('calendar')} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-red-50 text-red-600 p-3 rounded-2xl">
+                      <Calendar size={20} />
+                    </div>
+                    <span className="font-bold text-sm text-slate-900">Calendar & Booking Settings</span>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400" />
+                </button>
+
+                <button 
+                  onClick={() => setActiveSection('flagged')} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-amber-50 text-amber-600 p-3 rounded-2xl relative">
+                      <AlertCircle size={20} />
+                      {flaggedCount > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-bold">
+                          {flaggedCount}
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-bold text-sm text-slate-900">Flagged Questions</span>
                   </div>
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>

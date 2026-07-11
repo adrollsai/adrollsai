@@ -117,6 +117,10 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const [isDisconnecting, setIsDisconnecting] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
 
+  // Custom catalogue button text state
+  const [catalogueButtonText, setCatalogueButtonText] = useState('View Products')
+  const [savingButtonText, setSavingButtonText] = useState(false)
+
   // WhatsApp API Business Profile state
   const [waProfile, setWaProfile] = useState<any>({
     about: '',
@@ -274,7 +278,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
       // Fetch profile credentials
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('whatsapp_access_token, whatsapp_phone_number, whatsapp_waba_id, whatsapp_phone_number_id')
+        .select('whatsapp_access_token, whatsapp_phone_number, whatsapp_waba_id, whatsapp_phone_number_id, whatsapp_catalogue_button_text')
         .eq('id', userId)
         .single()
 
@@ -284,6 +288,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
         setWhatsappNumber(profileData.whatsapp_phone_number || '')
         setWhatsappWabaId(profileData.whatsapp_waba_id || '')
         setWhatsappPhoneId(profileData.whatsapp_phone_number_id || '')
+        setCatalogueButtonText(profileData.whatsapp_catalogue_button_text || 'View Products')
         
         if (isConnected) {
           fetchWaProfile()
@@ -705,6 +710,30 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
     toast.success("Copied to clipboard!")
   }
 
+  const handleSaveCatalogueButtonText = async () => {
+    if (!userId) return
+    if (!catalogueButtonText.trim()) {
+      toast.error("Button text cannot be empty!")
+      return
+    }
+    setSavingButtonText(true)
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          whatsapp_catalogue_button_text: catalogueButtonText.trim()
+        })
+        .eq('id', userId)
+
+      if (error) throw error
+      toast.success("Catalogue button text saved successfully!")
+    } catch (err: any) {
+      toast.error("Failed to save button text: " + err.message)
+    } finally {
+      setSavingButtonText(false)
+    }
+  }
+
   // Render template preview bubble
   const renderMockBubble = (templateBody: string, title: string, mapping: Record<string, string> = {}, headerUrl: string = '') => {
     let replacedText = templateBody || '';
@@ -1010,6 +1039,53 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                   </button>
                 </form>
               )}
+            </div>
+          )}
+
+          {/* Catalogue Button Settings Card */}
+          {whatsappConnected && (
+            <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm hover:shadow-md transition-all space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600 shadow-sm animate-pulse">
+                  <MessageCircle size={20} />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-slate-950">Catalogue Button</h4>
+                  <p className="text-[10px] text-slate-500 font-medium">Customize the interactive WhatsApp button text</p>
+                </div>
+              </div>
+
+              <div className="space-y-3.5">
+                <div>
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block mb-1 ml-0.5">Button Display Text</label>
+                  <input 
+                    type="text" 
+                    value={catalogueButtonText} 
+                    onChange={(e) => {
+                      const text = e.target.value;
+                      if (text.length <= 20) {
+                        setCatalogueButtonText(text);
+                      } else {
+                        toast.error("WhatsApp button text cannot exceed 20 characters!");
+                      }
+                    }}
+                    placeholder="e.g. View Products"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-900 bg-slate-50/20 font-bold"
+                  />
+                  <div className="flex justify-between items-center mt-1.5 px-1 text-[9px] font-bold text-slate-400">
+                    <span>Limit: 20 characters</span>
+                    <span className={catalogueButtonText.length > 18 ? "text-red-500" : ""}>{catalogueButtonText.length}/20</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleSaveCatalogueButtonText}
+                  disabled={savingButtonText}
+                  className="w-full py-2.5 px-4 rounded-full bg-slate-950 text-white hover:bg-slate-900 text-xs font-black transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50"
+                >
+                  {savingButtonText ? <Loader2 size={12} className="animate-spin text-white" /> : 'Save Button Text'}
+                </button>
+              </div>
             </div>
           )}
 

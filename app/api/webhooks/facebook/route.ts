@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
 import { sendCAPIEvent, callGemini } from '@/utils/external-apis'
 import { triggerWelcomeDrip } from '@/utils/whatsapp/drips'
-import { bookAppointment } from '@/utils/voice-helper'
+import { bookAppointment, triggerOutboundCall } from '@/utils/voice-helper'
 
 export const dynamic = 'force-dynamic'
 
@@ -474,12 +474,13 @@ IMPORTANT RULES:
                                     let ownerUserId: string | null = null;
                                     let ownerWaToken: string | null = null;
                                     let ownerWaPhoneId: string | null = null;
+                                    let catalogueBtnText = 'View Products';
 
                                     // PRIMARY: Resolve from webhook phone_number_id (most reliable)
                                     if (wabaPhoneId) {
                                         const { data: ownerProfiles } = await supabaseAdmin
                                             .from('profiles')
-                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role')
+                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role, whatsapp_catalogue_button_text')
                                             .eq('whatsapp_phone_number_id', wabaPhoneId);
                                         
                                         if (ownerProfiles && ownerProfiles.length > 0) {
@@ -491,6 +492,7 @@ IMPORTANT RULES:
                                             ownerUserId = selectedProfile.id;
                                             ownerWaToken = selectedProfile.whatsapp_access_token || selectedProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN || null;
                                             ownerWaPhoneId = selectedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
+                                            catalogueBtnText = selectedProfile.whatsapp_catalogue_button_text || 'View Products';
                                             console.log(`[Flow] Owner resolved from wabaPhoneId: ${selectedProfile.business_name} (${ownerUserId})`);
                                         }
                                     }
@@ -523,12 +525,13 @@ IMPORTANT RULES:
                                             ownerUserId = selectedLead.user_id;
                                             const { data: ownerProfile } = await supabaseAdmin
                                                 .from('profiles')
-                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
+                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text')
                                                 .eq('id', ownerUserId)
                                                 .maybeSingle();
                                             if (ownerProfile) {
                                                 ownerWaToken = ownerProfile.whatsapp_access_token || ownerProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN || null;
                                                 ownerWaPhoneId = ownerProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
+                                                catalogueBtnText = ownerProfile.whatsapp_catalogue_button_text || 'View Products';
                                             }
                                             console.log(`[Flow] Owner resolved from lead match: ${selectedLead.name} -> user ${ownerUserId}`);
                                         }
@@ -610,10 +613,13 @@ IMPORTANT RULES:
                                             message_text: messageText
                                         });
 
-                                    // Helper: send WhatsApp text message
+                                    // Helper: send WhatsApp interactive message with View Properties catalog button
                                     const sendWAMessage = async (text: string) => {
                                         try {
                                             const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
+                                            const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
+                                            const catalogueLink = `${appUrl}/shared/${ownerUserId}`;
+
                                             const sendRes = await fetch(metaUrl, {
                                                 method: 'POST',
                                                 headers: {
@@ -624,8 +630,20 @@ IMPORTANT RULES:
                                                     messaging_product: 'whatsapp',
                                                     recipient_type: 'individual',
                                                     to: cleanFrom,
-                                                    type: 'text',
-                                                    text: { body: text }
+                                                    type: 'interactive',
+                                                    interactive: {
+                                                        type: 'cta_url',
+                                                        body: {
+                                                            text: text
+                                                        },
+                                                        action: {
+                                                            name: 'cta_url',
+                                                            parameters: {
+                                                                display_text: (catalogueBtnText || 'View Products').slice(0, 20),
+                                                                url: catalogueLink
+                                                            }
+                                                        }
+                                                    }
                                                 })
                                             });
                                             if (sendRes.ok) {
@@ -963,13 +981,15 @@ Clean Name:`;
                                     if (propertiesResult.data && propertiesResult.data.length > 0) {
                                         propertiesText = propertiesResult.data
                                             .map((p: any) => {
-                                                const desc = p.description || 'No description available.';
-                                                const priceInfo = p.price ? `, Price: ${p.price}` : '';
-                                                const addrInfo = p.address ? `, Location/Address: ${p.address}` : '';
-                                                const typeInfo = p.property_type ? `, Type: ${p.property_type}` : '';
-                                                return `- Property: "${p.title}"${priceInfo}${addrInfo}${typeInfo}\n  Description/Details: ${desc}`;
+                                                return `<property>
+  <title>${p.title || 'N/A'}</title>
+  <type>${p.property_type || 'N/A'}</type>
+  <price>${p.price || 'N/A'}</price>
+  <address>${p.address || 'N/A'}</address>
+  <description>${p.description || 'N/A'}</description>
+</property>`;
                                             })
-                                            .join('\n\n');
+                                            .join('\n');
                                     }
 
                                     let voiceCallHistory = 'No previous voice calls.';
@@ -1016,11 +1036,12 @@ Current Date & Time: ${new Date().toLocaleString('en-US', { weekday: 'long', yea
 
 Guidelines:
 1. Speak in a natural, polite, and professional English language when responding.
-2. Answer the user's queries accurately based ONLY on the provided business profile and active inventory details. If they ask about listings or price, refer to the available properties list. If you don't know the answer, politely offer to book a consultation so our representative can answer.
-3. Gently encourage the user to book a meeting or consultation slot (e.g., "Would you like me to book a quick consultation call for you?").
-4. Keep all responses brief (under 50 words) and suitable for a WhatsApp text.
-5. If the user explicitly proposes, confirms, or agrees to a meeting time/day (e.g., "book for tomorrow at 2 pm", "yes 5 pm works", "sure let's talk at 3 tomorrow"), extract that timestamp as an ISO-8601 string. Otherwise, set it to null.
-6. The user's name is "${customerName}". Address them by name ONLY if this is the start of the conversation (i.e. first 1-2 messages in history). For subsequent replies, do NOT repeat greetings like "Hi [Name]" or "Hello [Name]" at the beginning of every message.
+2. STRICT CLOSED-WORLD GROUNDING: Answer the user's queries accurately based ONLY on the provided business profile and active properties catalog. If a user asks a question about a property, project, or developer that is not explicitly answered in the catalog provided below, set "flag_unanswered_question" to the user's raw question, and politely state in your "reply" that you don't have that detail but would love to schedule a call to get it for them. If the information IS in the catalog, set "flag_unanswered_question" to null. Do NOT make up any details or mix details from different properties (such as builder/developer names or prices).
+3. If the user explicitly asks to be called right now, requests a voice call, says "call me", or asks to speak on the phone immediately, set "trigger_call" to true. Otherwise, set it to false.
+4. Gently encourage the user to book a meeting or consultation slot (e.g., "Would you like me to book a quick consultation call for you?").
+5. Keep all responses brief (under 50 words) and suitable for a WhatsApp text.
+6. If the user explicitly proposes, confirms, or agrees to a meeting time/day (e.g., "book for tomorrow at 2 pm", "yes 5 pm works", "sure let's talk at 3 tomorrow"), extract that timestamp as an ISO-8601 string. Otherwise, set it to null.
+7. The user's name is "${customerName}". Address them by name ONLY if this is the start of the conversation (i.e. first 1-2 messages in history). For subsequent replies, do NOT repeat greetings like "Hi [Name]" or "Hello [Name]" at the beginning of every message.
 
 Recent WhatsApp Chat History:
 ${chatHistory}
@@ -1033,12 +1054,16 @@ Incoming User Message: "${messageText}"
 Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
 {
   "reply": "Your message reply in English",
-  "booking_time": "ISO-8601 string of agreed meeting slot or null"
+  "booking_time": "ISO-8601 string of agreed meeting slot or null",
+  "trigger_call": true/false,
+  "flag_unanswered_question": "raw question text if unanswered, otherwise null"
 }
 `;
 
                                     let replyText = "Thank you! Our representative will get back to you shortly.";
                                     let extractedBookingTime: string | null = null;
+                                    let triggerCallRequested = false;
+                                    let unansweredQuestionToFlag: string | null = null;
 
                                     try {
                                         const rawRes = await callGemini(aiPrompt);
@@ -1046,7 +1071,9 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                         const parsed = JSON.parse(cleanJson);
                                         replyText = parsed.reply || replyText;
                                         extractedBookingTime = parsed.booking_time || null;
-                                        console.log('[WhatsApp AI Assistant] Gemini parsed response:', { replyText, extractedBookingTime });
+                                        triggerCallRequested = !!parsed.trigger_call;
+                                        unansweredQuestionToFlag = parsed.flag_unanswered_question || null;
+                                        console.log('[WhatsApp AI Assistant] Gemini parsed response:', { replyText, extractedBookingTime, triggerCallRequested, unansweredQuestionToFlag });
                                     } catch (geminiErr) {
                                         console.error('[WhatsApp AI Assistant] Gemini generation/parsing failed:', geminiErr);
                                     }
@@ -1069,7 +1096,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                                     booking_time: extractedBookingTime || null
                                                 });
 
-                                                // Run notes update, history log, and booking in parallel
+                                                // Run notes update, history log, booking, call triggering, and question flagging in parallel
                                                 await Promise.all([
                                                     // Update lead notes
                                                     (async () => {
@@ -1078,7 +1105,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                                                 .from('leads')
                                                                 .select('notes')
                                                                 .eq('id', postReplyLeadId)
-                                                                .single();
+                                                                 .single();
                                                             const newNotes = lead?.notes ? `${notesAddition}\n\n${lead.notes}` : notesAddition;
                                                             await supabaseAdmin.from('leads').update({ notes: newNotes }).eq('id', postReplyLeadId);
                                                         } catch (e) { console.error('[WA AI] Notes update failed:', e); }
@@ -1094,7 +1121,16 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                                         } catch (e: any) { console.error('[WA AI] History log failed:', e); }
                                                     })(),
                                                     // Booking if extracted
-                                                    extractedBookingTime ? bookAppointment(supabaseAdmin, postReplyLeadId, extractedBookingTime, ownerUserId).catch(e => console.error('[WA AI] Booking failed:', e)) : Promise.resolve()
+                                                    extractedBookingTime ? bookAppointment(supabaseAdmin, postReplyLeadId, extractedBookingTime, ownerUserId).catch(e => console.error('[WA AI] Booking failed:', e)) : Promise.resolve(),
+                                                    // Immediate outbound voice call if requested
+                                                    triggerCallRequested ? triggerOutboundCall(supabaseAdmin, postReplyLeadId, ownerUserId).catch(e => console.error('[WA AI] Outbound call trigger failed:', e)) : Promise.resolve(),
+                                                    // Flag unanswered questions
+                                                    unansweredQuestionToFlag ? supabaseAdmin.from('flagged_questions').insert({
+                                                        user_id: ownerUserId,
+                                                        lead_id: postReplyLeadId,
+                                                        channel: 'whatsapp',
+                                                        question: unansweredQuestionToFlag
+                                                    }) : Promise.resolve()
                                                 ]);
                                             }
                                             // Push notification

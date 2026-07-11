@@ -155,13 +155,14 @@ export async function bookAppointment(
         // 2. Fetch Host Settings
         const { data: profile, error: profileError } = await supabaseAdmin
             .from('profiles')
-            .select('google_refresh_token, google_booking_enabled, google_booking_duration, business_name, google_calendar_id, facebook_token, selected_page_token, pixel_id')
+            .select('google_refresh_token, google_booking_enabled, google_booking_duration, google_booking_hours, business_name, google_calendar_id, facebook_token, selected_page_token, pixel_id')
             .eq('id', profileId)
             .maybeSingle()
 
         if (profileError) throw profileError
 
         let hangoutLink = ''
+        let calendarEventId: string | null = null
         let calendarEventCreated = false
         let timeZone = 'Asia/Kolkata' // Default fallback timezone
 
@@ -208,6 +209,94 @@ export async function bookAppointment(
             }
         }
 
+        // Check availability hours & slot validity
+        const duration = profile?.google_booking_duration || 30
+        const start = new Date(formattedSlot)
+        const end = new Date(start.getTime() + (duration * 60000))
+        
+        let bookingHours = { start: '09:00', end: '17:00' }
+        if (profile?.google_booking_hours && typeof profile.google_booking_hours === 'object') {
+            const h = profile.google_booking_hours as any
+            if (h.start) bookingHours.start = h.start
+            if (h.end) bookingHours.end = h.end
+        }
+
+        const timeFormatter = new Intl.DateTimeFormat('en-US', {
+            timeZone,
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        })
+        
+        const slotStartFormatted = timeFormatter.format(start)
+        const slotEndFormatted = timeFormatter.format(end)
+
+        if (slotStartFormatted < bookingHours.start || slotEndFormatted > bookingHours.end) {
+            console.warn(`[VOICE HELPER] Booking failed: proposed slot ${slotStartFormatted} - ${slotEndFormatted} is outside working hours: ${bookingHours.start} - ${bookingHours.end}`)
+            return { success: false, error: 'out_of_hours' }
+        }
+
+        // Overlapping event checks (Google Calendar vs local DB fallback)
+        let isSlotAvailable = true
+        if (profile && profile.google_refresh_token && profile.google_booking_enabled) {
+            try {
+                const refreshToken = profile.google_refresh_token
+                const accessToken = await refreshGoogleAccessToken(refreshToken)
+                const calendarId = encodeURIComponent(profile.google_calendar_id || 'primary')
+                const timeMin = start.toISOString()
+                const timeMax = end.toISOString()
+
+                const checkUrl = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true`
+                const checkRes = await fetch(checkUrl, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                })
+                const checkData = await checkRes.json()
+                if (checkRes.ok && checkData.items) {
+                    const activeEvents = checkData.items.filter((event: any) => event.status !== 'cancelled')
+                    if (activeEvents.length > 0) {
+                        isSlotAvailable = false
+                        console.warn(`[VOICE HELPER] Google Calendar slot taken. Found overlapping events:`, activeEvents)
+                    }
+                }
+            } catch (calErr: any) {
+                console.warn('[VOICE HELPER] Google Calendar availability check failed:', calErr.message)
+            }
+        } else {
+            // Check Supabase leads table for overlapping booked slot for this user
+            try {
+                const { data: overlappingLeads, error: dbErr } = await supabaseAdmin
+                    .from('leads')
+                    .select('id, name, booked_time')
+                    .eq('user_id', profileId)
+                    .not('booked_time', 'is', null)
+                    .neq('id', leadId)
+                
+                if (dbErr) throw dbErr
+
+                if (overlappingLeads && overlappingLeads.length > 0) {
+                    for (const otherLead of overlappingLeads) {
+                        const otherStart = new Date(otherLead.booked_time)
+                        const otherEnd = new Date(otherStart.getTime() + (duration * 60000))
+                        if (
+                            (start >= otherStart && start < otherEnd) ||
+                            (end > otherStart && end <= otherEnd) ||
+                            (start <= otherStart && end >= otherEnd)
+                        ) {
+                            isSlotAvailable = false
+                            console.warn(`[VOICE HELPER] DB fallback slot taken. Overlaps with lead: ${otherLead.name} (${otherLead.booked_time})`)
+                            break
+                        }
+                    }
+                }
+            } catch (dbCheckErr: any) {
+                console.error('[VOICE HELPER] DB availability check failed:', dbCheckErr.message)
+            }
+        }
+
+        if (!isSlotAvailable) {
+            return { success: false, error: 'slot_taken' }
+        }
+
         // 3. Create Calendar Event on Google Calendar (if integrated)
         if (profile && profile.google_refresh_token && profile.google_booking_enabled) {
             try {
@@ -215,6 +304,7 @@ export async function bookAppointment(
                 const duration = profile.google_booking_duration || 30
 
                 const accessToken = await refreshGoogleAccessToken(refreshToken)
+                const calendarId = encodeURIComponent(profile.google_calendar_id || 'primary')
 
                 const start = new Date(formattedSlot)
                 const end = new Date(start.getTime() + (duration * 60000))
@@ -256,7 +346,21 @@ export async function bookAppointment(
                     eventBody.attendees = [{ email: leadEmail }]
                 }
 
-                const calendarId = encodeURIComponent(profile.google_calendar_id || 'primary')
+                // Delete old calendar event if rescheduling
+                if (lead.google_calendar_event_id) {
+                    try {
+                        const oldEventId = lead.google_calendar_event_id
+                        const deleteUrl = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${oldEventId}`
+                        await fetch(deleteUrl, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${accessToken}` }
+                        })
+                        console.log(`[VOICE HELPER] Successfully deleted old Google Calendar event: ${oldEventId}`)
+                    } catch (delErr: any) {
+                        console.warn('[VOICE HELPER] Failed to delete old event during reschedule:', delErr.message || delErr)
+                    }
+                }
+
                 const calendarEventRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?sendUpdates=all&conferenceDataVersion=1`, {
                     method: 'POST',
                     headers: {
@@ -272,8 +376,9 @@ export async function bookAppointment(
                     console.warn('[VOICE HELPER] Google Calendar API Error:', eventResult.error)
                 } else {
                     hangoutLink = eventResult.hangoutLink || ''
+                    calendarEventId = eventResult.id || null
                     calendarEventCreated = true
-                    console.log(`[VOICE HELPER] Google Calendar event created successfully. Link: ${hangoutLink}`)
+                    console.log(`[VOICE HELPER] Google Calendar event created successfully. Link: ${hangoutLink}, Event ID: ${calendarEventId}`)
                 }
             } catch (calErr: any) {
                 console.warn('[VOICE HELPER] Failed to book via Google Calendar:', calErr.message || calErr)
@@ -288,11 +393,17 @@ export async function bookAppointment(
             .update({
                 booked_time: formattedSlot,
                 pipeline_stage: 'Appointment booked',
-                meet_link: hangoutLink || null
+                meet_link: hangoutLink || null,
+                google_calendar_event_id: calendarEventId || null,
+                reminder_24h_sent: false,
+                reminder_4h_sent: false,
+                reminder_1h_sent: false,
+                reminder_15m_sent: false
             })
             .eq('id', leadId)
 
         if (updateError) throw updateError
+
 
         // 5. Send confirmation email to lead
         let leadEmail = lead.email || ''
@@ -382,3 +493,89 @@ export async function bookAppointment(
         return { success: false, error: e.message || 'Internal error' }
     }
 }
+
+/**
+ * Cancels a booked appointment, deleting Google Calendar event and clearing booked_time fields.
+ */
+export async function cancelAppointment(
+    supabaseAdmin: any,
+    leadId: string
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        console.log(`[VOICE HELPER] Cancelling appointment for lead ${leadId}...`)
+
+        // 1. Fetch Lead Details
+        const { data: lead, error: leadError } = await supabaseAdmin
+            .from('leads')
+            .select('*')
+            .eq('id', leadId)
+            .maybeSingle()
+
+        if (leadError) throw leadError
+        if (!lead) {
+            return { success: false, error: 'Lead not found' }
+        }
+
+        // 2. Fetch Host Settings if Google calendar integration is used
+        if (lead.google_calendar_event_id) {
+            const { data: profile, error: profileError } = await supabaseAdmin
+                .from('profiles')
+                .select('google_refresh_token, google_calendar_id')
+                .eq('id', lead.user_id)
+                .maybeSingle()
+
+            if (profileError) throw profileError
+
+            if (profile && profile.google_refresh_token) {
+                try {
+                    const accessToken = await refreshGoogleAccessToken(profile.google_refresh_token)
+                    const calendarId = encodeURIComponent(profile.google_calendar_id || 'primary')
+                    const eventId = lead.google_calendar_event_id
+                    
+                    const deleteUrl = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`
+                    await fetch(deleteUrl, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${accessToken}` }
+                    })
+                    console.log(`[VOICE HELPER] Deleted Google Calendar event ${eventId} on cancellation`)
+                } catch (calErr: any) {
+                    console.warn('[VOICE HELPER] Failed to delete calendar event during cancellation:', calErr.message || calErr)
+                }
+            }
+        }
+
+        // 3. Update Lead in DB
+        const { error: updateError } = await supabaseAdmin
+            .from('leads')
+            .update({
+                booked_time: null,
+                meet_link: null,
+                google_calendar_event_id: null,
+                pipeline_stage: 'Lead', // Reset to standard pipeline stage
+                reminder_24h_sent: false,
+                reminder_4h_sent: false,
+                reminder_1h_sent: false,
+                reminder_15m_sent: false
+            })
+            .eq('id', leadId)
+
+        if (updateError) throw updateError
+
+        // 4. Log history
+        try {
+            await supabaseAdmin.from('lead_history').insert({
+                lead_id: leadId,
+                action: 'Booking Cancelled',
+                description: 'Appointment cancelled manually or by client. Booking time cleared.'
+            })
+        } catch (histErr) {
+            console.error('[VOICE HELPER] Failed to log lead history for cancellation:', histErr)
+        }
+
+        return { success: true }
+    } catch (e: any) {
+        console.error('[VOICE HELPER] cancelAppointment Exception:', e)
+        return { success: false, error: e.message || 'Internal error' }
+    }
+}
+
