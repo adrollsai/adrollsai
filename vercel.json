@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/booking-reminders",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/eod-report",
+      "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/cron/auto-generate",
+      "schedule": "0 4 * * *"
+    }
+  ]
+}
