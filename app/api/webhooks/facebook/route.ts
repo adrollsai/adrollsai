@@ -485,11 +485,14 @@ IMPORTANT RULES:
                                     let catalogueBtnText = 'View Products';
                                     let ownerCustomDomain: string | null = null;
 
+                                    let ownerQualifyingEnabled = false;
+                                    let ownerQualifyingQuestions: string[] = [];
+
                                     // PRIMARY: Resolve from webhook phone_number_id (most reliable)
                                     if (wabaPhoneId) {
                                         const { data: ownerProfiles } = await supabaseAdmin
                                             .from('profiles')
-                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role, whatsapp_catalogue_button_text, custom_domain')
+                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role, whatsapp_catalogue_button_text, custom_domain, qualifying_enabled, qualifying_questions')
                                             .eq('whatsapp_phone_number_id', wabaPhoneId);
                                         
                                         if (ownerProfiles && ownerProfiles.length > 0) {
@@ -503,6 +506,8 @@ IMPORTANT RULES:
                                             ownerWaPhoneId = selectedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
                                             catalogueBtnText = selectedProfile.whatsapp_catalogue_button_text || 'View Products';
                                             ownerCustomDomain = selectedProfile.custom_domain || null;
+                                            ownerQualifyingEnabled = selectedProfile.qualifying_enabled || false;
+                                            ownerQualifyingQuestions = selectedProfile.qualifying_questions || [];
                                             console.log(`[Flow] Owner resolved from wabaPhoneId: ${selectedProfile.business_name} (${ownerUserId})`);
                                         }
                                     }
@@ -535,7 +540,7 @@ IMPORTANT RULES:
                                             ownerUserId = selectedLead.user_id;
                                             const { data: ownerProfile } = await supabaseAdmin
                                                 .from('profiles')
-                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, custom_domain')
+                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, custom_domain, qualifying_enabled, qualifying_questions')
                                                 .eq('id', ownerUserId)
                                                 .maybeSingle();
                                             if (ownerProfile) {
@@ -543,6 +548,8 @@ IMPORTANT RULES:
                                                 ownerWaPhoneId = ownerProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
                                                 catalogueBtnText = ownerProfile.whatsapp_catalogue_button_text || 'View Products';
                                                 ownerCustomDomain = ownerProfile.custom_domain || null;
+                                                ownerQualifyingEnabled = ownerProfile.qualifying_enabled || false;
+                                                ownerQualifyingQuestions = ownerProfile.qualifying_questions || [];
                                             }
                                             console.log(`[Flow] Owner resolved from lead match: ${selectedLead.name} -> user ${ownerUserId}`);
                                         }
@@ -563,12 +570,13 @@ IMPORTANT RULES:
                                         .limit(1)
                                         .maybeSingle();
 
-                                    let { data: chat } = await supabaseAdmin
+                                    let { data: rawChat } = await supabaseAdmin
                                         .from('whatsapp_chats')
-                                        .select('id, recipient_name, current_flow_id, current_question_index, flow_answers, flow_completed, lead_id')
+                                        .select('id, recipient_name, current_flow_id, current_question_index, flow_answers, flow_completed, lead_id, qualifying_flow_active')
                                         .eq('user_id', ownerUserId)
                                         .eq('recipient_phone', cleanFrom)
                                         .maybeSingle();
+                                    let chat = rawChat as any;
 
                                     if (!chat) {
                                         const { data: newChat } = await supabaseAdmin
@@ -585,9 +593,9 @@ IMPORTANT RULES:
                                                 flow_answers: {},
                                                 flow_completed: false
                                             })
-                                            .select('id, recipient_name, current_flow_id, current_question_index, flow_answers, flow_completed, lead_id')
+                                            .select('id, recipient_name, current_flow_id, current_question_index, flow_answers, flow_completed, lead_id, qualifying_flow_active')
                                             .single();
-                                        chat = newChat;
+                                        chat = newChat as any;
                                     } else {
                                         const updates: any = {
                                             last_message_text: messageText,
@@ -789,7 +797,21 @@ Clean Name:`;
                                             if (anyFlow?.[0]) selectedFlow = anyFlow[0];
                                         }
 
-                                        if (selectedFlow && selectedFlow.questions && selectedFlow.questions.length > 0) {
+                                        if (ownerQualifyingEnabled && ownerQualifyingQuestions && ownerQualifyingQuestions.length > 0) {
+                                            // Start the profile qualification flow
+                                            await supabaseAdmin
+                                                .from('whatsapp_chats')
+                                                .update({
+                                                    qualifying_flow_active: true,
+                                                    current_question_index: 0,
+                                                    flow_answers: {},
+                                                    flow_completed: false
+                                                })
+                                                .eq('id', chat.id);
+
+                                            const firstQ = ownerQualifyingQuestions[0];
+                                            await sendWAMessage(`Thank you, ${providedName}! 🙏\n\n${firstQ}`);
+                                        } else if (selectedFlow && selectedFlow.questions && selectedFlow.questions.length > 0) {
                                             // Start the flow — send first question
                                             await supabaseAdmin
                                                 .from('whatsapp_chats')
@@ -844,6 +866,89 @@ Clean Name:`;
                                             try {
                                                 await sendPushNotification(ownerUserId!, `New WhatsApp Lead: ${providedName}`, `Phone: ${cleanFrom}`);
                                             } catch (pushErr) {}
+                                        }
+                                        return;
+                                    }
+
+                                    // STEP B1: Profile Qualifying Questions in progress
+                                    if (chat.qualifying_flow_active && !flowCompleted) {
+                                        const questions = ownerQualifyingQuestions || [];
+                                        const currentIdx = chat.current_question_index || 0;
+                                        const currentAnswers = (chat.flow_answers || {}) as Record<string, string>;
+
+                                        // Save the answer to the current question
+                                        if (currentIdx < questions.length) {
+                                            const currentQ = questions[currentIdx];
+                                            currentAnswers[currentQ] = messageText.trim();
+                                        }
+
+                                        const nextIdx = currentIdx + 1;
+
+                                        if (nextIdx < questions.length) {
+                                            // More questions to ask
+                                            await supabaseAdmin
+                                                .from('whatsapp_chats')
+                                                .update({
+                                                    current_question_index: nextIdx,
+                                                    flow_answers: currentAnswers
+                                                })
+                                                .eq('id', chat.id);
+
+                                            const nextQ = questions[nextIdx];
+                                            await sendWAMessage(nextQ);
+                                        } else {
+                                            // Flow complete! Create lead in CRM
+                                            const leadName = chat.recipient_name || 'WhatsApp Lead';
+
+                                            // Extract email from answers if available
+                                            const emailField = Object.entries(currentAnswers).find(([key]) =>
+                                                key.toLowerCase().includes('email')
+                                            );
+
+                                            const { data: newLead } = await supabaseAdmin
+                                                .from('leads')
+                                                .insert({
+                                                    user_id: ownerUserId,
+                                                    name: leadName,
+                                                    phone: cleanFrom,
+                                                    email: emailField?.[1] || '',
+                                                    source: 'WhatsApp',
+                                                    pipeline_stage: 'New',
+                                                    custom_fields: currentAnswers,
+                                                    campaign_id: campaignSourceId,
+                                                    created_at: new Date().toISOString()
+                                                })
+                                                .select('id')
+                                                .single();
+
+                                            await supabaseAdmin
+                                                .from('whatsapp_chats')
+                                                .update({
+                                                    flow_completed: true,
+                                                    qualifying_flow_active: false,
+                                                    flow_answers: currentAnswers,
+                                                    lead_id: newLead?.id || null
+                                                })
+                                                .eq('id', chat.id);
+                                            chat.flow_completed = true;
+                                            chat.lead_id = newLead?.id || null;
+                                            chat.flow_answers = currentAnswers;
+
+                                            await sendWAMessage(`Thank you for your responses, ${leadName}! ✅ Our team will reach out to you very soon. Feel free to ask any questions in the meantime!`);
+
+                                            // Send push notification
+                                            try {
+                                                await sendPushNotification(ownerUserId!, `✅ New Qualified WhatsApp Lead: ${leadName}`, `Phone: ${cleanFrom} | Answers: ${Object.values(currentAnswers).join(', ').substring(0, 100)}`);
+                                            } catch (pushErr) {}
+
+                                            // Trigger welcome drip
+                                            if (newLead) {
+                                                try {
+                                                    await triggerWelcomeDrip(supabaseAdmin, newLead.id, leadName, cleanFrom, ownerUserId!, 'All');
+                                                } catch (dripErr) {
+                                                    console.error('[Flow] Welcome drip trigger failed:', dripErr);
+                                                }
+                                            }
                                         }
                                         return;
                                     }

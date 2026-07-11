@@ -309,7 +309,109 @@ import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { generateContentWithFallback } from "./gemini-fallback";
 
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+let cachedLLMModel: string | null = null;
+let lastLLMCacheFetchTime = 0;
+const LLM_CACHE_TTL = 10000; // 10 seconds cache
+
+async function getSuperAdminSelectedLLM(): Promise<string> {
+    const now = Date.now();
+    if (cachedLLMModel && (now - lastLLMCacheFetchTime < LLM_CACHE_TTL)) {
+        return cachedLLMModel;
+    }
+
+    try {
+        const { data, error } = await supabaseAdmin
+            .from('profiles')
+            .select('selected_text_llm')
+            .eq('role', 'super_admin')
+            .limit(1);
+
+        if (!error && data && data.length > 0) {
+            const val = data[0].selected_text_llm || 'gemini';
+            cachedLLMModel = val;
+            lastLLMCacheFetchTime = now;
+            return val;
+        } else if (error) {
+            console.error("[LLM ROUTER] Supabase query error:", error);
+        }
+    } catch (err) {
+        console.error("[LLM ROUTER] Failed to fetch super admin selected LLM:", err);
+    }
+
+    // Default fallback
+    return cachedLLMModel || 'gemini';
+}
+
+export async function callDeepSeekWithUsage(prompt: string): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+        throw new Error("DEEPSEEK_API_KEY environment variable is not set");
+    }
+
+    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            model: "deepseek-v4-flash",
+            messages: [
+                { role: "user", content: prompt }
+            ],
+            stream: false
+        })
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`DeepSeek API error: ${response.statusText} - ${errText}`);
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content || "";
+    const usage = data.usage || {};
+    const promptTokens = usage.prompt_tokens || 0;
+    const completionTokens = usage.completion_tokens || 0;
+
+    return {
+        text,
+        promptTokens,
+        completionTokens,
+        modelName: "deepseek-v4-flash"
+    };
+}
+
 export async function callGeminiWithUsage(prompt: string, imageUrls?: string[]): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {
+    // 1. Multimodal queries (images/videos) MUST go to Gemini
+    if (imageUrls && imageUrls.length > 0) {
+        return callGeminiWithUsageOriginal(prompt, imageUrls);
+    }
+
+    // 2. Text-only queries: route based on super admin preference
+    const selectedModel = await getSuperAdminSelectedLLM();
+    if (selectedModel === 'deepseek') {
+        try {
+            console.log(`[LLM ROUTER] Routing text-only query to DeepSeek v4-flash`);
+            return await callDeepSeekWithUsage(prompt);
+        } catch (err: any) {
+            console.warn(`[LLM ROUTER] DeepSeek failed, falling back to Gemini. Error: ${err.message}`);
+            return callGeminiWithUsageOriginal(prompt, imageUrls);
+        }
+    }
+
+    // Default to Gemini
+    return callGeminiWithUsageOriginal(prompt, imageUrls);
+}
+
+export async function callGeminiWithUsageOriginal(prompt: string, imageUrls?: string[]): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {
     const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
     

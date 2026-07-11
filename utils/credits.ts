@@ -49,7 +49,7 @@ export async function hasEnoughCredits(
     if (error || !profile) return false
 
     // Unlimited bypass check (bluesquare infra / super_admin)
-    const isUnlimited = (profile.business_name?.toLowerCase().includes('bluesquare')) || (profile.role?.toLowerCase() === 'super_admin')
+    const isUnlimited = (profile.business_name?.toLowerCase().includes('bluesquare') || profile.business_name?.toLowerCase().includes('blue square')) || (profile.role?.toLowerCase() === 'super_admin')
     if (isUnlimited) return true
 
     // Check if base subscription plan is active
@@ -95,7 +95,7 @@ export async function deductCredits(
     }
 
     const currentCredits = profile.credits || 0
-    const isUnlimited = (profile.business_name?.toLowerCase().includes('bluesquare')) || (profile.role?.toLowerCase() === 'super_admin')
+    const isUnlimited = (profile.business_name?.toLowerCase().includes('bluesquare') || profile.business_name?.toLowerCase().includes('blue square')) || (profile.role?.toLowerCase() === 'super_admin')
 
     if (!isUnlimited && currentCredits < amount) {
       console.warn(`[CREDITS HELPER] Overdraft prevented. User ${primaryUserId} has ${currentCredits} credits; trying to deduct ${amount}.`)
@@ -203,6 +203,8 @@ export const MODEL_RATES: Record<string, { inputPerK: number; outputPerK: number
   'gemini-2.0-flash': { inputPerK: 0.0063, outputPerK: 0.0252 },
   'gemini-3.5-flash': { inputPerK: 0.0063, outputPerK: 0.0252 },
   'gemini-3.5-flash-preview': { inputPerK: 0.0063, outputPerK: 0.0252 },
+  'deepseek-v4-flash': { inputPerK: 0.0119, outputPerK: 0.0238 },
+  'deepseek': { inputPerK: 0.0119, outputPerK: 0.0238 },
   'default': { inputPerK: 0.0063, outputPerK: 0.0252 }
 };
 

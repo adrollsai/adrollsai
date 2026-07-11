@@ -304,6 +304,7 @@ export default function ProfilePage() {
   const [loadingFlagged, setLoadingFlagged] = useState(false)
   const [enableEodReport, setEnableEodReport] = useState(true)
   const [credits, setCredits] = useState<number>(0)
+  const [selectedTextLlm, setSelectedTextLlm] = useState('gemini')
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(authRole || role)
 
@@ -656,6 +657,7 @@ export default function ProfilePage() {
       if (profileData) {
         setRole(profileData.role as any || 'admin')
         setCredits(profileData.credits || 0)
+        setSelectedTextLlm(profileData.selected_text_llm || 'gemini')
 
         setDomainData({
           domain: profileData.custom_domain || '',
@@ -1254,7 +1256,8 @@ export default function ProfilePage() {
       instagram_url: isAdminLike ? formData.instagramUrl : undefined,
       custom_prompt: formData.customPrompt,
       currency: formData.currency,
-      whatsapp_personal_number: formData.whatsappPersonalNumber
+      whatsapp_personal_number: formData.whatsappPersonalNumber,
+      selected_text_llm: selectedTextLlm
     }
 
     const res = await fetch('/api/profile/update', {
@@ -1584,7 +1587,7 @@ export default function ProfilePage() {
                 <div>
                   <span className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest block">Nobo Credits Balance</span>
                   <h3 className="text-2xl font-black tracking-tight mt-0.5">
-                    {(formData.businessName?.toLowerCase().includes('bluesquare') || role === 'super_admin' || authRole === 'super_admin') ? '∞' : `${credits.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Credits`}
+                    {(formData.businessName?.toLowerCase().includes('bluesquare') || formData.businessName?.toLowerCase().includes('blue square') || role === 'super_admin' || authRole === 'super_admin') ? '∞' : `${credits.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Credits`}
                   </h3>
                 </div>
               </div>
@@ -2024,8 +2027,48 @@ export default function ProfilePage() {
                     This detailed style guide will be prioritized in all AI creative generations.
                   </p>
                 </div>
-
-
+ 
+                {/* Super Admin Model Toggle */}
+                {(authRole === 'super_admin' || role === 'super_admin') && (
+                  <div className="pt-4 border-t border-slate-100 mt-4 space-y-4">
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-150">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                          <Sparkles size={16} className="text-blue-600" />
+                          Super Admin: Default Text LLM Model
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-1 max-w-sm font-medium">
+                          Switch between Gemini 3.5 Flash and DeepSeek v4-flash for all text-only tasks.
+                        </p>
+                      </div>
+                      <div className="flex bg-slate-200 p-1 rounded-xl shrink-0 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTextLlm('gemini')}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all ${
+                            selectedTextLlm === 'gemini' 
+                              ? 'bg-blue-600 text-white shadow-sm' 
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Gemini 3.5 Flash
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTextLlm('deepseek')}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all ${
+                            selectedTextLlm === 'deepseek' 
+                              ? 'bg-blue-600 text-white shadow-sm' 
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          DeepSeek v4-flash
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+ 
                 {/* Custom Domains Section */}
                 {isAdminLike && (
                   <div className="space-y-4 pt-4 border-t border-slate-100 mt-4">
@@ -2570,6 +2613,19 @@ export default function ProfilePage() {
                       <Calendar size={20} />
                     </div>
                     <span className="font-bold text-sm text-slate-900">Calendar & Booking Settings</span>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400" />
+                </button>
+
+                <button 
+                  onClick={() => router.push(`/dashboard/qualifying${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-purple-100 text-purple-600 p-3 rounded-2xl">
+                      <Sparkles size={20} />
+                    </div>
+                    <span className="font-bold text-sm text-slate-900">AI Qualification Questions</span>
                   </div>
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>

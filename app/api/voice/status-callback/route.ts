@@ -115,7 +115,7 @@ export async function POST(req: Request) {
 
             const { data: profile } = await supabaseAdmin
                 .from('profiles')
-                .select('id, elevenlabs_api_key, elevenlabs_agent_id, business_name, voice_provider, voice_twilio_sid, voice_twilio_token')
+                .select('id, elevenlabs_api_key, elevenlabs_agent_id, business_name, voice_provider, voice_twilio_sid, voice_twilio_token, qualifying_enabled, qualifying_questions')
                 .eq('id', lead.user_id)
                 .single()
 
@@ -514,9 +514,54 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
             const currentRetryCount = lead.voice_call_retry_count || 0
             const MAX_TOTAL_ATTEMPTS = 5
 
+            let extractedAnswers: Record<string, string> = {}
+            if (profile?.qualifying_enabled && profile?.qualifying_questions && profile.qualifying_questions.length > 0 && transcript && transcript.length > 0) {
+                try {
+                    const formattedTranscript = transcript
+                        .map((t: any) => `${t.role === 'agent' ? 'Agent' : 'Lead'}: ${t.message || t.text || ''}`)
+                        .join('\n')
+
+                    const extractPrompt = `
+You are analyzing a phone call transcript to extract answers to qualifying questions.
+Here are the qualifying questions:
+${profile.qualifying_questions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}
+
+Here is the call transcript:
+${formattedTranscript}
+
+Please extract the lead's answer for each qualifying question.
+Generate a valid JSON object ONLY, where the keys are the exact questions and the values are the clean extracted answers. If a question was not answered or not asked, return null for its value.
+Example:
+{
+  "What is your budget?": "$5000",
+  "Are you looking to buy or rent?": "buy"
+}
+Do not use markdown formatting, ticks, backticks, or any conversational text. Return only raw JSON.
+`
+                    const rawAnswersRes = await callGemini(extractPrompt)
+                    const cleanJson = rawAnswersRes.replace(/```json/g, '').replace(/```/g, '').trim()
+                    const parsedAnswers = JSON.parse(cleanJson)
+                    
+                    for (const q of profile.qualifying_questions) {
+                        if (parsedAnswers[q] && parsedAnswers[q] !== 'null') {
+                            extractedAnswers[q] = String(parsedAnswers[q])
+                        }
+                    }
+                } catch (extractErr) {
+                    console.error('[STATUS CALLBACK] Failed to extract qualifying answers:', extractErr)
+                }
+            }
+
             const updateData: any = {
                 voice_call_status: 'completed',
                 voice_call_retry_count: 0 // Default: reset retry count since call was picked up
+            }
+
+            if (Object.keys(extractedAnswers).length > 0) {
+                updateData.custom_fields = {
+                    ...(lead.custom_fields || {}),
+                    ...extractedAnswers
+                }
             }
 
             if (publicRecordingUrl) {

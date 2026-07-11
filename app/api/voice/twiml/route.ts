@@ -225,10 +225,29 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
 
         const companyName = profile?.business_name || 'our company'
         const leadName = lead.name || 'there'
+
+        const isQualifyingActive = profile?.qualifying_enabled && profile?.qualifying_questions && profile.qualifying_questions.length > 0
+        let qualifyingInstruction = ''
+        if (isQualifyingActive) {
+            qualifyingInstruction = `
+MANDATORY PRE-QUALIFICATION RULES:
+Before discussing booking/scheduling a call, you MUST ask the lead these qualifying questions one by one.
+Do NOT book the meeting until you have answers to these questions:
+${profile.qualifying_questions.map((q: string, i: number) => `- Question ${i + 1}: "${q}"`).join('\n')}
+
+Guidelines for qualification:
+- Ask these questions one by one. Do not ask multiple questions at once.
+- Once the lead answers a question, politely acknowledge it and ask the next question.
+- After all questions are answered, proceed to the primary objective of scheduling the booking.
+`.trim()
+        }
+
         const customPrompt = `
 You are a professional, helpful outbound AI calling assistant calling on behalf of ${companyName}.
 Your name is a booking representative.
 Your primary objective is to make the lead, ${leadName}, book an appointment/consultation with the business.
+
+${qualifyingInstruction}
 
 CRITICAL RULES:
 1. ONLY speak about the provided business profile info, catalog, and the lead's own previous conversation history/CRM notes.
@@ -257,7 +276,10 @@ ${previousCallsHistory ? `Previous Call History:\n${previousCallsHistory}\n` : '
 ${whatsappHistory ? `Previous WhatsApp History:\n${whatsappHistory}` : ''}
 `.trim()
 
-        const dynamicFirstMessage = `Hi ${leadName}! Main ${companyName} se AI booking assistant baat kar raha hoon. Maine dekha aap hamare products me interest le rahe the, to kya hum ek quick consultation call schedule kar sakte hain? Aap kaise hain?`
+        let dynamicFirstMessage = `Hi ${leadName}! Main ${companyName} se AI booking assistant baat kar raha hoon. Maine dekha aap hamare products me interest le rahe the, to kya hum ek quick consultation call schedule kar sakte hain? Aap kaise hain?`
+        if (isQualifyingActive && profile.qualifying_questions[0]) {
+            dynamicFirstMessage = `Hi ${leadName}! Main ${companyName} se AI representative baat kar raha hoon. Maine dekha aapne query submit ki thi. Aage badhne se pehle kya main aap se ek quick detail clear kar sakta hoon? ${profile.qualifying_questions[0]}`
+        }
 
 
 
