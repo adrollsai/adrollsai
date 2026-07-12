@@ -206,6 +206,22 @@ wss.on('connection', (wsConnection) => {
                 let systemInstruction = 'You are a helpful representative. Focus on booking an appointment.';
                 let greetingMessage = 'Hello, how are you?';
 
+                // Clear old voice call fields immediately to prevent status callback race conditions
+                try {
+                    await supabaseAdmin
+                        .from('leads')
+                        .update({
+                            voice_call_summary: null,
+                            voice_call_transcript: null,
+                            voice_recording_url: null,
+                            voice_call_status: 'calling'
+                        })
+                        .eq('id', leadId);
+                    console.log(`[BRIDGE] Cleared stale voice call fields for lead ${leadId}`);
+                } catch (dbClearErr) {
+                    console.error('[BRIDGE] Failed to clear stale voice call fields:', dbClearErr);
+                }
+
                 const dbPromise = Promise.all([
                     supabaseAdmin.from('profiles').select('*').eq('id', profileId).maybeSingle(),
                     supabaseAdmin.from('leads').select('*').eq('id', leadId).maybeSingle(),
@@ -285,6 +301,7 @@ CRITICAL RULES (CLOSED-WORLD GROUNDING):
 7. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish) when responding to the user.
 8. ENDING THE CALL: Once the call objective is met or the lead wants to end, say a brief polite goodbye and trigger your "end_call" tool to hang up the call immediately.
 9. GENDER & PRONOUNS: You are a female assistant. You must always use female grammar and pronouns when speaking Hindi/Hinglish (e.g., use "karti hoon" instead of "karta hoon", "karungi" instead of "karunga", "baat kar rahi hoon" instead of "baat kar raha hoon", "de sakti hoon" instead of "de sakta hoon", "bhejti hoon" instead of "bhejta hoon").
+10. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear a voicemail greeting, answering machine message, or any automated message (such as "please leave a message", "after the beep", or an automated robot voice), you must immediately trigger your "end_call" tool to hang up the call. Do NOT speak, say hello, or say goodbye; just trigger "end_call" instantly.
 
 --- BUSINESS CONTEXT ---
 Business Name: ${companyName}
@@ -470,32 +487,36 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                                         }
                                     }));
 
-                                    // Trigger Twilio REST Call Termination
-                                    if (twilioCallSid && profileData) {
-                                        const twilioSid = process.env.MASTER_TWILIO_SID || profileData.voice_twilio_sid;
-                                        const twilioToken = process.env.MASTER_TWILIO_TOKEN || profileData.voice_twilio_token;
-                                        
-                                        if (twilioSid && twilioToken) {
-                                            try {
-                                                const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Calls/${twilioCallSid}.json`;
-                                                const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64');
-                                                await fetch(twilioUrl, {
-                                                    method: 'POST',
-                                                    headers: {
-                                                        'Authorization': `Basic ${twilioAuth}`,
-                                                        'Content-Type': 'application/x-www-form-urlencoded'
-                                                    },
-                                                    body: new URLSearchParams({ Status: 'completed' })
-                                                });
-                                                console.log(`[BRIDGE] Twilio call ${twilioCallSid} hung up successfully via REST.`);
-                                            } catch (hangupErr) {
-                                                console.error('[BRIDGE] Twilio REST hangup failed:', hangupErr);
+                                    // Trigger Twilio REST Call Termination & Close WebSocket with a 3-second delay
+                                    // to allow in-flight audio (like goodbye dialogue) to finish playing to the lead.
+                                    console.log('[BRIDGE] Waiting 3 seconds for audio playout before hanging up...');
+                                    setTimeout(async () => {
+                                        if (twilioCallSid && profileData) {
+                                            const twilioSid = process.env.MASTER_TWILIO_SID || profileData.voice_twilio_sid;
+                                            const twilioToken = process.env.MASTER_TWILIO_TOKEN || profileData.voice_twilio_token;
+                                            
+                                            if (twilioSid && twilioToken) {
+                                                try {
+                                                    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Calls/${twilioCallSid}.json`;
+                                                    const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64');
+                                                    await fetch(twilioUrl, {
+                                                        method: 'POST',
+                                                        headers: {
+                                                            'Authorization': `Basic ${twilioAuth}`,
+                                                            'Content-Type': 'application/x-www-form-urlencoded'
+                                                        },
+                                                        body: new URLSearchParams({ Status: 'completed' })
+                                                    });
+                                                    console.log(`[BRIDGE] Twilio call ${twilioCallSid} hung up successfully via REST.`);
+                                                } catch (hangupErr) {
+                                                    console.error('[BRIDGE] Twilio REST hangup failed:', hangupErr);
+                                                }
                                             }
                                         }
-                                    }
 
-                                    // Close WebSocket connection
-                                    wsConnection.close();
+                                        // Close WebSocket connection
+                                        wsConnection.close();
+                                    }, 3000);
                                 }
                             }
                         }
@@ -587,7 +608,7 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                 let summary = 'Conversation took place via Gemini Voice AI.';
                 try {
                     const summaryPrompt = `
-Generate a quick, concise one-sentence summary of the following phone conversation between our sales assistant and the lead:
+Generate a detailed summary of the following phone conversation between our sales assistant and the lead, highlighting the key points discussed, lead preferences or objections, questions asked, and any agreed next steps or appointments:
 ${fullTranscript}
 `.trim();
                     const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${geminiApiKey}`;

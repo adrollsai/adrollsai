@@ -15,10 +15,12 @@ export async function POST(req: Request) {
 
         let fromNumber = ''
         let toNumber = ''
+        let answeredBy = ''
         try {
             const formData = await req.formData()
             fromNumber = (formData.get('From') as string) || ''
             toNumber = (formData.get('To') as string) || ''
+            answeredBy = (formData.get('AnsweredBy') as string) || ''
         } catch (e) {
             console.warn('[TWIML BRIDGE] Could not parse form data:', e)
         }
@@ -27,6 +29,33 @@ export async function POST(req: Request) {
             return new NextResponse('<Response><Reject /></Response>', {
                 headers: { 'Content-Type': 'application/xml' }
             })
+        }
+
+        // Check if voicemail / answering machine was detected
+        const isMachine = answeredBy && (answeredBy.startsWith('machine') || answeredBy.toLowerCase().includes('voicemail') || answeredBy === 'fax');
+        if (isMachine) {
+            console.log(`[TWIML BRIDGE] Answering machine/voicemail detected: ${answeredBy} for lead ${leadId}. Hanging up.`);
+            
+            // Set lead call status to completed
+            await supabaseAdmin
+                .from('leads')
+                .update({ voice_call_status: 'completed', voice_call_scheduled_at: null })
+                .eq('id', leadId);
+
+            // Log to timeline history
+            try {
+                await supabaseAdmin.from('lead_history').insert({
+                    lead_id: leadId,
+                    action_type: 'REMARK',
+                    description: `🎙️ Call connected to voicemail/answering machine (${answeredBy}). Hung up automatically.`
+                });
+            } catch (hErr) {
+                console.error('[TWIML BRIDGE] Failed to log voicemail detection to history:', hErr);
+            }
+
+            return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup /></Response>', {
+                headers: { 'Content-Type': 'application/xml' }
+            });
         }
 
         // Fetch user voice credentials including business_info
@@ -257,6 +286,7 @@ CRITICAL RULES:
 5. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish) when responding to the user, as this is the preferred style of communication in India. If the lead speaks in pure English, you may respond in English, but default to Hinglish or match the lead's preferred language.
 6. PAST CALLS AND SCHEDULES: If the lead asks about when they requested a callback, how much time they asked to be called back in, or what you talked about in the last call, read the '--- LEAD CRM NOTES & SCHEDULE HISTORY ---' and 'Previous Call History' sections to answer them accurately in Hinglish (e.g. 'Aapne mujhe 1 minute baad call karne ko bola tha').
 7. ENDING THE CALL: Once the call objective is met (e.g. appointment is booked, callback is scheduled) or the lead wants to end the conversation, say a brief polite goodbye and immediately trigger your "End conversation" tool to hang up the call. Do not wait for the user to respond after your goodbye.
+8. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear a voicemail greeting, answering machine message, or any automated message (such as "please leave a message", "after the beep", or an automated robot voice), you must immediately trigger your "End conversation" tool to hang up the call. Do NOT speak, say hello, or say goodbye; just trigger the hangup tool instantly.
 
 --- LEAD & BUSINESS CONTEXT ---
 Lead Name: ${leadName}

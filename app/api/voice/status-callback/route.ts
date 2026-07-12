@@ -22,6 +22,7 @@ export async function POST(req: Request) {
 
         const formData = await req.formData()
         const callStatus = formData.get('CallStatus') as string
+        const callDuration = parseInt(formData.get('CallDuration') as string || '0', 10)
 
         console.log(`[TWILIO STATUS CALLBACK] Lead ${leadId} status changed to:`, callStatus)
 
@@ -193,6 +194,8 @@ export async function POST(req: Request) {
             let callbackTime: string | null = null
             let bookingTime: string | null = null
             let isQualified = false
+            let extractedAllowAfterHours = false
+            let extractedCallingEnabled = true
             let publicRecordingUrl = null
 
             // For Gemini provider, the voice bridge saves transcript/summary to leads table on WS close.
@@ -240,9 +243,11 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
   "callback_time": "ISO-8601 string of requested callback date/time if the lead asked or agreed to be called back at a specific time (including accepting or saying 'okay', 'thank you', 'theek hai' after a callback time is proposed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot if the lead agreed to, confirmed, or accepted a proposed meeting slot (including saying 'okay', 'thank you', 'theek hai', or saying goodbye/thank you after a meeting slot is proposed/confirmed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified),
+  "allow_after_hours": true/false (true if the prospect explicitly requested, suggested, agreed, or said it is okay to call them back after 7 PM local time, late, at night, or at any time in general, otherwise false),
+  "calling_enabled": true/false (false if the lead explicitly requested to never be called again, asked to stop calling, or requested to opt out/be removed from the calling list, otherwise true),
   "unanswered_questions": ["array of raw question strings that the AI assistant was unable to answer because it lacked info in context, or empty array if none"]
 }
-`
+`;
                         const rawGeminiRes = await callGemini(geminiPrompt)
                         const cleanJson = rawGeminiRes.replace(/```json/g, '').replace(/```/g, '').trim()
                         const extracted = JSON.parse(cleanJson)
@@ -250,6 +255,10 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                         callbackTime = extracted.callback_time || null
                         bookingTime = extracted.booking_time || null
                         isQualified = !!extracted.is_qualified
+                        extractedAllowAfterHours = !!extracted.allow_after_hours
+                        if (extracted.calling_enabled === false) {
+                            extractedCallingEnabled = false
+                        }
 
                         if (extracted.unanswered_questions && Array.isArray(extracted.unanswered_questions) && extracted.unanswered_questions.length > 0) {
                             const inserts = extracted.unanswered_questions.map((q: string) => ({
@@ -323,7 +332,7 @@ Listen to the audio recording carefully and extract the transcript, summary, and
 
 Generate a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
 {
-  "summary": "A clear, concise paragraph summary of the call",
+  "summary": "A detailed summary of the conversation highlighting the key points, lead's requirements or objections, questions asked, and any agreed next steps or appointments.",
   "transcript": [
     { "role": "agent", "message": "agent spoken text" },
     { "role": "user", "message": "user spoken text" }
@@ -331,6 +340,7 @@ Generate a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks
   "callback_time": "ISO-8601 string of requested callback date/time if the lead asked or agreed to be called back at a specific time, otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot, otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "is_qualified": true/false,
+  "allow_after_hours": true/false (true if the prospect explicitly requested, suggested, agreed, or said it is okay to call them back after 7 PM local time, late, at night, or at any time in general, otherwise false),
   "unanswered_questions": ["array of raw question strings that the AI assistant was unable to answer because it lacked info in context, or empty array if none"]
 }
 `
@@ -344,6 +354,7 @@ Generate a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks
                         callbackTime = extracted.callback_time || null
                         bookingTime = extracted.booking_time || null
                         isQualified = !!extracted.is_qualified
+                        extractedAllowAfterHours = !!extracted.allow_after_hours
                         conversationId = conversationId || 'gemini-audio'
 
                         if (extracted.unanswered_questions && Array.isArray(extracted.unanswered_questions) && extracted.unanswered_questions.length > 0) {
@@ -443,10 +454,12 @@ ${formattedTranscript}
 
 Extract the following details as a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
 {
-  "summary": "A clear, concise paragraph summary of the call",
+  "summary": "A detailed summary of the conversation highlighting the key points, lead's requirements or objections, questions asked, and any agreed next steps or appointments.",
   "callback_time": "ISO-8601 string of requested callback date/time if the lead asked or agreed to be called back at a specific time (including accepting or saying 'okay', 'thank you', 'theek hai' after a callback time is proposed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot if the lead agreed to, confirmed, or accepted a proposed meeting slot (including saying 'okay', 'thank you', 'theek hai', or saying goodbye/thank you after a meeting slot is proposed/confirmed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified),
+  "allow_after_hours": true/false (true if the prospect explicitly requested, suggested, agreed, or said it is okay to call them back after 7 PM local time, late, at night, or at any time in general, otherwise false),
+  "calling_enabled": true/false (false if the lead explicitly requested to never be called again, asked to stop calling, or requested to opt out/be removed from the calling list, otherwise true),
   "unanswered_questions": ["array of raw question strings that the AI assistant was unable to answer because it lacked info in context, or empty array if none"]
 }
 `
@@ -459,6 +472,10 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                     callbackTime = extracted.callback_time || null
                     bookingTime = extracted.booking_time || null
                     isQualified = !!extracted.is_qualified
+                    extractedAllowAfterHours = !!extracted.allow_after_hours
+                    if (extracted.calling_enabled === false) {
+                        extractedCallingEnabled = false
+                    }
 
                     if (extracted.unanswered_questions && Array.isArray(extracted.unanswered_questions) && extracted.unanswered_questions.length > 0) {
                         const inserts = extracted.unanswered_questions.map((q: string) => ({
@@ -556,17 +573,33 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                 voice_call_status: 'completed',
                 voice_call_retry_count: 0 // Default: reset retry count since call was picked up
             }
+            if (extractedCallingEnabled === false) {
+                updateData.calling_enabled = false
+            }
 
-            if (Object.keys(extractedAnswers).length > 0) {
-                updateData.custom_fields = {
-                    ...(lead.custom_fields || {}),
-                    ...extractedAnswers
+            let customFieldsObj: any = {}
+            if (lead?.custom_fields) {
+                if (typeof lead.custom_fields === 'string') {
+                    try {
+                        customFieldsObj = JSON.parse(lead.custom_fields)
+                    } catch (e) {
+                        customFieldsObj = {}
+                    }
+                } else if (typeof lead.custom_fields === 'object') {
+                    customFieldsObj = lead.custom_fields
                 }
             }
 
-            if (publicRecordingUrl) {
-                updateData.voice_recording_url = publicRecordingUrl
+            const customFields = {
+                ...customFieldsObj,
+                ...extractedAnswers
             }
+            if (extractedAllowAfterHours) {
+                customFields.allow_after_hours = true
+            }
+            updateData.custom_fields = customFields
+
+            updateData.voice_recording_url = publicRecordingUrl || null
 
             if (conversationId) {
                 updateData.voice_call_id = conversationId
@@ -597,9 +630,42 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                     updateData.notes = `[⚠️ Callback Skipped]: Lead requested callback but max total call attempts (${MAX_TOTAL_ATTEMPTS}) reached. Auto-calling stopped.\n\n` + updateData.notes
                     console.log(`[TWILIO STATUS CALLBACK] Callback requested but max attempts (${MAX_TOTAL_ATTEMPTS}) reached for lead ${leadId}. Not scheduling.`)
                 } else {
-                    // No callback requested — call is truly done
-                    updateData.voice_call_scheduled_at = null
-                    updateData.voice_call_retry_count = 0
+                    // Check if call was a no-reply / picked up but hung up within 15 seconds without speaking
+                    let leadSpoke = false
+                    if (transcript && Array.isArray(transcript)) {
+                        leadSpoke = transcript.some((t: any) => {
+                            const role = t.role || ''
+                            const message = t.message || t.text || ''
+                            return (role === 'user' || role === 'lead') && /[a-zA-Z0-9\u0900-\u097F]/.test(message)
+                        })
+                    }
+
+                    const isNoReply = !leadSpoke && callDuration < 15
+
+                    if (isNoReply) {
+                        if (currentRetryCount + 1 < MAX_TOTAL_ATTEMPTS) {
+                            const nextRetryCount = currentRetryCount + 1
+                            let delayMinutes = 30
+                            if (nextRetryCount === 2) delayMinutes = 120
+                            if (nextRetryCount === 3) delayMinutes = 360
+                            
+                            const scheduledTime = new Date(Date.now() + delayMinutes * 60000).toISOString()
+                            updateData.voice_call_scheduled_at = scheduledTime
+                            updateData.voice_call_status = 'scheduled_retry'
+                            updateData.voice_call_retry_count = nextRetryCount
+                            updateData.notes = `[⚠️ Call Rescheduled]: Call retry #${nextRetryCount} scheduled for ${new Date(scheduledTime).toLocaleString()} (Reason: Connected but lead hung up within 15s without speaking)\n\n` + updateData.notes
+                            console.log(`[TWILIO STATUS CALLBACK] Lead ${leadId} connected but hung up without speaking. Scheduled retry #${nextRetryCount} in ${delayMinutes} mins.`)
+                        } else {
+                            updateData.voice_call_scheduled_at = null
+                            updateData.voice_call_status = 'failed'
+                            updateData.notes = `[❌ Call Failed]: Max calling retry limit reached (5 attempts). Auto-calling stopped.\n\n` + updateData.notes
+                            console.log(`[TWILIO STATUS CALLBACK] Lead ${leadId} connected but hung up without speaking, and max attempts reached. Auto-calling stopped.`)
+                        }
+                    } else {
+                        // No callback requested & lead spoke or call was long — call is truly done
+                        updateData.voice_call_scheduled_at = null
+                        updateData.voice_call_retry_count = 0
+                    }
                 }
 
                 // Transition pipeline stage if qualified
@@ -615,7 +681,7 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
 
             if (!updateErr && bookingTime) {
                 console.log(`[TWILIO STATUS CALLBACK] Call led to booking slot ${bookingTime}. Triggering bookAppointment...`)
-                await bookAppointment(supabaseAdmin, leadId, bookingTime, lead.user_id)
+                await bookAppointment(supabaseAdmin, leadId, bookingTime, lead.user_id, true)
             }
 
             if (updateErr) {

@@ -46,6 +46,7 @@ async function handleVoiceCallerDispatcher(request: Request) {
       .lte('voice_call_scheduled_at', nowUtc)
       .neq('voice_call_status', 'calling')
       .neq('voice_call_status', 'failed')
+      .neq('calling_enabled', false)
       .not('pipeline_stage', 'in', '("Won", "Appointment booked")')
 
     if (dbError) throw dbError

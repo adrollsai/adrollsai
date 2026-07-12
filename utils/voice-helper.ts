@@ -37,15 +37,29 @@ export async function triggerOutboundCall(
     isAutoTrigger = false
 ): Promise<{ success: boolean; error?: string; callSid?: string; scheduled?: boolean; scheduledTime?: Date }> {
     try {
-        // 1. Fetch credentials from user profile
-        const { data: profile, error: profErr } = await supabaseAdmin
-            .from('profiles')
-            .select('elevenlabs_api_key, elevenlabs_agent_id, voice_twilio_sid, voice_twilio_token, voice_twilio_number, google_refresh_token, google_booking_enabled')
-            .eq('id', profileId)
-            .single()
+        // 1. Fetch credentials from user profile & lead details in parallel
+        const [profResult, leadResult] = await Promise.all([
+            supabaseAdmin
+                .from('profiles')
+                .select('elevenlabs_api_key, elevenlabs_agent_id, voice_twilio_sid, voice_twilio_token, voice_twilio_number, google_refresh_token, google_booking_enabled')
+                .eq('id', profileId)
+                .single(),
+            supabaseAdmin
+                .from('leads')
+                .select('id, name, phone, custom_fields')
+                .eq('id', leadId)
+                .single()
+        ])
 
-        if (profErr || !profile) {
+        const profile = profResult.data
+        const lead = leadResult.data
+
+        if (profResult.error || !profile) {
             return { success: false, error: 'Failed to fetch user voice configuration.' }
+        }
+
+        if (leadResult.error || !lead || !lead.phone) {
+            return { success: false, error: 'Lead not found or has no phone number.' }
         }
 
         if (isAutoTrigger) {
@@ -80,7 +94,20 @@ export async function triggerOutboundCall(
 
             const isWithinWindow = timeInMinutes >= startMinutes && timeInMinutes < endMinutes
 
-            if (!isWithinWindow) {
+            // Check if explicitly allowed after hours (asked on whatsapp or call)
+            let allowAfterHours = false
+            if (lead && lead.custom_fields) {
+                try {
+                    const customFields = typeof lead.custom_fields === 'string'
+                        ? JSON.parse(lead.custom_fields)
+                        : lead.custom_fields
+                    allowAfterHours = !!customFields?.allow_after_hours
+                } catch (e) {
+                    console.warn('[VOICE HELPER] Failed to parse custom_fields for allow_after_hours:', e)
+                }
+            }
+
+            if (!isWithinWindow && !allowAfterHours) {
                 // Calculate next valid 9 AM slot in local time and convert to UTC Date
                 const parts = new Intl.DateTimeFormat('en-US', {
                     timeZone,
@@ -170,17 +197,6 @@ export async function triggerOutboundCall(
             return { success: false, error: 'Voice calling credentials or phone number are not configured.' }
         }
 
-        // 2. Fetch lead details
-        const { data: lead, error: leadErr } = await supabaseAdmin
-            .from('leads')
-            .select('id, name, phone')
-            .eq('id', leadId)
-            .single()
-
-        if (leadErr || !lead || !lead.phone) {
-            return { success: false, error: 'Lead not found or has no phone number.' }
-        }
-
         // 3. Format phone number to E.164
         let cleanPhone = lead.phone.replace(/\D/g, '')
         if (!cleanPhone.startsWith('+')) {
@@ -196,10 +212,15 @@ export async function triggerOutboundCall(
 
         console.log(`[VOICE HELPER] Dialing lead ${lead.name} (${cleanPhone}) from caller ID ${voiceNumber}...`)
 
-        // 4. Update status to calling
+        // 4. Update status to calling & clear stale call data
         await supabaseAdmin
             .from('leads')
-            .update({ voice_call_status: 'calling' })
+            .update({ 
+                voice_call_status: 'calling',
+                voice_call_summary: null,
+                voice_call_transcript: null,
+                voice_recording_url: null
+            })
             .eq('id', lead.id)
 
         // 5. Call Twilio REST API
@@ -213,6 +234,7 @@ export async function triggerOutboundCall(
         params.append('From', voiceNumber.trim())
         params.append('StatusCallback', `${appUrl}/api/voice/status-callback?leadId=${lead.id}`)
         params.append('TimeLimit', '300') // Set hard limit of 5 minutes (300 seconds) for the call
+        params.append('Record', 'true') // Ensure outbound call recording is enabled
 
         const twilioRes = await fetch(twilioUrl, {
             method: 'POST',
@@ -251,7 +273,8 @@ export async function bookAppointment(
     supabaseAdmin: any,
     leadId: string,
     slot: string,
-    profileId: string
+    profileId: string,
+    bypassHoursCheck = false
 ): Promise<{ success: boolean; meetLink?: string; error?: string }> {
     try {
         console.log(`[VOICE HELPER] Booking appointment for lead ${leadId} at slot ${slot}...`)
@@ -347,7 +370,7 @@ export async function bookAppointment(
         const slotStartFormatted = timeFormatter.format(start)
         const slotEndFormatted = timeFormatter.format(end)
 
-        if (slotStartFormatted < bookingHours.start || slotEndFormatted > bookingHours.end) {
+        if (!bypassHoursCheck && (slotStartFormatted < bookingHours.start || slotEndFormatted > bookingHours.end)) {
             console.warn(`[VOICE HELPER] Booking failed: proposed slot ${slotStartFormatted} - ${slotEndFormatted} is outside working hours: ${bookingHours.start} - ${bookingHours.end}`)
             return { success: false, error: 'out_of_hours' }
         }

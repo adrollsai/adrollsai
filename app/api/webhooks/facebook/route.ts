@@ -1166,6 +1166,7 @@ Guidelines:
 5. Keep all responses brief (under 50 words) and suitable for a WhatsApp text.
 6. If the user explicitly proposes, confirms, or agrees to a meeting time/day (e.g., "book for tomorrow at 2 pm", "yes 5 pm works", "sure let's talk at 3 tomorrow"), extract that timestamp as an ISO-8601 string. Otherwise, set it to null.
 7. The user's name is "${customerName}". Address them by name ONLY if this is the start of the conversation (i.e. first 1-2 messages in history). For subsequent replies, do NOT repeat greetings like "Hi [Name]" or "Hello [Name]" at the beginning of every message.
+8. If the user explicitly asks to be called after 7 PM, suggests a late call, or says it is okay to call them at night or at any time in general, set "allow_after_hours" to true. Otherwise, default it to false.
 
 Recent WhatsApp Chat History:
 ${chatHistory}
@@ -1180,6 +1181,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
   "reply": "Your message reply in English",
   "booking_time": "ISO-8601 string of agreed meeting slot or null",
   "trigger_call": true/false,
+  "allow_after_hours": true/false,
   "flag_unanswered_question": "raw question text if unanswered, otherwise null"
 }
 `;
@@ -1187,6 +1189,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                     let replyText = "Thank you! Our representative will get back to you shortly.";
                                     let extractedBookingTime: string | null = null;
                                     let triggerCallRequested = false;
+                                    let extractedAllowAfterHours = false;
                                     let unansweredQuestionToFlag: string | null = null;
 
                                     let assistantUsage = { promptTokens: 0, completionTokens: 0, modelName: 'gemini-3.5-flash' };
@@ -1197,9 +1200,10 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                         replyText = parsed.reply || replyText;
                                         extractedBookingTime = parsed.booking_time || null;
                                         triggerCallRequested = !!parsed.trigger_call;
+                                        extractedAllowAfterHours = !!parsed.allow_after_hours;
                                         unansweredQuestionToFlag = parsed.flag_unanswered_question || null;
                                         assistantUsage = aiRes;
-                                        console.log('[WhatsApp AI Assistant] Gemini parsed response:', { replyText, extractedBookingTime, triggerCallRequested, unansweredQuestionToFlag });
+                                        console.log('[WhatsApp AI Assistant] Gemini parsed response:', { replyText, extractedBookingTime, triggerCallRequested, extractedAllowAfterHours, unansweredQuestionToFlag });
                                         
                                         // Dynamic billing for customer AI reply
                                         const aiTokensCost = calculateLLMCost(assistantUsage.modelName, assistantUsage.promptTokens, assistantUsage.completionTokens);
@@ -1231,16 +1235,34 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
 
                                                 // Run notes update, history log, booking, call triggering, and question flagging in parallel
                                                 await Promise.all([
-                                                    // Update lead notes
+                                                    // Update lead notes and custom_fields
                                                     (async () => {
                                                         try {
                                                             const { data: lead } = await supabaseAdmin
                                                                 .from('leads')
-                                                                .select('notes')
+                                                                .select('notes, custom_fields')
                                                                 .eq('id', postReplyLeadId)
-                                                                 .single();
+                                                                .single();
                                                             const newNotes = lead?.notes ? `${notesAddition}\n\n${lead.notes}` : notesAddition;
-                                                            await supabaseAdmin.from('leads').update({ notes: newNotes }).eq('id', postReplyLeadId);
+                                                            let customFieldsObj: any = {}
+                                                            if (lead?.custom_fields) {
+                                                                if (typeof lead.custom_fields === 'string') {
+                                                                    try {
+                                                                        customFieldsObj = JSON.parse(lead.custom_fields)
+                                                                    } catch (e) {
+                                                                        customFieldsObj = {}
+                                                                    }
+                                                                } else if (typeof lead.custom_fields === 'object') {
+                                                                    customFieldsObj = lead.custom_fields
+                                                                }
+                                                            }
+                                                            if (extractedAllowAfterHours) {
+                                                                customFieldsObj.allow_after_hours = true;
+                                                            }
+                                                            await supabaseAdmin.from('leads').update({ 
+                                                                notes: newNotes,
+                                                                custom_fields: customFieldsObj
+                                                            }).eq('id', postReplyLeadId);
                                                         } catch (e) { console.error('[WA AI] Notes update failed:', e); }
                                                     })(),
                                                     // Log to lead_history
@@ -1254,7 +1276,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                                         } catch (e: any) { console.error('[WA AI] History log failed:', e); }
                                                     })(),
                                                     // Booking if extracted
-                                                    extractedBookingTime ? bookAppointment(supabaseAdmin, postReplyLeadId, extractedBookingTime, ownerUserId).catch(e => console.error('[WA AI] Booking failed:', e)) : Promise.resolve(),
+                                                    extractedBookingTime ? bookAppointment(supabaseAdmin, postReplyLeadId, extractedBookingTime, ownerUserId, true).catch(e => console.error('[WA AI] Booking failed:', e)) : Promise.resolve(),
                                                     // Immediate outbound voice call if requested
                                                     triggerCallRequested ? triggerOutboundCall(supabaseAdmin, postReplyLeadId, ownerUserId).catch(e => console.error('[WA AI] Outbound call trigger failed:', e)) : Promise.resolve(),
                                                     // Flag unanswered questions

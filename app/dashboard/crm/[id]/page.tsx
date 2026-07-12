@@ -65,6 +65,12 @@ export default function LeadProfilePage() {
     const [selectedTemplateName, setSelectedTemplateName] = useState('')
     const [selectedTemplateBody, setSelectedTemplateBody] = useState('')
     const [isSendingTemplate, setIsSendingTemplate] = useState(false)
+ 
+    // Editing schedule states
+    const [isEditingBooking, setIsEditingBooking] = useState(false)
+    const [tempBookingTime, setTempBookingTime] = useState('')
+    const [isEditingCallback, setIsEditingCallback] = useState(false)
+    const [tempCallbackTime, setTempCallbackTime] = useState('')
 
     useEffect(() => {
         if (id) {
@@ -464,6 +470,130 @@ export default function LeadProfilePage() {
         }
     }
 
+    const handleToggleCallingEnabled = async (checked: boolean) => {
+        if (!lead) return
+        try {
+            const { error } = await supabase
+                .from('leads')
+                .update({ calling_enabled: checked })
+                .eq('id', lead.id)
+            
+            if (error) throw error
+            
+            const updatedLead = { ...lead, calling_enabled: checked }
+            setLead(updatedLead)
+            updateLocalCRMCache(updatedLead)
+            toast.success(checked ? "Auto-calling enabled" : "Auto-calling stopped")
+        } catch (e) {
+            console.error("Failed to toggle calling:", e)
+            toast.error("Failed to update calling settings")
+        }
+    }
+
+    const toLocalDateTimeString = (utcStr: string) => {
+        if (!utcStr) return ''
+        const d = new Date(utcStr)
+        const year = d.getFullYear()
+        const month = String(d.getMonth() + 1).padStart(2, '0')
+        const day = String(d.getDate()).padStart(2, '0')
+        const hours = String(d.getHours()).padStart(2, '0')
+        const minutes = String(d.getMinutes()).padStart(2, '0')
+        return `${year}-${month}-${day}T${hours}:${minutes}`
+    }
+
+    const handleDeleteCallback = async () => {
+        if (!confirm("Are you sure you want to cancel the scheduled AI callback?")) return
+        try {
+            const { error } = await supabase
+                .from('leads')
+                .update({ 
+                    voice_call_scheduled_at: null,
+                    voice_call_status: 'completed'
+                })
+                .eq('id', id)
+            if (error) throw error
+            const nextLead = { ...lead, voice_call_scheduled_at: null, voice_call_status: 'completed' }
+            setLead(nextLead)
+            updateLocalCRMCache(nextLead)
+            toast.success("Scheduled call cancelled")
+        } catch (e) {
+            console.error("Failed to delete callback:", e)
+            toast.error("Failed to cancel scheduled call")
+        }
+    }
+
+    const handleUpdateCallback = async (newTimeStr: string) => {
+        if (!newTimeStr) return
+        try {
+            const localDate = new Date(newTimeStr)
+            const utcIso = localDate.toISOString()
+            const { error } = await supabase
+                .from('leads')
+                .update({ 
+                    voice_call_scheduled_at: utcIso,
+                    voice_call_status: 'scheduled_callback'
+                })
+                .eq('id', id)
+            if (error) throw error
+            const nextLead = { ...lead, voice_call_scheduled_at: utcIso, voice_call_status: 'scheduled_callback' }
+            setLead(nextLead)
+            updateLocalCRMCache(nextLead)
+            toast.success("Scheduled call updated")
+        } catch (e) {
+            console.error("Failed to update callback:", e)
+            toast.error("Failed to update scheduled call time")
+        }
+    }
+
+    const handleDeleteBooking = async () => {
+        if (!confirm("Are you sure you want to cancel this booking/appointment?")) return
+        try {
+            const { error } = await supabase
+                .from('leads')
+                .update({ 
+                    booked_time: null,
+                    meet_link: null,
+                    google_calendar_event_id: null
+                })
+                .eq('id', id)
+            if (error) throw error
+            const nextLead = { 
+                ...lead, 
+                booked_time: null, 
+                meet_link: null, 
+                google_calendar_event_id: null 
+            }
+            setLead(nextLead)
+            updateLocalCRMCache(nextLead)
+            toast.success("Booking/Appointment cancelled")
+        } catch (e) {
+            console.error("Failed to delete booking:", e)
+            toast.error("Failed to cancel booking")
+        }
+    }
+
+    const handleUpdateBooking = async (newTimeStr: string) => {
+        if (!newTimeStr) return
+        try {
+            const localDate = new Date(newTimeStr)
+            const utcIso = localDate.toISOString()
+            const { error } = await supabase
+                .from('leads')
+                .update({ 
+                    booked_time: utcIso 
+                })
+                .eq('id', id)
+            if (error) throw error
+            const nextLead = { ...lead, booked_time: utcIso }
+            setLead(nextLead)
+            updateLocalCRMCache(nextLead)
+            toast.success("Booking/Appointment time updated")
+        } catch (e) {
+            console.error("Failed to update booking:", e)
+            toast.error("Failed to update booking time")
+        }
+    }
+
     const updateStage = async (newStage: string) => {
         const nextLead = { ...lead, pipeline_stage: newStage }
         setLead(nextLead)
@@ -701,25 +831,75 @@ END:VCARD`
                             <h3 className="text-[10px] font-bold text-slate-500 uppercase ml-2 flex items-center gap-1.5 mb-2">
                                 <span className="text-emerald-500 text-lg">📆</span> Google Calendar Booking
                             </h3>
-                            <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                <div>
-                                    <span className="block text-xs font-medium text-slate-500">Scheduled Time</span>
-                                    <span className="text-base font-extrabold text-slate-800">
-                                        {new Date(lead.booked_time).toLocaleString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                    {lead.meet_link && (
-                                        <div className="mt-2 flex flex-col gap-0.5">
-                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Google Meet Video Link</span>
-                                            <a href={lead.meet_link} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline break-all flex items-center gap-1">
-                                                🎥 {lead.meet_link}
-                                            </a>
-                                        </div>
-                                    )}
+                            {isEditingBooking ? (
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-3 ml-2">
+                                    <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Change Appointment Time</span>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <input 
+                                            type="datetime-local" 
+                                            defaultValue={toLocalDateTimeString(lead.booked_time)} 
+                                            onChange={(e) => setTempBookingTime(e.target.value)}
+                                            className="bg-white border border-slate-200/80 p-2 rounded-lg text-xs font-bold outline-none"
+                                        />
+                                        <button 
+                                            onClick={async () => {
+                                                const timeToSave = tempBookingTime || toLocalDateTimeString(lead.booked_time)
+                                                await handleUpdateBooking(timeToSave)
+                                                setIsEditingBooking(false)
+                                            }}
+                                            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-4.5 py-2 rounded-full transition-all shadow-sm"
+                                        >
+                                            Save
+                                        </button>
+                                        <button 
+                                            onClick={() => setIsEditingBooking(false)}
+                                            className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-black px-4.5 py-2 rounded-full transition-all shadow-sm"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
                                 </div>
-                                <span className="text-xs font-black bg-emerald-500 text-white px-3 py-1 rounded-full uppercase tracking-wider shrink-0">
-                                    Confirmed
-                                </span>
-                            </div>
+                            ) : (
+                                <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                    <div>
+                                        <span className="block text-xs font-medium text-slate-500">Scheduled Time</span>
+                                        <span className="text-base font-extrabold text-slate-800">
+                                            {new Date(lead.booked_time).toLocaleString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                        {lead.meet_link && (
+                                            <div className="mt-2 flex flex-col gap-0.5">
+                                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Google Meet Video Link</span>
+                                                <a href={lead.meet_link} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline break-all flex items-center gap-1">
+                                                    🎥 {lead.meet_link}
+                                                </a>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col sm:items-end gap-2 shrink-0 w-full sm:w-auto">
+                                        <span className="text-xs font-black bg-emerald-500 text-white px-3 py-1 rounded-full uppercase tracking-wider text-center shrink-0">
+                                            Confirmed
+                                        </span>
+                                        <div className="flex gap-2 mt-1 justify-end shrink-0">
+                                            <button 
+                                                onClick={() => {
+                                                    setTempBookingTime(toLocalDateTimeString(lead.booked_time))
+                                                    setIsEditingBooking(true)
+                                                }}
+                                                className="text-xs font-bold text-indigo-600 hover:text-indigo-850 underline transition-colors shrink-0"
+                                            >
+                                                Reschedule
+                                            </button>
+                                            <span className="text-slate-300 shrink-0">|</span>
+                                            <button 
+                                                onClick={handleDeleteBooking}
+                                                className="text-xs font-bold text-red-500 hover:text-red-750 underline transition-colors shrink-0"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -858,7 +1038,7 @@ END:VCARD`
                             )}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                             <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/50">
                                 <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Call Status</span>
                                 <span className={`font-black uppercase tracking-wider ${
@@ -872,12 +1052,85 @@ END:VCARD`
                                     ● {(lead.voice_call_status || 'not_called').replace(/_/g, ' ')}
                                 </span>
                             </div>
-                            {lead.voice_call_scheduled_at && (
-                                <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100">
-                                    <span className="block text-[9px] font-bold text-amber-800 uppercase tracking-wider mb-1">Scheduled Callback</span>
-                                    <span className="font-extrabold text-amber-950">
-                                        {new Date(lead.voice_call_scheduled_at).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/50 flex justify-between items-center">
+                                <div>
+                                    <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Calling Queue</span>
+                                    <span className={`font-black uppercase tracking-wider ${lead.calling_enabled !== false ? 'text-emerald-600' : 'text-red-500'}`}>
+                                        {lead.calling_enabled !== false ? 'Active' : 'Stopped'}
                                     </span>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={lead.calling_enabled !== false} 
+                                        onChange={(e) => handleToggleCallingEnabled(e.target.checked)}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                                </label>
+                            </div>
+
+                            {lead.voice_call_scheduled_at && (
+                                <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100 relative overflow-hidden flex flex-col justify-between min-h-[90px]">
+                                    {isEditingCallback ? (
+                                        <div className="space-y-1.5 w-full">
+                                            <span className="block text-[9px] font-bold text-amber-800 uppercase tracking-wider">Change Callback Time</span>
+                                            <div className="flex flex-col gap-1 w-full">
+                                                <input 
+                                                    type="datetime-local" 
+                                                    defaultValue={toLocalDateTimeString(lead.voice_call_scheduled_at)} 
+                                                    onChange={(e) => setTempCallbackTime(e.target.value)}
+                                                    className="bg-white border border-amber-200 p-1 py-0.5 rounded text-[11px] font-bold outline-none w-full"
+                                                />
+                                                <div className="flex gap-1.5 mt-0.5">
+                                                    <button 
+                                                        onClick={async () => {
+                                                            const timeToSave = tempCallbackTime || toLocalDateTimeString(lead.voice_call_scheduled_at)
+                                                            await handleUpdateCallback(timeToSave)
+                                                            setIsEditingCallback(false)
+                                                        }}
+                                                        className="bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-bold px-2 py-1 rounded"
+                                                    >
+                                                        Save
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => setIsEditingCallback(false)}
+                                                        className="bg-amber-100 hover:bg-amber-200 text-amber-900 text-[9px] font-bold px-2 py-1 rounded"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col justify-between h-full w-full">
+                                            <div>
+                                                <span className="block text-[9px] font-bold text-amber-800 uppercase tracking-wider mb-1">Scheduled Callback</span>
+                                                <span className="font-extrabold text-amber-950 block">
+                                                    {new Date(lead.voice_call_scheduled_at).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                                                </span>
+                                            </div>
+                                            <div className="flex gap-2 mt-1.5">
+                                                <button 
+                                                    onClick={() => {
+                                                        setTempCallbackTime(toLocalDateTimeString(lead.voice_call_scheduled_at))
+                                                        setIsEditingCallback(true)
+                                                    }}
+                                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-850 underline transition-colors"
+                                                >
+                                                    Reschedule
+                                                </button>
+                                                <span className="text-amber-200">|</span>
+                                                <button 
+                                                    onClick={handleDeleteCallback}
+                                                    className="text-[10px] font-bold text-red-500 hover:text-red-750 underline transition-colors"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

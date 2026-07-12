@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       .update({ voice_call_scheduled_at: null })
       .eq('id', lead.id)
 
-    const result = await triggerOutboundCall(supabaseAdmin, lead.id, lead.user_id)
+    const result = await triggerOutboundCall(supabaseAdmin, lead.id, lead.user_id, true)
     
     if (!result.success) {
       console.error(`[Voice Caller Worker] Call failed to initiate for lead ${lead.id}:`, result.error)
