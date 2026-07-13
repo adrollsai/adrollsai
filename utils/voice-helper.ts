@@ -189,8 +189,8 @@ export async function triggerOutboundCall(
             return { success: false, error: 'Insufficient credits' }
         }
 
-        const twilioSid = process.env.MASTER_TWILIO_SID || profile.voice_twilio_sid || process.env.DEV_TWILIO_SID
-        const twilioToken = process.env.MASTER_TWILIO_TOKEN || profile.voice_twilio_token || process.env.DEV_TWILIO_TOKEN
+        const twilioSid = process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
+        const twilioToken = process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
         const voiceNumber = profile.voice_twilio_number || process.env.MASTER_TWILIO_NUMBER
 
         if (!twilioSid || !twilioToken || !voiceNumber) {

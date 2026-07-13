@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package } from 'lucide-react'
+import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 
@@ -84,6 +84,12 @@ export default function AutomationPage() {
   }
   const [templates, setTemplates] = useState<MetaTemplate[]>([])
   const [loadingTemplates, setLoadingTemplates] = useState(false)
+
+  // Admin & Billing Check states
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [profile, setProfile] = useState<any>(null)
+  const [billingStatus, setBillingStatus] = useState<any>(null)
+  const [loadingBilling, setLoadingBilling] = useState(false)
   
   // Lead info panel
   type LeadInfo = {
@@ -112,11 +118,45 @@ export default function AutomationPage() {
     }
   }, [chats])
 
+  const fetchProfileAndBilling = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+        if (prof) {
+          setProfile(prof)
+          const adminRoles = ['super_admin', 'agency', 'admin']
+          const isUserAdmin = adminRoles.includes(prof.role || '')
+          setIsAdmin(isUserAdmin)
+
+          // If they are an admin, fetch the WhatsApp Business Account billing/TOS status
+          if (isUserAdmin) {
+            setLoadingBilling(true)
+            try {
+              const res = await fetch('/api/whatsapp/status')
+              if (res.ok) {
+                const billData = await res.json()
+                setBillingStatus(billData)
+              }
+            } catch (billingErr) {
+              console.error("Failed to fetch WABA billing status:", billingErr)
+            } finally {
+              setLoadingBilling(false)
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load profile/billing:", err)
+    }
+  }
+
   // Fetch chats, templates and properties on mount
   useEffect(() => {
     fetchChats()
     fetchTemplates()
     fetchProperties()
+    fetchProfileAndBilling()
   }, [])
 
   // Fetch messages (and load cache first) when a chat is selected
@@ -368,6 +408,18 @@ export default function AutomationPage() {
 
   const handleSendTemplate = async () => {
     if (!selectedChatId || sendingMessage) return
+
+    if (isAdmin && billingStatus) {
+      if (billingStatus.tos_accepted === false) {
+        alert(`Cannot send template: You must accept the WhatsApp Payments Terms of Service first.\n\nUse the link in the billing bar at the top or click here: ${billingStatus.pending_tos_url || 'https://fb.me/2bcZ0cOTE9VAxqQ'}`)
+        return
+      }
+      if (billingStatus.has_payment_method === false) {
+        alert("Cannot send template: Your WhatsApp Business Account is missing a valid payment method. Please connect a payment method first in your Meta Business Suite.")
+        return
+      }
+    }
+
     setSendingMessage(true)
 
     const templateName = selectedTemplate === 'custom' ? customTemplateName.trim() : selectedTemplate
@@ -445,11 +497,89 @@ export default function AutomationPage() {
     <div className="p-5 mx-auto min-h-screen pb-24 max-w-5xl">
       
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">WhatsApp Portal</h1>
           <p className="text-slate-500 text-xs mt-1">Live customer and bot conversations</p>
         </div>
+
+        {/* Billing Info (Admins Only) */}
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-3 bg-white p-2 px-3 border border-slate-200/80 rounded-2xl shadow-sm text-xs">
+            {loadingBilling ? (
+              <div className="text-slate-400 font-semibold flex items-center gap-1.5 py-0.5">
+                <Loader2 size={12} className="animate-spin text-indigo-600" />
+                <span>Checking WABA status...</span>
+              </div>
+            ) : billingStatus && billingStatus.success !== false ? (
+              <>
+                {/* WABA Name & Currency */}
+                <div className="flex items-center gap-1.5 pr-3 border-r border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">WABA:</span>
+                  <span className="font-extrabold text-slate-800">
+                    {billingStatus.waba_name || 'Connected'} ({billingStatus.currency || 'INR'})
+                  </span>
+                </div>
+
+                {/* TOS Status */}
+                <div className="flex items-center gap-1.5 pr-3 border-r border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">TOS Status:</span>
+                  {billingStatus.tos_accepted ? (
+                    <span className="text-[10px] font-black bg-emerald-50 text-emerald-600 border border-emerald-150 px-2 py-0.5 rounded-full uppercase tracking-wider">Accepted</span>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-black bg-amber-50 text-amber-600 border border-amber-150 px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">Pending TOS</span>
+                      {billingStatus.pending_tos_url && (
+                        <a 
+                          href={billingStatus.pending_tos_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline hover:underline transition-colors shrink-0"
+                        >
+                          Accept Terms ↗
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* WABA Payment Configuration */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Payment Method:</span>
+                  {billingStatus.has_payment_method ? (
+                    <span className="text-[10px] font-black bg-emerald-50 text-emerald-600 border border-emerald-150 px-2 py-0.5 rounded-full uppercase tracking-wider">Connected</span>
+                  ) : (
+                    <span className="text-[10px] font-black bg-rose-50 text-rose-600 border border-rose-150 px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">Missing Method</span>
+                  )}
+                </div>
+
+                {/* Force Refresh */}
+                <button 
+                  onClick={fetchProfileAndBilling}
+                  title="Refresh WABA Status"
+                  className="p-1 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-slate-600 transition-colors ml-1"
+                >
+                  <RefreshCw size={12} />
+                </button>
+              </>
+            ) : (
+              <div className="text-slate-400 font-semibold py-0.5 flex flex-wrap items-center gap-2">
+                <span>{billingStatus?.error || 'WABA Status Check Failed'}</span>
+                {billingStatus?.pending_tos_url && (
+                  <a 
+                    href={billingStatus.pending_tos_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-[11px] font-bold text-blue-600 hover:underline inline-flex items-center gap-0.5"
+                  >
+                    Accept Payments TOS ↗
+                  </a>
+                )}
+                <button onClick={fetchProfileAndBilling} className="text-indigo-600 hover:underline font-bold ml-1">Retry</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="bg-white border border-slate-200/80 rounded-[2rem] shadow-xl overflow-hidden h-[600px] flex">

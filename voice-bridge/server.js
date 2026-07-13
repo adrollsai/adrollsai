@@ -492,8 +492,8 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                                     console.log('[BRIDGE] Waiting 3 seconds for audio playout before hanging up...');
                                     setTimeout(async () => {
                                         if (twilioCallSid && profileData) {
-                                            const twilioSid = process.env.MASTER_TWILIO_SID || profileData.voice_twilio_sid;
-                                            const twilioToken = process.env.MASTER_TWILIO_TOKEN || profileData.voice_twilio_token;
+                                            const twilioSid = process.env.MASTER_TWILIO_SID;
+                                            const twilioToken = process.env.MASTER_TWILIO_TOKEN;
                                             
                                             if (twilioSid && twilioToken) {
                                                 try {

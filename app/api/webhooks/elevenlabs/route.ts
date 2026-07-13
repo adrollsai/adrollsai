@@ -179,7 +179,7 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
 
         // 3. Download the audio recording from ElevenLabs
         let publicRecordingUrl = null
-        const elevenlabsApiKey = process.env.MASTER_ELEVENLABS_KEY || profile?.elevenlabs_api_key
+        const elevenlabsApiKey = profile?.elevenlabs_api_key || process.env.MASTER_ELEVENLABS_KEY
         if (elevenlabsApiKey) {
             try {
                 const audioUrl = `https://api.elevenlabs.io/v1/convai/conversations/${conversationId}/audio`

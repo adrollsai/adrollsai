@@ -138,7 +138,14 @@ export default function LeadProfilePage() {
                 setSelectedTemplateBody('')
                 alert("WhatsApp template sent successfully!")
             } else {
-                alert("Failed to send WhatsApp template.")
+                let errMsg = "Failed to send WhatsApp template."
+                try {
+                    const errData = await res.json()
+                    if (errData && errData.error) {
+                        errMsg = `Failed to send WhatsApp template: ${errData.error}`
+                    }
+                } catch (e) {}
+                alert(errMsg)
             }
         } catch (err) {
             console.error("Error sending template:", err)

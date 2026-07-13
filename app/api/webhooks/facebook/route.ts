@@ -484,6 +484,7 @@ IMPORTANT RULES:
                                     let ownerWaPhoneId: string | null = null;
                                     let catalogueBtnText = 'View Products';
                                     let ownerCustomDomain: string | null = null;
+                                    let ownerButtons: any[] = [];
 
                                     let ownerQualifyingEnabled = false;
                                     let ownerQualifyingQuestions: string[] = [];
@@ -492,7 +493,7 @@ IMPORTANT RULES:
                                     if (wabaPhoneId) {
                                         const { data: ownerProfiles } = await supabaseAdmin
                                             .from('profiles')
-                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role, whatsapp_catalogue_button_text, custom_domain, qualifying_enabled, qualifying_questions')
+                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions')
                                             .eq('whatsapp_phone_number_id', wabaPhoneId);
                                         
                                         if (ownerProfiles && ownerProfiles.length > 0) {
@@ -506,6 +507,7 @@ IMPORTANT RULES:
                                             ownerWaPhoneId = selectedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
                                             catalogueBtnText = selectedProfile.whatsapp_catalogue_button_text || 'View Products';
                                             ownerCustomDomain = selectedProfile.custom_domain || null;
+                                            ownerButtons = selectedProfile.whatsapp_buttons || [];
                                             ownerQualifyingEnabled = selectedProfile.qualifying_enabled || false;
                                             ownerQualifyingQuestions = selectedProfile.qualifying_questions || [];
                                             console.log(`[Flow] Owner resolved from wabaPhoneId: ${selectedProfile.business_name} (${ownerUserId})`);
@@ -540,7 +542,7 @@ IMPORTANT RULES:
                                             ownerUserId = selectedLead.user_id;
                                             const { data: ownerProfile } = await supabaseAdmin
                                                 .from('profiles')
-                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, custom_domain, qualifying_enabled, qualifying_questions')
+                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions')
                                                 .eq('id', ownerUserId)
                                                 .maybeSingle();
                                             if (ownerProfile) {
@@ -548,6 +550,7 @@ IMPORTANT RULES:
                                                 ownerWaPhoneId = ownerProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
                                                 catalogueBtnText = ownerProfile.whatsapp_catalogue_button_text || 'View Products';
                                                 ownerCustomDomain = ownerProfile.custom_domain || null;
+                                                ownerButtons = ownerProfile.whatsapp_buttons || [];
                                                 ownerQualifyingEnabled = ownerProfile.qualifying_enabled || false;
                                                 ownerQualifyingQuestions = ownerProfile.qualifying_questions || [];
                                             }
@@ -632,7 +635,7 @@ IMPORTANT RULES:
                                             message_text: messageText
                                         });
 
-                                    // Helper: send WhatsApp interactive message with View Properties catalog button
+                                    // Helper: send WhatsApp interactive message with customizable action buttons
                                     const sendWAMessage = async (text: string) => {
                                         try {
                                             const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
@@ -641,6 +644,24 @@ IMPORTANT RULES:
                                                 ? `https://${ownerCustomDomain}` 
                                                 : `${appUrl}/shared/${ownerUserId}`;
 
+                                            // Build buttons list
+                                            let buttons = [{ text: catalogueBtnText || 'View Products', url: catalogueLink }];
+                                            if (ownerButtons && Array.isArray(ownerButtons) && ownerButtons.length > 0) {
+                                                buttons = ownerButtons.map((btn: any, idx: number) => {
+                                                    let url = btn.url ? btn.url.trim() : '';
+                                                    if (!url) {
+                                                        url = catalogueLink;
+                                                    } else if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                                                        url = 'https://' + url;
+                                                    }
+                                                    return {
+                                                        text: (btn.text || (idx === 0 ? (catalogueBtnText || 'View Products') : 'View Link')).slice(0, 20),
+                                                        url: url
+                                                    };
+                                                });
+                                            }
+
+                                            // Send the primary button
                                             const sendRes = await fetch(metaUrl, {
                                                 method: 'POST',
                                                 headers: {
@@ -660,13 +681,14 @@ IMPORTANT RULES:
                                                         action: {
                                                             name: 'cta_url',
                                                             parameters: {
-                                                                display_text: (catalogueBtnText || 'View Products').slice(0, 20),
-                                                                url: catalogueLink
+                                                                display_text: buttons[0].text,
+                                                                url: buttons[0].url
                                                             }
                                                         }
                                                     }
                                                 })
                                             });
+
                                             if (sendRes.ok) {
                                                 // Log outbound
                                                 await supabaseAdmin
@@ -680,6 +702,55 @@ IMPORTANT RULES:
                                                     .from('whatsapp_chats')
                                                     .update({ last_message_text: text, updated_at: new Date().toISOString() })
                                                     .eq('id', chat!.id);
+
+                                                // Send subsequent buttons as separate messages (if any)
+                                                for (let i = 1; i < buttons.length; i++) {
+                                                    const extraBtn = buttons[i];
+                                                    // Small delay to ensure order in WhatsApp UI
+                                                    await new Promise(resolve => setTimeout(resolve, 800));
+                                                    
+                                                    const extraBodyText = `Click below to access ${extraBtn.text}:`;
+                                                    
+                                                    const extraRes = await fetch(metaUrl, {
+                                                        method: 'POST',
+                                                        headers: {
+                                                            'Authorization': `Bearer ${ownerWaToken}`,
+                                                            'Content-Type': 'application/json'
+                                                        },
+                                                        body: JSON.stringify({
+                                                            messaging_product: 'whatsapp',
+                                                            recipient_type: 'individual',
+                                                            to: cleanFrom,
+                                                            type: 'interactive',
+                                                            interactive: {
+                                                                type: 'cta_url',
+                                                                body: {
+                                                                    text: extraBodyText
+                                                                },
+                                                                action: {
+                                                                    name: 'cta_url',
+                                                                    parameters: {
+                                                                        display_text: extraBtn.text,
+                                                                        url: extraBtn.url
+                                                                    }
+                                                                }
+                                                            }
+                                                        })
+                                                    });
+
+                                                    if (extraRes.ok) {
+                                                        await supabaseAdmin
+                                                            .from('whatsapp_messages')
+                                                            .insert({
+                                                                chat_id: chat!.id,
+                                                                direction: 'outbound',
+                                                                message_text: extraBodyText
+                                                            });
+                                                    } else {
+                                                        const errData = await extraRes.json();
+                                                        console.error(`[Flow] Failed to send extra WA button ${i}:`, errData);
+                                                    }
+                                                }
                                             } else {
                                                 const errData = await sendRes.json();
                                                 console.error(`[Flow] Failed to send WA message:`, errData);

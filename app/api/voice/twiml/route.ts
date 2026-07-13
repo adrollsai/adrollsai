@@ -65,7 +65,7 @@ export async function POST(req: Request) {
             .eq('id', profileId)
             .single()
 
-        const voiceProvider = profile?.voice_provider || 'elevenlabs'
+        const voiceProvider = profile?.voice_provider || 'gemini'
 
         if (voiceProvider === 'gemini') {
             const bridgeHost = process.env.GEMINI_VOICE_BRIDGE_URL || 'ws://localhost:5050'
@@ -87,8 +87,8 @@ export async function POST(req: Request) {
         }
 
         if (voiceProvider === 'elevenlabs') {
-            const elevenlabsApiKey = process.env.MASTER_ELEVENLABS_KEY || profile?.elevenlabs_api_key
-            const elevenlabsAgentId = process.env.MASTER_ELEVENLABS_AGENT_ID || profile?.elevenlabs_agent_id
+            const elevenlabsApiKey = profile?.elevenlabs_api_key || process.env.MASTER_ELEVENLABS_KEY
+            const elevenlabsAgentId = profile?.elevenlabs_agent_id || process.env.MASTER_ELEVENLABS_AGENT_ID
 
             if (!elevenlabsApiKey || !elevenlabsAgentId) {
                 console.error('[TWIML BRIDGE] Missing voice configuration for profile:', profileId)
@@ -313,8 +313,8 @@ ${whatsappHistory ? `Previous WhatsApp History:\n${whatsappHistory}` : ''}
 
 
 
-        const elevenlabsApiKey = process.env.MASTER_ELEVENLABS_KEY || profile?.elevenlabs_api_key
-        const elevenlabsAgentId = process.env.MASTER_ELEVENLABS_AGENT_ID || profile?.elevenlabs_agent_id
+        const elevenlabsApiKey = profile?.elevenlabs_api_key || process.env.MASTER_ELEVENLABS_KEY
+        const elevenlabsAgentId = profile?.elevenlabs_agent_id || process.env.MASTER_ELEVENLABS_AGENT_ID
 
         // Call ElevenLabs twilio/register-call to retrieve the TwiML configuration
         const elevenlabsUrl = 'https://api.elevenlabs.io/v1/convai/twilio/register-call'

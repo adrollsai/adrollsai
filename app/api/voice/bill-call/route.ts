@@ -34,8 +34,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'User config not found' }, { status: 404 })
     }
 
-    const twilioSid = process.env.MASTER_TWILIO_SID || profile.voice_twilio_sid || process.env.DEV_TWILIO_SID
-    const twilioToken = process.env.MASTER_TWILIO_TOKEN || profile.voice_twilio_token || process.env.DEV_TWILIO_TOKEN
+    const twilioSid = process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
+    const twilioToken = process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
     const activeProvider = voiceProvider || profile.voice_provider || 'elevenlabs'
 
     if (!twilioSid || !twilioToken) {

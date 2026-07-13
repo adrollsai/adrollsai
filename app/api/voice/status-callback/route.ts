@@ -120,7 +120,7 @@ export async function POST(req: Request) {
                 .eq('id', lead.user_id)
                 .single()
 
-            const voiceProvider = profile?.voice_provider || 'elevenlabs'
+            const voiceProvider = profile?.voice_provider || 'gemini'
             const targetLeadId = lead.id
             const targetUserId = lead.user_id
 
@@ -185,8 +185,8 @@ export async function POST(req: Request) {
                     }, 60000)
                 }
             }
-            const elevenlabsApiKey = process.env.MASTER_ELEVENLABS_KEY || profile?.elevenlabs_api_key
-            const elevenlabsAgentId = process.env.MASTER_ELEVENLABS_AGENT_ID || profile?.elevenlabs_agent_id
+            const elevenlabsApiKey = profile?.elevenlabs_api_key || process.env.MASTER_ELEVENLABS_KEY
+            const elevenlabsAgentId = profile?.elevenlabs_agent_id || process.env.MASTER_ELEVENLABS_AGENT_ID
 
             let conversationId = null
             let transcript: any[] = []
@@ -282,8 +282,8 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                 if (recordingUrl) {
                     console.log('[TWILIO STATUS CALLBACK] Twilio Call Recording found. Downloading...', recordingUrl)
                     try {
-                        const twilioSid = process.env.MASTER_TWILIO_SID || profile?.voice_twilio_sid
-                        const twilioToken = process.env.MASTER_TWILIO_TOKEN || profile?.voice_twilio_token
+                        const twilioSid = process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
+                        const twilioToken = process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
                         const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64')
 
                         const recordingRes = await fetch(recordingUrl, {
