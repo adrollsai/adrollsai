@@ -485,6 +485,8 @@ IMPORTANT RULES:
                                     let catalogueBtnText = 'View Products';
                                     let ownerCustomDomain: string | null = null;
                                     let ownerButtons: any[] = [];
+                                    let ownerAutoCallNewLeads = false;
+                                    let ownerRole = '';
 
                                     let ownerQualifyingEnabled = false;
                                     let ownerQualifyingQuestions: string[] = [];
@@ -493,7 +495,7 @@ IMPORTANT RULES:
                                     if (wabaPhoneId) {
                                         const { data: ownerProfiles } = await supabaseAdmin
                                             .from('profiles')
-                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions')
+                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads')
                                             .eq('whatsapp_phone_number_id', wabaPhoneId);
                                         
                                         if (ownerProfiles && ownerProfiles.length > 0) {
@@ -508,6 +510,8 @@ IMPORTANT RULES:
                                             catalogueBtnText = selectedProfile.whatsapp_catalogue_button_text || 'View Products';
                                             ownerCustomDomain = selectedProfile.custom_domain || null;
                                             ownerButtons = selectedProfile.whatsapp_buttons || [];
+                                            ownerAutoCallNewLeads = !!selectedProfile.auto_call_new_leads;
+                                            ownerRole = selectedProfile.role || '';
                                             ownerQualifyingEnabled = selectedProfile.qualifying_enabled || false;
                                             ownerQualifyingQuestions = selectedProfile.qualifying_questions || [];
                                             console.log(`[Flow] Owner resolved from wabaPhoneId: ${selectedProfile.business_name} (${ownerUserId})`);
@@ -542,7 +546,7 @@ IMPORTANT RULES:
                                             ownerUserId = selectedLead.user_id;
                                             const { data: ownerProfile } = await supabaseAdmin
                                                 .from('profiles')
-                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions')
+                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, role')
                                                 .eq('id', ownerUserId)
                                                 .maybeSingle();
                                             if (ownerProfile) {
@@ -551,6 +555,8 @@ IMPORTANT RULES:
                                                 catalogueBtnText = ownerProfile.whatsapp_catalogue_button_text || 'View Products';
                                                 ownerCustomDomain = ownerProfile.custom_domain || null;
                                                 ownerButtons = ownerProfile.whatsapp_buttons || [];
+                                                ownerAutoCallNewLeads = !!ownerProfile.auto_call_new_leads;
+                                                ownerRole = ownerProfile.role || '';
                                                 ownerQualifyingEnabled = ownerProfile.qualifying_enabled || false;
                                                 ownerQualifyingQuestions = ownerProfile.qualifying_questions || [];
                                             }
@@ -561,6 +567,24 @@ IMPORTANT RULES:
                                     if (!ownerUserId || !ownerWaToken || !ownerWaPhoneId) {
                                         console.log(`[Flow] Could not resolve owner for phone ${cleanFrom}. Skipping.`);
                                         return;
+                                    }
+
+                                    // Resolve billing user and inventory owner (charge clients talking to official support)
+                                    let billingUserId = ownerUserId;
+                                    let inventoryOwnerId = ownerUserId;
+
+                                    if (ownerRole === 'super_admin') {
+                                        // Query if cleanFrom belongs to a client profile
+                                        const { data: clientProfile } = await supabaseAdmin
+                                            .from('profiles')
+                                            .select('id')
+                                            .or(`whatsapp_phone_number.ilike.%${cleanFrom.slice(-10)}%,contact_number.ilike.%${cleanFrom.slice(-10)}%`)
+                                            .maybeSingle();
+                                        if (clientProfile) {
+                                            billingUserId = clientProfile.id;
+                                            inventoryOwnerId = clientProfile.id;
+                                            console.log(`[Flow] Webhook conversation is with client ${clientProfile.id}. Setting billing and inventory owner to client.`);
+                                        }
                                     }
 
                                     // 2. Find or create chat record
@@ -814,11 +838,11 @@ Clean Name:`;
                                             // Dynamic billing for name parse
                                             const nameTokensCost = calculateLLMCost(nameRes.modelName, nameRes.promptTokens, nameRes.completionTokens);
                                             const totalNameCost = 0.05 + nameTokensCost;
-                                            await deductCreditsByCost(supabaseAdmin, ownerUserId, totalNameCost, 'whatsapp', 'WhatsApp Customer Flow - Name Parsing');
+                                            await deductCreditsByCost(supabaseAdmin, billingUserId, totalNameCost, 'whatsapp', 'WhatsApp Customer Flow - Name Parsing');
                                         } catch (geminiErr) {
                                             console.error("[Flow] Gemini name parsing failed, fallback to raw name:", geminiErr);
                                             // Fallback billing for webhook processing
-                                            await deductCreditsByCost(supabaseAdmin, ownerUserId, 0.05, 'whatsapp', 'WhatsApp Customer Flow - Name Parsing (Fallback)');
+                                            await deductCreditsByCost(supabaseAdmin, billingUserId, 0.05, 'whatsapp', 'WhatsApp Customer Flow - Name Parsing (Fallback)');
                                         }
 
                                         // Save the name
@@ -881,7 +905,7 @@ Clean Name:`;
                                                 .eq('id', chat.id);
 
                                             const firstQ = ownerQualifyingQuestions[0];
-                                            await sendWAMessage(`Thank you, ${providedName}! 🙏\n\n${firstQ}`);
+                                            await sendWAMessage(`Thank you, ${parsedName}! 🙏\n\n${firstQ}`);
                                         } else if (selectedFlow && selectedFlow.questions && selectedFlow.questions.length > 0) {
                                             // Start the flow — send first question
                                             await supabaseAdmin
@@ -895,7 +919,7 @@ Clean Name:`;
                                                 .eq('id', chat.id);
 
                                             const firstQ = selectedFlow.questions[0];
-                                            await sendWAMessage(`Thank you, ${providedName}! 🙏\n\n${firstQ.question}`);
+                                            await sendWAMessage(`Thank you, ${parsedName}! 🙏\n\n${firstQ.question}`);
                                         } else {
                                             // No qualification flow — just greet and create lead immediately
                                             await supabaseAdmin
@@ -908,15 +932,15 @@ Clean Name:`;
                                                 .from('leads')
                                                 .insert({
                                                     user_id: ownerUserId,
-                                                    name: providedName,
+                                                    name: parsedName,
                                                     phone: cleanFrom,
                                                     source: 'WhatsApp',
                                                     pipeline_stage: 'New',
                                                     campaign_id: campaignSourceId,
                                                     created_at: new Date().toISOString()
-                                                })
-                                                .select('id')
-                                                .single();
+                                                 })
+                                                 .select('id')
+                                                 .single();
 
                                             if (newLead) {
                                                 await supabaseAdmin
@@ -926,16 +950,23 @@ Clean Name:`;
 
                                                 // Trigger welcome drip
                                                 try {
-                                                    await triggerWelcomeDrip(supabaseAdmin, newLead.id, providedName, cleanFrom, ownerUserId!, 'All');
+                                                    await triggerWelcomeDrip(supabaseAdmin, newLead.id, parsedName, cleanFrom, ownerUserId!, 'All');
                                                 } catch (dripErr) {
-                                                    console.error('[Flow] Welcome drip trigger failed:', dripErr);
+                                                     console.error('[Flow] Welcome drip trigger failed:', dripErr);
+                                                }
+
+                                                // Trigger automated Voice Dialing if enabled
+                                                if (ownerAutoCallNewLeads) {
+                                                    triggerOutboundCall(supabaseAdmin, newLead.id, ownerUserId!, true).catch(err => {
+                                                        console.error('[AUTO CALL] Auto voice call trigger failed:', err);
+                                                    });
                                                 }
                                             }
 
-                                            await sendWAMessage(`Thank you, ${providedName}! 🙏 We've received your message. Our team will get back to you shortly.`);
+                                            await sendWAMessage(`Thank you, ${parsedName}! 🙏 We've received your message. Our team will get back to you shortly.`);
 
                                             try {
-                                                await sendPushNotification(ownerUserId!, `New WhatsApp Lead: ${providedName}`, `Phone: ${cleanFrom}`);
+                                                await sendPushNotification(ownerUserId!, `New WhatsApp Lead: ${parsedName}`, `Phone: ${cleanFrom}`);
                                             } catch (pushErr) {}
                                         }
                                         return;
@@ -1018,6 +1049,12 @@ Clean Name:`;
                                                     await triggerWelcomeDrip(supabaseAdmin, newLead.id, leadName, cleanFrom, ownerUserId!, 'All');
                                                 } catch (dripErr) {
                                                     console.error('[Flow] Welcome drip trigger failed:', dripErr);
+                                                }
+
+                                                if (ownerAutoCallNewLeads) {
+                                                    triggerOutboundCall(supabaseAdmin, newLead.id, ownerUserId!, true).catch(err => {
+                                                        console.error('[AUTO CALL] Auto voice call trigger failed:', err);
+                                                    });
                                                 }
                                             }
                                         }
@@ -1118,6 +1155,12 @@ Clean Name:`;
                                                 } catch (dripErr) {
                                                     console.error('[Flow] Welcome drip trigger failed:', dripErr);
                                                 }
+
+                                                if (ownerAutoCallNewLeads) {
+                                                    triggerOutboundCall(supabaseAdmin, newLead.id, ownerUserId!, true).catch(err => {
+                                                        console.error('[AUTO CALL] Auto voice call trigger failed:', err);
+                                                    });
+                                                }
                                             }
                                         }
                                         return;
@@ -1137,8 +1180,8 @@ Clean Name:`;
                                         // 2. Properties/listings
                                         supabaseAdmin
                                             .from('properties')
-                                            .select('title, price, address, property_type, description, configurations')
-                                            .eq('user_id', ownerUserId),
+                                            .select('id, title, price, address, property_type, description, configurations')
+                                            .eq('user_id', inventoryOwnerId),
                                         // 3. Voice call history (lead_history for matched leads)
                                         (async () => {
                                             try {
@@ -1177,6 +1220,7 @@ Clean Name:`;
                                         propertiesText = propertiesResult.data
                                             .map((p: any) => {
                                                 return `<property>
+  <id>${p.id}</id>
   <title>${p.title || 'N/A'}</title>
   <type>${p.property_type || 'N/A'}</type>
   <price>${p.price || 'N/A'}</price>
@@ -1238,6 +1282,7 @@ Guidelines:
 6. If the user explicitly proposes, confirms, or agrees to a meeting time/day (e.g., "book for tomorrow at 2 pm", "yes 5 pm works", "sure let's talk at 3 tomorrow"), extract that timestamp as an ISO-8601 string. Otherwise, set it to null.
 7. The user's name is "${customerName}". Address them by name ONLY if this is the start of the conversation (i.e. first 1-2 messages in history). For subsequent replies, do NOT repeat greetings like "Hi [Name]" or "Hello [Name]" at the beginning of every message.
 8. If the user explicitly asks to be called after 7 PM, suggests a late call, or says it is okay to call them at night or at any time in general, set "allow_after_hours" to true. Otherwise, default it to false.
+9. If the user asks for details or information about a particular product/property in the active inventory (either explicitly by name or by referencing listings details), identify it and set the "send_product_id" in the output JSON to the exact UUID value of that property's <id>. Otherwise set it to null.
 
 Recent WhatsApp Chat History:
 ${chatHistory}
@@ -1253,7 +1298,8 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
   "booking_time": "ISO-8601 string of agreed meeting slot or null",
   "trigger_call": true/false,
   "allow_after_hours": true/false,
-  "flag_unanswered_question": "raw question text if unanswered, otherwise null"
+  "flag_unanswered_question": "raw question text if unanswered, otherwise null",
+  "send_product_id": "UUID string of requested product/property from active inventory if customer asked for details of a particular one, otherwise null"
 }
 `;
 
@@ -1262,6 +1308,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                     let triggerCallRequested = false;
                                     let extractedAllowAfterHours = false;
                                     let unansweredQuestionToFlag: string | null = null;
+                                    let extractedProductId: string | null = null;
 
                                     let assistantUsage = { promptTokens: 0, completionTokens: 0, modelName: 'gemini-3.5-flash' };
                                     try {
@@ -1273,21 +1320,99 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                         triggerCallRequested = !!parsed.trigger_call;
                                         extractedAllowAfterHours = !!parsed.allow_after_hours;
                                         unansweredQuestionToFlag = parsed.flag_unanswered_question || null;
+                                        extractedProductId = parsed.send_product_id || null;
                                         assistantUsage = aiRes;
-                                        console.log('[WhatsApp AI Assistant] Gemini parsed response:', { replyText, extractedBookingTime, triggerCallRequested, extractedAllowAfterHours, unansweredQuestionToFlag });
+                                        console.log('[WhatsApp AI Assistant] Gemini parsed response:', { replyText, extractedBookingTime, triggerCallRequested, extractedAllowAfterHours, unansweredQuestionToFlag, extractedProductId });
                                         
                                         // Dynamic billing for customer AI reply
                                         const aiTokensCost = calculateLLMCost(assistantUsage.modelName, assistantUsage.promptTokens, assistantUsage.completionTokens);
                                         const totalAiCost = 0.05 + aiTokensCost;
-                                        await deductCreditsByCost(supabaseAdmin, ownerUserId, totalAiCost, 'whatsapp', 'WhatsApp Customer AI Assistant response');
+                                        await deductCreditsByCost(supabaseAdmin, billingUserId, totalAiCost, 'whatsapp', 'WhatsApp Customer AI Assistant response');
                                     } catch (geminiErr) {
                                         console.error('[WhatsApp AI Assistant] Gemini generation/parsing failed:', geminiErr);
                                         // Fallback billing for webhook processing
-                                        await deductCreditsByCost(supabaseAdmin, ownerUserId, 0.05, 'whatsapp', 'WhatsApp Customer AI Assistant response (Fallback)');
+                                        await deductCreditsByCost(supabaseAdmin, billingUserId, 0.05, 'whatsapp', 'WhatsApp Customer AI Assistant response (Fallback)');
                                     }
 
                                     // 4. Send the reply via WhatsApp
                                     await sendWAMessage(replyText);
+
+                                    // If a specific product was requested, send the product card as a follow-up
+                                    if (extractedProductId) {
+                                        try {
+                                            const { data: prop } = await supabaseAdmin
+                                                .from('properties')
+                                                .select('id, title, price, description, image_url, images')
+                                                .eq('id', extractedProductId)
+                                                .maybeSingle();
+
+                                            if (prop) {
+                                                const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
+                                                
+                                                // Fetch custom domain of the inventory owner
+                                                const { data: invProfile } = await supabaseAdmin
+                                                    .from('profiles')
+                                                    .select('custom_domain')
+                                                    .eq('id', inventoryOwnerId)
+                                                    .maybeSingle();
+
+                                                const productUrl = invProfile?.custom_domain 
+                                                    ? `https://${invProfile.custom_domain}?property=${prop.id}` 
+                                                    : `${appUrl}/shared/${inventoryOwnerId}?property=${prop.id}`;
+
+                                                const lines = [];
+                                                if (prop.title) lines.push(`🏷️ *${prop.title}*`);
+                                                if (prop.description) {
+                                                    const shortDesc = prop.description.length > 500 
+                                                        ? prop.description.substring(0, 500) + '...' 
+                                                        : prop.description;
+                                                    lines.push(`\n${shortDesc}`);
+                                                }
+                                                lines.push(`\n🌐 View Details & Photos: ${productUrl}`);
+                                                const productText = lines.join('\n');
+
+                                                const imageUrl = prop.image_url || (prop.images && prop.images.length > 0 ? prop.images[0] : null);
+
+                                                // Send the follow-up message
+                                                if (imageUrl) {
+                                                    const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
+                                                    const imgRes = await fetch(metaUrl, {
+                                                        method: 'POST',
+                                                        headers: {
+                                                            'Authorization': `Bearer ${ownerWaToken}`,
+                                                            'Content-Type': 'application/json'
+                                                        },
+                                                        body: JSON.stringify({
+                                                            messaging_product: 'whatsapp',
+                                                            recipient_type: 'individual',
+                                                            to: cleanFrom,
+                                                            type: 'image',
+                                                            image: {
+                                                                link: imageUrl,
+                                                                caption: productText
+                                                            }
+                                                        })
+                                                    });
+                                                    if (imgRes.ok) {
+                                                        await supabaseAdmin
+                                                            .from('whatsapp_messages')
+                                                            .insert({
+                                                                chat_id: chat.id,
+                                                                direction: 'outbound',
+                                                                message_text: `[Image Product Card] ${productText}`
+                                                            });
+                                                    } else {
+                                                        // Fallback: send as text if image fails
+                                                        await sendWAMessage(productText);
+                                                    }
+                                                } else {
+                                                    await sendWAMessage(productText);
+                                                }
+                                            }
+                                        } catch (prodErr) {
+                                            console.error('[WhatsApp AI Assistant] Failed to send product follow-up:', prodErr);
+                                        }
+                                    }
 
                                     // 5. Post-reply operations: update notes, log history, push notification — fire-and-forget for speed
                                     const postReplyLeadId = chat.lead_id;

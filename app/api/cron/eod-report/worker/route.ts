@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendDailyEodReportEmail } from '@/utils/email-helper'
+import { deductCredits } from '@/utils/credits'
 
 // Force dynamic execution to bypass Vercel static build cache
 export const dynamic = 'force-dynamic'
@@ -265,6 +266,15 @@ export async function POST(request: Request) {
     const emailResult = await sendDailyEodReportEmail(profile.email, businessName, emailHtml)
     
     console.log(`[EOD Report Worker] EOD email status for ${profile.email}: success=${emailResult.success}`)
+    
+    if (emailResult.success) {
+      try {
+        await deductCredits(supabaseAdmin, profileId, 10, 'ai_generation', 'Daily EOD Operations Report Email')
+      } catch (creditErr) {
+        console.error(`[EOD Report Worker] Failed to deduct credits for EOD report:`, creditErr)
+      }
+    }
+
     return NextResponse.json({ success: emailResult.success })
   } catch (error: any) {
     console.error('[EOD Report Worker] Execution failed:', error)
