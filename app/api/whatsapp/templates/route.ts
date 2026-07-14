@@ -14,21 +14,39 @@ const FALLBACK_TEMPLATES = [
     }
 ]
 
-export async function GET() {
+export async function GET(req: Request) {
     try {
         const supabase = await createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+        const url = new URL(req.url)
+        const impersonateId = url.searchParams.get('impersonate')
+
+        // Resolve effective user ID (support impersonation for super_admin/agency)
+        let effectiveUserId = user.id
+        if (impersonateId && impersonateId !== user.id) {
+            const { data: authProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single()
+            const authRole = authProfile?.role?.toLowerCase() || ''
+            if (['super_admin', 'agency', 'admin'].includes(authRole)) {
+                effectiveUserId = impersonateId
+            }
+        }
+
         // Fetch WhatsApp credentials
         const { data: profile } = await supabase
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_waba_id, facebook_token')
-            .eq('id', user.id)
+            .select('whatsapp_access_token, whatsapp_waba_id, facebook_token, email')
+            .eq('id', effectiveUserId)
             .single()
 
-        const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
-        const whatsappWabaId = profile?.whatsapp_waba_id || process.env.DEV_WHATSAPP_WABA_ID
+        const isMasterDefaultUser = profile?.email === 'rchopra489@gmail.com' || profile?.email === 'infobluesquareinfra@gmail.com'
+        const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_ACCESS_TOKEN : null)
+        const whatsappWabaId = profile?.whatsapp_waba_id || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_WABA_ID : null)
 
         if (!whatsappToken || !whatsappWabaId) {
             // No credentials = return standard templates so setup wizard works
@@ -106,12 +124,13 @@ export async function POST(req: Request) {
         // Fetch credentials
         const { data: profile } = await supabase
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_waba_id, facebook_token')
+            .select('whatsapp_access_token, whatsapp_waba_id, facebook_token, email')
             .eq('id', user.id)
             .single()
 
-        const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
-        const whatsappWabaId = profile?.whatsapp_waba_id || process.env.DEV_WHATSAPP_WABA_ID
+        const isMasterDefaultUser = profile?.email === 'rchopra489@gmail.com' || profile?.email === 'infobluesquareinfra@gmail.com'
+        const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_ACCESS_TOKEN : null)
+        const whatsappWabaId = profile?.whatsapp_waba_id || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_WABA_ID : null)
 
         if (!whatsappToken || !whatsappWabaId) {
             return NextResponse.json({ 

@@ -21,7 +21,7 @@ export default function TermsAndConditions() {
           <section>
             <h2 className="text-xl font-bold text-white mb-4">1. Definitions</h2>
             <ul className="list-disc pl-5 space-y-2">
-              <li><strong>"Company," "We," "Us," or "Our"</strong> refers to RAHUL CHOPRA.</li>
+              <li><strong>"Company," "We," "Us," or "Our"</strong> refers to Nobogent AI Solutions LLP.</li>
               <li><strong>"Service"</strong> refers to the NobogentAI application and website which provides marketing automation, image branding, and ad management for real estate professionals.</li>
               <li><strong>"User," "You"</strong> refers to the individual or entity accessing the Service.</li>
               <li><strong>"Platform"</strong> refers to third-party social media sites, specifically Facebook and Instagram (Meta Platforms, Inc.).</li>
@@ -70,13 +70,13 @@ export default function TermsAndConditions() {
             <h2 className="text-xl font-bold text-white mb-4">6. Intellectual Property</h2>
             <ul className="list-disc pl-5 space-y-2">
               <li><strong>Your Content:</strong> You retain ownership of the photos, logos, and branding assets you upload. By uploading them, you grant us a license to process and display them to provide the Service.</li>
-              <li><strong>Our Content:</strong> The NobogentAI code, design, templates, and algorithms are the intellectual property of RAHUL CHOPRA and are protected by copyright laws.</li>
+              <li><strong>Our Content:</strong> The NobogentAI code, design, templates, and algorithms are the intellectual property of Nobogent AI Solutions LLP and are protected by copyright laws.</li>
             </ul>
           </section>
 
           <section>
             <h2 className="text-xl font-bold text-white mb-4">7. Limitation of Liability</h2>
-            <p className="mb-2">To the maximum extent permitted by applicable law, RAHUL CHOPRA shall not be liable for:</p>
+            <p className="mb-2">To the maximum extent permitted by applicable law, Nobogent AI Solutions LLP shall not be liable for:</p>
             <ul className="list-disc pl-5 space-y-2">
               <li>Any indirect, incidental, or consequential damages (including loss of profits or data).</li>
               <li>Any loss of ad budget due to improperly configured campaigns or Facebook errors.</li>

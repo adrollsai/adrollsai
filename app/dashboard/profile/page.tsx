@@ -290,7 +290,8 @@ export default function ProfilePage() {
 
   // --- STATE ---
   const [loading, setLoading] = useState(true)
-  const [activeSection, setActiveSection] = useState<'main' | 'whatsapp' | 'voice' | 'calendar' | 'flagged'>('main')
+  const [activeSection, setActiveSection] = useState<'main' | 'whatsapp' | 'voice' | 'calendar' | 'flagged' | 'legal'>('main')
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [targetUserId, setTargetUserId] = useState<string | null>(null)
@@ -379,7 +380,8 @@ export default function ProfilePage() {
     customPrompt: '',
     currency: 'INR',
     industry: '',
-    whatsappPersonalNumber: ''
+    whatsappPersonalNumber: '',
+    email: ''
   })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -658,6 +660,7 @@ export default function ProfilePage() {
         setRole(profileData.role as any || 'admin')
         setCredits(profileData.credits || 0)
         setSelectedTextLlm(profileData.selected_text_llm || 'gemini')
+        setAcceptedTerms(profileData.accepted_terms || false)
 
         setDomainData({
           domain: profileData.custom_domain || '',
@@ -688,7 +691,8 @@ export default function ProfilePage() {
           customPrompt: profileData.custom_prompt || '',
           currency: profileData.currency || 'INR',
           industry: profileData.industry || '',
-          whatsappPersonalNumber: profileData.whatsapp_personal_number || ''
+          whatsappPersonalNumber: profileData.whatsapp_personal_number || '',
+          email: profileData.email || ''
         })
 
         if (profileData.facebook_token && isValidFacebookToken(profileData.facebook_token)) {
@@ -1343,7 +1347,7 @@ export default function ProfilePage() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
 
         <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-8 ml-1">
-          {activeSection === 'whatsapp' ? 'WhatsApp Automation' : activeSection === 'voice' ? 'Voice Agent' : activeSection === 'calendar' ? 'Calendar Settings' : activeSection === 'flagged' ? 'Flagged Questions' : 'Workspace Settings'}
+          {activeSection === 'whatsapp' ? 'WhatsApp Automation' : activeSection === 'voice' ? 'Voice Agent' : activeSection === 'calendar' ? 'Calendar Settings' : activeSection === 'flagged' ? 'Flagged Questions' : activeSection === 'legal' ? 'Terms & Privacy Compliance' : 'Workspace Settings'}
         </h1>
 
         {activeSection === 'whatsapp' ? (
@@ -1512,6 +1516,77 @@ export default function ProfilePage() {
               {isSavingGoogleSettings ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
               {isSavingGoogleSettings ? 'Saving...' : 'Save Calendar Settings'}
             </button>
+          </div>
+        ) : activeSection === 'legal' ? (
+          <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200/60 max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="bg-red-100 text-red-600 p-3 rounded-2xl">
+                  <Shield size={22} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Legal Agreements</h2>
+                  <p className="text-xs text-slate-500 font-medium">Review and agree to the latest compliance agreements.</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setActiveSection('main')}
+                className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest px-2"
+              >
+                Back
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+                <h3 className="font-bold text-sm text-slate-800">Compliance & Privacy Consent</h3>
+                <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                  By accepting these terms, you acknowledge and agree that Nobogent AI relies on third-party services (Meta, Twilio, and ElevenLabs). Any ad campaign spend will be billed directly to you by Meta Platforms, and virtual phone number calls are subject to standard telecom compliance guidelines. Please review our full policies for details.
+                </p>
+                <div className="flex gap-4 text-xs font-bold text-blue-600">
+                  <a href="/terms-and-conditions" target="_blank" className="hover:underline">Terms & Conditions</a>
+                  <span>•</span>
+                  <a href="/privacy-policy" target="_blank" className="hover:underline">Privacy Policy</a>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                <div className="pr-4">
+                  <h4 className="font-bold text-sm text-slate-800">I Accept the Agreements</h4>
+                  <p className="text-xs text-slate-500 mt-1 max-w-xs font-medium">I accept the Terms & Conditions and Privacy Policy for using Nobogent AI.</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input 
+                    type="checkbox" 
+                    checked={acceptedTerms} 
+                    onChange={async (e) => {
+                      const val = e.target.checked;
+                      setAcceptedTerms(val);
+                      try {
+                        const effectiveUserId = targetUserId || userId;
+                        const res = await fetch('/api/profile/update', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            targetUserId: effectiveUserId,
+                            updates: { accepted_terms: val }
+                          })
+                        });
+                        const resData = await res.json();
+                        if (resData.error) throw new Error(resData.error);
+                        
+                        updateLocalCache({ accepted_terms: val });
+                        toast.success("Legal agreement preference updated!");
+                      } catch (err: any) {
+                        toast.error("Failed to update agreement: " + err.message);
+                      }
+                    }}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+            </div>
           </div>
         ) : activeSection === 'flagged' ? (
           <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200/60 max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -1684,7 +1759,7 @@ export default function ProfilePage() {
                 <div>
                   <span className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest block">Nobo Credits Balance</span>
                   <h3 className="text-2xl font-black tracking-tight mt-0.5">
-                    {(formData.businessName?.toLowerCase().includes('bluesquare') || formData.businessName?.toLowerCase().includes('blue square') || role === 'super_admin' || authRole === 'super_admin') ? '∞' : `${credits.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Credits`}
+                    {(['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'].includes(formData.email)) ? '∞' : `${credits.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Credits`}
                   </h3>
                 </div>
               </div>
@@ -2614,22 +2689,6 @@ export default function ProfilePage() {
                   </button>
                 )}
 
-                {/* Ads Launcher - Only for non-agents */}
-                {authRole !== 'agent' && (
-                  <button 
-                    onClick={() => router.push(`/dashboard/ads${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
-                    className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="bg-blue-50 text-blue-600 p-3 rounded-2xl">
-                        <Zap size={20} />
-                      </div>
-                      <span className="font-bold text-sm text-slate-900">Ads campaigns</span>
-                    </div>
-                    <ChevronRight size={20} className="text-slate-400" />
-                  </button>
-                )}
-
                 {/* Accounts Management - Only for Super Admin / Agency */}
                 {['super_admin', 'agency'].includes(authRole || role) && (
                   <button 
@@ -2710,6 +2769,24 @@ export default function ProfilePage() {
                       <Calendar size={20} />
                     </div>
                     <span className="font-bold text-sm text-slate-900">Calendar & Booking Settings</span>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400" />
+                </button>
+
+                <button 
+                  onClick={() => setActiveSection('legal')} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-blue-50 text-blue-600 p-3 rounded-2xl relative">
+                      <Shield size={20} />
+                      {!acceptedTerms && (
+                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-bold">
+                          !
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-bold text-sm text-slate-900">Terms & Conditions Compliance</span>
                   </div>
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>

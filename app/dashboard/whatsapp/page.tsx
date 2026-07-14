@@ -44,6 +44,20 @@ type Message = {
 export default function AutomationPage() {
   const supabase = createClient()
   
+  // Get impersonate ID from URL for super-admin sub-account viewing
+  const getImpersonateId = () => {
+    if (typeof window === 'undefined') return null
+    return new URLSearchParams(window.location.search).get('impersonate')
+  }
+  const buildApiUrl = (base: string, extraParams?: Record<string, string>) => {
+    const impersonateId = getImpersonateId()
+    const params = new URLSearchParams()
+    if (impersonateId) params.set('impersonate', impersonateId)
+    if (extraParams) Object.entries(extraParams).forEach(([k, v]) => params.set(k, v))
+    const qs = params.toString()
+    return qs ? `${base}?${qs}` : base
+  }
+  
   // Live Chat Inbox states (Cached in localStorage)
   const [chats, setChats] = useState<Chat[]>(() => {
     if (typeof window !== 'undefined') {
@@ -122,7 +136,17 @@ export default function AutomationPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+        const urlParams = new URLSearchParams(window.location.search)
+        const impersonateId = urlParams.get('impersonate')
+
+        let targetId = user.id
+        const { data: authProfile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+        const isAuthAdmin = ['super_admin', 'agency', 'admin'].includes(authProfile?.role || '')
+        if (impersonateId && isAuthAdmin) {
+          targetId = impersonateId
+        }
+
+        const { data: prof } = await supabase.from('profiles').select('*').eq('id', targetId).single()
         if (prof) {
           setProfile(prof)
           const adminRoles = ['super_admin', 'agency', 'admin']
@@ -133,7 +157,7 @@ export default function AutomationPage() {
           if (isUserAdmin) {
             setLoadingBilling(true)
             try {
-              const res = await fetch('/api/whatsapp/status')
+              const res = await fetch(`/api/whatsapp/status${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
               if (res.ok) {
                 const billData = await res.json()
                 setBillingStatus(billData)
@@ -270,7 +294,7 @@ export default function AutomationPage() {
   const fetchChats = async () => {
     setLoadingChats(true)
     try {
-      const res = await fetch('/api/whatsapp/chat')
+      const res = await fetch(buildApiUrl('/api/whatsapp/chat'))
       const data = await res.json()
       if (data.success) {
         setChats(data.chats || [])
@@ -284,7 +308,7 @@ export default function AutomationPage() {
   const fetchTemplates = async () => {
     setLoadingTemplates(true)
     try {
-      const res = await fetch('/api/whatsapp/templates')
+      const res = await fetch(buildApiUrl('/api/whatsapp/templates'))
       const data = await res.json()
       if (data.success) {
         setTemplates(data.templates || [])
@@ -299,7 +323,7 @@ export default function AutomationPage() {
   const fetchProperties = async () => {
     setLoadingProperties(true)
     try {
-      const res = await fetch('/api/whatsapp/send-products')
+      const res = await fetch(buildApiUrl('/api/whatsapp/send-products'))
       const data = await res.json()
       if (data.success) {
         setProperties(data.properties || [])
@@ -317,7 +341,7 @@ export default function AutomationPage() {
   const fetchMessages = async (chatId: string) => {
     setLoadingMessages(true)
     try {
-      const res = await fetch(`/api/whatsapp/chat?chatId=${chatId}`)
+      const res = await fetch(buildApiUrl('/api/whatsapp/chat', { chatId }))
       const data = await res.json()
       if (data.success) {
         setMessages(data.messages || [])
@@ -386,7 +410,7 @@ export default function AutomationPage() {
     if (!selectedChatId || !newMessageText.trim() || sendingMessage) return
     setSendingMessage(true)
     try {
-      const res = await fetch('/api/whatsapp/chat', {
+      const res = await fetch(buildApiUrl('/api/whatsapp/chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId: selectedChatId, messageText: newMessageText })
@@ -432,7 +456,7 @@ export default function AutomationPage() {
     }
 
     try {
-      const res = await fetch('/api/whatsapp/chat', {
+      const res = await fetch(buildApiUrl('/api/whatsapp/chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -460,7 +484,7 @@ export default function AutomationPage() {
     if (!selectedChatId || !selectedPropertyId || sendingProducts) return
     setSendingProducts(true)
     try {
-      const res = await fetch('/api/whatsapp/send-products', {
+      const res = await fetch(buildApiUrl('/api/whatsapp/send-products'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId: selectedChatId, propertyId: selectedPropertyId })

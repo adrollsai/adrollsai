@@ -1,22 +1,47 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 
+function isRealPublicImageUrl(url: string | null | undefined): boolean {
+    if (!url) return false;
+    const lower = url.toLowerCase();
+    if (lower.includes('placehold.co') || lower.includes('placeholder') || lower.includes('via.placeholder')) {
+        return false;
+    }
+    return url.startsWith('http://') || url.startsWith('https://');
+}
+
 export async function GET(req: Request) {
     try {
         const supabase = await createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-        // Resolve the owner user ID (for agents, use parent's credentials and inventory)
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('role, parent_id, agency_id')
-            .eq('id', user.id)
-            .single()
+        const url = new URL(req.url)
+        const impersonateId = url.searchParams.get('impersonate')
 
-        const role = profile?.role?.toLowerCase() || 'admin'
-        const parentId = profile?.parent_id || profile?.agency_id
-        const ownerUserId = (role === 'agent' && parentId) ? parentId : user.id
+        // Resolve the owner user ID (for agents, use parent's credentials and inventory; for impersonation, use impersonated user)
+        let ownerUserId = user.id
+        if (impersonateId && impersonateId !== user.id) {
+            const { data: authProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single()
+            const authRole = authProfile?.role?.toLowerCase() || ''
+            if (['super_admin', 'agency', 'admin'].includes(authRole)) {
+                ownerUserId = impersonateId
+            }
+        } else {
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('role, parent_id, agency_id')
+                .eq('id', user.id)
+                .single()
+
+            const role = profile?.role?.toLowerCase() || 'admin'
+            const parentId = profile?.parent_id || profile?.agency_id
+            ownerUserId = (role === 'agent' && parentId) ? parentId : user.id
+        }
 
         // Fetch properties for the owner
         const { data: properties, error: propErr } = await supabase
@@ -71,12 +96,13 @@ export async function POST(req: Request) {
         // Fetch WABA credentials from the owner profile
         const { data: ownerProfile } = await supabase
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, custom_domain')
+            .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, custom_domain, email')
             .eq('id', ownerUserId)
             .single()
 
-        const whatsappToken = ownerProfile?.whatsapp_access_token || ownerProfile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
-        const whatsappPhoneId = ownerProfile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID
+        const isMasterDefaultUser = ownerProfile?.email === 'rchopra489@gmail.com' || ownerProfile?.email === 'infobluesquareinfra@gmail.com'
+        const whatsappToken = ownerProfile?.whatsapp_access_token || ownerProfile?.facebook_token || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_ACCESS_TOKEN : null)
+        const whatsappPhoneId = ownerProfile?.whatsapp_phone_number_id || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_PHONE_ID : null)
 
         if (!whatsappToken || !whatsappPhoneId) {
             return NextResponse.json({ error: 'WhatsApp integration not configured.' }, { status: 400 })
@@ -100,7 +126,7 @@ export async function POST(req: Request) {
         let errorCount = 0
 
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
-        const productUrl = ownerProfile?.custom_domain 
+        let productUrl = ownerProfile?.custom_domain 
             ? `https://${ownerProfile.custom_domain}?property=${prop.id}` 
             : `${appUrl}/shared/${ownerUserId}?property=${prop.id}`
 
@@ -122,7 +148,7 @@ export async function POST(req: Request) {
         const imageUrl = prop.image_url || (prop.images && prop.images.length > 0 ? prop.images[0] : null)
 
         // If we have an image, send as image message with caption
-        if (imageUrl) {
+        if (imageUrl && isRealPublicImageUrl(imageUrl)) {
             const imagePayload = {
                 messaging_product: 'whatsapp',
                 recipient_type: 'individual',
@@ -146,7 +172,6 @@ export async function POST(req: Request) {
             const imgData = await imgRes.json()
             if (!imgRes.ok) {
                 console.error(`[SEND PRODUCTS] Failed to send image for ${prop.title}:`, imgData)
-                errorCount++
                 // Fallback: send as text only
                 const textPayload = {
                     messaging_product: 'whatsapp',
@@ -164,11 +189,17 @@ export async function POST(req: Request) {
                     body: JSON.stringify(textPayload)
                 })
                 if (!fallbackRes.ok) {
-                    errorCount++
+                    const fallbackData = await fallbackRes.json()
+                    console.error(`[SEND PRODUCTS] Fallback text failed too:`, fallbackData)
+                    errorCount = 2
+                } else {
+                    errorCount = 0
                 }
+            } else {
+                errorCount = 0
             }
         } else {
-            // No image — send as text
+            // No image or image is a placeholder — send as text
             const textPayload = {
                 messaging_product: 'whatsapp',
                 recipient_type: 'individual',
@@ -190,7 +221,13 @@ export async function POST(req: Request) {
                 const textData = await textRes.json()
                 console.error(`[SEND PRODUCTS] Failed to send text for ${prop.title}:`, textData)
                 errorCount++
+            } else {
+                errorCount = 0
             }
+        }
+
+        if (errorCount > 0) {
+            return NextResponse.json({ error: 'WhatsApp service failed to deliver message. Please check logs and WABA connection status.' }, { status: 500 })
         }
 
         // Log to whatsapp_messages

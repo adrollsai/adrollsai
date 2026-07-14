@@ -42,14 +42,14 @@ export async function hasEnoughCredits(
     const primaryUserId = await getPrimaryUserId(supabaseAdmin, userId)
     const { data: profile, error } = await supabaseAdmin
       .from('profiles')
-      .select('credits, business_name, role, subscription_status')
+      .select('credits, business_name, role, subscription_status, email')
       .eq('id', primaryUserId)
       .single()
 
     if (error || !profile) return false
 
-    // Unlimited bypass check (bluesquare infra / super_admin)
-    const isUnlimited = (profile.business_name?.toLowerCase().includes('bluesquare') || profile.business_name?.toLowerCase().includes('blue square')) || (profile.role?.toLowerCase() === 'super_admin')
+    // Unlimited bypass check (rchopra489, infobluesquare, khushiram)
+    const isUnlimited = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'].includes(profile.email || '')
     if (isUnlimited) return true
 
     // Check if base subscription plan is active
@@ -85,7 +85,7 @@ export async function deductCredits(
     // 1. Fetch current credits
     const { data: profile, error: fetchErr } = await supabaseAdmin
       .from('profiles')
-      .select('credits, business_name, role')
+      .select('credits, business_name, role, email')
       .eq('id', primaryUserId)
       .single()
 
@@ -95,7 +95,7 @@ export async function deductCredits(
     }
 
     const currentCredits = profile.credits || 0
-    const isUnlimited = (profile.business_name?.toLowerCase().includes('bluesquare') || profile.business_name?.toLowerCase().includes('blue square')) || (profile.role?.toLowerCase() === 'super_admin')
+    const isUnlimited = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'].includes(profile.email || '')
 
     if (!isUnlimited && currentCredits < amount) {
       console.warn(`[CREDITS HELPER] Overdraft prevented. User ${primaryUserId} has ${currentCredits} credits; trying to deduct ${amount}.`)

@@ -19,6 +19,7 @@ export default function LoginPage() {
   const [successMessage, setSuccessMessage] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [agreed, setAgreed] = useState(false)
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,7 +29,7 @@ export default function LoginPage() {
 
     try {
       if (mode === 'signup') {
-        const { error } = await supabase.auth.signUp({
+        const { data: signUpData, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -36,6 +37,14 @@ export default function LoginPage() {
           },
         })
         if (error) throw error
+        
+        if (signUpData?.user) {
+          await supabase
+            .from('profiles')
+            .update({ accepted_terms: true })
+            .eq('id', signUpData.user.id)
+        }
+        
         setSuccessMessage('Account created! Please check your email to verify your account.')
         toast.success("Verification email sent!")
         
@@ -185,11 +194,27 @@ export default function LoginPage() {
                         </div>
                     )}
 
+                    {/* Legal Agreement Checkbox for Sign Up */}
+                    {mode === 'signup' && (
+                        <label className="flex items-start gap-3 mt-4 text-xs text-slate-500 cursor-pointer select-none animate-in fade-in slide-in-from-top-2 duration-300">
+                            <input 
+                                type="checkbox" 
+                                required
+                                checked={agreed}
+                                onChange={(e) => setAgreed(e.target.checked)}
+                                className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                            />
+                            <span className="font-semibold leading-relaxed text-slate-600">
+                                I agree to the <a href="/terms-and-conditions" target="_blank" className="text-blue-600 font-bold hover:underline">Terms & Conditions</a> and <a href="/privacy-policy" target="_blank" className="text-blue-600 font-bold hover:underline">Privacy Policy</a>.
+                            </span>
+                        </label>
+                    )}
+
                     {/* Submit Button */}
                     <button 
                         type="submit" 
-                        disabled={loading || !email || (mode !== 'forgot_password' && !password)}
-                        className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:scale-100 mt-2"
+                        disabled={loading || !email || (mode !== 'forgot_password' && !password) || (mode === 'signup' && !agreed)}
+                        className="w-full bg-slate-950 hover:bg-slate-900 text-white py-4 rounded-[1.5rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:scale-100 mt-2"
                     >
                         {loading ? <Loader2 size={18} className="animate-spin" /> : null}
                         {!loading && mode === 'login' && 'Sign In'}

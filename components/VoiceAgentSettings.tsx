@@ -173,7 +173,9 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       }
 
       // 2. Fetch server SaaS status
-      const res = await fetch('/api/voice/settings')
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      const res = await fetch(`/api/voice/settings${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
       const resData = await res.json()
       if (resData.success) {
         setSaasMode(resData.saasMode)
@@ -193,7 +195,9 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
   const handleProvisionNumber = async () => {
     setProvisioning(true)
     try {
-      const res = await fetch('/api/voice/provision', { method: 'POST' })
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      const res = await fetch(`/api/voice/provision${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { method: 'POST' })
       const data = await res.json()
       if (data.success) {
         toast.success(`Calling number assigned successfully: ${data.phoneNumber}! 🎙️`)

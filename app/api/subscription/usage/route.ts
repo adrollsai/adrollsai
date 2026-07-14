@@ -120,7 +120,7 @@ export async function GET() {
                 }
             },
             credits: primaryProfile.credits || 0,
-            isUnlimited: (primaryProfile.business_name?.toLowerCase().includes('bluesquare') || primaryProfile.business_name?.toLowerCase().includes('blue square')) || (primaryProfile.role?.toLowerCase() === 'super_admin'),
+            isUnlimited: ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'].includes(primaryProfile?.email || ''),
             transactions: [] as any[]
         };
 

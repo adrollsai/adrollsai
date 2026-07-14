@@ -949,18 +949,6 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                     </div>
                   </div>
 
-                  {/* Status / About */}
-                  <div>
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block mb-1 ml-0.5">Status / About Text</label>
-                    <input 
-                      type="text" 
-                      value={waProfile.about} 
-                      onChange={(e) => setWaProfile({ ...waProfile, about: e.target.value })}
-                      placeholder="e.g. Hello! We are available on WhatsApp."
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-900 bg-slate-50/20 font-medium"
-                    />
-                  </div>
-
                   {/* Description */}
                   <div>
                     <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block mb-1 ml-0.5">Business Description</label>

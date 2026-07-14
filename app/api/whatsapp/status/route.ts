@@ -9,10 +9,25 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
+        const url = new URL(request.url)
+        const impersonateId = url.searchParams.get('impersonate')
+
+        let targetId = user.id
+        if (impersonateId) {
+            const { data: authProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single()
+            if (['super_admin', 'agency', 'admin'].includes(authProfile?.role || '')) {
+                targetId = impersonateId
+            }
+        }
+
         const { data: profile } = await supabase
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_waba_id, whatsapp_business_account_id, role')
-            .eq('id', user.id)
+            .select('whatsapp_access_token, whatsapp_waba_id, whatsapp_business_account_id, role, email')
+            .eq('id', targetId)
             .single()
 
         if (!profile) {
@@ -20,7 +35,9 @@ export async function GET(request: Request) {
         }
 
         const wabaId = profile.whatsapp_waba_id || profile.whatsapp_business_account_id
-        const token = profile.whatsapp_access_token
+        
+        const isMasterDefaultUser = profile.email === 'rchopra489@gmail.com' || profile.email === 'infobluesquareinfra@gmail.com'
+        const token = profile.whatsapp_access_token || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_ACCESS_TOKEN : null)
 
         if (!wabaId || !token) {
             return NextResponse.json({ 

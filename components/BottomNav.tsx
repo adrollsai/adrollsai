@@ -67,6 +67,7 @@ export default function BottomNav() {
     { name: 'Inventory', icon: LayoutGrid, path: '/dashboard' },
     // { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
     { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
+    { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
     { name: 'WhatsApp', icon: MessageCircle, path: '/dashboard/whatsapp' },
     ...(showDistribute ? [{ name: 'Distribute', icon: Share2, path: '/dashboard/distribute' }] : []),

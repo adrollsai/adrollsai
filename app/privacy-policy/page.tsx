@@ -4,7 +4,7 @@ import { ArrowLeft } from 'lucide-react'
 
 export default function PrivacyPolicy() {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-300 font-sans selection:bg-amber-500/30 py-12 px-6">
+    <div className="min-h-screen bg-slate-950 text-slate-300 font-sans selection:bg-amber-500/30 py-12 px-6" suppressHydrationWarning>
       <div className="max-w-3xl mx-auto">
         <Link href="/" className="inline-flex items-center gap-2 text-amber-500 hover:text-amber-400 mb-8 transition-colors">
           <ArrowLeft size={16} /> Back to Home
@@ -24,7 +24,7 @@ export default function PrivacyPolicy() {
             
             <h3 className="font-semibold text-white mb-2">A. Information You Provide</h3>
             <ul className="list-disc pl-5 space-y-2 mb-4">
-              <li><strong>Account Information:</strong> Name, email address (info@nobogent.com), and profile picture when you sign up.</li>
+              <li><strong>Account Information:</strong> Name, email address (<a href="mailto:info@nobogent.com" className="text-amber-500 hover:underline">info@nobogent.com</a>), and profile picture when you sign up.</li>
               <li><strong>Business Profile:</strong> Your real estate agent profile details (e.g., phone number, business logo, branding colors).</li>
             </ul>
 
@@ -54,7 +54,13 @@ export default function PrivacyPolicy() {
 
           <section>
             <h2 className="text-xl font-bold text-white mb-4">3. Data Sharing and Disclosure</h2>
-            <p className="mb-2">We do not sell your personal data. We may share data only in the following circumstances:</p>
+            <div className="mb-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4">
+              <p className="text-sm font-bold text-white mb-1">🛡️ NO DATA SALE POLICY</p>
+              <p className="text-xs leading-relaxed text-slate-300">
+                Nobogent AI does not sell, trade, rent, license, or monetize any of your CRM leads, WhatsApp chat data, client contacts, or voice recording inputs to any third parties, advertising brokers, or external entities for any purpose. Your data belongs entirely to you.
+              </p>
+            </div>
+            <p className="mb-2">We may share data only in the following extremely limited circumstances:</p>
             <ul className="list-disc pl-5 space-y-2">
               <li><strong>Service Providers:</strong> We use trusted third-party providers (e.g., Supabase for database hosting, Cloudflare for image storage) to run our infrastructure. These providers are bound by confidentiality agreements.</li>
               <li><strong>Legal Compliance:</strong> If required by law or to protect our rights.</li>

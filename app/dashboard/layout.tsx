@@ -42,6 +42,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
   const supabase = createClient()
   const [isAuthorized, setIsAuthorized] = useState(false)
+  const [acceptedTerms, setAcceptedTerms] = useState(true)
 
   useEffect(() => {
     const enforcePaywall = async () => {
@@ -54,7 +55,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       // Check user's profile
       const { data: userProfile } = await supabase
         .from('profiles')
-        .select('subscription_status, role, parent_id, agency_id, onboarding_completed')
+        .select('subscription_status, role, parent_id, agency_id, onboarding_completed, accepted_terms')
         .eq('id', session.user.id)
         .single()
 
@@ -127,6 +128,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             .update({ role: 'admin' })
             .eq('id', session.user.id);
         }
+
+        // If user logs in but has no role assigned, default to admin to bypass onboarding deadlock
+        if (userProfile && !userProfile.role) {
+          const { data: allUsers } = await supabase.from('profiles').select('id');
+          if (allUsers && allUsers.length === 1) {
+            await supabase
+              .from('profiles')
+              .update({ role: 'admin' })
+              .eq('id', session.user.id);
+          }
+        }
+        setAcceptedTerms(userProfile?.accepted_terms !== false)
         setIsAuthorized(true)
       }
     }
@@ -150,6 +163,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Global Plan and Add-on limit checks */}
         <QuotaManager />
+
+        {!acceptedTerms && pathname !== '/dashboard/profile' && (
+          <div className="bg-red-50 border-b border-red-100 px-4 py-3 text-center flex flex-col sm:flex-row items-center justify-center gap-3 shadow-sm animate-in slide-in-from-top duration-300">
+            <span className="text-xs font-bold text-red-700 flex items-center gap-1.5 justify-center">
+              ⚠️ Action Required: Kindly accept the updated Terms & Conditions and Privacy Policy to keep your account active and in compliance.
+            </span>
+            <button 
+              onClick={() => router.push('/dashboard/profile')}
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded-full text-[10px] font-black tracking-wide transition-all active:scale-95 shadow-sm cursor-pointer whitespace-nowrap"
+            >
+              Review & Accept
+            </button>
+          </div>
+        )}
 
         {children}
 

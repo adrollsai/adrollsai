@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 
 export async function GET(req: Request) {
     try {
@@ -9,10 +10,33 @@ export async function GET(req: Request) {
 
         const url = new URL(req.url)
         const chatId = url.searchParams.get('chatId')
+        const impersonateId = url.searchParams.get('impersonate')
+
+        // Resolve the effective user ID and the appropriate DB client
+        // When impersonating, use service role client to bypass RLS
+        let effectiveUserId = user.id
+        let isImpersonating = false
+        if (impersonateId && impersonateId !== user.id) {
+            const { data: authProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single()
+            const role = authProfile?.role?.toLowerCase() || ''
+            if (['super_admin', 'agency', 'admin'].includes(role)) {
+                effectiveUserId = impersonateId
+                isImpersonating = true
+            }
+        }
+
+        // Use admin client for impersonation to bypass RLS, otherwise use session client
+        const dbClient = isImpersonating
+            ? createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+            : supabase
 
         if (chatId) {
             // Fetch messages for a specific chat
-            const { data: messages, error } = await supabase
+            const { data: messages, error } = await dbClient
                 .from('whatsapp_messages')
                 .select('*')
                 .eq('chat_id', chatId)
@@ -21,7 +45,7 @@ export async function GET(req: Request) {
             if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
             // Clear unread count for this chat
-            await supabase
+            await dbClient
                 .from('whatsapp_chats')
                 .update({ unread_count: 0 })
                 .eq('id', chatId)
@@ -29,10 +53,10 @@ export async function GET(req: Request) {
             return NextResponse.json({ success: true, messages })
         } else {
             // Determine the user's role and resolve the correct owner user_id
-            const { data: profile } = await supabase
+            const { data: profile } = await dbClient
                 .from('profiles')
                 .select('role, parent_id, agency_id')
-                .eq('id', user.id)
+                .eq('id', effectiveUserId)
                 .single()
 
             const role = profile?.role?.toLowerCase() || 'admin'
@@ -40,11 +64,10 @@ export async function GET(req: Request) {
 
             if (role === 'agent' && parentId) {
                 // Agent: fetch only chats linked to leads assigned to them
-                // RLS policy handles access control, but we also filter explicitly
-                const { data: assignedLeads } = await supabase
+                const { data: assignedLeads } = await dbClient
                     .from('leads')
                     .select('id')
-                    .eq('assigned_to', user.id)
+                    .eq('assigned_to', effectiveUserId)
 
                 const assignedLeadIds = assignedLeads?.map(l => l.id) || []
 
@@ -52,7 +75,7 @@ export async function GET(req: Request) {
                     return NextResponse.json({ success: true, chats: [] })
                 }
 
-                const { data: chats, error } = await supabase
+                const { data: chats, error } = await dbClient
                     .from('whatsapp_chats')
                     .select('*')
                     .in('lead_id', assignedLeadIds)
@@ -62,10 +85,10 @@ export async function GET(req: Request) {
                 return NextResponse.json({ success: true, chats })
             } else {
                 // Admin/owner: fetch all their chats
-                const { data: chats, error } = await supabase
+                const { data: chats, error } = await dbClient
                     .from('whatsapp_chats')
                     .select('*')
-                    .eq('user_id', user.id)
+                    .eq('user_id', effectiveUserId)
                     .order('updated_at', { ascending: false })
 
                 if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -83,24 +106,51 @@ export async function POST(req: Request) {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+        const url = new URL(req.url)
+        const impersonateId = url.searchParams.get('impersonate')
+
         const { chatId, messageText, templateName, language } = await req.json()
         if (!chatId || (!messageText && !templateName)) {
             return NextResponse.json({ error: 'Missing required parameters (chatId, and either messageText or templateName)' }, { status: 400 })
         }
 
-        // Resolve the owner user ID (for agents, use parent's credentials)
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('role, parent_id, agency_id')
-            .eq('id', user.id)
-            .single()
+        // Always create admin client (needed for credits and impersonation)
+        const supabaseAdmin = createSupabaseAdmin(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+        )
 
-        const role = profile?.role?.toLowerCase() || 'admin'
-        const parentId = profile?.parent_id || profile?.agency_id
-        const ownerUserId = (role === 'agent' && parentId) ? parentId : user.id
+        // Resolve the owner user ID (for agents, use parent's credentials; for impersonation, use impersonated user)
+        let ownerUserId = user.id
+        let isImpersonating = false
+        if (impersonateId && impersonateId !== user.id) {
+            const { data: authProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single()
+            const authRole = authProfile?.role?.toLowerCase() || ''
+            if (['super_admin', 'agency', 'admin'].includes(authRole)) {
+                ownerUserId = impersonateId
+                isImpersonating = true
+            }
+        } else {
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('role, parent_id, agency_id')
+                .eq('id', user.id)
+                .single()
 
-        // Fetch chat details — RLS will enforce access control
-        const { data: chat, error: chatErr } = await supabase
+            const role = profile?.role?.toLowerCase() || 'admin'
+            const parentId = profile?.parent_id || profile?.agency_id
+            ownerUserId = (role === 'agent' && parentId) ? parentId : user.id
+        }
+
+        // Use admin client for impersonation to bypass RLS
+        const dbClient = isImpersonating ? supabaseAdmin : supabase
+
+        // Fetch chat details
+        const { data: chat, error: chatErr } = await dbClient
             .from('whatsapp_chats')
             .select('*')
             .eq('id', chatId)
@@ -110,26 +160,22 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Chat not found or access denied' }, { status: 404 })
         }
 
-        // Fetch WABA credentials from the owner profile (not the agent's)
-        const { data: ownerProfile } = await supabase
+        // Fetch WABA credentials from the owner profile
+        const { data: ownerProfile } = await supabaseAdmin
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
+            .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, email')
             .eq('id', ownerUserId)
             .single()
 
-        const whatsappToken = ownerProfile?.whatsapp_access_token || ownerProfile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
-        const whatsappPhoneId = ownerProfile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID
+        const isMasterDefaultUser = ownerProfile?.email === 'rchopra489@gmail.com' || ownerProfile?.email === 'infobluesquareinfra@gmail.com'
+        const whatsappToken = ownerProfile?.whatsapp_access_token || ownerProfile?.facebook_token || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_ACCESS_TOKEN : null)
+        const whatsappPhoneId = ownerProfile?.whatsapp_phone_number_id || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_PHONE_ID : null)
 
         if (!whatsappToken || !whatsappPhoneId) {
             return NextResponse.json({ error: 'WhatsApp integration not configured.' }, { status: 400 })
         }
 
         // Pre-flight credits check (manual outbound message = Rs. 0.10 cost = 2 credits)
-        const { createClient: createSupabaseAdmin } = await import('@supabase/supabase-js')
-        const supabaseAdmin = createSupabaseAdmin(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE_KEY!
-        )
         const { hasEnoughCredits, deductCreditsByCost } = await import('@/utils/credits')
         const hasCredits = await hasEnoughCredits(supabaseAdmin, ownerUserId, 2)
         if (!hasCredits) {
@@ -192,7 +238,7 @@ export async function POST(req: Request) {
 
         // Save to whatsapp_messages
         const logText = templateName ? `Sent Template: ${templateName}` : messageText
-        const { data: insertedMsg, error: insertErr } = await supabase
+        const { data: insertedMsg, error: insertErr } = await dbClient
             .from('whatsapp_messages')
             .insert({
                 chat_id: chatId,
@@ -207,7 +253,7 @@ export async function POST(req: Request) {
         }
 
         // Update chat's last message
-        await supabase
+        await dbClient
             .from('whatsapp_chats')
             .update({
                 last_message_text: logText,

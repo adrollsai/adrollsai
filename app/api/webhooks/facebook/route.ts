@@ -34,6 +34,15 @@ const supabaseAdmin = createClient(
 
 const processedMessageIds = new Set<string>();
 
+function isRealPublicImageUrl(url: string | null | undefined): boolean {
+    if (!url) return false;
+    const lower = url.toLowerCase();
+    if (lower.includes('placehold.co') || lower.includes('placeholder') || lower.includes('via.placeholder')) {
+        return false;
+    }
+    return url.startsWith('http://') || url.startsWith('https://');
+}
+
 async function getNextRoundRobinAgent(supabaseAdmin: any, agentIds: string[]) {
     if (!agentIds || agentIds.length === 0) return null;
     if (agentIds.length === 1) return agentIds[0];
@@ -1374,7 +1383,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                                 const imageUrl = prop.image_url || (prop.images && prop.images.length > 0 ? prop.images[0] : null);
 
                                                 // Send the follow-up message
-                                                if (imageUrl) {
+                                                if (imageUrl && isRealPublicImageUrl(imageUrl)) {
                                                     const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
                                                     const imgRes = await fetch(metaUrl, {
                                                         method: 'POST',
