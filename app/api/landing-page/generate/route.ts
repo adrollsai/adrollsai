@@ -98,12 +98,6 @@ export async function POST(request: Request) {
             }
         }
 
-        // Check credit balance (must have at least 1 credit to perform AI page generation)
-        const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, 1)
-        if (!hasCredits) {
-            return NextResponse.json({ error: 'Insufficient credits. Please top up your Nobo Credits to perform AI generation.' }, { status: 402 })
-        }
-
         const body = await request.json()
         const { 
             id,
@@ -119,6 +113,41 @@ export async function POST(request: Request) {
             imageUrls,
             pageType = 'standard'
         } = body
+
+        // Check credit balance dynamically (must have enough credits for generation / editing)
+        let requiredCredits = 20 // default minimum for copywriting/editing/analysis
+        if (mode === 'generate') {
+            let hasPreExistingImages = false
+            if (propertyId) {
+                const { data: propCheck } = await supabaseAdmin
+                    .from('properties')
+                    .select('images, image_url')
+                    .eq('id', propertyId)
+                    .maybeSingle()
+                if (propCheck && ((propCheck.images && propCheck.images.length > 0) || propCheck.image_url)) {
+                    hasPreExistingImages = true
+                }
+            } else if (pageType === 'business') {
+                const { data: activeProps } = await supabaseAdmin
+                    .from('properties')
+                    .select('image_url')
+                    .eq('user_id', targetUserId)
+                    .neq('show_on_landing_page', false)
+                if (activeProps && activeProps.some(p => p.image_url)) {
+                    hasPreExistingImages = true
+                }
+            }
+            if (!hasPreExistingImages) {
+                requiredCredits = 220 // 200 credits for 5 generated images + 20 for copywriting/analysis
+            }
+        }
+
+        const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, requiredCredits)
+        if (!hasCredits) {
+            return NextResponse.json({ 
+                error: `Insufficient credits. You need at least ${requiredCredits} Nobo Credits to perform this AI generation step.` 
+            }, { status: 402 })
+        }
 
         // 1. Fetch business profile details for automatic contact pre-fill & branding
         const { data: profile } = await supabaseAdmin
@@ -211,6 +240,16 @@ PROPERTY INVENTORY CONTEXT:
             }
         }
 
+        const isIndia = (profile?.contact_number || '').includes('+91') || 
+                        (profile?.contact_number || '').startsWith('91') || 
+                        (resolvedContext || '').toLowerCase().includes('india') || 
+                        (resolvedContext || '').toLowerCase().includes('₹') ||
+                        (resolvedContext || '').toLowerCase().includes('rs.') ||
+                        (resolvedProductName || '').toLowerCase().includes('bluesquare') ||
+                        (profile?.email || '').endsWith('.in')
+        
+        const resolvedEthnicity = isIndia ? 'South Asian/Indian' : 'appropriate'
+
         const contactInfoText = `
 BUSINESS CONTACT INFO:
 - Brand/Business Name: ${profile?.business_name || resolvedProductName || "Premium Listings"}
@@ -250,11 +289,11 @@ BUSINESS CONTACT INFO:
             console.log(`[Lander API] Product "${resolvedProductName}" has no images. Generating 5 relevant images using gpt-image-2-text-to-image model...`);
             
             const promptDescriptions = [
-                `A professional, high-converting hero banner photograph for ${resolvedProductName}. Context: ${resolvedContext}. Real, organic and natural looking people experiencing the dream outcome of ${resolvedProductName} in their daily lives, smiling candidly, taken with a high-end camera, natural soft lighting.`,
-                `A candid, authentic social proof wall of love photograph for ${resolvedProductName}. Real, organic and natural looking people, smiling happily, sharing their positive experience with the brand/product ${resolvedProductName}, captured in natural lighting.`,
-                `An organic lifestyle photo representing the success of using ${resolvedProductName}. Features a real, natural looking person or family utilizing this product/service in their modern home, feeling relaxed and satisfied.`,
-                `A step-by-step process representation for ${resolvedProductName}. Highlights real, organic looking people interacting with the product/service easily and naturally, showing a high level of usability.`,
-                `A premium, clean brand contextual image for ${resolvedProductName}. Focus on details, real people with a human touch, natural shadows, soft warm lighting.`
+                `A professional, high-converting hero banner photograph for ${resolvedProductName}. Context: ${resolvedContext}. Real, beautiful and attractive looking ${resolvedEthnicity} people experiencing the dream outcome of ${resolvedProductName} in their daily lives, smiling candidly, taken with a high-end camera, natural soft lighting.`,
+                `A candid, authentic social proof wall of love photograph for ${resolvedProductName}. Real, beautiful and attractive looking ${resolvedEthnicity} people, smiling happily, sharing their positive experience with the brand/product ${resolvedProductName}, captured in natural lighting.`,
+                `An organic lifestyle photo representing the success of using ${resolvedProductName}. Features a real, beautiful and attractive looking ${resolvedEthnicity} person or family utilizing this product/service in their modern home, feeling relaxed and satisfied.`,
+                `A step-by-step process representation for ${resolvedProductName}. Highlights real, beautiful and attractive looking ${resolvedEthnicity} people interacting with the product/service easily and naturally, showing a high level of usability.`,
+                `A premium, clean brand contextual image for ${resolvedProductName}. Focus on details, real, beautiful and attractive looking ${resolvedEthnicity} people with a human touch, natural shadows, soft warm lighting.`
             ];
 
             try {
@@ -262,8 +301,9 @@ BUSINESS CONTACT INFO:
                     createKieImageTask(
                         `AESTHETIC: RAW & ORGANIC. Use a smartphone-photo style. It must look like an unedited, authentic photo taken by a regular person, not a professional photographer.
 LIGHTING: Natural, slightly imperfect, no studio glow.
-PEOPLE: Include real, organic and natural looking people to have a human touch. They should look candid, happy, and authentic.
-PROMPT: ${p}`,
+PEOPLE: Include real, beautiful and attractive looking ${resolvedEthnicity} people to have a human touch. They should look candid, happy, and authentic, with true-to-life detailing of skin, hair, and features.
+PROMPT: ${p}
+CRITICAL: Do NOT write or draw any text overlays, labels, or placeholders like 'logo', 'put logo here', 'business name', or text circles. Keep the image fully clean of text and placeholders.`,
                         "gpt-image-2-text-to-image"
                     )
                 );
@@ -323,6 +363,15 @@ PROMPT: ${p}`,
                 
                 if (completedUrls.length > 0) {
                     propertyImagesList = completedUrls;
+                    // Deduct credits for generated images: Rs. 2.00 cost to us per image (translates to 40 credits each)
+                    const imageGenerationRupeeCost = completedUrls.length * 2.00;
+                    await deductCreditsByCost(
+                        supabaseAdmin,
+                        targetUserId,
+                        imageGenerationRupeeCost,
+                        'ai_generation',
+                        `AI Landing Page - Generated ${completedUrls.length} relevant images`
+                    );
                 }
             } catch (err: any) {
                 console.error("[Lander API] Kie Image generation failed:", err);

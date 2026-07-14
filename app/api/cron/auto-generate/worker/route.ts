@@ -92,25 +92,29 @@ export async function POST(request: Request) {
 
     // C. Build literal, simplified, high-converting image prompt
     const promptParts = [
-      "Make a high converting static meta ad, make sure the result is real looking, and include attractive looking humans in it (ethnicity should be according to where the business is from) that don't look artificial, they should look real. Only include essential info in the image text overlays so it is not cluttered with text. IMPORTANT: Do NOT include ANY information that is not explicitly provided below — no made-up prices, discounts, claims, phone numbers, websites, or contact details. If a detail is not provided, leave it out entirely.",
+      "Make a premium, high-converting static meta ad. The final generated image must look 100% like an authentic, high-quality photograph, avoiding any artificial, shiny, or plastic look. It must include beautiful, attractive, photorealistic humans (could be a family, a man, or a woman depending on the product, with true-to-life detailing of skin, hair, and features). The ethnicity of the people must match the origin of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise). Do NOT write or draw any text overlays, labels, or placeholders like 'logo', 'put logo here', 'business name', or text circles. Keep the image fully clean of text and placeholders.",
       `Product Info: ${prop.title || ''}. Description: ${prop.description || ''}`,
       businessName ? `Business Name: ${businessName}` : '',
       contactNumber ? `Contact Info: ${contactNumber}` : '',
-      logoUrl ? `Business Logo: Include the business logo cleanly in a corner of the creative.` : 'Business Logo: Include the business logo cleanly in a corner.',
       profile.custom_prompt ? `Custom Instructions: ${profile.custom_prompt}` : ''
     ].filter(Boolean);
 
     const finalImagePrompt = promptParts.join("\n");
 
-    const payload = {
-      "model": "gpt-image-2-image-to-image",
+    const selectedModel = allInputImages.length > 0 ? "gpt-image-2-image-to-image" : "gpt-image-2-text-to-image";
+
+    const payload: any = {
+      "model": selectedModel,
       "input": {
         "prompt": finalImagePrompt,
-        "input_urls": allInputImages,
         "aspect_ratio": "4:5",
         "resolution": "1K"
       }
     };
+
+    if (allInputImages.length > 0) {
+      payload.input.input_urls = allInputImages;
+    }
 
     // D. Fire External API requests
     let generatedCaption = "";

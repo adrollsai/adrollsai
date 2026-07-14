@@ -2705,21 +2705,19 @@ export default function ProfilePage() {
                   </button>
                 )}
 
-                {/* Landing Pages Manager - Only for Super Admin / Agency */}
-                {['super_admin', 'agency'].includes(authRole || role) && (
-                  <button 
-                    onClick={() => router.push(`/dashboard/pages${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
-                    className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="bg-blue-50 text-blue-600 p-3 rounded-2xl">
-                        <Globe size={20} />
-                      </div>
-                      <span className="font-bold text-sm text-slate-900">Landing Pages Manager</span>
+                {/* Landing Pages Manager - Available to all users */}
+                <button 
+                  onClick={() => router.push(`/dashboard/pages${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-blue-50 text-blue-600 p-3 rounded-2xl">
+                      <Globe size={20} />
                     </div>
-                    <ChevronRight size={20} className="text-slate-400" />
-                  </button>
-                )}
+                    <span className="font-bold text-sm text-slate-900">Landing Pages Manager</span>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400" />
+                </button>
 
                 <button 
                   onClick={() => router.push(`/dashboard/plugins${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 

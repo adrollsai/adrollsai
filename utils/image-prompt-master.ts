@@ -26,11 +26,11 @@ Camera characteristics:
 - The result should feel authentic and suitable for use in a high-end advertising campaign.
 
 Human subjects (when included):
-- Humans must appear completely authentic and naturally posed.
-- Realistic anatomy, skin texture, pores, hair strands, eye reflections, clothing folds, and body proportions.
-- Natural facial asymmetry and candid expressions.
-- Avoid model-like posing unless specifically requested.
-- Hands, fingers, teeth, and eyes must be anatomically accurate.
+- Humans must appear completely authentic, beautiful, attractive, and naturally posed (could be a family, a professional man, or a woman depending on the context).
+- The ethnicity of the humans should match the geographical region of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).
+- Skin must have true-to-life detailing (real skin texture, pores, fine hair) and look completely natural, avoiding any plastic, synthetic, or shiny AI-generated look.
+- Avoid common AI errors like distorted fingers, unnatural expressions, extra limbs, or synthetic-looking eyes.
+- Candid expressions and natural facial asymmetry should be prioritized.
 
 Materials and environment:
 - Surfaces should display realistic physical properties and subtle imperfections.
@@ -186,10 +186,10 @@ export const CONTENT_INTEGRITY_RULES = `Content Integrity & Branding Rules (MAND
    - Prefer visual storytelling over text-heavy layouts.
 
 3. BUSINESS LOGO (MANDATORY BY DEFAULT):
-   - The business logo MUST be included in every creative as a clean, professional element.
-   - Place the logo as a subtle but visible seal/watermark in a corner (top-left, top-right, or bottom-right) — it should feel integrated, not pasted on.
-   - If a logo image is provided in the input images, reproduce it faithfully. Do NOT redesign, reinterpret, or replace the logo.
-   - The logo should be appropriately sized — visible but not dominating the creative.
+   - The business logo MUST be integrated into the creative visually as a clean, professional branding stamp.
+   - Place the logo as a subtle but visible seal/watermark in a corner (top-left, top-right, or bottom-right).
+   - If a logo image is provided in the input images, use its visual graphic/icon.
+   - CRITICAL: Do NOT write, print, or draw any literal text phrases, labels, or placeholders in the image such as "logo", "business logo", "put logo here", "logo here", or blank placeholder circles. The final image must be completely clean of layout instructions or design annotations.
    - EXCEPTION: Only omit the logo if the user EXPLICITLY requests "no logo" or "remove the logo" in their instructions.
 
 4. CONTACT INFORMATION (MANDATORY BY DEFAULT):
