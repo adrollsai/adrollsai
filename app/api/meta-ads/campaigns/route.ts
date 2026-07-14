@@ -90,7 +90,7 @@ export async function GET(request: Request) {
   try {
     // 3. Fetch Campaigns from Meta
     // fields=effective_status fetches ACTIVE, PAUSED, ARCHIVED, etc.
-    const fbUrl = `${FB_GRAPH_URL}/${targetProfile.ad_account_id}/campaigns?fields=id,name,status,effective_status,objective,start_time&filtering=[{"field":"objective","operator":"IN","value":["OUTCOME_LEADS","LEAD_GENERATION","OUTCOME_ENGAGEMENT"]}]&limit=20&access_token=${token}`;
+    const fbUrl = `${FB_GRAPH_URL}/${targetProfile.ad_account_id}/campaigns?fields=id,name,status,effective_status,objective,start_time&filtering=[{"field":"objective","operator":"IN","value":["OUTCOME_LEADS","LEAD_GENERATION","OUTCOME_ENGAGEMENT"]}]&limit=100&access_token=${token}`;
     
     const response = await fetch(fbUrl);
     const data = await response.json();

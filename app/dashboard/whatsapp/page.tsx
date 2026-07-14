@@ -585,7 +585,7 @@ export default function AutomationPage() {
       <div className="bg-white border border-slate-200/80 rounded-[2rem] shadow-xl overflow-hidden h-[600px] flex">
           
           {/* Chats Sidebar */}
-          <div className="w-1/3 border-r border-slate-100 flex flex-col bg-slate-50/50">
+          <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-1/3 border-r border-slate-100 flex-col bg-slate-50/50`}>
             <div className="p-4 border-b border-slate-100 bg-white flex justify-between items-center">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Active Chats</span>
               <button 
@@ -640,7 +640,7 @@ export default function AutomationPage() {
           </div>
 
           {/* Chat Pane */}
-          <div className="flex-1 flex flex-col bg-slate-50/20">
+          <div className={`${selectedChatId ? 'flex' : 'hidden md:flex'} flex-grow flex-shrink flex-col bg-slate-50/20 h-full min-w-0`}>
             {selectedChat ? (
               <>
                 {/* Chat Pane Header */}
@@ -648,7 +648,7 @@ export default function AutomationPage() {
                   <div className="flex items-center gap-3">
                     <button 
                       onClick={() => setSelectedChatId(null)}
-                      className="sm:hidden p-1.5 hover:bg-slate-100 rounded-lg text-slate-400"
+                      className="md:hidden p-1.5 hover:bg-slate-100 rounded-lg text-slate-400"
                     >
                       <ArrowLeft size={16} />
                     </button>

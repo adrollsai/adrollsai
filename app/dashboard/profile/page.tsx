@@ -865,13 +865,49 @@ export default function ProfilePage() {
     try {
       const { data, error } = await supabase
         .from('flagged_questions')
-        .select('*')
+        .select(`
+          *,
+          leads (
+            id,
+            name,
+            phone,
+            email,
+            voice_recording_url,
+            properties (
+              id,
+              title
+            )
+          )
+        `)
         .eq('user_id', uId)
         .eq('resolved', false)
         .order('created_at', { ascending: false })
       if (!error && data) {
         setFlaggedQuestions(data)
         setFlaggedCount(data.length)
+
+        // Automatically trigger enrichment for questions missing language/translation metadata
+        data.forEach((fq: any) => {
+          if (!fq.language) {
+            fetch('/api/questions/enrich', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ questionId: fq.id })
+            })
+            .then(res => res.json())
+            .then(enrichData => {
+              if (enrichData.success) {
+                setFlaggedQuestions(prev => prev.map(item => {
+                  if (item.id === fq.id) {
+                    return { ...item, language: enrichData.language, translation: enrichData.translation }
+                  }
+                  return item
+                }))
+              }
+            })
+            .catch(err => console.error('Enrichment call failed:', err))
+          }
+        })
       }
     } catch (err) {
       console.error("Failed to load flagged questions:", err)
@@ -879,6 +915,7 @@ export default function ProfilePage() {
       setLoadingFlagged(false)
     }
   }
+
 
   useEffect(() => {
     const effectiveUserId = targetUserId || userId;
@@ -1527,6 +1564,66 @@ export default function ProfilePage() {
                           • {new Date(fq.created_at).toLocaleDateString()}
                         </span>
                         <h4 className="text-sm font-semibold text-slate-800">"{fq.question}"</h4>
+
+                        {/* Lead / Prospect Context */}
+                        {(() => {
+                          const lead = Array.isArray(fq.leads) ? fq.leads[0] : fq.leads;
+                          if (!lead) return null;
+                          const property = Array.isArray(lead.properties) ? lead.properties[0] : lead.properties;
+                          return (
+                            <div className="bg-slate-100/60 rounded-2xl p-3 mt-2 text-xs text-slate-600 space-y-1 font-medium border border-slate-200/20 max-w-xl">
+                              <div>
+                                <span className="font-bold text-slate-500 uppercase tracking-wider text-[9px] mr-1">Prospect:</span>
+                                <span className="text-slate-800 font-semibold">{lead.name || 'Unknown'}</span>
+                                {lead.phone && <span className="text-slate-500 ml-1">({lead.phone})</span>}
+                                {lead.email && <span className="text-slate-500 ml-1.5">• {lead.email}</span>}
+                              </div>
+                              {property && property.title && (
+                                <div>
+                                  <span className="font-bold text-slate-500 uppercase tracking-wider text-[9px] mr-1">Interested Product:</span>
+                                  <span className="text-indigo-600 font-bold">{property.title}</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Audio Call Recording */}
+                        {(() => {
+                          const lead = Array.isArray(fq.leads) ? fq.leads[0] : fq.leads;
+                          if (lead && lead.voice_recording_url) {
+                            return (
+                              <div className="mt-2.5 pt-2 pb-1 bg-indigo-50/40 rounded-2xl p-3 border border-indigo-100/30 max-w-xl">
+                                <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1.5 ml-1 flex items-center gap-1.5 font-sans">
+                                  <Mic size={10} className="text-indigo-600 animate-pulse" /> Listen to Call Recording
+                                </span>
+                                <audio 
+                                  controls 
+                                  src={lead.voice_recording_url} 
+                                  className="w-full h-8 outline-none rounded-lg" 
+                                />
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+
+                        <div className="flex flex-wrap gap-2 items-center mt-2">
+                          {fq.language ? (
+                            <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full border border-slate-200/50">
+                              Language: <span className="text-slate-800 font-extrabold">{fq.language}</span>
+                            </span>
+                          ) : (
+                            <span className="bg-slate-50 text-slate-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-slate-200/30 flex items-center gap-1.5">
+                              <Loader2 size={10} className="animate-spin text-slate-300" /> Detecting language...
+                            </span>
+                          )}
+                          {fq.translation && fq.translation !== fq.question && (
+                            <span className="bg-indigo-50 text-indigo-600 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-100/80">
+                              Translation: <span className="text-indigo-900 font-medium">"{fq.translation}"</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <button
                         onClick={async () => {

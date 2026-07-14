@@ -193,8 +193,9 @@ wss.on('connection', (wsConnection) => {
                 twilioCallSid = data.start.callSid;
                 leadId = data.start.customParameters?.leadId;
                 profileId = data.start.customParameters?.profileId;
+                const campaignId = data.start.customParameters?.campaignId;
 
-                console.log(`[BRIDGE] Twilio call started. StreamSid: ${twilioStreamSid}, CallSid: ${twilioCallSid}, leadId: ${leadId}, profileId: ${profileId}`);
+                console.log(`[BRIDGE] Twilio call started. StreamSid: ${twilioStreamSid}, CallSid: ${twilioCallSid}, leadId: ${leadId}, profileId: ${profileId}, campaignId: ${campaignId}`);
 
                 if (!leadId || !profileId) {
                     console.error('[BRIDGE] Missing customParameters: leadId or profileId in start packet.');
@@ -222,10 +223,15 @@ wss.on('connection', (wsConnection) => {
                     console.error('[BRIDGE] Failed to clear stale voice call fields:', dbClearErr);
                 }
 
+                const campaignPromise = campaignId
+                    ? supabaseAdmin.from('voice_campaigns').select('*').eq('id', campaignId).maybeSingle()
+                    : Promise.resolve({ data: null });
+
                 const dbPromise = Promise.all([
                     supabaseAdmin.from('profiles').select('*').eq('id', profileId).maybeSingle(),
                     supabaseAdmin.from('leads').select('*').eq('id', leadId).maybeSingle(),
-                    supabaseAdmin.from('properties').select('*').eq('user_id', profileId).limit(5)
+                    supabaseAdmin.from('properties').select('*').eq('user_id', profileId).limit(5),
+                    campaignPromise
                 ]);
 
                 const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
@@ -235,13 +241,15 @@ wss.on('connection', (wsConnection) => {
                 let profile = null;
                 let lead = null;
                 let props = null;
+                let campaign = null;
 
                 try {
-                    const [profileRes, leadRes, propsRes] = await dbPromise;
+                    const [profileRes, leadRes, propsRes, campaignRes] = await dbPromise;
                     profile = profileRes.data;
                     profileData = profile;
                     lead = leadRes.data;
                     props = propsRes.data;
+                    campaign = campaignRes ? campaignRes.data : null;
 
                     if (lead) {
                         leadPhone = lead.phone;
@@ -281,7 +289,27 @@ wss.on('connection', (wsConnection) => {
                         const companyName = profile?.business_name || 'our company';
                         const firstName = leadName.split(' ')[0] || 'there';
                         
-                        systemInstruction = `
+                        if (campaign && campaign.custom_prompt) {
+                            systemInstruction = `
+${campaign.custom_prompt}
+
+--- LEAD & BUSINESS CONTEXT ---
+Lead Name: ${leadName}
+Lead Phone: ${leadPhone || 'N/A'}
+Notes/History: ${lead.notes || 'None'}
+${productContext ? `--- LEAD INTEREST ---\n${productContext}\n` : ''}
+${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
+`.trim();
+
+                            const promptLower = campaign.custom_prompt.toLowerCase();
+                            const isHinglish = promptLower.includes('hinglish') || promptLower.includes('hindi') || promptLower.includes('india');
+                            if (isHinglish) {
+                                greetingMessage = `Hi ${firstName} ji! Main assistant baat kar raha hoon aapki query ke regarding. Kaise hain aap?`;
+                            } else {
+                                greetingMessage = `Hi ${firstName}! I'm calling to follow up on your recent request. How are you doing today?`;
+                            }
+                        } else {
+                            systemInstruction = `
 You are a helpful AI Voice calling assistant for "${companyName}".
 Your name is a booking representative.
 Your primary objective is to make the lead, ${leadName}, book an appointment/consultation with the business.
@@ -313,7 +341,8 @@ ${productContext ? `--- LEAD INTEREST ---\n${productContext}\n` : ''}
 ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
 `.trim();
 
-                        greetingMessage = `Hi ${firstName} ji, kaise ho aap?`;
+                            greetingMessage = `Hi ${firstName} ji, kaise ho aap?`;
+                        }
                     }
                 } catch (dbErr) {
                     console.error('[BRIDGE] DB context fetch error:', dbErr);
@@ -608,7 +637,10 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                 let summary = 'Conversation took place via Gemini Voice AI.';
                 try {
                     const summaryPrompt = `
-Generate a detailed summary of the following phone conversation between our sales assistant and the lead, highlighting the key points discussed, lead preferences or objections, questions asked, and any agreed next steps or appointments:
+You are analyzing a phone call transcript. Write a concise, professional 2-3 sentence summary of the call.
+Do NOT use markdown headers, bold, bullets, or lists. Output only a single clean paragraph.
+
+Transcript:
 ${fullTranscript}
 `.trim();
                     const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${geminiApiKey}`;

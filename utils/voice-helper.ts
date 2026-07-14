@@ -34,7 +34,8 @@ export async function triggerOutboundCall(
     supabaseAdmin: any,
     leadId: string,
     profileId: string,
-    isAutoTrigger = false
+    isAutoTrigger = false,
+    campaignId?: string
 ): Promise<{ success: boolean; error?: string; callSid?: string; scheduled?: boolean; scheduledTime?: Date }> {
     try {
         // 1. Fetch credentials from user profile & lead details in parallel
@@ -60,6 +61,24 @@ export async function triggerOutboundCall(
 
         if (leadResult.error || !lead || !lead.phone) {
             return { success: false, error: 'Lead not found or has no phone number.' }
+        }
+
+        // Concurrency Check: Only allow one active call at a time per user
+        const { data: activeLeads } = await supabaseAdmin
+            .from('leads')
+            .select('id, updated_at')
+            .eq('user_id', profileId)
+            .eq('voice_call_status', 'calling');
+
+        const nowTs = Date.now();
+        const activeCalls = (activeLeads || []).filter((c: any) => {
+            const updatedAtTime = new Date(c.updated_at).getTime();
+            return (nowTs - updatedAtTime) < 7 * 60 * 1000; // 7 minutes timeout
+        });
+
+        if (activeCalls.length > 0 && activeCalls[0].id !== leadId) {
+            console.warn(`[VOICE HELPER] Outbound call aborted for lead ${leadId}: User ${profileId} already has an active call in progress.`);
+            return { success: false, error: 'ACTIVE_CALL_IN_PROGRESS' };
         }
 
         if (isAutoTrigger) {
@@ -189,8 +208,8 @@ export async function triggerOutboundCall(
             return { success: false, error: 'Insufficient credits' }
         }
 
-        const twilioSid = process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
-        const twilioToken = process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
+        const twilioSid = profile.voice_twilio_sid || process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
+        const twilioToken = profile.voice_twilio_token || process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
         const voiceNumber = profile.voice_twilio_number || process.env.MASTER_TWILIO_NUMBER
 
         if (!twilioSid || !twilioToken || !voiceNumber) {
@@ -229,7 +248,7 @@ export async function triggerOutboundCall(
         const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64')
 
         const params = new URLSearchParams()
-        params.append('Url', `${appUrl}/api/voice/twiml?leadId=${lead.id}&profileId=${profileId}`)
+        params.append('Url', `${appUrl}/api/voice/twiml?leadId=${lead.id}&profileId=${profileId}${campaignId ? `&campaignId=${campaignId}` : ''}`)
         params.append('To', cleanPhone)
         params.append('From', voiceNumber.trim())
         params.append('StatusCallback', `${appUrl}/api/voice/status-callback?leadId=${lead.id}`)
@@ -720,5 +739,101 @@ export async function cancelAppointment(
         console.error('[VOICE HELPER] cancelAppointment Exception:', e)
         return { success: false, error: e.message || 'Internal error' }
     }
+}
+
+/**
+ * Automatically dispatches the next call in sequence for a user's phone line.
+ * Prioritizes scheduled calls over campaign calls.
+ * Ensures only one call is active at any time.
+ */
+export async function dispatchNextCall(supabaseAdmin: any, userId: string): Promise<any> {
+    console.log(`[CALL DISPATCHER] Dispatching next call for user ${userId}...`);
+
+    // 1. Check if there is already an active call in progress for this user
+    const { data: activeLeads } = await supabaseAdmin
+        .from('leads')
+        .select('id, updated_at')
+        .eq('user_id', userId)
+        .eq('voice_call_status', 'calling');
+
+    const now = Date.now();
+    const activeCalls = (activeLeads || []).filter((c: any) => {
+        const updatedAtTime = new Date(c.updated_at).getTime();
+        return (now - updatedAtTime) < 7 * 60 * 1000; // 7 minutes timeout
+    });
+
+    if (activeCalls.length > 0) {
+        console.log(`[CALL DISPATCHER] Call deferred: Lead ${activeCalls[0].id} is currently in progress.`);
+        return { deferred: true, activeLeadId: activeCalls[0].id };
+    }
+
+    // 2. Priority 1: Check for scheduled calls whose reminder time has come
+    const nowUtc = new Date().toISOString();
+    const { data: scheduledLeads } = await supabaseAdmin
+        .from('leads')
+        .select('id, name')
+        .eq('user_id', userId)
+        .not('voice_call_scheduled_at', 'is', null)
+        .lte('voice_call_scheduled_at', nowUtc)
+        .neq('voice_call_status', 'calling')
+        .neq('voice_call_status', 'failed')
+        .neq('calling_enabled', false)
+        .not('pipeline_stage', 'in', '("Won", "Appointment booked")')
+        .order('voice_call_scheduled_at', { ascending: true })
+        .limit(1);
+
+    if (scheduledLeads && scheduledLeads.length > 0) {
+        const targetLead = scheduledLeads[0];
+        console.log(`[CALL DISPATCHER] Prioritizing scheduled call for lead: ${targetLead.name} (ID: ${targetLead.id})`);
+        
+        // Clear scheduled time first to prevent double-calls
+        await supabaseAdmin
+            .from('leads')
+            .update({ voice_call_scheduled_at: null })
+            .eq('id', targetLead.id);
+
+        const callRes = await triggerOutboundCall(supabaseAdmin, targetLead.id, userId, true);
+        return { dispatched: true, type: 'scheduled', leadId: targetLead.id, success: callRes.success };
+    }
+
+    // 3. Priority 2: Check for campaign calls
+    // Find any voice campaigns for this user that are currently 'running'
+    const { data: runningCampaigns } = await supabaseAdmin
+        .from('voice_campaigns')
+        .select('id, name')
+        .eq('user_id', userId)
+        .eq('status', 'running')
+        .limit(1);
+
+    if (runningCampaigns && runningCampaigns.length > 0) {
+        const activeCampaign = runningCampaigns[0];
+        console.log(`[CALL DISPATCHER] Active campaign found: ${activeCampaign.name} (ID: ${activeCampaign.id})`);
+
+        // Find the next lead in this campaign that hasn't been called yet
+        const { data: campaignLeads } = await supabaseAdmin
+            .from('leads')
+            .select('id, name')
+            .eq('user_id', userId)
+            .eq('voice_campaign_id', activeCampaign.id)
+            .is('voice_call_status', null)
+            .limit(1);
+
+        if (campaignLeads && campaignLeads.length > 0) {
+            const nextLead = campaignLeads[0];
+            console.log(`[CALL DISPATCHER] Dialing next campaign lead: ${nextLead.name} (ID: ${nextLead.id})`);
+            const callRes = await triggerOutboundCall(supabaseAdmin, nextLead.id, userId, false, activeCampaign.id);
+            return { dispatched: true, type: 'campaign', leadId: nextLead.id, success: callRes.success };
+        } else {
+            // No more leads left in the campaign, mark it as completed
+            console.log(`[CALL DISPATCHER] Campaign ${activeCampaign.name} completed all calls.`);
+            await supabaseAdmin
+                .from('voice_campaigns')
+                .update({ status: 'completed' })
+                .eq('id', activeCampaign.id);
+        }
+    }
+
+    console.log(`[CALL DISPATCHER] No calls to dispatch at this time.`);
+    return { dispatched: false };
 }
 

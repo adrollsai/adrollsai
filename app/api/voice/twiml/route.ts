@@ -12,6 +12,7 @@ export async function POST(req: Request) {
         const { searchParams } = new URL(req.url)
         const leadId = searchParams.get('leadId')
         const profileId = searchParams.get('profileId')
+        const campaignId = searchParams.get('campaignId')
 
         let fromNumber = ''
         let toNumber = ''
@@ -65,6 +66,23 @@ export async function POST(req: Request) {
             .eq('id', profileId)
             .single()
 
+        // Fetch campaign if campaignId is present
+        let campaign = null
+        if (campaignId) {
+            try {
+                const { data: camp } = await supabaseAdmin
+                    .from('voice_campaigns')
+                    .select('*')
+                    .eq('id', campaignId)
+                    .single()
+                if (camp) {
+                    campaign = camp
+                }
+            } catch (campErr) {
+                console.warn('[TWIML BRIDGE] Failed to fetch campaign context:', campErr)
+            }
+        }
+
         const voiceProvider = profile?.voice_provider || 'gemini'
 
         if (voiceProvider === 'gemini') {
@@ -78,6 +96,7 @@ export async function POST(req: Request) {
         <Stream url="${streamUrl}">
             <Parameter name="leadId" value="${leadId}" />
             <Parameter name="profileId" value="${profileId}" />
+            ${campaignId ? `<Parameter name="campaignId" value="${campaignId}" />` : ''}
         </Stream>
     </Connect>
 </Response>`
@@ -311,6 +330,35 @@ ${whatsappHistory ? `Previous WhatsApp History:\n${whatsappHistory}` : ''}
             dynamicFirstMessage = `Hi ${leadName}! Main ${companyName} se AI representative baat kar raha hoon. Maine dekha aapne query submit ki thi. Aage badhne se pehle kya main aap se ek quick detail clear kar sakta hoon? ${profile.qualifying_questions[0]}`
         }
 
+        let finalPrompt = customPrompt
+        if (campaign?.custom_prompt) {
+            finalPrompt = `
+${campaign.custom_prompt}
+
+--- LEAD & BUSINESS CONTEXT ---
+Lead Name: ${leadName}
+Email: ${lead.email || 'None'}
+Attributed Details: ${JSON.stringify(lead.custom_fields || {})}
+Current Time: ${new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+
+--- LEAD CRM NOTES & SCHEDULE HISTORY ---
+${lead.notes || 'None'}
+
+${productContext ? `Interested Product:\n${productContext}\n` : ''}
+${catalogContext ? `Catalog / Available Products:\n${catalogContext}\n` : ''}
+${previousCallsHistory ? `Previous Call History:\n${previousCallsHistory}\n` : ''}
+${whatsappHistory ? `Previous WhatsApp History:\n${whatsappHistory}` : ''}
+`.trim()
+
+            const promptLower = campaign.custom_prompt.toLowerCase()
+            const isHinglish = promptLower.includes('hinglish') || promptLower.includes('hindi') || promptLower.includes('india')
+            if (isHinglish) {
+                dynamicFirstMessage = `Hi ${leadName}! Main assistant baat kar raha hoon aapki query ke regarding. Kaise hain aap?`
+            } else {
+                dynamicFirstMessage = `Hi ${leadName}! I'm calling to follow up on your recent request. How are you doing today?`
+            }
+        }
+
 
 
         const elevenlabsApiKey = profile?.elevenlabs_api_key || process.env.MASTER_ELEVENLABS_KEY
@@ -332,7 +380,7 @@ ${whatsappHistory ? `Previous WhatsApp History:\n${whatsappHistory}` : ''}
                     conversation_config_override: {
                         agent: {
                             prompt: {
-                                prompt: customPrompt
+                                prompt: finalPrompt
                             },
                             first_message: dynamicFirstMessage
                         },

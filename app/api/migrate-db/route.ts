@@ -16,15 +16,13 @@ export async function GET() {
         // ALTER TABLE profiles ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'INR';
 
         const { error } = await supabaseAdmin.rpc('run_sql', {
-            sql_query: "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'INR';"
+            sql_query: "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'INR'; ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS csv_audience TEXT;"
         })
 
         if (error) {
-            // Fallback: If RPC doesn't exist, we'll try to just insert a dummy record to a temp table
-            // But usually, I'll just ask you to run this in your Supabase SQL Editor.
             return NextResponse.json({ 
                 error: "RPC 'run_sql' not found.",
-                instruction: "Please go to your Supabase Dashboard -> SQL Editor and run: \n\n ALTER TABLE profiles ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'INR';"
+                instruction: "Please go to your Supabase Dashboard -> SQL Editor and run:\n\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'INR';\nALTER TABLE public.leads ADD COLUMN IF NOT EXISTS csv_audience TEXT;"
             })
         }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { callGemini } from '@/utils/external-apis'
-import { bookAppointment } from '@/utils/voice-helper'
+import { bookAppointment, dispatchNextCall } from '@/utils/voice-helper'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
         if (dbStatus === 'failed') {
             const { data: leadData } = await supabaseAdmin
                 .from('leads')
-                .select('voice_call_retry_count, notes')
+                .select('voice_call_retry_count, notes, user_id')
                 .eq('id', leadId)
                 .single()
 
@@ -97,6 +97,11 @@ export async function POST(req: Request) {
                     })
 
                 console.log(`[TWILIO STATUS CALLBACK] Updated lead ${leadId} to final failed status. Max retries reached.`)
+            }
+            if (leadData?.user_id) {
+                dispatchNextCall(supabaseAdmin, leadData.user_id).catch(err => {
+                    console.error('[TWILIO STATUS CALLBACK] dispatcher error on failed call:', err)
+                })
             }
             return NextResponse.json({ success: true })
         }
@@ -240,7 +245,7 @@ ${formattedTranscript}
 
 Extract the following details as a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
 {
-  "callback_time": "ISO-8601 string of requested callback date/time if the lead asked or agreed to be called back at a specific time (including accepting or saying 'okay', 'thank you', 'theek hai' after a callback time is proposed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
+  "callback_time": "ISO-8601 string of requested callback date/time. If the lead asked or agreed to a callback/meeting (including tentative agreement like 'call me Saturday', 'connect tomorrow', or 'call later') but no specific hour was finalized, generate a fallback time for that day at 10:00 AM local time (or 24 hours from now if no day was specified) so a follow-up reminder call is scheduled. Current system UTC time is: ${new Date().toISOString()}",
   "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot if the lead agreed to, confirmed, or accepted a proposed meeting slot (including saying 'okay', 'thank you', 'theek hai', or saying goodbye/thank you after a meeting slot is proposed/confirmed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified),
   "allow_after_hours": true/false (true if the prospect explicitly requested, suggested, agreed, or said it is okay to call them back after 7 PM local time, late, at night, or at any time in general, otherwise false),
@@ -332,12 +337,12 @@ Listen to the audio recording carefully and extract the transcript, summary, and
 
 Generate a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
 {
-  "summary": "A detailed summary of the conversation highlighting the key points, lead's requirements or objections, questions asked, and any agreed next steps or appointments.",
+  "summary": "A concise, clean 2-3 sentence paragraph summarizing the call. Do NOT use markdown headers, bold, bullets, or lists.",
   "transcript": [
     { "role": "agent", "message": "agent spoken text" },
     { "role": "user", "message": "user spoken text" }
   ],
-  "callback_time": "ISO-8601 string of requested callback date/time if the lead asked or agreed to be called back at a specific time, otherwise null. Current system UTC time is: ${new Date().toISOString()}",
+  "callback_time": "ISO-8601 string of requested callback date/time. If the lead asked or agreed to a callback/meeting (including tentative agreement like 'call me Saturday', 'connect tomorrow', or 'call later') but no specific hour was finalized, generate a fallback time for that day at 10:00 AM local time (or 24 hours from now if no day was specified) so a follow-up reminder call is scheduled. Current system UTC time is: ${new Date().toISOString()}",
   "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot, otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "is_qualified": true/false,
   "allow_after_hours": true/false (true if the prospect explicitly requested, suggested, agreed, or said it is okay to call them back after 7 PM local time, late, at night, or at any time in general, otherwise false),
@@ -454,8 +459,8 @@ ${formattedTranscript}
 
 Extract the following details as a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
 {
-  "summary": "A detailed summary of the conversation highlighting the key points, lead's requirements or objections, questions asked, and any agreed next steps or appointments.",
-  "callback_time": "ISO-8601 string of requested callback date/time if the lead asked or agreed to be called back at a specific time (including accepting or saying 'okay', 'thank you', 'theek hai' after a callback time is proposed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
+  "summary": "A concise, clean 2-3 sentence paragraph summarizing the call. Do NOT use markdown headers, bold, bullets, or lists.",
+  "callback_time": "ISO-8601 string of requested callback date/time. If the lead asked or agreed to a callback/meeting (including tentative agreement like 'call me Saturday', 'connect tomorrow', or 'call later') but no specific hour was finalized, generate a fallback time for that day at 10:00 AM local time (or 24 hours from now if no day was specified) so a follow-up reminder call is scheduled. Current system UTC time is: ${new Date().toISOString()}",
   "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot if the lead agreed to, confirmed, or accepted a proposed meeting slot (including saying 'okay', 'thank you', 'theek hai', or saying goodbye/thank you after a meeting slot is proposed/confirmed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified),
   "allow_after_hours": true/false (true if the prospect explicitly requested, suggested, agreed, or said it is okay to call them back after 7 PM local time, late, at night, or at any time in general, otherwise false),
@@ -726,6 +731,7 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                         const parsed = JSON.parse(rawJson)
                         
                         parsed.recording_url = publicRecordingUrl
+                        parsed.summary = summary
                         
                         await supabaseAdmin
                             .from('lead_history')
@@ -734,11 +740,17 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                             })
                             .eq('id', logRecord.id)
                         
-                        console.log('[TWILIO STATUS CALLBACK] Successfully updated Gemini lead_history recording_url!')
+                        console.log('[TWILIO STATUS CALLBACK] Successfully updated Gemini lead_history recording_url and summary!')
                     }
                 } catch (updateLogErr) {
                     console.error('[TWILIO STATUS CALLBACK] Failed to update Gemini lead_history recording_url:', updateLogErr)
                 }
+            }
+
+            if (lead?.user_id) {
+                dispatchNextCall(supabaseAdmin, lead.user_id).catch((dispatchErr: any) => {
+                    console.error('[TWILIO STATUS CALLBACK] next dispatch failed:', dispatchErr)
+                })
             }
 
             console.log(`[TWILIO STATUS CALLBACK] Successfully processed post-call details for lead ${leadId}`)

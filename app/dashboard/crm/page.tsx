@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { 
   Search, Phone, MessageCircle, RefreshCw, Upload, 
   Plus, CheckCircle2, X, Download, Trash2, UserPlus, 
-  Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, FileText, Send
+  Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, FileText, Send, HelpCircle
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import TestNotificationBtn from '@/components/TestNotificationBtn'
@@ -67,6 +67,7 @@ export default function CRMPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCampaign, setSelectedCampaign] = useState('')
   const [selectedForm, setSelectedForm] = useState('')
+  const [selectedCsvAudience, setSelectedCsvAudience] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   
   const [currentPage, setCurrentPageState] = useState(() => {
@@ -100,7 +101,7 @@ export default function CRMPage() {
       return
     }
     setCurrentPage(1)
-  }, [activeStage, searchQuery, selectedCampaign, selectedForm])
+  }, [activeStage, searchQuery, selectedCampaign, selectedForm, selectedCsvAudience])
 
   // --- MODAL STATE ---
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
@@ -698,19 +699,6 @@ export default function CRMPage() {
                 console.log("[CRM] WhatsApp auto-trigger status:", data)
             }).catch(err => console.error("[CRM] WhatsApp auto-trigger failed:", err))
 
-            // 2. Trigger outbound voice call if auto call setting is enabled
-            if (autoCallNewLeads) {
-                console.log("[CRM] auto_call_new_leads is enabled. Triggering outbound voice call for lead ID:", savedLead.id)
-                fetch('/api/voice/call', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ leadId: savedLead.id, isAutoTrigger: true })
-                }).then(async (res) => {
-                    const data = await res.json()
-                    console.log("[CRM] Outbound voice call auto-trigger status:", data)
-                }).catch(err => console.error("[CRM] Outbound voice call auto-trigger failed:", err))
-            }
-
             // Force cache refresh
             await fetchLeads(true)
             setIsAddModalOpen(false)
@@ -874,12 +862,20 @@ export default function CRMPage() {
     const file = e.target.files?.[0]
     const effectiveUserId = targetUserId || userId;
     if (!file || !effectiveUserId) return
+
+    // Prompt the user for an audience name
+    const defaultName = file.name.replace(".csv", "")
+    const audienceName = prompt("Give a name to this CSV uploaded audience:", defaultName);
+    if (audienceName === null) return; // User cancelled upload
+    const csvAudience = audienceName.trim() || 'General CSV Import'
+
     const reader = new FileReader()
     reader.onload = async (event) => {
         const rows = (event.target?.result as string).split('\n').slice(1)
         const newLeads = rows.map(r => r.split(',')).filter(c => c.length >= 2).map(cols => ({ 
             user_id: effectiveUserId, name: cols[0]?.trim(), phone: cols[1]?.trim(), 
             email: cols[2]?.trim(), source: 'CSV Import', pipeline_stage: 'New',
+            csv_audience: csvAudience,
             created_at: new Date().toISOString()
         }))
         if (newLeads.length > 0) {
@@ -952,6 +948,13 @@ END:VCARD\n`
     return [...new Set(formNames)] as string[]
   }, [leads])
 
+  const uniqueCsvAudiences = useMemo(() => {
+    const audiences = leads
+      .map(l => l.csv_audience)
+      .filter(a => a && a !== 'null' && a !== 'undefined' && typeof a === 'string')
+    return [...new Set(audiences)] as string[]
+  }, [leads])
+
   // --- ADVANCED FILTERING ---
   // 1. Leads matching search, campaign, and form filters (but NOT pipeline stage)
   const leadsMatchingFilters = useMemo(() => {
@@ -976,8 +979,10 @@ END:VCARD\n`
       const matchForm = selectedForm === '' || 
                         l.form_name?.trim() === selectedForm.trim() || 
                         l.source?.trim() === selectedForm.trim()
+      const matchCsvAudience = selectedCsvAudience === '' || 
+                               l.csv_audience?.trim() === selectedCsvAudience.trim()
       
-      return matchSearch && matchCampaign && matchForm
+      return matchSearch && matchCampaign && matchForm && matchCsvAudience
     })
 
     // Deduplicate leads by unique phone number (or ID if no phone) to keep CRM clean of duplicate contacts
@@ -1131,10 +1136,32 @@ END:VCARD\n`
                             <Download size={16} className="text-slate-600" />
                             <span className="font-bold text-[10px] sm:text-sm text-slate-600">Export VCF</span>
                         </button>
-                        <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-slate-200/60 bg-white hover:bg-slate-50 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
-                            <Upload size={16} className="text-slate-600" />
-                            <span className="font-bold text-[10px] sm:text-sm text-slate-600">Import CSV</span>
-                        </button>
+                        <div className="flex items-center gap-1">
+                            <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-slate-200/60 bg-white hover:bg-slate-50 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
+                                <Upload size={16} className="text-slate-600" />
+                                <span className="font-bold text-[10px] sm:text-sm text-slate-600">Import CSV</span>
+                            </button>
+                            <div className="relative group">
+                                <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none" title="CSV Format Guide">
+                                    <HelpCircle size={16} />
+                                </button>
+                                <div className="absolute right-0 top-full mt-2 w-72 p-4 bg-slate-950 text-white text-xs rounded-2xl shadow-xl border border-slate-800 opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 transition-all duration-200 z-50">
+                                    <p className="font-bold text-slate-200 mb-1.5 flex items-center gap-1">
+                                        <HelpCircle size={12} className="text-indigo-400" /> CSV Import Format
+                                    </p>
+                                    <p className="text-slate-400 leading-relaxed mb-2 font-medium">
+                                        Your CSV file must include headers on the first row: <code className="font-mono text-yellow-300">Name,Phone,Email</code>
+                                    </p>
+                                    <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 font-mono text-[10px] text-emerald-400 space-y-1">
+                                        <div>Name,Phone,Email</div>
+                                        <div>John Doe,+919999999999,john@example.com</div>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 mt-2 font-semibold leading-normal">
+                                        Name and Phone columns are required. Ensure phone numbers include country prefix (e.g. +91).
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
                         <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv" className="hidden" />
                     </>
                 )}
@@ -1184,8 +1211,17 @@ END:VCARD\n`
                         </select>
                         <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     </div>
-                    {(selectedCampaign || selectedForm) && (
-                        <button onClick={() => { setSelectedCampaign(''); setSelectedForm(''); }} className="px-4 py-3.5 text-xs font-bold text-red-500 hover:bg-red-50 rounded-2xl transition-colors">Clear Filters</button>
+                    {uniqueCsvAudiences.length > 0 && (
+                        <div className="relative flex-1">
+                            <select value={selectedCsvAudience} onChange={(e) => setSelectedCsvAudience(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-sm font-bold rounded-2xl py-3.5 pl-4 pr-10 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
+                                <option value="">All CSV Audiences</option>
+                                {uniqueCsvAudiences.map((aud, i) => <option key={i} value={aud}>{aud}</option>)}
+                            </select>
+                            <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        </div>
+                    )}
+                    {(selectedCampaign || selectedForm || selectedCsvAudience) && (
+                        <button onClick={() => { setSelectedCampaign(''); setSelectedForm(''); setSelectedCsvAudience(''); }} className="px-4 py-3.5 text-xs font-bold text-red-500 hover:bg-red-50 rounded-2xl transition-colors">Clear Filters</button>
                     )}
                 </div>
             )}
