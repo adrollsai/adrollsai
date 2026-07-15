@@ -213,8 +213,8 @@ export async function POST(request: Request) {
     const hasReference = validTemplate.length > 0;
 
     // Detect if user requested to exclude logo or business info
-    const excludeLogo = userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't)\s+logo\b/i);
-    const excludeBusinessInfo = userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't)\s+(business|brand|info)\b/i);
+    const excludeLogo = userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip)\s+logo\b/i);
+    const excludeBusinessInfo = userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip|only)\s+(business|brand|info|text|headline|label|overlay|words|letters|writing)\b/i) || userInstructions?.toLowerCase().includes('raw picture') || userInstructions?.toLowerCase().includes('raw image');
 
     // Multimodal Visual Style Analysis using Gemini if a reference ad image is selected
     let styleDescription = "";
@@ -305,11 +305,12 @@ Here is the information provided by the user:
 Your goal is to synthesize this information and output an extremely detailed, descriptive visual prompt for the image generation model.
 Follow these master designer rules to ensure the prompt is premium, attention-grabbing, and informative:
 1. COMPOSITION & DETAIL: Describe a highly detailed, premium, and professional visual layout. Specify the hero scene, composition hierarchy, framing (e.g. eye-level, wide angle, close-up details), cinematic warm or natural lighting, material textures (wood grain, soft fabrics, glass reflections), and overall luxury editorial mood. The description must be rich, concrete, and visually descriptive.
-2. INFORMATION & ATTENTION-GRABBING KEYWORDS: Include clear, high-converting text overlay instructions. Mention that the poster should feature elegant, clean, and legible typography for the primary value proposition, such as "SMART INVESTMENT: PREMIUM STUDENT LIVING" or relevant key benefit statements matching the product.
-3. MANDATORY CONTACT INFO & BRANDING: Unless the user's custom instructions explicitly request to exclude the contact number, you MUST instruct the model to display the contact number "${finalContactNumber || ''}" cleanly, professionally, and prominently. It should be positioned elegantly at the bottom footer or banner of the design (e.g., "For info, contact: ${finalContactNumber || ''}" or "Call ${finalContactNumber || ''}").
-4. LOGO INTEGRATION: Instruct the image model to place the business logo cleanly and integrate it seamlessly (blending the background smoothly into the surrounding theme/sky, avoiding unblended raw shapes).
+2. INFORMATION & ATTENTION-GRABBING KEYWORDS: Unless the user's custom instructions explicitly request to exclude text overlays, make the creative highly informative. Include clear, high-converting text overlay instructions: a bold benefit-driven headline highlighting the product value proposition, and a sub-headline listing key features or pricing details.
+3. MANDATORY CONTACT INFO & BRANDING: Unless the user's custom instructions explicitly request to exclude the contact number or business info, you MUST instruct the model to display the contact number "${finalContactNumber || ''}" cleanly, professionally, and prominently. It should be positioned elegantly at the bottom footer or banner of the design (e.g., "For info, contact: ${finalContactNumber || ''}" or "Call ${finalContactNumber || ''}").
+4. LOGO INTEGRATION: Unless the user's custom instructions explicitly request to exclude the logo, instruct the image model to place the business logo cleanly and integrate it seamlessly (blending the background smoothly into the surrounding theme/sky, avoiding unblended raw shapes).
 5. IMAGE HERO: Instruct the model to analyze the provided product/property photos, select the most relevant hero asset, and place it at the center (taking up 60-70% of the canvas).
-6. OUTPUT FORMAT: The output should be a single cohesive, highly detailed, descriptive paragraph containing the exact scene description, layouts, styling, text overlays, and details for the image model. Do NOT include any intro, conversational text, or metadata in your output. Just output the final prompt.`;
+6. EXPLICIT EXCLUSION HANDLING: If the custom user instructions explicitly ask to remove, exclude, or skip text overlays, headlines, contact numbers, or logos (e.g., "no text", "no logo", "raw picture without text", "raw image"), you MUST follow this strictly. In that case, do NOT instruct the image model to include any text overlays, slogans, contact numbers, or logos. Describe only the raw visual scene of the product/property itself.
+7. OUTPUT FORMAT: The output should be a single cohesive, highly detailed, descriptive paragraph containing the exact scene description, layouts, styling, text overlays, and details for the image model. Do NOT include any intro, conversational text, or metadata in your output. Just output the final prompt.`;
 
         const imageParts: any[] = [];
         for (const imgUrl of validPropImages.slice(0, 4)) {
@@ -400,7 +401,9 @@ Make the edits clean, professional, and blend seamlessly with the original conte
           (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Include the contact number "${finalContactNumber}" clearly and elegantly in a banner or footer at the bottom of the poster (e.g. "Call: ${finalContactNumber}").` : '',
           `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`,
           `Ensure the overall composition is highly professional, balanced, featuring cinematic warm lighting, detailed textures, and a luxury editorial aesthetic.`,
-          `Keep overlays minimal, clean, and high-converting (e.g. a bold, clean headline and subhead). Avoid gibberish or messy text clutter.`,
+          !excludeBusinessInfo ? `If text is not excluded, make the creative highly informative: include a bold, clean benefit-driven headline (based on ${propertyTitle || 'the product'}), a sub-headline highlighting key details or amenities (based on ${propertyDescription || 'the product details'}), and display the brand logo and contact details clearly.` : '',
+          excludeBusinessInfo ? `Do NOT add any text overlays, slogans, contact numbers, writing, or labels on the image. Keep it purely as a clean, raw photograph.` : '',
+          excludeLogo ? `Do NOT include any brand logo or watermark on the image.` : '',
           userInstructions ? `Custom Instructions: ${userInstructions}` : ''
       ].filter(Boolean).join("\n");
     }

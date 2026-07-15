@@ -90,16 +90,47 @@ export async function POST(request: Request) {
     const allInputImages = [...propImages];
     if (logoUrl) allInputImages.push(logoUrl);
 
-    // C. Build literal, simplified, high-converting image prompt
-    const promptParts = [
-      "Make a premium, high-converting static meta ad. The final generated image must look 100% like an authentic, high-quality photograph, avoiding any artificial, shiny, or plastic look. It must include beautiful, attractive, photorealistic humans (could be a family, a man, or a woman depending on the product, with true-to-life detailing of skin, hair, and features). The ethnicity of the people must match the origin of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise). Do NOT write or draw any text overlays, labels, or placeholders like 'logo', 'put logo here', 'business name', or text circles. Keep the image fully clean of text and placeholders.",
-      `Product Info: ${prop.title || ''}. Description: ${prop.description || ''}`,
-      businessName ? `Business Name: ${businessName}` : '',
-      contactNumber ? `Contact Info: ${contactNumber}` : '',
-      profile.custom_prompt ? `Custom Instructions: ${profile.custom_prompt}` : ''
-    ].filter(Boolean);
+    // C. Generate custom, high-converting image prompt using Gemini
+    const systemVisualRules = buildImageSystemPrompt(industry || 'general', false);
 
-    const finalImagePrompt = promptParts.join("\n");
+    const llmPromptForImage = `You are a world-class Ad Creative Director with 20 years of experience creating high-converting Meta ads.
+Your task is to write a highly detailed, professional visual design prompt for an image generation model to create a stunning static ad graphic for this product:
+
+PRODUCT TITLE: "${prop.title || ''}"
+PRODUCT DESCRIPTION: "${prop.description || ''}"
+BUSINESS NAME: "${businessName || ''}"
+CONTACT DETAILS: "${contactNumber || ''}"
+INDUSTRY/VERTICAL: "${industry || 'general'}"
+CUSTOM USER INSTRUCTIONS: "${profile.custom_prompt || ''}"
+
+### VISUAL DESIGN SYSTEM RULES (MANDATORY)
+The image prompt you generate must instruct the image model to follow these guidelines:
+${systemVisualRules}
+
+### ADDITIONAL SPECIFIC DIRECTIONS
+- The product or property itself must be the primary focus and hero of the image. For real estate, showcase a gorgeous modern luxury apartment interior, living room, or a villa.
+- Show happy, attractive, photorealistic humans (e.g. a family, a professional, or a couple) interacting naturally with the product in the scene (e.g., enjoying the living room, standing in front of the villa, working at the desk). The people should have true-to-life skin detailing, real pores, natural expressions, and look completely authentic.
+- The ethnicity of the humans must match the business origin (e.g., South Asian/Indian ethnicity if the business context or product is based in India, Caucasian/Western otherwise).
+- Create a complete, premium ad design layout: Include a clean, professional logo/monogram watermark of the brand in one corner. Overlay the product name and a short hook/benefit headline in an elegant, minimal geometric font. Print the business name "${businessName}" and contact info "${contactNumber}" in a tiny, clean info line at the bottom margin.
+
+Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that describes this complete visual scene, composition, lighting, and design layout. Do NOT write any markdown, intro, or explanation. Output ONLY the raw prompt text itself.`;
+
+    let finalImagePrompt = "";
+    try {
+      console.log("[Auto-Generate Worker] Calling Gemini to generate custom image prompt...");
+      const response = await generateKieChat(llmPromptForImage, "gemini-3-flash");
+      finalImagePrompt = response.trim();
+      console.log("[Auto-Generate Worker] Generated Custom Image Prompt:", finalImagePrompt);
+    } catch (err) {
+      console.error("[Auto-Generate Worker] Gemini prompt generation failed, falling back to static prompt:", err);
+      // Fallback if Gemini fails
+      finalImagePrompt = [
+        `Make a premium, high-converting static meta ad for ${prop.title || ''}.`,
+        `The primary focus must be the product/property itself. Include attractive photorealistic humans (matching origin ethnicity) interacting with the product naturally (e.g. enjoying the room).`,
+        `Integrate a small branding logo watermark in a corner and contact info "${contactNumber || ''}" at the bottom.`,
+        `Product details: ${prop.title || ''} - ${prop.description || ''}`
+      ].join("\n");
+    }
 
     const selectedModel = allInputImages.length > 0 ? "gpt-image-2-image-to-image" : "gpt-image-2-text-to-image";
 

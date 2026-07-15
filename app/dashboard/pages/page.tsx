@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { 
     Globe, Plus, Trash2, Edit3, Eye, Copy, Check, MessageSquare, 
     Sparkles, ArrowRight, Loader2, List, Clipboard, ArrowLeft, Send, Paperclip,
-    Code
+    Code, Image as ImageIcon, X
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2, compressImage } from '@/utils/upload-helper'
@@ -141,10 +141,14 @@ export default function PagesDashboard() {
 
     // Brand Color & Chat files states
     const [brandColor, setBrandColor] = useState('#2563eb')
-    const [chatFiles, setChatFiles] = useState<File[]>([])
-    const [chatPreviews, setChatPreviews] = useState<string[]>([])
+    const [attachments, setAttachments] = useState<{ id: string; type: 'local' | 'asset'; url: string; file?: File }[]>([])
     const [isUploadingChatFiles, setIsUploadingChatFiles] = useState(false)
     const chatFileInputRef = useRef<HTMLInputElement>(null)
+
+    // Assets Picker States
+    const [existingAssets, setExistingAssets] = useState<any[]>([])
+    const [isAssetPickerOpen, setIsAssetPickerOpen] = useState(false)
+    const [loadingAssets, setLoadingAssets] = useState(false)
 
 
 
@@ -166,15 +170,55 @@ export default function PagesDashboard() {
     const handleChatFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             const filesArray = Array.from(e.target.files)
-            setChatFiles(prev => [...prev, ...filesArray])
-            const newPreviews = filesArray.map(file => URL.createObjectURL(file))
-            setChatPreviews(prev => [...prev, ...newPreviews])
+            const newAttachments = filesArray.map(file => ({
+                id: crypto.randomUUID(),
+                type: 'local' as const,
+                url: URL.createObjectURL(file),
+                file
+            }))
+            setAttachments(prev => [...prev, ...newAttachments])
         }
     }
 
-    const handleRemoveChatFile = (index: number) => {
-        setChatFiles(prev => prev.filter((_, i) => i !== index))
-        setChatPreviews(prev => prev.filter((_, i) => i !== index))
+    const handleRemoveAttachment = (id: string) => {
+        setAttachments(prev => prev.filter(att => att.id !== id))
+    }
+
+    const handleOpenAssetPicker = async () => {
+        setIsAssetPickerOpen(true)
+        setLoadingAssets(true)
+        try {
+            const urlParams = new URLSearchParams(window.location.search)
+            const impersonateId = urlParams.get('impersonate')
+            const response = await fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+            const assetData = await response.json()
+            if (Array.isArray(assetData)) {
+                const photoAssets = assetData.filter((a: any) => 
+                    a.type === 'image' && 
+                    a.url && 
+                    !a.url.includes('processing') && 
+                    !['Processing', 'Rendering', 'Failed'].includes(a.status)
+                )
+                setExistingAssets(photoAssets)
+            }
+        } catch (err) {
+            console.error("Failed to load existing assets:", err)
+        } finally {
+            setLoadingAssets(false)
+        }
+    }
+
+    const handleToggleAsset = (assetUrl: string) => {
+        const exists = attachments.some(a => a.url === assetUrl)
+        if (exists) {
+            setAttachments(prev => prev.filter(a => a.url !== assetUrl))
+        } else {
+            setAttachments(prev => [...prev, {
+                id: crypto.randomUUID(),
+                type: 'asset' as const,
+                url: assetUrl
+            }])
+        }
     }
 
     // --- 1. SESSION & IMPERSONATION SETUP ---
@@ -736,25 +780,25 @@ export default function PagesDashboard() {
 
     // --- 5. CONVERSATIONAL EDIT CHAT Console ---
     const handleSendChatEdit = async () => {
-        if ((!chatInput.trim() && chatFiles.length === 0) || !activeEditorPage) return
+        if ((!chatInput.trim() && attachments.length === 0) || !activeEditorPage) return
         
         const userMsg = chatInput.trim()
         setChatInput('')
-        const filesToSend = [...chatFiles]
-        const previewsToSend = [...chatPreviews]
-        setChatFiles([])
-        setChatPreviews([])
+        const localAttachments = attachments.filter(a => a.type === 'local')
+        const assetAttachments = attachments.filter(a => a.type === 'asset')
+        const previewsToSend = attachments.map(a => a.url)
+        setAttachments([])
 
         setChatLogs(prev => [...prev, { sender: 'user', message: userMsg || "Sent attachment(s)", images: previewsToSend }])
         setActionLoading(true)
 
         try {
             let uploadedUrls: string[] = []
-            if (filesToSend.length > 0) {
+            if (localAttachments.length > 0) {
                 setIsUploadingChatFiles(true)
                 try {
-                    const uploadPromises = filesToSend.map(async (file) => {
-                        const compressedFile = await compressImage(file)
+                    const uploadPromises = localAttachments.map(async (att) => {
+                        const compressedFile = await compressImage(att.file!)
                         const publicUrl = await uploadToR2(compressedFile, 'chat-attachments')
                         return publicUrl
                     })
@@ -767,6 +811,8 @@ export default function PagesDashboard() {
                 }
                 setIsUploadingChatFiles(false)
             }
+
+            const finalImageUrls = [...uploadedUrls, ...assetAttachments.map(a => a.url)]
 
             const endpoint = impersonateId 
                 ? `/api/landing-page/generate?impersonate=${impersonateId}` 
@@ -783,7 +829,7 @@ export default function PagesDashboard() {
                     mode: 'edit',
                     instructions: userMsg,
                     currentHtml: activeEditorPage.html_content,
-                    imageUrls: uploadedUrls
+                    imageUrls: finalImageUrls
                 })
             })
 
@@ -1197,17 +1243,18 @@ export default function PagesDashboard() {
                         </div>
 
                         {/* Attached files previews */}
-                        {chatPreviews.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mb-2 p-2 bg-white border border-slate-200 rounded-xl">
-                                {chatPreviews.map((url, idx) => (
-                                    <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200 group">
-                                        <img src={url} alt="attached-preview" className="w-full h-full object-cover" />
+                        {attachments.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mb-2 p-2 bg-white border border-slate-200 rounded-xl animate-in fade-in duration-200">
+                                {attachments.map((att) => (
+                                    <div key={att.id} className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200 group">
+                                        <img src={att.url} alt="attached-preview" className="w-full h-full object-cover" />
                                         <button
-                                            onClick={() => handleRemoveChatFile(idx)}
+                                            onClick={() => handleRemoveAttachment(att.id)}
                                             className="absolute top-0.5 right-0.5 bg-red-500/90 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold hover:bg-red-600 transition-colors shadow"
                                         >
                                             ×
                                         </button>
+                                        <span className={`absolute bottom-0.5 right-0.5 text-[6px] font-black text-white px-1 rounded ${att.type === 'asset' ? 'bg-purple-600' : 'bg-blue-600'}`}>{att.type === 'asset' ? 'Asset' : 'File'}</span>
                                     </div>
                                 ))}
                             </div>
@@ -1228,9 +1275,18 @@ export default function PagesDashboard() {
                                 disabled={actionLoading}
                                 type="button"
                                 className="bg-white border border-slate-200 text-slate-500 hover:text-slate-700 rounded-xl p-3 shadow-sm hover:bg-slate-50 active:scale-95 disabled:opacity-50 flex items-center justify-center transition-all"
-                                title="Attach photo or screenshot"
+                                title="Attach local photo or screenshot"
                             >
                                 <Paperclip size={16} />
+                            </button>
+                            <button
+                                onClick={handleOpenAssetPicker}
+                                disabled={actionLoading}
+                                type="button"
+                                className="bg-white border border-slate-200 text-slate-500 hover:text-slate-700 rounded-xl p-3 shadow-sm hover:bg-slate-50 active:scale-95 disabled:opacity-50 flex items-center justify-center transition-all"
+                                title="Select from Assets"
+                            >
+                                <ImageIcon size={16} />
                             </button>
                             <input 
                                 type="text"
@@ -1243,7 +1299,7 @@ export default function PagesDashboard() {
                             />
                             <button
                                 onClick={handleSendChatEdit}
-                                disabled={actionLoading || (!chatInput.trim() && chatFiles.length === 0)}
+                                disabled={actionLoading || (!chatInput.trim() && attachments.length === 0)}
                                 className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl p-3 shadow-md shadow-blue-500/10 active:scale-95 disabled:opacity-50 flex items-center justify-center transition-all"
                             >
                                 <Send size={16} />
@@ -2158,6 +2214,89 @@ export default function PagesDashboard() {
                             {actionLoading ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} className="text-purple-400" />}
                             {actionLoading ? 'Asking Gemini to generate HTML...' : 'Generate High-Converting Landing Page'}
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ASSET PICKER DIALOG */}
+            {isAssetPickerOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white w-full max-w-2xl rounded-[2rem] border border-slate-100 shadow-2xl p-6 flex flex-col max-h-[80vh] overflow-hidden transform transition-all scale-100 animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+                            <div>
+                                <h3 className="text-base font-black text-slate-800">Select Image from Assets</h3>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Click on creatives to toggle select</p>
+                            </div>
+                            <button 
+                                onClick={() => setIsAssetPickerOpen(false)}
+                                className="bg-slate-50 p-2 rounded-full border border-slate-200 hover:bg-slate-100 text-slate-500 transition-colors"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        {/* Content Area */}
+                        <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-hide">
+                            {loadingAssets ? (
+                                <div className="flex flex-col items-center justify-center py-12 gap-2 text-slate-400">
+                                    <Loader2 className="animate-spin text-blue-500 w-8 h-8" />
+                                    <span className="text-xs font-bold uppercase tracking-wider">Loading assets...</span>
+                                </div>
+                            ) : existingAssets.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-12 gap-2 text-slate-400">
+                                    <ImageIcon size={32} />
+                                    <span className="text-xs font-bold uppercase tracking-wider">No assets found</span>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                    {existingAssets.map((asset) => {
+                                        const isSelected = attachments.some(a => a.url === asset.url);
+                                        return (
+                                            <div 
+                                                key={asset.id}
+                                                onClick={() => handleToggleAsset(asset.url)}
+                                                className={`relative rounded-2xl overflow-hidden border-2 cursor-pointer transition-all aspect-[4/5] shadow-sm group ${
+                                                    isSelected ? 'border-blue-600 ring-4 ring-blue-500/10 scale-[0.98]' : 'border-slate-100 hover:border-slate-300'
+                                                }`}
+                                            >
+                                                <img 
+                                                    src={asset.url} 
+                                                    alt={asset.caption || 'Asset'} 
+                                                    className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300" 
+                                                />
+                                                {/* Checkbox overlay */}
+                                                <div className={`absolute inset-0 flex items-center justify-center transition-all ${
+                                                    isSelected ? 'bg-blue-900/10' : 'bg-transparent'
+                                                }`}>
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg border border-white transition-all transform ${
+                                                        isSelected ? 'bg-blue-600 text-white scale-100' : 'bg-white/80 text-slate-500 scale-90 opacity-0 group-hover:opacity-100'
+                                                    }`}>
+                                                        <Check size={16} />
+                                                    </div>
+                                                </div>
+                                                {/* Title watermark */}
+                                                {asset.caption && (
+                                                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-6 text-[10px] text-white font-medium truncate">
+                                                        {asset.caption}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="border-t border-slate-100 pt-4 mt-4 flex justify-end">
+                            <button
+                                onClick={() => setIsAssetPickerOpen(false)}
+                                className="bg-slate-900 text-white font-extrabold hover:bg-slate-800 text-xs px-6 py-3 rounded-full shadow-md shadow-slate-900/10 active:scale-95 transition-all"
+                            >
+                                Done
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

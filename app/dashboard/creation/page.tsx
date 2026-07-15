@@ -200,7 +200,7 @@ export default function CreationPage() {
   const [selectedRatio, setSelectedRatio] = useState('4:5')
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<'google/nano-banana-2' | 'gpt/gpt-image-2-text-to-image'>('gpt/gpt-image-2-text-to-image')
-  const [creativeCategory, setCreativeCategory] = useState('Premium')
+  const [creativeCategory, setCreativeCategory] = useState('')
   
   // Custom Reference State
   const [uploadedRefUrl, setUploadedRefUrl] = useState<string | null>(null)
@@ -543,7 +543,7 @@ export default function CreationPage() {
     instructions: '',
     quantity: 5,
     isOrganic: false,
-    creativeCategory: 'Premium',
+    creativeCategory: '',
     angles: [],
     selectedAngles: [],
     generatedAssets: [],
@@ -598,10 +598,13 @@ export default function CreationPage() {
             // Filter out batch-excluded images
             const filteredPropImages = propImages.filter(img => !creativeFlow.batchExcludedImages.includes(img));
 
+            // Check if logo is excluded
+            const isLogoExcluded = profile?.logo_url ? creativeFlow.batchExcludedImages.includes(profile.logo_url) : false;
+
             const payload = {
                 propertyTitle: creativeFlow.product?.title,
                 propertyDescription: creativeFlow.product?.description || "",
-                creativeCategory: creativeFlow.creativeCategory || 'Premium',
+                creativeCategory: creativeFlow.creativeCategory || '',
                 styleAesthetic: angle.title ? `${angle.title} - ${angle.visual_concept}` : undefined,
                 userInstructions: creativeFlow.instructions + (angle.visual_concept ? `\nVisual Concept to follow: ${angle.visual_concept}` : ""),
                 propImages: filteredPropImages,
@@ -609,8 +612,8 @@ export default function CreationPage() {
                 aspectRatio: "4:5",
                 model: 'image-2.0',
                 contactNumber: profile?.contact_number,
-                logoUrl: profile?.logo_url,
-                excludedImages: excludedImages
+                logoUrl: isLogoExcluded ? null : profile?.logo_url,
+                excludedImages: creativeFlow.batchExcludedImages
             };
 
             const res = await fetch(`/api/chat${window.location.search}`, {
@@ -1303,22 +1306,7 @@ export default function CreationPage() {
                 </div>
             )}
 
-            {creationMode === 'image' && (
-                <div className="relative w-full">
-                    <Sparkles size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-purple-500 animate-pulse" />
-                    <select 
-                        value={creativeCategory}
-                        onChange={(e) => setCreativeCategory(e.target.value)}
-                        className="w-full bg-purple-50/50 hover:bg-purple-100/50 border border-purple-100 text-purple-900 text-[11px] font-bold rounded-[1rem] py-2.5 pl-9 pr-8 appearance-none outline-none focus:ring-2 focus:ring-purple-500/20 transition-all cursor-pointer h-full"
-                    >
-                        {[
-                          'Premium',
-                          'High Converting'
-                        ].map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                    </select>
-                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
-                </div>
-            )}
+            {/* Creative category dropdown removed as per user instruction to only follow master prompt and custom instructions */}
 
             {/* Language Toggle (only in video mode) */}
             {creationMode === 'video' && (
@@ -2473,11 +2461,11 @@ export default function CreationPage() {
         )}
       </AnimatePresence>
 
-      {/* CREATIVE FLOW MODAL */}
       <CreativeFlowModal 
         creativeFlow={creativeFlow}
         setCreativeFlow={setCreativeFlow}
         properties={properties}
+        profile={profile}
         handleGenerateAngles={handleGenerateAngles}
         handleStartBatchRendering={handleStartBatchRendering}
       />
@@ -2906,6 +2894,7 @@ function CreativeFlowModal({
     creativeFlow, 
     setCreativeFlow, 
     properties, 
+    profile,
     handleGenerateAngles, 
     handleStartBatchRendering
   }: any) {
@@ -2960,25 +2949,31 @@ function CreativeFlowModal({
                   </div>
                 </div>
 
-                {/* IMAGE SELECTOR: Show product images for include/exclude */}
+                {/* IMAGE SELECTOR: Show product images and brand logo for include/exclude */}
                 {creativeFlow.product && (() => {
-                  const allImages: string[] = [];
+                  const allImages: { url: string; label: string; isLogo?: boolean }[] = [];
                   if (creativeFlow.product.images && creativeFlow.product.images.length > 0) {
-                    allImages.push(...creativeFlow.product.images.slice(0, 10));
+                    creativeFlow.product.images.slice(0, 10).forEach((url: string, idx: number) => {
+                      allImages.push({ url, label: `Photo ${idx + 1}` });
+                    });
                   } else if (creativeFlow.product.image_url) {
-                    allImages.push(creativeFlow.product.image_url);
+                    allImages.push({ url: creativeFlow.product.image_url, label: `Main Photo` });
                   }
-                  const includedCount = allImages.filter(img => !creativeFlow.batchExcludedImages.includes(img)).length;
+                  if (profile?.logo_url) {
+                    allImages.push({ url: profile.logo_url, label: 'Brand Logo', isLogo: true });
+                  }
+
+                  const includedCount = allImages.filter(img => !creativeFlow.batchExcludedImages.includes(img.url)).length;
                   if (allImages.length === 0) return null;
                   return (
                     <div>
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">2. Select Photos to Include</label>
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">2. Select Photos & Logo to Include</label>
                       <p className="text-[10px] text-slate-400 font-medium mb-4">
-                        {includedCount} of {allImages.length} photos will be sent to the AI model. Click to exclude/include.
+                        {includedCount} of {allImages.length} assets will be sent to the AI model. Click to exclude/include.
                       </p>
                       <div className="flex gap-3 flex-wrap">
-                        {allImages.map((imgUrl, idx) => {
-                          const isExcluded = creativeFlow.batchExcludedImages.includes(imgUrl);
+                        {allImages.map((imgItem, idx) => {
+                          const isExcluded = creativeFlow.batchExcludedImages.includes(imgItem.url);
                           return (
                             <div
                               key={idx}
@@ -2986,15 +2981,15 @@ function CreativeFlowModal({
                                 setCreativeFlow((prev: any) => ({
                                   ...prev,
                                   batchExcludedImages: isExcluded
-                                    ? prev.batchExcludedImages.filter((u: string) => u !== imgUrl)
-                                    : [...prev.batchExcludedImages, imgUrl]
+                                    ? prev.batchExcludedImages.filter((u: string) => u !== imgItem.url)
+                                    : [...prev.batchExcludedImages, imgItem.url]
                                 }));
                               }}
                               className={`relative w-16 h-16 rounded-xl overflow-hidden cursor-pointer border-2 transition-all group ${
                                 isExcluded ? 'border-red-400 opacity-40 grayscale' : 'border-blue-500 ring-2 ring-blue-500/10'
                               }`}
                             >
-                              <img src={imgUrl} className="w-full h-full object-cover" alt={`Product ${idx + 1}`} />
+                              <img src={imgItem.url} className="w-full h-full object-cover" alt={imgItem.label} />
                               <div className={`absolute inset-0 flex items-center justify-center transition-all ${
                                 isExcluded ? 'bg-red-900/30' : 'bg-blue-900/10'
                               }`}>
@@ -3004,7 +2999,11 @@ function CreativeFlowModal({
                                   <Check size={16} className="text-white drop-shadow-md" />
                                 )}
                               </div>
-                              <span className="absolute bottom-0.5 right-0.5 text-[7px] font-black text-white bg-black/50 px-1 rounded">{idx + 1}</span>
+                              <span className={`absolute bottom-0.5 right-0.5 text-[7px] font-black text-white px-1 rounded ${
+                                imgItem.isLogo ? 'bg-purple-600' : 'bg-black/50'
+                              }`}>
+                                {imgItem.isLogo ? 'Logo' : `${idx + 1}`}
+                              </span>
                             </div>
                           );
                         })}
@@ -3013,7 +3012,7 @@ function CreativeFlowModal({
                   );
                 })()}
   
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-6">
                   <div>
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">{creativeFlow.product && ((creativeFlow.product.images?.length || 0) > 0 || creativeFlow.product.image_url) ? '3' : '2'}. Quantity</label>
                     <select 
@@ -3024,34 +3023,10 @@ function CreativeFlowModal({
                       {[3, 5, 10, 15].map(q => <option key={q} value={q}>{q} Variations</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">{creativeFlow.product && ((creativeFlow.product.images?.length || 0) > 0 || creativeFlow.product.image_url) ? '4' : '3'}. Creative Strategy</label>
-                    <div className="relative">
-                      <Sparkles size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-500 animate-pulse pointer-events-none" />
-                      <select 
-                        value={creativeFlow.creativeCategory || 'Premium'}
-                        onChange={(e) => {
-                          const cat = e.target.value;
-                          setCreativeFlow((prev: any) => ({ 
-                            ...prev, 
-                            creativeCategory: cat,
-                            isOrganic: cat === 'High Converting'
-                          }));
-                        }}
-                        className="w-full bg-slate-50 border border-slate-200 py-3.5 pl-11 pr-10 rounded-2xl text-sm font-bold outline-none cursor-pointer hover:bg-slate-100/50 appearance-none transition-all h-[52px]"
-                      >
-                        {[
-                          'Premium',
-                          'High Converting'
-                        ].map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                      </select>
-                      <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                    </div>
-                  </div>
                 </div>
   
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">{creativeFlow.product && ((creativeFlow.product.images?.length || 0) > 0 || creativeFlow.product.image_url) ? '5' : '4'}. Additional Context (Optional)</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">{creativeFlow.product && ((creativeFlow.product.images?.length || 0) > 0 || creativeFlow.product.image_url) ? '4' : '3'}. Additional Context (Optional)</label>
                   <textarea 
                     value={creativeFlow.instructions}
                     onChange={(e) => setCreativeFlow((prev: any) => ({ ...prev, instructions: e.target.value }))}

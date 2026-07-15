@@ -17,7 +17,8 @@ import {
   Target,
   ArrowLeft,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  HelpCircle
 } from 'lucide-react'
 
 type MetaAudience = {
@@ -45,12 +46,16 @@ export default function CustomAudiencesPage() {
   const [audiences, setAudiences] = useState<MetaAudience[]>([])
 
   // Form State
-  const [creationTab, setCreationTab] = useState<'list' | 'website'>('list')
+  const [creationTab, setCreationTab] = useState<'list' | 'website' | 'crm'>('list')
   const [audName, setAudName] = useState('')
   const [audDescription, setAudDescription] = useState('')
   // List fields
   const [contactText, setContactText] = useState('')
   const [listFile, setListFile] = useState<File | null>(null)
+  // CRM fields
+  const [selectedStages, setSelectedStages] = useState<string[]>([])
+  const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([])
+  const [crmCampaignsList, setCrmCampaignsList] = useState<string[]>([])
   // Website fields
   const [retentionDays, setRetentionDays] = useState(30)
   const [urlContains, setUrlContains] = useState('')
@@ -110,6 +115,21 @@ export default function CustomAudiencesPage() {
           setAudiences(data.audiences)
         } else if (data.error) {
           toast.error(`Meta API Error: ${data.error}`)
+        }
+
+        // Fetch unique campaigns for CRM filters
+        const { data: leadsData } = await supabase
+          .from('leads')
+          .select('campaign_id, source')
+          .eq('user_id', targetUserId)
+        
+        if (leadsData) {
+          const campaignSet = new Set<string>()
+          leadsData.forEach((l: any) => {
+            if (l.campaign_id) campaignSet.add(l.campaign_id)
+            if (l.source) campaignSet.add(l.source)
+          })
+          setCrmCampaignsList(Array.from(campaignSet).filter(Boolean))
         }
       } else {
         setProfileConnected(false)
@@ -181,15 +201,89 @@ export default function CustomAudiencesPage() {
           setIsSubmitting(false)
           return
         }
+      } else if (creationTab === 'crm') {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          setIsSubmitting(false)
+          return
+        }
+        
+        let targetUserId = user.id
+        const { data: authProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+        if (['admin', 'agent'].includes(authProfile?.role || '') && (authProfile?.agency_id || authProfile?.parent_id)) {
+          targetUserId = (authProfile?.agency_id || authProfile?.parent_id) as string
+        }
+        if (impersonateId && ['super_admin', 'agency', 'admin', 'agent'].includes(authProfile?.role || '')) {
+          if (authProfile?.role !== 'super_admin') {
+            const isParent = (authProfile?.agency_id === impersonateId || authProfile?.parent_id === impersonateId)
+            const { data: subAccount } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('id', impersonateId)
+              .eq('agency_id', authProfile?.agency_id || user.id)
+              .single()
+            if (isParent || subAccount) targetUserId = impersonateId
+          } else {
+            targetUserId = impersonateId
+          }
+        }
+
+        let query = supabase
+          .from('leads')
+          .select('email, phone, name, campaign_id, source')
+          .eq('user_id', targetUserId)
+
+        if (selectedStages.length > 0) {
+          query = query.in('pipeline_stage', selectedStages)
+        }
+
+        const { data: filteredLeads, error: leadsFetchErr } = await query
+        if (leadsFetchErr) {
+          toast.error(`Failed to fetch leads: ${leadsFetchErr.message}`)
+          setIsSubmitting(false)
+          return
+        }
+
+        if (!filteredLeads || filteredLeads.length === 0) {
+          toast.error('No leads found matching the selected CRM filters.')
+          setIsSubmitting(false)
+          return
+        }
+
+        // Apply campaign filter on results (since campaign could match campaign_id or source)
+        let matchedLeads = filteredLeads
+        if (selectedCampaigns.length > 0) {
+          matchedLeads = filteredLeads.filter((l: any) => 
+            (l.campaign_id && selectedCampaigns.includes(l.campaign_id)) || 
+            (l.source && selectedCampaigns.includes(l.source))
+          )
+        }
+
+        if (matchedLeads.length === 0) {
+          toast.error('No leads matched the selected Campaign filters.')
+          setIsSubmitting(false)
+          return
+        }
+
+        contactsPayload = matchedLeads.map((l: any) => ({
+          email: l.email || undefined,
+          phone: l.phone || undefined
+        })).filter((c: any) => c.email || c.phone)
+
+        if (contactsPayload.length === 0) {
+          toast.error('No leads have email or phone numbers configured.')
+          setIsSubmitting(false)
+          return
+        }
       }
 
       const payload = {
         name: audName,
         description: audDescription,
-        subtype: creationTab === 'list' ? 'CUSTOM' : 'WEBSITE',
+        subtype: creationTab === 'website' ? 'WEBSITE' : 'CUSTOM',
         retention_seconds: creationTab === 'website' ? retentionDays * 86400 : undefined,
         url_contains: creationTab === 'website' && urlContains ? urlContains : undefined,
-        contacts: creationTab === 'list' ? contactsPayload : undefined
+        contacts: creationTab !== 'website' ? contactsPayload : undefined
       }
 
       const impParam = impersonateId ? `?impersonate=${impersonateId}` : ''
@@ -211,6 +305,8 @@ export default function CustomAudiencesPage() {
         setListFile(null)
         setUrlContains('')
         setRetentionDays(30)
+        setSelectedStages([])
+        setSelectedCampaigns([])
         if (fileInputRef.current) fileInputRef.current.value = ''
         
         fetchProfileAndAudiences(true)
@@ -289,20 +385,27 @@ export default function CustomAudiencesPage() {
               </div>
 
               {/* Subtype tabs */}
-              <div className="flex bg-slate-100 p-1 rounded-2xl">
+              <div className="flex bg-slate-100 p-1 rounded-2xl gap-1">
                 <button
                   type="button"
                   onClick={() => { setCreationTab('list'); setAudName(''); }}
-                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${creationTab === 'list' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  className={`flex-1 py-2 px-1 text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 ${creationTab === 'list' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                  <Upload size={14} /> Customer List
+                  <Upload size={12} /> List File
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setCreationTab('crm'); setAudName(''); }}
+                  className={`flex-1 py-2 px-1 text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 ${creationTab === 'crm' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  <Users size={12} /> CRM Leads
                 </button>
                 <button
                   type="button"
                   onClick={() => { setCreationTab('website'); setAudName(''); }}
-                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${creationTab === 'website' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  className={`flex-1 py-2 px-1 text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 ${creationTab === 'website' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                  <Globe size={14} /> Website Traffic
+                  <Globe size={12} /> Website
                 </button>
               </div>
 
@@ -312,7 +415,7 @@ export default function CustomAudiencesPage() {
                   <input
                     type="text"
                     required
-                    placeholder={creationTab === 'list' ? 'E.g., VIP CRM Clients' : 'E.g., All Website Visitors 30d'}
+                    placeholder={creationTab === 'list' ? 'E.g., VIP CRM Clients' : creationTab === 'crm' ? 'E.g., Qualified Leads' : 'E.g., All Website Visitors 30d'}
                     value={audName}
                     onChange={(e) => setAudName(e.target.value)}
                     className="w-full bg-slate-50 hover:bg-slate-100/50 py-3 px-4 rounded-2xl text-slate-800 text-sm font-semibold outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all"
@@ -330,10 +433,20 @@ export default function CustomAudiencesPage() {
                   />
                 </div>
 
-                {creationTab === 'list' ? (
+                {creationTab === 'list' && (
                   <div className="space-y-4">
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Upload CSV / TXT File</label>
+                      <div className="flex items-center gap-1.5 ml-2 mb-1.5">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Upload CSV / TXT File</label>
+                        <div className="group relative cursor-pointer">
+                          <HelpCircle size={12} className="text-slate-400 hover:text-slate-600 transition-colors" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-slate-800 text-white text-[10px] rounded-xl shadow-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 leading-relaxed">
+                            <strong>Format guidelines:</strong><br />
+                            One email address or phone number per line.<br />
+                            Commas, semicolons, and newlines will be used as delimiters. No headers required.
+                          </div>
+                        </div>
+                      </div>
                       <div
                         onClick={() => fileInputRef.current?.click()}
                         className="border-2 border-dashed border-slate-200 rounded-2xl p-6 bg-slate-50 hover:bg-blue-50/30 hover:border-blue-300 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2"
@@ -373,7 +486,77 @@ export default function CustomAudiencesPage() {
                       />
                     </div>
                   </div>
-                ) : (
+                )}
+
+                {creationTab === 'crm' && (
+                  <div className="space-y-4 bg-blue-50/30 p-4 rounded-2xl border border-blue-100/50">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">CRM Lead Stage(s)</label>
+                      <div className="flex flex-wrap gap-2">
+                        {['New', 'Contacted', 'Qualified', 'Appointment Booked', 'Appointment Done', 'Closed', 'Lost'].map(stage => {
+                          const isSelected = selectedStages.includes(stage)
+                          return (
+                            <button
+                              key={stage}
+                              type="button"
+                              onClick={() => {
+                                setSelectedStages(prev => 
+                                  isSelected ? prev.filter(s => s !== stage) : [...prev, stage]
+                                )
+                              }}
+                              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
+                                isSelected 
+                                  ? 'bg-blue-600 border-blue-600 text-white shadow-sm' 
+                                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm'
+                              }`}
+                            >
+                              {stage}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {selectedStages.length === 0 && (
+                        <p className="text-[9px] text-slate-400 mt-1.5 ml-2 font-medium">None selected: All stages will be included.</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">Source Campaign(s) / Channel(s)</label>
+                      <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-2 border border-slate-200/60 rounded-2xl bg-white shadow-inner">
+                        {crmCampaignsList.length === 0 ? (
+                          <span className="text-xs text-slate-400 p-2 italic">No campaigns found in CRM</span>
+                        ) : (
+                          crmCampaignsList.map(campaign => {
+                            const isSelected = selectedCampaigns.includes(campaign)
+                            return (
+                              <button
+                                key={campaign}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCampaigns(prev => 
+                                    isSelected ? prev.filter(c => c !== campaign) : [...prev, campaign]
+                                  )
+                                }}
+                                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
+                                  isSelected 
+                                    ? 'bg-blue-600 border-blue-600 text-white shadow-sm' 
+                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm'
+                                }`}
+                              >
+                                {campaign}
+                              </button>
+                            )
+                          })
+                        )}
+                      </div>
+                      {selectedCampaigns.length === 0 && (
+                        <p className="text-[9px] text-slate-400 mt-1.5 ml-2 font-medium">None selected: All campaigns will be included.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {creationTab === 'website' && (
                   <div className="space-y-4">
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Retention (Days)</label>

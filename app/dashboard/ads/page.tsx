@@ -1865,7 +1865,6 @@ export default function AdsPage() {
                                     <Sparkles size={14} /> 
                                     {orchestrator.isOpen && orchestrator.campaign?.id === campaign.id ? 'Optimizing...' : optimizedCampaigns.includes(campaign.id) ? 'Re-optimize' : 'Optimize'}
                                 </button>
-                                <button onClick={() => handleRemarketing(campaign)} disabled={orchestrator.isOpen && orchestrator.mode === 'remarketing'} className={`flex items-center justify-center gap-1 text-xs font-bold py-2 px-2.5 rounded-xl transition-all ${orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'remarketing' ? 'bg-blue-100 text-blue-400' : 'bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 shadow-sm'}`}><Users size={14} /> Remarket</button>
                                 <a href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-xl transition-colors"><ExternalLink size={16} /></a>
                             </div>
                         </div>
@@ -4459,11 +4458,7 @@ export default function AdsPage() {
                           )}
                         </div>
                       )}
- 
-                      <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-2xl border border-purple-100 flex items-center justify-between mt-4">
-                          <div><h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5"><Sparkles size={16} className="text-purple-500"/> Optimize for High-Quality Leads</h3><p className="text-xs text-slate-600 mt-1 font-medium">Use AI to automatically find users who are more likely to convert (requires Pixel).</p></div>
-                          <button onClick={() => setAdForm(prev => ({ ...prev, optimizeForConversions: !prev.optimizeForConversions }))} className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 shrink-0 ${adForm.optimizeForConversions ? 'bg-purple-500 focus:ring-purple-500' : 'bg-slate-300 focus:ring-slate-400'}`}><div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${adForm.optimizeForConversions ? 'translate-x-5' : 'translate-x-0'}`} /></button>
-                      </div>
+                      {/* Optimize for High-Quality Leads hidden as requested */}
                     
                       <div className="flex flex-col sm:flex-row gap-4">
                           <div className="flex-1"><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Gender</label><select value={adForm.gender} onChange={(e) => setAdForm(prev => ({...prev, gender: e.target.value}))} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 px-4 rounded-2xl text-slate-800 text-sm font-medium outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer">{GENDERS.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
