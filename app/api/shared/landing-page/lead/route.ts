@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
 import { sendCAPIEvent } from '@/utils/external-apis'
 import { triggerWelcomeDrip } from '@/utils/whatsapp/drips'
+import { triggerOutboundCall } from '@/utils/voice-helper'
 
 async function getNextRoundRobinAgent(supabaseAdmin: any, agentIds: string[]) {
     if (!agentIds || agentIds.length === 0) return null;
@@ -231,6 +232,21 @@ export async function POST(request: Request) {
             triggerWelcomeDrip(supabaseAdmin, newLead.id, name, phone, user_id, newLead.source || 'All').catch(err => {
                 console.error('[DRIP TRIGGER] Exception triggering welcome flow:', err)
             })
+
+            // Trigger automated Voice Dialing if enabled
+            try {
+                const { data: profile } = await supabaseAdmin
+                    .from('profiles')
+                    .select('auto_call_new_leads')
+                    .eq('id', user_id)
+                    .single()
+                
+                if (profile?.auto_call_new_leads) {
+                    await triggerOutboundCall(supabaseAdmin, newLead.id, user_id, true)
+                }
+            } catch (err: any) {
+                console.error('[AUTO CALL] Auto voice call trigger failed:', err.message || err)
+            }
         }
 
         return NextResponse.json({ 

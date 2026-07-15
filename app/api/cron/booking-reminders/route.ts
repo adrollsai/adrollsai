@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     // 1. Fetch all leads with active future bookings
     const { data: leads, error: leadsErr } = await supabaseAdmin
       .from('leads')
-      .select('id, booked_time, reminder_24h_sent, reminder_4h_sent, reminder_1h_sent, reminder_15m_sent')
+      .select('id, booked_time, reminder_24h_sent, reminder_4h_sent, reminder_1h_sent, reminder_15m_sent, custom_fields')
       .not('booked_time', 'is', null)
       .gt('booked_time', now.toISOString())
 
@@ -43,6 +43,42 @@ export async function GET(request: NextRequest) {
     const leadsToQueue: { id: string; type: '24h' | '4h' | '1h' | '15m' }[] = []
 
     for (const lead of leads) {
+      // Handle reschedule checking
+      let customFields = lead.custom_fields || {}
+      if (typeof customFields === 'string') {
+        try {
+          customFields = JSON.parse(customFields)
+        } catch (e) {
+          customFields = {}
+        }
+      }
+
+      if (customFields.last_notified_booked_time && customFields.last_notified_booked_time !== lead.booked_time) {
+        // Appointment rescheduled! Reset reminder statuses
+        lead.reminder_24h_sent = false
+        lead.reminder_4h_sent = false
+        lead.reminder_1h_sent = false
+        lead.reminder_15m_sent = false
+        customFields.last_notified_booked_time = lead.booked_time
+
+        await supabaseAdmin
+          .from('leads')
+          .update({
+            reminder_24h_sent: false,
+            reminder_4h_sent: false,
+            reminder_1h_sent: false,
+            reminder_15m_sent: false,
+            custom_fields: customFields
+          })
+          .eq('id', lead.id)
+      } else if (!customFields.last_notified_booked_time) {
+        customFields.last_notified_booked_time = lead.booked_time
+        await supabaseAdmin
+          .from('leads')
+          .update({ custom_fields: customFields })
+          .eq('id', lead.id)
+      }
+
       const bookedTime = new Date(lead.booked_time!)
       const diffMs = bookedTime.getTime() - now.getTime()
       const diffMins = Math.floor(diffMs / 60000)

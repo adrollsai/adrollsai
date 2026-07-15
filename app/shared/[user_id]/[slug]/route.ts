@@ -120,61 +120,25 @@ export async function GET(request: Request, { params }: RouteProps) {
         const buttonBgColor = isBrandLight ? '#0B0F19' : brandColor;
         const buttonTextColor = '#ffffff';
 
-        if (isSurveyPage) {
-            formHtml = `
-                <div id="survey-wizard-container" style="width: 100%; max-width: 500px; background: #ffffff; border-radius: 1.5rem; padding: 2.25rem 2rem; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; box-sizing: border-box; display: flex; flex-direction: column; gap: 1.5rem; margin: 0 auto;">
-                    <!-- Back Button & Progress -->
-                    <div id="survey-progress-container" style="display: flex; align-items: center; gap: 0.75rem; width: 100%; box-sizing: border-box;">
-                        <button id="survey-back-btn" style="display: none; background: #f1f5f9; border: none; border-radius: 50%; width: 2rem; height: 2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; font-weight: bold; font-size: 1.25rem; transition: background 0.2s;">←</button>
-                        <div style="flex: 1; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
-                            <div id="survey-progress-bar" style="width: 0%; height: 100%; background: ${brandColor}; border-radius: 3px; transition: width 0.3s ease-out;"></div>
-                        </div>
-                        <span id="survey-progress-text" style="font-size: 0.75rem; font-weight: 700; color: #64748b; white-space: nowrap;">Step 1 of 3</span>
+        // Always render the form wizard inline on the page
+        formHtml = `
+            <div id="survey-wizard-container" style="width: 100%; max-width: 500px; background: #ffffff; border-radius: 1.5rem; padding: 2.25rem 2rem; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; box-sizing: border-box; display: flex; flex-direction: column; gap: 1.5rem; margin: 0 auto;">
+                <!-- Back Button & Progress -->
+                <div id="survey-progress-container" style="display: flex; align-items: center; gap: 0.75rem; width: 100%; box-sizing: border-box;">
+                    <button id="survey-back-btn" style="display: none; background: #f1f5f9; border: none; border-radius: 50%; width: 2rem; height: 2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; font-weight: bold; font-size: 1.25rem; transition: background 0.2s;">←</button>
+                    <div style="flex: 1; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
+                        <div id="survey-progress-bar" style="width: 0%; height: 100%; background: ${brandColor}; border-radius: 3px; transition: width 0.3s ease-out;"></div>
                     </div>
-                    <!-- Steps Content Container -->
-                    <div id="survey-steps-container" style="width: 100%; box-sizing: border-box; text-align: left;">
-                        <!-- JS generated content -->
-                    </div>
+                    <span id="survey-progress-text" style="font-size: 0.75rem; font-weight: 700; color: #64748b; white-space: nowrap;">Step 1 of 3</span>
                 </div>
-            `
-        } else {
-            formHtml = `
-                <div class="qualification-trigger-card" style="max-width: 500px; margin: 2rem auto; padding: 1.5rem 0; background: transparent; font-family: inherit; text-align: center; box-sizing: border-box;">
-                    <div style="width: 3.5rem; height: 3.5rem; background: color-mix(in srgb, ${brandColor} 15%, transparent); border-radius: 1rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem;">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${brandColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>
-                    </div>
-                    <h3 style="margin-top: 0; margin-bottom: 0.5rem; color: inherit; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.025em; font-family: inherit;">${cardTitle}</h3>
-                    <p style="color: inherit; opacity: 0.8; font-size: 0.875rem; margin-bottom: 1.5rem; line-height: 1.5; font-family: inherit;">${cardDesc}</p>
-                    <button class="open-eligibility-modal-btn" style="width: 100%; padding: 0.875rem 1.25rem; background: ${buttonBgColor} !important; color: ${buttonTextColor} !important; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.15); font-family: inherit;">${buttonText}</button>
+                <!-- Steps Content Container -->
+                <div id="survey-steps-container" style="width: 100%; box-sizing: border-box; text-align: left;">
+                    <!-- JS generated content -->
                 </div>
+            </div>
+        `
  
-                <!-- Full-Screen Eligibility Modal Overlay -->
-                <div id="eligibility-modal-overlay" style="display: none; position: fixed; inset: 0; z-index: 999999; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(8px); align-items: center; justify-content: center; font-family: system-ui, -apple-system, sans-serif; padding: 1rem; box-sizing: border-box;">
-                    <div id="eligibility-modal-card" style="position: relative; width: 100%; max-width: 500px; background: #ffffff; border-radius: 1.5rem; padding: 2.25rem 2rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; gap: 1.5rem;">
-                        <!-- Back Button -->
-                        <button id="eligibility-modal-back" style="display: none; position: absolute; top: 1.25rem; left: 1.25rem; background: #f1f5f9; border: none; border-radius: 50%; width: 2rem; height: 2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; font-weight: bold; font-size: 1.25rem; transition: background 0.2s;">←</button>
- 
-                        <!-- Close Button -->
-                        <button id="eligibility-modal-close" style="position: absolute; top: 1.25rem; right: 1.25rem; background: #f1f5f9; border: none; border-radius: 50%; width: 2rem; height: 2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; font-weight: bold; font-size: 1.25rem; transition: background 0.2s;">×</button>
-                        
-                        <!-- Progress Container -->
-                        <div id="eligibility-modal-progress-container" style="display: flex; align-items: center; gap: 0.75rem; width: 100%; box-sizing: border-box; margin-bottom: 0.25rem;">
-                            <div style="flex: 1; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
-                                <div id="eligibility-modal-progress-bar" style="width: 0%; height: 100%; background: ${brandColor}; border-radius: 3px; transition: width 0.3s ease-out;"></div>
-                            </div>
-                            <span id="eligibility-modal-progress-text" style="font-size: 0.75rem; font-weight: 700; color: #64748b; white-space: nowrap;">Step 1 of 3</span>
-                        </div>
- 
-                        <!-- Steps Content Container -->
-                        <div id="eligibility-modal-steps-container" style="width: 100%; box-sizing: border-box; text-align: left;">
-                            <!-- JS generated content -->
-                        </div>
-                    </div>
-                </div>
-            `
-        }
- 
-        formHtml += `
+        let scriptHtml = `
             <style>
             @keyframes survey-step-in {
                 from { opacity: 0; transform: translateY(8px); }
@@ -355,22 +319,18 @@ export async function GET(request: Request, { params }: RouteProps) {
                 const answers = {};
                 const contactInfo = { name: '', phone: '', city: '' };
                 
-                const isSurvey = ${isSurveyPage};
-                const overlay = document.getElementById('eligibility-modal-overlay');
-                const closeBtn = document.getElementById('eligibility-modal-close');
-                const backBtn = isSurvey ? document.getElementById('survey-back-btn') : document.getElementById('eligibility-modal-back');
-                const progressContainer = isSurvey ? document.getElementById('survey-progress-container') : document.getElementById('eligibility-modal-progress-container');
-                const progressBar = isSurvey ? document.getElementById('survey-progress-bar') : document.getElementById('eligibility-modal-progress-bar');
-                const progressText = isSurvey ? document.getElementById('survey-progress-text') : document.getElementById('eligibility-modal-progress-text');
-                const stepsContainer = isSurvey ? document.getElementById('survey-steps-container') : document.getElementById('eligibility-modal-steps-container');
+                const isSurvey = true;
+                const overlay = null;
+                const closeBtn = null;
+                const backBtn = document.getElementById('survey-back-btn');
+                const progressContainer = document.getElementById('survey-progress-container');
+                const progressBar = document.getElementById('survey-progress-bar');
+                const progressText = document.getElementById('survey-progress-text');
+                const stepsContainer = document.getElementById('survey-steps-container');
                 
                 const catalogueLink = window.location.hostname.includes('.') && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('adrolls.in') && !window.location.hostname.includes('vercel.app') && !window.location.hostname.includes('ngrok-free.dev')
                     ? window.location.origin + '/'
                     : window.location.origin + '/shared/' + userId;
- 
-                if (overlay && overlay.parentNode !== document.body) {
-                    document.body.appendChild(overlay);
-                }
                 
                 function openModal() {
                     if (!overlay) return;
@@ -410,6 +370,7 @@ export async function GET(request: Request, { params }: RouteProps) {
                 }
                 
                 function renderStep() {
+                    if (!stepsContainer || !progressContainer) return;
                     stepsContainer.innerHTML = '';
                     progressContainer.style.display = 'flex';
                     
@@ -787,6 +748,10 @@ export async function GET(request: Request, { params }: RouteProps) {
                 }
  
                 function showSuccess(leadId) {
+                    if (!stepsContainer) {
+                        alert('Thank you! Your details have been submitted.');
+                        return;
+                    }
                     if (bookingEnabled && leadId) {
                         renderCalendarBooking(leadId);
                     } else {
@@ -795,8 +760,9 @@ export async function GET(request: Request, { params }: RouteProps) {
                 }
  
                 function showSuccessDirect() {
-                    progressContainer.style.display = 'none';
+                    if (progressContainer) progressContainer.style.display = 'none';
                     if (backBtn) backBtn.style.display = 'none';
+                    if (!stepsContainer) return;
                     stepsContainer.innerHTML = '';
                     
                     const wrapper = document.createElement('div');
@@ -901,8 +867,9 @@ export async function GET(request: Request, { params }: RouteProps) {
                 }
  
                 function renderCalendarBooking(leadId) {
+                    if (!stepsContainer) return;
                     stepsContainer.innerHTML = '';
-                    progressContainer.style.display = 'none';
+                    if (progressContainer) progressContainer.style.display = 'none';
                     if (backBtn) backBtn.style.display = 'none';
  
                     const wrapper = document.createElement('div');
@@ -1515,7 +1482,7 @@ export async function GET(request: Request, { params }: RouteProps) {
                     }
                 }
                 
-                if (isSurvey) {
+                if (isSurvey && stepsContainer) {
                     currentStep = 0;
                     renderStep();
                 } else {
@@ -1537,6 +1504,240 @@ export async function GET(request: Request, { params }: RouteProps) {
                         }
                     });
                 }
+
+                // Auto-hook into any static or AI-generated custom forms on the page
+                function hookStaticForms() {
+                    const hasAttachedForm = ${page.form_id ? 'true' : 'false'};
+                    const oldModal = document.getElementById('enquiryModal');
+                    
+                    if (hasAttachedForm) {
+                        // 1. Hide and disable any AI-generated custom modal since a real form is attached
+                        if (oldModal) {
+                            oldModal.style.setProperty('display', 'none', 'important');
+                            oldModal.classList.remove('active');
+                            oldModal.remove();
+                        }
+                        
+                        // 2. Hijack the global openModal/closeModal functions to open our dynamic overlay
+                        window.openModal = function() {
+                            const target = document.getElementById('survey-wizard-container') || document.getElementById('qualification-form-container');
+                            if (target) {
+                                const offset = 100;
+                                const top = target.getBoundingClientRect().top + window.scrollY - offset;
+                                window.scrollTo({ top: top, behavior: 'smooth' });
+                            }
+                        };
+                        window.closeModal = function() {
+                            // Inline layout has no closeModal actions needed
+                        };
+                    } else {
+                        // No attached form - make the AI-generated form functional!
+                        
+                        // Hide custom modal by default on load
+                        if (oldModal) {
+                            oldModal.style.display = 'none';
+                            oldModal.classList.remove('active');
+                            document.body.style.overflow = 'auto';
+
+                            // Re-bind global trigger methods
+                            window.openModal = function() {
+                                oldModal.style.display = 'flex';
+                                oldModal.classList.add('active');
+                                document.body.style.overflow = 'hidden';
+                            };
+                            window.closeModal = function() {
+                                oldModal.style.display = 'none';
+                                oldModal.classList.remove('active');
+                                document.body.style.overflow = 'auto';
+                            };
+                            
+                            // Re-bind close button clicks
+                            const closeBtn3 = oldModal.querySelector('button[onclick="closeModal()"]') || oldModal.querySelector('.absolute.top-4.right-4');
+                            if (closeBtn3) {
+                                closeBtn3.removeAttribute('onclick');
+                                closeBtn3.addEventListener('click', window.closeModal);
+                            }
+                            
+                            // Handle click outside modal to close
+                            oldModal.addEventListener('click', function(e) {
+                                if (e.target === oldModal) {
+                                    window.closeModal();
+                                }
+                            });
+                        }
+
+                        // Ensure all inputs and buttons on the page are clickable and active
+                        const allInputs = Array.from(document.querySelectorAll('input, button, select, textarea'));
+                        allInputs.forEach(function(el) {
+                            if (el.id.startsWith('eligibility-') || el.id.startsWith('survey-')) return;
+                            el.removeAttribute('disabled');
+                            el.removeAttribute('readonly');
+                            el.style.pointerEvents = 'auto';
+                            el.style.cursor = el.tagName === 'BUTTON' ? 'pointer' : 'text';
+                        });
+
+                        async function handleCustomSubmit(container, customBtn) {
+                            const submitBtn = customBtn || container.querySelector('button[type="submit"]') || container.querySelector('button');
+                            if (!submitBtn) return;
+                            
+                            if (submitBtn.disabled) return;
+                            submitBtn.disabled = true;
+                            const originalText = submitBtn.textContent;
+                            submitBtn.textContent = 'Submitting...';
+
+                            let nameVal = '';
+                            let phoneVal = '';
+                            let cityVal = '';
+                            let budgetVal = '';
+
+                            const formInputs = Array.from(container.querySelectorAll('input, select, textarea'));
+                            formInputs.forEach(function(input) {
+                                const placeholder = (input.placeholder || '').toLowerCase();
+                                const type = (input.type || '').toLowerCase();
+                                const nameAttr = (input.name || '').toLowerCase();
+                                const val = input.value.trim();
+
+                                if ((type === 'radio' || type === 'checkbox') && !input.checked) return;
+
+                                const isPhone = type === 'tel' || placeholder.includes('phone') || placeholder.includes('number') || placeholder.includes('whatsapp') || nameAttr.includes('phone') || nameAttr.includes('number') || nameAttr.includes('whatsapp');
+                                const isCity = placeholder.includes('city') || placeholder.includes('location') || placeholder.includes('mohali') || nameAttr.includes('city') || nameAttr.includes('location');
+                                const isBudget = placeholder.includes('budget') || placeholder.includes('plot') || placeholder.includes('size') || nameAttr.includes('budget') || nameAttr.includes('size') || nameAttr.includes('plot');
+                                const isName = !isPhone && !isCity && !isBudget && (type === 'text' || placeholder.includes('name') || placeholder.includes('john') || nameAttr.includes('name'));
+
+                                if (isPhone) phoneVal = val;
+                                else if (isCity) cityVal = val;
+                                else if (isBudget) budgetVal = val;
+                                else if (isName) nameVal = val;
+                            });
+
+                            if (!phoneVal) {
+                                alert('Please enter your Mobile/WhatsApp Number.');
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = originalText;
+                                return;
+                            }
+
+                            const eventId = 'evt_lead_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);
+                            const payload = {
+                                landing_page_id: '${page.id}',
+                                user_id: '${profile.id}',
+                                slug: '${slug}',
+                                name: nameVal || 'Prospect',
+                                phone: phoneVal,
+                                city: cityVal || '',
+                                custom_question_0: budgetVal ? ('Selected Plot Size: ' + budgetVal) : '',
+                                eventId: eventId
+                            };
+
+                            try {
+                                const res = await fetch('/api/shared/landing-page/lead', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(payload)
+                                });
+
+                                const resData = await res.json();
+                                if (!res.ok || !resData.success) {
+                                    throw new Error(resData.error || 'Submission failed');
+                                }
+
+                                if (window.fbq) {
+                                    window.fbq('track', 'Lead', {
+                                        content_name: '${page.product_name.replace(/'/g, "\\'")}',
+                                        status: 'Qualified'
+                                    }, { eventID: eventId });
+                                }
+
+                                formInputs.forEach(function(i) {
+                                    if (i.type === 'radio' || i.type === 'checkbox') {
+                                        i.checked = false;
+                                    } else {
+                                        i.value = '';
+                                    }
+                                });
+                                
+                                submitBtn.textContent = 'Submitted Successfully!';
+                                submitBtn.style.background = '#166534';
+                                
+                                setTimeout(function() {
+                                    if (window.closeModal) window.closeModal();
+                                }, 1500);
+
+                                showSuccess(resData.leadId);
+                            } catch (err) {
+                                alert(err.message || 'Something went wrong. Please try again.');
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = originalText;
+                            }
+                        }
+
+                        // Intercept submit on any custom form on the page (both hero card and popup modal)
+                        // Clone-replace each form to strip any AI-generated listeners (e.g. "Sending..." freeze)
+                        const forms = Array.from(document.querySelectorAll('form'));
+                        forms.forEach(function(form) {
+                            if (form.id && (form.id.startsWith('eligibility-') || form.id.startsWith('survey-'))) return;
+                            
+                            const clone = form.cloneNode(true);
+                            clone.removeAttribute('action');
+                            clone.removeAttribute('method');
+                            clone.removeAttribute('onsubmit');
+                            
+                            clone.addEventListener('submit', async function(e) {
+                                e.preventDefault();
+                                e.stopImmediatePropagation();
+                                handleCustomSubmit(clone);
+                            });
+                            
+                            form.parentNode.replaceChild(clone, form);
+                        });
+
+                        // Also find any buttons not inside a form that submit data
+                        const buttons = Array.from(document.querySelectorAll('button'));
+                        buttons.forEach(function(btn) {
+                            if (btn.id.startsWith('eligibility-') || btn.id.startsWith('survey-') || btn.className.includes('open-eligibility-modal-btn')) return;
+                            
+                            // Check if button is inside a form
+                            if (btn.closest('form')) return; 
+
+                            const text = btn.textContent.toLowerCase();
+                            if (text.includes('download') || text.includes('submit') || text.includes('enquiry') || text.includes('check') || text.includes('register') || text.includes('book') || text.includes('get price') || text.includes('avail')) {
+                                btn.addEventListener('click', async function(e) {
+                                    e.preventDefault();
+                                    // Climb up to find a container with inputs
+                                    let container = btn.parentElement;
+                                    while (container && container.tagName !== 'BODY') {
+                                        if (container.querySelectorAll('input').length > 0) {
+                                            break;
+                                        }
+                                        container = container.parentElement;
+                                    }
+                                    if (container) {
+                                        handleCustomSubmit(container, btn);
+                                    }
+                                });
+                            }
+                        });
+                    }
+                }
+                
+                // Run hook immediately and at every lifecycle stage to bypass other scripts/crashes
+                try {
+                    hookStaticForms();
+                } catch(e) {
+                    console.error('[hookStaticForms Immediate Error]', e);
+                }
+                document.addEventListener('DOMContentLoaded', function() {
+                    try { hookStaticForms(); } catch(e) {}
+                });
+                window.addEventListener('load', function() {
+                    try { hookStaticForms(); } catch(e) {}
+                });
+                setTimeout(function() {
+                    try { hookStaticForms(); } catch(e) {}
+                }, 500);
+                setTimeout(function() {
+                    try { hookStaticForms(); } catch(e) {}
+                }, 1500);
             })();
             </script>
         `
@@ -1645,8 +1846,27 @@ export async function GET(request: Request, { params }: RouteProps) {
         const containerRegex = /<div\s+[^>]*id="qualification-form-container"[^>]*>([\s\S]*?)<\/div>/gi
         if (finalHtml.match(containerRegex)) {
             finalHtml = finalHtml.replace(containerRegex, formHtml)
+        } else if (page.form_id) {
+            // Fallback: ONLY replace mock form elements if a form is explicitly attached!
+            const commentRegex = /<!--\s*QUALIFICATION\s+FORM\s+CONTAINER[\s\S]*?-->\s*<div[^>]*>[\s\S]*?<\/button>\s*<\/div>/gi
+            if (finalHtml.match(commentRegex)) {
+                finalHtml = finalHtml.replace(commentRegex, `<div id="qualification-form-container">${formHtml}</div>`)
+            } else {
+                // Second Fallback: Look for any disabled form block or placeholder to replace
+                const disabledFormRegex = /<div[^>]*style="[^"]*background:\s*transparent[^"]*"[^>]*>\s*<h3[^>]*>[\s\S]*?<\/button>\s*<\/div>/gi
+                if (finalHtml.match(disabledFormRegex)) {
+                    finalHtml = finalHtml.replace(disabledFormRegex, `<div id="qualification-form-container">${formHtml}</div>`)
+                }
+            }
         }
 
+        // Inject Qualification Form script tag before body close
+        if (finalHtml.includes('</body>')) {
+            finalHtml = finalHtml.replace('</body>', `${scriptHtml}</body>`)
+        } else {
+            finalHtml += scriptHtml
+        }
+        
         // Inject Meta Pixel script inside head
         if (pixelScript) {
             if (finalHtml.includes('</head>')) {

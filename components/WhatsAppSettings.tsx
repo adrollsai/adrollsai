@@ -2145,6 +2145,21 @@ function DevOverrideForm({ userId, onSave }: DevOverrideFormProps) {
       if (error) throw error
 
       toast.success("Sandbox credentials saved! ✨")
+      
+      // Trigger default templates auto-seeding in the background
+      fetch('/api/whatsapp/templates/auto-seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.submitted > 0) {
+          toast.success(`Registered ${data.submitted} default WhatsApp templates for Meta approval! 🚀`)
+        }
+      })
+      .catch(err => console.error('[AUTO SEED] Failed:', err))
+
       onSave()
       setToken('')
       setWabaId('')
