@@ -354,9 +354,7 @@ export default function CRMPage() {
                 .order('created_at', { ascending: false, nullsFirst: false })
                 .range(start, start + step - 1)
 
-              if (maxCreatedAt && !force) {
-                  query = query.gt('created_at', maxCreatedAt);
-              }
+              // Fetch complete fresh list to support pagination beyond cache slice
 
               if (currentRole === 'super_admin') {
                   query = query.eq('user_id', targetUserId)
@@ -421,7 +419,7 @@ export default function CRMPage() {
           console.error("Error fetching campaigns in CRM:", err)
       }
     } catch (e) {
-      console.error(e)
+      console.error("[CRM fetchLeads Error]:", e)
     } finally {
       setLoading(false)
       setIsRefreshing(false)

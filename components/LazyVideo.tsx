@@ -26,7 +26,7 @@ export default function LazyVideo({
     const containerRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
-        if (typeof window === 'undefined' || poster) return // Don't need lazy-loading if we have a poster!
+        if (typeof window === 'undefined') return
         
         const observer = new IntersectionObserver(
             ([entry]) => {
@@ -35,7 +35,7 @@ export default function LazyVideo({
                     observer.disconnect()
                 }
             },
-            { rootMargin: '200px' }
+            { rootMargin: '300px' } // Preload when within 300px of viewport
         )
 
         if (containerRef.current) {
@@ -43,30 +43,15 @@ export default function LazyVideo({
         }
 
         return () => observer.disconnect()
-    }, [poster])
-
-    // If poster is available, render video immediately with the poster (no range request for t=0.1 frame required by browser)
-    if (poster) {
-        return (
-            <video
-                src={src}
-                poster={poster}
-                preload="none" // do NOT load video bytes until user interacts or plays!
-                playsInline={playsInline}
-                muted={muted}
-                loop={loop}
-                autoPlay={autoPlay}
-                className={className}
-            />
-        )
-    }
+    }, [src, poster])
 
     return (
         <div ref={containerRef} className="w-full h-full relative bg-slate-900 flex items-center justify-center">
             {isInView ? (
                 <video
-                    src={`${src}#t=0.1`}
-                    preload="metadata"
+                    src={poster ? src : `${src}#t=0.1`}
+                    poster={poster}
+                    preload={poster ? "none" : "metadata"}
                     playsInline={playsInline}
                     muted={muted}
                     loop={loop}

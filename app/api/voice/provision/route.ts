@@ -152,3 +152,107 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 })
     }
 }
+
+async function releaseTwilioNumber(masterSid: string, masterToken: string, phoneNumber: string): Promise<boolean> {
+    try {
+        const basicAuth = Buffer.from(`${masterSid}:${masterToken}`).toString('base64');
+        
+        // 1. Search for the IncomingPhoneNumber SID matching the phone number
+        const searchUrl = `https://api.twilio.com/2010-04-01/Accounts/${masterSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`;
+        const searchRes = await fetch(searchUrl, {
+            headers: { 'Authorization': `Basic ${basicAuth}` }
+        });
+        
+        if (!searchRes.ok) {
+            console.error(`[RELEASE] Failed to search number ${phoneNumber} in Twilio:`, await searchRes.text());
+            return false;
+        }
+        
+        const searchData = await searchRes.json();
+        const incomingNumbers = searchData.incoming_phone_numbers || [];
+        if (incomingNumbers.length === 0) {
+            console.log(`[RELEASE] Phone number ${phoneNumber} not found in Twilio account.`);
+            return true; // Already released or not owned by us
+        }
+        
+        const sid = incomingNumbers[0].sid;
+        
+        // 2. Delete the phone number from Twilio account to stop being charged
+        const deleteUrl = `https://api.twilio.com/2010-04-01/Accounts/${masterSid}/IncomingPhoneNumbers/${sid}.json`;
+        const deleteRes = await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Basic ${basicAuth}` }
+        });
+        
+        if (!deleteRes.ok) {
+            console.error(`[RELEASE] Failed to delete number ${phoneNumber} (SID: ${sid}) from Twilio:`, await deleteRes.text());
+            return false;
+        }
+        
+        console.log(`[RELEASE] Successfully released Twilio number ${phoneNumber} (SID: ${sid}).`);
+        return true;
+    } catch (err) {
+        console.error(`[RELEASE] Exception while releasing number ${phoneNumber}:`, err);
+        return false;
+    }
+}
+
+export async function DELETE(req: Request) {
+    try {
+        const supabase = await createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+        const masterSid = process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
+        const masterToken = process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
+
+        const url = new URL(req.url)
+        const impersonateId = url.searchParams.get('impersonate')
+
+        let targetId = user.id
+        if (impersonateId) {
+            const { data: authProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single()
+            if (['super_admin', 'agency', 'admin'].includes(authProfile?.role || '')) {
+                targetId = impersonateId
+            }
+        }
+
+        // Fetch user's voice twilio number
+        const { data: targetProfile } = await supabase
+            .from('profiles')
+            .select('voice_twilio_number, voice_twilio_sid')
+            .eq('id', targetId)
+            .single()
+
+        const phoneNumber = targetProfile?.voice_twilio_number
+        const customSid = targetProfile?.voice_twilio_sid
+
+        // If they had a SaaS virtual line (and not custom credentials), release it from the platform Twilio account
+        if (phoneNumber && !customSid && masterSid && masterToken) {
+            await releaseTwilioNumber(masterSid, masterToken, phoneNumber)
+        }
+
+        // Clear settings in DB (both SaaS and custom configuration is reset)
+        const { error: dbErr } = await supabase
+            .from('profiles')
+            .update({ 
+                voice_twilio_number: null,
+                voice_twilio_sid: null,
+                voice_twilio_token: null,
+                old_voice_twilio_number: null
+            })
+            .eq('id', targetId)
+
+        if (dbErr) {
+            return NextResponse.json({ error: 'Failed to clear settings in database.' }, { status: 500 })
+        }
+
+        return NextResponse.json({ success: true, message: 'Voice line disconnected successfully.' })
+    } catch (e: any) {
+        return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 })
+    }
+}
