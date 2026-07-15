@@ -308,7 +308,7 @@ export default function ProductsPage() {
 
       // Combine existing un-deleted images with newly uploaded images
       const finalImages = [...existingImages, ...uploadedUrls]
-      const finalMainImage = finalImages.length > 0 ? finalImages[0] : null
+      const finalMainImage = finalImages.length > 0 ? finalImages[0] : ""
 
       const apiRes = await fetch('/api/inventory', {
         method: 'POST',
@@ -565,7 +565,7 @@ export default function ProductsPage() {
             price: '',
             property_type: 'Generic',
             status: 'Active',
-            image_url: uploadedUrls[0] || null,
+            image_url: uploadedUrls[0] || "",
             images: uploadedUrls,
             youtube_url: newProp.youtube_url || null,
             show_on_landing_page: newProp.show_on_landing_page !== false
