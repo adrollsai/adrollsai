@@ -179,16 +179,268 @@ export async function POST(request: NextRequest) {
     // 2. Dispatch WhatsApp Reminder
     if (profile.whatsapp_access_token && profile.whatsapp_phone_number_id && lead.phone) {
       console.log(`[CRON REMINDERS WORKER] Sending WhatsApp message to ${lead.phone}...`)
-      const waBody = `⏰ Meeting Reminder: Your appointment with ${profile.business_name || 'us'} is scheduled in ${timeLeftStr} (${friendlyTime}).\n\n${
-        lead.meet_link ? `🎥 Google Meet link: ${lead.meet_link}\n\n` : ''
-      }Need to change details?\n🔄 Reschedule: ${rescheduleLink}\n❌ Cancel: ${cancelLink}`
       
-      await sendWhatsAppReminder(
-        profile.whatsapp_access_token,
-        profile.whatsapp_phone_number_id,
-        lead.phone,
-        waBody
-      ).catch(e => console.error('[CRON REMINDERS WORKER] WhatsApp dispatch failed:', e))
+      let cleanPhone = lead.phone.replace(/\D/g, '')
+      if (cleanPhone.startsWith('00')) {
+        cleanPhone = cleanPhone.substring(2)
+      }
+      if (cleanPhone.length === 10) {
+        cleanPhone = '91' + cleanPhone
+      } else if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) {
+        cleanPhone = '91' + cleanPhone.substring(1)
+      }
+
+      // Check if chat exists, if not create
+      let chat: any = null
+      try {
+        const { data: existingChat } = await supabaseAdmin
+          .from('whatsapp_chats')
+          .select('*')
+          .eq('lead_id', lead.id)
+          .maybeSingle()
+
+        if (existingChat) {
+          chat = existingChat
+        } else {
+          const { data: altChat } = await supabaseAdmin
+            .from('whatsapp_chats')
+            .select('*')
+            .eq('recipient_phone', cleanPhone)
+            .eq('user_id', lead.user_id)
+            .maybeSingle()
+
+          if (altChat) {
+            const { data: updatedChat } = await supabaseAdmin
+              .from('whatsapp_chats')
+              .update({ lead_id: lead.id })
+              .eq('id', altChat.id)
+              .select('*')
+              .single()
+            chat = updatedChat || altChat
+          } else {
+            const { data: newChat } = await supabaseAdmin
+              .from('whatsapp_chats')
+              .insert({
+                user_id: lead.user_id,
+                lead_id: lead.id,
+                recipient_phone: cleanPhone,
+                recipient_name: lead.name || 'Prospect',
+                unread_count: 0,
+                last_message_text: 'Reminder queued',
+                last_message_at: new Date().toISOString()
+              })
+              .select('*')
+              .single()
+            chat = newChat
+          }
+        }
+      } catch (chatErr) {
+        console.error('[CRON REMINDERS WORKER] Error ensuring chat exists:', chatErr)
+      }
+
+      // Check 24-hour window active status
+      let isWindowActive = false
+      if (chat) {
+        const { data: lastInbound } = await supabaseAdmin
+          .from('whatsapp_messages')
+          .select('created_at')
+          .eq('chat_id', chat.id)
+          .eq('direction', 'inbound')
+          .order('created_at', { ascending: false })
+          .limit(1)
+
+        if (lastInbound && lastInbound.length > 0) {
+          const lastInboundTime = new Date(lastInbound[0].created_at).getTime()
+          if (Date.now() - lastInboundTime < 24 * 60 * 60 * 1000) {
+            isWindowActive = true
+          }
+        }
+      }
+
+      const dateOptions = { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' } as const
+      const timeOptions = { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' } as const
+      const formattedDate = new Date(lead.booked_time).toLocaleDateString('en-US', dateOptions)
+      const formattedTime = new Date(lead.booked_time).toLocaleTimeString('en-US', timeOptions)
+
+      let metaPayload: any = null
+      let isTemplate = false
+      let templateName = ''
+      let logText = ''
+
+      if (isWindowActive) {
+        // Construct Free-form text message
+        let messageBody = ''
+        if (reminderType === '24h') {
+          messageBody = `Hi ${lead.name || 'there'}, this is a quick reminder of your scheduled appointment with ${profile.business_name || 'us'} tomorrow, ${formattedDate} at ${formattedTime}. We look forward to speaking with you!`
+        } else if (reminderType === '4h') {
+          messageBody = `Hi ${lead.name || 'there'}, looking forward to our appointment today in 4 hours (at ${formattedTime}). Please let us know if you need to reschedule.`
+        } else if (reminderType === '1h') {
+          messageBody = `Hi ${lead.name || 'there'}, our meeting starts in 1 hour at ${formattedTime}. We look forward to connecting with you shortly!`
+        } else if (reminderType === '15m') {
+          messageBody = `Hi ${lead.name || 'there'}, we are starting in 15 minutes! Please click the link to join: ${lead.meet_link || 'our meeting link'}`
+        }
+
+        metaPayload = {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: cleanPhone,
+          type: 'text',
+          text: { body: messageBody }
+        }
+        logText = messageBody
+      }
+
+      if (!metaPayload) {
+        isTemplate = true
+        let templateParams: string[] = []
+
+        if (reminderType === '24h') {
+          templateName = 'auto_reminder_24h'
+          templateParams = [lead.name || 'Valued Client', profile.business_name || 'our team', formattedDate, formattedTime]
+        } else if (reminderType === '4h') {
+          templateName = 'auto_reminder_4h'
+          templateParams = [lead.name || 'Valued Client', formattedTime]
+        } else if (reminderType === '1h') {
+          templateName = 'auto_reminder_1h'
+          templateParams = [lead.name || 'Valued Client', formattedTime]
+        } else if (reminderType === '15m') {
+          templateName = 'auto_reminder_15m'
+          templateParams = [lead.name || 'Valued Client', lead.meet_link || 'our meeting link']
+        }
+
+        metaPayload = {
+          messaging_product: 'whatsapp',
+          to: cleanPhone,
+          type: 'template',
+          template: {
+            name: templateName,
+            language: { code: 'en_US' },
+            components: [
+              {
+                type: 'body',
+                parameters: templateParams.map(val => ({ type: 'text', text: val }))
+              }
+            ]
+          }
+        }
+        logText = `Sent Template: ${templateName}`
+      }
+
+      // Send to Meta API
+      try {
+        const metaUrl = `https://graph.facebook.com/v20.0/${profile.whatsapp_phone_number_id}/messages`
+        const sendRes = await fetch(metaUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${profile.whatsapp_access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(metaPayload)
+        })
+
+        const sendData = await sendRes.json()
+
+        if (sendData.error) {
+          console.error(`[CRON REMINDERS WORKER] Meta API rejected reminder for lead ${lead.name}:`, sendData.error)
+          
+          // Fallback to Template if free-form failed due to 24h limit
+          if (!isTemplate && (sendData.error.code === 131047 || sendData.error.error_subcode === 2494010)) {
+            console.log(`[CRON REMINDERS WORKER] Free-form failed due to 24h limit, falling back to Meta template...`);
+            
+            let fallbackTemplate = ''
+            let fallbackParams: string[] = []
+
+            if (reminderType === '24h') {
+              fallbackTemplate = 'auto_reminder_24h'
+              fallbackParams = [lead.name || 'Valued Client', profile.business_name || 'our team', formattedDate, formattedTime]
+            } else if (reminderType === '4h') {
+              fallbackTemplate = 'auto_reminder_4h'
+              fallbackParams = [lead.name || 'Valued Client', formattedTime]
+            } else if (reminderType === '1h') {
+              fallbackTemplate = 'auto_reminder_1h'
+              fallbackParams = [lead.name || 'Valued Client', formattedTime]
+            } else if (reminderType === '15m') {
+              fallbackTemplate = 'auto_reminder_15m'
+              fallbackParams = [lead.name || 'Valued Client', lead.meet_link || 'our meeting link']
+            }
+
+            const fallbackPayload = {
+              messaging_product: 'whatsapp',
+              to: cleanPhone,
+              type: 'template',
+              template: {
+                name: fallbackTemplate,
+                language: { code: 'en_US' },
+                components: [
+                  {
+                    type: 'body',
+                    parameters: fallbackParams.map(val => ({ type: 'text', text: val }))
+                  }
+                ]
+              }
+            }
+
+            const fallbackRes = await fetch(metaUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${profile.whatsapp_access_token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(fallbackPayload)
+            })
+            const fallbackData = await fallbackRes.json()
+
+            if (fallbackData.error) {
+              console.error(`[CRON REMINDERS WORKER] Fallback template send failed:`, fallbackData.error)
+            } else {
+              console.log(`[CRON REMINDERS WORKER] Fallback template sent successfully for lead ${lead.name}`);
+              logText = `Sent Template: ${fallbackTemplate}`
+              if (chat) {
+                await supabaseAdmin.from('whatsapp_messages').insert({
+                  chat_id: chat.id,
+                  direction: 'outbound',
+                  message_text: logText
+                })
+              }
+            }
+          }
+        } else {
+          // Success
+          console.log(`[CRON REMINDERS WORKER] WhatsApp sent successfully for lead ${lead.name}`);
+          if (chat) {
+            await supabaseAdmin.from('whatsapp_messages').insert({
+              chat_id: chat.id,
+              direction: 'outbound',
+              message_text: logText
+            })
+            await supabaseAdmin.from('whatsapp_chats').update({
+              last_message_text: logText,
+              last_message_at: new Date().toISOString()
+            }).eq('id', chat.id)
+          }
+
+          // Insert lead history log
+          await supabaseAdmin.from('lead_history').insert({
+            lead_id: lead.id,
+            action_type: 'REMARK',
+            description: `⏰ Automated ${reminderType} appointment reminder sent via WhatsApp.`
+          })
+
+          // Deduct credits
+          try {
+            const { deductCreditsByCost } = await import('@/utils/credits')
+            await deductCreditsByCost(
+              supabaseAdmin,
+              lead.user_id,
+              0.10,
+              'whatsapp',
+              `Automated WhatsApp appointment reminder (${reminderType}) to ${lead.name || 'Prospect'}`
+            )
+          } catch (crErr) {}
+        }
+      } catch (err: any) {
+        console.error(`[CRON REMINDERS WORKER] Exception sending WhatsApp reminder:`, err.message)
+      }
     }
 
     // 3. Mark reminder as sent in DB

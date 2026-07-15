@@ -27,8 +27,8 @@ export async function generateAndUploadVideoThumbnail(
         );
         const ffmpeg = fs.existsSync(nodeModulesFfmpeg) ? nodeModulesFfmpeg : (ffmpegPath || 'ffmpeg');
         
-        // Extract 1 frame at 1.0 second. This ensures a valid image is captured for the thumbnail.
-        const command = `"${ffmpeg}" -y -ss 00:00:01 -i "${localVideoPath}" -vframes 1 "${thumbnailPath}"`;
+        // Extract 1 frame at 1.0 second and scale it down to a web-optimized 360px width.
+        const command = `"${ffmpeg}" -y -ss 00:00:01 -i "${localVideoPath}" -vf "scale=360:-1" -vframes 1 "${thumbnailPath}"`;
         console.log(`[Thumbnail Helper] Extracting thumbnail. Command: ${command}`);
         
         await execPromise(command);

@@ -145,6 +145,20 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
     }
   }
 
+  const [subscriptionStatus, setSubscriptionStatus] = useState('')
+  const [userEmail, setUserEmail] = useState('')
+  const [oldVoiceNumber, setOldVoiceNumber] = useState('')
+  const [disconnecting, setDisconnecting] = useState(false)
+
+  const isSubscriptionActive = useMemo(() => {
+    const status = subscriptionStatus.toLowerCase()
+    const whitelistedEmails = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com']
+    if (whitelistedEmails.includes(userEmail.toLowerCase())) {
+      return true
+    }
+    return ['active', 'trialing', 'pro', 'growth'].includes(status)
+  }, [subscriptionStatus, userEmail])
+
   const fetchSettings = async () => {
     setLoading(true)
     try {
@@ -160,6 +174,9 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       let phoneNum = ''
       if (data) {
         phoneNum = data.voice_twilio_number || ''
+        setUserEmail(data.email || '')
+        setSubscriptionStatus(data.subscription_status || '')
+        setOldVoiceNumber(data.old_voice_twilio_number || '')
         setSettings({
           elevenlabs_api_key: data.elevenlabs_api_key || '',
           elevenlabs_agent_id: data.elevenlabs_agent_id || '',
@@ -203,6 +220,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
         toast.success(`Calling number assigned successfully: ${data.phoneNumber}! 🎙️`)
         setSettings(prev => ({ ...prev, voice_twilio_number: data.phoneNumber }))
         setConnected(true)
+        setOldVoiceNumber('')
       } else {
         toast.error(data.error || 'Failed to provision calling number.')
       }
@@ -210,6 +228,37 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       toast.error(err.message || 'An error occurred.')
     } finally {
       setProvisioning(false)
+    }
+  }
+
+  const handleDisconnectNumber = async () => {
+    if (!confirm("Are you sure you want to disconnect your voice calling line? This will release the phone number.")) return
+    setDisconnecting(true)
+    try {
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      
+      const res = await fetch(`/api/voice/provision${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { 
+        method: 'DELETE'
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success('Voice line disconnected successfully! 🎙️')
+        setSettings(prev => ({ 
+          ...prev, 
+          voice_twilio_number: '',
+          voice_twilio_sid: '',
+          voice_twilio_token: ''
+        }))
+        setConnected(false)
+        setOldVoiceNumber('')
+      } else {
+        toast.error(data.error || 'Failed to disconnect voice line.')
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'An error occurred while disconnecting.')
+    } finally {
+      setDisconnecting(false)
     }
   }
 
@@ -335,8 +384,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                 <div className="bg-indigo-50/40 border border-indigo-100 rounded-3xl p-4 space-y-3">
                   <div className="flex justify-between items-center pb-2 border-b border-indigo-100/50">
                     <span className="text-[10px] text-indigo-800 font-bold uppercase tracking-wider">Status</span>
-                    <span className={`text-xs font-black flex items-center gap-1 ${connected ? 'text-indigo-600' : 'text-slate-400'}`}>
-                      ● {connected ? 'Connected' : 'Offline'}
+                    <span className={`text-xs font-black flex items-center gap-1 ${connected && isSubscriptionActive ? 'text-indigo-600' : !isSubscriptionActive ? 'text-amber-600' : 'text-slate-400'}`}>
+                      ● {connected && isSubscriptionActive ? 'Connected' : !isSubscriptionActive ? 'Subscription Inactive' : 'Offline'}
                     </span>
                   </div>
                   {settings.voice_twilio_number && (
@@ -387,20 +436,36 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                         </div>
                       </div>
 
-                      {settings.voice_twilio_number ? (
+                      {settings.voice_twilio_number && isSubscriptionActive ? (
                         <div className="bg-white border border-slate-200/80 p-4.5 rounded-2xl flex items-center justify-between shadow-sm">
                           <div className="flex flex-col">
                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Active Outbound Caller ID</span>
                             <span className="text-sm font-bold text-slate-800 mt-1">{settings.voice_twilio_number}</span>
                           </div>
-                          <span className="bg-emerald-50 text-emerald-600 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
-                            ● Active
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="bg-emerald-50 text-emerald-600 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
+                              ● Active
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleDisconnectNumber}
+                              disabled={disconnecting}
+                              className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
+                              title="Disconnect voice line and release number"
+                            >
+                              {disconnecting ? <Loader2 size={12} className="animate-spin" /> : 'Disconnect'}
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <div className="bg-white border border-slate-200/80 p-6 rounded-2xl text-center space-y-4 shadow-sm">
                           <p className="text-xs text-slate-500 font-medium max-w-sm mx-auto">
-                            You do not have an active outbound calling number assigned yet. Provision a virtual calling line instantly to get started.
+                            {!isSubscriptionActive 
+                              ? `Your subscription is inactive. Please ensure you have an active subscription and reconnect your voice line to automate outbound calling.`
+                              : oldVoiceNumber 
+                                ? `Your previous voice line (${oldVoiceNumber}) was disconnected. Reconnect now to reclaim it or provision a new number.`
+                                : `You do not have an active outbound calling number assigned yet. Provision a virtual calling line instantly to get started.`
+                            }
                           </p>
                           <button
                             type="button"
@@ -410,11 +475,12 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                           >
                             {provisioning ? (
                               <>
-                                <Loader2 size={14} className="animate-spin text-white" /> Provisioning Line...
+                                <Loader2 size={14} className="animate-spin text-white" /> Connecting Line...
                               </>
                             ) : (
                               <>
-                                <Sparkles size={14} /> Provision Virtual Outbound Number
+                                <Sparkles size={14} /> 
+                                {!isSubscriptionActive || oldVoiceNumber ? 'Reconnect Voice Line' : 'Provision Virtual Outbound Number'}
                               </>
                             )}
                           </button>
@@ -500,21 +566,33 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                   </button>
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="w-full py-3.5 bg-slate-950 hover:bg-slate-900 text-white rounded-full text-xs font-black shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 size={14} className="animate-spin text-white" /> Saving Settings...
-                    </>
-                  ) : (
-                    <>
-                      <Save size={14} /> Save Configuration
-                    </>
+                <div className="flex gap-4">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="flex-1 py-3.5 bg-slate-950 hover:bg-slate-900 text-white rounded-full text-xs font-black shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin text-white" /> Saving Settings...
+                      </>
+                    ) : (
+                      <>
+                        <Save size={14} /> Save Configuration
+                      </>
+                    )}
+                  </button>
+                  {connected && !saasMode && (
+                    <button
+                      type="button"
+                      onClick={handleDisconnectNumber}
+                      disabled={disconnecting}
+                      className="py-3.5 px-6 border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 rounded-full text-xs font-black shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                    >
+                      {disconnecting ? <Loader2 size={14} className="animate-spin" /> : 'Disconnect'}
+                    </button>
                   )}
-                </button>
+                </div>
               </form>
             </div>
           </div>

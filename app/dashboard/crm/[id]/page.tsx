@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2, History } from 'lucide-react'
+import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2, History, ChevronLeft, ChevronRight } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 
@@ -42,6 +42,7 @@ export default function LeadProfilePage() {
 
     const [lead, setLead] = useState<any>(null)
     const [nextLeadId, setNextLeadId] = useState<string | null>(null)
+    const [prevLeadId, setPrevLeadId] = useState<string | null>(null)
     const [isAddingCustomField, setIsAddingCustomField] = useState(false)
     const [newFieldKey, setNewFieldKey] = useState('')
     const [newFieldValue, setNewFieldValue] = useState('')
@@ -257,47 +258,71 @@ export default function LeadProfilePage() {
 
             const currentRole = profile?.role || 'admin'
 
-            let query = supabase
-                .from('leads')
-                .select('id, created_at, facebook_created_at')
-                .eq('pipeline_stage', currentLead.pipeline_stage)
-
-            if (currentRole === 'super_admin') {
-                query = query.eq('user_id', currentLead.user_id)
-            } else if (currentRole === 'agency') {
+            let agencyIds: string[] = []
+            if (currentRole === 'agency') {
                 const urlParams = new URLSearchParams(window.location.search)
                 const impId = urlParams.get('impersonate')
-                if (impId) {
-                    query = query.eq('user_id', impId)
-                } else {
+                if (!impId) {
                     const { data: clientIds } = await supabase.from('profiles').select('id').eq('agency_id', user.id)
-                    const allIds = [user.id, ...(clientIds?.map((c: any) => c.id) || [])]
-                    query = query.in('user_id', allIds)
+                    agencyIds = [user.id, ...(clientIds?.map((c: any) => c.id) || [])]
                 }
-            } else if (currentRole === 'admin' || currentRole === 'client') {
-                query = query.eq('user_id', currentLead.user_id)
-            } else {
-                query = query.eq('assigned_to', user.id)
             }
 
-            const { data: siblingData } = await query
-            if (siblingData && siblingData.length > 0) {
-                const siblingLeads = [...siblingData].sort((a: any, b: any) => {
-                    const timeA = new Date(a.facebook_created_at || a.created_at).getTime()
-                    const timeB = new Date(b.facebook_created_at || b.created_at).getTime()
-                    return timeB - timeA
-                })
+            const applyFilters = (q: any) => {
+                let temp = q.eq('pipeline_stage', currentLead.pipeline_stage)
+                if (currentRole === 'super_admin') {
+                    return temp.eq('user_id', currentLead.user_id)
+                } else if (currentRole === 'agency') {
+                    const urlParams = new URLSearchParams(window.location.search)
+                    const impId = urlParams.get('impersonate')
+                    if (impId) {
+                        return temp.eq('user_id', impId)
+                    } else {
+                        return temp.in('user_id', agencyIds)
+                    }
+                } else if (currentRole === 'admin' || currentRole === 'client') {
+                    return temp.eq('user_id', currentLead.user_id)
+                } else {
+                    return temp.eq('assigned_to', user.id)
+                }
+            }
 
-                const currentIndex = siblingLeads.findIndex((l: any) => l.id === currentLead.id)
-                if (currentIndex !== -1 && currentIndex + 1 < siblingLeads.length) {
-                    setNextLeadId(siblingLeads[currentIndex + 1].id)
-                } else if (siblingLeads.length > 1) {
-                    setNextLeadId(siblingLeads[0].id) // Wrap around
+            // 1. Next Lead query (older than currentLead)
+            let nextQ = supabase.from('leads').select('id').lt('created_at', currentLead.created_at)
+            nextQ = applyFilters(nextQ)
+            const { data: nextData } = await nextQ.order('created_at', { ascending: false }).limit(1)
+
+            if (nextData && nextData.length > 0) {
+                setNextLeadId(nextData[0].id)
+            } else {
+                // Wrap around to newest lead
+                let wrapNextQ = supabase.from('leads').select('id')
+                wrapNextQ = applyFilters(wrapNextQ)
+                const { data: wrapNextData } = await wrapNextQ.order('created_at', { ascending: false }).limit(1)
+                if (wrapNextData && wrapNextData.length > 0 && wrapNextData[0].id !== currentLead.id) {
+                    setNextLeadId(wrapNextData[0].id)
                 } else {
                     setNextLeadId(null)
                 }
+            }
+
+            // 2. Prev Lead query (newer than currentLead)
+            let prevQ = supabase.from('leads').select('id').gt('created_at', currentLead.created_at)
+            prevQ = applyFilters(prevQ)
+            const { data: prevData } = await prevQ.order('created_at', { ascending: true }).limit(1)
+
+            if (prevData && prevData.length > 0) {
+                setPrevLeadId(prevData[0].id)
             } else {
-                setNextLeadId(null)
+                // Wrap around to oldest lead
+                let wrapPrevQ = supabase.from('leads').select('id')
+                wrapPrevQ = applyFilters(wrapPrevQ)
+                const { data: wrapPrevData } = await wrapPrevQ.order('created_at', { ascending: true }).limit(1)
+                if (wrapPrevData && wrapPrevData.length > 0 && wrapPrevData[0].id !== currentLead.id) {
+                    setPrevLeadId(wrapPrevData[0].id)
+                } else {
+                    setPrevLeadId(null)
+                }
             }
         } catch (e) {
             console.error("Failed to fetch sibling leads:", e)
@@ -307,6 +332,12 @@ export default function LeadProfilePage() {
     const handleNextLead = () => {
         if (nextLeadId) {
             router.push(`/dashboard/crm/${nextLeadId}${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+        }
+    }
+
+    const handlePrevLead = () => {
+        if (prevLeadId) {
+            router.push(`/dashboard/crm/${prevLeadId}${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
         }
     }
 
@@ -387,6 +418,7 @@ export default function LeadProfilePage() {
 
     const fetchLeadData = async () => {
         setNextLeadId(null)
+        setPrevLeadId(null)
         const { data } = await supabase.from('leads').select('*').eq('id', id).single()
         if (data) {
             let parsedCustomFields = data.custom_fields;
@@ -757,16 +789,31 @@ END:VCARD`
                         </div>
                     </div>
                 </div>
-                {(lead.phone || nextLeadId) && (
+                {(lead.phone || nextLeadId || prevLeadId) && (
                     <div className="flex gap-2 w-full sm:w-auto justify-end sm:justify-start pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 items-center">
-                        {nextLeadId && (
-                            <button 
-                                onClick={handleNextLead} 
-                                className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shrink-0 transition-colors shadow-sm active:scale-95"
-                                title="Go to next lead in this stage"
-                            >
-                                Next Lead →
-                            </button>
+                        {(prevLeadId || nextLeadId) && (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                                {prevLeadId && (
+                                    <button 
+                                        onClick={handlePrevLead} 
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 font-bold text-[11px] transition-all active:scale-95 shadow-sm"
+                                        title="Go to previous lead"
+                                    >
+                                        <ChevronLeft size={12} />
+                                        <span>Prev</span>
+                                    </button>
+                                )}
+                                {nextLeadId && (
+                                    <button 
+                                        onClick={handleNextLead} 
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 font-bold text-[11px] transition-all active:scale-95 shadow-sm"
+                                        title="Go to next lead"
+                                    >
+                                        <span>Next</span>
+                                        <ChevronRight size={12} />
+                                    </button>
+                                )}
+                            </div>
                         )}
                         {lead.phone && (
                             <>
