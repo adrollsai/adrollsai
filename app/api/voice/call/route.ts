@@ -8,11 +8,29 @@ export async function POST(req: Request) {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-        // Fetch credentials
+        const body = await req.json()
+        const { leadId, leadIds, isAutoTrigger, impersonate } = body
+
+        const url = new URL(req.url)
+        let impersonateId = url.searchParams.get('impersonate') || impersonate
+
+        let targetId = user.id
+        if (impersonateId) {
+            const { data: authProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single()
+            if (['super_admin', 'agency', 'admin'].includes(authProfile?.role || '')) {
+                targetId = impersonateId
+            }
+        }
+
+        // Fetch credentials of targetId
         const { data: profile, error: profErr } = await supabase
             .from('profiles')
             .select('*')
-            .eq('id', user.id)
+            .eq('id', targetId)
             .single()
 
         if (profErr || !profile) {
@@ -31,9 +49,6 @@ export async function POST(req: Request) {
             }, { status: 400 })
         }
 
-        const body = await req.json()
-        const { leadId, leadIds, isAutoTrigger } = body
-
         const targets: string[] = []
         if (leadId) targets.push(leadId)
         if (Array.isArray(leadIds)) targets.push(...leadIds)
@@ -45,9 +60,9 @@ export async function POST(req: Request) {
         const results = []
         const isAuto = !!isAutoTrigger
 
-        for (const targetId of targets) {
-            const res = await triggerOutboundCall(supabase, targetId, user.id, isAuto)
-            results.push({ leadId: targetId, ...res })
+        for (const targetLeadId of targets) {
+            const res = await triggerOutboundCall(supabase, targetLeadId, targetId, isAuto)
+            results.push({ leadId: targetLeadId, ...res })
         }
 
         return NextResponse.json({ success: true, results })

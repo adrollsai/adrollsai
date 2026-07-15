@@ -14,15 +14,65 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 export async function POST(req: Request) {
     try {
         const { searchParams } = new URL(req.url)
-        const leadId = searchParams.get('leadId')
-
-        if (!leadId) {
-            return NextResponse.json({ success: false, error: 'Missing leadId' })
-        }
+        let leadId = searchParams.get('leadId')
 
         const formData = await req.formData()
+        const callSid = formData.get('CallSid') as string || ''
+        const fromNumber = formData.get('From') as string || ''
+        const toNumber = formData.get('To') as string || ''
         const callStatus = formData.get('CallStatus') as string
         const callDuration = parseInt(formData.get('CallDuration') as string || '0', 10)
+
+        if (!leadId) {
+            try {
+                if (callSid) {
+                    const { data: matchLead } = await supabaseAdmin
+                        .from('leads')
+                        .select('id')
+                        .eq('voice_call_id', callSid)
+                        .limit(1)
+                        .maybeSingle()
+                    if (matchLead) {
+                        leadId = matchLead.id
+                        console.log(`[TWILIO STATUS CALLBACK] Resolved leadId ${leadId} via CallSid ${callSid}`)
+                    }
+                }
+
+                if (!leadId && fromNumber && toNumber) {
+                    const cleanTo = toNumber.replace(/\D/g, '')
+                    const cleanFrom = fromNumber.replace(/\D/g, '')
+
+                    const { data: matchProfile } = await supabaseAdmin
+                        .from('profiles')
+                        .select('id')
+                        .or(`voice_twilio_number.eq.${toNumber},voice_twilio_number.eq.+${cleanTo},voice_twilio_number.eq.${cleanTo}`)
+                        .limit(1)
+                        .maybeSingle()
+
+                    if (matchProfile) {
+                        const { data: matchLead } = await supabaseAdmin
+                            .from('leads')
+                            .select('id')
+                            .eq('user_id', matchProfile.id)
+                            .or(`phone.eq.${fromNumber},phone.eq.+${cleanFrom},phone.eq.${cleanFrom}`)
+                            .limit(1)
+                            .maybeSingle()
+
+                        if (matchLead) {
+                            leadId = matchLead.id
+                            console.log(`[TWILIO STATUS CALLBACK] Resolved leadId ${leadId} via fromNumber ${fromNumber} and toNumber ${toNumber}`)
+                        }
+                    }
+                }
+            } catch (resolveErr: any) {
+                console.warn('[TWILIO STATUS CALLBACK] Error resolving leadId for status update:', resolveErr.message)
+            }
+        }
+
+        if (!leadId) {
+            console.warn('[TWILIO STATUS CALLBACK] Ignored status callback: Missing leadId', { callSid, fromNumber, toNumber })
+            return NextResponse.json({ success: false, error: 'Missing leadId' })
+        }
 
         console.log(`[TWILIO STATUS CALLBACK] Lead ${leadId} status changed to:`, callStatus)
 
@@ -125,7 +175,7 @@ export async function POST(req: Request) {
                 .eq('id', lead.user_id)
                 .single()
 
-            const voiceProvider = profile?.voice_provider || 'gemini'
+            const voiceProvider = 'gemini' // Force Gemini 3.1 Flash Live API for all accounts
             const targetLeadId = lead.id
             const targetUserId = lead.user_id
 
@@ -228,8 +278,7 @@ export async function POST(req: Request) {
                     transcript = updatedLead.voice_call_transcript
                     summary = updatedLead.voice_call_summary || summary
                     publicRecordingUrl = updatedLead.voice_recording_url || null
-                    conversationId = 'gemini-live' // Mark as valid to trigger analysis below
-
+                    conversationId = 'gemini-live' 
                     console.log(`[TWILIO STATUS CALLBACK] Read ${transcript.length} transcript turns from voice bridge.`)
 
                     // Perform agentic analysis on the bridge-saved transcript
@@ -245,6 +294,7 @@ ${formattedTranscript}
 
 Extract the following details as a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
 {
+  "summary": "A concise, clean 2-3 sentence paragraph summarizing the call. Do NOT use markdown headers, bold, bullets, or lists.",
   "callback_time": "ISO-8601 string of requested callback date/time. If the lead asked or agreed to a callback/meeting (including tentative agreement like 'call me Saturday', 'connect tomorrow', or 'call later') but no specific hour was finalized, generate a fallback time for that day at 10:00 AM local time (or 24 hours from now if no day was specified) so a follow-up reminder call is scheduled. Current system UTC time is: ${new Date().toISOString()}",
   "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot if the lead agreed to, confirmed, or accepted a proposed meeting slot (including saying 'okay', 'thank you', 'theek hai', or saying goodbye/thank you after a meeting slot is proposed/confirmed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
   "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified),
@@ -257,6 +307,7 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                         const cleanJson = rawGeminiRes.replace(/```json/g, '').replace(/```/g, '').trim()
                         const extracted = JSON.parse(cleanJson)
 
+                        summary = extracted.summary || summary
                         callbackTime = extracted.callback_time || null
                         bookingTime = extracted.booking_time || null
                         isQualified = !!extracted.is_qualified
@@ -715,7 +766,7 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                 } catch (histErr) {
                     console.error('[TWILIO STATUS CALLBACK] Exception inserting lead history:', histErr)
                 }
-            } else if (publicRecordingUrl) {
+            } else {
                 try {
                     const { data: recentLogs, error: logErr } = await supabaseAdmin
                         .from('lead_history')
@@ -730,7 +781,9 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                         const rawJson = logRecord.description.replace('🎙️ CALL_JSON:', '').trim()
                         const parsed = JSON.parse(rawJson)
                         
-                        parsed.recording_url = publicRecordingUrl
+                        if (publicRecordingUrl) {
+                            parsed.recording_url = publicRecordingUrl
+                        }
                         parsed.summary = summary
                         
                         await supabaseAdmin

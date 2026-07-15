@@ -231,7 +231,8 @@ wss.on('connection', (wsConnection) => {
                     supabaseAdmin.from('profiles').select('*').eq('id', profileId).maybeSingle(),
                     supabaseAdmin.from('leads').select('*').eq('id', leadId).maybeSingle(),
                     supabaseAdmin.from('properties').select('*').eq('user_id', profileId).limit(5),
-                    campaignPromise
+                    campaignPromise,
+                    supabaseAdmin.from('flagged_questions').select('*').eq('lead_id', leadId).eq('resolved', true).not('answer', 'is', null)
                 ]);
 
                 const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
@@ -242,14 +243,16 @@ wss.on('connection', (wsConnection) => {
                 let lead = null;
                 let props = null;
                 let campaign = null;
+                let resolvedQuestions = [];
 
                 try {
-                    const [profileRes, leadRes, propsRes, campaignRes] = await dbPromise;
+                    const [profileRes, leadRes, propsRes, campaignRes, flaggedRes] = await dbPromise;
                     profile = profileRes.data;
                     profileData = profile;
                     lead = leadRes.data;
                     props = propsRes.data;
                     campaign = campaignRes ? campaignRes.data : null;
+                    resolvedQuestions = flaggedRes?.data || [];
 
                     if (lead) {
                         leadPhone = lead.phone;
@@ -286,12 +289,42 @@ wss.on('connection', (wsConnection) => {
                             }).join('\n');
                         }
 
+                        const isFirstCall = !lead.voice_call_summary;
+                        let sourceInstructions = "";
+                        if (isFirstCall) {
+                            sourceInstructions = `\nThis is your FIRST call to this lead. If the prospect asks "What is this call regarding?", explain the context:`;
+                            if (lead.source) {
+                                const cleanSource = lead.source.toLowerCase();
+                                if (cleanSource.includes('facebook') || cleanSource.includes('fb') || cleanSource.includes('ad')) {
+                                    sourceInstructions += `\n- The lead came from Facebook Ads. Say: "I am calling because you showed interest in our Facebook ad regarding properties. You must've seen our ad."`;
+                                } else {
+                                    sourceInstructions += `\n- The lead came from ${lead.source}. Say: "I am calling because you recently registered your interest on our portal from ${lead.source}."`;
+                                }
+                            } else {
+                                sourceInstructions += `\n- There is no specific source context. Say: "I am calling to follow up on your interest in our premium real estate properties."`;
+                            }
+                        }
+
+                        let resolvedQuestionsInstruction = "";
+                        if (resolvedQuestions && resolvedQuestions.length > 0) {
+                            resolvedQuestionsInstruction = `\n\n--- RECENTLY RESOLVED QUESTIONS ---
+The prospect recently asked the following questions which we have now resolved. Please proactively bring them up and clear their doubts:
+`;
+                            resolvedQuestions.forEach((q, idx) => {
+                                resolvedQuestionsInstruction += `\nQuestion ${idx+1}: "${q.question}"\nAnswer: "${q.answer}"\n`;
+                            });
+                            resolvedQuestionsInstruction += `\nGreet the user and clear their doubts regarding these questions first.`;
+                        }
+
                         const companyName = profile?.business_name || 'our company';
                         const firstName = leadName.split(' ')[0] || 'there';
                         
                         if (campaign && campaign.custom_prompt) {
                             systemInstruction = `
 ${campaign.custom_prompt}
+
+${sourceInstructions}
+${resolvedQuestionsInstruction}
 
 --- LEAD & BUSINESS CONTEXT ---
 Lead Name: ${leadName}
@@ -303,7 +336,9 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
 
                             const promptLower = campaign.custom_prompt.toLowerCase();
                             const isHinglish = promptLower.includes('hinglish') || promptLower.includes('hindi') || promptLower.includes('india');
-                            if (isHinglish) {
+                            if (resolvedQuestions.length > 0) {
+                                greetingMessage = `Hi ${firstName} ji! Main assistant baat kar rahi hoon. Aapne pichli call mein jo sawal pucha tha, uska answer humare paas aa gaya hai. Main aapke doubts clear karne ke liye call kar rahi hoon. Kaise hain aap?`;
+                            } else if (isHinglish) {
                                 greetingMessage = `Hi ${firstName} ji! Main assistant baat kar raha hoon aapki query ke regarding. Kaise hain aap?`;
                             } else {
                                 greetingMessage = `Hi ${firstName}! I'm calling to follow up on your recent request. How are you doing today?`;
@@ -331,6 +366,9 @@ CRITICAL RULES (CLOSED-WORLD GROUNDING):
 9. GENDER & PRONOUNS: You are a female assistant. You must always use female grammar and pronouns when speaking Hindi/Hinglish (e.g., use "karti hoon" instead of "karta hoon", "karungi" instead of "karunga", "baat kar rahi hoon" instead of "baat kar raha hoon", "de sakti hoon" instead of "de sakta hoon", "bhejti hoon" instead of "bhejta hoon").
 10. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear a voicemail greeting, answering machine message, or any automated message (such as "please leave a message", "after the beep", or an automated robot voice), you must immediately trigger your "end_call" tool to hang up the call. Do NOT speak, say hello, or say goodbye; just trigger "end_call" instantly.
 
+${sourceInstructions}
+${resolvedQuestionsInstruction}
+
 --- BUSINESS CONTEXT ---
 Business Name: ${companyName}
 Business Info: ${profile?.business_info || 'N/A'}
@@ -341,7 +379,11 @@ ${productContext ? `--- LEAD INTEREST ---\n${productContext}\n` : ''}
 ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
 `.trim();
 
-                            greetingMessage = `Hi ${firstName} ji, kaise ho aap?`;
+                            if (resolvedQuestions.length > 0) {
+                                greetingMessage = `Hi ${firstName} ji! Main assistant baat kar rahi hoon. Aapne pichli call mein jo sawal pucha tha, uska answer humare paas aa gaya hai. Main aapke doubts clear karne ke liye call kar rahi hoon. Kaise hain aap?`;
+                            } else {
+                                greetingMessage = `Hi ${firstName} ji, kaise ho aap?`;
+                            }
                         }
                     }
                 } catch (dbErr) {

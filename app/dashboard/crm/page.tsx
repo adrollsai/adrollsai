@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { 
   Search, Phone, MessageCircle, RefreshCw, Upload, 
   Plus, CheckCircle2, X, Download, Trash2, UserPlus, 
@@ -29,6 +29,8 @@ function urlBase64ToUint8Array(base64String: string) {
 export default function CRMPage() {
   const supabase = createClient()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const impersonateId = searchParams.get('impersonate')
   
   // --- ROLE & HIERARCHY STATE ---
   const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent'>('admin')
@@ -204,7 +206,7 @@ export default function CRMPage() {
     if (selectedLeadIds.length === 0) return
     setIsCallingCampaign(true)
     try {
-      const res = await fetch('/api/voice/call', {
+      const res = await fetch(`/api/voice/call${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leadIds: selectedLeadIds })

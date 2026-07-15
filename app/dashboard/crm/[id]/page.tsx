@@ -678,7 +678,7 @@ export default function LeadProfilePage() {
     const handleTriggerCall = async () => {
         setIsCalling(true)
         try {
-            const res = await fetch('/api/voice/call', {
+            const res = await fetch(`/api/voice/call${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ leadId: id })

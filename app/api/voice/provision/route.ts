@@ -54,6 +54,31 @@ export async function POST(req: Request) {
                     const checkData = await checkRes.json()
                     const incomingNumbers = checkData.incoming_phone_numbers || []
                     if (incomingNumbers.length > 0) {
+                        const existingNumberSid = incomingNumbers[0].sid
+                        // We already own this number! Update its webhook configurations on Twilio
+                        const updateUrl = `https://api.twilio.com/2010-04-01/Accounts/${masterSid}/IncomingPhoneNumbers/${existingNumberSid}.json`
+                        const updateParams = new URLSearchParams()
+                        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://local.nobogent.com'
+                        updateParams.append('VoiceUrl', `${appUrl}/api/voice/twiml`)
+                        updateParams.append('VoiceMethod', 'POST')
+                        updateParams.append('StatusCallback', `${appUrl}/api/voice/status-callback`)
+                        updateParams.append('StatusCallbackMethod', 'POST')
+
+                        const updateRes = await fetch(updateUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Basic ${basicAuth}`,
+                                'Content-Type': 'application/x-www-form-urlencoded'
+                            },
+                            body: updateParams
+                        })
+
+                        if (!updateRes.ok) {
+                            console.error('[PROVISION] Failed to update webhook for existing number:', await updateRes.text())
+                        } else {
+                            console.log('[PROVISION] Successfully configured webhook for existing number:', oldNumber)
+                        }
+
                         // We already own this number! Restoring connection.
                         await supabase
                             .from('profiles')
@@ -115,6 +140,12 @@ export async function POST(req: Request) {
         const purchaseUrl = `https://api.twilio.com/2010-04-01/Accounts/${masterSid}/IncomingPhoneNumbers.json`
         const params = new URLSearchParams()
         params.append('PhoneNumber', selectedNumber)
+
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://local.nobogent.com'
+        params.append('VoiceUrl', `${appUrl}/api/voice/twiml`)
+        params.append('VoiceMethod', 'POST')
+        params.append('StatusCallback', `${appUrl}/api/voice/status-callback`)
+        params.append('StatusCallbackMethod', 'POST')
 
         const purchaseRes = await fetch(purchaseUrl, {
             method: 'POST',

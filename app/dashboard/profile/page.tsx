@@ -384,6 +384,12 @@ export default function ProfilePage() {
     email: ''
   })
 
+  const [personalFullName, setPersonalFullName] = useState('')
+  const [personalAvatarUrl, setPersonalAvatarUrl] = useState('')
+  const [uploadingPersonalAvatar, setUploadingPersonalAvatar] = useState(false)
+  const [isSavingPersonalDetails, setIsSavingPersonalDetails] = useState(false)
+  const personalAvatarInputRef = useRef<HTMLInputElement>(null)
+
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // --- HELPERS ---
@@ -621,10 +627,12 @@ export default function ProfilePage() {
       setUserId(user.id)
 
       // Get AUTH user role first
-      const { data: authProfile } = await supabase.from('profiles').select('role, agency_id, parent_id, business_name').eq('id', user.id).single()
+      const { data: authProfile } = await supabase.from('profiles').select('role, agency_id, parent_id, business_name, full_name, avatar_url').eq('id', user.id).single()
       const currentAuthRole = authProfile?.role || 'admin'
       setAuthRole(currentAuthRole)
       setAuthUserName(authProfile?.business_name || null)
+      setPersonalFullName(authProfile?.full_name || '')
+      setPersonalAvatarUrl(authProfile?.avatar_url || '')
 
       // Resolve Target User ID
       let tUserId = user.id
@@ -1269,14 +1277,84 @@ export default function ProfilePage() {
           }
         })
       });
-      const resData = await res.json();
-      if (resData.error) throw new Error(resData.error);
-      
       updateLocalCache({ [dbFieldName]: null });
       toast.success("Asset removed successfully!");
     } catch (error: any) {
       console.error("Remove asset error:", error);
       alert('Error removing asset: ' + (error.message || JSON.stringify(error)));
+    }
+  }
+
+  const handlePersonalAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      if (!event.target.files || !event.target.files.length) return
+      
+      const file = event.target.files[0]
+      if (file.size > 15 * 1024 * 1024) {
+        alert("File size exceeds 15MB limit.")
+        return
+      }
+
+      setUploadingPersonalAvatar(true)
+
+      const fileExt = file.name.split('.').pop()
+      const fileName = `personal-avatar-${userId}-${Date.now()}.${fileExt}`
+      const renamedFile = new File([file], fileName, { type: file.type })
+
+      const publicUrl = await uploadToR2(renamedFile, 'logos')
+
+      setPersonalAvatarUrl(publicUrl)
+      
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId: userId,
+          updates: {
+            avatar_url: publicUrl,
+          }
+        })
+      })
+      const resData = await res.json()
+      if (resData.error) throw new Error(resData.error)
+      toast.success("Personal profile photo uploaded successfully!")
+
+    } catch (error: any) {
+      console.error("Personal avatar upload error:", error)
+      alert('Error uploading photo: ' + (error.message || JSON.stringify(error)))
+    } finally {
+      setUploadingPersonalAvatar(false)
+    }
+  }
+
+  const handleSavePersonalDetails = async () => {
+    setIsSavingPersonalDetails(true)
+    try {
+      if (!userId) return
+
+      const updates = {
+        full_name: personalFullName
+      }
+
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId: userId,
+          updates
+        })
+      })
+      const resData = await res.json()
+
+      if (resData.error) {
+        alert(`Error saving personal details: ${resData.error}`)
+      } else {
+        toast.success("Personal Details Saved! ✨")
+      }
+    } catch (e: any) {
+      toast.error("Failed to save: " + e.message)
+    } finally {
+      setIsSavingPersonalDetails(false)
     }
   }
 
@@ -1722,20 +1800,30 @@ export default function ProfilePage() {
 
                     <div className="pt-2 border-t border-slate-100 flex gap-2">
                       <button
-                        onClick={() => {
-                          const answer = prompt(`Write your answer for: "${fq.question}"\n\nThis answer will be appended to your Business Info (AI Context) so the AI agent knows it next time.`);
+                        onClick={async () => {
+                          const answer = prompt(`Write your answer for: "${fq.question}"\n\nThis answer will be appended to your Business Info (AI Context) and a callback will be triggered immediately.`);
                           if (answer) {
-                            const updatedInfo = `${formData.businessInfo}\n\nQ: ${fq.question}\nA: ${answer}`;
-                            setFormData(prev => ({ ...prev, businessInfo: updatedInfo }));
-                            supabase.from('profiles').update({ business_info: updatedInfo }).eq('id', targetUserId || userId).then(({ error }) => {
-                              if (!error) {
-                                supabase.from('flagged_questions').update({ resolved: true }).eq('id', fq.id).then(() => {
-                                  toast.success("Context updated and question resolved!");
-                                  fetchFlaggedQuestions(targetUserId || userId || '');
-                                  updateLocalCache({ business_info: updatedInfo });
-                                });
+                            try {
+                              const res = await fetch('/api/questions/resolve', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ questionId: fq.id, answer })
+                              });
+                              const data = await res.json();
+                              if (res.ok && data.success) {
+                                toast.success("Question resolved and outbound call triggered! 📞");
+                                fetchFlaggedQuestions(targetUserId || userId || '');
+                                
+                                // Update local form and cache
+                                const updatedInfo = `${formData.businessInfo}\n\nQ: ${fq.question}\nA: ${answer}`;
+                                setFormData(prev => ({ ...prev, businessInfo: updatedInfo }));
+                                updateLocalCache({ business_info: updatedInfo });
+                              } else {
+                                throw new Error(data.error || 'Failed to resolve flagged question');
                               }
-                            });
+                            } catch (err: any) {
+                              toast.error(err.message || 'An error occurred while resolving question');
+                            }
                           }
                         }}
                         className="text-[10px] bg-purple-50 text-purple-600 hover:bg-purple-100 font-bold px-3 py-1.5 rounded-full active:scale-95 transition-all flex items-center gap-1.5"
@@ -2035,6 +2123,72 @@ export default function ProfilePage() {
                   </div>
                 </div>
               )}
+                    </div>
+
+            {/* Personal Profile Details Card */}
+            <div className="bg-white p-6 sm:p-8 rounded-[2rem] shadow-sm border border-slate-200/60 space-y-6 transition-all hover:shadow-md">
+              <div className="flex items-center gap-3 border-b border-slate-100 pb-4 mb-2">
+                <div className="bg-indigo-100 text-indigo-600 p-2.5 rounded-full">
+                  <User size={20} />
+                </div>
+                <h3 className="font-bold text-lg text-slate-800">Personal Profile Details</h3>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-6">
+                {/* Personal Photo Upload */}
+                <div
+                  onClick={() => !uploadingPersonalAvatar && personalAvatarInputRef.current?.click()}
+                  className="w-24 h-24 bg-slate-50/80 rounded-full flex shrink-0 items-center justify-center overflow-hidden relative group cursor-pointer border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 transition-all shadow-sm"
+                  title="Upload Profile Photo"
+                >
+                  {uploadingPersonalAvatar ? (
+                    <div className="flex flex-col items-center justify-center p-2 text-center">
+                      <Loader2 className="animate-spin text-indigo-600 mb-1" size={20} />
+                      <span className="text-[8px] font-black text-slate-400">Uploading...</span>
+                    </div>
+                  ) : personalAvatarUrl ? (
+                    <div className="relative w-full h-full group">
+                      <img src={personalAvatarUrl} alt="Avatar" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 gap-2">
+                        <button
+                          type="button"
+                          className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-indigo-600 shadow-md"
+                          onClick={(e) => { e.stopPropagation(); personalAvatarInputRef.current?.click(); }}
+                        >
+                          <Upload size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 text-slate-400 group-hover:text-indigo-500 transition-colors">
+                      <Upload size={20} />
+                      <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Photo</span>
+                    </div>
+                  )}
+                  <input type="file" ref={personalAvatarInputRef} onChange={handlePersonalAvatarUpload} accept="image/*" className="hidden" />
+                </div>
+
+                <div className="flex-1 w-full space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">Your Full Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. John Doe"
+                      value={personalFullName}
+                      onChange={(e) => setPersonalFullName(e.target.value)}
+                      className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-indigo-500/20 outline-none border border-slate-200/60 focus:border-indigo-400 transition-all"
+                    />
+                  </div>
+                  <button
+                    onClick={handleSavePersonalDetails}
+                    disabled={isSavingPersonalDetails}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-3 px-5 rounded-full transition-all shadow-sm active:scale-95 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isSavingPersonalDetails ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                    Save Personal Details
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Business Profile Form Card */}

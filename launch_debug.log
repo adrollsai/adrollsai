@@ -228,3 +228,99 @@
   "leadgenTosAccepted": true
 }
 ------------------------------------------------
+[2026-07-15T07:58:00.315Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 2f62a259-f23b-48ee-a920-c436f36eaa4b
+------------------------------------------------
+[2026-07-15T07:58:00.318Z] [Campaigns API] targetUserId resolved to: 2f62a259-f23b-48ee-a920-c436f36eaa4b
+------------------------------------------------
+[2026-07-15T07:58:00.440Z] [Campaigns API] Token Exists: true, Ad Account: act_464203130758610
+------------------------------------------------
+[2026-07-15T07:58:01.012Z] [Campaigns API] Successfully fetched 100 campaigns
+------------------------------------------------
+[2026-07-15T07:58:01.742Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 2f62a259-f23b-48ee-a920-c436f36eaa4b
+------------------------------------------------
+[2026-07-15T07:58:01.744Z] [Campaigns API] targetUserId resolved to: 2f62a259-f23b-48ee-a920-c436f36eaa4b
+------------------------------------------------
+[2026-07-15T07:58:01.877Z] [Campaigns API] Token Exists: true, Ad Account: act_464203130758610
+------------------------------------------------
+[2026-07-15T07:58:02.638Z] [Campaigns API] Successfully fetched 100 campaigns
+------------------------------------------------
+[2026-07-15T07:58:03.254Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 2f62a259-f23b-48ee-a920-c436f36eaa4b
+------------------------------------------------
+[2026-07-15T07:58:03.255Z] [Campaigns API] targetUserId resolved to: 2f62a259-f23b-48ee-a920-c436f36eaa4b
+------------------------------------------------
+[2026-07-15T07:58:03.371Z] [Campaigns API] Token Exists: true, Ad Account: act_464203130758610
+------------------------------------------------
+[2026-07-15T07:58:03.878Z] [Campaigns API] Successfully fetched 100 campaigns
+------------------------------------------------
+[2026-07-15T13:20:58.856Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:20:58.859Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:20:58.979Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-07-15T13:20:59.436Z] [Campaigns API] Successfully fetched 21 campaigns
+------------------------------------------------
+[2026-07-15T13:21:00.142Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:21:00.143Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:21:00.279Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-07-15T13:21:00.840Z] [Campaigns API] Successfully fetched 21 campaigns
+------------------------------------------------
+[2026-07-15T13:21:01.406Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-07-15T13:21:01.436Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-07-15T13:21:22.833Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:21:22.834Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:21:22.957Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-07-15T13:21:23.358Z] [Campaigns API] Successfully fetched 21 campaigns
+------------------------------------------------
+[2026-07-15T13:21:24.044Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:21:24.045Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:21:24.170Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-07-15T13:21:24.567Z] [Campaigns API] Successfully fetched 21 campaigns
+------------------------------------------------
+[2026-07-15T13:31:07.162Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:31:07.164Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:31:07.288Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-07-15T13:31:08.034Z] [Campaigns API] Successfully fetched 21 campaigns
+------------------------------------------------
+[2026-07-15T13:31:12.377Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-07-15T13:31:12.519Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:31:12.519Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:31:12.852Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-07-15T13:31:13.298Z] [Campaigns API] Successfully fetched 21 campaigns
+------------------------------------------------
+[2026-07-15T13:31:13.818Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-07-15T13:31:43.060Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:31:43.061Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:31:43.353Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-07-15T13:31:43.875Z] [Campaigns API] Successfully fetched 21 campaigns
+------------------------------------------------
+[2026-07-15T13:31:44.580Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:31:44.583Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-07-15T13:31:44.714Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-07-15T13:31:45.104Z] [Campaigns API] Successfully fetched 21 campaigns
+------------------------------------------------

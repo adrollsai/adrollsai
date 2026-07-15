@@ -201,14 +201,18 @@ export default function TeamPage() {
             {filteredTeam.map((member) => (
               <div key={member.id} className="bg-white border border-slate-200 rounded-[1.5rem] p-5 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
                 <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold shadow-sm ${
-                    member.role === 'admin' ? 'bg-indigo-100 text-indigo-600' : 'bg-blue-50 text-blue-500'
-                  }`}>
-                    {member.business_name?.charAt(0) || <Users size={20} />}
+                  <div className="w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center text-lg font-bold shadow-sm bg-slate-50 border border-slate-100 shrink-0">
+                    {member.avatar_url ? (
+                      <img src={member.avatar_url} alt={member.full_name || member.business_name} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className={member.role === 'admin' ? 'text-indigo-600' : 'text-blue-500'}>
+                        {(member.full_name || member.business_name || '').charAt(0).toUpperCase() || <Users size={20} />}
+                      </span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-slate-900 truncate">{member.business_name}</h3>
+                      <h3 className="font-bold text-slate-900 truncate">{member.full_name || member.business_name}</h3>
                       <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
                         member.role === 'admin' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
                       }`}>

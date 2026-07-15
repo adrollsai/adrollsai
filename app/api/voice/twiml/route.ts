@@ -10,8 +10,8 @@ const supabaseAdmin = createClient(
 export async function POST(req: Request) {
     try {
         const { searchParams } = new URL(req.url)
-        const leadId = searchParams.get('leadId')
-        const profileId = searchParams.get('profileId')
+        let leadId = searchParams.get('leadId')
+        let profileId = searchParams.get('profileId')
         const campaignId = searchParams.get('campaignId')
 
         let fromNumber = ''
@@ -26,7 +26,60 @@ export async function POST(req: Request) {
             console.warn('[TWIML BRIDGE] Could not parse form data:', e)
         }
 
+        // Support direct inbound call routing if leadId or profileId are missing
+        if (!profileId && toNumber) {
+            const cleanTo = toNumber.replace(/\D/g, '')
+            const { data: matchProfile } = await supabaseAdmin
+                .from('profiles')
+                .select('id')
+                .or(`voice_twilio_number.eq.${toNumber},voice_twilio_number.eq.+${cleanTo},voice_twilio_number.eq.${cleanTo}`)
+                .limit(1)
+                .maybeSingle()
+            
+            if (matchProfile) {
+                profileId = matchProfile.id
+                console.log(`[TWIML BRIDGE] Resolved profileId ${profileId} from toNumber ${toNumber}`)
+            }
+        }
+
+        if (profileId && !leadId && fromNumber) {
+            const cleanFrom = fromNumber.replace(/\D/g, '')
+            const { data: matchLead } = await supabaseAdmin
+                .from('leads')
+                .select('id')
+                .eq('user_id', profileId)
+                .or(`phone.eq.${fromNumber},phone.eq.+${cleanFrom},phone.eq.${cleanFrom}`)
+                .limit(1)
+                .maybeSingle()
+            
+            if (matchLead) {
+                leadId = matchLead.id
+                console.log(`[TWIML BRIDGE] Resolved leadId ${leadId} from fromNumber ${fromNumber}`)
+            } else {
+                // Dynamically create a new lead for inbound call
+                const { data: newLead, error: createErr } = await supabaseAdmin
+                    .from('leads')
+                    .insert({
+                        user_id: profileId,
+                        name: `Inbound Caller (${fromNumber})`,
+                        phone: fromNumber,
+                        source: 'Inbound Call',
+                        pipeline_stage: 'Lead'
+                    })
+                    .select('id')
+                    .single()
+                
+                if (createErr) {
+                    console.error('[TWIML BRIDGE] Failed to dynamically create lead for inbound caller:', createErr)
+                } else if (newLead) {
+                    leadId = newLead.id
+                    console.log(`[TWIML BRIDGE] Created new lead ${leadId} for inbound caller ${fromNumber}`)
+                }
+            }
+        }
+
         if (!leadId || !profileId) {
+            console.error(`[TWIML BRIDGE] Missing routing info. profileId: ${profileId}, leadId: ${leadId}`)
             return new NextResponse('<Response><Reject /></Response>', {
                 headers: { 'Content-Type': 'application/xml' }
             })
@@ -83,10 +136,10 @@ export async function POST(req: Request) {
             }
         }
 
-        const voiceProvider = profile?.voice_provider || 'gemini'
+        const voiceProvider = 'gemini' // Force Gemini 3.1 Flash Live API for all accounts
 
         if (voiceProvider === 'gemini') {
-            const bridgeHost = process.env.GEMINI_VOICE_BRIDGE_URL || 'ws://localhost:5050'
+            const bridgeHost = process.env.GEMINI_VOICE_BRIDGE_URL || 'wss://gemini-voice-bridge-805895515412.us-central1.run.app'
             const streamUrl = `${bridgeHost}/gemini-live-stream`
             console.log(`[TWIML BRIDGE] Redirecting Twilio Media Stream to Gemini Live Bridge: ${streamUrl}`)
             

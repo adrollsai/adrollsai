@@ -7,7 +7,7 @@ import { hasEnoughCredits } from '@/utils/credits'
  * Warms up the Cloud Run Voice Bridge container to prevent cold-start websocket timeouts in Twilio.
  */
 export async function warmupVoiceBridge(): Promise<void> {
-    const bridgeUrl = process.env.GEMINI_VOICE_BRIDGE_URL || 'ws://localhost:5050';
+    const bridgeUrl = process.env.GEMINI_VOICE_BRIDGE_URL || 'wss://gemini-voice-bridge-805895515412.us-central1.run.app';
     if (bridgeUrl.startsWith('ws')) {
         const healthUrl = bridgeUrl.replace(/^ws/, 'http') + '/health';
         console.log(`[VOICE HELPER] Warming up Voice Bridge container at: ${healthUrl}`);
@@ -315,7 +315,7 @@ export async function bookAppointment(
         // 2. Fetch Host Settings
         const { data: profile, error: profileError } = await supabaseAdmin
             .from('profiles')
-            .select('google_refresh_token, google_booking_enabled, google_booking_duration, google_booking_hours, business_name, google_calendar_id, facebook_token, selected_page_token, pixel_id')
+            .select('google_refresh_token, google_booking_enabled, google_booking_duration, google_booking_hours, business_name, google_calendar_id, facebook_token, selected_page_token, pixel_id, whatsapp_access_token, whatsapp_waba_id, whatsapp_phone_number_id, whatsapp_personal_number, avatar_url, full_name')
             .eq('id', profileId)
             .maybeSingle()
 
@@ -618,6 +618,185 @@ export async function bookAppointment(
             })
         } catch (histErr) {
             console.error('[VOICE HELPER] Failed to log lead history:', histErr)
+        }
+
+        // 6b. WhatsApp Notifications (Double booking confirmation)
+        try {
+            // Resolve host name and avatar (assigned team member or admin owner)
+            let hostName = profile?.full_name || profile?.business_name || 'Team Member'
+            let hostAvatar = profile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/default-avatar.png'
+
+            if (lead?.assigned_to) {
+                const { data: assignedProfile } = await supabaseAdmin
+                    .from('profiles')
+                    .select('full_name, business_name, avatar_url')
+                    .eq('id', lead.assigned_to)
+                    .maybeSingle()
+
+                if (assignedProfile) {
+                    hostName = assignedProfile.full_name || assignedProfile.business_name || hostName
+                    hostAvatar = assignedProfile.avatar_url || hostAvatar
+                }
+            }
+
+            const localSlotDate = new Date(formattedSlot)
+            const formattedDate = localSlotDate.toLocaleString('en-US', {
+                timeZone: timeZone,
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+            })
+
+            const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
+            const phoneId = profile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_NUMBER_ID
+            
+            // Normalize prospect phone
+            let cleanLeadPhone = lead?.phone ? lead.phone.replace(/\D/g, '') : ''
+            if (cleanLeadPhone.length === 10) {
+                cleanLeadPhone = '91' + cleanLeadPhone
+            }
+
+            // Normalize admin personal phone
+            const adminPhone = profile?.whatsapp_personal_number
+            let cleanAdminPhone = adminPhone ? adminPhone.replace(/\D/g, '') : ''
+            if (cleanAdminPhone.length === 10) {
+                cleanAdminPhone = '91' + cleanAdminPhone
+            }
+
+            if (phoneId && whatsappToken) {
+                // 1. Prospect message template
+                if (cleanLeadPhone) {
+                    console.log(`[VOICE HELPER] Sending WhatsApp booking confirmation to prospect: ${cleanLeadPhone}`)
+                    const prospectPayload = {
+                        messaging_product: 'whatsapp',
+                        recipient_type: 'individual',
+                        to: cleanLeadPhone,
+                        type: 'template',
+                        template: {
+                            name: 'booking_confirmation_prospect',
+                            language: {
+                                code: 'en_US'
+                            },
+                            components: [
+                                {
+                                    type: 'header',
+                                    parameters: [
+                                        {
+                                            type: 'image',
+                                            image: {
+                                                link: hostAvatar
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    type: 'body',
+                                    parameters: [
+                                        {
+                                            type: 'text',
+                                            text: lead.name || 'Prospect'
+                                        },
+                                        {
+                                            type: 'text',
+                                            text: formattedDate
+                                        },
+                                        {
+                                            type: 'text',
+                                            text: hostName
+                                        },
+                                        {
+                                            type: 'text',
+                                            text: profile?.business_name || 'Consultation'
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+
+                    const waRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${whatsappToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(prospectPayload)
+                    })
+                    const waData = await waRes.json()
+                    if (waData.error) {
+                        console.error('[VOICE HELPER] WhatsApp Prospect Confirmation Error:', waData.error)
+                    } else {
+                        console.log(`[VOICE HELPER] Prospect WhatsApp confirmation sent successfully. Message ID: ${waData.messages?.[0]?.id}`)
+                    }
+                }
+
+                // 2. Admin message template
+                if (cleanAdminPhone) {
+                    console.log(`[VOICE HELPER] Sending WhatsApp booking notification to admin: ${cleanAdminPhone}`)
+                    const adminPayload = {
+                        messaging_product: 'whatsapp',
+                        recipient_type: 'individual',
+                        to: cleanAdminPhone,
+                        type: 'template',
+                        template: {
+                            name: 'booking_notification_admin',
+                            language: {
+                                code: 'en_US'
+                            },
+                            components: [
+                                {
+                                    type: 'body',
+                                    parameters: [
+                                        {
+                                            type: 'text',
+                                            text: lead.name || 'Prospect'
+                                        },
+                                        {
+                                            type: 'text',
+                                            text: formattedDate
+                                        },
+                                        {
+                                            type: 'text',
+                                            text: hostName
+                                        },
+                                        {
+                                            type: 'text',
+                                            text: lead.phone || 'N/A'
+                                        },
+                                        {
+                                            type: 'text',
+                                            text: leadEmail || 'N/A'
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+
+                    const waAdminRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${whatsappToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(adminPayload)
+                    })
+                    const waAdminData = await waAdminRes.json()
+                    if (waAdminData.error) {
+                        console.error('[VOICE HELPER] WhatsApp Admin Notification Error:', waAdminData.error)
+                    } else {
+                        console.log(`[VOICE HELPER] Admin WhatsApp notification sent successfully. Message ID: ${waAdminData.messages?.[0]?.id}`)
+                    }
+                }
+            } else {
+                console.warn('[VOICE HELPER] WhatsApp credentials not configured. Skipping confirmations.')
+            }
+        } catch (waErr: any) {
+            console.error('[VOICE HELPER] WhatsApp double-send exception:', waErr.message || waErr)
         }
 
         // 7. Trigger Conversions API (CAPI) Schedule Event

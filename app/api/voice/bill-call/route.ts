@@ -36,7 +36,7 @@ export async function POST(req: Request) {
 
     const twilioSid = process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
     const twilioToken = process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
-    const activeProvider = voiceProvider || profile.voice_provider || 'elevenlabs'
+    const activeProvider: string = 'gemini' // Force Gemini 3.1 Flash Live API for all accounts
 
     if (!twilioSid || !twilioToken) {
       console.error('[BILL-CALL] Twilio credentials not configured')
