@@ -112,6 +112,17 @@ export async function POST(request: Request) {
                 assignedTo = agentIds[currentAgentIndex];
                 currentAgentIndex = (currentAgentIndex + 1) % agentIds.length;
             }
+
+            let leadCreatedAt = new Date().toISOString();
+            if (lead.facebook_created_at) {
+                const parsedDate = isNaN(Number(lead.facebook_created_at)) 
+                    ? Date.parse(lead.facebook_created_at) 
+                    : Number(lead.facebook_created_at) * (Number(lead.facebook_created_at) < 1000000000000 ? 1000 : 1);
+                if (!isNaN(parsedDate)) {
+                    leadCreatedAt = new Date(parsedDate).toISOString();
+                }
+            }
+
             return {
                 user_id: targetUserId,
                 name: lead.name,
@@ -127,7 +138,8 @@ export async function POST(request: Request) {
                 status: 'New', 
                 pipeline_stage: 'New',
                 assigned_to: assignedTo,
-                campaign_id: lead.campaign_id || null
+                campaign_id: lead.campaign_id || null,
+                created_at: leadCreatedAt
             };
         });
 

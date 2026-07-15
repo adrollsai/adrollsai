@@ -308,7 +308,7 @@ export default function ProductsPage() {
 
       // Combine existing un-deleted images with newly uploaded images
       const finalImages = [...existingImages, ...uploadedUrls]
-      const finalMainImage = finalImages.length > 0 ? finalImages[0] : `https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(editProp.title)}`
+      const finalMainImage = finalImages.length > 0 ? finalImages[0] : null
 
       const apiRes = await fetch('/api/inventory', {
         method: 'POST',
@@ -541,8 +541,6 @@ export default function ProductsPage() {
         })
         const results = await Promise.all(uploadPromises)
         uploadedUrls.push(...results)
-      } else {
-          uploadedUrls.push(`https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newProp.title)}`)
       }
 
       // Resolve correct attribution ID (use ownerId state if active, otherwise check profiles relationship or fallback to user.id)
@@ -567,7 +565,7 @@ export default function ProductsPage() {
             price: '',
             property_type: 'Generic',
             status: 'Active',
-            image_url: uploadedUrls[0],
+            image_url: uploadedUrls[0] || null,
             images: uploadedUrls,
             youtube_url: newProp.youtube_url || null,
             show_on_landing_page: newProp.show_on_landing_page !== false

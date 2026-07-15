@@ -126,7 +126,8 @@ export async function POST(request: Request) {
                 budget: body.custom_question_0 || '',
                 timeline: body.custom_question_1 || '',
                 pixel_id: customPixelId || null,
-                property_id: pagePropertyId || null
+                property_id: pagePropertyId || null,
+                created_at: new Date().toISOString()
             })
             .select()
             .single()

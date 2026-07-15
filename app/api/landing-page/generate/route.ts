@@ -115,32 +115,7 @@ export async function POST(request: Request) {
         } = body
 
         // Check credit balance dynamically (must have enough credits for generation / editing)
-        let requiredCredits = 20 // default minimum for copywriting/editing/analysis
-        if (mode === 'generate') {
-            let hasPreExistingImages = false
-            if (propertyId) {
-                const { data: propCheck } = await supabaseAdmin
-                    .from('properties')
-                    .select('images, image_url')
-                    .eq('id', propertyId)
-                    .maybeSingle()
-                if (propCheck && ((propCheck.images && propCheck.images.length > 0) || propCheck.image_url)) {
-                    hasPreExistingImages = true
-                }
-            } else if (pageType === 'business') {
-                const { data: activeProps } = await supabaseAdmin
-                    .from('properties')
-                    .select('image_url')
-                    .eq('user_id', targetUserId)
-                    .neq('show_on_landing_page', false)
-                if (activeProps && activeProps.some(p => p.image_url)) {
-                    hasPreExistingImages = true
-                }
-            }
-            if (!hasPreExistingImages) {
-                requiredCredits = 220 // 200 credits for 5 generated images + 20 for copywriting/analysis
-            }
-        }
+        const requiredCredits = 20 // default minimum for copywriting/editing/analysis (image generation bypassed as requested)
 
         const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, requiredCredits)
         if (!hasCredits) {
@@ -189,9 +164,9 @@ Listing ${idx + 1}:
 - Description: ${p.description || "N/A"}
 - Price: ${p.price || "N/A"}
 - Location: ${p.address || "N/A"}
-- Image: ${p.image_url || "N/A"}
+- Image: ${p.image_url && !p.image_url.includes('placehold.co') && !p.image_url.includes('placeholder') ? p.image_url : "N/A"}
 `).join('\n')
-                propertyImagesList = activeProps.map(p => p.image_url).filter(Boolean) as string[]
+                propertyImagesList = activeProps.map(p => p.image_url).filter(img => img && !img.includes('placehold.co') && !img.includes('placeholder')) as string[]
             }
 
             propertyDataText = `
@@ -208,14 +183,17 @@ ${propertyDetails || "No listings currently active."}
             if (property) {
                 resolvedProductName = resolvedProductName || property.title
                 resolvedContext = resolvedContext || property.description || ""
-                propertyImagesList = property.images || []
-                if (property.image_url && !propertyImagesList.includes(property.image_url)) {
+                
+                // Filter out placeholder images from propertyImagesList
+                propertyImagesList = (property.images || []).filter((img: string) => img && !img.includes('placehold.co') && !img.includes('placeholder'))
+                if (property.image_url && !property.image_url.includes('placehold.co') && !property.image_url.includes('placeholder') && !propertyImagesList.includes(property.image_url)) {
                     propertyImagesList.unshift(property.image_url)
                 }
+
                 if (property.rera_number) {
                     propertyRera = property.rera_number
                 }
-                if (property.floor_plan_url) {
+                if (property.floor_plan_url && !property.floor_plan_url.includes('placehold.co') && !property.floor_plan_url.includes('placeholder')) {
                     propertyFloorPlan = property.floor_plan_url
                 }
                 if (property.price) {
@@ -284,99 +262,7 @@ BUSINESS CONTACT INFO:
             formFieldsText = "Full Name, WhatsApp Number, City"
         }
 
-        // 4. Generate 5 relevant images using Kie.ai if no images exist
-        if (mode === 'generate' && propertyImagesList.length === 0) {
-            console.log(`[Lander API] Product "${resolvedProductName}" has no images. Generating 5 relevant images using gpt-image-2-text-to-image model...`);
-            
-            const promptDescriptions = [
-                `A professional, high-converting hero banner photograph for ${resolvedProductName}. Context: ${resolvedContext}. Real, beautiful and attractive looking ${resolvedEthnicity} people experiencing the dream outcome of ${resolvedProductName} in their daily lives, smiling candidly, taken with a high-end camera, natural soft lighting.`,
-                `A candid, authentic social proof wall of love photograph for ${resolvedProductName}. Real, beautiful and attractive looking ${resolvedEthnicity} people, smiling happily, sharing their positive experience with the brand/product ${resolvedProductName}, captured in natural lighting.`,
-                `An organic lifestyle photo representing the success of using ${resolvedProductName}. Features a real, beautiful and attractive looking ${resolvedEthnicity} person or family utilizing this product/service in their modern home, feeling relaxed and satisfied.`,
-                `A step-by-step process representation for ${resolvedProductName}. Highlights real, beautiful and attractive looking ${resolvedEthnicity} people interacting with the product/service easily and naturally, showing a high level of usability.`,
-                `A premium, clean brand contextual image for ${resolvedProductName}. Focus on details, real, beautiful and attractive looking ${resolvedEthnicity} people with a human touch, natural shadows, soft warm lighting.`
-            ];
-
-            try {
-                const taskPromises = promptDescriptions.map(p => 
-                    createKieImageTask(
-                        `AESTHETIC: RAW & ORGANIC. Use a smartphone-photo style. It must look like an unedited, authentic photo taken by a regular person, not a professional photographer.
-LIGHTING: Natural, slightly imperfect, no studio glow.
-PEOPLE: Include real, beautiful and attractive looking ${resolvedEthnicity} people to have a human touch. They should look candid, happy, and authentic, with true-to-life detailing of skin, hair, and features.
-PROMPT: ${p}
-CRITICAL: Do NOT write or draw any text overlays, labels, or placeholders like 'logo', 'put logo here', 'business name', or text circles. Keep the image fully clean of text and placeholders.`,
-                        "gpt-image-2-text-to-image"
-                    )
-                );
-                
-                const taskIds = await Promise.all(taskPromises);
-                console.log(`[Lander API] Created Kie image generation tasks: ${JSON.stringify(taskIds)}`);
-
-                // Poll the tasks in parallel (up to 100 seconds)
-                const completedUrls: string[] = [];
-                const startTime = Date.now();
-                const timeoutMs = 100000; // 100 seconds polling limit
-                
-                const pendingTasks = taskIds.map((tid, idx) => ({ id: tid, index: idx, status: 'pending', url: null as string | null }));
-
-                while (pendingTasks.some(t => t.status === 'pending') && (Date.now() - startTime) < timeoutMs) {
-                    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3s between polls
-                    
-                    const pollPromises = pendingTasks.map(async (task) => {
-                        if (task.status !== 'pending' || !task.id) return;
-                        
-                        try {
-                            const res = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${task.id}`, {
-                                method: 'GET',
-                                headers: {
-                                    'Authorization': `Bearer ${process.env.KIE_API_KEY}`
-                                }
-                            });
-                            
-                            if (res.ok) {
-                                const checkData = await res.json();
-                                const status = checkData.status || checkData.data?.status || checkData.data?.state;
-                                if (status === 'succeeded' || status === 'completed' || status === 'success') {
-                                    const imageUrl = extractImageUrl(checkData);
-                                    if (imageUrl) {
-                                        task.status = 'succeeded';
-                                        task.url = imageUrl;
-                                    }
-                                } else if (status === 'failed' || status === 'error') {
-                                    task.status = 'failed';
-                                }
-                            }
-                        } catch (err) {
-                            console.error(`[Lander API] Error polling task ${task.id}:`, err);
-                        }
-                    });
-                    
-                    await Promise.all(pollPromises);
-                }
-
-                pendingTasks.forEach(task => {
-                    if (task.url) {
-                        completedUrls.push(task.url);
-                    }
-                });
-
-                console.log(`[Lander API] Generated ${completedUrls.length} images successfully:`, completedUrls);
-                
-                if (completedUrls.length > 0) {
-                    propertyImagesList = completedUrls;
-                    // Deduct credits for generated images: Rs. 2.00 cost to us per image (translates to 40 credits each)
-                    const imageGenerationRupeeCost = completedUrls.length * 2.00;
-                    await deductCreditsByCost(
-                        supabaseAdmin,
-                        targetUserId,
-                        imageGenerationRupeeCost,
-                        'ai_generation',
-                        `AI Landing Page - Generated ${completedUrls.length} relevant images`
-                    );
-                }
-            } catch (err: any) {
-                console.error("[Lander API] Kie Image generation failed:", err);
-            }
-        }
+        // 4. Image Generation Bypassed (as requested, if no images exist, no images are generated/placed)
         let imageAnalysisResults = ""
         if (mode === 'generate' && propertyImagesList.length > 0) {
             console.log(`[Lander API] Performing multimodal image analysis on ${propertyImagesList.length} images...`)
@@ -689,6 +575,8 @@ CRITICAL RULES:
         }
         if (id) {
             payload.id = id
+        } else {
+            payload.created_at = new Date().toISOString()
         }
 
         // Create or update record in public.landing_pages
