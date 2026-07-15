@@ -342,7 +342,7 @@ export default function ProductsPage() {
       } : p)
       
       setProperties(updatedProps)
-      localStorage.setItem(`inventory_cache_${user.id}`, JSON.stringify(updatedProps))
+      setLocalCache(`properties_cache_${ownerId || user.id}`, updatedProps)
       
       toast.success('Product updated successfully!')
       setShowEditModal(false)
@@ -377,9 +377,7 @@ export default function ProductsPage() {
           setProperties(updatedProps);
           
           const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-              localStorage.setItem(`inventory_cache_${user.id}`, JSON.stringify(updatedProps));
-          }
+          setLocalCache(`properties_cache_${ownerId || user?.id}`, updatedProps);
 
           toast.success("Product deleted successfully.");
           setPropertyToDelete(null);
@@ -469,9 +467,7 @@ export default function ProductsPage() {
       setProperties(updated)
       
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-          localStorage.setItem(`inventory_cache_${user.id}`, JSON.stringify(updated))
-      }
+      setLocalCache(`properties_cache_${ownerId || user?.id}`, updated)
     } catch (error: any) {
       toast.error("Failed to update auto-generation status: " + error.message)
     } finally {
@@ -509,9 +505,7 @@ export default function ProductsPage() {
       setProperties(updated)
       
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-          localStorage.setItem(`inventory_cache_${user.id}`, JSON.stringify(updated))
-      }
+      setLocalCache(`properties_cache_${ownerId || user?.id}`, updated)
       toast.success(newStatus ? "Enabled on Landing Page" : "Hidden from Landing Page")
     } catch (error: any) {
       toast.error("Failed to update status: " + error.message)

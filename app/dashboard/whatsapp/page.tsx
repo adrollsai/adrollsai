@@ -128,7 +128,11 @@ export default function AutomationPage() {
   // Cache chats updates
   useEffect(() => {
     if (chats.length > 0) {
-      localStorage.setItem('wa_cached_chats', JSON.stringify(chats))
+      try {
+        localStorage.setItem('wa_cached_chats', JSON.stringify(chats))
+      } catch (e) {
+        console.error('[WhatsApp Cache] Error caching chats:', e)
+      }
     }
   }, [chats])
 
@@ -210,7 +214,11 @@ export default function AutomationPage() {
   // Cache messages updates
   useEffect(() => {
     if (selectedChatId && messages.length > 0) {
-      localStorage.setItem(`wa_cached_msgs_${selectedChatId}`, JSON.stringify(messages))
+      try {
+        localStorage.setItem(`wa_cached_msgs_${selectedChatId}`, JSON.stringify(messages))
+      } catch (e) {
+        console.error(`[WhatsApp Cache] Error caching messages for ${selectedChatId}:`, e)
+      }
     }
   }, [selectedChatId, messages])
 

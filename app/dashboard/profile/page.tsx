@@ -393,10 +393,14 @@ export default function ProfilePage() {
     const effectiveUserId = targetUserId || userId;
     if (!effectiveUserId) return;
     const cacheKey = `profile_cache_${effectiveUserId}`;
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      localStorage.setItem(cacheKey, JSON.stringify({ ...parsed, ...updates }));
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        localStorage.setItem(cacheKey, JSON.stringify({ ...parsed, ...updates }));
+      }
+    } catch (e) {
+      console.error(`[Profile Cache] Error updating cache for key "${cacheKey}":`, e);
     }
   }
 

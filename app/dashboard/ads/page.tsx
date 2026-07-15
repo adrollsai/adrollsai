@@ -193,10 +193,14 @@ export default function AdsPage() {
   // Save orchestrator state to local storage whenever variations change
   useEffect(() => {
       if (orchestrator.variations.length > 0) {
-          localStorage.setItem('adrolls_orchestrator_cache', JSON.stringify({
-              variations: orchestrator.variations,
-              selectedVariations: orchestrator.selectedVariations
-          }));
+          try {
+              localStorage.setItem('adrolls_orchestrator_cache', JSON.stringify({
+                  variations: orchestrator.variations,
+                  selectedVariations: orchestrator.selectedVariations
+              }));
+          } catch (e) {
+              console.error("[Ads Cache] Error caching orchestrator variations:", e);
+          }
       }
   }, [orchestrator.variations, orchestrator.selectedVariations]);
   
@@ -216,10 +220,14 @@ export default function AdsPage() {
   }, []);
 
   useEffect(() => {
-    if (orchestrator.isOpen) {
-      localStorage.setItem('active_orchestrator_state', JSON.stringify(orchestrator));
-    } else {
-      localStorage.removeItem('active_orchestrator_state');
+    try {
+      if (orchestrator.isOpen) {
+        localStorage.setItem('active_orchestrator_state', JSON.stringify(orchestrator));
+      } else {
+        localStorage.removeItem('active_orchestrator_state');
+      }
+    } catch (e) {
+      console.error("[Ads Cache] Error persisting active orchestrator state:", e);
     }
   }, [orchestrator]);
 
