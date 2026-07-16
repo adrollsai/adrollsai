@@ -256,6 +256,7 @@ export async function triggerOutboundCall(
         params.append('StatusCallback', `${appUrl}/api/voice/status-callback?leadId=${lead.id}`)
         params.append('TimeLimit', '300') // Set hard limit of 5 minutes (300 seconds) for the call
         params.append('Record', 'true') // Ensure outbound call recording is enabled
+        params.append('MachineDetection', 'Enable') // Enable Answering Machine Detection
 
         const twilioRes = await fetch(twilioUrl, {
             method: 'POST',
@@ -974,10 +975,16 @@ export async function dispatchNextCall(supabaseAdmin: any, userId: string): Prom
             .eq('id', targetLead.id);
 
         const callRes = await triggerOutboundCall(supabaseAdmin, targetLead.id, userId, true);
+        if (!callRes.success) {
+            console.log(`[CALL DISPATCHER] Scheduled call failed to initiate. Dispatching next immediately...`);
+            setTimeout(() => {
+                dispatchNextCall(supabaseAdmin, userId).catch(err => console.error('[RECURSIVE DISPATCH ERROR]', err));
+            }, 500);
+        }
         return { dispatched: true, type: 'scheduled', leadId: targetLead.id, success: callRes.success };
     }
 
-    // 3. Priority 2: Check for campaign calls
+    // 3. Check for campaign calls
     // Find any voice campaigns for this user that are currently 'running'
     const { data: runningCampaigns } = await supabaseAdmin
         .from('voice_campaigns')
@@ -996,13 +1003,19 @@ export async function dispatchNextCall(supabaseAdmin: any, userId: string): Prom
             .select('id, name')
             .eq('user_id', userId)
             .eq('voice_campaign_id', activeCampaign.id)
-            .is('voice_call_status', null)
+            .or('voice_call_status.is.null,voice_call_status.eq.not_called')
             .limit(1);
 
         if (campaignLeads && campaignLeads.length > 0) {
             const nextLead = campaignLeads[0];
             console.log(`[CALL DISPATCHER] Dialing next campaign lead: ${nextLead.name} (ID: ${nextLead.id})`);
             const callRes = await triggerOutboundCall(supabaseAdmin, nextLead.id, userId, false, activeCampaign.id);
+            if (!callRes.success) {
+                console.log(`[CALL DISPATCHER] Campaign call failed to initiate. Dispatching next immediately...`);
+                setTimeout(() => {
+                    dispatchNextCall(supabaseAdmin, userId).catch(err => console.error('[RECURSIVE DISPATCH ERROR]', err));
+                }, 500);
+            }
             return { dispatched: true, type: 'campaign', leadId: nextLead.id, success: callRes.success };
         } else {
             // No more leads left in the campaign, mark it as completed

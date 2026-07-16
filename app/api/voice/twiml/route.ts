@@ -90,21 +90,69 @@ export async function POST(req: Request) {
         if (isMachine) {
             console.log(`[TWIML BRIDGE] Answering machine/voicemail detected: ${answeredBy} for lead ${leadId}. Hanging up.`);
             
-            // Set lead call status to completed
-            await supabaseAdmin
+            // Get current retry count
+            const { data: leadData } = await supabaseAdmin
                 .from('leads')
-                .update({ voice_call_status: 'completed', voice_call_scheduled_at: null })
-                .eq('id', leadId);
+                .select('voice_call_retry_count, notes')
+                .eq('id', leadId)
+                .single();
 
-            // Log to timeline history
-            try {
-                await supabaseAdmin.from('lead_history').insert({
-                    lead_id: leadId,
-                    action_type: 'REMARK',
-                    description: `🎙️ Call connected to voicemail/answering machine (${answeredBy}). Hung up automatically.`
-                });
-            } catch (hErr) {
-                console.error('[TWIML BRIDGE] Failed to log voicemail detection to history:', hErr);
+            const currentRetries = leadData?.voice_call_retry_count || 0;
+            if (currentRetries < 3) {
+                const nextRetryCount = currentRetries + 1;
+                let delayMinutes = 30;
+                if (nextRetryCount === 2) delayMinutes = 120;
+                if (nextRetryCount === 3) delayMinutes = 360;
+
+                const scheduledTime = new Date(Date.now() + delayMinutes * 60000).toISOString();
+                let updatedNotes = `[⚠️ Call Rescheduled]: Call connected to voicemail/answering machine. Scheduled retry #${nextRetryCount} in ${delayMinutes} minutes.`;
+                if (leadData?.notes) {
+                    updatedNotes += `\n\n${leadData.notes}`;
+                }
+
+                await supabaseAdmin
+                    .from('leads')
+                    .update({ 
+                        voice_call_status: 'scheduled_retry', 
+                        voice_call_scheduled_at: scheduledTime,
+                        voice_call_retry_count: nextRetryCount,
+                        notes: updatedNotes
+                    })
+                    .eq('id', leadId);
+
+                try {
+                    await supabaseAdmin.from('lead_history').insert({
+                        lead_id: leadId,
+                        action_type: 'REMARK',
+                        description: `🎙️ Call connected to voicemail/answering machine (${answeredBy}). Scheduled retry #${nextRetryCount} in ${delayMinutes} minutes.`
+                    });
+                } catch (hErr) {
+                    console.error('[TWIML BRIDGE] Failed to log voicemail detection to history:', hErr);
+                }
+            } else {
+                let updatedNotes = `[❌ Call Failed]: Connected to voicemail/answering machine. Max calling retry limit reached (3 attempts). Auto-calling stopped.`;
+                if (leadData?.notes) {
+                    updatedNotes += `\n\n${leadData.notes}`;
+                }
+
+                await supabaseAdmin
+                    .from('leads')
+                    .update({ 
+                        voice_call_status: 'failed', 
+                        voice_call_scheduled_at: null,
+                        notes: updatedNotes
+                    })
+                    .eq('id', leadId);
+
+                try {
+                    await supabaseAdmin.from('lead_history').insert({
+                        lead_id: leadId,
+                        action_type: 'REMARK',
+                        description: `❌ Outbound call failed after maximum retry attempts (3) due to voicemail.`
+                    });
+                } catch (hErr) {
+                    console.error('[TWIML BRIDGE] Failed to log voicemail failure to history:', hErr);
+                }
             }
 
             return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup /></Response>', {
@@ -136,6 +184,19 @@ export async function POST(req: Request) {
             }
         }
 
+        const { data: lead } = await supabaseAdmin
+            .from('leads')
+            .select('id, name, phone, email, source, custom_fields, voice_call_summary, voice_call_transcript, property_id, notes')
+            .eq('id', leadId)
+            .single()
+
+        if (!lead) {
+            console.error('[TWIML BRIDGE] Lead not found:', leadId)
+            return new NextResponse('<Response><Reject /></Response>', {
+                headers: { 'Content-Type': 'application/xml' }
+            })
+        }
+
         const voiceProvider = 'gemini' // Force Gemini 3.1 Flash Live API for all accounts
 
         if (voiceProvider === 'gemini') {
@@ -143,13 +204,27 @@ export async function POST(req: Request) {
             const streamUrl = `${bridgeHost}/gemini-live-stream`
             console.log(`[TWIML BRIDGE] Redirecting Twilio Media Stream to Gemini Live Bridge: ${streamUrl}`)
             
+            const voiceName = campaign?.audience_filter?.voice_name || 'Aoede'
+            const isFemale = ['aoede', 'kore'].includes(voiceName.toLowerCase())
+            const twilioVoice = isFemale ? 'Polly.Aditi-Neural' : 'Polly.Madhur-Neural'
+            
+            const firstName = lead.name ? lead.name.split(' ')[0] : 'there'
+            let greetingText = campaign?.audience_filter?.greeting || `Hi ${firstName} ji, kaise ho aap?`
+            greetingText = greetingText
+                .replace(/\{name\}/gi, firstName)
+                .replace(/\{firstname\}/gi, firstName)
+                .replace(/\{leadname\}/gi, lead.name || 'there')
+
             const geminiTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+    <Say voice="${twilioVoice}" language="hi-IN">${greetingText}</Say>
     <Connect>
         <Stream url="${streamUrl}">
             <Parameter name="leadId" value="${leadId}" />
             <Parameter name="profileId" value="${profileId}" />
             ${campaignId ? `<Parameter name="campaignId" value="${campaignId}" />` : ''}
+            <Parameter name="greetingPlayed" value="true" />
+            <Parameter name="voiceName" value="${voiceName}" />
         </Stream>
     </Connect>
 </Response>`

@@ -158,7 +158,7 @@ async function run() {
                 components: [
                     {
                         type: 'BODY',
-                        text: 'New booking alert! Lead {{1}} has booked an appointment for {{2}}. Host: {{3}}. Full details: Phone: {{4}}, Email: {{5}}.',
+                        text: 'You have a new booking! {{1}} has booked an appointment for {{2}} with {{3}}. Contact details - Phone: {{4}}, Email: {{5}}. Please check your dashboard for more info.',
                         example: {
                             body_text: [
                                 ['John Doe', 'July 16, 2026 at 10:00 AM', 'Sarah Jenkins', '+919999999999', 'john@example.com']

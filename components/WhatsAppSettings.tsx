@@ -77,6 +77,7 @@ interface WhatsAppSettingsProps {
 
 export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsProps) {
   const supabase = createClient()
+  const buildUrl = (path: string) => userId ? `${path}${path.includes('?') ? '&' : '?'}impersonate=${userId}` : path
   const [activeTab, setActiveTab] = useState<'drips' | 'templates' | 'broadcasts' | 'qualification'>('drips')
   
   // Qualification Flows state
@@ -141,7 +142,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const fetchWaProfile = async () => {
     try {
       setLoadingWaProfile(true)
-      const res = await fetch('/api/whatsapp/profile')
+      const res = await fetch(buildUrl('/api/whatsapp/profile'))
       const data = await res.json()
       if (data.success && data.profile) {
         setWaProfile({
@@ -165,7 +166,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
     e.preventDefault()
     try {
       setSavingWaProfile(true)
-      const res = await fetch('/api/whatsapp/profile', {
+      const res = await fetch(buildUrl('/api/whatsapp/profile'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(waProfile)
@@ -198,7 +199,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
       const formData = new FormData()
       formData.append('file', file)
 
-      const res = await fetch('/api/whatsapp/profile', {
+      const res = await fetch(buildUrl('/api/whatsapp/profile'), {
         method: 'POST',
         body: formData
       })
@@ -311,7 +312,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
 
       // Fetch qualification flows
       try {
-        const qfRes = await fetch('/api/whatsapp/question-flows')
+        const qfRes = await fetch(buildUrl('/api/whatsapp/question-flows'))
         const qfData = await qfRes.json()
         if (qfData.success) setQuestionFlows(qfData.flows || [])
       } catch (e) {
@@ -330,7 +331,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   // Fetch flows from CRUD API
   const fetchFlows = async () => {
     try {
-      const res = await fetch('/api/whatsapp/flows')
+      const res = await fetch(buildUrl('/api/whatsapp/flows'))
       const data = await res.json()
       if (data.success) {
         setFlows(data.flows)
@@ -344,7 +345,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const fetchTemplates = async () => {
     setLoadingTemplates(true)
     try {
-      const res = await fetch('/api/whatsapp/templates')
+      const res = await fetch(buildUrl('/api/whatsapp/templates'))
       const data = await res.json()
       if (data.success) {
         setTemplates(data.templates)
@@ -457,7 +458,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
         window.removeEventListener('message', messageListener)
         const finalMetadata = metadata || {}
         try {
-          const res = await fetch('/api/whatsapp/onboard', {
+          const res = await fetch(buildUrl('/api/whatsapp/onboard'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -560,7 +561,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const toggleFlow = async (id: string, currentStatus: boolean) => {
     setFlows(prev => prev.map(f => f.id === id ? { ...f, is_active: !currentStatus } : f))
     try {
-      const res = await fetch('/api/whatsapp/flows', {
+      const res = await fetch(buildUrl('/api/whatsapp/flows'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, is_active: !currentStatus })
@@ -576,7 +577,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   // Update drip delay minutes
   const handleSaveDelay = async (id: string, newDelay: number) => {
     try {
-      const res = await fetch('/api/whatsapp/flows', {
+      const res = await fetch(buildUrl('/api/whatsapp/flows'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, delay_minutes: newDelay })
@@ -593,7 +594,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   // Update drip campaign mapping
   const updateFlowCampaign = async (id: string, campaignName: string) => {
     try {
-      const res = await fetch('/api/whatsapp/flows', {
+      const res = await fetch(buildUrl('/api/whatsapp/flows'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, campaign_name: campaignName })
@@ -611,7 +612,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const handleCreateFlow = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const res = await fetch('/api/whatsapp/flows', {
+      const res = await fetch(buildUrl('/api/whatsapp/flows'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -649,7 +650,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const handleDeleteFlow = async (id: string) => {
     if (!confirm("Are you sure you want to delete this custom flow?")) return
     try {
-      const res = await fetch(`/api/whatsapp/flows?id=${id}`, { method: 'DELETE' })
+      const res = await fetch(buildUrl(`/api/whatsapp/flows?id=${id}`), { method: 'DELETE' })
       if (res.ok) {
         toast.success("Flow deleted")
         await fetchFlows()
@@ -664,7 +665,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
     e.preventDefault()
     setSubmittingTemplate(true)
     try {
-      const res = await fetch('/api/whatsapp/templates', {
+      const res = await fetch(buildUrl('/api/whatsapp/templates'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newTemplate)
@@ -690,7 +691,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
     e.preventDefault()
     setSubmittingBroadcast(true)
     try {
-      const res = await fetch('/api/whatsapp/broadcasts', {
+      const res = await fetch(buildUrl('/api/whatsapp/broadcasts'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1834,7 +1835,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                       linked_campaign_id: qFlowForm.linked_campaign_id || null,
                       is_active: qFlowForm.is_active
                     }
-                    const res = await fetch('/api/whatsapp/question-flows', {
+                    const res = await fetch(buildUrl('/api/whatsapp/question-flows'), {
                       method: editingQFlowId ? 'PUT' : 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(payload)
@@ -1846,7 +1847,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                       setEditingQFlowId(null)
                       setQFlowForm({ name: '', questions: [{ question: '', field_name: '' }], linked_campaign_id: '', is_active: false })
                       // Refresh flows
-                      const refreshRes = await fetch('/api/whatsapp/question-flows')
+                      const refreshRes = await fetch(buildUrl('/api/whatsapp/question-flows'))
                       const refreshData = await refreshRes.json()
                       if (refreshData.success) setQuestionFlows(refreshData.flows)
                     } else {
@@ -1997,7 +1998,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                           <button
                             onClick={async () => {
                               try {
-                                const res = await fetch('/api/whatsapp/question-flows', {
+                                const res = await fetch(buildUrl('/api/whatsapp/question-flows'), {
                                   method: 'PUT',
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({ id: flow.id, is_active: !flow.is_active })
@@ -2005,7 +2006,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                                 const data = await res.json()
                                 if (data.success) {
                                   toast.success(flow.is_active ? 'Flow deactivated' : 'Flow activated!')
-                                  const refreshRes = await fetch('/api/whatsapp/question-flows')
+                                  const refreshRes = await fetch(buildUrl('/api/whatsapp/question-flows'))
                                   const refreshData = await refreshRes.json()
                                   if (refreshData.success) setQuestionFlows(refreshData.flows)
                                 }
@@ -2036,7 +2037,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                             onClick={async () => {
                               if (!confirm('Delete this flow? This cannot be undone.')) return
                               try {
-                                const res = await fetch(`/api/whatsapp/question-flows?id=${flow.id}`, { method: 'DELETE' })
+                                const res = await fetch(buildUrl(`/api/whatsapp/question-flows?id=${flow.id}`), { method: 'DELETE' })
                                 if (res.ok) {
                                   toast.success('Flow deleted')
                                   setQuestionFlows(prev => prev.filter(f => f.id !== flow.id))

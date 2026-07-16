@@ -90,6 +90,7 @@ export default function CRMPage() {
   const [pageInputVal, setPageInputVal] = useState(String(currentPage))
   const leadsPerPage = 50
   const isFirstRender = useRef(true)
+  const isSearchMounted = useRef(false)
 
   // Sync page input value when currentPage changes
   useEffect(() => {
@@ -375,6 +376,11 @@ export default function CRMPage() {
                   query = query.eq('assigned_to', user.id) 
               }
 
+              if (searchQuery.trim() !== '') {
+                  const term = `%${searchQuery.trim()}%`
+                  query = query.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`)
+              }
+
               const { data, error } = await query
               if (error) throw error
               
@@ -454,6 +460,18 @@ export default function CRMPage() {
     
     initCRM()
   }, [])
+
+  // Debounced database-level global search
+  useEffect(() => {
+    if (!isSearchMounted.current) {
+      isSearchMounted.current = true
+      return
+    }
+    const delayDebounce = setTimeout(() => {
+      fetchLeads(true)
+    }, 600)
+    return () => clearTimeout(delayDebounce)
+  }, [searchQuery])
  
   // 2. SUPABASE REAL-TIME (Listen for Webhook Insertions & Updates)
   useEffect(() => {
@@ -985,9 +1003,21 @@ END:VCARD\n`
       return matchSearch && matchCampaign && matchForm && matchCsvAudience
     })
 
+    // Sort to prioritize leads with active call status and newer creation times before deduplicating
+    const sortedUnfiltered = [...unfiltered].sort((a, b) => {
+        const hasHistoryA = (a.voice_call_status && a.voice_call_status !== 'not_called') ? 1 : 0;
+        const hasHistoryB = (b.voice_call_status && b.voice_call_status !== 'not_called') ? 1 : 0;
+        if (hasHistoryA !== hasHistoryB) {
+            return hasHistoryB - hasHistoryA;
+        }
+        const timeA = new Date(a.facebook_created_at || a.created_at).getTime();
+        const timeB = new Date(b.facebook_created_at || b.created_at).getTime();
+        return timeB - timeA;
+    });
+
     // Deduplicate leads by unique phone number (or ID if no phone) to keep CRM clean of duplicate contacts
     const seen = new Set();
-    return unfiltered.filter(lead => {
+    return sortedUnfiltered.filter(lead => {
         const cleanPhone = lead.phone ? lead.phone.replace(/\D/g, '') : '';
         const key = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : lead.id;
         if (!key) return true;
@@ -999,13 +1029,17 @@ END:VCARD\n`
 
   // 2. Final filtered list including pipeline stage matching and sorted by newest first
   const filteredLeads = useMemo(() => {
-    const list = leadsMatchingFilters.filter(l => (l.pipeline_stage || 'New') === activeStage)
+    const list = leadsMatchingFilters.filter(l => {
+      // If there's an active search query, bypass the pipeline stage tab filter to allow global search
+      if (searchQuery.trim() !== '') return true
+      return (l.pipeline_stage || 'New') === activeStage
+    })
     return list.sort((a, b) => {
       const timeA = new Date(a.facebook_created_at || a.created_at).getTime()
       const timeB = new Date(b.facebook_created_at || b.created_at).getTime()
       return timeB - timeA
     })
-  }, [leadsMatchingFilters, activeStage])
+  }, [leadsMatchingFilters, activeStage, searchQuery])
 
   const totalPages = Math.ceil(filteredLeads.length / leadsPerPage)
   const currentLeads = filteredLeads.slice((currentPage - 1) * leadsPerPage, currentPage * leadsPerPage)

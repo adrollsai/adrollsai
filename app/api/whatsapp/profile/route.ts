@@ -9,11 +9,28 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        const url = new URL(req.url);
+        const impersonateId = url.searchParams.get('impersonate');
+
+        // Resolve effective user ID (support impersonation for super_admin/agency)
+        let effectiveUserId = user.id;
+        if (impersonateId && impersonateId !== user.id) {
+            const { data: authProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single();
+            const authRole = authProfile?.role?.toLowerCase() || '';
+            if (['super_admin', 'agency', 'admin'].includes(authRole)) {
+                effectiveUserId = impersonateId;
+            }
+        }
+
         // Fetch WABA credentials
         const { data: profile } = await supabase
             .from('profiles')
             .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
-            .eq('id', user.id)
+            .eq('id', effectiveUserId)
             .single();
 
         const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token;
@@ -53,11 +70,28 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        const url = new URL(req.url);
+        const impersonateId = url.searchParams.get('impersonate');
+
+        // Resolve effective user ID (support impersonation for super_admin/agency)
+        let effectiveUserId = user.id;
+        if (impersonateId && impersonateId !== user.id) {
+            const { data: authProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single();
+            const authRole = authProfile?.role?.toLowerCase() || '';
+            if (['super_admin', 'agency', 'admin'].includes(authRole)) {
+                effectiveUserId = impersonateId;
+            }
+        }
+
         // Fetch WABA credentials
         const { data: profile } = await supabase
             .from('profiles')
             .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
-            .eq('id', user.id)
+            .eq('id', effectiveUserId)
             .single();
 
         const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token;

@@ -119,7 +119,7 @@ wss.on('connection', (wsConnection) => {
     let twilioCallSid = null;
     let geminiSocket = null;
     let geminiReady = false;
-    let geminiApiKey = null; // Resolved dynamically from tenant profile or env
+    let geminiApiKey = null;
     
     let leadId = null;
     let profileId = null;
@@ -128,6 +128,8 @@ wss.on('connection', (wsConnection) => {
     let leadName = 'there';
 
     const transcriptTurns = [];
+    let greetingPlayed = false;
+    let voiceName = 'Aoede';
 
     // Connection health check (heartbeat to prevent lingering ghost connections)
     let isAlive = true;
@@ -194,8 +196,10 @@ wss.on('connection', (wsConnection) => {
                 leadId = data.start.customParameters?.leadId;
                 profileId = data.start.customParameters?.profileId;
                 const campaignId = data.start.customParameters?.campaignId;
+                greetingPlayed = data.start.customParameters?.greetingPlayed === 'true';
+                voiceName = data.start.customParameters?.voiceName || 'Aoede';
 
-                console.log(`[BRIDGE] Twilio call started. StreamSid: ${twilioStreamSid}, CallSid: ${twilioCallSid}, leadId: ${leadId}, profileId: ${profileId}, campaignId: ${campaignId}`);
+                console.log(`[BRIDGE] Twilio call started. StreamSid: ${twilioStreamSid}, CallSid: ${twilioCallSid}, leadId: ${leadId}, profileId: ${profileId}, campaignId: ${campaignId}, greetingPlayed: ${greetingPlayed}, voiceName: ${voiceName}`);
 
                 if (!leadId || !profileId) {
                     console.error('[BRIDGE] Missing customParameters: leadId or profileId in start packet.');
@@ -417,7 +421,7 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                             speechConfig: {
                                 voiceConfig: {
                                     prebuiltVoiceConfig: {
-                                        voiceName: "Aoede" // Warm female voice config
+                                        voiceName: voiceName
                                     }
                                 }
                             }
@@ -458,22 +462,27 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                          }
                          
                          // Handle setup complete before sending greeting
-                         if (serverMsg.setupComplete) {
-                            console.log('[BRIDGE] Gemini Setup Complete received. Injecting greeting turn...');
-                            const initialTurn = {
-                                clientContent: {
-                                    turns: [
-                                        {
-                                            role: "user",
-                                            parts: [{ text: `Hello! Call has connected. Please speak this exact greeting message now in a warm, welcoming tone: "${greetingMessage}"` }]
-                                        }
-                                    ],
-                                    turnComplete: true
-                                }
-                            };
-                            console.log('[BRIDGE] Sending to Gemini:', JSON.stringify(initialTurn));
-                            geminiSocket.send(JSON.stringify(initialTurn));
-                            geminiReady = true;
+                          if (serverMsg.setupComplete) {
+                             console.log('[BRIDGE] Gemini Setup Complete received. Injecting greeting turn...');
+                             
+                             const textPrompt = greetingPlayed
+                                 ? `The call has connected. We have already played the initial welcome greeting to the user: "${greetingMessage}". Do NOT repeat this greeting. Please wait silently for the user to respond first, and then reply naturally in Hinglish.`
+                                 : `Hello! Call has connected. Please speak this exact greeting message now in a warm, welcoming tone: "${greetingMessage}"`;
+
+                             const initialTurn = {
+                                 clientContent: {
+                                     turns: [
+                                         {
+                                             role: "user",
+                                             parts: [{ text: textPrompt }]
+                                         }
+                                     ],
+                                     turnComplete: true
+                                 }
+                             };
+                             console.log('[BRIDGE] Sending to Gemini:', JSON.stringify(initialTurn));
+                             geminiSocket.send(JSON.stringify(initialTurn));
+                             geminiReady = true;
                             console.log('[BRIDGE] geminiReady set to true. Waiting for Gemini audio response...');
                             return;
                         }

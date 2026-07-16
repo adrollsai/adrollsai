@@ -1,16 +1,35 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 
-export async function GET() {
+async function getEffectiveUserId(supabase: any, user: any, req: Request) {
+    const url = new URL(req.url)
+    const impersonateId = url.searchParams.get('impersonate')
+    if (impersonateId && impersonateId !== user.id) {
+        const { data: authProfile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single()
+        const authRole = authProfile?.role?.toLowerCase() || ''
+        if (['super_admin', 'agency', 'admin'].includes(authRole)) {
+            return impersonateId
+        }
+    }
+    return user.id
+}
+
+export async function GET(req: Request) {
     try {
         const supabase = await createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+        const effectiveUserId = await getEffectiveUserId(supabase, user, req)
+
         const { data: flows, error: flowsErr } = await supabase
             .from('whatsapp_flows')
             .select('*')
-            .eq('user_id', user.id)
+            .eq('user_id', effectiveUserId)
             .order('created_at', { ascending: true })
 
         if (flowsErr) {
@@ -22,7 +41,7 @@ export async function GET() {
         const { data: properties } = await supabase
             .from('properties')
             .select('id, title')
-            .eq('user_id', user.id)
+            .eq('user_id', effectiveUserId)
 
         const resolvedFlows = (flows || []).map(flow => {
             const property = (properties || []).find(p => p.id === flow.property_id)
@@ -43,6 +62,8 @@ export async function POST(req: Request) {
         const supabase = await createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+        const effectiveUserId = await getEffectiveUserId(supabase, user, req)
 
         const body = await req.json()
         const { 
@@ -65,7 +86,7 @@ export async function POST(req: Request) {
         const { data: newFlow, error: insertErr } = await supabase
             .from('whatsapp_flows')
             .insert({
-                user_id: user.id,
+                user_id: effectiveUserId,
                 title,
                 description: description || '',
                 icon_name: icon_name || 'MessageCircle',
@@ -97,6 +118,8 @@ export async function PUT(req: Request) {
         const supabase = await createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+        const effectiveUserId = await getEffectiveUserId(supabase, user, req)
 
         const body = await req.json()
         const { 
@@ -135,7 +158,7 @@ export async function PUT(req: Request) {
             .from('whatsapp_flows')
             .update(updateData)
             .eq('id', id)
-            .eq('user_id', user.id)
+            .eq('user_id', effectiveUserId)
             .select()
             .single()
 
@@ -156,6 +179,8 @@ export async function DELETE(req: Request) {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+        const effectiveUserId = await getEffectiveUserId(supabase, user, req)
+
         const { searchParams } = new URL(req.url)
         const id = searchParams.get('id')
 
@@ -167,7 +192,7 @@ export async function DELETE(req: Request) {
             .from('whatsapp_flows')
             .delete()
             .eq('id', id)
-            .eq('user_id', user.id)
+            .eq('user_id', effectiveUserId)
 
         if (deleteErr) {
             console.error('[FLOWS API] Error deleting flow:', deleteErr)
