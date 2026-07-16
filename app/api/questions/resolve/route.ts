@@ -10,8 +10,8 @@ const supabaseAdmin = createClient(
 export async function POST(req: Request) {
     try {
         const { questionId, answer } = await req.json()
-        if (!questionId || !answer) {
-            return NextResponse.json({ error: 'Missing questionId or answer' }, { status: 400 })
+        if (!questionId) {
+            return NextResponse.json({ error: 'Missing questionId' }, { status: 400 })
         }
 
         // 1. Fetch flagged question details
@@ -25,29 +25,31 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Flagged question not found' }, { status: 404 })
         }
 
-        // 2. Fetch profile details (to append answer to business_info context)
-        const { data: profile, error: profileErr } = await supabaseAdmin
-            .from('profiles')
-            .select('business_info')
-            .eq('id', fq.user_id)
-            .single()
+        if (answer) {
+            // 2. Fetch profile details (to append answer to business_info context)
+            const { data: profile, error: profileErr } = await supabaseAdmin
+                .from('profiles')
+                .select('business_info')
+                .eq('id', fq.user_id)
+                .single()
 
-        if (profileErr || !profile) {
-            return NextResponse.json({ error: 'Workspace profile not found' }, { status: 404 })
-        }
+            if (profileErr || !profile) {
+                return NextResponse.json({ error: 'Workspace profile not found' }, { status: 404 })
+            }
 
-        // 3. Append to business_info (AI context)
-        const originalInfo = profile.business_info || ''
-        const updatedInfo = `${originalInfo}\n\nQ: ${fq.question}\nA: ${answer}`
+            // 3. Append to business_info (AI context)
+            const originalInfo = profile.business_info || ''
+            const updatedInfo = `${originalInfo}\n\nQ: ${fq.question}\nA: ${answer}`
 
-        // 4. Update profile business_info
-        const { error: profileUpdateErr } = await supabaseAdmin
-            .from('profiles')
-            .update({ business_info: updatedInfo })
-            .eq('id', fq.user_id)
+            // 4. Update profile business_info
+            const { error: profileUpdateErr } = await supabaseAdmin
+                .from('profiles')
+                .update({ business_info: updatedInfo })
+                .eq('id', fq.user_id)
 
-        if (profileUpdateErr) {
-            return NextResponse.json({ error: 'Failed to update business profile info: ' + profileUpdateErr.message }, { status: 500 })
+            if (profileUpdateErr) {
+                return NextResponse.json({ error: 'Failed to update business profile info: ' + profileUpdateErr.message }, { status: 500 })
+            }
         }
 
         // 5. Update flagged_questions resolved and answer columns
@@ -55,7 +57,7 @@ export async function POST(req: Request) {
             .from('flagged_questions')
             .update({
                 resolved: true,
-                answer: answer
+                answer: answer || null
             })
             .eq('id', questionId)
 
@@ -64,24 +66,27 @@ export async function POST(req: Request) {
         }
 
         // 6. Trigger outbound call to the lead regarding this resolved doubt!
-        console.log(`[RESOLVE QUESTION] Triggering auto-retry outbound voice call for lead ${fq.lead_id} under profile ${fq.user_id}`)
         let callSuccess = false
         let callError = null
-        try {
-            const callRes = await triggerOutboundCall(supabaseAdmin, fq.lead_id, fq.user_id, true)
-            callSuccess = callRes.success
-            if (!callRes.success) {
-                callError = callRes.error
+        
+        if (answer) {
+            console.log(`[RESOLVE QUESTION] Triggering auto-retry outbound voice call for lead ${fq.lead_id} under profile ${fq.user_id}`)
+            try {
+                const callRes = await triggerOutboundCall(supabaseAdmin, fq.lead_id, fq.user_id, true)
+                callSuccess = callRes.success
+                if (!callRes.success) {
+                    callError = callRes.error
+                }
+            } catch (callErr: any) {
+                console.error('[RESOLVE QUESTION] Outbound call trigger failed:', callErr)
+                callError = callErr.message || callErr
             }
-        } catch (callErr: any) {
-            console.error('[RESOLVE QUESTION] Outbound call trigger failed:', callErr)
-            callError = callErr.message || callErr
         }
 
         return NextResponse.json({
             success: true,
-            message: 'Flagged question resolved and outbound call triggered!',
-            callTriggered: callSuccess,
+            message: answer ? 'Flagged question resolved and outbound call triggered!' : 'Flagged question dismissed.',
+            callTriggered: answer ? callSuccess : false,
             callError
         })
 

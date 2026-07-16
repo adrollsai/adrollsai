@@ -893,11 +893,19 @@ export default function ProfilePage() {
     const effectiveUserId = targetUserId || userId;
     try {
       if (effectiveUserId) {
-        const { error } = await supabase.from('profiles').update({
-          google_refresh_token: null,
-          google_booking_enabled: false
-        }).eq('id', effectiveUserId)
-        if (error) throw error
+        const res = await fetch('/api/profile/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetUserId: effectiveUserId,
+            updates: {
+              google_refresh_token: null,
+              google_booking_enabled: false
+            }
+          })
+        })
+        const resData = await res.json()
+        if (!res.ok || resData.error) throw new Error(resData.error || 'Failed to update')
         setIsGoogleConnected(false)
         updateLocalCache({ google_refresh_token: null, google_booking_enabled: false })
         toast.success("Google Calendar disconnected successfully.")
@@ -929,10 +937,17 @@ export default function ProfilePage() {
           })
           setIsGoogleConnected(false)
           // Automatically unlink the Google account in the database
-          await supabase.from('profiles').update({
-            google_refresh_token: null,
-            google_booking_enabled: false
-          }).eq('id', uId)
+          await fetch('/api/profile/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              targetUserId: uId,
+              updates: {
+                google_refresh_token: null,
+                google_booking_enabled: false
+              }
+            })
+          })
           updateLocalCache({ google_refresh_token: null, google_booking_enabled: false })
         } else {
           toast.error(`Calendars error: ${data.error || 'Failed to fetch calendar list'}`)
@@ -955,26 +970,12 @@ export default function ProfilePage() {
   const fetchFlaggedQuestions = async (uId: string) => {
     setLoadingFlagged(true)
     try {
-      const { data, error } = await supabase
-        .from('flagged_questions')
-        .select(`
-          *,
-          leads (
-            id,
-            name,
-            phone,
-            email,
-            voice_recording_url,
-            properties (
-              id,
-              title
-            )
-          )
-        `)
-        .eq('user_id', uId)
-        .eq('resolved', false)
-        .order('created_at', { ascending: false })
-      if (!error && data) {
+      const imp = impersonateId ? `?impersonate=${impersonateId}` : ''
+      const res = await fetch(`/api/questions/list${imp}`)
+      const resData = await res.json()
+      
+      if (res.ok && resData.flaggedQuestions) {
+        const data = resData.flaggedQuestions
         setFlaggedQuestions(data)
         setFlaggedCount(data.length)
 
@@ -1000,9 +1001,15 @@ export default function ProfilePage() {
             .catch(err => console.error('Enrichment call failed:', err))
           }
         })
+      } else {
+        console.error("Failed to load flagged questions API error:", resData.error)
+        setFlaggedQuestions([])
+        setFlaggedCount(0)
       }
     } catch (err) {
       console.error("Failed to load flagged questions:", err)
+      setFlaggedQuestions([])
+      setFlaggedCount(0)
     } finally {
       setLoadingFlagged(false)
     }
@@ -1860,12 +1867,21 @@ export default function ProfilePage() {
                       </div>
                       <button
                         onClick={async () => {
-                          const { error } = await supabase.from('flagged_questions').update({ resolved: true }).eq('id', fq.id)
-                          if (!error) {
-                            toast.success("Question resolved")
-                            fetchFlaggedQuestions(targetUserId || userId || '')
-                          } else {
-                            toast.error("Failed to resolve")
+                          try {
+                            const res = await fetch('/api/questions/resolve', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ questionId: fq.id })
+                            })
+                            const resData = await res.json()
+                            if (res.ok && resData.success) {
+                              toast.success("Question dismissed")
+                              fetchFlaggedQuestions(targetUserId || userId || '')
+                            } else {
+                              throw new Error(resData.error || 'Failed to dismiss')
+                            }
+                          } catch (err: any) {
+                            toast.error(err.message || "Failed to dismiss")
                           }
                         }}
                         className="text-[10px] bg-white border border-slate-200 text-slate-500 hover:text-slate-700 font-bold px-3 py-1.5 rounded-full active:scale-95 transition-all shadow-xs"
