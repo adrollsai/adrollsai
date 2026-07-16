@@ -256,7 +256,6 @@ export async function triggerOutboundCall(
         params.append('StatusCallback', `${appUrl}/api/voice/status-callback?leadId=${lead.id}`)
         params.append('TimeLimit', '300') // Set hard limit of 5 minutes (300 seconds) for the call
         params.append('Record', 'true') // Ensure outbound call recording is enabled
-        params.append('MachineDetection', 'Enable') // Enable Answering Machine Detection
 
         const twilioRes = await fetch(twilioUrl, {
             method: 'POST',

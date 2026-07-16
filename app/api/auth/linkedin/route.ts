@@ -16,10 +16,20 @@ export async function GET(req: Request) {
     : (process.env.NEXT_PUBLIC_APP_URL || currentOrigin)
   const redirectUri = encodeURIComponent(`${primaryDomain}/api/auth/linkedin/callback`)
   
-  const scope = encodeURIComponent('openid profile email w_member_social')
+  const type = searchParams.get('type') || 'personal'
+  const scopeList = type === 'company'
+    ? 'openid profile email w_member_social w_organization_social rw_organization_admin'
+    : 'openid profile email w_member_social'
+  const scope = encodeURIComponent(scopeList)
+  
+  const impersonate = searchParams.get('impersonate') || ''
   
   // Store the actual origin in the state so we can redirect back after callback
-  const state = encodeURIComponent(JSON.stringify({ origin: `${protocol}://${req.headers.get('host')}` }))
+  const state = encodeURIComponent(JSON.stringify({ 
+    origin: `${protocol}://${req.headers.get('host')}`,
+    impersonate,
+    type
+  }))
   
   const linkedinAuthUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`
 

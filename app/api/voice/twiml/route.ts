@@ -206,7 +206,7 @@ export async function POST(req: Request) {
             
             const voiceName = campaign?.audience_filter?.voice_name || 'Aoede'
             const isFemale = ['aoede', 'kore'].includes(voiceName.toLowerCase())
-            const twilioVoice = isFemale ? 'Polly.Aditi-Neural' : 'Polly.Madhur-Neural'
+            const twilioVoice = isFemale ? 'Polly.Aditi' : 'Google.hi-IN-Wavenet-B'
             
             const firstName = lead.name ? lead.name.split(' ')[0] : 'there'
             let greetingText = campaign?.audience_filter?.greeting || `Hi ${firstName} ji, kaise ho aap?`
@@ -217,13 +217,11 @@ export async function POST(req: Request) {
 
             const geminiTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="${twilioVoice}" language="hi-IN">${greetingText}</Say>
     <Connect>
         <Stream url="${streamUrl}">
             <Parameter name="leadId" value="${leadId}" />
             <Parameter name="profileId" value="${profileId}" />
             ${campaignId ? `<Parameter name="campaignId" value="${campaignId}" />` : ''}
-            <Parameter name="greetingPlayed" value="true" />
             <Parameter name="voiceName" value="${voiceName}" />
         </Stream>
     </Connect>
@@ -245,19 +243,7 @@ export async function POST(req: Request) {
             }
         }
 
-        // Fetch lead information including property_id and notes
-        const { data: lead } = await supabaseAdmin
-            .from('leads')
-            .select('id, name, phone, email, source, custom_fields, voice_call_summary, voice_call_transcript, property_id, notes')
-            .eq('id', leadId)
-            .single()
 
-        if (!lead) {
-            console.error('[TWIML BRIDGE] Lead not found:', leadId)
-            return new NextResponse('<Response><Reject /></Response>', {
-                headers: { 'Content-Type': 'application/xml' }
-            })
-        }
 
         // Fetch product/property details if the lead is attributed to one
         let productContext = ''

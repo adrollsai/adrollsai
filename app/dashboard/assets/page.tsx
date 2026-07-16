@@ -713,7 +713,7 @@ export default function AssetsPage() {
                     imageUrl: selectedAsset.url,
                     caption: caption || 'Automated Post via AdRolls AI 🚀',
                     type: selectedAsset.type,
-                    platforms: [...targets, 'linkedin'] // Always try LinkedIn if connected
+                    platforms: targets
                 })
             })
 
@@ -1421,13 +1421,15 @@ export default function AssetsPage() {
                                             >
                                                 <Instagram size={18} /> Insta
                                             </button>
-                                            <button
-                                                onClick={handlePostLinkedin}
-                                                disabled={isPosting || isDownloading}
-                                                className="bg-[#0A66C2]/10 text-[#0A66C2] hover:bg-[#0A66C2] hover:text-white py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
-                                            >
-                                                <Linkedin size={18} /> LinkedIn
-                                            </button>
+                                            {false && (
+                                                <button
+                                                    onClick={handlePostLinkedin}
+                                                    disabled={isPosting || isDownloading}
+                                                    className="bg-[#0A66C2]/10 text-[#0A66C2] hover:bg-[#0A66C2] hover:text-white py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                                >
+                                                    <Linkedin size={18} /> LinkedIn
+                                                </button>
+                                            )}
                                         </div>
                                     )}
 

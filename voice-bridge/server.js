@@ -448,7 +448,10 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
                  geminiSocket.on('message', async (data) => {
                      try {
                          const serverMsg = JSON.parse(data.toString());
-                         console.log('[BRIDGE] Received from Gemini:', JSON.stringify(serverMsg));
+                          // Only log if it's not a standard streaming media packet
+                          if (!serverMsg.serverContent?.modelTurn?.parts?.some(p => p.inlineData) && !serverMsg.serverContent?.outputTranscription) {
+                              console.log('[BRIDGE] Received from Gemini:', JSON.stringify(serverMsg));
+                          }
                          
                          // Handle user interruption (barge-in)
                          if (serverMsg.serverContent?.interrupted) {

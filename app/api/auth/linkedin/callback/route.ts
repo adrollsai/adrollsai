@@ -7,10 +7,14 @@ export async function GET(req: Request) {
   const stateStr = searchParams.get('state')
   
   let targetOrigin = ''
+  let impersonateId = ''
+  let connectionType = 'personal'
   try {
     if (stateStr) {
       const state = JSON.parse(decodeURIComponent(stateStr))
       targetOrigin = state.origin
+      impersonateId = state.impersonate || ''
+      connectionType = state.type || 'personal'
     }
   } catch (e) {
     console.error("Failed to parse state:", e)
@@ -19,7 +23,9 @@ export async function GET(req: Request) {
   const baseRedirectUrl = targetOrigin || new URL(req.url).origin
 
   if (!code) {
-    return NextResponse.redirect(new URL('/dashboard/profile?error=no_code', baseRedirectUrl))
+    const redirectUrl = new URL('/dashboard/profile?error=no_code', baseRedirectUrl)
+    if (impersonateId) redirectUrl.searchParams.set('impersonate', impersonateId)
+    return NextResponse.redirect(redirectUrl)
   }
 
   try {
@@ -60,14 +66,34 @@ export async function GET(req: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     
     if (user) {
-      await supabase.from('profiles').update({
+      let targetUserId = user.id
+      if (impersonateId) {
+        const { data: ownProfile } = await supabase.from('profiles').select('role, agency_id').eq('id', user.id).single()
+        if (['super_admin', 'agency', 'admin'].includes(ownProfile?.role || '')) {
+          if (ownProfile?.role !== 'super_admin') {
+            const { data: subAccount } = await supabase.from('profiles').select('id').eq('id', impersonateId).eq('agency_id', user.id).single()
+            if (subAccount) targetUserId = impersonateId
+          } else {
+            targetUserId = impersonateId
+          }
+        }
+      }
+
+      const updates: any = {
         linkedin_token: accessToken,
         linkedin_id: profileData.sub, // sub is the unique ID in OIDC
         linkedin_name: profileData.name
-      }).eq('id', user.id)
+      }
+      if (connectionType === 'personal') {
+        updates.linkedin_urn = null
+      }
+
+      await supabase.from('profiles').update(updates).eq('id', targetUserId)
     }
 
-    return NextResponse.redirect(new URL('/dashboard/profile?success=linkedin_linked', baseRedirectUrl))
+    const redirectUrl = new URL('/dashboard/profile?success=linkedin_linked', baseRedirectUrl)
+    if (impersonateId) redirectUrl.searchParams.set('impersonate', impersonateId)
+    return NextResponse.redirect(redirectUrl)
 
   } catch (error: any) {
     console.error('LinkedIn Auth Error:', error)

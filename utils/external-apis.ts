@@ -208,8 +208,8 @@ export async function postToInstagram(accessToken: string, pageId: string, media
 /**
  * 3.5 LinkedIn Posting (Latest 2026 Versioned REST API)
  */
-export async function postToLinkedin(accessToken: string, linkedinId: string, assetUrl: string, commentary: string, type: string = 'image'): Promise<any> {
-    const urn = `urn:li:person:${linkedinId}`
+export async function postToLinkedin(accessToken: string, authorUrn: string, assetUrl: string, commentary: string, type: string = 'image'): Promise<any> {
+    const urn = authorUrn
     const linkedinVersion = '202604'
     let assetUrn = null
 

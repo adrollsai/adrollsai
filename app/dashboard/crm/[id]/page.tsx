@@ -1331,7 +1331,7 @@ END:VCARD`
                                             </div>
                                             <div className="flex-1 min-w-0 bg-slate-50 p-4 rounded-2xl border border-slate-100 mt-0.5">
                                                 <div className="flex items-center justify-between mb-1.5">
-                                                    <div className="font-bold text-xs text-slate-900 capitalize truncate pr-2">{item.action_type.replace('_', ' ')}</div>
+                                                    <div className="font-bold text-xs text-slate-900 capitalize truncate pr-2">{(item.action_type || '').replace('_', ' ')}</div>
                                                     <time className="text-[10px] font-bold text-slate-400 bg-white px-1.5 py-0.5 rounded-md border border-slate-100 shrink-0">{new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</time>
                                                 </div>
                                                 <div className="text-xs text-slate-600 leading-relaxed break-words font-medium">

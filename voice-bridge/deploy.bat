@@ -40,7 +40,7 @@ echo.
 
 :: 3. Build & Deploy to Google Cloud Run
 echo [STEP 1/2] Building Container Image via Cloud Builds...
-gcloud.cmd builds submit --tag gcr.io/%GCP_PROJECT%/gemini-voice-bridge
+call gcloud.cmd builds submit --tag gcr.io/%GCP_PROJECT%/gemini-voice-bridge
 
 if errorlevel 1 (
     echo [ERROR] Container build failed.
@@ -50,7 +50,7 @@ if errorlevel 1 (
 
 echo.
 echo [STEP 2/2] Deploying to Google Cloud Run (US-Central1)...
-gcloud.cmd run deploy gemini-voice-bridge ^
+call gcloud.cmd run deploy gemini-voice-bridge ^
   --image gcr.io/%GCP_PROJECT%/gemini-voice-bridge ^
   --platform managed ^
   --region us-central1 ^

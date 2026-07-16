@@ -22,6 +22,7 @@ import {
   Linkedin,
   Users,
   User,
+  Building2,
   Video,
   BarChart3,
   Mic,
@@ -321,6 +322,10 @@ export default function ProfilePage() {
   const [isLinkedinConnected, setIsLinkedinConnected] = useState(false)
   const [linkedinName, setLinkedinName] = useState('')
   const [isConnectingLinkedin, setIsConnectingLinkedin] = useState(false)
+  const [linkedinPages, setLinkedinPages] = useState<{ id: string; name: string }[]>([])
+  const [selectedLinkedinUrn, setSelectedLinkedinUrn] = useState<string | null>(null)
+  const [isLoadingLinkedinPages, setIsLoadingLinkedinPages] = useState(false)
+  const [linkedinScopeWarning, setLinkedinScopeWarning] = useState(false)
 
   // --- GOOGLE CALENDAR STATE ---
   const [isGoogleConnected, setIsGoogleConnected] = useState(false)
@@ -427,6 +432,60 @@ export default function ProfilePage() {
     } finally {
       setIsLoadingPages(false)
     }
+  }
+
+  // 1.5 Fetch LinkedIn Pages
+  const fetchLinkedinPages = async () => {
+    setIsLoadingLinkedinPages(true)
+    setLinkedinScopeWarning(false)
+    try {
+      const res = await fetch(`/api/linkedin/pages${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+      if (res.status === 403) {
+        setLinkedinScopeWarning(true)
+        setLinkedinPages([])
+        return
+      }
+      const data = await res.json()
+      if (res.ok && data.pages) {
+        setLinkedinPages(data.pages)
+      } else {
+        setLinkedinPages([])
+      }
+    } catch (e) {
+      console.error("Error fetching LinkedIn pages:", e)
+      setLinkedinPages([])
+    } finally {
+      setIsLoadingLinkedinPages(false)
+    }
+  }
+
+  const handleLinkedinPageSelect = async (urn: string | null) => {
+    const effectiveUserId = targetUserId || userId;
+    if (!effectiveUserId) return
+
+    setSelectedLinkedinUrn(urn)
+
+    const res = await fetch('/api/profile/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targetUserId: effectiveUserId,
+        updates: {
+          linkedin_urn: urn
+        }
+      })
+    })
+    const resData = await res.json()
+    if (resData.error) {
+      toast.error(`Failed to save LinkedIn page selection: ${resData.error}`)
+      return
+    }
+
+    toast.success(urn ? "Connected to LinkedIn Company Page!" : "Connected to LinkedIn Personal Profile!", {
+      description: urn ? "Posts will now be published to this page." : "Posts will now be published to your profile."
+    })
+    
+    updateLocalCache({ linkedin_urn: urn })
   }
 
   // 2. Fetch Ad Accounts
@@ -733,9 +792,13 @@ export default function ProfilePage() {
         if (profileData.linkedin_token) {
           setIsLinkedinConnected(true)
           setLinkedinName(profileData.linkedin_name || 'Connected Account')
+          setSelectedLinkedinUrn(profileData.linkedin_urn || null)
+          fetchLinkedinPages()
         } else {
           setIsLinkedinConnected(false)
           setLinkedinName('')
+          setSelectedLinkedinUrn(null)
+          setLinkedinPages([])
         }
 
         // Handle Google & Booking Status
@@ -768,11 +831,12 @@ export default function ProfilePage() {
 
   // --- ACTIONS ---
 
-  const handleConnectLinkedin = async () => {
+  const handleConnectLinkedin = async (type: 'personal' | 'company' = 'personal') => {
     setIsConnectingLinkedin(true)
     try {
       // Redirect to our LinkedIn Auth API
-      window.location.href = '/api/auth/linkedin'
+      const imp = impersonateId ? `&impersonate=${impersonateId}` : ''
+      window.location.href = `/api/auth/linkedin?type=${type}${imp}`
     } catch (err) {
       toast.error('Failed to initiate LinkedIn connection')
       setIsConnectingLinkedin(false)
@@ -786,20 +850,32 @@ export default function ProfilePage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
+      const effectiveUserId = targetUserId || user.id;
+
       const { error } = await supabase
         .from('profiles')
         .update({ 
           linkedin_token: null, 
           linkedin_id: null,
-          linkedin_name: null 
+          linkedin_name: null,
+          linkedin_urn: null
         })
-        .eq('id', user.id)
+        .eq('id', effectiveUserId)
 
       if (error) throw error
       
       setIsLinkedinConnected(false)
       setLinkedinName('')
+      setSelectedLinkedinUrn(null)
+      setLinkedinPages([])
+      setLinkedinScopeWarning(false)
       toast.success('LinkedIn unlinked successfully')
+      updateLocalCache({
+        linkedin_token: null,
+        linkedin_id: null,
+        linkedin_name: null,
+        linkedin_urn: null
+      })
     } catch (err: any) {
       toast.error('Failed to unlink LinkedIn', { description: err.message })
     }
@@ -2661,7 +2737,7 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {isAdminLike && authRole !== 'agent' && (
+            {false && isAdminLike && authRole !== 'agent' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md mb-6">
                 <div className="p-6 sm:p-7">
                   <div className="flex items-center justify-between">
@@ -2670,7 +2746,7 @@ export default function ProfilePage() {
                         <Linkedin size={20} fill="white" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-base text-slate-900">LinkedIn Profile</h4>
+                        <h4 className="font-bold text-base text-slate-900">LinkedIn Integration</h4>
                         <p className="text-xs text-slate-500 font-medium mt-0.5">
                           {isLinkedinConnected ? `Connected as ${linkedinName}` : 'Share professional updates'}
                         </p>
@@ -2682,7 +2758,7 @@ export default function ProfilePage() {
                       </button>
                     ) : (
                       <button
-                        onClick={handleConnectLinkedin}
+                        onClick={() => handleConnectLinkedin('personal')}
                         disabled={isConnectingLinkedin}
                         className="bg-[#0A66C2] hover:bg-[#084d91] text-white px-5 py-2 rounded-full text-xs font-bold shadow-sm transition-colors disabled:opacity-50 flex items-center gap-2"
                       >
@@ -2691,6 +2767,68 @@ export default function ProfilePage() {
                       </button>
                     )}
                   </div>
+
+                  {isLinkedinConnected && (
+                    <>
+                      {linkedinScopeWarning ? (
+                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mt-4 text-amber-800 text-xs font-medium space-y-2.5">
+                          <p className="leading-relaxed">To post to your LinkedIn company pages, you need to reconnect LinkedIn to grant page administrator permissions.</p>
+                          <button onClick={() => handleConnectLinkedin('company')} className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-2 rounded-xl transition-all shadow-sm active:scale-95">
+                            Reconnect LinkedIn (Company Pages)
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="border-t border-slate-100 mt-5 pt-5">
+                          <div className="flex justify-between items-center mb-3 px-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Posting Destination</label>
+                            <div className="flex items-center gap-3">
+                              <button onClick={() => handleConnectLinkedin('company')} className="text-[10px] text-purple-600 hover:text-[#084d91] font-bold uppercase tracking-wider transition-colors">Link Company Pages</button>
+                              <button onClick={fetchLinkedinPages} className="text-[10px] text-[#0A66C2] hover:text-[#084d91] font-bold uppercase tracking-wider transition-colors">Refresh List</button>
+                            </div>
+                          </div>
+
+                          {isLoadingLinkedinPages ? (
+                            <div className="flex items-center gap-2 text-xs text-slate-500 py-3 px-2 font-medium">
+                              <Loader2 size={16} className="animate-spin text-[#0A66C2]" /> Loading destinations...
+                            </div>
+                          ) : (
+                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                              {/* Option 1: Personal Profile */}
+                              <button 
+                                onClick={() => handleLinkedinPageSelect(null)} 
+                                className={`w-full flex items-center justify-between p-3.5 rounded-2xl text-left transition-all ${!selectedLinkedinUrn ? 'bg-white shadow-sm border border-blue-200 ring-2 ring-blue-500/20' : 'hover:bg-slate-200/50 bg-slate-100/50'}`}
+                              >
+                                <div className="flex items-center gap-3 truncate pr-3">
+                                  <User size={16} className={!selectedLinkedinUrn ? 'text-[#0A66C2] shrink-0' : 'text-slate-400 shrink-0'} />
+                                  <span className={`text-sm font-bold truncate ${!selectedLinkedinUrn ? 'text-blue-900' : 'text-slate-600'}`}>
+                                    Personal Profile ({linkedinName})
+                                  </span>
+                                </div>
+                                {!selectedLinkedinUrn && <CheckCircle size={18} className="text-[#0A66C2] shrink-0" />}
+                              </button>
+
+                              {/* Option 2..N: Company Pages */}
+                              {linkedinPages.map(page => (
+                                <button 
+                                  key={page.id} 
+                                  onClick={() => handleLinkedinPageSelect(page.id)} 
+                                  className={`w-full flex items-center justify-between p-3.5 rounded-2xl text-left transition-all ${selectedLinkedinUrn === page.id ? 'bg-white shadow-sm border border-blue-200 ring-2 ring-blue-500/20' : 'hover:bg-slate-200/50 bg-slate-100/50'}`}
+                                >
+                                  <div className="flex items-center gap-3 truncate pr-3">
+                                    <Building2 size={16} className={selectedLinkedinUrn === page.id ? 'text-[#0A66C2] shrink-0' : 'text-slate-400 shrink-0'} />
+                                    <span className={`text-sm font-bold truncate ${selectedLinkedinUrn === page.id ? 'text-blue-900' : 'text-slate-600'}`}>
+                                      {page.name}
+                                    </span>
+                                  </div>
+                                  {selectedLinkedinUrn === page.id && <CheckCircle size={18} className="text-[#0A66C2] shrink-0" />}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             )}

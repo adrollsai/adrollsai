@@ -29,14 +29,14 @@ export async function POST(req: Request) {
         }
     }
 
-    const { data: profile } = await supabase.from('profiles').select('linkedin_token, linkedin_id').eq('id', targetUserId).single()
+    const { data: profile } = await supabase.from('profiles').select('linkedin_token, linkedin_id, linkedin_urn').eq('id', targetUserId).single()
     
     if (!profile?.linkedin_token || !profile?.linkedin_id) {
       return NextResponse.json({ error: impersonateId ? 'Client LinkedIn not connected' : 'LinkedIn not connected' }, { status: 400 })
     }
 
     const accessToken = profile.linkedin_token
-    const urn = `urn:li:person:${profile.linkedin_id}`
+    const urn = profile.linkedin_urn || `urn:li:person:${profile.linkedin_id}`
 
     const linkedinVersion = '202604'
     let response;

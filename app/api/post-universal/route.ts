@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   // 2. Get User Credentials
   const { data: profile } = await supabase
     .from('profiles')
-    .select('selected_page_token, selected_page_id, linkedin_token, linkedin_id')
+    .select('selected_page_token, selected_page_id, linkedin_token, linkedin_id, linkedin_urn')
     .eq('id', targetUserId)
     .single()
 
@@ -88,9 +88,10 @@ export async function POST(request: Request) {
   // --- LINKEDIN ---
   if (platforms.includes('linkedin')) {
     if (profile.linkedin_token && profile.linkedin_id) {
+      const authorUrn = profile.linkedin_urn || `urn:li:person:${profile.linkedin_id}`
       promises.push(sendToPlatform('linkedin', () => postToLinkedin(
         profile.linkedin_token!,
-        profile.linkedin_id!,
+        authorUrn,
         imageUrl,
         caption,
         type
