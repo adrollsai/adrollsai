@@ -57,6 +57,14 @@ const SEED_TEMPLATES = [
         example: {
             body_text: [['John', 'https://meet.google.com/abc']]
         }
+    },
+    {
+        name: 'expert_connection_notification',
+        category: 'UTILITY',
+        bodyText: 'Lead Notification: {{1}} (Phone: {{2}}) has requested to connect with an expert immediately. Please contact them as soon as possible.',
+        example: {
+            body_text: [['John Doe', '+919999999999']]
+        }
     }
 ]
 
@@ -145,6 +153,17 @@ export async function POST(req: Request) {
                 console.error(`[Auto-Seed] Exception creating ${t.name}:`, err)
                 results.push({ name: t.name, success: false, error: err.message || 'Fetch Exception' })
             }
+        }
+
+        // 3. Invoke template-seeder to register other default automation templates
+        try {
+            const { registerDefaultTemplates } = await import('@/utils/whatsapp/template-seeder');
+            const seedRes = await registerDefaultTemplates(supabase, targetUserId, whatsappToken, whatsappWabaId);
+            if (seedRes && seedRes.results) {
+                results.push(...seedRes.results);
+            }
+        } catch (seedErr: any) {
+            console.error('[Auto-Seed] Failed to register automation templates:', seedErr.message);
         }
 
         return NextResponse.json({ 

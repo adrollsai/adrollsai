@@ -182,6 +182,41 @@ async function run() {
             } else {
                 console.log(`[TEMPLATE SUCCESS] Registered successfully! Template ID: ${adminMetaData.id}`);
             }
+
+            // Step 4: Register the template expert_connection_notification with Meta
+            console.log('[TEMPLATE] Registering expert_connection_notification template...');
+            const expertTemplatePayload = {
+                name: 'expert_connection_notification',
+                category: 'UTILITY',
+                language: 'en_US',
+                components: [
+                    {
+                        type: 'BODY',
+                        text: 'Lead Notification: {{1}} (Phone: {{2}}) has requested to connect with an expert immediately. Please contact them as soon as possible.',
+                        example: {
+                            body_text: [
+                                ['John Doe', '+919999999999']
+                            ]
+                        }
+                    }
+                ]
+            };
+
+            const expertMetaRes = await fetch(metaUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(expertTemplatePayload)
+            });
+
+            const expertMetaData = await expertMetaRes.json();
+            if (expertMetaData.error) {
+                console.error('[TEMPLATE ERROR] Expert Notification Registration failed:', expertMetaData.error.message);
+            } else {
+                console.log(`[TEMPLATE SUCCESS] Registered successfully! Template ID: ${expertMetaData.id}`);
+            }
         }
 
     } catch (e) {

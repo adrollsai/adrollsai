@@ -628,4 +628,59 @@ export async function sendCancellationEmail(
     console.error("Cancellation Email Error:", error)
     return { success: false, error: error.message }
   }
+}
+
+export async function sendConnectExpertNotificationEmail(
+  to: string,
+  businessName: string,
+  leadName: string,
+  leadPhone: string
+) {
+  try {
+    if (!to) {
+      return { success: false, error: "No recipient email provided" };
+    }
+
+    const info = await transporter.sendMail({
+      from: `"Nobogent Alerts" <no-reply@mail.nobogent.com>`,
+      to: to,
+      subject: `☎️ Lead Callback Requested: Connect with Expert`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h2 style="color: #b91c1c; margin: 0; font-size: 24px; font-weight: bold; border-bottom: 2px solid #b91c1c; padding-bottom: 12px;">Expert Callback Request</h2>
+          </div>
+          <p style="font-size: 16px; color: #334155; line-height: 1.5;">Hello,</p>
+          <p style="font-size: 15px; color: #475569; line-height: 1.5;">
+            A lead has requested to connect with an expert immediately regarding <strong>${businessName}</strong>. Please reach out to them on call as soon as possible.
+          </p>
+          
+          <div style="background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; padding: 16px; margin: 20px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 6px 0; font-weight: bold; color: #64748b; font-size: 13px; text-transform: uppercase; width: 120px;">Lead Name:</td>
+                <td style="padding: 6px 0; font-weight: 600; color: #0f172a; font-size: 15px;">${leadName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; font-weight: bold; color: #64748b; font-size: 13px; text-transform: uppercase;">Phone Number:</td>
+                <td style="padding: 6px 0; font-weight: 600; color: #0f172a; font-size: 15px;">
+                  <a href="tel:${leadPhone}" style="color: #2563eb; text-decoration: none;">${leadPhone}</a>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
+            <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
+              Nobogent AI Notification Alerts
+            </p>
+          </div>
+        </div>
+      `,
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    console.error("Connect Expert Email Notification Error:", error);
+    return { success: false, error: error.message };
+  }
 }

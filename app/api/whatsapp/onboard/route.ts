@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { registerDefaultTemplates } from '@/utils/whatsapp/template-seeder';
 
 export async function POST(req: Request) {
     try {
@@ -166,6 +167,16 @@ export async function POST(req: Request) {
                 }
             } catch (subErr) {
                 console.error('[WHATSAPP ONBOARD] ⚠️ WABA webhook subscription failed (non-fatal):', subErr);
+            }
+        }
+
+        // 3d. Register default WhatsApp automation templates with Meta
+        if (finalWabaId && accessToken) {
+            try {
+                const result = await registerDefaultTemplates(supabase, user.id, accessToken, finalWabaId);
+                console.log('[WHATSAPP ONBOARD] Default templates registration complete:', result);
+            } catch (tplErr: any) {
+                console.error('[WHATSAPP ONBOARD] ⚠️ Template registration failed (non-fatal):', tplErr.message);
             }
         }
 
