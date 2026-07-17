@@ -55,22 +55,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       // Check user's profile
       const { data: userProfile } = await supabase
         .from('profiles')
-        .select('subscription_status, role, parent_id, agency_id, onboarding_completed, accepted_terms')
+        .select('subscription_status, subscription_valid_until, email, role, parent_id, agency_id, onboarding_completed, accepted_terms')
         .eq('id', session.user.id)
         .single()
 
       // Resolve Primary User for subscription check
       let subscriptionStatus = userProfile?.subscription_status?.toLowerCase() || ''
+      let subscriptionValidUntil = userProfile?.subscription_valid_until
       let onboardingCompleted = userProfile?.onboarding_completed
       const parentId = userProfile?.parent_id || userProfile?.agency_id
       if (parentId) {
           const { data: parentProfile } = await supabase
             .from('profiles')
-            .select('subscription_status, onboarding_completed')
+            .select('subscription_status, subscription_valid_until, onboarding_completed')
             .eq('id', parentId)
             .single()
           subscriptionStatus = parentProfile?.subscription_status?.toLowerCase() || ''
+          subscriptionValidUntil = parentProfile?.subscription_valid_until
           onboardingCompleted = parentProfile?.onboarding_completed
+      }
+
+      // Whitelisted emails that do not get trapped by subscription expiry
+      const whitelistedEmails = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com']
+      const userEmail = userProfile?.email?.toLowerCase() || ''
+      const isWhitelisted = whitelistedEmails.includes(userEmail)
+
+      // Dynamic chronological check
+      if (subscriptionValidUntil && new Date(subscriptionValidUntil) < new Date() && !isWhitelisted) {
+          subscriptionStatus = 'expired'
       }
 
       const isPaid = subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro'

@@ -42,7 +42,7 @@ export async function triggerOutboundCall(
         const [profResult, leadResult] = await Promise.all([
             supabaseAdmin
                 .from('profiles')
-                .select('elevenlabs_api_key, elevenlabs_agent_id, voice_twilio_sid, voice_twilio_token, voice_twilio_number, google_refresh_token, google_booking_enabled')
+                .select('elevenlabs_api_key, elevenlabs_agent_id, voice_twilio_sid, voice_twilio_token, voice_twilio_number, google_refresh_token, google_booking_enabled, subscription_status, subscription_valid_until, email')
                 .eq('id', profileId)
                 .single(),
             supabaseAdmin
@@ -61,6 +61,20 @@ export async function triggerOutboundCall(
 
         if (leadResult.error || !lead || !lead.phone) {
             return { success: false, error: 'Lead not found or has no phone number.' }
+        }
+
+        // Subscription Validation Check
+        const subscriptionStatus = profile.subscription_status?.toLowerCase() || ''
+        const subscriptionValidUntil = profile.subscription_valid_until
+        const userEmail = profile.email?.toLowerCase() || ''
+        const whitelistedEmails = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com']
+        const isWhitelisted = whitelistedEmails.includes(userEmail)
+
+        const isSubscriptionExpired = subscriptionValidUntil && new Date(subscriptionValidUntil) < new Date()
+        const isPaid = (subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro') && !isSubscriptionExpired
+
+        if (!isPaid && !isWhitelisted) {
+            return { success: false, error: 'SUBSCRIPTION_EXPIRED' }
         }
 
         // Concurrency Check: Only allow one active call at a time per user
