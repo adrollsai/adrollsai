@@ -250,9 +250,7 @@ export async function POST(request: Request) {
           ...newGeo
         };
 
-        if (currentGeo.location_types) {
-          updatedGeo.location_types = currentGeo.location_types;
-        }
+
         if (currentGeo.custom_audiences) {
           updatedGeo.custom_audiences = currentGeo.custom_audiences;
         }

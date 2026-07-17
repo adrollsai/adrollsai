@@ -418,12 +418,12 @@ export async function POST(request: Request) {
         const campaignId = campaignData.id;
 
         // --- Step 6: Parse Targeting ---
-        let targetingConfig: any = { geo_locations: { countries: ['IN'], location_types: ['home'] } };
+        let targetingConfig: any = { geo_locations: { countries: ['IN'] } };
         if (metaLocationsStr) {
             try {
                 const locationsArray = JSON.parse(metaLocationsStr);
                 if (Array.isArray(locationsArray) && locationsArray.length > 0) {
-                    targetingConfig = { geo_locations: { cities: [], regions: [], countries: [], zips: [], location_types: ['home'] } };
+                    targetingConfig = { geo_locations: { cities: [], regions: [], countries: [], zips: [] } };
                     locationsArray.forEach((locData: any) => {
                         const loc = locData.location;
                         if (loc && loc.key) {
