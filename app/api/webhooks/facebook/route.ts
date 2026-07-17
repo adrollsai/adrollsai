@@ -566,7 +566,7 @@ IMPORTANT RULES:
                                         if (selectedModel === 'deepseek' && hasDeepSeekKey) {
                                             console.log("🤖 Routing WhatsApp bot query to DEEPSEEK model");
                                             const deepseek = createOpenAI({
-                                                baseURL: 'https://api.deepseek.com/v1',
+                                                baseURL: 'https://api.deepseek.com',
                                                 apiKey: process.env.DEEPSEEK_API_KEY || ''
                                             });
                                             modelProvider = deepseek('deepseek-v4-flash');
