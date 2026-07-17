@@ -1252,3 +1252,31 @@
   "leadgenTosAccepted": true
 }
 ------------------------------------------------
+[2026-07-17T11:03:43.633Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-07-17T11:03:43.635Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-07-17T11:03:43.763Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-07-17T11:03:44.408Z] [Campaigns API] Successfully fetched 8 campaigns
+------------------------------------------------
+[2026-07-17T11:03:47.452Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-07-17T11:03:47.575Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-07-17T11:03:47.577Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-07-17T11:03:47.699Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-07-17T11:03:48.081Z] [Campaigns API] Successfully fetched 8 campaigns
+------------------------------------------------
+[2026-07-17T11:03:48.698Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-07-17T11:03:48.819Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-07-17T11:03:48.820Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-07-17T11:03:48.938Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-07-17T11:03:49.365Z] [Campaigns API] Successfully fetched 8 campaigns
+------------------------------------------------

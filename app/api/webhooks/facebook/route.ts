@@ -562,7 +562,8 @@ IMPORTANT RULES:
                                         }
 
                                         let modelProvider: any;
-                                        if (selectedModel === 'deepseek') {
+                                        const hasDeepSeekKey = !!process.env.DEEPSEEK_API_KEY;
+                                        if (selectedModel === 'deepseek' && hasDeepSeekKey) {
                                             console.log("🤖 Routing WhatsApp bot query to DEEPSEEK model");
                                             const deepseek = createOpenAI({
                                                 baseURL: 'https://api.deepseek.com/v1',
@@ -570,6 +571,9 @@ IMPORTANT RULES:
                                             });
                                             modelProvider = deepseek('deepseek-v4-flash');
                                         } else {
+                                            if (selectedModel === 'deepseek') {
+                                                console.warn("⚠️ DEEPSEEK_API_KEY is missing in env. Falling back to GEMINI model.");
+                                            }
                                             console.log("🤖 Routing WhatsApp bot query to GEMINI model");
                                             modelProvider = google('gemini-3.5-flash');
                                         }
@@ -586,10 +590,17 @@ IMPORTANT RULES:
                                         ownerUsage = {
                                             promptTokens: usage?.inputTokens || 0,
                                             completionTokens: usage?.outputTokens || 0,
-                                            modelName: selectedModel === 'deepseek' ? 'deepseek-v4-flash' : 'gemini-3.5-flash'
+                                            modelName: (selectedModel === 'deepseek' && hasDeepSeekKey) ? 'deepseek-v4-flash' : 'gemini-3.5-flash'
                                         };
                                     } catch (llmErr: any) {
-                                        console.error("❌ Agentic LLM response generation failed:", llmErr);
+                                        console.error("❌ Agentic LLM response generation failed:", llmErr?.message || llmErr);
+                                        console.error("❌ Error details:", JSON.stringify({
+                                            name: llmErr?.name,
+                                            status: llmErr?.status || llmErr?.statusCode,
+                                            cause: llmErr?.cause?.message || llmErr?.cause,
+                                            responseBody: llmErr?.responseBody || llmErr?.data,
+                                            stack: llmErr?.stack?.split('\n').slice(0, 5).join('\n')
+                                        }, null, 2));
                                         botResponseText = "Hi! I matched your number, but I had trouble processing the request. Please check back shortly.";
                                     }
                                     
