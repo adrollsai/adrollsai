@@ -204,7 +204,7 @@ export async function POST(req: Request) {
             const streamUrl = `${bridgeHost}/gemini-live-stream`
             console.log(`[TWIML BRIDGE] Redirecting Twilio Media Stream to Gemini Live Bridge: ${streamUrl}`)
             
-            const voiceName = campaign?.audience_filter?.voice_name || 'Aoede'
+            const voiceName = campaign?.audience_filter?.voice_name || profile?.voice_name || 'Aoede'
             const isFemale = ['aoede', 'kore'].includes(voiceName.toLowerCase())
             const twilioVoice = isFemale ? 'Polly.Aditi' : 'Google.hi-IN-Wavenet-B'
             

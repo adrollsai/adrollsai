@@ -11,7 +11,8 @@ import {
   Settings, 
   Sparkles,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  Play
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
@@ -35,7 +36,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
     voice_twilio_token: '',
     voice_twilio_number: '',
     auto_call_new_leads: false,
-    voice_provider: 'gemini'
+    voice_provider: 'gemini',
+    voice_name: 'Aoede'
   })
 
   const [connected, setConnected] = useState(false)
@@ -188,7 +190,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
           voice_twilio_token: data.voice_twilio_token || '',
           voice_twilio_number: phoneNum,
           auto_call_new_leads: !!data.auto_call_new_leads,
-          voice_provider: data.voice_provider || 'gemini'
+          voice_provider: data.voice_provider || 'gemini',
+          voice_name: data.voice_name || 'Aoede'
         })
         setConnected(!!(data.voice_twilio_sid || phoneNum))
       }
@@ -302,7 +305,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       const updateData: any = {
         voice_twilio_number: settings.voice_twilio_number.trim() || null,
         auto_call_new_leads: settings.auto_call_new_leads,
-        voice_provider: settings.voice_provider
+        voice_provider: settings.voice_provider,
+        voice_name: settings.voice_name
       }
 
       if (!saasMode) {
@@ -570,6 +574,45 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                   </button>
                 </div>
 
+                {/* Default Voice Selection and Previews */}
+                <div className="space-y-4 border border-slate-100 bg-slate-50/30 p-4 rounded-2xl">
+                  <h4 className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                    <Sparkles size={14} className="text-indigo-600" /> Default Voice Agent Tone
+                  </h4>
+                  <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
+                    Choose the voice tone used universally for triggered calls (when new leads land in CRM, when dismissing flagged questions, or when manually dialing).
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase block ml-1">Select Voice</label>
+                      <select 
+                        value={settings.voice_name}
+                        onChange={(e) => setSettings({ ...settings, voice_name: e.target.value })}
+                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-indigo-400 transition-all cursor-pointer shadow-xs"
+                      >
+                        <option value="Aoede">Aoede (Warm Female)</option>
+                        <option value="Kore">Kore (Young Female)</option>
+                        <option value="Charon">Charon (Warm Male)</option>
+                        <option value="Fenrir">Fenrir (Deep Male)</option>
+                        <option value="Puck">Puck (Energetic Male)</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col justify-end space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase block ml-1">Voice Preview</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const audio = new Audio(`/${settings.voice_name.toLowerCase()}.mp3`);
+                          audio.play().catch(e => console.error("Audio playback failed:", e));
+                        }}
+                        className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 active:scale-95 transition-all shadow-xs cursor-pointer"
+                      >
+                        <Play size={12} fill="currentColor" /> Play Voice Sample
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="flex gap-4">
                   <button
                     type="submit"
@@ -822,7 +865,19 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase block ml-1">Voice Agent Tone</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase block ml-1 flex items-center justify-between">
+                    <span>Voice Agent Tone</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const audio = new Audio(`/${campaignForm.voiceName.toLowerCase()}.mp3`);
+                        audio.play().catch(e => console.error("Audio playback failed:", e));
+                      }}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                    >
+                      <Play size={10} fill="currentColor" /> Play Sample
+                    </button>
+                  </label>
                   <select 
                     value={campaignForm.voiceName}
                     onChange={(e) => setCampaignForm({ ...campaignForm, voiceName: e.target.value })}
