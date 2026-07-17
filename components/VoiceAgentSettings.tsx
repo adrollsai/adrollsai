@@ -151,6 +151,59 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
     }
   }
 
+  const playVoicePreview = (voiceName: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      return toast.error("Text-to-speech preview is not supported in this browser.");
+    }
+    
+    // Stop any current speech
+    window.speechSynthesis.cancel();
+
+    const voiceDescriptions: Record<string, string> = {
+      aoede: "Hello! I am Aoede. I am a clear and professional female voice, perfect for welcoming your leads and guiding them.",
+      kore: "Hi there! I am Kore, a neutral and conversational female voice, designed to keep customer interactions natural and engaging.",
+      charon: "Hello, this is Charon. I am a deep and authoritative male voice, ideal for professional updates.",
+      fenrir: "Hey! I am Fenrir. I am a warm, energetic, and approachable male voice, great for friendly client outreach.",
+      puck: "Hi! I am Puck. I am a conversational and friendly male voice, designed to build quick rapport."
+    };
+
+    const text = voiceDescriptions[voiceName.toLowerCase()] || `Hello! I am your ${voiceName} voice assistant.`;
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    const isFemale = ['aoede', 'kore'].includes(voiceName.toLowerCase());
+    
+    const browserVoices = window.speechSynthesis.getVoices();
+    let selectedVoice = browserVoices.find(v => {
+      const nameLower = v.name.toLowerCase();
+      const langMatch = v.lang.startsWith('en') || v.lang.startsWith('hi');
+      if (!langMatch) return false;
+      const isFemaleVoice = nameLower.includes('female') || nameLower.includes('zira') || nameLower.includes('hazel') || nameLower.includes('samantha') || nameLower.includes('google us english') || nameLower.includes('microsoft');
+      return isFemale ? isFemaleVoice : !isFemaleVoice;
+    });
+
+    if (!selectedVoice && browserVoices.length > 0) {
+      selectedVoice = browserVoices.find(v => v.lang.startsWith('en') || v.lang.startsWith('hi'));
+    }
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    }
+    
+    if (voiceName.toLowerCase() === 'kore') {
+      utterance.pitch = 1.15;
+    } else if (voiceName.toLowerCase() === 'charon') {
+      utterance.pitch = 0.85;
+    } else if (voiceName.toLowerCase() === 'fenrir') {
+      utterance.pitch = 0.95;
+      utterance.rate = 1.05;
+    } else if (voiceName.toLowerCase() === 'puck') {
+      utterance.pitch = 1.0;
+      utterance.rate = 1.12;
+    }
+
+    window.speechSynthesis.speak(utterance);
+  };
+
   const [subscriptionStatus, setSubscriptionStatus] = useState('')
   const [userEmail, setUserEmail] = useState('')
   const [oldVoiceNumber, setOldVoiceNumber] = useState('')
@@ -601,10 +654,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                       <label className="text-[10px] font-black text-slate-400 uppercase block ml-1">Voice Preview</label>
                       <button
                         type="button"
-                        onClick={() => {
-                          const audio = new Audio(`/${settings.voice_name.toLowerCase()}.mp3`);
-                          audio.play().catch(e => console.error("Audio playback failed:", e));
-                        }}
+                        onClick={() => playVoicePreview(settings.voice_name)}
                         className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 active:scale-95 transition-all shadow-xs cursor-pointer"
                       >
                         <Play size={12} fill="currentColor" /> Play Voice Sample
@@ -869,10 +919,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                     <span>Voice Agent Tone</span>
                     <button
                       type="button"
-                      onClick={() => {
-                        const audio = new Audio(`/${campaignForm.voiceName.toLowerCase()}.mp3`);
-                        audio.play().catch(e => console.error("Audio playback failed:", e));
-                      }}
+                      onClick={() => playVoicePreview(campaignForm.voiceName)}
                       className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
                     >
                       <Play size={10} fill="currentColor" /> Play Sample
