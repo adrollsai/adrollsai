@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const envPath = 'C:\\Users\\Adrolls\\Desktop\\nobogent-app\\nobogent\\.env.local';
+const envPath = path.join(__dirname, '..', '..', '.env.local');
 const envContent = fs.readFileSync(envPath, 'utf8');
 const env = {};
 envContent.split('\n').forEach(line => {
@@ -19,8 +19,7 @@ envContent.split('\n').forEach(line => {
 
 const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
-const projectNodeModules = 'C:\\Users\\Adrolls\\Desktop\\nobogent-app\\nobogent\\node_modules';
-const { createClient } = require(path.join(projectNodeModules, '@supabase', 'supabase-js'));
+const { createClient } = require('@supabase/supabase-js');
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
 
