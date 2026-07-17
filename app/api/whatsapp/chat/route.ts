@@ -175,9 +175,9 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'WhatsApp integration not configured.' }, { status: 400 })
         }
 
-        // Pre-flight credits check (manual outbound message = Rs. 0.10 cost = 2 credits)
+        // Pre-flight credits check (manual outbound message = Rs. 0.10 cost * 2x markup = 0.2 credits)
         const { hasEnoughCredits, deductCreditsByCost } = await import('@/utils/credits')
-        const hasCredits = await hasEnoughCredits(supabaseAdmin, ownerUserId, 2)
+        const hasCredits = await hasEnoughCredits(supabaseAdmin, ownerUserId, 0.2)
         if (!hasCredits) {
             return NextResponse.json({ error: 'Insufficient credits. Please top up your Nobo Credits to send WhatsApp messages.' }, { status: 402 })
         }

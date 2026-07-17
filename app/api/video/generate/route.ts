@@ -257,6 +257,9 @@ function extrapolateEthnicity(profile: any, property: any, customInstructions?: 
 }
 
 export async function POST(request: Request) {
+    let creditsDeductedSuccess = false;
+    let totalCreditsRequired = 0;
+    let targetUserId = '';
     try {
         const supabase = await createClient();
         const { data: { user } } = await supabase.auth.getUser();
@@ -358,7 +361,7 @@ export async function POST(request: Request) {
         const impersonateId = url.searchParams.get('impersonate')
 
         const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
-        let targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
+        targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
           ? (currentProfile.agency_id || currentProfile.parent_id) 
           : user.id
 
@@ -750,6 +753,30 @@ High-end commercial production quality.
             });
         }
 
+        // --- CREDITS CHECK & DEDUCTION ---
+        totalCreditsRequired = prompts.length * 250;
+        const { hasEnoughCredits, deductCredits, addCredits } = await import('@/utils/credits');
+        const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, totalCreditsRequired);
+        if (!hasCredits) {
+            await refundLimit(targetUserId, 'videos');
+            return NextResponse.json({ 
+                error: `Insufficient credits. You need at least ${totalCreditsRequired} Nobo Credits to generate this ${prompts.length * 15}-second video.` 
+            }, { status: 402 });
+        }
+
+        const creditsDeducted = await deductCredits(
+            supabaseAdmin, 
+            targetUserId, 
+            totalCreditsRequired, 
+            'ai_generation', 
+            `AI Video Generation (${prompts.length} x 15s clips) - ${script.title || 'Video'}`
+        );
+        if (!creditsDeducted) {
+            await refundLimit(targetUserId, 'videos');
+            return NextResponse.json({ error: 'Failed to process credit deduction.' }, { status: 500 });
+        }
+        creditsDeductedSuccess = true;
+
         // 4. Create Placeholder Asset (Spinning Card) in Supabase
         const { data: newAsset, error: newAssetError } = await supabaseAdmin
             .from('assets')
@@ -850,6 +877,11 @@ High-end commercial production quality.
             // Delete placeholder and refund credit if any task failed to start
             await supabaseAdmin.from('assets').delete().eq('id', newAsset.id);
             await refundLimit(targetUserId, 'videos');
+            
+            // Refund credits
+            await addCredits(supabaseAdmin, targetUserId, totalCreditsRequired, 'ai_generation', `Refund: AI Video Generation failed to launch`);
+            creditsDeductedSuccess = false;
+
             return NextResponse.json({ error: launchErrors.join(', ') || "Failed to start parallel video generations" }, { status: 500 });
         }
 
@@ -888,6 +920,15 @@ High-end commercial production quality.
 
     } catch (error: any) {
         console.error("Video Generate Error:", error);
+        if (creditsDeductedSuccess) {
+            try {
+                await refundLimit(targetUserId, 'videos');
+                const { addCredits } = await import('@/utils/credits');
+                await addCredits(supabaseAdmin, targetUserId, totalCreditsRequired, 'ai_generation', `Refund: AI Video Generation failed`);
+            } catch (refundErr) {
+                console.error("Failed to refund credit/limit in catch block:", refundErr);
+            }
+        }
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

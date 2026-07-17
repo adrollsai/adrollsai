@@ -284,12 +284,37 @@ export async function POST(request: Request) {
             // If we reach here, all retries failed or max retries reached
             await supabaseAdmin.from('video_tasks').update({ status: 'Failed', last_error: msg }).eq('id', videoTask.id);
             if (videoTask.asset_id) {
+                // Find sibling tasks sharing this asset_id to know the number of clips generated
+                const { data: siblingTasks } = await supabaseAdmin
+                    .from('video_tasks')
+                    .select('id')
+                    .eq('asset_id', videoTask.asset_id);
+                const taskCount = siblingTasks?.length || 1;
+
                 await supabaseAdmin.from('assets').update({ 
                     status: 'Failed',
                     metadata: { error: msg || "AI video generation failed after maximum retries." }
                 }).eq('id', videoTask.asset_id);
+                
                 // Clean up all video tasks sharing this asset_id
                 await supabaseAdmin.from('video_tasks').delete().eq('asset_id', videoTask.asset_id);
+
+                // Refund the videos quota limit
+                try {
+                    const { refundLimit } = await import('@/utils/subscription-server');
+                    await refundLimit(videoTask.user_id, 'videos');
+                } catch (limErr) {
+                    console.error("Failed to refund limit in video callback:", limErr);
+                }
+
+                // Refund the credits
+                try {
+                    const { addCredits } = await import('@/utils/credits');
+                    const refundAmount = taskCount * 250;
+                    await addCredits(supabaseAdmin, videoTask.user_id, refundAmount, 'ai_generation', `Refund: AI Video Generation failed after maximum retries (${taskCount} clips)`);
+                } catch (crErr) {
+                    console.error("Failed to refund credits in video callback:", crErr);
+                }
             }
             return NextResponse.json({ success: true });
         }
@@ -531,6 +556,23 @@ export async function POST(request: Request) {
             if (videoTask.asset_id) {
                 await supabaseAdmin.from('assets').update({ status: 'Failed' }).eq('id', videoTask.asset_id);
                 await supabaseAdmin.from('video_tasks').delete().eq('asset_id', videoTask.asset_id);
+                
+                // Refund the videos limit
+                try {
+                    const { refundLimit } = await import('@/utils/subscription-server');
+                    await refundLimit(videoTask.user_id, 'videos');
+                } catch (limErr) {
+                    console.error("Failed to refund limit in video callback:", limErr);
+                }
+
+                // Refund credits
+                try {
+                    const { addCredits } = await import('@/utils/credits');
+                    const refundAmount = siblings.length * 250;
+                    await addCredits(supabaseAdmin, videoTask.user_id, refundAmount, 'ai_generation', `Refund: Stitching dispatch failed (${siblings.length} clips)`);
+                } catch (crErr) {
+                    console.error("Failed to refund credits in video callback:", crErr);
+                }
             }
             return NextResponse.json({ error: stitchErr.message || 'Stitching dispatch failed' }, { status: 500 });
         }

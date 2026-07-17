@@ -4,6 +4,8 @@ import { renderMediaOnLambda } from '@remotion/lambda';
 import { speculateFunctionName } from '@remotion/lambda-client';
 
 export async function POST(request: Request) {
+    let creditsDeductedSuccess = false;
+    let userId = '';
     try {
         const supabase = await createClient();
         const { data: { user } } = await supabase.auth.getUser();
@@ -11,12 +13,39 @@ export async function POST(request: Request) {
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
+        userId = user.id;
 
         const { assetId, videoUrl, captions, effects: clientEffects, theme, durationInFrames } = await request.json();
 
         if (!assetId || !videoUrl || !captions || !theme) {
             return NextResponse.json({ error: 'Missing required parameters: assetId, videoUrl, captions, and theme are required.' }, { status: 400 });
         }
+
+        // Create Supabase Admin client to manage credits
+        const { createClient: createAdminClient } = await import('@supabase/supabase-js');
+        const supabaseAdmin = createAdminClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+
+        // --- CREDITS CHECK & DEDUCTION ---
+        const { hasEnoughCredits, deductCredits, addCredits } = await import('@/utils/credits');
+        const hasCredits = await hasEnoughCredits(supabaseAdmin, userId, 20);
+        if (!hasCredits) {
+            return NextResponse.json({ error: 'Insufficient credits. You need at least 20 Nobo Credits to render this video.' }, { status: 402 });
+        }
+
+        const creditsDeducted = await deductCredits(
+            supabaseAdmin,
+            userId,
+            20,
+            'ai_generation',
+            `AI Video Render - Editing video asset ${assetId}`
+        );
+        if (!creditsDeducted) {
+            return NextResponse.json({ error: 'Failed to process credit deduction.' }, { status: 500 });
+        }
+        creditsDeductedSuccess = true;
 
         // 1. Retrieve original asset context details
         const { data: originalAsset, error: fetchErr } = await supabase
@@ -147,6 +176,14 @@ export async function POST(request: Request) {
                 .update({ status: 'Failed' })
                 .eq('id', newAsset.id);
 
+            // Refund credits
+            try {
+                await addCredits(supabaseAdmin, userId, 20, 'ai_generation', `Refund: AWS Lambda delegation failed for video render`);
+                creditsDeductedSuccess = false;
+            } catch (refundErr) {
+                console.error("Failed to refund video render credits:", refundErr);
+            }
+
             return NextResponse.json({
                 success: false,
                 error: `Failed to initiate cloud rendering worker: ${workerError.message}`
@@ -155,6 +192,19 @@ export async function POST(request: Request) {
 
     } catch (error: any) {
         console.error("[Render Route] Error:", error);
+        if (creditsDeductedSuccess) {
+            try {
+                const { createClient: createAdminClient } = await import('@supabase/supabase-js');
+                const supabaseAdmin = createAdminClient(
+                    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                    process.env.SUPABASE_SERVICE_ROLE_KEY!
+                );
+                const { addCredits } = await import('@/utils/credits');
+                await addCredits(supabaseAdmin, userId, 20, 'ai_generation', `Refund: Video render failed`);
+            } catch (refundErr) {
+                console.error("Failed to refund video render credits in catch block:", refundErr);
+            }
+        }
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

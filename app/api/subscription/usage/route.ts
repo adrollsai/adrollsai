@@ -2,11 +2,16 @@ import { createClient } from '@/utils/supabase/server';
 import { NextResponse } from 'next/server';
 import { PLANS, getUserLimits } from '@/utils/subscription';
 
-export async function GET() {
+export async function GET(request: Request) {
     try {
         const supabase = await createClient();
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+        const url = new URL(request.url);
+        const page = parseInt(url.searchParams.get('page') || '1', 10);
+        const limit = parseInt(url.searchParams.get('limit') || '10', 10);
+        const offset = (page - 1) * limit;
 
         const { data: profile } = await supabase
             .from('profiles')
@@ -121,19 +126,26 @@ export async function GET() {
             },
             credits: primaryProfile.credits || 0,
             isUnlimited: ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'].includes(primaryProfile?.email || ''),
-            transactions: [] as any[]
+            transactions: [] as any[],
+            hasMore: false
         };
 
-        // Query credit transactions ledger
+        // Query credit transactions ledger with pagination (fetches limit + 1 to check hasMore)
         const { data: txs } = await supabase
             .from('credit_transactions')
             .select('*')
             .eq('user_id', primaryUserId)
             .order('created_at', { ascending: false })
-            .limit(50);
+            .range(offset, offset + limit);
 
         if (txs) {
-            usageData.transactions = txs;
+            if (txs.length > limit) {
+                usageData.transactions = txs.slice(0, limit);
+                usageData.hasMore = true;
+            } else {
+                usageData.transactions = txs;
+                usageData.hasMore = false;
+            }
         }
 
         return NextResponse.json(usageData);

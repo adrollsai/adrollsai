@@ -24,6 +24,8 @@ function extractTag(text: string, tag: string, fallback: string = ''): string {
 }
 
 export async function POST(request: Request) {
+  let creditDeductedSuccess = false;
+  let targetUserId = '';
   try {
     logToFile("--- NEW IMAGE GEN REQUEST RECEIVED ---");
     const supabase = await createClient()
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
     const impersonateId = url.searchParams.get('impersonate') || body?.impersonateId || body?.payload?.impersonateId;
 
     const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
-    let targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
+    targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
       ? (currentProfile.agency_id || currentProfile.parent_id) 
       : user.id
 
@@ -78,7 +80,8 @@ export async function POST(request: Request) {
 
     logToFile(`PAYLOAD RECEIVED: ${JSON.stringify(body, null, 2)}`);
 
-    // --- SUBSCRIPTION CHECK ---
+    // --- SUBSCRIPTION & CREDITS CHECK ---
+    const { hasEnoughCredits, deductCredits, addCredits } = await import('@/utils/credits')
     try {
       await checkLimitAndIncrement(targetUserId, 'images');
       await checkStorageLimit(targetUserId);
@@ -86,7 +89,7 @@ export async function POST(request: Request) {
       logToFile(`QUOTA ERROR: ${limitErr.message}`);
       return NextResponse.json({ error: limitErr.message }, { status: 403 });
     }
-    
+
     const { 
         userInstructions, 
         propertyDescription, 
@@ -104,6 +107,20 @@ export async function POST(request: Request) {
         excludedImages = [],
         isEdit = false
     } = body;
+
+    const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, 30);
+    if (!hasCredits) {
+      logToFile(`CREDIT ERROR: Insufficient credits for image generation.`);
+      await refundLimit(targetUserId, 'images');
+      return NextResponse.json({ error: 'Insufficient credits. You need at least 30 Nobo Credits to generate an AI image.' }, { status: 402 });
+    }
+
+    const creditDeducted = await deductCredits(supabaseAdmin, targetUserId, 30, 'ai_generation', `AI Image Generation - ${propertyTitle || 'Ad'}`);
+    if (!creditDeducted) {
+      await refundLimit(targetUserId, 'images');
+      return NextResponse.json({ error: 'Failed to process credit deduction.' }, { status: 500 });
+    }
+    creditDeductedSuccess = true;
 
     // Fetch user profile for business context + industry
     const { data: profile } = await supabase
@@ -489,8 +506,10 @@ Premium design, clean layout, bold headline.`;
       const finalError = kieResult?.error || "Final attempt failed";
       logToFile(`Kie AI Task failed permanently: ${finalError}`);
       
-      // REFUND: Give back the credit if task failed to start even after failover
-      await refundLimit(user.id, 'images');
+      // REFUND: Give back the credit and limit
+      await refundLimit(targetUserId, 'images');
+      await addCredits(supabaseAdmin, targetUserId, 30, 'ai_generation', `Refund: AI Image Generation failed - ${propertyTitle || 'Ad'}`);
+      creditDeductedSuccess = false;
       
       throw new Error(`Design server error: ${finalError}`);
     }
@@ -541,6 +560,15 @@ RULES:
 
   } catch (error: any) {
     logToFile(`FATAL ERROR: ${error.message}`);
+    if (creditDeductedSuccess) {
+      try {
+        await refundLimit(targetUserId, 'images');
+        const { addCredits } = await import('@/utils/credits');
+        await addCredits(supabaseAdmin, targetUserId, 30, 'ai_generation', `Refund: AI Image Generation failed`);
+      } catch (refundErr) {
+        console.error("Failed to refund credit/limit in catch block:", refundErr);
+      }
+    }
     return NextResponse.json(
       { error: error.message || "Internal Server Error" }, 
       { status: 500 }

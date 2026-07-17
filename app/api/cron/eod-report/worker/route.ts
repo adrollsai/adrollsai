@@ -269,7 +269,7 @@ export async function POST(request: Request) {
     
     if (emailResult.success) {
       try {
-        await deductCredits(supabaseAdmin, profileId, 10, 'ai_generation', 'Daily EOD Operations Report Email')
+        await deductCredits(supabaseAdmin, profileId, 1, 'ai_generation', 'Daily EOD Operations Report Email')
       } catch (creditErr) {
         console.error(`[EOD Report Worker] Failed to deduct credits for EOD report:`, creditErr)
       }

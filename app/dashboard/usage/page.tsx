@@ -17,24 +17,45 @@ import { toast } from 'sonner'
 export default function UsagePage() {
     const [usage, setUsage] = useState<any>(null)
     const [loading, setLoading] = useState(true)
+    const [transactions, setTransactions] = useState<any[]>([])
+    const [page, setPage] = useState(1)
+    const [hasMore, setHasMore] = useState(false)
+    const [loadingMore, setLoadingMore] = useState(false)
 
-    const fetchUsage = async () => {
-        setLoading(true)
+    const fetchUsage = async (targetPage = 1) => {
+        if (targetPage === 1) setLoading(true)
+        else setLoadingMore(true)
+        
         try {
-            const res = await fetch('/api/subscription/usage')
+            const res = await fetch(`/api/subscription/usage?page=${targetPage}&limit=10`)
             const data = await res.json()
             if (data.error) throw new Error(data.error)
-            setUsage(data)
+            
+            if (targetPage === 1) {
+                setUsage(data)
+                setTransactions(data.transactions || [])
+            } else {
+                setTransactions(prev => [...prev, ...(data.transactions || [])])
+            }
+            setHasMore(data.hasMore)
+            setPage(targetPage)
         } catch (err: any) {
             toast.error("Failed to load usage data")
         } finally {
             setLoading(false)
+            setLoadingMore(false)
         }
     }
 
     useEffect(() => {
-        fetchUsage()
+        fetchUsage(1)
     }, [])
+
+    const handleLoadMore = () => {
+        if (!loadingMore && hasMore) {
+            fetchUsage(page + 1)
+        }
+    }
 
     const handleRecharge = (planName: string, amount: number) => {
         toast.info(`Redirecting to our secure WhatsApp payment desk for ${planName}...`)
@@ -109,7 +130,7 @@ export default function UsagePage() {
                     </div>
                     
                     <button
-                        onClick={fetchUsage}
+                        onClick={() => fetchUsage(1)}
                         className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer"
                     >
                         <RefreshCw size={14} /> Refresh Balance
@@ -137,7 +158,7 @@ export default function UsagePage() {
                                     {usage.isUnlimited ? '∞' : (usage.credits || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                                 </h2>
                                 <span className="text-indigo-200/90 text-sm font-bold block">
-                                    {usage.isUnlimited ? 'Unlimited Account Plan' : `≈ ₹ ${(usage.credits / 10).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR`}
+                                    {usage.isUnlimited ? 'Unlimited Account Plan' : `≈ ₹ ${(usage.credits).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR`}
                                 </span>
                             </div>
                             <div className="relative z-10 pt-4 border-t border-white/10 text-xs text-indigo-200/80 font-medium">
@@ -151,9 +172,9 @@ export default function UsagePage() {
                             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Top-Up Credit Packages</h3>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 {[
-                                    { name: 'Starter Pack', amount: 2000, credits: 20000, desc: 'For growing campaigns', color: 'border-slate-200' },
-                                    { name: 'Growth Pack', amount: 5000, credits: 50000, desc: 'Calling & manual chat combo', color: 'border-indigo-600 ring-2 ring-indigo-600/10 scale-102', recommended: true },
-                                    { name: 'Enterprise Pack', amount: 10000, credits: 100000, desc: 'High volume voice calling', color: 'border-slate-200' }
+                                    { name: 'Starter Pack', amount: 2000, credits: 2000, desc: 'For growing campaigns', color: 'border-slate-200' },
+                                    { name: 'Growth Pack', amount: 5000, credits: 5000, desc: 'Calling & manual chat combo', color: 'border-indigo-600 ring-2 ring-indigo-600/10 scale-102', recommended: true },
+                                    { name: 'Enterprise Pack', amount: 10000, credits: 10000, desc: 'High volume voice calling', color: 'border-slate-200' }
                                 ].map((pkg, idx) => (
                                     <div 
                                         key={idx} 
@@ -192,24 +213,38 @@ export default function UsagePage() {
                         </div>
                     </div>
 
-                    {/* Credits rates information banner */}
-                    <div className="bg-slate-900 text-white p-6 rounded-[2rem] border border-slate-800 shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                        <div className="z-10 max-w-2xl">
-                            <h4 className="text-sm font-extrabold tracking-wide uppercase text-indigo-400 flex items-center gap-1.5 mb-1">
-                                <ShieldCheck size={16} /> Live Billing Structure Active
-                            </h4>
-                            <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                                Prepaid billing calculates cost values dynamically. AI text and image generation are charged based on token inputs. Outbound Voice Calls are billed per minute based on actual Twilio carrier cost plus speech/LLM engine runtimes. WhatsApp messages incur a micro-infra process rate.
-                            </p>
+                    {/* Premium Rate Card Widget */}
+                    <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] border border-slate-800 shadow-xl relative overflow-hidden">
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.15),transparent_50%)] pointer-events-none" />
+                        <div className="relative z-10 flex items-center gap-2 mb-6">
+                            <ShieldCheck className="text-indigo-400" size={20} />
+                            <h3 className="text-sm font-black uppercase tracking-wider text-indigo-400">Prepaid Usage Rate Card</h3>
                         </div>
-                        <div className="z-10 flex gap-4 text-xs font-bold shrink-0">
-                            <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-2 text-center backdrop-blur-sm">
-                                <span className="text-slate-400 block text-[9px] uppercase tracking-wider mb-0.5">WhatsApp Outbound</span>
-                                <span>2 Credits</span>
+                        <div className="relative z-10 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                            <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
+                                <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold">Voice Call</span>
+                                <span className="text-lg font-black mt-1 block">₹10/min</span>
+                                <span className="text-[9px] text-slate-400 block mt-0.5">Prepaid outbound dials</span>
                             </div>
-                            <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-2 text-center backdrop-blur-sm">
-                                <span className="text-slate-400 block text-[9px] uppercase tracking-wider mb-0.5">Voice Minutes</span>
-                                <span>Actual Cost × 20</span>
+                            <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
+                                <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold">AI Image</span>
+                                <span className="text-lg font-black mt-1 block">₹30/gen</span>
+                                <span className="text-[9px] text-slate-400 block mt-0.5">Image creative builds</span>
+                            </div>
+                            <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
+                                <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold">AI Video</span>
+                                <span className="text-lg font-black mt-1 block">₹250/15s</span>
+                                <span className="text-[9px] text-slate-400 block mt-0.5">AI presenter clips</span>
+                            </div>
+                            <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
+                                <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold">Video Render</span>
+                                <span className="text-lg font-black mt-1 block">₹20/render</span>
+                                <span className="text-[9px] text-slate-400 block mt-0.5">Media edit outputs</span>
+                            </div>
+                            <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm col-span-2 sm:col-span-1">
+                                <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold font-black">Other Tasks</span>
+                                <span className="text-lg font-black mt-1 block">As Per Actual</span>
+                                <span className="text-[9px] text-slate-400 block mt-0.5">Chatbot/Campaigns at 2x cost</span>
                             </div>
                         </div>
                     </div>
@@ -223,7 +258,7 @@ export default function UsagePage() {
                             </div>
                         </div>
 
-                        {(!usage.transactions || usage.transactions.length === 0) ? (
+                        {(transactions.length === 0) ? (
                             <div className="text-center py-16 flex flex-col items-center gap-4">
                                 <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center border border-slate-100">
                                     <Coins className="text-slate-300" size={20} />
@@ -245,7 +280,7 @@ export default function UsagePage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50 text-xs">
-                                        {usage.transactions.map((tx: any) => {
+                                        {transactions.map((tx: any) => {
                                             const isDeduction = tx.amount < 0
                                             return (
                                                 <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors group">
@@ -284,6 +319,27 @@ export default function UsagePage() {
                                         })}
                                     </tbody>
                                 </table>
+
+                                {hasMore && (
+                                    <div className="flex justify-center mt-6">
+                                        <button
+                                            onClick={handleLoadMore}
+                                            disabled={loadingMore}
+                                            className="flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-55"
+                                        >
+                                            {loadingMore ? (
+                                                <>
+                                                    <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                                                    Loading more events...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    Load More Transactions
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

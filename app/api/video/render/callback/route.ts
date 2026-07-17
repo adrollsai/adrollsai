@@ -58,11 +58,42 @@ export async function POST(request: Request) {
                 .eq('id', assetId);
 
             if (isStitch) {
+                // Find sibling tasks sharing this asset_id to know the number of clips generated
+                const { data: siblingTasks } = await supabaseAdmin
+                    .from('video_tasks')
+                    .select('id')
+                    .eq('asset_id', assetId);
+                const taskCount = siblingTasks?.length || 1;
+
                 // Delete all video tasks sharing this asset_id
                 await supabaseAdmin.from('video_tasks').delete().eq('asset_id', assetId);
+
+                // Refund limit
+                try {
+                    const { refundLimit } = await import('@/utils/subscription-server');
+                    await refundLimit(asset.user_id, 'videos');
+                } catch (limErr) {
+                    console.error("Failed to refund videos limit on stitch fail:", limErr);
+                }
+
+                // Refund credits
+                try {
+                    const { addCredits } = await import('@/utils/credits');
+                    await addCredits(supabaseAdmin, asset.user_id, taskCount * 250, 'ai_generation', `Refund: Video stitching failed (${taskCount} clips)`);
+                } catch (refundErr) {
+                    console.error("Failed to refund credits on stitch fail:", refundErr);
+                }
+            } else {
+                // Refund edit render credits
+                try {
+                    const { addCredits } = await import('@/utils/credits');
+                    await addCredits(supabaseAdmin, asset.user_id, 20, 'ai_generation', `Refund: Video render failed`);
+                } catch (refundErr) {
+                    console.error("Failed to refund credits on video render fail:", refundErr);
+                }
             }
 
-            return NextResponse.json({ success: true, message: "Asset marked as failed" });
+            return NextResponse.json({ success: true, message: "Asset marked as failed and credits/limit refunded" });
         }
 
         // 3. Handle success - download file from S3 and upload to Cloudflare R2

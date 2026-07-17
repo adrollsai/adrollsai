@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
 import { sendCAPIEvent, callGemini, callGeminiWithUsage } from '@/utils/external-apis'
+import { createOpenAI } from '@ai-sdk/openai'
+import { google } from '@ai-sdk/google'
+import { generateText, tool, stepCountIs } from 'ai'
+import { z } from 'zod'
 import { triggerWelcomeDrip } from '@/utils/whatsapp/drips'
 import { bookAppointment, triggerOutboundCall } from '@/utils/voice-helper'
 import { deductCreditsByCost, calculateLLMCost } from '@/utils/credits'
@@ -139,7 +143,7 @@ export async function POST(request: Request) {
                         // Look up matched profile by personal notification number
                         const { data: profiles } = await supabaseAdmin
                             .from('profiles')
-                            .select('id, role, parent_id, agency_id, business_name, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, ad_account_id')
+                            .select('id, role, parent_id, agency_id, business_name, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, ad_account_id, custom_domain')
                             .not('whatsapp_personal_number', 'is', null);
                             
                         const wabaPhoneId = val.metadata?.phone_number_id || '';
@@ -155,6 +159,56 @@ export async function POST(request: Request) {
                         
                         if (matchedProfile) {
                             console.log(`🤖 MATCHED PROFILE: ${matchedProfile.business_name} (User: ${matchedProfile.id})`);
+                            
+                            // Database helper functions for agentic bot tools (declared as const to avoid block-scope syntax issues)
+                            const dbSearchLeads = async (userId: string, query: string) => {
+                                const { data: matchedLeads } = await supabaseAdmin
+                                    .from('leads')
+                                    .select('id, name, phone, email, pipeline_stage, remarks, source, created_at')
+                                    .eq('user_id', userId)
+                                    .or(`name.ilike.%${query}%,email.ilike.%${query}%,phone.ilike.%${query}%`);
+                                return matchedLeads || [];
+                            };
+
+                            const dbGetLeadDetails = async (userId: string, leadId: string) => {
+                                const { data: lead } = await supabaseAdmin
+                                    .from('leads')
+                                    .select('id, name, phone, email, pipeline_stage, remarks, source, created_at')
+                                    .eq('user_id', userId)
+                                    .eq('id', leadId)
+                                    .maybeSingle();
+                                return lead || null;
+                            };
+
+                            const dbGetLeadWhatsAppHistory = async (userId: string, leadId: string) => {
+                                const { data: chat } = await supabaseAdmin
+                                    .from('whatsapp_chats')
+                                    .select('id')
+                                    .eq('user_id', userId)
+                                    .eq('lead_id', leadId)
+                                    .maybeSingle();
+
+                                if (!chat) return [];
+
+                                const { data: messages } = await supabaseAdmin
+                                    .from('whatsapp_messages')
+                                    .select('direction, message_text, created_at')
+                                    .eq('chat_id', chat.id)
+                                    .order('created_at', { ascending: false })
+                                    .limit(20);
+
+                                return messages ? messages.reverse() : [];
+                            };
+
+                            const dbGetLeadsByStage = async (userId: string, stage: string) => {
+                                const { data: leads } = await supabaseAdmin
+                                    .from('leads')
+                                    .select('id, name, phone, email, pipeline_stage, created_at')
+                                    .eq('user_id', userId)
+                                    .eq('pipeline_stage', stage)
+                                    .limit(10);
+                                return leads || [];
+                            };
                             
                             // Process and wait to ensure Vercel does not freeze execution before completion
                             await (async () => {
@@ -211,11 +265,56 @@ export async function POST(request: Request) {
                                         .select('title, price, status, property_type')
                                         .eq('user_id', matchedProfile.id)
                                         .limit(10);
-                                        
-                                    const { data: leads } = await supabaseAdmin
-                                        .from('leads')
-                                        .select('name, pipeline_stage, created_at, campaign_id')
-                                        .eq('user_id', matchedProfile.id);
+                                                   // Smart lead search check
+                                     let matchedLeadsText = '';
+                                     let leadsList: any[] = [];
+                                     try {
+                                         // 1. Fetch basic leads list (up to 500 leads) for fallback/fuzzy match
+                                         const { data: listData } = await supabaseAdmin
+                                             .from('leads')
+                                             .select('id, name, phone, email')
+                                             .eq('user_id', matchedProfile.id)
+                                             .order('created_at', { ascending: false })
+                                             .limit(500);
+                                         leadsList = listData || [];
+
+                                         // 2. Extract keywords to perform a database-side ilike query
+                                         const searchTerms = messageText
+                                             .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "")
+                                             .split(/\s+/)
+                                             .filter((word: string) => word.length > 2 && !['lead', 'info', 'details', 'who', 'show', 'find', 'search', 'get', 'about', 'the', 'for', 'this', 'that', 'with', 'from', 'status', 'stage', 'contact', 'hello', 'greetings', 'status', 'hi', 'hey', 'help', 'menu', 'tell', 'want'].includes(word.toLowerCase()));
+
+                                         if (searchTerms.length > 0) {
+                                             // Search leads by name or email or phone matching the terms
+                                             let leadSearchQuery = supabaseAdmin
+                                                 .from('leads')
+                                                 .select('id, name, phone, email, pipeline_stage, remarks, source, created_at')
+                                                 .eq('user_id', matchedProfile.id);
+                                             
+                                             const orConditions = searchTerms.map((term: string) => `name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%`).join(',');
+                                             leadSearchQuery = leadSearchQuery.or(orConditions);
+                                             
+                                             const { data: matchedLeads } = await leadSearchQuery.limit(5);
+                                             if (matchedLeads && matchedLeads.length > 0) {
+                                                 matchedLeadsText = `\nMatched Leads details found in database:\n` + matchedLeads.map((l: any) => {
+                                                     const leadLink = `https://app.nobogent.com/dashboard/crm/${l.id}`;
+                                                     return `- Name: ${l.name}
+  Phone: ${l.phone || 'N/A'}
+  Email: ${l.email || 'N/A'}
+  Stage: ${l.pipeline_stage || 'New'}
+  Source: ${l.source || 'N/A'}
+  Created: ${new Date(l.created_at).toLocaleString()}
+  Remarks: ${l.remarks || 'None'}
+  Link to Lead: ${leadLink}`;
+                                                 }).join('\n\n');
+                                             }
+                                         }
+                                     } catch (errSearch) {
+                                         console.error("❌ Failed to search leads for context:", errSearch);
+                                     }
+                                     // Duplicate query removed:
+                                     const leads: any[] = [];
+                                     if (false) console.log(leads);
                                         
                                     let campaignsContext = '';
                                     let facebookToken = matchedProfile.facebook_token;
@@ -381,7 +480,6 @@ ${systemWideStats}
                                             console.error("❌ Failed to fetch chat history:", histErr);
                                         }
                                     }
-
                                     const botPrompt = `You are "Nobogent AI Assistant", a smart personal assistant for the Nobogent CRM and ads dashboard.
 You are communicating via WhatsApp with the business owner/user.
 
@@ -391,30 +489,108 @@ ${systemContext}
 Recent Conversation History:
 ${chatHistoryText || "No previous messages."}
 
-The user's query: "${messageText}"
-
 IMPORTANT RULES:
 - Always use "Dashboard Results" as the primary campaign result/lead count (this matches the Meta Ads Manager results column). Do NOT sum the metrics inside "Actions Breakdown" unless explicitly asked to provide other specific events breakdown. Use "Dashboard Results" directly for any questions about campaign results or lead counts!
-- Answer their query accurately using ONLY the data provided above. Do NOT invent, estimate, or hallucinate any fields (like quantity, stock count, revenue, etc.) that are not explicitly present in the context data.
-- If a field is not available in the data, say "not available" instead of guessing.
-- Keep formatting neat and clean for WhatsApp (use asterisks for bolding).
-- Keep the response friendly but professional.
-- Do NOT mention internal database names, table names, or ID strings.
+- Answer their query accurately using ONLY the data provided or returned by tools. Do NOT invent, estimate, or hallucinate any fields.
+- If the user asks about a lead (e.g. details, stage, what conversation happened, contacts, etc.), you MUST call the relevant tool (search_leads, get_lead_details, or get_lead_whatsapp_history) to retrieve the active, fresh data from the database.
+- If they misspelled a name (e.g. "Hrsh" for "Harsh" or "Jne" for "Jane"), search the "Basic Leads Directory" or call search_leads with your best guess and fetch the correct details.
+- Always output the full lead details if requested and provide the Link to Lead exactly as "https://app.nobogent.com/dashboard/crm/{id}" where {id} is the lead's UUID.
+- ALWAYS use the host "app.nobogent.com" for lead links (i.e. "https://app.nobogent.com/dashboard/crm/{id}"). Do NOT use custom domains.
+- Do NOT mention internal database names, table names, or ID strings (except in the Link to Lead URLs).
 - Identify campaign conversions/results based on their Conversions/Actions metric:
   * For website lead campaigns: look for "offsite_conversion.fb_pixel_lead" or similar event value.
   * For instant form lead campaigns: look for "lead" or "results.lead" event value.
   * For click-to-WhatsApp/messaging campaigns: look for messaging actions (e.g. "onsite_conversion.messaging_first_reply", "onsite_conversion.messaging_conversation_started_7d") value.
   * If a campaign lists "None" or has no conversions under the requested type, state "0" or "None".`;
 
+                                    const tools = {
+                                      search_leads: tool({
+                                        description: 'Search for leads in the database by name, phone number, or email. Returns matching leads.',
+                                        inputSchema: z.object({
+                                          searchQuery: z.string().describe('The name, phone number, or email to search for.')
+                                        }),
+                                        execute: async (args: { searchQuery: string }) => {
+                                          return await dbSearchLeads(matchedProfile.id, args.searchQuery);
+                                        }
+                                      }),
+                                      get_lead_details: tool({
+                                        description: 'Fetch full detailed profile of a specific lead by their lead UUID.',
+                                        inputSchema: z.object({
+                                          leadId: z.string().describe('The UUID of the lead.')
+                                        }),
+                                        execute: async (args: { leadId: string }) => {
+                                          return await dbGetLeadDetails(matchedProfile.id, args.leadId);
+                                        }
+                                      }),
+                                      get_lead_whatsapp_history: tool({
+                                        description: 'Retrieve WhatsApp chat history (last 20 messages) for a specific lead by their lead UUID.',
+                                        inputSchema: z.object({
+                                          leadId: z.string().describe('The UUID of the lead.')
+                                        }),
+                                        execute: async (args: { leadId: string }) => {
+                                          return await dbGetLeadWhatsAppHistory(matchedProfile.id, args.leadId);
+                                        }
+                                      }),
+                                      get_leads_by_stage: tool({
+                                        description: 'Fetch leads in a specific pipeline stage.',
+                                        inputSchema: z.object({
+                                          stageName: z.string().describe("The name of the pipeline stage (e.g. 'New', 'Contacted', 'Won', 'Lost').")
+                                        }),
+                                        execute: async (args: { stageName: string }) => {
+                                          return await dbGetLeadsByStage(matchedProfile.id, args.stageName);
+                                        }
+                                      })
+                                    };
+
                                     let botResponseText = "Hello! I received your message, but I encountered an error while processing your request. Please try again.";
                                     let ownerUsage = { promptTokens: 0, completionTokens: 0, modelName: 'gemini-3.5-flash' };
+                                    
                                     try {
-                                        const genRes = await callGeminiWithUsage(botPrompt);
-                                        botResponseText = genRes.text;
-                                        ownerUsage = genRes;
+                                        // 1. Fetch super admin model selection
+                                        let selectedModel = 'gemini';
+                                        try {
+                                            const { data: adminProfs } = await supabaseAdmin
+                                                .from('profiles')
+                                                .select('selected_text_llm')
+                                                .eq('role', 'super_admin')
+                                                .limit(1);
+                                            if (adminProfs && adminProfs.length > 0) {
+                                                selectedModel = adminProfs[0].selected_text_llm || 'gemini';
+                                            }
+                                        } catch (errAdmin) {
+                                            console.error("❌ Failed to query super_admin model toggle:", errAdmin);
+                                        }
+
+                                        let modelProvider: any;
+                                        if (selectedModel === 'deepseek') {
+                                            console.log("🤖 Routing WhatsApp bot query to DEEPSEEK model");
+                                            const deepseek = createOpenAI({
+                                                baseURL: 'https://api.deepseek.com/v1',
+                                                apiKey: process.env.DEEPSEEK_API_KEY || ''
+                                            });
+                                            modelProvider = deepseek('deepseek-v4-flash');
+                                        } else {
+                                            console.log("🤖 Routing WhatsApp bot query to GEMINI model");
+                                            modelProvider = google('gemini-3.5-flash');
+                                        }
+
+                                        const { text, usage } = await generateText({
+                                            model: modelProvider,
+                                            system: botPrompt,
+                                            prompt: `User query: "${messageText}"`,
+                                            tools: tools,
+                                            stopWhen: stepCountIs(5)
+                                        });
+
+                                        botResponseText = text;
+                                        ownerUsage = {
+                                            promptTokens: usage?.inputTokens || 0,
+                                            completionTokens: usage?.outputTokens || 0,
+                                            modelName: selectedModel === 'deepseek' ? 'deepseek-v4-flash' : 'gemini-3.5-flash'
+                                        };
                                     } catch (llmErr: any) {
-                                        console.error("❌ Gemini response generation failed:", llmErr);
-                                        botResponseText = "Hi! I matched your number, but I had trouble fetching the Gemini AI response. Please check back shortly.";
+                                        console.error("❌ Agentic LLM response generation failed:", llmErr);
+                                        botResponseText = "Hi! I matched your number, but I had trouble processing the request. Please check back shortly.";
                                     }
                                     
                                     // Dynamic billing for owner query

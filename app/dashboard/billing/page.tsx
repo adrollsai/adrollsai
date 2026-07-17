@@ -194,6 +194,42 @@ export default function BillingPage() {
                     </div>
                 </div>
 
+                {/* Rate Card Grid */}
+                <div className="bg-white rounded-[2.5rem] border border-slate-200 p-6 sm:p-8 shadow-sm mb-12 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50/40 rounded-full blur-2xl pointer-events-none" />
+                    <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-4">
+                        <Sparkles className="text-blue-600 animate-pulse" size={20} />
+                        <h3 className="text-sm font-black uppercase tracking-wider text-slate-800">Prepaid Usage Rate Card</h3>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                        <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100/85 transition-all hover:bg-slate-100/30">
+                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Voice Calls</span>
+                            <span className="text-base font-black text-slate-800 mt-1 block">₹10/min</span>
+                            <span className="text-[9px] text-slate-400 block mt-0.5 font-medium">Prepaid outbound dials</span>
+                        </div>
+                        <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100/85 transition-all hover:bg-slate-100/30">
+                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">AI Images</span>
+                            <span className="text-base font-black text-slate-800 mt-1 block">₹30/gen</span>
+                            <span className="text-[9px] text-slate-400 block mt-0.5 font-medium">Image creative builds</span>
+                        </div>
+                        <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100/85 transition-all hover:bg-slate-100/30">
+                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">AI Videos</span>
+                            <span className="text-base font-black text-slate-800 mt-1 block">₹250/15s</span>
+                            <span className="text-[9px] text-slate-400 block mt-0.5 font-medium">AI presenter clips</span>
+                        </div>
+                        <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100/85 transition-all hover:bg-slate-100/30">
+                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Video Renders</span>
+                            <span className="text-base font-black text-slate-800 mt-1 block">₹20/render</span>
+                            <span className="text-[9px] text-slate-400 block mt-0.5 font-medium">Media edit outputs</span>
+                        </div>
+                        <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100/85 transition-all hover:bg-slate-100/30 col-span-2 sm:col-span-1">
+                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block font-black">Other Tasks</span>
+                            <span className="text-base font-black text-slate-800 mt-1 block">As Per Actual</span>
+                            <span className="text-[9px] text-slate-400 block mt-0.5 font-medium">Chatbot/Campaigns at 2x cost</span>
+                        </div>
+                    </div>
+                </div>
+
                 {/* Subscriptions Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch mb-12">
                     {planTiers.map((tier) => {

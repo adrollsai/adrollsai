@@ -136,6 +136,12 @@ export async function POST(req: Request) {
                         
                         // REFUND: Task failed on Kie AI's side (e.g. content policy or server error)
                         await refundLimit(userId, 'images');
+                        try {
+                            const { addCredits } = await import('@/utils/credits');
+                            await addCredits(supabaseAdmin, userId, 30, 'ai_generation', 'Refund: AI Image Generation failed (Design server error)');
+                        } catch (refundErr) {
+                            console.error("Failed to refund credits in background worker:", refundErr);
+                        }
 
                         // Update placeholder to Failed so user knows it won't finish
                         if (placeholder?.id) {
@@ -150,6 +156,13 @@ export async function POST(req: Request) {
 
                 if (!finalImageUrl) {
                      console.error("[Worker] Polling finished but no finalImageUrl found.");
+                     await refundLimit(userId, 'images');
+                     try {
+                         const { addCredits } = await import('@/utils/credits');
+                         await addCredits(supabaseAdmin, userId, 30, 'ai_generation', 'Refund: AI Image Generation failed (Timeout)');
+                     } catch (refundErr) {
+                         console.error("Failed to refund credits on timeout in background worker:", refundErr);
+                     }
                      if (placeholder?.id) {
                          await supabaseAdmin.from('assets').update({ 
                              status: 'Failed',

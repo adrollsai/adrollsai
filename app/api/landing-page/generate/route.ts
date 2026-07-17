@@ -115,7 +115,7 @@ export async function POST(request: Request) {
         } = body
 
         // Check credit balance dynamically (must have enough credits for generation / editing)
-        const requiredCredits = 20 // default minimum for copywriting/editing/analysis (image generation bypassed as requested)
+        const requiredCredits = 1 // default minimum for copywriting/editing/analysis (image generation bypassed as requested)
 
         const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, requiredCredits)
         if (!hasCredits) {

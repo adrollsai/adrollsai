@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { deductCreditsByCost } from '@/utils/credits'
+import { deductCreditsByCost, deductCredits } from '@/utils/credits'
 
 // Bypassing RLS with Admin Key
 const supabaseAdmin = createClient(
@@ -110,12 +110,13 @@ export async function POST(req: Request) {
     console.log(`[BILL-CALL] Call Billing Summary: Duration=${durationMinutes} min(s), Total INR Cost=${finalCostInr.toFixed(4)}, Method: ${billingMethod}`);
 
     // 4. Deduct the credits
-    const success = await deductCreditsByCost(
+    const creditsToDeduct = durationMinutes * 10
+    const success = await deductCredits(
       supabaseAdmin,
       userId,
-      finalCostInr,
+      creditsToDeduct,
       'calling',
-      `Outbound call to ${leadName} (${leadPhone}) - Duration: ${durationMinutes} min(s) [${billingMethod}]`
+      `Outbound call to ${leadName} (${leadPhone}) - Duration: ${durationMinutes} min(s) (Rs. 10.00/min) [Carrier Cost: Rs. ${finalCostInr.toFixed(2)}]`
     )
 
     return NextResponse.json({ success, finalCostInr, durationMinutes, billingMethod })
