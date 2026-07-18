@@ -12,7 +12,7 @@ export async function POST(req: Request) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        const { url, type } = await req.json();
+        const { url, type, assetId, propertyId, customInstructions } = await req.json();
         if (!url) return NextResponse.json({ error: 'No asset URL provided' }, { status: 400 });
 
         console.log(`[Generate Caption] Fetching and analyzing asset: ${url} (${type})`);
@@ -29,11 +29,30 @@ export async function POST(req: Request) {
         // Fetch business context
         const { data: profile } = await supabase.from('profiles').select('business_name, contact_number').eq('id', user.id).single();
 
+        // Fetch product context if propertyId is provided
+        let propertyContext = "";
+        if (propertyId) {
+            const { data: prop } = await supabase.from('properties').select('title, description, price, location').eq('id', propertyId).single();
+            if (prop) {
+                propertyContext = `
+Target Product/Property Details:
+- Title: ${prop.title || ''}
+- Description: ${prop.description || ''}
+- Price: ${prop.price || ''}
+- Location: ${prop.location || ''}
+`;
+            }
+        }
+
         const prompt = `You are a world-class Direct Response Copywriter and Social Media Expert.
 Analyze the provided ${type === 'video' ? 'video' : 'image'} and write high-converting copy for it.
 
 Business: "${profile?.business_name || 'Our Company'}"
 Contact: "${profile?.contact_number || 'DM for details'}"
+
+${propertyContext}
+
+${customInstructions ? `Custom Copywriting Instructions (MUST FOLLOW STRICTLY):\n"${customInstructions}"\n` : ''}
 
 You must generate exactly three pieces of copy:
 1. "headline": A short, catchy, attention-grabbing headline (maximum 40 characters) suitable for ads. Do NOT use markdown or hashtags here.
@@ -66,6 +85,34 @@ Output ONLY a JSON object:
 
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         const captions = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+
+        // Update database record for the asset if assetId or url is matched
+        const targetAssetId = assetId;
+        let finalAssetId = targetAssetId;
+
+        if (!finalAssetId) {
+            // Fallback: lookup by URL
+            const { data: matchedAsset } = await supabase.from('assets').select('id').eq('url', url).limit(1).maybeSingle();
+            if (matchedAsset) finalAssetId = matchedAsset.id;
+        }
+
+        if (finalAssetId) {
+            const { data: asset } = await supabase.from('assets').select('metadata').eq('id', finalAssetId).single();
+            const existingMetadata = asset?.metadata || {};
+            const updatedMetadata = {
+                ...existingMetadata,
+                headline: captions.headline,
+                primary_text: captions.primary_text
+            };
+
+            await supabase
+                .from('assets')
+                .update({
+                    caption: captions.social_post_description,
+                    metadata: updatedMetadata
+                })
+                .eq('id', finalAssetId);
+        }
 
         return NextResponse.json({ success: true, captions });
 

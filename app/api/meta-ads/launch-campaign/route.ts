@@ -86,6 +86,7 @@ export async function POST(request: Request) {
         data.adCopyJson = formData.get('adCopy')?.toString();
         data.adCopiesJson = formData.get('adCopies')?.toString();
         data.whatsappNumber = formData.get('whatsappNumber')?.toString();
+        data.customInstructions = formData.get('customInstructions')?.toString();
 
         const ageMinVal = formData.get('ageMin');
         if (ageMinVal) data.ageMin = parseInt(ageMinVal.toString());
@@ -292,7 +293,8 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         businessName: data.business_name || "Our Business",
         contactNumber: data.contact_number || "",
         currency,
-        logoUrl: targetProfile?.logo_url || null
+        logoUrl: targetProfile?.logo_url || null,
+        customInstructions: data.customInstructions || null
     };
 
     let jobId = null;

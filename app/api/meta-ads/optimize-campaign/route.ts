@@ -110,22 +110,36 @@ export async function POST(request: Request) {
         let realPropId = null;
         let matchedProperty = null;
         try {
-            const { data: properties } = await supabaseAdmin
-                .from('properties')
-                .select('id, title, description')
-                .eq('user_id', targetUserId);
-            
-            if (properties && properties.length > 0) {
-                if (campaignName) {
-                    matchedProperty = properties.find(p => 
-                        p.title && campaignName.toLowerCase().includes(p.title.toLowerCase())
-                    );
+            if (body.propertyId) {
+                const { data: prop } = await supabaseAdmin
+                    .from('properties')
+                    .select('id, title, description')
+                    .eq('id', body.propertyId)
+                    .single();
+                if (prop) {
+                    matchedProperty = prop;
+                    realPropId = prop.id;
                 }
-                // Fallback to first property if no direct title match
-                if (!matchedProperty) {
-                    matchedProperty = properties[0];
+            }
+
+            if (!matchedProperty) {
+                const { data: properties } = await supabaseAdmin
+                    .from('properties')
+                    .select('id, title, description')
+                    .eq('user_id', targetUserId);
+                
+                if (properties && properties.length > 0) {
+                    if (campaignName) {
+                        matchedProperty = properties.find(p => 
+                            p.title && campaignName.toLowerCase().includes(p.title.toLowerCase())
+                        );
+                    }
+                    // Fallback to first property if no direct title match
+                    if (!matchedProperty) {
+                        matchedProperty = properties[0];
+                    }
+                    realPropId = matchedProperty.id;
                 }
-                realPropId = matchedProperty.id;
             }
         } catch (e: any) {
             console.error("[Optimize] Failed to fetch/match property:", e.message);
@@ -226,11 +240,12 @@ export async function POST(request: Request) {
             
             IMAGE PROMPT GUIDELINES (FOR VARIATIONS):
             - HYPER-REALISM: The images must look like professional photographs taken with a high-end camera. No "AI sheen".
-            - NATURAL LIGHTING: Use soft, natural light.
-            - PEOPLE: ALWAYS include high-quality, "super beautiful" people who look successful and aspirational.
+            - BRIGHT NATURAL LIGHTING: The visual concepts MUST default to a bright, airy, clean light theme with high-exposure natural morning sunlight and clear bright blue skies. You MUST NOT suggest golden hour, twilight, sunset, evening, or dark interior glow themes unless the user strategy notes explicitly ask for it.
+            - PEOPLE: ALWAYS suggest close-up shots of fully visible, beautiful, photorealistic people showing happy, smiling expressions. Avoid tiny or distant human figures.
             - ETHNICITY: Match the ethnicity to the business context (${profile.business_name || 'Global'}).
-            - TYPOGRAPHY & TEXT DENSITY: Use minimal, high-impact text. Do NOT clutter the image with long sentences. Include ONLY the Business Name and the most important "Hook". Ensure all text is large, bold, and easily readable on a small mobile screen.
+            - TYPOGRAPHY & TEXT DENSITY: Make the ad creative highly informative and descriptive. Instruct the model to include clear, clean text overlays: a bold, benefit-driven primary headline, a sub-headline detailing key property specs, prices or features (e.g. BHK size), and display the business logo/branding and contact information clearly.
             - HOOK & HIERARCHY: Use a clear visual hook that immediately draws the eye.
+            - VISUAL CONSISTENCY: The generated visuals must keep the structure, design, and architecture extremely close and visually consistent with the actual property photos fed as input. Avoid creating random, unrelated fantasy buildings.
             - DESIGN: Describe the composition, lighting, and brand encapsulation for the generator.
             
             IMPORTANT: Use the winning visuals (${imageUrls.length} provided) as your "Visual DNA". Your image_prompt should describe how to evolve these winners into premium, attention-grabbing agency-grade creatives.
@@ -270,8 +285,8 @@ export async function POST(request: Request) {
         if (step === 'generate') {
             // Robust baseUrl for local/production loopback
             const host = request.headers.get('host') || 'localhost:3000';
-            const protocol = host.includes('localhost') ? 'http' : 'https';
-            const baseUrl = `${protocol}://${host}`;
+            const isLocal = host.includes('localhost') || host.includes('local.nobogent.com') || host.includes('127.0.0.1');
+            const baseUrl = isLocal ? 'http://127.0.0.1:3000' : `https://${host}`;
             
             const batchId = crypto.randomUUID();
 
@@ -340,6 +355,8 @@ export async function POST(request: Request) {
             Contact: ${profile.contact_number || 'Contact Us'}
             Existing Captions (Context): ${captions ? captions.join(' | ') : 'None provided'}
             
+            ${userInstructions ? `Custom Copywriting Instructions (MUST FOLLOW STRICTLY):\n"${userInstructions}"\n` : ''}
+
             CRITICAL RULES:
             1. Apply Alex Hormozi's marketing frameworks: Emphasize "Value Stacking", create "Grand Slam Offers", use risk reversal, and write strong, emotionally resonant hooks.
             2. MANDATORY: YOU MUST ALWAYS INCLUDE THE BUSINESS NAME (${profile.business_name || 'Our Company'}) AND CONTACT INFORMATION (${profile.contact_number || 'Contact Us'}) IN EVERY SINGLE VARIATION.

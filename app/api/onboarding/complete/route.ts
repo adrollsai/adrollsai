@@ -219,8 +219,8 @@ AVOID
         // 5. Submit 3 Image Tasks to Kie.ai (using 4:5 aspect ratio)
         console.log("[Onboarding API] Submitting 3 image tasks to Kie.ai...");
         const host = request.headers.get('host') || 'localhost:3000';
-        const protocol = host.includes('localhost') ? 'http' : 'https';
-        const baseUrl = `${protocol}://${host}`;
+        const isLocal = host.includes('localhost') || host.includes('local.nobogent.com') || host.includes('127.0.0.1');
+        const baseUrl = isLocal ? 'http://127.0.0.1:3000' : `https://${host}`;
 
         for (let i = 0; i < imagePrompts.length; i++) {
             const prompt = imagePrompts[i];

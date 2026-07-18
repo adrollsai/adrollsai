@@ -15,7 +15,7 @@ export type UploadedCreative = {
     videoId?: string;
 };
 
-async function generateAICampaignCopy(product: any, businessName: string, contactNumber: string): Promise<{ primary_text: string; headline: string; description: string }> {
+async function generateAICampaignCopy(product: any, businessName: string, contactNumber: string, customInstructions?: string): Promise<{ primary_text: string; headline: string; description: string }> {
     try {
         const { callGemini } = await import('./external-apis');
         
@@ -30,6 +30,8 @@ Product Details:
 - Features: Bed: ${product.beds || 'N/A'}, Bath: ${product.baths || 'N/A'}, Area: ${product.area || 'N/A'}
 - Business Name: ${businessName || 'Our Agency'}
 - Contact Number: ${contactNumber || ''}
+
+${customInstructions ? `Custom Copywriting Instructions (MUST FOLLOW STRICTLY):\n"${customInstructions}"\n` : ''}
 
 Task:
 Generate a compelling, attractive, and highly engaging real estate ad copy and headline for this property.
@@ -149,7 +151,8 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             businessName,
             contactNumber,
             currency,
-            logoUrl
+            logoUrl,
+            customInstructions
         } = payload;
 
         const isWebsiteCampaign = campaignType === 'website_conversion';
@@ -394,7 +397,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             let aiCopy = null;
             if (product) {
                 logToFile(`[Processor] Generating AI copy for Creative ${i+1} using Product: ${product.title}`);
-                aiCopy = await generateAICampaignCopy(product, businessName, contactNumber);
+                aiCopy = await generateAICampaignCopy(product, businessName, contactNumber, customInstructions);
             }
             
             const specificCopy = adCopies && adCopies[i] ? adCopies[i] : null;

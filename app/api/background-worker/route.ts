@@ -23,8 +23,8 @@ export async function POST(req: Request) {
         const { userId, propId, propertyTitle, payload, existingTaskId, existingCaption, batchId } = body;
 
         const host = req.headers.get('host') || 'localhost:3000';
-        const protocol = host.includes('localhost') ? 'http' : 'https';
-        const baseUrl = `${protocol}://${host}`; 
+        const isLocal = host.includes('localhost') || host.includes('local.nobogent.com') || host.includes('127.0.0.1');
+        const baseUrl = isLocal ? 'http://127.0.0.1:3000' : `https://${host}`; 
         const cookieHeader = req.headers.get('cookie') || '';
 
         let taskId = existingTaskId;
@@ -77,7 +77,8 @@ export async function POST(req: Request) {
             status: 'Processing',
             url: 'https://designs.adrolls.in/processing', // Temporary URL to satisfy NOT NULL constraint
             caption: generatedCaption,
-            metadata: body.payload?.socialCaption ? { social_caption: body.payload.socialCaption } : {}
+            metadata: body.payload?.socialCaption ? { social_caption: body.payload.socialCaption } : {},
+            created_at: new Date().toISOString()
         }).select().single();
 
         if (placeholderError) {
@@ -130,7 +131,7 @@ export async function POST(req: Request) {
                             console.log("[Worker] Found Image URL:", finalImageUrl);
                             break;
                         }
-                    } else if (status === 'failed' || status === 'error') {
+                    } else if (status === 'failed' || status === 'error' || status === 'fail') {
                         const failReason = checkData.failMsg || checkData.error || checkData.msg || "Unknown Kie.ai Error";
                         console.error(`[Worker] Generation Failed for taskId ${taskId}:`, failReason);
                         

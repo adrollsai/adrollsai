@@ -189,7 +189,9 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
     let finalImageUrl = '';
     const taskId = kieResult.taskId;
     let attempts = 0;
-    const baseUrl = new URL(request.url).origin;
+    const host = new URL(request.url).host;
+    const isLocal = host.includes('localhost') || host.includes('local.nobogent.com') || host.includes('127.0.0.1');
+    const baseUrl = isLocal ? 'http://127.0.0.1:3000' : new URL(request.url).origin;
 
     while (attempts < 30) {
       attempts++;
@@ -215,7 +217,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
           finalImageUrl = checkData.data.resultUrl;
           break;
         }
-      } else if (checkData.data && checkData.data.state === 'failed') {
+      } else if (checkData.data && (checkData.data.state === 'failed' || checkData.data.state === 'fail')) {
         throw new Error('Image generation task failed internally');
       }
     }

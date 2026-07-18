@@ -36,6 +36,7 @@ export default function AdsPage() {
   const impersonateId = searchParams.get('impersonate')
   const supabase = createClient()
   const fileInputRef = useRef<HTMLInputElement>(null) 
+  const optimizerFileInputRef = useRef<HTMLInputElement>(null)
   
   // Data States
   const [loading, setLoading] = useState(true)
@@ -328,6 +329,7 @@ export default function AdsPage() {
     pageId: '', 
     linkUrl: 'https://adrolls.in', 
     optimizeForConversions: false,
+    customInstructions: '',
   })
 
   // Mandatory Product Selection for Campaign Launch
@@ -968,9 +970,9 @@ export default function AdsPage() {
           isOpen: true,
           mode: 'optimize',
           campaign,
-          status: 'setup',
-          step: 1,
-          logs: [{ id: Date.now(), text: `Configure your optimization strategy for ${campaign.name}`, type: 'system' }],
+          status: 'picking',
+          step: 2,
+          logs: [{ id: Date.now(), text: `Select creatives and map to inventory products for ${campaign.name}`, type: 'system' }],
           variations: [],
           selectedVariations: [],
           winningImageUrls: [],
@@ -980,7 +982,7 @@ export default function AdsPage() {
           generationCount: 5,
           style: 'hyper',
           customInstructions: '',
-          isManual: false
+          isManual: true
       });
   }
 
@@ -1323,9 +1325,26 @@ export default function AdsPage() {
                   // Persist final edits to library
                   for (const v of selectedAssets) {
                       if (v.asset_id) {
-                          const fullCaption = `${v.headline}\n\n${v.primary_text}${v.description ? `\n\n${v.description}` : ''}`;
-                          supabase.from('assets').update({ caption: fullCaption }).eq('id', v.asset_id).then();
-                          setAssets(curr => curr.map(asset => asset.id === v.asset_id ? { ...asset, caption: fullCaption } : asset));
+                          // Fetch existing metadata to merge
+                          const { data: assetData } = await supabase.from('assets').select('metadata').eq('id', v.asset_id).single();
+                          const existingMetadata = assetData?.metadata || {};
+                          const updatedMetadata = {
+                              ...existingMetadata,
+                              headline: v.headline || null,
+                              primary_text: v.primary_text || null,
+                              custom_instructions: orchestrator.customInstructions || null
+                          };
+
+                          await supabase.from('assets').update({ 
+                              caption: v.caption || v.primary_text || null,
+                              metadata: updatedMetadata 
+                          }).eq('id', v.asset_id);
+
+                          setAssets(curr => curr.map(asset => asset.id === v.asset_id ? { 
+                              ...asset, 
+                              caption: v.caption || v.primary_text || null,
+                              metadata: updatedMetadata 
+                          } : asset));
                       }
                   }
                   setOrchestrator(prev => ({ ...prev, status: 'success', step: 4, logs: [...prev.logs, { id: Date.now(), text: `Successfully pushed ${data.pushedCount} ads!`, type: 'system' }] }));
@@ -1400,6 +1419,162 @@ export default function AdsPage() {
       const newCreatives = files.map(file => ({ uid: Math.random().toString(36).substr(2, 9), sourceType: 'local' as const, file: file, previewUrl: URL.createObjectURL(file), name: file.name, type: file.type.startsWith('video/') ? 'video' as const : 'image' as const }))
       setSelectedCreatives(prev => [...prev, ...newCreatives])
     }
+  }
+
+  const handleOptimizerLocalFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if(e.target.files) {
+      const files = Array.from(e.target.files)
+      const newVars = files.map(file => {
+          const previewUrl = URL.createObjectURL(file);
+          return {
+              asset_id: null,
+              type: file.type.startsWith('video/') ? 'video' as const : 'image' as const,
+              image_url: previewUrl,
+              url: previewUrl,
+              sourceType: 'local',
+              file: file,
+              headline: '',
+              primary_text: '',
+              description: '',
+              caption: '',
+              title: file.name
+          };
+      });
+      setOrchestrator(prev => {
+          const updated = [...prev.variations, ...newVars];
+          return { ...prev, variations: updated, selectedVariations: updated.map((_, i) => i) };
+      });
+    }
+  }
+
+  const handleGenerateManualCopies = async () => {
+      if (!orchestrator.campaign) return;
+      
+      const selectedCount = orchestrator.variations.length;
+      if (selectedCount === 0) {
+          toast.error("Please select or upload at least one creative.");
+          return;
+      }
+
+      setOrchestrator(prev => ({ 
+          ...prev, 
+          status: 'generating',
+          logs: [...prev.logs, { id: Date.now(), text: `Uploading assets and generating copywriting copies for ${selectedCount} creative(s)...`, type: 'system' }]
+      }));
+
+      try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const impersonateId = urlParams.get('impersonate');
+          
+          // Resolve targetUserId
+          const { data: { user } } = await supabase.auth.getUser();
+          const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user?.id).single();
+          let tUserId = user?.id;
+          if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+              tUserId = (profile?.parent_id || profile?.agency_id) as string;
+          }
+          if (impersonateId) tUserId = impersonateId;
+
+          const updatedVariations = [...orchestrator.variations];
+
+          for (let i = 0; i < updatedVariations.length; i++) {
+              const v = updatedVariations[i];
+              let assetId = v.asset_id;
+              let imageUrl = v.image_url;
+
+              // 1. Upload local file if needed
+              if (v.sourceType === 'local' && v.file) {
+                  toast.info(`Uploading file ${v.title}...`);
+                  const publicUrl = await uploadToR2(v.file, 'campaign_creatives');
+                  
+                  // Insert creative into assets table
+                  const { data: newAsset, error: assetErr } = await supabase
+                      .from('assets')
+                      .insert({
+                          url: publicUrl,
+                          type: v.type || 'image',
+                          user_id: tUserId,
+                          status: 'Active',
+                          property_id: v.mappedProductId || null,
+                          metadata: {
+                              custom_instructions: orchestrator.customInstructions || null
+                          }
+                      })
+                      .select('id')
+                      .single();
+                      
+                  if (assetErr || !newAsset) {
+                      throw new Error(`Failed to save creative: ${assetErr?.message || 'unknown'}`);
+                  }
+                  
+                  assetId = newAsset.id;
+                  imageUrl = publicUrl;
+                  
+                  updatedVariations[i] = {
+                      ...updatedVariations[i],
+                      asset_id: assetId,
+                      image_url: imageUrl,
+                      url: imageUrl,
+                      sourceType: 'asset'
+                  };
+              } else if (v.asset_id && v.mappedProductId) {
+                  // If it's a library asset and mapping has changed, update it in the database
+                  await supabase
+                      .from('assets')
+                      .update({ 
+                          property_id: v.mappedProductId,
+                          metadata: {
+                              ...v.metadata,
+                              custom_instructions: orchestrator.customInstructions || null
+                          }
+                      })
+                      .eq('id', v.asset_id);
+              }
+
+              // 2. Call generate-copy API
+              const copyRes = await fetch(`/api/meta-ads/optimize-campaign${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      campaignId: orchestrator.campaign.id,
+                      campaignName: orchestrator.campaign.name,
+                      step: 'generate-copy',
+                      imageUrls: [imageUrl],
+                      propertyId: v.mappedProductId || undefined,
+                      userInstructions: orchestrator.customInstructions
+                  })
+              });
+              const copyData = await copyRes.json();
+              if (copyData.status === 'success' && copyData.variation) {
+                  updatedVariations[i] = {
+                      ...updatedVariations[i],
+                      headline: copyData.variation.headline || '',
+                      primary_text: copyData.variation.primary_text || '',
+                      description: copyData.variation.description || ''
+                  };
+              } else {
+                  // Fallback if API fails
+                  updatedVariations[i] = {
+                      ...updatedVariations[i],
+                      headline: orchestrator.campaign.name.substring(0, 40),
+                      primary_text: 'Premium deal. Contact us for details!',
+                      description: 'View pricing & details'
+                  };
+              }
+          }
+
+          setOrchestrator(prev => ({
+              ...prev,
+              variations: updatedVariations,
+              selectedVariations: updatedVariations.map((_, idx) => idx),
+              step: 3,
+              status: 'reviewing',
+              logs: [...prev.logs, { id: Date.now(), text: `Generated copywriting copies for ${selectedCount} variations.`, type: 'system' }]
+          }));
+      } catch (err: any) {
+          toast.error("Failed to generate ad copywriting: " + err.message);
+          setOrchestrator(prev => ({ ...prev, status: 'error' }));
+      }
   }
 
   const removeCreative = (uid: string) => {
@@ -1500,7 +1675,11 @@ export default function AdsPage() {
                       url: publicUrl,
                       type: c.type || 'image',
                       user_id: tUserId,
-                      status: 'Active'
+                      status: 'Active',
+                      property_id: c.mappedProductId || null,
+                      metadata: {
+                          custom_instructions: adForm.customInstructions || null
+                      }
                   })
                   .select('id')
                   .single();
@@ -1524,6 +1703,9 @@ export default function AdsPage() {
       }
 
       const formPayload = new FormData();
+      if (adForm.customInstructions) {
+          formPayload.append('customInstructions', adForm.customInstructions);
+      }
       formPayload.append('adAccountId', selectedAdAccountId);
       formPayload.append('facebookToken', facebookToken || '');
       formPayload.append('pageId', adForm.pageId);
@@ -1885,15 +2067,15 @@ export default function AdsPage() {
                   <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 mb-6 relative z-10">
                       {/* STEP INDICATOR */}
                       <div className="flex items-center justify-between mb-8 px-2">
-                          {[1, 2, 3].map((s) => (
+                          {[2, 3].map((s, idx) => (
                               <div key={s} className="flex items-center gap-2">
                                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition-all ${orchestrator.step === s ? 'bg-purple-600 text-white shadow-lg ring-4 ring-purple-100' : orchestrator.step > s ? 'bg-green-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                                      {orchestrator.step > s ? <CheckCircle size={14} /> : s}
+                                      {orchestrator.step > s ? <CheckCircle size={14} /> : (idx + 1)}
                                   </div>
                                   <span className={`text-[10px] font-bold uppercase tracking-widest hidden xs:block ${orchestrator.step === s ? 'text-slate-900' : 'text-slate-400'}`}>
-                                      {s === 1 ? 'Strategy' : s === 2 ? 'Assets' : 'Review'}
+                                      {s === 2 ? 'Assets' : 'Review'}
                                   </span>
-                                  {s < 3 && <div className="w-8 sm:w-12 h-[2px] bg-slate-100 mx-1 sm:mx-2" />}
+                                  {idx < 1 && <div className="w-16 sm:w-24 h-[2px] bg-slate-100 mx-2" />}
                               </div>
                           ))}
                       </div>
@@ -2052,76 +2234,169 @@ export default function AdsPage() {
                                     </div>
                                 ) : (
                                     <>
-                                        <div className="flex justify-between items-center mb-2">
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Select assets for this campaign:</p>
-                                    <div className="flex gap-2">
-                                        {['All', 'image', 'video'].map(f => (
-                                            <button key={f} onClick={() => setAssetFilter(f)} className={`text-[10px] font-bold px-2 py-1 rounded-md transition-colors ${assetFilter === f ? 'bg-purple-100 text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}>{f}</button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-3 gap-3">
-                                    {assets.filter(a => assetFilter === 'All' || a.type === assetFilter).map(a => {
-                                        const isSelected = orchestrator.variations.some(v => v.asset_id === a.id);
-                                        return (
-                                            <div key={a.id} onClick={() => {
-                                                setOrchestrator(prev => {
-                                                    if (isSelected) {
-                                                        return { ...prev, variations: prev.variations.filter(v => v.asset_id !== a.id), selectedVariations: prev.variations.filter(v => v.asset_id !== a.id).map((_, i) => i) };
-                                                    }
-                                                    
-                                                    const rawCaption = a.caption || '';
-                                                    const campaignName = orchestrator.campaign?.name || "";
-                                                    const matchedProperty = properties.find(p => p.title && campaignName.toLowerCase().includes(p.title.toLowerCase()));
-                                                    
-                                                    let headline = matchedProperty ? matchedProperty.title : `${orchestrator.campaign?.name} - Exclusive Offer`;
-                                                    let primaryText = matchedProperty ? matchedProperty.description : `Premium opportunities at ${orchestrator.campaign?.name}. Contact us today!`;
-                                                    let description = "";
-
-                                                    if (rawCaption.includes('\n\n')) {
-                                                        const parts = rawCaption.split('\n\n');
-                                                        headline = parts[0];
-                                                        primaryText = parts[1] || "";
-                                                        description = parts.slice(2).join('\n\n');
-                                                    } else if (rawCaption.includes('\n')) {
-                                                        const parts = rawCaption.split('\n');
-                                                        headline = parts[0];
-                                                        primaryText = parts.slice(1).join('\n');
-                                                    } else if (rawCaption.length > 0) {
-                                                        headline = rawCaption;
-                                                    }
-
-                                                    const newVar = { 
-                                                        asset_id: a.id, 
-                                                        type: a.type,
-                                                        image_url: a.url, 
-                                                        url: a.url,
-                                                        headline: headline,
-                                                        primary_text: primaryText,
-                                                        description: description,
-                                                        caption: a.caption,
-                                                        title: 'Selected Asset',
-                                                        thumbnailUrl: a.metadata?.thumbnailUrl
-                                                    };
-                                                    const newVariations = [...prev.variations, newVar];
-                                                    return { ...prev, variations: newVariations, selectedVariations: newVariations.map((_, i) => i) };
-                                                });
-                                            }} className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${isSelected ? 'border-blue-500 shadow-md ring-2 ring-blue-500/20' : 'border-slate-100 hover:border-slate-200'}`}>
-                                                {a.type === 'video' ? (
-                                                    <LazyVideo
-                                                        src={fixR2Url(a.url)}
-                                                        poster={a.metadata?.thumbnailUrl ? fixR2Url(a.metadata.thumbnailUrl) : undefined}
-                                                        className="w-full h-full object-cover"
-                                                    />
-                                                ) : (
-                                                    <img src={fixR2Url(a.url)} className="w-full h-full object-cover" />
-                                                )}
-                                                {isSelected && <div className="absolute top-1 right-1 bg-blue-600 text-white p-0.5 rounded-full shadow-sm"><CheckCircle size={8} /></div>}
-                                                {a.caption && <div className="absolute top-1 left-1 bg-purple-600 text-white p-0.5 rounded-full shadow-sm animate-pulse"><Sparkles size={8} /></div>}
+                                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Select from library:</p>
+                                            <div className="flex gap-2">
+                                                {['All', 'image', 'video'].map(f => (
+                                                    <button key={f} type="button" onClick={() => setAssetFilter(f)} className={`text-[10px] font-bold px-2 py-1 rounded-md transition-colors ${assetFilter === f ? 'bg-purple-100 text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}>{f}</button>
+                                                ))}
                                             </div>
-                                        );
-                                    })}
-                                </div>
+                                        </div>
+                                        
+                                        {/* Library Grid */}
+                                        <div className="grid grid-cols-4 gap-3 max-h-48 overflow-y-auto p-1 border border-slate-100 rounded-2xl mb-4 bg-slate-50/50">
+                                            {assets.filter(a => assetFilter === 'All' || a.type === assetFilter).map(a => {
+                                                const isSelected = orchestrator.variations.some(v => v.asset_id === a.id);
+                                                return (
+                                                    <div key={a.id} onClick={() => {
+                                                        setOrchestrator(prev => {
+                                                            if (isSelected) {
+                                                                return { ...prev, variations: prev.variations.filter(v => v.asset_id !== a.id), selectedVariations: prev.variations.filter(v => v.asset_id !== a.id).map((_, i) => i) };
+                                                            }
+                                                            
+                                                            const rawCaption = a.caption || '';
+                                                            const campaignName = orchestrator.campaign?.name || "";
+                                                            const matchedProperty = properties.find(p => p.title && campaignName.toLowerCase().includes(p.title.toLowerCase()));
+                                                            
+                                                            let headline = matchedProperty ? matchedProperty.title : `${orchestrator.campaign?.name} - Exclusive Offer`;
+                                                            let primaryText = matchedProperty ? matchedProperty.description : `Premium opportunities at ${orchestrator.campaign?.name}. Contact us today!`;
+                                                            let description = "";
+
+                                                            if (rawCaption.includes('\n\n')) {
+                                                                const parts = rawCaption.split('\n\n');
+                                                                headline = parts[0];
+                                                                primaryText = parts[1] || "";
+                                                                description = parts.slice(2).join('\n\n');
+                                                            } else if (rawCaption.includes('\n')) {
+                                                                const parts = rawCaption.split('\n');
+                                                                headline = parts[0];
+                                                                primaryText = parts.slice(1).join('\n');
+                                                            } else if (rawCaption.length > 0) {
+                                                                headline = rawCaption;
+                                                            }
+
+                                                            const newVar = { 
+                                                                asset_id: a.id, 
+                                                                type: a.type,
+                                                                image_url: a.url, 
+                                                                url: a.url,
+                                                                headline: headline,
+                                                                primary_text: primaryText,
+                                                                description: description,
+                                                                caption: a.caption,
+                                                                title: 'Library Creative',
+                                                                thumbnailUrl: a.metadata?.thumbnailUrl,
+                                                                mappedProductId: a.property_id || ''
+                                                            };
+                                                            const newVariations = [...prev.variations, newVar];
+                                                            return { ...prev, variations: newVariations, selectedVariations: newVariations.map((_, i) => i) };
+                                                        });
+                                                    }} className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${isSelected ? 'border-blue-500 shadow-md ring-2 ring-blue-500/20' : 'border-slate-100 hover:border-slate-200 bg-white'}`}>
+                                                        {a.type === 'video' ? (
+                                                            <LazyVideo
+                                                                src={fixR2Url(a.url)}
+                                                                poster={a.metadata?.thumbnailUrl ? fixR2Url(a.metadata.thumbnailUrl) : undefined}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            <img src={fixR2Url(a.url)} className="w-full h-full object-cover" />
+                                                        )}
+                                                        {isSelected && <div className="absolute top-1 right-1 bg-blue-600 text-white p-0.5 rounded-full shadow-sm"><CheckCircle size={8} /></div>}
+                                                        {a.caption && <div className="absolute top-1 left-1 bg-purple-600 text-white p-0.5 rounded-full shadow-sm animate-pulse"><Sparkles size={8} /></div>}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Upload In-place Custom Files */}
+                                        <div className="mb-4">
+                                            <input
+                                                type="file"
+                                                ref={optimizerFileInputRef}
+                                                onChange={handleOptimizerLocalFiles}
+                                                accept="image/*,video/*"
+                                                className="hidden"
+                                                multiple
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => optimizerFileInputRef.current?.click()}
+                                                className="w-full py-3 border-2 border-dashed border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50 rounded-2xl text-xs font-bold text-slate-500 hover:text-blue-600 flex items-center justify-center gap-2 transition-all"
+                                            >
+                                                <Upload size={14} /> Upload Custom Files
+                                            </button>
+                                        </div>
+
+                                        {/* Selected Assets and Mapping Dropdowns */}
+                                        {orchestrator.variations.length > 0 && (
+                                            <div className="border-t border-slate-100 pt-4">
+                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Selected Creatives & Product Mappings ({orchestrator.variations.length})</p>
+                                                <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
+                                                    {orchestrator.variations.map((v, idx) => {
+                                                        const isVideo = v.type === 'video' || (typeof v.image_url === 'string' && v.image_url.toLowerCase().match(/\.(mp4|mov|avi|wmv)/));
+                                                        return (
+                                                            <div key={idx} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:bg-slate-100/50 transition-colors">
+                                                                <div className="relative w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex-shrink-0 overflow-hidden">
+                                                                    {isVideo ? (
+                                                                        <LazyVideo src={fixR2Url(v.image_url)} className="w-full h-full object-cover" />
+                                                                    ) : (
+                                                                        <img src={fixR2Url(v.image_url)} className="w-full h-full object-cover" />
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="text-[11px] font-bold text-slate-800 truncate">{v.title}</div>
+                                                                    <div className="text-[9px] text-slate-400 capitalize">{v.sourceType || 'asset'} {v.type || 'image'}</div>
+                                                                    
+                                                                    <div className="mt-1">
+                                                                        <select
+                                                                            value={v.mappedProductId || ''}
+                                                                            onChange={(e) => {
+                                                                                const prodId = e.target.value;
+                                                                                setOrchestrator(prev => {
+                                                                                    const updated = [...prev.variations];
+                                                                                    updated[idx] = { ...updated[idx], mappedProductId: prodId };
+                                                                                    return { ...prev, variations: updated };
+                                                                                });
+                                                                            }}
+                                                                            className="w-full max-w-[200px] bg-white border border-slate-200 text-slate-700 py-1.5 px-2 rounded-xl text-[9px] font-bold outline-none cursor-pointer hover:bg-slate-50 transition-all"
+                                                                        >
+                                                                            <option value="">-- Map to Product --</option>
+                                                                            {properties.map(p => (
+                                                                                <option key={p.id} value={p.id}>{p.title}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </div>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setOrchestrator(prev => {
+                                                                            const updated = prev.variations.filter((_, i) => i !== idx);
+                                                                            return { ...prev, variations: updated, selectedVariations: updated.map((_, i) => i) };
+                                                                        });
+                                                                    }}
+                                                                    className="text-slate-400 hover:text-red-500 p-1.5 transition-colors bg-white rounded-full border border-slate-200/60 shadow-sm hover:border-red-100"
+                                                                >
+                                                                    <X size={14} />
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Gemini Custom Copywriting instructions field */}
+                                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mt-4">
+                                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">AI Copywriting Instructions for Gemini</label>
+                                             <textarea 
+                                                 value={orchestrator.customInstructions}
+                                                 onChange={(e) => setOrchestrator(prev => ({...prev, customInstructions: e.target.value}))}
+                                                 placeholder="E.g. Focus on luxury amenities, professional copywriting tone..."
+                                                 rows={2}
+                                                 className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-purple-500/20 transition-all resize-none font-medium text-slate-700"
+                                             />
+                                        </div>
                                     </>
                                 )}
                             </div>
@@ -2272,99 +2547,12 @@ export default function AdsPage() {
                       {orchestrator.step === 2 && (
                           <div className="flex flex-col gap-3">
                               <button 
-                                onClick={async () => {
-                                    if (orchestrator.variations.length === 0) return;
-                                    
-                                    // Check if any asset lacks saved copy
-                                    const assetsWithoutCopy = orchestrator.variations.filter(v => !v.caption || v.caption.trim().length === 0);
-                                    
-                                    if (assetsWithoutCopy.length > 0) {
-                                        // Fetch copy from existing campaign ads
-                                        setOrchestrator(prev => ({ ...prev, status: 'pushing', logs: [...prev.logs, { id: Date.now(), text: `Inheriting ad copy from existing campaign ads for ${assetsWithoutCopy.length} asset(s)...`, type: 'system' }] }));
-                                        
-                                        try {
-                                            const impersonateId = new URLSearchParams(window.location.search).get('impersonate');
-                                            const detailsRes = await fetch(`/api/meta-ads/campaign-details?campaignId=${orchestrator.campaign?.id}${impersonateId ? `&impersonate=${impersonateId}` : ''}`);
-                                            const detailsData = await detailsRes.json();
-                                            
-                                            let inheritedHeadline = `${orchestrator.campaign?.name || 'Special Offer'}`;
-                                            let inheritedPrimaryText = 'Contact us today for more details!';
-                                            let inheritedDescription = '';
-                                            
-                                            if (detailsData.success) {
-                                                // Find first ad with copy
-                                                for (const adset of (detailsData.adsets || [])) {
-                                                    for (const ad of (adset.ads || [])) {
-                                                        if (ad.creative?.primaryText || ad.creative?.headline) {
-                                                            inheritedHeadline = ad.creative.headline || inheritedHeadline;
-                                                            inheritedPrimaryText = ad.creative.primaryText || inheritedPrimaryText;
-                                                            inheritedDescription = ad.creative.description || '';
-                                                            break;
-                                                        }
-                                                    }
-                                                    if (inheritedPrimaryText !== 'Contact us today for more details!') break;
-                                                }
-                                            }
-                                            
-                                            // Apply inherited copy to assets without saved copy
-                                            const updatedVariations = orchestrator.variations.map(v => {
-                                                if (!v.caption || v.caption.trim().length === 0) {
-                                                    return { ...v, headline: inheritedHeadline, primary_text: inheritedPrimaryText, description: inheritedDescription };
-                                                }
-                                                return v;
-                                            });
-                                            
-                                            setOrchestrator(prev => ({ ...prev, variations: updatedVariations, selectedVariations: updatedVariations.map((_, i) => i) }));
-                                        } catch (e: any) {
-                                            console.error('Failed to fetch existing campaign copy:', e);
-                                            // Continue with defaults
-                                        }
-                                    }
-                                    
-                                    // Now push directly
-                                    setOrchestrator(prev => ({ ...prev, status: 'pushing', step: 3, logs: [...prev.logs, { id: Date.now(), text: 'Pushing directly to campaign...', type: 'system' }] }));
-                                    
-                                    const impersonateId = new URLSearchParams(window.location.search).get('impersonate');
-                                    const pushUrl = `/api/meta-ads/push-optimized-ads${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
-                                    
-                                    try {
-                                        const currentVars = orchestrator.variations;
-                                        const selectedAssets = currentVars.filter((_, i) => orchestrator.selectedVariations.includes(i));
-                                        const res = await fetch(pushUrl, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({
-                                                campaignId: orchestrator.campaign?.id,
-                                                selectedAssets,
-                                                leadFormId: orchestrator.leadFormId
-                                            })
-                                        });
-                                        const data = await res.json();
-                                        if (data.success) {
-                                            const saved = [...optimizedCampaigns, orchestrator.campaign!.id];
-                                            setOptimizedCampaigns(saved);
-                                            localStorage.setItem('optimized_campaign_ids', JSON.stringify(saved));
-                                            setOrchestrator(prev => ({ ...prev, status: 'success', step: 4, logs: [...prev.logs, { id: Date.now(), text: `Successfully pushed ${data.pushedCount} ads!`, type: 'system' }] }));
-                                        } else {
-                                            setOrchestrator(prev => ({ ...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: data.error || 'Push failed.', type: 'system' }] }));
-                                        }
-                                    } catch (e) {
-                                        setOrchestrator(prev => ({ ...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: 'Network error during push.', type: 'system' }] }));
-                                    }
-                                }}
-                                disabled={orchestrator.variations.length === 0 || orchestrator.status === 'pushing'}
-                                className="w-full bg-green-600 text-white font-bold py-4 rounded-2xl hover:bg-green-700 shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                                onClick={handleGenerateManualCopies}
+                                disabled={orchestrator.variations.length === 0 || orchestrator.status === 'generating'}
+                                className="w-full bg-purple-600 text-white font-bold py-4 rounded-2xl hover:bg-purple-700 shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                               >
-                                  {orchestrator.status === 'pushing' ? <><Loader2 size={18} className="animate-spin" /> Publishing...</> : <><Zap size={18} /> Publish {orchestrator.variations.length} Selected Directly</>}
+                                  {orchestrator.status === 'generating' ? <><Loader2 size={18} className="animate-spin" /> Generating Copy...</> : <><Sparkles size={18} /> Generate AI Copy & Review <ArrowRight size={18} /></>}
                               </button>
-                              <button 
-                                onClick={() => setOrchestrator(prev => ({ ...prev, step: 3, status: 'reviewing' }))}
-                                disabled={orchestrator.variations.length === 0}
-                                className="w-full bg-white text-slate-900 font-bold py-4 rounded-2xl hover:bg-slate-50 border-2 border-slate-100 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
-                              >
-                                  Review & Edit Copy First <ArrowRight size={18} />
-                              </button>
-                              <button onClick={() => setOrchestrator(prev => ({...prev, step: 1}))} className="w-full text-[10px] font-bold text-slate-400 uppercase tracking-widest py-2 hover:text-slate-600 transition-colors text-center">← Back to Strategy</button>
                           </div>
                       )}
 
@@ -4074,6 +4262,16 @@ export default function AdsPage() {
                 </div>
                 <input type="file" ref={fileInputRef} onChange={handleLocalFiles} accept="image/*,video/*" className="hidden" multiple />
                 <button onClick={() => fileInputRef.current?.click()} className="w-full mb-4 py-3.5 border-2 border-dashed border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50 rounded-2xl text-sm font-bold text-slate-500 hover:text-blue-600 flex items-center justify-center gap-2 transition-all"><Upload size={18} /> Upload Custom Files</button>
+                <div className="mb-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">AI Copywriting Instructions (Optional)</label>
+                    <textarea 
+                        value={adForm.customInstructions || ''}
+                        onChange={(e) => setAdForm(prev => ({...prev, customInstructions: e.target.value}))}
+                        placeholder="E.g. Focus on key property highlights, call to action, professional tone..."
+                        rows={2}
+                        className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-blue-500/20 transition-all resize-none font-medium text-slate-700"
+                    />
+                </div>
                 {selectedCreatives.length > 0 && (
                   <div className="space-y-3 mt-2 max-h-60 overflow-y-auto pr-1">
                     {selectedCreatives.map((c) => {
@@ -4105,7 +4303,7 @@ export default function AdsPage() {
                             <div className="text-[11px] font-bold text-slate-800 truncate">{c.name}</div>
                             <div className="text-[9px] text-slate-400 capitalize">{c.sourceType} {c.type || 'creative'}</div>
                             
-                            {selectedProducts.length > 1 && (
+                            {properties.length > 0 && (
                               <div className="mt-1">
                                 <select
                                   value={c.mappedProductId || ''}
@@ -4113,10 +4311,10 @@ export default function AdsPage() {
                                     const prodId = e.target.value;
                                     setSelectedCreatives(prev => prev.map(item => item.uid === c.uid ? { ...item, mappedProductId: prodId } : item));
                                   }}
-                                  className="w-full max-w-[220px] bg-slate-50 border border-slate-200 text-slate-700 py-1 px-2 rounded-lg text-[10px] font-bold outline-none cursor-pointer hover:bg-slate-100 transition-all"
+                                  className="w-full max-w-[220px] bg-slate-50 border border-slate-200 text-slate-700 py-1.5 px-2 rounded-xl text-[10px] font-bold outline-none cursor-pointer hover:bg-slate-100 transition-all"
                                 >
                                   <option value="">-- Map to Product --</option>
-                                  {selectedProducts.map(p => (
+                                  {properties.map(p => (
                                     <option key={p.id} value={p.id}>{p.title}</option>
                                   ))}
                                 </select>

@@ -65,7 +65,7 @@ export async function GET(request: Request) {
             .eq('user_id', targetUserId);
             
         if (since) {
-            query = query.gt('created_at', since);
+            query = query.or(`created_at.gt.${since},status.eq.Processing,status.eq.Rendering`);
         }
 
         const { data: assetData, error: assetError } = await query.order('created_at', { ascending: false });
@@ -84,70 +84,90 @@ export async function GET(request: Request) {
                     const checkRes = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}`, {
                         headers: { 'Authorization': `Bearer ${process.env.KIE_API_KEY}` }
                     });
-                    if (!checkRes.ok) continue;
+                    
+                    let markAsFailed = false;
+                    let failMsg = "";
 
-                    const checkData = await checkRes.json();
-                    if (checkData.code !== 200) continue;
-
-                    const state = checkData.data?.state;
-                    if (state === 'success') {
-                        let imageUrl = null;
-                        const resultJson = checkData.data?.resultJson;
-                        if (resultJson) {
-                            try {
-                                const parsed = JSON.parse(resultJson);
-                                imageUrl = parsed.resultUrls?.[0] || parsed.url;
-                            } catch (e) {}
+                    if (!checkRes.ok) {
+                        const elapsedMs = Date.now() - new Date(asset.created_at || "").getTime();
+                        if (elapsedMs > 5 * 60 * 1000) {
+                            markAsFailed = true;
+                            failMsg = `Server error ${checkRes.status}`;
                         }
-                        const result = checkData.data?.result || checkData.data;
-                        if (!imageUrl && result) {
-                            imageUrl = result.image_url || result.imageUrl || result.output_url || result.outputUrl || result.url || result.resultUrl;
-                        }
+                    } else {
+                        const checkData = await checkRes.json();
+                        if (checkData.code !== 200) {
+                            const elapsedMs = Date.now() - new Date(asset.created_at || "").getTime();
+                            if (elapsedMs > 5 * 60 * 1000) {
+                                markAsFailed = true;
+                                failMsg = checkData.msg || checkData.error || "Task not found on design server";
+                            }
+                        } else {
+                            const state = checkData.data?.state || checkData.data?.status || checkData.status;
+                            if (state === 'success' || state === 'succeeded' || state === 'completed') {
+                                let imageUrl = null;
+                                const resultJson = checkData.data?.resultJson;
+                                if (resultJson) {
+                                    try {
+                                        const parsed = JSON.parse(resultJson);
+                                        imageUrl = parsed.resultUrls?.[0] || parsed.url;
+                                    } catch (e) {}
+                                }
+                                const result = checkData.data?.result || checkData.data;
+                                if (!imageUrl && result) {
+                                    imageUrl = result.image_url || result.imageUrl || result.output_url || result.outputUrl || result.url || result.resultUrl;
+                                }
 
-                        if (imageUrl) {
-                            const imgRes = await fetch(imageUrl);
-                            if (imgRes.ok) {
-                                const buffer = Buffer.from(await imgRes.arrayBuffer());
-                                const ext = imageUrl.split('.').pop()?.split('?')[0] || 'png';
-                                const r2Key = `generated/${asset.user_id}/creative_${Date.now()}_${asset.id}.${ext}`;
+                                if (imageUrl) {
+                                    const imgRes = await fetch(imageUrl);
+                                    if (imgRes.ok) {
+                                        const buffer = Buffer.from(await imgRes.arrayBuffer());
+                                        const ext = imageUrl.split('.').pop()?.split('?')[0] || 'png';
+                                        const r2Key = `generated/${asset.user_id}/creative_${Date.now()}_${asset.id}.${ext}`;
 
-                                await r2.send(new PutObjectCommand({
-                                    Bucket: R2_BUCKET,
-                                    Key: r2Key,
-                                    Body: buffer,
-                                    ContentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`
-                                }));
+                                        await r2.send(new PutObjectCommand({
+                                            Bucket: R2_BUCKET,
+                                            Key: r2Key,
+                                            Body: buffer,
+                                            ContentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`
+                                        }));
 
-                                const r2Url = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
-                                
-                                // Update database record
-                                await supabaseAdmin
-                                    .from('assets')
-                                    .update({
-                                        url: r2Url,
-                                        status: 'Draft',
-                                        created_at: new Date().toISOString()
-                                    })
-                                    .eq('id', asset.id);
-                                
-                                // Update local variable so it returns updated draft state to frontend
-                                asset.url = r2Url;
-                                asset.status = 'Draft';
-                                asset.created_at = new Date().toISOString();
+                                        const r2Url = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
+                                        
+                                        // Update database record
+                                        await supabaseAdmin
+                                            .from('assets')
+                                            .update({
+                                                url: r2Url,
+                                                status: 'Draft',
+                                                created_at: new Date().toISOString()
+                                            })
+                                            .eq('id', asset.id);
+                                        
+                                        // Update local variable so it returns updated draft state to frontend
+                                        asset.url = r2Url;
+                                        asset.status = 'Draft';
+                                        asset.created_at = new Date().toISOString();
+                                    }
+                                }
+                            } else if (state === 'failed' || state === 'error' || state === 'fail') {
+                                markAsFailed = true;
+                                failMsg = checkData.data?.failMsg || "Kie.ai generation error";
                             }
                         }
-                    } else if (state === 'failed' || state === 'error') {
-                        const failReason = checkData.data?.failMsg || "Kie.ai Error";
+                    }
+
+                    if (markAsFailed) {
                         await supabaseAdmin
                             .from('assets')
                             .update({
                                 status: 'Failed',
-                                caption: `Error: ${failReason}`
+                                caption: `Error: ${failMsg}`
                             })
                             .eq('id', asset.id);
                         
                         asset.status = 'Failed';
-                        asset.caption = `Error: ${failReason}`;
+                        asset.caption = `Error: ${failMsg}`;
                     }
                 } catch (err) {
                     console.error(`[Assets API] Sync failed for asset ${asset.id}:`, err);

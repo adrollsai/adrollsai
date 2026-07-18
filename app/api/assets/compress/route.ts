@@ -22,7 +22,7 @@ export async function POST(request: Request) {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-        const { tempUrl, fileName, fileType, fileSize, impersonateId } = await request.json()
+        const { tempUrl, fileName, fileType, fileSize, impersonateId, propertyId, customInstructions } = await request.json()
         if (!tempUrl) {
             return NextResponse.json({ error: 'No temporary video URL provided' }, { status: 400 })
         }
@@ -126,7 +126,11 @@ export async function POST(request: Request) {
                         url: finalPublicUrl,
                         status: 'Ready',
                         caption: `Uploaded: ${fileName}`,
-                        metadata: thumbnailUrl ? { thumbnailUrl } : {}
+                        property_id: propertyId || null,
+                        metadata: {
+                            ...(thumbnailUrl ? { thumbnailUrl } : {}),
+                            custom_instructions: customInstructions || null
+                        }
                     })
                     .select()
                     .single()
@@ -191,7 +195,11 @@ export async function POST(request: Request) {
                         url: finalPublicUrl,
                         status: 'Ready',
                         caption: `Uploaded: ${fileName} (Original)`,
-                        metadata: thumbnailUrl ? { thumbnailUrl } : {}
+                        property_id: propertyId || null,
+                        metadata: {
+                            ...(thumbnailUrl ? { thumbnailUrl } : {}),
+                            custom_instructions: customInstructions || null
+                        }
                     })
                     .select()
                     .single()

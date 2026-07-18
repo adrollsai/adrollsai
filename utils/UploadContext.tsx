@@ -16,7 +16,7 @@ export interface UploadTask {
 
 interface UploadContextType {
     tasks: UploadTask[]
-    uploadAssets: (files: FileList | File[], targetUserId: string, impersonateId: string | null) => void
+    uploadAssets: (files: FileList | File[], targetUserId: string, impersonateId: string | null, propertyId?: string, customInstructions?: string) => void
     clearCompletedTasks: () => void
     removeTask: (id: string) => void
     hasActiveTasks: boolean
@@ -35,7 +35,7 @@ export const UploadProvider = ({ children }: { children: React.ReactNode }) => {
     const [tasks, setTasks] = useState<UploadTask[]>([])
     const supabase = createClient()
     const activeUploadsCount = useRef(0)
-    const taskQueueRef = useRef<{ file: File; id: string; targetUserId: string; impersonateId: string | null }[]>([])
+    const taskQueueRef = useRef<{ file: File; id: string; targetUserId: string; impersonateId: string | null; propertyId?: string; customInstructions?: string }[]>([])
     const completionCallbacks = useRef<Set<() => void>>(new Set())
 
     const subscribeToCompletion = (callback: () => void) => {
@@ -65,7 +65,7 @@ export const UploadProvider = ({ children }: { children: React.ReactNode }) => {
 
     const hasActiveTasks = tasks.some(t => ['compressing', 'uploading', 'processing'].includes(t.status))
 
-    const uploadAssets = (files: FileList | File[], targetUserId: string, impersonateId: string | null) => {
+    const uploadAssets = (files: FileList | File[], targetUserId: string, impersonateId: string | null, propertyId?: string, customInstructions?: string) => {
         const fileList = Array.from(files)
         if (fileList.length === 0) return
 
@@ -96,7 +96,9 @@ export const UploadProvider = ({ children }: { children: React.ReactNode }) => {
                 file,
                 id: newTasks[index].id,
                 targetUserId,
-                impersonateId
+                impersonateId,
+                propertyId,
+                customInstructions
             })
         })
 
@@ -119,8 +121,8 @@ export const UploadProvider = ({ children }: { children: React.ReactNode }) => {
         setTasks(prev => prev.map(t => (t.id === id ? { ...t, ...updates } : t)))
     }
 
-    const executeUpload = async (task: { file: File; id: string; targetUserId: string; impersonateId: string | null }) => {
-        const { file, id, targetUserId, impersonateId } = task
+    const executeUpload = async (task: { file: File; id: string; targetUserId: string; impersonateId: string | null; propertyId?: string; customInstructions?: string }) => {
+        const { file, id, targetUserId, impersonateId, propertyId, customInstructions } = task
         let currentFile = file
 
         try {
@@ -195,7 +197,9 @@ export const UploadProvider = ({ children }: { children: React.ReactNode }) => {
                         fileName: currentFile.name,
                         fileType: currentFile.type,
                         fileSize: currentFile.size,
-                        impersonateId
+                        impersonateId,
+                        propertyId,
+                        customInstructions
                     })
                 })
 
@@ -213,7 +217,11 @@ export const UploadProvider = ({ children }: { children: React.ReactNode }) => {
                         type: 'image',
                         url: publicUrl,
                         status: 'Ready',
-                        caption: `Uploaded: ${currentFile.name}`
+                        caption: `Uploaded: ${currentFile.name}`,
+                        property_id: propertyId || null,
+                        metadata: {
+                            custom_instructions: customInstructions || null
+                        }
                     })
 
                 if (insertError) throw new Error(`Database registration failed: ${insertError.message}`)

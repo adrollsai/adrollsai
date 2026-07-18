@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Filter, Download, Facebook, Instagram, Linkedin, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2, Check, Trash2, Upload, Copy, AlertCircle } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, Linkedin, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2, Check, Trash2, Upload, Copy, AlertCircle, Save } from 'lucide-react'
 import JSZip from 'jszip'
 import { analyzeMediaAction } from './actions'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -69,11 +69,25 @@ export default function AssetsPage() {
     const [headline, setHeadline] = useState('')
     const [primaryText, setPrimaryText] = useState('')
     const [isGeneratingCaptions, setIsGeneratingCaptions] = useState(false)
+    const [customInstructions, setCustomInstructions] = useState('')
+
+    // Upload Config Modal States
+    const [uploadModalOpen, setUploadModalOpen] = useState(false)
+    const [pendingFiles, setPendingFiles] = useState<File[]>([])
+    const [uploadPropertyId, setUploadPropertyId] = useState<string>('')
+    const [uploadInstructions, setUploadInstructions] = useState<string>('')
 
     useEffect(() => {
-        if (!selectedAsset) {
+        if (selectedAsset) {
+            setCaption(selectedAsset.caption || '');
+            setHeadline(selectedAsset.metadata?.headline || '');
+            setPrimaryText(selectedAsset.metadata?.primary_text || '');
+            setCustomInstructions(selectedAsset.metadata?.custom_instructions || '');
+        } else {
+            setCaption('');
             setHeadline('');
             setPrimaryText('');
+            setCustomInstructions('');
         }
     }, [selectedAsset])
 
@@ -88,7 +102,10 @@ export default function AssetsPage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         url: selectedAsset.url,
-                        type: selectedAsset.type
+                        type: selectedAsset.type,
+                        assetId: selectedAsset.id,
+                        propertyId: selectedAsset.property_id,
+                        customInstructions: customInstructions
                     })
                 });
 
@@ -108,6 +125,12 @@ export default function AssetsPage() {
                     setCaption(data.captions.social_post_description || '');
                     setHeadline(data.captions.headline || '');
                     setPrimaryText(data.captions.primary_text || '');
+                    // Update our locally cached asset list so it's instantly reflected
+                    setAssets(prev => prev.map(a => a.id === selectedAsset.id ? { 
+                        ...a, 
+                        caption: data.captions.social_post_description, 
+                        metadata: { ...a.metadata, headline: data.captions.headline, primary_text: data.captions.primary_text } 
+                    } : a));
                     return "AI Captions generated successfully!";
                 } else {
                     throw new Error("No captions returned from AI.");
@@ -125,6 +148,56 @@ export default function AssetsPage() {
             success: (msg) => msg,
             error: (err) => `Failed: ${err.message}`
         });
+    };
+
+    const handleLinkProduct = async (assetId: string, propertyId: string) => {
+        try {
+            const { error } = await supabase
+                .from('assets')
+                .update({ property_id: propertyId || null })
+                .eq('id', assetId);
+            
+            if (error) throw error;
+            
+            // Update local state
+            setAssets(prev => prev.map(a => a.id === assetId ? { ...a, property_id: propertyId } : a));
+            if (selectedAsset && selectedAsset.id === assetId) {
+                setSelectedAsset(prev => prev ? { ...prev, property_id: propertyId } : null);
+            }
+            toast.success("Asset linked to product successfully!");
+        } catch (e: any) {
+            toast.error("Failed to link product: " + e.message);
+        }
+    };
+
+    const handleSaveCopyChanges = async () => {
+        if (!selectedAsset) return;
+        try {
+            const existingMetadata = selectedAsset.metadata || {};
+            const updatedMetadata = {
+                ...existingMetadata,
+                headline: headline || null,
+                primary_text: primaryText || null,
+                custom_instructions: customInstructions || null
+            };
+
+            const { error } = await supabase
+                .from('assets')
+                .update({ 
+                    caption,
+                    metadata: updatedMetadata
+                })
+                .eq('id', selectedAsset.id);
+            
+            if (error) throw error;
+
+            // Update local state
+            setAssets(prev => prev.map(a => a.id === selectedAsset.id ? { ...a, caption, metadata: updatedMetadata } : a));
+            setSelectedAsset(prev => prev ? { ...prev, caption, metadata: updatedMetadata } : null);
+            toast.success("Ad Copy and Caption saved!");
+        } catch (e: any) {
+            toast.error("Failed to save changes: " + e.message);
+        }
     };
 
     // Image Preview Modal
@@ -241,8 +314,10 @@ export default function AssetsPage() {
                     if (aActive && !bActive) return -1;
                     if (!aActive && bActive) return 1;
                     
-                    // If both are active or both are inactive, maintain original order (chronological desc by created_at)
-                    return 0;
+                    // Sort by created_at descending if they have the same active status
+                    const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+                    const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+                    return bTime - aTime;
                 });
                 
                 setAssets(sortedAssets)
@@ -442,10 +517,18 @@ export default function AssetsPage() {
         });
     };
     
-    const handleLibraryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleLibraryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
+        setPendingFiles(Array.from(files));
+        setUploadPropertyId('');
+        setUploadInstructions('');
+        setUploadModalOpen(true);
+        e.target.value = '';
+    };
 
+    const handleConfirmUpload = async () => {
+        if (pendingFiles.length === 0) return;
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) {
@@ -476,13 +559,13 @@ export default function AssetsPage() {
                 }
             }
 
-            uploadAssets(files, targetUserId, impersonateId);
-            toast.success(`Added ${files.length} asset(s) to the upload queue!`);
+            uploadAssets(pendingFiles, targetUserId, impersonateId, uploadPropertyId || undefined, uploadInstructions || undefined);
+            toast.success(`Added ${pendingFiles.length} asset(s) to the upload queue!`);
+            setUploadModalOpen(false);
+            setPendingFiles([]);
         } catch (err: any) {
             console.error("Queue upload error:", err);
             toast.error(`Upload queue failed: ${err.message}`);
-        } finally {
-            e.target.value = '';
         }
     };
 
@@ -1162,126 +1245,143 @@ export default function AssetsPage() {
                             <div
                                 key={asset.id}
                                 onClick={() => toggleSelection(asset.id)}
-                                className={`relative aspect-square rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden bg-white shadow-sm border group cursor-pointer active:scale-95 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 ${selectedIds.has(asset.id) ? 'ring-4 ring-blue-500 border-transparent' : 'border-slate-200/40'}`}
+                                className={`relative flex flex-col h-auto rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden bg-white shadow-sm border group cursor-pointer active:scale-95 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 ${selectedIds.has(asset.id) ? 'ring-4 ring-blue-500 border-transparent' : 'border-slate-200/40'}`}
                             >
-                                {/* Selection Checkbox */}
-                                <div className={`absolute top-4 left-4 z-20 w-7 h-7 rounded-full flex items-center justify-center transition-all ${selectedIds.has(asset.id) ? 'bg-blue-600 scale-110 shadow-lg' : 'bg-white/40 backdrop-blur-md opacity-0 group-hover:opacity-100 border border-white/50'}`}>
-                                    {selectedIds.has(asset.id) && <Check size={16} className="text-white" strokeWidth={4} />}
-                                </div>
+                                {/* Aspect Square wrapper for media content */}
+                                <div className="relative aspect-square w-full overflow-hidden flex-shrink-0 bg-slate-50">
+                                    {/* Selection Checkbox */}
+                                    <div className={`absolute top-4 left-4 z-20 w-7 h-7 rounded-full flex items-center justify-center transition-all ${selectedIds.has(asset.id) ? 'bg-blue-600 scale-110 shadow-lg' : 'bg-white/40 backdrop-blur-md opacity-0 group-hover:opacity-100 border border-white/50'}`}>
+                                        {selectedIds.has(asset.id) && <Check size={16} className="text-white" strokeWidth={4} />}
+                                    </div>
 
-                                {['Processing', 'Rendering'].includes(asset.status) ? (
-                                    <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center p-4 text-center">
-                                        <div className="relative">
-                                            <Loader2 size={28} className={`animate-spin ${asset.status === 'Rendering' ? 'text-blue-500' : 'text-purple-500'}`} />
-                                            <Sparkles size={12} className="absolute -top-1 -right-1 text-amber-400 animate-pulse" />
-                                        </div>
-                                        <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] mt-3">
-                                            {asset.status === 'Rendering' ? 'AI EDITING...' : 'AI Designing...'}
-                                        </p>
-                                        <p className="text-[9px] text-slate-400 font-medium mt-1">
-                                            {asset.status === 'Rendering' ? 'Compiling subtitles & outro' : 'Check back in a bit'}
-                                        </p>
-                                        {asset.status !== 'Rendering' && (
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }}
-                                                className="mt-3 text-[9px] font-bold text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest"
-                                            >
-                                                Cancel
-                                            </button>
-                                        )}
-                                    </div>
-                                ) : asset.status === 'Failed' ? (
-                                    <div className="w-full h-full bg-red-50 flex flex-col items-center justify-center p-4 text-center relative">
-                                        <div className="bg-red-100 p-3 rounded-full mb-2">
-                                            <X className="text-red-500" size={24} />
-                                        </div>
-                                        <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">Failed</p>
-                                        <p 
-                                            className="text-[9px] text-red-400 font-medium mt-1 max-w-[120px] line-clamp-2"
-                                            title={asset.metadata?.error || "AI generation failed"}
-                                        >
-                                            {asset.metadata?.error || "AI generation failed"}
-                                        </p>
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }}
-                                            className="mt-3 bg-red-500 text-white px-4 py-1.5 rounded-full text-[10px] font-bold hover:bg-red-600 transition-all shadow-sm"
-                                        >
-                                            Remove
-                                        </button>
-                                    </div>
-                                ) : asset.type === 'video' ? (
-                                    <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
-                                        <LazyVideo 
-                                            src={fixR2Url(asset.url)} 
-                                            poster={asset.metadata?.thumbnailUrl ? fixR2Url(asset.metadata.thumbnailUrl) : undefined} 
-                                            className="w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity" 
-                                        />
-                                        <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-transparent transition-colors">
-                                            <div className="bg-white/20 backdrop-blur-md p-3 rounded-full shadow-sm">
-                                                <Film className="text-white" size={24} />
+                                    {['Processing', 'Rendering'].includes(asset.status) ? (
+                                        <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center p-4 text-center">
+                                            <div className="relative">
+                                                <Loader2 size={28} className={`animate-spin ${asset.status === 'Rendering' ? 'text-blue-500' : 'text-purple-500'}`} />
+                                                <Sparkles size={12} className="absolute -top-1 -right-1 text-amber-400 animate-pulse" />
                                             </div>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <img src={fixR2Url(asset.url)} alt="Asset" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                                )}
-
-                                {/* Overlay Actions */}
-                                {asset.status !== 'Processing' ? (
-                                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                        <div className="flex gap-3">
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setPreviewImage({ isOpen: true, url: asset.url, title: 'Asset Preview', type: asset.type });
-                                                }}
-                                                className="bg-white p-3 rounded-full text-slate-900 shadow-xl hover:scale-110 transition-all"
-                                            >
-                                                <Maximize2 size={20} />
-                                            </button>
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setSelectedAsset(asset);
-                                                    setCaption(asset.caption || '');
-                                                }}
-                                                className="bg-white p-3 rounded-full text-blue-600 shadow-xl hover:scale-110 transition-all"
-                                            >
-                                                <Globe size={20} />
-                                            </button>
-                                            
-                                            {userRole !== 'agent' && (
+                                            <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] mt-3">
+                                                {asset.status === 'Rendering' ? 'AI EDITING...' : 'AI Designing...'}
+                                            </p>
+                                            <p className="text-[9px] text-slate-400 font-medium mt-1">
+                                                {asset.status === 'Rendering' ? 'Compiling subtitles & outro' : 'Check back in a bit'}
+                                            </p>
+                                            {asset.status !== 'Rendering' && (
                                                 <button 
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDeleteAsset(asset.id);
-                                                    }}
-                                                    className="bg-white p-3 rounded-full text-red-500 shadow-xl hover:scale-110 transition-all"
+                                                    onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }}
+                                                    className="mt-3 text-[9px] font-bold text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest"
                                                 >
-                                                    <Trash2 size={20} />
+                                                    Cancel
                                                 </button>
                                             )}
                                         </div>
-                                    </div>
-                                ) : null}
-
-                                {/* Status Badge */}
-                                <div className="absolute top-4 right-4 shadow-md z-10">
-                                    {['Processing', 'Rendering'].includes(asset.status) ? (
-                                        <div className={`text-white p-1.5 rounded-full border-2 border-white animate-pulse ${asset.status === 'Rendering' ? 'bg-blue-500' : 'bg-purple-500'}`} title={asset.status}>
-                                            <Sparkles size={14} />
-                                        </div>
-                                    ) : asset.status === 'Published' ? (
-                                        <div className="bg-emerald-500 text-white p-1.5 rounded-full border-2 border-white" title="Published">
-                                            <CheckCircle2 size={14} strokeWidth={3} />
-                                        </div>
                                     ) : asset.status === 'Failed' ? (
-                                        <div className="bg-red-500 text-white p-1.5 rounded-full border-2 border-white" title="Failed">
-                                            <X size={14} strokeWidth={3} />
+                                        <div className="w-full h-full bg-red-50 flex flex-col items-center justify-center p-4 text-center relative">
+                                            <div className="bg-red-100 p-3 rounded-full mb-2">
+                                                <X className="text-red-500" size={24} />
+                                            </div>
+                                            <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">Failed</p>
+                                            <p 
+                                                className="text-[9px] text-red-400 font-medium mt-1 max-w-[120px] line-clamp-2"
+                                                title={asset.metadata?.error || "AI generation failed"}
+                                            >
+                                                {asset.metadata?.error || "AI generation failed"}
+                                            </p>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }}
+                                                className="mt-3 bg-red-500 text-white px-4 py-1.5 rounded-full text-[10px] font-bold hover:bg-red-600 transition-all shadow-sm"
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                    ) : asset.type === 'video' ? (
+                                        <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
+                                            <LazyVideo 
+                                                src={fixR2Url(asset.url)} 
+                                                poster={asset.metadata?.thumbnailUrl ? fixR2Url(asset.metadata.thumbnailUrl) : undefined} 
+                                                className="w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity" 
+                                            />
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-transparent transition-colors">
+                                                <div className="bg-white/20 backdrop-blur-md p-3 rounded-full shadow-sm">
+                                                    <Film className="text-white" size={24} />
+                                                </div>
+                                            </div>
                                         </div>
                                     ) : (
-                                        <div className="bg-amber-400 w-4 h-4 rounded-full border-2 border-white" title="Draft / Unused" />
+                                        <img src={fixR2Url(asset.url)} alt="Asset" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                     )}
+
+                                    {/* Overlay Actions */}
+                                    {asset.status !== 'Processing' ? (
+                                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                            <div className="flex gap-3">
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setPreviewImage({ isOpen: true, url: asset.url, title: 'Asset Preview', type: asset.type });
+                                                    }}
+                                                    className="bg-white p-3 rounded-full text-slate-900 shadow-xl hover:scale-110 transition-all"
+                                                >
+                                                    <Maximize2 size={20} />
+                                                </button>
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSelectedAsset(asset);
+                                                    }}
+                                                    className="bg-white p-3 rounded-full text-blue-600 shadow-xl hover:scale-110 transition-all"
+                                                >
+                                                    <Globe size={20} />
+                                                </button>
+                                                
+                                                {userRole !== 'agent' && (
+                                                    <button 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDeleteAsset(asset.id);
+                                                        }}
+                                                        className="bg-white p-3 rounded-full text-red-500 shadow-xl hover:scale-110 transition-all"
+                                                    >
+                                                        <Trash2 size={20} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ) : null}
+
+                                    {/* Status Badge */}
+                                    <div className="absolute top-4 right-4 shadow-md z-10">
+                                        {['Processing', 'Rendering'].includes(asset.status) ? (
+                                            <div className={`text-white p-1.5 rounded-full border-2 border-white animate-pulse ${asset.status === 'Rendering' ? 'bg-blue-500' : 'bg-purple-500'}`} title={asset.status}>
+                                                <Sparkles size={14} />
+                                            </div>
+                                        ) : asset.status === 'Published' ? (
+                                            <div className="bg-emerald-500 text-white p-1.5 rounded-full border-2 border-white" title="Published">
+                                                <CheckCircle2 size={14} strokeWidth={3} />
+                                            </div>
+                                        ) : asset.status === 'Failed' ? (
+                                            <div className="bg-red-500 text-white p-1.5 rounded-full border-2 border-white" title="Failed">
+                                                <X size={14} strokeWidth={3} />
+                                            </div>
+                                        ) : (
+                                            <div className="bg-amber-400 w-4 h-4 rounded-full border-2 border-white" title="Draft / Unused" />
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Card mapping select dropdown at the bottom */}
+                                <div className="p-3 bg-white border-t border-slate-100 flex items-center justify-between gap-2 z-10 relative" onClick={(e) => e.stopPropagation()}>
+                                    <Package size={12} className="text-slate-400 shrink-0" />
+                                    <select
+                                        value={asset.property_id || ''}
+                                        onChange={(e) => handleLinkProduct(asset.id, e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 text-slate-700 py-1.5 px-2 rounded-xl text-[10px] font-bold outline-none cursor-pointer hover:bg-slate-100 transition-all"
+                                    >
+                                        <option value="">-- Link Product --</option>
+                                        {properties.map(p => (
+                                            <option key={p.id} value={p.id}>{p.title}</option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
                         ))}
@@ -1326,21 +1426,46 @@ export default function AssetsPage() {
                                     )}
                                 </div>
 
+                                {/* Mapping product & Custom Instructions */}
+                                <div className="mb-6 space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-200/60">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Linked Product</label>
+                                        <select
+                                            value={selectedAsset.property_id || ''}
+                                            onChange={(e) => handleLinkProduct(selectedAsset.id, e.target.value)}
+                                            className="w-full bg-white border border-slate-200 text-slate-700 py-2.5 px-3 rounded-xl text-xs font-bold outline-none cursor-pointer hover:bg-slate-50 transition-all"
+                                        >
+                                            <option value="">-- No Product Linked --</option>
+                                            {properties.map(p => (
+                                                <option key={p.id} value={p.id}>{p.title}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Copywriting Instructions for Gemini</label>
+                                        <textarea
+                                            value={customInstructions}
+                                            onChange={(e) => setCustomInstructions(e.target.value)}
+                                            placeholder="E.g. Focus on key benefits, professional tone..."
+                                            className="w-full bg-white border border-slate-200 p-3 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 transition-all resize-none"
+                                            rows={2}
+                                        />
+                                    </div>
+                                </div>
+
                                 {/* Caption Area */}
                                 <div className="mb-6">
                                     <div className="flex justify-between items-center mb-2">
                                         <label className="text-xs font-bold text-slate-500 ml-2 block uppercase tracking-wider">Asset Caption</label>
-                                        {selectedAsset.type !== 'video' && (
-                                            <button
-                                                type="button"
-                                                onClick={handleGenerateAICaptions}
-                                                disabled={isGeneratingCaptions || isPosting}
-                                                className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/80 px-3 py-1.5 rounded-xl transition-all active:scale-95 disabled:opacity-50"
-                                            >
-                                                {isGeneratingCaptions ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                                                {isGeneratingCaptions ? 'Generating...' : 'Generate AI Captions'}
-                                            </button>
-                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={handleGenerateAICaptions}
+                                            disabled={isGeneratingCaptions || isPosting}
+                                            className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/80 px-3 py-1.5 rounded-xl transition-all active:scale-95 disabled:opacity-50"
+                                        >
+                                            {isGeneratingCaptions ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                                            {isGeneratingCaptions ? 'Generating...' : 'Generate AI Captions'}
+                                        </button>
                                     </div>
                                     <textarea
                                         value={caption}
@@ -1349,59 +1474,71 @@ export default function AssetsPage() {
                                         className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none resize-none border border-slate-200/60 focus:border-blue-400 transition-all"
                                         rows={4}
                                     />
+                                    <div className="flex justify-end gap-2 mt-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveCopyChanges}
+                                            disabled={isPosting}
+                                            className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                                        >
+                                            <Save size={12} /> Save Copy & Caption
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* AI Generated Ad Fields (Headline & Primary Text) */}
-                                {(headline || primaryText) && (
-                                    <div className="mb-6 space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-200/60 animate-in fade-in duration-300">
-                                        <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-600 uppercase tracking-widest">
-                                            <Sparkles size={14} className="text-blue-500" />
-                                            <span>AI Ad Copy (Headline & Primary Text)</span>
-                                        </div>
-                                        
-                                        {/* Headline Field */}
-                                        {headline && (
-                                            <div className="space-y-1.5">
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Headline</span>
-                                                    <button
-                                                        onClick={() => {
-                                                            navigator.clipboard.writeText(headline);
-                                                            toast.success("Headline copied to clipboard!");
-                                                        }}
-                                                        className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-all"
-                                                    >
-                                                        <Copy size={12} /> Copy
-                                                    </button>
-                                                </div>
-                                                <div className="bg-white border border-slate-200 px-4 py-3 rounded-xl text-sm font-semibold text-slate-800 select-all">
-                                                    {headline}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Primary Text Field */}
-                                        {primaryText && (
-                                            <div className="space-y-1.5">
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Primary Text</span>
-                                                    <button
-                                                        onClick={() => {
-                                                            navigator.clipboard.writeText(primaryText);
-                                                            toast.success("Primary Text copied to clipboard!");
-                                                        }}
-                                                        className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-all"
-                                                    >
-                                                        <Copy size={12} /> Copy
-                                                    </button>
-                                                </div>
-                                                <div className="bg-white border border-slate-200 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 select-all">
-                                                    {primaryText}
-                                                </div>
-                                            </div>
-                                        )}
+                                <div className="mb-6 space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-200/60">
+                                    <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-600 uppercase tracking-widest">
+                                        <Sparkles size={14} className="text-blue-500" />
+                                        <span>AI Ad Copy (Headline & Primary Text)</span>
                                     </div>
-                                )}
+                                    
+                                    {/* Headline Field */}
+                                    <div className="space-y-1.5">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Headline</span>
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(headline);
+                                                    toast.success("Headline copied to clipboard!");
+                                                }}
+                                                className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-all"
+                                            >
+                                                <Copy size={12} /> Copy
+                                            </button>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            value={headline}
+                                            onChange={(e) => setHeadline(e.target.value)}
+                                            placeholder="No headline generated yet"
+                                            className="w-full bg-white border border-slate-200 px-4 py-3 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+                                        />
+                                    </div>
+
+                                    {/* Primary Text Field */}
+                                    <div className="space-y-1.5">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Primary Text</span>
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(primaryText);
+                                                    toast.success("Primary Text copied to clipboard!");
+                                                }}
+                                                className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-all"
+                                            >
+                                                <Copy size={12} /> Copy
+                                            </button>
+                                        </div>
+                                        <textarea
+                                            value={primaryText}
+                                            onChange={(e) => setPrimaryText(e.target.value)}
+                                            placeholder="No primary text generated yet"
+                                            rows={3}
+                                            className="w-full bg-white border border-slate-200 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all resize-none"
+                                        />
+                                    </div>
+                                </div>
 
                                 {/* Actions Grid */}
                                 <div className="flex flex-col gap-3">
@@ -1708,6 +1845,87 @@ export default function AssetsPage() {
                                     Direct WhatsApp Share
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* UPLOAD CONFIGURATION MODAL */}
+            {uploadModalOpen && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
+                    <div className="bg-white w-full max-w-lg rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
+                        {/* HEADER */}
+                        <div className="flex justify-between items-center p-6 bg-white border-b border-slate-100 flex-shrink-0">
+                            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                                <Upload className="text-blue-600" size={20} />
+                                Asset Upload Settings
+                            </h2>
+                            <button onClick={() => { setUploadModalOpen(false); setPendingFiles([]); }} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* BODY */}
+                        <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
+                            {/* Selected Files Preview */}
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Selected Files ({pendingFiles.length})</label>
+                                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                                    {pendingFiles.map((file, i) => (
+                                        <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                {file.type.startsWith('video') ? <Film size={14} className="text-slate-400 shrink-0" /> : <ImageIcon size={14} className="text-slate-400 shrink-0" />}
+                                                <span className="text-xs font-semibold text-slate-700 truncate">{file.name}</span>
+                                            </div>
+                                            <span className="text-[10px] text-slate-400 shrink-0">{(file.size / (1024 * 1024)).toFixed(2)} MB</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Property Mapping dropdown */}
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Link to Inventory Product</label>
+                                <select
+                                    value={uploadPropertyId}
+                                    onChange={(e) => setUploadPropertyId(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 text-slate-700 py-3 px-4 rounded-2xl text-xs font-bold outline-none cursor-pointer hover:bg-slate-100 transition-all focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400"
+                                >
+                                    <option value="">-- No Product Linked --</option>
+                                    {properties.map(p => (
+                                        <option key={p.id} value={p.id}>{p.title}</option>
+                                    ))}
+                                </select>
+                                <p className="text-[9px] text-slate-400 mt-1 ml-1">If the product is linked, the AI copywriter will automatically use its details for text generation.</p>
+                            </div>
+
+                            {/* Custom Instructions */}
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Custom Copywriting Instructions</label>
+                                <textarea
+                                    value={uploadInstructions}
+                                    onChange={(e) => setUploadInstructions(e.target.value)}
+                                    placeholder="E.g. Highlight a 20% discount hook, use casual tone, focus on prime location..."
+                                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl text-xs font-medium outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 transition-all resize-none"
+                                    rows={3}
+                                />
+                                <p className="text-[9px] text-slate-400 mt-1 ml-1">Instructions will guide the AI writer when generating descriptions and headlines for these assets.</p>
+                            </div>
+                        </div>
+
+                        {/* FOOTER */}
+                        <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3 flex-shrink-0">
+                            <button
+                                onClick={() => { setUploadModalOpen(false); setPendingFiles([]); }}
+                                className="flex-1 bg-white border border-slate-200 text-slate-700 py-3.5 rounded-2xl text-xs font-bold hover:bg-slate-100 transition-all active:scale-95"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleConfirmUpload}
+                                className="flex-1 bg-blue-600 text-white py-3.5 rounded-2xl text-xs font-bold hover:bg-blue-700 transition-all shadow-md active:scale-95"
+                            >
+                                Start Upload ({pendingFiles.length})
+                            </button>
                         </div>
                     </div>
                 </div>

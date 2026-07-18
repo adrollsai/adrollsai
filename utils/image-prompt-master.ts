@@ -11,6 +11,7 @@ When reference images are provided, preserve the architecture, layout, products,
 
 Default visual style:
 - Ultra-photorealistic commercial photography.
+- Bright, airy, and clean light theme by default. Use high-exposure morning sunlight, crisp natural shadows, and a clean commercial lighting aesthetic. Avoid dark, dim, moody, or sunset/twilight settings unless explicitly requested.
 - Premium editorial and advertising quality.
 - Natural, believable lighting with physically plausible reflections, shadows, and materials.
 - Real-world camera optics and exposure behavior.
@@ -26,7 +27,7 @@ Camera characteristics:
 - The result should feel authentic and suitable for use in a high-end advertising campaign.
 
 Human subjects (when included):
-- Humans must appear completely authentic, beautiful, attractive, and naturally posed (could be a family, a professional man, or a woman depending on the context).
+- Focus exclusively on close-up shots of fully visible, beautiful, photorealistic humans (e.g. happy families, couples, or professional individuals depending on the product) showing happy, positive, and smiling facial expressions of joy. Avoid distant, tiny, or blurry figures.
 - The ethnicity of the humans should match the geographical region of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).
 - Skin must have true-to-life detailing (real skin texture, pores, fine hair) and look completely natural, avoiding any plastic, synthetic, or shiny AI-generated look.
 - Avoid common AI errors like distorted fingers, unnatural expressions, extra limbs, or synthetic-looking eyes.
@@ -64,14 +65,15 @@ export const ORGANIC_OVERRIDE = `Camera characteristics override (RAW & ORGANIC)
 
 export const VERTICAL_MODULES: Record<string, string> = {
   real_estate: `Vertical module — Real Estate, Land, & Architecture:
-The objective is to produce highly premium, modern, and conceptual luxury real estate graphic layouts. Draw layout and design inspiration from elite digital real estate graphics (such as those seen on Pinterest or Architectural Digest social feeds).
+The objective is to produce highly premium, modern, and high-converting real estate ad layouts. Draw layout and design inspiration from elite digital real estate graphics (such as those seen on Pinterest or Architectural Digest social feeds).
 
 Layout & Visual Structure Rules:
 1. Floating Asset Visual: If generating land or plots, portray it as an isometric 3D block of land floating cleanly in space with realistic soil layers, green grass, and trees. Place a glowing, high-contrast semi-transparent wireframe or digital blueprint overlay outlining villa/home structures directly on the land to represent planning, future value, and modern architectural potential.
-2. Premium Atmosphere & Lighting: Set the scene against a luminous golden-hour sunset, warm sunrise, or clear azure sky with soft clouds. Use warm interior glows emitting from floor-to-ceiling villa glass windows, coupled with soft sunflares filter from the margins to evoke premium quality.
-3. Design Layout & Spacing: Keep the visual clean and uncluttered. Use an asymmetric split: place branding and headlines on one side covered by a subtle dark gradient vignette for maximum legibility, while letting the hero home/plot image occupy the rest of the canvas.
-4. Typography Pairing: Use modern, clean, geometric sans-serif fonts. Emphasize keywords using weight contrast—combine a regular/thin weight phrase (e.g., "INVEST IN") with a bold, uppercase primary keyword (e.g., "LAND") in a vibrant color (like lime-green or gold).
-5. Brand & Info Integration: The brand logo must be positioned as a small, elegant seal/monogram in a corner (e.g. top-left or top-right) to act as a discrete stamp of quality. Website and contact information should be aligned horizontally at the bottom margin in a tiny, well-spaced clean font.`,
+2. Bright Atmosphere & Natural Lighting: The scene should have a bright, airy, and clean light theme. Use bright morning sunlight, clear blue skies, and high-exposure commercial architecture lighting. Avoid dark, moody, twilight, or sunset settings unless specifically requested.
+3. Design Layout & Spacing: Keep the visual clean, crisp, and uncluttered. If using gradient vignettes for legibility under text, ensure they are subtle light-translucent overlays, keeping the overall scene bright.
+4. Typography Styling & Pairing: Use premium, modern, and stylized typography (e.g. elegant serif headers paired with clean minimalist geometric sans-serif sub-headers). Avoid unstyled, generic lettering. Ensure all text is extremely crisp, legible, and integrated cleanly with proper letter-spacing.
+5. Human Subjects: Include close-up or medium shots of fully visible, beautiful, photorealistic humans (e.g. smiling faces, expressions of joy/satisfaction) enjoying the property or space.
+6. Brand & Info Integration: The brand logo must be positioned as a small, elegant seal/monogram in a corner (e.g. top-left or top-right) to act as a discrete stamp of quality. Website and contact information should be aligned horizontally at the bottom margin in a tiny, well-spaced clean font.`,
 
   food: `Vertical module — Food & Restaurant:
 The objective is realistic editorial food photography. Preserve the dish, plating, and ingredients faithfully while emphasizing freshness, texture, and appetite appeal. Use natural window light or warm ambient restaurant lighting. Avoid exaggerated steam, unrealistic glossiness, or artificial perfection. Show real tableware, textured surfaces, and environmental context (wooden table, marble counter, restaurant interior). The result should resemble a photograph from a premium restaurant campaign or food magazine like Bon Appétit.`,
@@ -162,6 +164,32 @@ The property/product photos are CONTENT ASSETS ONLY — they replace the hero vi
 The logo image is BRANDING ONLY — it replaces any logo in the reference layout or goes in a corner.
 
 === END CRITICAL DESIGN INSTRUCTION ===
+
+`;
+}
+
+export function buildImageDisambiguationPreamble(
+  numPropertyImages: number,
+  hasLogo: boolean
+): string {
+  if (numPropertyImages === 0 && !hasLogo) return '';
+
+  const imageMap: string[] = [];
+  for (let i = 0; i < numPropertyImages; i++) {
+    imageMap.push(`  - Image ${i + 1}: PROPERTY/PRODUCT photo (content asset only — use as the primary visual source for the real estate property)`);
+  }
+  if (hasLogo) {
+    imageMap.push(`  - Image ${numPropertyImages + 1}: BUSINESS LOGO (branding asset only — place cleanly in a corner, blend its background smoothly, do NOT make it a hero/subject)`);
+  }
+
+  return `=== CRITICAL IMAGE SOURCE ROLES (HIGHEST PRIORITY) ===
+Each input image is labeled and mapped to its role below:
+${imageMap.join('\n')}
+
+MANDATORY RULES:
+1. The property photos (Image 1 to Image ${numPropertyImages}) are content assets. Keep the generated building/property visual extremely close, faithful, and visually consistent with these actual photos. Do NOT invent unrelated structures or change the architectural design of the building.
+2. The logo (Image ${numPropertyImages + 1}) is branding only. Place it elegantly as a stamp of quality. Do NOT stretch, warp, or place it at the center of the scene.
+=== END IMAGE ROLES ===
 
 `;
 }
