@@ -162,18 +162,49 @@ export async function POST(request: Request) {
                             
                             // Database helper functions for agentic bot tools (declared as const to avoid block-scope syntax issues)
                             const dbSearchLeads = async (userId: string, query: string) => {
-                                const { data: matchedLeads } = await supabaseAdmin
-                                    .from('leads')
-                                    .select('id, name, phone, email, pipeline_stage, remarks, source, created_at')
-                                    .eq('user_id', userId)
-                                    .or(`name.ilike.%${query}%,email.ilike.%${query}%,phone.ilike.%${query}%`);
-                                return matchedLeads || [];
-                            };
+                                 console.log(`🔍 dbSearchLeads triggered with query: "${query}" for userId: ${userId}`);
+                                 const cleanQuery = query.trim();
+                                 if (!cleanQuery) return [];
+
+                                 const words = cleanQuery.split(/\s+/).filter(w => w.length > 1);
+                                 if (words.length === 0) {
+                                     const { data: matched } = await supabaseAdmin
+                                         .from('leads')
+                                         .select('id, name, phone, email, pipeline_stage, notes, source, created_at')
+                                         .eq('user_id', userId)
+                                         .or(`name.ilike.%${cleanQuery}%,email.ilike.%${cleanQuery}%,phone.ilike.%${cleanQuery}%`);
+                                     return matched || [];
+                                 }
+
+                                 const conditions: string[] = [];
+                                 for (const word of words) {
+                                     conditions.push(`name.ilike.%${word}%`);
+                                 }
+                                 conditions.push(`email.ilike.%${cleanQuery}%`);
+                                 conditions.push(`phone.ilike.%${cleanQuery}%`);
+
+                                 const orCondition = conditions.join(',');
+                                 console.log(`🔍 Constructed OR condition: ${orCondition}`);
+
+                                 const { data: matchedLeads, error } = await supabaseAdmin
+                                     .from('leads')
+                                     .select('id, name, phone, email, pipeline_stage, notes, source, created_at')
+                                     .eq('user_id', userId)
+                                     .or(orCondition);
+
+                                 if (error) {
+                                     console.error("❌ dbSearchLeads error:", error);
+                                     return [];
+                                 }
+
+                                 console.log(`🔍 dbSearchLeads found ${matchedLeads?.length || 0} leads`);
+                                 return matchedLeads || [];
+                             };
 
                             const dbGetLeadDetails = async (userId: string, leadId: string) => {
                                 const { data: lead } = await supabaseAdmin
                                     .from('leads')
-                                    .select('id, name, phone, email, pipeline_stage, remarks, source, created_at')
+                                    .select('id, name, phone, email, pipeline_stage, notes, source, created_at')
                                     .eq('user_id', userId)
                                     .eq('id', leadId)
                                     .maybeSingle();
@@ -272,7 +303,7 @@ export async function POST(request: Request) {
                                          // 1. Fetch basic leads list (up to 500 leads) for fallback/fuzzy match
                                          const { data: listData } = await supabaseAdmin
                                              .from('leads')
-                                             .select('id, name, phone, email')
+                                             .select('id, name, phone, email, pipeline_stage, created_at')
                                              .eq('user_id', matchedProfile.id)
                                              .order('created_at', { ascending: false })
                                              .limit(500);
@@ -288,7 +319,7 @@ export async function POST(request: Request) {
                                              // Search leads by name or email or phone matching the terms
                                              let leadSearchQuery = supabaseAdmin
                                                  .from('leads')
-                                                 .select('id, name, phone, email, pipeline_stage, remarks, source, created_at')
+                                                 .select('id, name, phone, email, pipeline_stage, notes, source, created_at')
                                                  .eq('user_id', matchedProfile.id);
                                              
                                              const orConditions = searchTerms.map((term: string) => `name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%`).join(',');
@@ -304,7 +335,7 @@ export async function POST(request: Request) {
   Stage: ${l.pipeline_stage || 'New'}
   Source: ${l.source || 'N/A'}
   Created: ${new Date(l.created_at).toLocaleString()}
-  Remarks: ${l.remarks || 'None'}
+  Notes: ${l.notes || 'None'}
   Link to Lead: ${leadLink}`;
                                                  }).join('\n\n');
                                              }
@@ -312,8 +343,8 @@ export async function POST(request: Request) {
                                      } catch (errSearch) {
                                          console.error("❌ Failed to search leads for context:", errSearch);
                                      }
-                                     // Duplicate query removed:
-                                     const leads: any[] = [];
+                                     // Assign leads to the leadsList which was fetched successfully
+                                     const leads: any[] = leadsList;
                                      if (false) console.log(leads);
                                         
                                     let campaignsContext = '';
@@ -490,6 +521,18 @@ Recent Conversation History:
 ${chatHistoryText || "No previous messages."}
 
 IMPORTANT RULES:
+- WHATSAPP FORMATTING CONSTRAINTS:
+  * WhatsApp does NOT support markdown tables, HTML, or code-blocks. NEVER output tables, columns, or markdown table syntax (| --- |).
+  * Always format lists, metrics, or chat history logs as a clean, vertical, chronological stream.
+  * For chat histories, format precisely like this:
+    📅 *July 8, 2026*
+    📩 *Inbound*: "User message text"
+    📤 *Outbound*: "Bot message text"
+  * Use bold text (*text*) and standard bullets (•) to group details. Keep everything extremely readable on a narrow phone screen.
+- READ-ONLY SCOPE LIMITATION:
+  * You are a read-only assistant. You CANNOT update, modify, delete, or move leads. You cannot change pipeline stages, add notes, or edit contact details.
+  * NEVER suggest, offer, or ask the user if they want you to perform any write/update actions (e.g. do NOT ask if they want you to "move them to a different stage" or "update details"). 
+  * Only suggest viewing or querying information that you can actually retrieve (e.g. "Would you like to view their WhatsApp chat history?").
 - Always use "Dashboard Results" as the primary campaign result/lead count (this matches the Meta Ads Manager results column). Do NOT sum the metrics inside "Actions Breakdown" unless explicitly asked to provide other specific events breakdown. Use "Dashboard Results" directly for any questions about campaign results or lead counts!
 - Answer their query accurately using ONLY the data provided or returned by tools. Do NOT invent, estimate, or hallucinate any fields.
 - If the user asks about a lead (e.g. details, stage, what conversation happened, contacts, etc.), you MUST call the relevant tool (search_leads, get_lead_details, or get_lead_whatsapp_history) to retrieve the active, fresh data from the database.
@@ -510,7 +553,10 @@ IMPORTANT RULES:
                                           searchQuery: z.string().describe('The name, phone number, or email to search for.')
                                         }),
                                         execute: async (args: { searchQuery: string }) => {
-                                          return await dbSearchLeads(matchedProfile.id, args.searchQuery);
+                                          console.log(`🤖 [TOOL: search_leads] Triggered with search query: "${args.searchQuery}"`);
+                                          const results = await dbSearchLeads(matchedProfile.id, args.searchQuery);
+                                          console.log(`🤖 [TOOL: search_leads] Found ${results.length} matched leads`);
+                                          return results;
                                         }
                                       }),
                                       get_lead_details: tool({
@@ -519,7 +565,10 @@ IMPORTANT RULES:
                                           leadId: z.string().describe('The UUID of the lead.')
                                         }),
                                         execute: async (args: { leadId: string }) => {
-                                          return await dbGetLeadDetails(matchedProfile.id, args.leadId);
+                                          console.log(`🤖 [TOOL: get_lead_details] Fetching details for lead ID: "${args.leadId}"`);
+                                          const result = await dbGetLeadDetails(matchedProfile.id, args.leadId);
+                                          console.log(`🤖 [TOOL: get_lead_details] Result:`, result);
+                                          return result;
                                         }
                                       }),
                                       get_lead_whatsapp_history: tool({
@@ -528,7 +577,10 @@ IMPORTANT RULES:
                                           leadId: z.string().describe('The UUID of the lead.')
                                         }),
                                         execute: async (args: { leadId: string }) => {
-                                          return await dbGetLeadWhatsAppHistory(matchedProfile.id, args.leadId);
+                                          console.log(`🤖 [TOOL: get_lead_whatsapp_history] Fetching WhatsApp history for lead ID: "${args.leadId}"`);
+                                          const result = await dbGetLeadWhatsAppHistory(matchedProfile.id, args.leadId);
+                                          console.log(`🤖 [TOOL: get_lead_whatsapp_history] Retrieved ${result.length} message logs`);
+                                          return result;
                                         }
                                       }),
                                       get_leads_by_stage: tool({
@@ -537,7 +589,10 @@ IMPORTANT RULES:
                                           stageName: z.string().describe("The name of the pipeline stage (e.g. 'New', 'Contacted', 'Won', 'Lost').")
                                         }),
                                         execute: async (args: { stageName: string }) => {
-                                          return await dbGetLeadsByStage(matchedProfile.id, args.stageName);
+                                          console.log(`🤖 [TOOL: get_leads_by_stage] Fetching leads in stage: "${args.stageName}"`);
+                                          const result = await dbGetLeadsByStage(matchedProfile.id, args.stageName);
+                                          console.log(`🤖 [TOOL: get_leads_by_stage] Found ${result.length} leads in stage`);
+                                          return result;
                                         }
                                       })
                                     };
@@ -569,13 +624,13 @@ IMPORTANT RULES:
                                                 baseURL: 'https://api.deepseek.com/v1',
                                                 apiKey: process.env.DEEPSEEK_API_KEY || ''
                                             });
-                                            modelProvider = deepseek('deepseek-v4-flash');
+                                            modelProvider = deepseek.chat('deepseek-v4-flash');
                                         } else {
                                             if (selectedModel === 'deepseek') {
                                                 console.warn("⚠️ DEEPSEEK_API_KEY is missing in env. Falling back to GEMINI model.");
                                             }
                                             console.log("🤖 Routing WhatsApp bot query to GEMINI model");
-                                            modelProvider = google('gemini-3.5-flash');
+                                            modelProvider = google.chat('gemini-3.5-flash');
                                         }
 
                                         const { text, usage } = await generateText({

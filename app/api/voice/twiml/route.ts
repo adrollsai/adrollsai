@@ -387,6 +387,31 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
 
         const companyName = profile?.business_name || 'our company'
         const leadName = lead.name || 'there'
+        const firstName = leadName.split(' ')[0] || 'there'
+        const isFirstCall = !previousCallsHistory && !whatsappHistory
+
+        // Build proactive context instruction for after-greeting conversation step
+        let contextInstruction = ''
+        if (isFirstCall) {
+            if (lead.source) {
+                const cleanSource = lead.source.toLowerCase()
+                if (cleanSource.includes('facebook') || cleanSource.includes('fb') || cleanSource.includes('instagram') || cleanSource.includes('ad')) {
+                    contextInstruction = `After the lead responds to your greeting, proactively establish context. Say something like: "Aapne hamaari ad dekhi hogi ${companyName} ki, ussi ke regarding call kar raha hoon." Then naturally ask about their availability.`
+                } else {
+                    contextInstruction = `After the lead responds to your greeting, proactively establish context. Say something like: "Aapne ${lead.source} par interest dikhaya tha, ussi ke regarding ${companyName} se call kar raha hoon." Then naturally ask about their availability.`
+                }
+            } else {
+                contextInstruction = `After the lead responds to your greeting, introduce yourself and what the business does. ${productContext ? 'Mention the product/property they may be interested in from the LEAD INTEREST section below.' : (profile?.business_info ? `Briefly mention what the business deals in based on this info: "${profile.business_info.substring(0, 150).replace(/"/g, "'")}"` : '')} Say something like: "Main ${companyName} se baat kar raha hoon, hum [mention product/service] mein deal karte hain." Then naturally ask about their availability.`
+            }
+        } else {
+            if (previousCallsHistory) {
+                contextInstruction = `After the lead responds to your greeting, reference the previous conversation to establish recognition. Say something like: "Humne pichli baar baat ki thi..." and briefly mention what was discussed based on the Previous Call History provided below. Keep it natural and brief so the prospect remembers. Then ask about their availability.`
+            } else if (whatsappHistory) {
+                contextInstruction = `After the lead responds to your greeting, reference the WhatsApp conversation to establish recognition. Say something like: "Aapki WhatsApp par humse baat hui thi, ussi ke regarding follow-up call kar raha hoon." Briefly reference what was discussed. Then ask about their availability.`
+            } else {
+                contextInstruction = `After the lead responds to your greeting, say: "Humne pichli baar baat ki thi ${companyName} ke regarding, ussi ke follow-up mein call kar raha hoon." Then naturally ask about their availability.`
+            }
+        }
 
         const isQualifyingActive = profile?.qualifying_enabled && profile?.qualifying_questions && profile.qualifying_questions.length > 0
         let qualifyingInstruction = ''
@@ -421,6 +446,12 @@ CRITICAL RULES:
 7. ENDING THE CALL: Once the call objective is met (e.g. appointment is booked, callback is scheduled) or the lead wants to end the conversation, say a brief polite goodbye and immediately trigger your "End conversation" tool to hang up the call. Do not wait for the user to respond after your goodbye.
 8. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear a voicemail greeting, answering machine message, or any automated message (such as "please leave a message", "after the beep", or an automated robot voice), you must immediately trigger your "End conversation" tool to hang up the call. Do NOT speak, say hello, or say goodbye; just trigger the hangup tool instantly.
 
+CONVERSATION FLOW:
+1. Your first greeting is already spoken: "Hi ${firstName} ji, kaise ho aap?".
+2. Once the lead responds to your greeting, your NEXT response must proactively establish context and recognition:
+${contextInstruction}
+3. After establishing context, proceed with the conversation (guide them to schedule a consultation/appointment with ${companyName}).
+
 --- LEAD & BUSINESS CONTEXT ---
 Lead Name: ${leadName}
 Email: ${lead.email || 'None'}
@@ -439,9 +470,9 @@ ${previousCallsHistory ? `Previous Call History:\n${previousCallsHistory}\n` : '
 ${whatsappHistory ? `Previous WhatsApp History:\n${whatsappHistory}` : ''}
 `.trim()
 
-        let dynamicFirstMessage = `Hi ${leadName}! Main ${companyName} se AI booking assistant baat kar raha hoon. Maine dekha aap hamare products me interest le rahe the, to kya hum ek quick consultation call schedule kar sakte hain? Aap kaise hain?`
+        let dynamicFirstMessage = `Hi ${firstName} ji, kaise ho aap?`
         if (isQualifyingActive && profile.qualifying_questions[0]) {
-            dynamicFirstMessage = `Hi ${leadName}! Main ${companyName} se AI representative baat kar raha hoon. Maine dekha aapne query submit ki thi. Aage badhne se pehle kya main aap se ek quick detail clear kar sakta hoon? ${profile.qualifying_questions[0]}`
+            dynamicFirstMessage = `Hi ${firstName}! Main ${companyName} se AI representative baat kar raha hoon. Maine dekha aapne query submit ki thi. Aage badhne se pehle kya main aap se ek quick detail clear kar sakta hoon? ${profile.qualifying_questions[0]}`
         }
 
         let finalPrompt = customPrompt

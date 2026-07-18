@@ -790,7 +790,7 @@ END:VCARD`
                     </div>
                 </div>
                 {(lead.phone || nextLeadId || prevLeadId) && (
-                    <div className="flex gap-2 w-full sm:w-auto justify-end sm:justify-start pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 items-center">
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-between sm:justify-start pt-2.5 sm:pt-0 border-t sm:border-t-0 border-slate-100 items-center">
                         {(prevLeadId || nextLeadId) && (
                             <div className="flex items-center gap-1.5 shrink-0">
                                 {prevLeadId && (
@@ -816,17 +816,17 @@ END:VCARD`
                             </div>
                         )}
                         {lead.phone && (
-                            <>
-                                <button onClick={downloadVCard} className="p-3 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-full shadow-sm transition-colors" title="Save to Contacts">
-                                    <UserPlus size={18} />
+                            <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap justify-end ml-auto sm:ml-0">
+                                <button onClick={downloadVCard} className="p-2.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-full shadow-sm transition-colors shrink-0" title="Save to Contacts">
+                                    <UserPlus size={16} />
                                 </button>
-                                <button onClick={() => setIsSendTemplateOpen(true)} className="p-3 bg-[#25D366] text-white hover:bg-[#22c35e] rounded-full shadow-sm transition-colors flex items-center gap-1.5 px-4 font-bold text-xs animate-pulse" title="Send WhatsApp Template">
-                                    <MessageCircle size={18} />
+                                <button onClick={() => setIsSendTemplateOpen(true)} className="p-2.5 bg-[#25D366] text-white hover:bg-[#22c35e] rounded-full shadow-sm transition-colors flex items-center gap-1.5 px-3.5 font-bold text-[11px] sm:text-xs animate-pulse shrink-0" title="Send WhatsApp Template">
+                                    <MessageCircle size={16} />
                                     <span>Send Template</span>
                                 </button>
-                                <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-3 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors" title="Direct WhatsApp Chat"><MessageCircle size={18} /></a>
-                                <a href={`tel:${lead.phone}`} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full shadow-sm transition-colors" title="Call Lead"><Phone size={18} /></a>
-                            </>
+                                <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors shrink-0" title="Direct WhatsApp Chat"><MessageCircle size={16} /></a>
+                                <a href={`tel:${lead.phone}`} className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full shadow-sm transition-colors shrink-0" title="Call Lead"><Phone size={16} /></a>
+                            </div>
                         )}
                     </div>
                 )}

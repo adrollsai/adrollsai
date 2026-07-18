@@ -293,19 +293,90 @@ wss.on('connection', (wsConnection) => {
                             }).join('\n');
                         }
 
-                        const isFirstCall = !lead.voice_call_summary;
+                        // Fetch WhatsApp history for conversational context
+                        let whatsappHistory = '';
+                        try {
+                            const { data: waChat } = await supabaseAdmin
+                                .from('whatsapp_chats')
+                                .select('id')
+                                .eq('lead_id', leadId)
+                                .maybeSingle();
+                            if (waChat) {
+                                const { data: waMsgs } = await supabaseAdmin
+                                    .from('whatsapp_messages')
+                                    .select('direction, message_text, created_at')
+                                    .eq('chat_id', waChat.id)
+                                    .order('created_at', { ascending: false })
+                                    .limit(10);
+                                if (waMsgs && waMsgs.length > 0) {
+                                    whatsappHistory = waMsgs
+                                        .reverse()
+                                        .map(m => `${m.direction === 'inbound' ? 'Lead' : 'Agent'}: ${m.message_text}`)
+                                        .join('\n');
+                                }
+                            }
+                        } catch (waErr) {
+                            console.error('[BRIDGE] WhatsApp history fetch error:', waErr);
+                        }
+
+                        // Fetch previous call summaries from lead_history
+                        let previousCallsHistory = '';
+                        try {
+                            const { data: callLogs } = await supabaseAdmin
+                                .from('lead_history')
+                                .select('description, created_at')
+                                .eq('lead_id', leadId)
+                                .eq('action_type', 'REMARK')
+                                .order('created_at', { ascending: false })
+                                .limit(5);
+                            if (callLogs && callLogs.length > 0) {
+                                const parsedCalls = [];
+                                for (const log of callLogs) {
+                                    if (log.description && log.description.startsWith('🎙️ CALL_JSON:')) {
+                                        try {
+                                            const rawJson = log.description.replace('🎙️ CALL_JSON:', '').trim();
+                                            const parsed = JSON.parse(rawJson);
+                                            const dateStr = new Date(log.created_at).toLocaleDateString();
+                                            if (parsed.summary) parsedCalls.push(`- Call on ${dateStr}: ${parsed.summary}`);
+                                        } catch (e) { /* skip malformed */ }
+                                    }
+                                }
+                                if (parsedCalls.length > 0) previousCallsHistory = parsedCalls.join('\n');
+                            }
+                        } catch (chErr) {
+                            console.error('[BRIDGE] Call history fetch error:', chErr);
+                        }
+                        if (!previousCallsHistory && lead.voice_call_summary) {
+                            previousCallsHistory = `- Last Call Summary: ${lead.voice_call_summary}`;
+                        }
+
+                        const companyName = profile?.business_name || 'our company';
+                        const firstName = leadName.split(' ')[0] || 'there';
+                        const isFirstCall = !previousCallsHistory && !whatsappHistory;
+
+                        // Build proactive context instruction for the agent's second turn (after greeting response)
                         let sourceInstructions = "";
+                        let contextInstruction = "";
                         if (isFirstCall) {
-                            sourceInstructions = `\nThis is your FIRST call to this lead. If the prospect asks "What is this call regarding?", explain the context:`;
+                            sourceInstructions = `\nThis is your FIRST call to this lead.`;
                             if (lead.source) {
                                 const cleanSource = lead.source.toLowerCase();
-                                if (cleanSource.includes('facebook') || cleanSource.includes('fb') || cleanSource.includes('ad')) {
-                                    sourceInstructions += `\n- The lead came from Facebook Ads. Say: "I am calling because you showed interest in our Facebook ad regarding properties. You must've seen our ad."`;
+                                if (cleanSource.includes('facebook') || cleanSource.includes('fb') || cleanSource.includes('instagram') || cleanSource.includes('ad')) {
+                                    contextInstruction = `   After the lead responds to your greeting, proactively establish context. Say something like: "Aapne hamaari ad dekhi hogi ${companyName} ki, ussi ke regarding call kar rahi hoon." Then naturally ask about their availability.`;
                                 } else {
-                                    sourceInstructions += `\n- The lead came from ${lead.source}. Say: "I am calling because you recently registered your interest on our portal from ${lead.source}."`;
+                                    contextInstruction = `   After the lead responds to your greeting, proactively establish context. Say something like: "Aapne ${lead.source} par interest dikhaya tha, ussi ke regarding ${companyName} se call kar rahi hoon." Then naturally ask about their availability.`;
                                 }
                             } else {
-                                sourceInstructions += `\n- There is no specific source context. Say: "I am calling to follow up on your interest in our premium real estate properties."`;
+                                contextInstruction = `   After the lead responds to your greeting, introduce yourself and what the business does. ${productContext ? 'Mention the product/property they may be interested in from the LEAD INTEREST section below.' : (profile?.business_info ? `Briefly mention what the business deals in based on this info: "${profile.business_info.substring(0, 150).replace(/"/g, "'")}"` : '')} Say something like: "Main ${companyName} se baat kar rahi hoon, hum [mention product/service] mein deal karte hain." Then naturally ask about their availability.`;
+                            }
+                        } else {
+                            sourceInstructions = `\nThis is a FOLLOW-UP call. The lead has been contacted before.`;
+                            if (previousCallsHistory) {
+                                contextInstruction = `   After the lead responds to your greeting, reference the previous conversation to establish recognition. Say something like: "Humne pichli baar baat ki thi..." and briefly mention what was discussed based on the Previous Call History provided below. Keep it natural and brief so the prospect remembers. Then ask about their availability.`;
+                            } else if (whatsappHistory) {
+                                contextInstruction = `   After the lead responds to your greeting, reference the WhatsApp conversation to establish recognition. Say something like: "Aapki WhatsApp par humse baat hui thi, ussi ke regarding follow-up call kar rahi hoon." Briefly reference what was discussed. Then ask about their availability.`;
+                            } else {
+                                contextInstruction = `   After the lead responds to your greeting, say: "Humne pichli baar baat ki thi ${companyName} ke regarding, ussi ke follow-up mein call kar rahi hoon." Then naturally ask about their availability.`;
                             }
                         }
 
@@ -320,14 +391,14 @@ The prospect recently asked the following questions which we have now resolved. 
                             resolvedQuestionsInstruction += `\nGreet the user and clear their doubts regarding these questions first.`;
                         }
 
-                        const companyName = profile?.business_name || 'our company';
-                        const firstName = leadName.split(' ')[0] || 'there';
+
                         
                         if (campaign && campaign.custom_prompt) {
                             systemInstruction = `
 ${campaign.custom_prompt}
 
 ${sourceInstructions}
+${contextInstruction}
 ${resolvedQuestionsInstruction}
 
 --- LEAD & BUSINESS CONTEXT ---
@@ -336,6 +407,8 @@ Lead Phone: ${leadPhone || 'N/A'}
 Notes/History: ${lead.notes || 'None'}
 ${productContext ? `--- LEAD INTEREST ---\n${productContext}\n` : ''}
 ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
+${previousCallsHistory ? `--- PREVIOUS CALL HISTORY ---\n${previousCallsHistory}\n` : ''}
+${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : ''}
 `.trim();
 
                             const promptLower = campaign.custom_prompt.toLowerCase();
@@ -355,8 +428,9 @@ Your primary objective is to make the lead, ${leadName}, book an appointment/con
 
 CONVERSATION FLOW:
 1. Your first greeting is: "Hi ${firstName} ji, kaise ho aap?". (This is already spoken initially).
-2. Once the lead responds to your greeting, your immediate next response must be to ask if they have availability to talk right now (e.g., "Kya aapke paas abhi baat karne ke liye time hai?").
-3. After they confirm availability or agree to speak, proceed with the rest of the conversation (introduce yourself as the AI booking assistant from ${companyName}, and guide them to schedule a consultation/appointment).
+2. Once the lead responds to your greeting, your NEXT response must proactively establish context and recognition:
+${contextInstruction}
+3. After establishing context, proceed with the conversation (guide them to schedule a consultation/appointment with ${companyName}).
 
 CRITICAL RULES (CLOSED-WORLD GROUNDING):
 1. STRICT CLOSED-WORLD ASSUMPTION: You must ONLY speak about the facts explicitly provided in the business profile info, catalog, and lead details.
@@ -381,6 +455,8 @@ Lead Phone: ${leadPhone || 'N/A'}
 Notes/History: ${lead.notes || 'None'}
 ${productContext ? `--- LEAD INTEREST ---\n${productContext}\n` : ''}
 ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
+${previousCallsHistory ? `--- PREVIOUS CALL HISTORY ---\n${previousCallsHistory}\n` : ''}
+${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : ''}
 `.trim();
 
                             if (resolvedQuestions.length > 0) {

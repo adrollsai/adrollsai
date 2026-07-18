@@ -366,16 +366,19 @@ export default function AutomationPage() {
     try {
       const { data, error } = await supabase
         .from('leads')
-        .select('id, name, phone, email, pipeline_stage, remarks, custom_fields, source, created_at')
+        .select('id, name, phone, email, pipeline_stage, notes, custom_fields, source, created_at')
         .eq('id', leadId)
         .single()
       if (data && !error) {
-        setLeadInfo(data as LeadInfo)
+        setLeadInfo({
+          ...data,
+          remarks: (data as any).notes || ''
+        } as unknown as LeadInfo)
         setLeadEditForm({
           name: data.name || '',
           email: data.email || '',
           pipeline_stage: data.pipeline_stage || 'New',
-          remarks: data.remarks || ''
+          remarks: (data as any).notes || ''
         })
       }
     } catch (e) {
@@ -393,7 +396,7 @@ export default function AutomationPage() {
           name: leadEditForm.name,
           email: leadEditForm.email,
           pipeline_stage: leadEditForm.pipeline_stage,
-          remarks: leadEditForm.remarks
+          notes: leadEditForm.remarks
         })
         .eq('id', leadInfo.id)
       if (error) throw error
