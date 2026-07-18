@@ -133,10 +133,30 @@ export async function POST(request: Request) {
                         const buttonReplyId = isInteractive ? message.interactive?.button_reply?.id : null;
                         const buttonReplyTitle = isInteractive ? message.interactive?.button_reply?.title : null;
                         
-                        const messageText = buttonReplyTitle || message.text?.body || '';
+                        // Handle media messages (image, video, document, audio, sticker)
+                        const mediaTypes = ['image', 'video', 'document', 'audio', 'sticker'];
+                        const isMediaMessage = mediaTypes.includes(message.type);
+                        let inboundMediaUrl: string | null = null;
+                        let inboundMediaType: string | null = null;
+                        let mediaCaption = '';
+
+                        if (isMediaMessage) {
+                            inboundMediaType = message.type;
+                            const mediaObj = message[message.type]; // e.g. message.image, message.video
+                            mediaCaption = mediaObj?.caption || '';
+                            const mediaId = mediaObj?.id;
+                            
+                            if (mediaId) {
+                                // Resolve the media download URL from Meta Graph API
+                                // We need the WABA token from the profile matched below, so we store media ID and resolve later
+                                inboundMediaUrl = `__media_id__:${mediaId}`; // Placeholder, resolved after profile match
+                            }
+                        }
+
+                        const messageText = buttonReplyTitle || message.text?.body || mediaCaption || (isMediaMessage ? `[${message.type}]` : '');
                         
-                        console.log(`💬 Received message from ${fromPhone}: "${messageText}"`);
-                        if (!messageText) continue;
+                        console.log(`💬 Received message from ${fromPhone}: "${messageText}"${isMediaMessage ? ` [media: ${message.type}]` : ''}`);
+                        if (!messageText && !isMediaMessage) continue;
                         
                         const cleanFrom = fromPhone.replace(/\D/g, '');
                         
@@ -278,13 +298,37 @@ export async function POST(request: Request) {
                                         }
 
                                         if (ownerChat) {
+                                            // Resolve media URL for owner messages if needed
+                                            if (isMediaMessage && inboundMediaUrl?.startsWith('__media_id__:')) {
+                                                const ownerToken = matchedProfile.whatsapp_access_token || matchedProfile.facebook_token;
+                                                if (ownerToken) {
+                                                    const mediaId = inboundMediaUrl.replace('__media_id__:', '');
+                                                    try {
+                                                        const mediaInfoRes = await fetch(`https://graph.facebook.com/v20.0/${mediaId}`, {
+                                                            headers: { 'Authorization': `Bearer ${ownerToken}` }
+                                                        });
+                                                        if (mediaInfoRes.ok) {
+                                                            const mediaInfo = await mediaInfoRes.json();
+                                                            inboundMediaUrl = mediaInfo.url || null;
+                                                        }
+                                                    } catch (mediaErr) {
+                                                        console.error(`[Flow] Error resolving owner media URL:`, mediaErr);
+                                                    }
+                                                }
+                                            }
+
+                                            const ownerMsgInsert: any = {
+                                                chat_id: ownerChat.id,
+                                                direction: 'inbound',
+                                                message_text: messageText || `[${inboundMediaType || 'media'}]`
+                                            };
+                                            if (inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:')) {
+                                                ownerMsgInsert.media_url = inboundMediaUrl;
+                                            }
+                                            if (inboundMediaType) ownerMsgInsert.media_type = inboundMediaType;
                                             await supabaseAdmin
                                                 .from('whatsapp_messages')
-                                                .insert({
-                                                    chat_id: ownerChat.id,
-                                                    direction: 'inbound',
-                                                    message_text: messageText
-                                                });
+                                                .insert(ownerMsgInsert);
                                         }
                                     } catch (dbErr) {
                                         console.error("❌ Failed to log owner message to DB:", dbErr);
@@ -905,14 +949,38 @@ IMPORTANT RULES:
                                         return;
                                     }
 
-                                    // Log inbound message
+                                    // Resolve media URL if this is a media message
+                                    if (isMediaMessage && inboundMediaUrl?.startsWith('__media_id__:')) {
+                                        const mediaId = inboundMediaUrl.replace('__media_id__:', '');
+                                        try {
+                                            const mediaInfoRes = await fetch(`https://graph.facebook.com/v20.0/${mediaId}`, {
+                                                headers: { 'Authorization': `Bearer ${ownerWaToken}` }
+                                            });
+                                            if (mediaInfoRes.ok) {
+                                                const mediaInfo = await mediaInfoRes.json();
+                                                inboundMediaUrl = mediaInfo.url || null;
+                                            } else {
+                                                console.error(`[Flow] Failed to fetch media info for ${mediaId}`);
+                                                inboundMediaUrl = null;
+                                            }
+                                        } catch (mediaErr) {
+                                            console.error(`[Flow] Error resolving media URL:`, mediaErr);
+                                            inboundMediaUrl = null;
+                                        }
+                                    }
+
+                                    // Log inbound message (with media if present)
+                                    const inboundInsert: any = {
+                                        chat_id: chat.id,
+                                        direction: 'inbound',
+                                        message_text: messageText || `[${inboundMediaType || 'media'}]`
+                                    };
+                                    if (inboundMediaUrl) inboundInsert.media_url = inboundMediaUrl;
+                                    if (inboundMediaType) inboundInsert.media_type = inboundMediaType;
+
                                     await supabaseAdmin
                                         .from('whatsapp_messages')
-                                        .insert({
-                                            chat_id: chat.id,
-                                            direction: 'inbound',
-                                            message_text: messageText
-                                        });
+                                        .insert(inboundInsert);
 
                                      // Check if this was a click on the "Connect with Expert" button
                                      const isConnectExpertClick = buttonReplyId === 'connect_expert';
@@ -1041,6 +1109,53 @@ IMPORTANT RULES:
                                                              console.error('[Flow] Failed to send WhatsApp template alert to admin:', waAlertData);
                                                          } else {
                                                              console.log(`[Flow] WhatsApp template alert sent to admin: ${cleanPersonal}`);
+                                                             
+                                                             // Log the template message in the CRM WhatsApp inbox so it's visible
+                                                             try {
+                                                                 const templateBodyText = `🔔 Expert Connection Request!\n\nLead *${leadName}* (${leadPhone}) has requested to connect with an expert.\n\nPlease call them back as soon as possible.`;
+                                                                 
+                                                                 // Upsert chat for admin's personal number
+                                                                 const { data: existingAdminChat } = await supabaseAdmin
+                                                                     .from('whatsapp_chats')
+                                                                     .select('id')
+                                                                     .eq('user_id', ownerUserId)
+                                                                     .eq('recipient_phone', cleanPersonal)
+                                                                     .maybeSingle();
+                                                                 
+                                                                 let adminChatId = existingAdminChat?.id;
+                                                                 
+                                                                 if (!adminChatId) {
+                                                                     const { data: newAdminChat } = await supabaseAdmin
+                                                                         .from('whatsapp_chats')
+                                                                         .insert({
+                                                                             user_id: ownerUserId,
+                                                                             recipient_phone: cleanPersonal,
+                                                                             recipient_name: ownerProfile.business_name ? `${ownerProfile.business_name} (Admin)` : 'Admin',
+                                                                             last_message_text: templateBodyText,
+                                                                             updated_at: new Date().toISOString()
+                                                                         })
+                                                                         .select('id')
+                                                                         .single();
+                                                                     adminChatId = newAdminChat?.id;
+                                                                 } else {
+                                                                     await supabaseAdmin
+                                                                         .from('whatsapp_chats')
+                                                                         .update({ last_message_text: templateBodyText, updated_at: new Date().toISOString() })
+                                                                         .eq('id', adminChatId);
+                                                                 }
+                                                                 
+                                                                 if (adminChatId) {
+                                                                     await supabaseAdmin
+                                                                         .from('whatsapp_messages')
+                                                                         .insert({
+                                                                             chat_id: adminChatId,
+                                                                             direction: 'outbound',
+                                                                             message_text: templateBodyText
+                                                                         });
+                                                                 }
+                                                             } catch (logErr) {
+                                                                 console.error('[Flow] Failed to log admin template in CRM inbox:', logErr);
+                                                             }
                                                          }
                                                      } catch (waAlertErr: any) {
                                                          console.error('[Flow] Exception sending WhatsApp alert to admin:', waAlertErr.message);
@@ -1052,7 +1167,7 @@ IMPORTANT RULES:
                                          return; // Stop processing further automation rules/flows or Gemini
                                      }
 
-                                    // Helper: send WhatsApp interactive message with customizable action buttons
+                                    // Helper: send WhatsApp interactive message with Connect with Expert button built-in
                                     const sendWAMessage = async (text: string) => {
                                         try {
                                             const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
@@ -1061,7 +1176,7 @@ IMPORTANT RULES:
                                                 ? `https://${ownerCustomDomain}` 
                                                 : `${appUrl}/shared/${ownerUserId}`;
 
-                                            // Build buttons list
+                                            // Build buttons list for CTA links
                                             let buttons = [{ text: catalogueBtnText || 'View Products', url: catalogueLink }];
                                             if (ownerButtons && Array.isArray(ownerButtons) && ownerButtons.length > 0) {
                                                 buttons = ownerButtons.map((btn: any, idx: number) => {
@@ -1078,7 +1193,12 @@ IMPORTANT RULES:
                                                 });
                                             }
 
-                                            // Send the primary button
+                                            // Append catalogue link(s) to the body text so user can click them
+                                            let bodyWithLinks = text;
+                                            const linkLines = buttons.map(b => `🔗 ${b.text}: ${b.url}`).join('\n');
+                                            bodyWithLinks += `\n\n${linkLines}`;
+
+                                            // Send as interactive button type with "Connect with Expert" quick reply
                                             const sendRes = await fetch(metaUrl, {
                                                 method: 'POST',
                                                 headers: {
@@ -1091,16 +1211,20 @@ IMPORTANT RULES:
                                                     to: cleanFrom,
                                                     type: 'interactive',
                                                     interactive: {
-                                                        type: 'cta_url',
+                                                        type: 'button',
                                                         body: {
-                                                            text: text
+                                                            text: bodyWithLinks
                                                         },
                                                         action: {
-                                                            name: 'cta_url',
-                                                            parameters: {
-                                                                display_text: buttons[0].text,
-                                                                url: buttons[0].url
-                                                            }
+                                                            buttons: [
+                                                                {
+                                                                    type: 'reply',
+                                                                    reply: {
+                                                                        id: 'connect_expert',
+                                                                        title: 'Connect with Expert'
+                                                                    }
+                                                                }
+                                                            ]
                                                         }
                                                     }
                                                 })
@@ -1168,52 +1292,6 @@ IMPORTANT RULES:
                                                         console.error(`[Flow] Failed to send extra WA button ${i}:`, errData);
                                                     }
                                                 }
-                                            
-                                                 // Send "Connect with Expert" quick reply button as a subsequent message
-                                                 await new Promise(resolve => setTimeout(resolve, 800));
-                                                 const expertBodyText = "Would you like to speak directly with our expert on call?";
-                                                 const expertRes = await fetch(metaUrl, {
-                                                     method: 'POST',
-                                                     headers: {
-                                                         'Authorization': `Bearer ${ownerWaToken}`,
-                                                         'Content-Type': 'application/json'
-                                                     },
-                                                     body: JSON.stringify({
-                                                         messaging_product: 'whatsapp',
-                                                         recipient_type: 'individual',
-                                                         to: cleanFrom,
-                                                         type: 'interactive',
-                                                         interactive: {
-                                                             type: 'button',
-                                                             body: {
-                                                                 text: expertBodyText
-                                                             },
-                                                             action: {
-                                                                 buttons: [
-                                                                     {
-                                                                         type: 'reply',
-                                                                         reply: {
-                                                                             id: 'connect_expert',
-                                                                             title: 'Connect with Expert'
-                                                                         }
-                                                                     }
-                                                                 ]
-                                                             }
-                                                         }
-                                                     })
-                                                 });
-                                                 if (expertRes.ok) {
-                                                     await supabaseAdmin
-                                                         .from('whatsapp_messages')
-                                                         .insert({
-                                                             chat_id: chat!.id,
-                                                             direction: 'outbound',
-                                                             message_text: expertBodyText + " [Button: Connect with Expert]"
-                                                         });
-                                                 } else {
-                                                     const errData = await expertRes.json();
-                                                     console.error(`[Flow] Failed to send Connect with Expert button:`, errData);
-                                                 }
                                              } else {
                                                 const errData = await sendRes.json();
                                                 console.error(`[Flow] Failed to send WA message:`, errData);
@@ -2203,6 +2281,28 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
               `/dashboard/crm/${savedLead.id}` 
           )
 
+          // Personalize welcome template campaign name based on matched property in active inventory
+          let matchedPropertyTitle = '';
+          try {
+              const { data: properties } = await supabaseAdmin
+                  .from('properties')
+                  .select('title')
+                  .eq('user_id', profile.id);
+                  
+              if (properties && properties.length > 0) {
+                  // Scan for property title in campaignName, adCampaignString, formName (case-insensitive)
+                  const searchStr = `${campaignName} ${adCampaignString} ${formName}`.toLowerCase();
+                  const matched = properties.find(p => p.title && searchStr.includes(p.title.toLowerCase().trim()));
+                  if (matched) {
+                      matchedPropertyTitle = matched.title;
+                  }
+              }
+          } catch (propErr) {
+              console.error("[Facebook Webhook] Property attribution matching failed:", propErr);
+          }
+
+          const targetCampaignName = matchedPropertyTitle || campaignName || 'our properties';
+
           // Trigger automated WhatsApp welcome drip campaign
           if (savedLead && phone) {
               triggerWelcomeDrip(
@@ -2211,7 +2311,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                   name,
                   phone,
                   profile.id,
-                  adCampaignString || 'All'
+                  targetCampaignName
               ).catch(err => {
                   console.error('[DRIP TRIGGER] Facebook lead welcome drip failed:', err);
               });

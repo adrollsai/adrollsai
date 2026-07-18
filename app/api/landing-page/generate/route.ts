@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+
+export const maxDuration = 60
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { callGemini, callGeminiWithUsage, createKieImageTask } from '@/utils/external-apis'
@@ -530,21 +532,6 @@ CRITICAL RULES:
 8. SURVEY LAYOUT RULE: If the instructions request a survey page format, or if the current HTML contains a survey (data-page-type='survey'), you must structure the page as a single fullscreen centered card (light theme). The property visuals/images must be at the top of the card, and the qualification container '<div id="qualification-form-container" data-page-type="survey" data-button-text="Next"></div>' must be placed **directly below** the property images/slider. Ensure all other elements (like highlights or text descriptions), if present, are placed BELOW the survey container. Do NOT generate any "Start Survey" buttons or trigger card HTML; the first question must render immediately.`
         }
 
-        console.log(`[Lander API] Calling Gemini in mode: ${mode}...`)
-        const generateRes = await callGeminiWithUsage(systemPrompt, imageUrls)
-        const aiRawResult = generateRes.text
-        
-        // Deduct credits dynamically
-        const generateInr = calculateLLMCost(generateRes.modelName, generateRes.promptTokens, generateRes.completionTokens)
-        await deductCreditsByCost(supabaseAdmin, targetUserId, generateInr, 'ai_generation', `AI Landing Page - Page Copy Generation (${mode})`)
-        
-        // Clean markdown formatting if LLM failed to follow the instruction
-        const htmlResult = aiRawResult
-            .replace(/^```html\s*/i, '')
-            .replace(/^```\s*/, '')
-            .replace(/\s*```$/, '')
-            .trim()
-
         // Resolve slug
         let slug = requestSlug
         if (!slug) {
@@ -569,7 +556,7 @@ CRITICAL RULES:
             slug,
             title: `${resolvedProductName || 'Offer'} | High-Converting Listing`,
             product_name: resolvedProductName || 'Property Listing',
-            html_content: htmlResult,
+            html_content: mode === 'edit' ? currentHtml : '<!-- Generating page content... please wait. -->',
             form_id: formId || null,
             updated_at: new Date().toISOString()
         }
@@ -579,7 +566,7 @@ CRITICAL RULES:
             payload.created_at = new Date().toISOString()
         }
 
-        // Create or update record in public.landing_pages
+        // Create or update record in public.landing_pages first
         const { data: pageRecord, error: dbError } = await supabaseAdmin
             .from('landing_pages')
             .upsert(payload, {
@@ -593,11 +580,94 @@ CRITICAL RULES:
             return NextResponse.json({ error: "Failed to persist landing page to database." }, { status: 500 })
         }
 
+        // Create a tracking record in campaign_jobs
+        const { data: job, error: jobErr } = await supabaseAdmin
+            .from('campaign_jobs')
+            .insert({
+                user_id: user.id,
+                target_user_id: targetUserId,
+                status: 'processing',
+                payload: {
+                    type: 'landing_page_generation',
+                    mode,
+                    page_id: pageRecord.id,
+                    product_name: resolvedProductName,
+                    slug
+                }
+            })
+            .select()
+            .single()
+
+        if (jobErr) {
+            console.error("❌ Failed to create tracking campaign job:", jobErr)
+            return NextResponse.json({ error: "Failed to initialize background task tracking." }, { status: 500 })
+        }
+
+        // Fire and forget: run the heavy Gemini generation in background
+        (async () => {
+            try {
+                console.log(`[Lander API BG] Calling Gemini for job ${job.id} / page ${pageRecord.id} in mode: ${mode}...`)
+                const generateRes = await callGeminiWithUsage(systemPrompt, imageUrls)
+                const aiRawResult = generateRes.text
+                
+                // Deduct credits dynamically
+                const generateInr = calculateLLMCost(generateRes.modelName, generateRes.promptTokens, generateRes.completionTokens)
+                await deductCreditsByCost(supabaseAdmin, targetUserId, generateInr, 'ai_generation', `AI Landing Page - Page Copy Generation (${mode})`)
+                
+                // Clean markdown formatting if LLM failed to follow the instruction
+                const htmlResult = aiRawResult
+                    .replace(/^```html\s*/i, '')
+                    .replace(/^```\s*/, '')
+                    .replace(/\s*```$/, '')
+                    .trim()
+
+                // Clean spaces
+                const cleanedHtml = htmlResult.replace(/\u00a0/g, ' ')
+
+                // Save final HTML content to landing page
+                const { error: pageUpdateErr } = await supabaseAdmin
+                    .from('landing_pages')
+                    .update({
+                        html_content: cleanedHtml,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', pageRecord.id)
+
+                if (pageUpdateErr) {
+                    throw pageUpdateErr
+                }
+
+                // Update job status to completed
+                await supabaseAdmin
+                    .from('campaign_jobs')
+                    .update({
+                        status: 'completed',
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', job.id)
+
+                console.log(`[Lander API BG] Successfully generated and updated landing page ${pageRecord.id}`)
+            } catch (bgError: any) {
+                console.error(`[Lander API BG] Background generation error for job ${job.id}:`, bgError)
+                
+                // Update job status to failed and save the error message
+                await supabaseAdmin
+                    .from('campaign_jobs')
+                    .update({
+                        status: 'failed',
+                        message: bgError.message || "Background landing page generation failed.",
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', job.id)
+            }
+        })()
+
         const domainBase = profile?.custom_domain || `app.nobogent.com/shared/${targetUserId}`
         const publicUrl = `https://${domainBase}/${slug}`
 
         return NextResponse.json({
             success: true,
+            jobId: job.id,
             page: pageRecord,
             publicUrl
         })

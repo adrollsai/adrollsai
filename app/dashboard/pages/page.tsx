@@ -587,13 +587,14 @@ export default function PagesDashboard() {
     }
 
     // --- 4. LANDING PAGE GENERATION ---
-    const handleGenerateLandingPage = async () => {
+const handleGenerateLandingPage = async () => {
         if (!pageProductName.trim() && !selectedPropertyId && pageType !== 'business') {
             showToast("Please enter a product name or select a property from your inventory.", 'error')
             return
         }
 
         setActionLoading(true)
+        let startedBgJob = false
         try {
             const endpoint = impersonateId 
                 ? `/api/landing-page/generate?impersonate=${impersonateId}` 
@@ -624,7 +625,7 @@ export default function PagesDashboard() {
 
             if (!response.ok) throw new Error(resData.error || "Generation failed")
 
-            showToast(`Landing page for "${pageProductName || 'your property'}" created successfully!`)
+            showToast(`Generation started in background...prefix`)
             setPageProductName('')
             setPageContext('')
             setSelectedPropertyId('')
@@ -633,21 +634,29 @@ export default function PagesDashboard() {
             setPageType('standard')
             setShowPageGenerator(false)
             
-            // Auto open the newly generated page in the preview editor
+            // Auto open the newly generated page in the preview editor with a loading state
             if (resData.page) {
                 setActiveEditorPage(resData.page)
                 setChatLogs([
-                    { sender: 'ai', message: `Awesome! Landing page for "${resData.page.product_name}" generated with slug "/${resData.page.slug}". Inspect the live preview on the right side and type any modifications you need in this chat console!` }
+                    { sender: 'ai', message: `Building landing page for "${resData.page.product_name}" in the background... This can take up to a minute. Please wait.` }
                 ])
+            }
+            
+            if (resData.jobId && resData.page) {
+                startedBgJob = true
+                startPollingJobStatus(resData.jobId, resData.page.id, false)
             }
             await fetchListData(targetUserId)
         } catch (e: any) {
             showToast(e.message, 'error')
         } finally {
-            setActionLoading(false)
+            if (!startedBgJob) {
+                setActionLoading(false)
+            }
         }
     }
 
+    // Clean placeholder helper text from showToast
     const handleDeletePage = async (pageId: string) => {
         if (!confirm("Are you sure you want to delete this landing page Listing?")) return
 
@@ -779,7 +788,73 @@ export default function PagesDashboard() {
     }
 
     // --- 5. CONVERSATIONAL EDIT CHAT Console ---
-    const handleSendChatEdit = async () => {
+    const startPollingJobStatus = (jobId: string, pageId: string, isEditMode: boolean) => {
+        const interval = setInterval(async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('campaign_jobs')
+                    .select('status, message')
+                    .eq('id', jobId)
+                    .single()
+
+                if (error) {
+                    console.error("Job status check error:", error)
+                    clearInterval(interval)
+                    setActionLoading(false)
+                    showToast("Could not check generation progress.", "error")
+                    return
+                }
+
+                if (data) {
+                    if (data.status === 'completed') {
+                        clearInterval(interval)
+                        
+                        // Fetch latest page details
+                        const { data: updatedPage, error: pageErr } = await supabase
+                            .from('landing_pages')
+                            .select('*')
+                            .eq('id', pageId)
+                            .single()
+
+                        setActionLoading(false)
+                        if (pageErr) {
+                            showToast("Failed to load generated page content.", "error")
+                        } else if (updatedPage) {
+                            setActiveEditorPage(updatedPage)
+                            if (isEditMode) {
+                                setChatLogs(prev => [...prev, { 
+                                    sender: 'ai', 
+                                    message: "I have successfully modified the styling and layout according to your request! You can inspect the updated preview now." 
+                                }])
+                            } else {
+                                showToast("Landing page generated successfully!")
+                                setChatLogs([
+                                    { sender: 'ai', message: `Awesome! Landing page generated with slug "/${updatedPage.slug}". Inspect the live preview on the right side and type any modifications you need in this chat console!` }
+                                ])
+                            }
+                        }
+                        await fetchListData(targetUserId)
+                    } else if (data.status === 'failed') {
+                        clearInterval(interval)
+                        setActionLoading(false)
+                        showToast(data.message || "Background generation failed.", "error")
+                        if (isEditMode) {
+                            setChatLogs(prev => [...prev, { 
+                                sender: 'ai', 
+                                message: `❌ Generation failed: ${data.message || "Unknown error"}` 
+                            }])
+                        }
+                    }
+                }
+            } catch (err: any) {
+                console.error("Error in status polling:", err)
+                clearInterval(interval)
+                setActionLoading(false)
+            }
+        }, 3000)
+    }
+
+const handleSendChatEdit = async () => {
         if ((!chatInput.trim() && attachments.length === 0) || !activeEditorPage) return
         
         const userMsg = chatInput.trim()
@@ -791,6 +866,7 @@ export default function PagesDashboard() {
 
         setChatLogs(prev => [...prev, { sender: 'user', message: userMsg || "Sent attachment(s)", images: previewsToSend }])
         setActionLoading(true)
+        let startedBgJob = false
 
         try {
             let uploadedUrls: string[] = []
@@ -853,21 +929,24 @@ export default function PagesDashboard() {
                 throw new Error(errMsg)
             }
 
-            if (resData.page) {
-                setActiveEditorPage(resData.page)
-                setChatLogs(prev => [...prev, { sender: 'ai', message: "I have successfully modified the styling and layout according to your request! You can inspect the updated preview now." }])
-                // Refresh list
-                await fetchListData(targetUserId)
+            if (resData.jobId && resData.page) {
+                startedBgJob = true
+                setChatLogs(prev => [...prev, { 
+                    sender: 'ai', 
+                    message: "Applying edits to the landing page styling and layout in the background... Please wait." 
+                }])
+                startPollingJobStatus(resData.jobId, resData.page.id, true)
             }
         } catch(e: any) {
             setChatLogs(prev => [...prev, { sender: 'ai', message: `❌ Edit Failed: ${e.message}. Please try again.` }])
         } finally {
-            setActionLoading(false)
-            setIsUploadingChatFiles(false)
+            if (!startedBgJob) {
+                setActionLoading(false)
+            }
         }
     }
 
-    const handleSaveHtml = async () => {
+        const handleSaveHtml = async () => {
         if (!activeEditorPage) return
 
         setActionLoading(true)

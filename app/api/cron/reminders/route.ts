@@ -66,6 +66,22 @@ export async function GET(request: Request) {
       })
     }
 
+    // Asynchronously trigger the WhatsApp 24h followups scanner
+    try {
+      const followupUrl = `${url.origin}/api/cron/whatsapp-followup`
+      console.log(`[Reminders Dispatcher] Triggering WhatsApp followups scanner at ${followupUrl}`)
+      fetch(followupUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.CRON_SECRET || ''}`
+        }
+      }).catch(err => {
+        console.error('[Reminders Dispatcher] WhatsApp followup trigger failed:', err)
+      })
+    } catch (followupErr: any) {
+      console.error('[Reminders Dispatcher] Failed to trigger WhatsApp followups:', followupErr)
+    }
+
     if (tasksToQueue.length === 0) {
       return NextResponse.json({ success: true, message: 'No reminders or followups due at this time.' })
     }

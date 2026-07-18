@@ -39,6 +39,8 @@ type Message = {
   direction: 'inbound' | 'outbound'
   message_text: string
   created_at: string
+  media_url?: string | null
+  media_type?: string | null
 }
 
 export default function AutomationPage() {
@@ -794,7 +796,48 @@ export default function AutomationPage() {
                               : 'bg-white text-slate-800 rounded-tl-none border border-slate-100'
                             }
                           `}>
-                            <p className="whitespace-pre-wrap">{m.message_text}</p>
+                            {/* Render media if present */}
+                            {m.media_url && (m.media_type === 'image' || m.media_type === 'sticker') && (
+                              <img 
+                                src={`/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url)}`}
+                                alt="Shared image" 
+                                className="rounded-lg mb-2 max-w-full max-h-60 object-contain cursor-pointer"
+                                onClick={() => window.open(`/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url!)}`, '_blank')}
+                                loading="lazy"
+                              />
+                            )}
+                            {m.media_url && m.media_type === 'video' && (
+                              <video 
+                                src={`/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url)}`}
+                                controls 
+                                className="rounded-lg mb-2 max-w-full max-h-60"
+                                preload="metadata"
+                              />
+                            )}
+                            {m.media_url && m.media_type === 'audio' && (
+                              <audio 
+                                src={`/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url)}`}
+                                controls 
+                                className="mb-2 max-w-full"
+                                preload="metadata"
+                              />
+                            )}
+                            {m.media_url && m.media_type === 'document' && (
+                              <a 
+                                href={`/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url)}`}
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className={`flex items-center gap-2 mb-2 p-2 rounded-lg text-xs font-medium ${isOutbound ? 'bg-emerald-600/30 text-white' : 'bg-slate-100 text-blue-600'}`}
+                              >
+                                📄 View Document
+                              </a>
+                            )}
+                            {m.message_text && !(['[image]', '[video]', '[audio]', '[sticker]', '[document]'].includes(m.message_text?.toLowerCase())) && (
+                              <p className="whitespace-pre-wrap">{m.message_text}</p>
+                            )}
+                            {(!m.message_text || ['[image]', '[video]', '[audio]', '[sticker]', '[document]'].includes(m.message_text?.toLowerCase())) && !m.media_url && (
+                              <p className="whitespace-pre-wrap italic opacity-60">{m.message_text || '[media]'}</p>
+                            )}
                             <span className={`text-[8px] block text-right mt-1.5 font-medium ${isOutbound ? 'text-emerald-100' : 'text-slate-400'}`}>
                               {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>

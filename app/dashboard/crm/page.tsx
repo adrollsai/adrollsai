@@ -702,20 +702,6 @@ export default function CRMPage() {
         const { data: savedLead, error } = await supabase.from('leads').insert(leadPayload).select().single()
         if (!error && savedLead) {
             console.log("[CRM] Lead inserted successfully!", savedLead);
-            
-            // 1. Trigger automated WhatsApp welcome template send (defaults to hello_world sandbox template)
-            fetch('/api/whatsapp/test-send', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    recipient: leadPayload.phone,
-                    templateName: 'hello_world',
-                    isSandboxTest: true
-                })
-            }).then(async (res) => {
-                const data = await res.json()
-                console.log("[CRM] WhatsApp auto-trigger status:", data)
-            }).catch(err => console.error("[CRM] WhatsApp auto-trigger failed:", err))
 
             // Force cache refresh
             await fetchLeads(true)

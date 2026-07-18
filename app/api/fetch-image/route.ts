@@ -4,6 +4,8 @@ import { NextResponse } from 'next/server';
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const imageUrl = searchParams.get('url');
+  const triggerDownload = searchParams.get('download') === 'true';
+  const customName = searchParams.get('name') || 'asset';
 
   if (!imageUrl) {
     return new NextResponse('Missing URL', { status: 400 });
@@ -15,15 +17,23 @@ export async function GET(request: Request) {
     
     if (!response.ok) throw new Error('Failed to fetch image from source');
     
-    const blob = await response.blob();
+    const mimeType = response.headers.get('Content-Type') || 'application/octet-stream';
     
-    return new NextResponse(blob, {
-      headers: {
-        'Content-Type': response.headers.get('Content-Type') || 'image/jpeg',
-        // Explicitly allow your frontend to read this
-        'Access-Control-Allow-Origin': '*', 
-        'Cache-Control': 'public, max-age=31536000, immutable'
-      },
+    const headers: Record<string, string> = {
+      'Content-Type': mimeType,
+      'Access-Control-Allow-Origin': '*',
+      'Content-Length': response.headers.get('Content-Length') || '',
+      'Cache-Control': 'public, max-age=31536000, immutable'
+    };
+
+    if (triggerDownload) {
+      // Direct browser download attachment header
+      headers['Content-Disposition'] = `attachment; filename="${customName}"`;
+    }
+
+    // Return the response body stream directly (prevents buffering in memory)
+    return new NextResponse(response.body, {
+      headers,
     });
   } catch (error) {
     console.error('Image proxy error:', error);

@@ -77,7 +77,7 @@ export async function POST(
         // 1. Validate token and find user
         const { data: profile, error: profileErr } = await supabaseAdmin
             .from('profiles')
-            .select('id, business_name, enable_distribution, pixel_id, facebook_token')
+            .select('id, business_name, enable_distribution, pixel_id, facebook_token, auto_call_new_leads')
             .eq('webhook_token_99acres', token)
             .single()
 
@@ -221,6 +221,33 @@ export async function POST(
             )
         } catch (notifErr) {
             console.error('[99acres Webhook] Push notification failed:', notifErr)
+        }
+
+        // Trigger automated WhatsApp welcome drip campaign
+        if (savedLead && phone) {
+            try {
+                const { triggerWelcomeDrip } = await import('@/utils/whatsapp/drips')
+                await triggerWelcomeDrip(
+                    supabaseAdmin,
+                    savedLead.id,
+                    name,
+                    phone,
+                    profile.id,
+                    projectName ? `property on 99acres (${projectName})` : 'property on 99acres'
+                )
+            } catch (err) {
+                console.error('[DRIP TRIGGER] 99acres lead welcome drip failed:', err)
+            }
+        }
+
+        // Trigger automated Voice Dialing if enabled
+        if (savedLead && phone && profile.auto_call_new_leads) {
+            try {
+                const { triggerOutboundCall } = await import('@/utils/voice-helper')
+                await triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true)
+            } catch (err) {
+                console.error('[AUTO CALL] Auto voice call trigger failed:', err)
+            }
         }
 
         return NextResponse.json({

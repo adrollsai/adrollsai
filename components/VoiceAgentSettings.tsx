@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { 
   Phone, 
   Loader2, 
@@ -24,6 +24,16 @@ interface VoiceAgentSettingsProps {
 
 export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSettingsProps) {
   const supabase = createClient()
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+      }
+    }
+  }, [])
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saasMode, setSaasMode] = useState(false)
@@ -152,56 +162,21 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
   }
 
   const playVoicePreview = (voiceName: string) => {
-    if (typeof window === 'undefined' || !window.speechSynthesis) {
-      return toast.error("Text-to-speech preview is not supported in this browser.");
+    if (typeof window === 'undefined') return;
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
     }
-    
-    // Stop any current speech
-    window.speechSynthesis.cancel();
 
-    const voiceDescriptions: Record<string, string> = {
-      aoede: "Hello! I am Aoede. I am a clear and professional female voice, perfect for welcoming your leads and guiding them.",
-      kore: "Hi there! I am Kore, a neutral and conversational female voice, designed to keep customer interactions natural and engaging.",
-      charon: "Hello, this is Charon. I am a deep and authoritative male voice, ideal for professional updates.",
-      fenrir: "Hey! I am Fenrir. I am a warm, energetic, and approachable male voice, great for friendly client outreach.",
-      puck: "Hi! I am Puck. I am a conversational and friendly male voice, designed to build quick rapport."
-    };
+    const audioUrl = `/voices/${voiceName.toLowerCase()}.wav`;
+    const audio = new Audio(audioUrl);
+    audioRef.current = audio;
 
-    const text = voiceDescriptions[voiceName.toLowerCase()] || `Hello! I am your ${voiceName} voice assistant.`;
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    const isFemale = ['aoede', 'kore'].includes(voiceName.toLowerCase());
-    
-    const browserVoices = window.speechSynthesis.getVoices();
-    let selectedVoice = browserVoices.find(v => {
-      const nameLower = v.name.toLowerCase();
-      const langMatch = v.lang.startsWith('en') || v.lang.startsWith('hi');
-      if (!langMatch) return false;
-      const isFemaleVoice = nameLower.includes('female') || nameLower.includes('zira') || nameLower.includes('hazel') || nameLower.includes('samantha') || nameLower.includes('google us english') || nameLower.includes('microsoft');
-      return isFemale ? isFemaleVoice : !isFemaleVoice;
+    audio.play().catch(err => {
+      console.error('[PLAY PREVIEW ERROR]', err);
+      toast.error(`Failed to play preview for ${voiceName}`);
     });
-
-    if (!selectedVoice && browserVoices.length > 0) {
-      selectedVoice = browserVoices.find(v => v.lang.startsWith('en') || v.lang.startsWith('hi'));
-    }
-
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
-    }
-    
-    if (voiceName.toLowerCase() === 'kore') {
-      utterance.pitch = 1.15;
-    } else if (voiceName.toLowerCase() === 'charon') {
-      utterance.pitch = 0.85;
-    } else if (voiceName.toLowerCase() === 'fenrir') {
-      utterance.pitch = 0.95;
-      utterance.rate = 1.05;
-    } else if (voiceName.toLowerCase() === 'puck') {
-      utterance.pitch = 1.0;
-      utterance.rate = 1.12;
-    }
-
-    window.speechSynthesis.speak(utterance);
   };
 
   const [subscriptionStatus, setSubscriptionStatus] = useState('')

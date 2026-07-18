@@ -192,6 +192,8 @@ export async function POST(req: Request) {
             to: cleanRecipient
         }
 
+        let resolvedTemplateText = ''
+
         if (templateName) {
             payload.type = 'template'
             payload.template = {
@@ -232,22 +234,33 @@ export async function POST(req: Request) {
                             const bodyComp = templateDef.components.find((c: any) => c.type === 'BODY')
                             if (bodyComp && bodyComp.text) {
                                 const varCount = (bodyComp.text.match(/\{\{\d+\}\}/g) || []).length
-                                if (varCount > 0) {
-                                    const bodyParams = []
-                                    for (let i = 1; i <= varCount; i++) {
-                                        if (i === 1) {
-                                            bodyParams.push({ type: 'text', text: chat.recipient_name || 'Valued Lead' })
-                                        } else if (i === 2) {
-                                            bodyParams.push({ type: 'text', text: ownerProfile?.business_name || 'Partner' })
-                                        } else {
-                                            bodyParams.push({ type: 'text', text: 'details' })
-                                        }
+                                const bodyParams = []
+                                const paramValues: string[] = []
+                                for (let i = 1; i <= varCount; i++) {
+                                    if (i === 1) {
+                                        bodyParams.push({ type: 'text', text: chat.recipient_name || 'Valued Lead' })
+                                        paramValues.push(chat.recipient_name || 'Valued Lead')
+                                    } else if (i === 2) {
+                                        bodyParams.push({ type: 'text', text: ownerProfile?.business_name || 'Partner' })
+                                        paramValues.push(ownerProfile?.business_name || 'Partner')
+                                    } else {
+                                        bodyParams.push({ type: 'text', text: 'details' })
+                                        paramValues.push('details')
                                     }
+                                }
+                                if (varCount > 0) {
                                     components.push({
                                         type: 'body',
                                         parameters: bodyParams
                                     })
                                 }
+
+                                // Resolve template body text with actual parameter values
+                                let resolved = bodyComp.text as string
+                                paramValues.forEach((val, idx) => {
+                                    resolved = resolved.replace(`{{${idx + 1}}}`, val)
+                                })
+                                resolvedTemplateText = resolved
                             }
 
                             if (components.length > 0) {
@@ -296,8 +309,10 @@ export async function POST(req: Request) {
             `Manual WhatsApp outbound message to ${chat.recipient_name || 'Prospect'} (${cleanRecipient})`
         )
 
-        // Save to whatsapp_messages
-        const logText = templateName ? `Sent Template: ${templateName}` : messageText
+        // Save to whatsapp_messages — use resolved template text if available
+        const logText = templateName 
+            ? (resolvedTemplateText || `📋 Template: ${templateName}`)
+            : messageText
         const { data: insertedMsg, error: insertErr } = await dbClient
             .from('whatsapp_messages')
             .insert({

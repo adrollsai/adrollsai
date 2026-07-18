@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anmol Avenue – Premium Residential Plots near Mohali | Blue Square Infra</title>
+    <meta name="description" content="Own a 400–600 sq. yd. premium plot in a 28-acre gated township near Chitkara University. Starting ₹50,000/sq. yd. Limited inventory.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&amp;family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            light: '#dfba89',
+                            DEFAULT: '#111947',
+                            dark: '#0a0f2e',
+                            bg: '#fdfbf7',
+                            heading: '#1a1a2e',
+                            smartbg: '#111947'
+                        }
+                    },
+                    fontFamily: {
+                        serif: ['Georgia', 'serif'],
+                        sans: ['Inter', 'sans-serif'],
+                        outfit: ['Outfit', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #fdfbf7;
+            color: #333;
+            overflow-x: hidden;
+        }
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6 {
+            font-family: 'Outfit', sans-serif;
+        }
+
+        /* Carousel */
+        .carousel-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            overflow: hidden;
+        }
+        .carousel-slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            opacity: 0;
+            transition: opacity 1.5s ease-in-out;
+        }
+        .carousel-slide.active {
+            opacity: 1;
+        }
+        .carousel-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(17, 25, 71, 0.95) 0%, rgba(17, 25, 71, 0.70) 50%, rgba(17, 25, 71, 0.92) 100%);
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            background-color: rgba(0, 0, 0, 0.7);
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(5px);
+        }
+        .modal.active {
+            display: flex;
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        /* UI Utilities */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s ease-in-out;
+        }
+        .accordion-content.open {
+            max-height: 600px;
+        }
+
+        .brand-gradient {
+            background: linear-gradient(135deg, #111947 0%, #1e2a5e 100%);
+        }
+        .brand-text {
+            color: #111947;
+        }
+        .brand-bg {
+            background: #111947;
+        }
+        .brand-light-bg {
+            background: #dfba89;
+        }
+        .brand-light-text {
+            color: #dfba89;
+        }
+        .brand-bg-soft {
+            background: #fdfbf7;
+        }
+        .brand-border {
+            border-color: #111947;
+        }
+        .text-balance {
+            text-wrap: balance;
+        }
+        .hover-lift {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .hover-lift:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px -12px rgba(17, 25, 71, 0.15);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .step-number {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 1.3rem;
+            color: #fff;
+            background: #111947;
+            flex-shrink: 0;
+        }
+        .amenity-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            color: #fff;
+            background: #111947;
+            flex-shrink: 0;
+        }
+        .testimonial-avatar {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: #111947;
+            flex-shrink: 0;
+            border: 2px solid #fff;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+        }
+        .badge-pill {
+            display: inline-block;
+            padding: 0.2rem 1rem;
+            border-radius: 100px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            background: rgba(17, 25, 71, 0.08);
+            color: #111947;
+        }
+        .nav-blur {
+            background: rgba(253, 251, 247, 0.92);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(17, 25, 71, 0.06);
+        }
+        .cta-shadow {
+            box-shadow: 0 8px 32px -8px rgba(17, 25, 71, 0.25);
+        }
+        .form-card-shadow {
+            box-shadow: 0 20px 60px -16px rgba(17, 25, 71, 0.12);
+        }
+        .pulsing-dot {
+            width: 10px;
+            height: 10px;
+            background-color: #22c55e;
+            border-radius: 50%;
+            display: inline-block;
+            animation: pulse-green 2s infinite;
+        }
+        @keyframes pulse-green {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+            }
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+            }
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+            }
+        }
+
+        .floorplan-btn {
+            padding: 0.6rem 1.8rem;
+            border-radius: 100px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 0.95rem;
+            border: 2px solid #111947;
+            background: transparent;
+            color: #111947;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+        .floorplan-btn.active {
+            background: #111947;
+            color: #fff;
+        }
+        .floorplan-btn:hover {
+            background: #111947;
+            color: #fff;
+        }
+        #floorplan-overlay {
+            transition: opacity 0.4s ease;
+        }
+
+        .floating-cta {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 9999;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-top: 1px solid rgba(17, 25, 71, 0.08);
+            padding: 0.75rem 1rem;
+            display: none;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.06);
+        }
+        .floating-cta a {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .floating-cta .call-btn {
+            background: #111947;
+            color: #fff;
+        }
+        .floating-cta .whatsapp-btn {
+            background: #25D366;
+            color: #fff;
+        }
+        .floating-cta a:active {
+            transform: scale(0.97);
+        }
+        @media (max-width: 767px) {
+            .floating-cta {
+                display: flex;
+            }
+            body {
+                padding-bottom: 76px;
+            }
+        }
+        @media (min-width: 768px) {
+            .floating-cta {
+                display: none !important;
+            }
+            body {
+                padding-bottom: 0;
+            }
+        }
+        .section-padding {
+            padding: 5rem 1.25rem;
+        }
+        @media (min-width: 768px) {
+            .section-padding {
+                padding: 6rem 2rem;
+            }
+        }
+        .max-w-content {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .grid-gap {
+            gap: 1.5rem;
+        }
+        @media (min-width: 768px) {
+            .grid-gap {
+                gap: 2rem;
+            }
+        }
+
+        /* Mobile Menu */
+        .mobile-menu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+            background: rgba(253, 251, 247, 0.98);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            z-index: 9998;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1.75rem;
+            padding: 2rem;
+            opacity: 0;
+            transition: opacity 0.35s ease;
+        }
+        .mobile-menu.open {
+            display: flex;
+            opacity: 1;
+        }
+        .mobile-menu a {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #111947;
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+        .mobile-menu a:hover {
+            color: #dfba89;
+        }
+        .mobile-menu .close-btn {
+            position: absolute;
+            top: 1.25rem;
+            right: 1.25rem;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 0.5rem;
+        }
+        .mobile-menu .close-btn img {
+            width: 28px;
+            height: 28px;
+        }
+        .mobile-menu .menu-cta {
+            margin-top: 1rem;
+            background: #111947;
+            color: #fff;
+            padding: 0.75rem 2rem;
+            border-radius: 100px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 1rem;
+            text-decoration: none;
+            transition: background 0.2s ease;
+        }
+        .mobile-menu .menu-cta:hover {
+            background: #0a0f2e;
+        }
+    </style>
+<style>*, ::before, ::after{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }::backdrop{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }/* ! tailwindcss v3.4.17 | MIT License | https://tailwindcss.com */*,::after,::before{box-sizing:border-box;border-width:0;border-style:solid;border-color:#e5e7eb}::after,::before{--tw-content:''}:host,html{line-height:1.5;-webkit-text-size-adjust:100%;-moz-tab-size:4;tab-size:4;font-family:Inter, sans-serif;font-feature-settings:normal;font-variation-settings:normal;-webkit-tap-highlight-color:transparent}body{margin:0;line-height:inherit}hr{height:0;color:inherit;border-top-width:1px}abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}a{color:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,pre,samp{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-feature-settings:normal;font-variation-settings:normal;font-size:1em}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}button,input,optgroup,select,textarea{font-family:inherit;font-feature-settings:inherit;font-variation-settings:inherit;font-size:100%;font-weight:inherit;line-height:inherit;letter-spacing:inherit;color:inherit;margin:0;padding:0}button,select{text-transform:none}button,input:where([type=button]),input:where([type=reset]),input:where([type=submit]){-webkit-appearance:button;background-color:transparent;background-image:none}:-moz-focusring{outline:auto}:-moz-ui-invalid{box-shadow:none}progress{vertical-align:baseline}::-webkit-inner-spin-button,::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}summary{display:list-item}blockquote,dd,dl,figure,h1,h2,h3,h4,h5,h6,hr,p,pre{margin:0}fieldset{margin:0;padding:0}legend{padding:0}menu,ol,ul{list-style:none;margin:0;padding:0}dialog{padding:0}textarea{resize:vertical}input::placeholder,textarea::placeholder{opacity:1;color:#9ca3af}[role=button],button{cursor:pointer}:disabled{cursor:default}audio,canvas,embed,iframe,img,object,svg,video{display:block;vertical-align:middle}img,video{max-width:100%;height:auto}[hidden]:where(:not([hidden=until-found])){display:none}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0, 0, 0, 0);white-space:nowrap;border-width:0}.absolute{position:absolute}.relative{position:relative}.sticky{position:sticky}.inset-0{inset:0px}.right-4{right:1rem}.top-0{top:0px}.top-4{top:1rem}.z-10{z-index:10}.z-20{z-index:20}.z-50{z-index:50}.col-span-1{grid-column:span 1 / span 1}.col-span-2{grid-column:span 2 / span 2}.row-span-1{grid-row:span 1 / span 1}.row-span-2{grid-row:span 2 / span 2}.mx-auto{margin-left:auto;margin-right:auto}.my-4{margin-top:1rem;margin-bottom:1rem}.mb-1{margin-bottom:0.25rem}.mb-10{margin-bottom:2.5rem}.mb-12{margin-bottom:3rem}.mb-2{margin-bottom:0.5rem}.mb-3{margin-bottom:0.75rem}.mb-4{margin-bottom:1rem}.mb-6{margin-bottom:1.5rem}.mb-8{margin-bottom:2rem}.mt-0\.5{margin-top:0.125rem}.mt-1{margin-top:0.25rem}.mt-2{margin-top:0.5rem}.mt-4{margin-top:1rem}.mt-6{margin-top:1.5rem}.mt-8{margin-top:2rem}.mt-auto{margin-top:auto}.block{display:block}.inline-block{display:inline-block}.flex{display:flex}.grid{display:grid}.hidden{display:none}.aspect-square{aspect-ratio:1 / 1}.h-10{height:2.5rem}.h-12{height:3rem}.h-32{height:8rem}.h-4{height:1rem}.h-5{height:1.25rem}.h-6{height:1.5rem}.h-64{height:16rem}.h-8{height:2rem}.h-\[400px\]{height:400px}.h-\[450px\]{height:450px}.h-\[500px\]{height:500px}.h-auto{height:auto}.h-fit{height:-moz-fit-content;height:fit-content}.h-full{height:100%}.min-h-\[128px\]{min-height:128px}.min-h-\[300px\]{min-height:300px}.min-h-\[90vh\]{min-height:90vh}.w-12{width:3rem}.w-4{width:1rem}.w-5{width:1.25rem}.w-6{width:1.5rem}.w-\[250px\]{width:250px}.w-\[95\%\]{width:95%}.w-full{width:100%}.max-w-2xl{max-width:42rem}.max-w-4xl{max-width:56rem}.max-w-5xl{max-width:64rem}.max-w-6xl{max-width:72rem}.max-w-7xl{max-width:80rem}.max-w-\[350px\]{max-width:350px}.max-w-\[450px\]{max-width:450px}.max-w-lg{max-width:32rem}.max-w-xl{max-width:36rem}.rotate-180{--tw-rotate:180deg;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.transform{transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.cursor-pointer{cursor:pointer}.grid-cols-1{grid-template-columns:repeat(1, minmax(0, 1fr))}.grid-cols-2{grid-template-columns:repeat(2, minmax(0, 1fr))}.grid-cols-3{grid-template-columns:repeat(3, minmax(0, 1fr))}.grid-rows-3{grid-template-rows:repeat(3, minmax(0, 1fr))}.flex-col{flex-direction:column}.flex-wrap{flex-wrap:wrap}.items-start{align-items:flex-start}.items-end{align-items:flex-end}.items-center{align-items:center}.items-stretch{align-items:stretch}.justify-start{justify-content:flex-start}.justify-end{justify-content:flex-end}.justify-center{justify-content:center}.justify-between{justify-content:space-between}.gap-0{gap:0px}.gap-1{gap:0.25rem}.gap-10{gap:2.5rem}.gap-12{gap:3rem}.gap-2{gap:0.5rem}.gap-3{gap:0.75rem}.gap-4{gap:1rem}.gap-6{gap:1.5rem}.gap-8{gap:2rem}.gap-\[1px\]{gap:1px}.gap-x-4{column-gap:1rem}.gap-y-3{row-gap:0.75rem}.space-x-6 > :not([hidden]) ~ :not([hidden]){--tw-space-x-reverse:0;margin-right:calc(1.5rem * var(--tw-space-x-reverse));margin-left:calc(1.5rem * calc(1 - var(--tw-space-x-reverse)))}.space-y-2 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(0.5rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(0.5rem * var(--tw-space-y-reverse))}.space-y-4 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1rem * var(--tw-space-y-reverse))}.space-y-5 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1.25rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1.25rem * var(--tw-space-y-reverse))}.overflow-hidden{overflow:hidden}.overflow-x-auto{overflow-x:auto}.scroll-smooth{scroll-behavior:smooth}.whitespace-nowrap{white-space:nowrap}.rounded{border-radius:0.25rem}.rounded-2xl{border-radius:1rem}.rounded-full{border-radius:9999px}.rounded-lg{border-radius:0.5rem}.rounded-md{border-radius:0.375rem}.rounded-sm{border-radius:0.125rem}.rounded-t-full{border-top-left-radius:9999px;border-top-right-radius:9999px}.rounded-br-\[50px\]{border-bottom-right-radius:50px}.rounded-tr-\[50px\]{border-top-right-radius:50px}.border{border-width:1px}.border-2{border-width:2px}.border-b{border-bottom-width:1px}.border-b-2{border-bottom-width:2px}.border-b-\[3px\]{border-bottom-width:3px}.border-b-\[8px\]{border-bottom-width:8px}.border-l-2{border-left-width:2px}.border-r{border-right-width:1px}.border-t{border-top-width:1px}.border-t-4{border-top-width:4px}.border-brand{--tw-border-opacity:1;border-color:rgb(17 25 71 / var(--tw-border-opacity, 1))}.border-brand\/20{border-color:rgb(17 25 71 / 0.2)}.border-gray-100{--tw-border-opacity:1;border-color:rgb(243 244 246 / var(--tw-border-opacity, 1))}.border-gray-200{--tw-border-opacity:1;border-color:rgb(229 231 235 / var(--tw-border-opacity, 1))}.border-gray-300{--tw-border-opacity:1;border-color:rgb(209 213 219 / var(--tw-border-opacity, 1))}.border-gray-400{--tw-border-opacity:1;border-color:rgb(156 163 175 / var(--tw-border-opacity, 1))}.border-gray-600{--tw-border-opacity:1;border-color:rgb(75 85 99 / var(--tw-border-opacity, 1))}.border-white{--tw-border-opacity:1;border-color:rgb(255 255 255 / var(--tw-border-opacity, 1))}.border-white\/20{border-color:rgb(255 255 255 / 0.2)}.bg-\[\#4a4a4a\]{--tw-bg-opacity:1;background-color:rgb(74 74 74 / var(--tw-bg-opacity, 1))}.bg-\[\#dfba89\]{--tw-bg-opacity:1;background-color:rgb(223 186 137 / var(--tw-bg-opacity, 1))}.bg-\[\#ebebeb\]{--tw-bg-opacity:1;background-color:rgb(235 235 235 / var(--tw-bg-opacity, 1))}.bg-black{--tw-bg-opacity:1;background-color:rgb(0 0 0 / var(--tw-bg-opacity, 1))}.bg-black\/50{background-color:rgb(0 0 0 / 0.5)}.bg-brand{--tw-bg-opacity:1;background-color:rgb(17 25 71 / var(--tw-bg-opacity, 1))}.bg-brand-bg{--tw-bg-opacity:1;background-color:rgb(253 251 247 / var(--tw-bg-opacity, 1))}.bg-brand\/10{background-color:rgb(17 25 71 / 0.1)}.bg-brand\/80{background-color:rgb(17 25 71 / 0.8)}.bg-gray-50{--tw-bg-opacity:1;background-color:rgb(249 250 251 / var(--tw-bg-opacity, 1))}.bg-gray-50\/50{background-color:rgb(249 250 251 / 0.5)}.bg-red-600{--tw-bg-opacity:1;background-color:rgb(220 38 38 / var(--tw-bg-opacity, 1))}.bg-transparent{background-color:transparent}.bg-white{--tw-bg-opacity:1;background-color:rgb(255 255 255 / var(--tw-bg-opacity, 1))}.bg-white\/40{background-color:rgb(255 255 255 / 0.4)}.bg-white\/5{background-color:rgb(255 255 255 / 0.05)}.bg-cover{background-size:cover}.bg-center{background-position:center}.object-contain{object-fit:contain}.object-cover{object-fit:cover}.p-1{padding:0.25rem}.p-10{padding:2.5rem}.p-2{padding:0.5rem}.p-3{padding:0.75rem}.p-4{padding:1rem}.p-6{padding:1.5rem}.p-8{padding:2rem}.px-10{padding-left:2.5rem;padding-right:2.5rem}.px-2{padding-left:0.5rem;padding-right:0.5rem}.px-3{padding-left:0.75rem;padding-right:0.75rem}.px-4{padding-left:1rem;padding-right:1rem}.px-5{padding-left:1.25rem;padding-right:1.25rem}.px-6{padding-left:1.5rem;padding-right:1.5rem}.px-8{padding-left:2rem;padding-right:2rem}.py-1{padding-top:0.25rem;padding-bottom:0.25rem}.py-1\.5{padding-top:0.375rem;padding-bottom:0.375rem}.py-16{padding-top:4rem;padding-bottom:4rem}.py-2{padding-top:0.5rem;padding-bottom:0.5rem}.py-2\.5{padding-top:0.625rem;padding-bottom:0.625rem}.py-20{padding-top:5rem;padding-bottom:5rem}.py-24{padding-top:6rem;padding-bottom:6rem}.py-3{padding-top:0.75rem;padding-bottom:0.75rem}.py-3\.5{padding-top:0.875rem;padding-bottom:0.875rem}.py-4{padding-top:1rem;padding-bottom:1rem}.pb-2{padding-bottom:0.5rem}.pb-20{padding-bottom:5rem}.pb-4{padding-bottom:1rem}.pb-6{padding-bottom:1.5rem}.pl-4{padding-left:1rem}.pt-16{padding-top:4rem}.pt-2{padding-top:0.5rem}.pt-4{padding-top:1rem}.pt-8{padding-top:2rem}.text-left{text-align:left}.text-center{text-align:center}.font-outfit{font-family:Outfit, sans-serif}.font-serif{font-family:Georgia, serif}.text-2xl{font-size:1.5rem;line-height:2rem}.text-3xl{font-size:1.875rem;line-height:2.25rem}.text-4xl{font-size:2.25rem;line-height:2.5rem}.text-\[10px\]{font-size:10px}.text-\[11px\]{font-size:11px}.text-base{font-size:1rem;line-height:1.5rem}.text-lg{font-size:1.125rem;line-height:1.75rem}.text-sm{font-size:0.875rem;line-height:1.25rem}.text-xl{font-size:1.25rem;line-height:1.75rem}.text-xs{font-size:0.75rem;line-height:1rem}.font-bold{font-weight:700}.font-medium{font-weight:500}.font-semibold{font-weight:600}.uppercase{text-transform:uppercase}.italic{font-style:italic}.leading-relaxed{line-height:1.625}.leading-snug{line-height:1.375}.leading-tight{line-height:1.25}.tracking-wide{letter-spacing:0.025em}.text-\[\#dfba89\]{--tw-text-opacity:1;color:rgb(223 186 137 / var(--tw-text-opacity, 1))}.text-black{--tw-text-opacity:1;color:rgb(0 0 0 / var(--tw-text-opacity, 1))}.text-brand{--tw-text-opacity:1;color:rgb(17 25 71 / var(--tw-text-opacity, 1))}.text-brand-heading{--tw-text-opacity:1;color:rgb(26 26 46 / var(--tw-text-opacity, 1))}.text-brand-light{--tw-text-opacity:1;color:rgb(223 186 137 / var(--tw-text-opacity, 1))}.text-gray-100{--tw-text-opacity:1;color:rgb(243 244 246 / var(--tw-text-opacity, 1))}.text-gray-200{--tw-text-opacity:1;color:rgb(229 231 235 / var(--tw-text-opacity, 1))}.text-gray-300{--tw-text-opacity:1;color:rgb(209 213 219 / var(--tw-text-opacity, 1))}.text-gray-500{--tw-text-opacity:1;color:rgb(107 114 128 / var(--tw-text-opacity, 1))}.text-gray-600{--tw-text-opacity:1;color:rgb(75 85 99 / var(--tw-text-opacity, 1))}.text-gray-700{--tw-text-opacity:1;color:rgb(55 65 81 / var(--tw-text-opacity, 1))}.text-gray-800{--tw-text-opacity:1;color:rgb(31 41 55 / var(--tw-text-opacity, 1))}.text-gray-900{--tw-text-opacity:1;color:rgb(17 24 39 / var(--tw-text-opacity, 1))}.text-white{--tw-text-opacity:1;color:rgb(255 255 255 / var(--tw-text-opacity, 1))}.text-white\/60{color:rgb(255 255 255 / 0.6)}.opacity-70{opacity:0.7}.opacity-80{opacity:0.8}.opacity-90{opacity:0.9}.shadow{--tw-shadow:0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 1px 3px 0 var(--tw-shadow-color), 0 1px 2px -1px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-2xl{--tw-shadow:0 25px 50px -12px rgb(0 0 0 / 0.25);--tw-shadow-colored:0 25px 50px -12px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-inner{--tw-shadow:inset 0 2px 4px 0 rgb(0 0 0 / 0.05);--tw-shadow-colored:inset 0 2px 4px 0 var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-lg{--tw-shadow:0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 10px 15px -3px var(--tw-shadow-color), 0 4px 6px -4px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-md{--tw-shadow:0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 4px 6px -1px var(--tw-shadow-color), 0 2px 4px -2px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-sm{--tw-shadow:0 1px 2px 0 rgb(0 0 0 / 0.05);--tw-shadow-colored:0 1px 2px 0 var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-xl{--tw-shadow:0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 20px 25px -5px var(--tw-shadow-color), 0 8px 10px -6px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.outline-none{outline:2px solid transparent;outline-offset:2px}.drop-shadow{--tw-drop-shadow:drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)) drop-shadow(0 1px 1px rgb(0 0 0 / 0.06));filter:var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow)}.drop-shadow-md{--tw-drop-shadow:drop-shadow(0 4px 3px rgb(0 0 0 / 0.07)) drop-shadow(0 2px 2px rgb(0 0 0 / 0.06));filter:var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow)}.invert{--tw-invert:invert(100%);filter:var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow)}.filter{filter:var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow)}.backdrop-blur-md{--tw-backdrop-blur:blur(12px);-webkit-backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.transition{transition-property:color, background-color, border-color, fill, stroke, opacity, box-shadow, transform, filter, -webkit-text-decoration-color, -webkit-backdrop-filter;transition-property:color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;transition-property:color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter, -webkit-text-decoration-color, -webkit-backdrop-filter;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.transition-all{transition-property:all;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.transition-colors{transition-property:color, background-color, border-color, fill, stroke, -webkit-text-decoration-color;transition-property:color, background-color, border-color, text-decoration-color, fill, stroke;transition-property:color, background-color, border-color, text-decoration-color, fill, stroke, -webkit-text-decoration-color;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.transition-opacity{transition-property:opacity;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.transition-transform{transition-property:transform;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.duration-300{transition-duration:300ms}.duration-500{transition-duration:500ms}.focus-within\:bg-white:focus-within{--tw-bg-opacity:1;background-color:rgb(255 255 255 / var(--tw-bg-opacity, 1))}.focus-within\:outline-brand:focus-within{outline-color:#111947}.hover\:-translate-y-0\.5:hover{--tw-translate-y:-0.125rem;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.hover\:-translate-y-1:hover{--tw-translate-y:-0.25rem;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.hover\:-translate-y-2:hover{--tw-translate-y:-0.5rem;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.hover\:scale-105:hover{--tw-scale-x:1.05;--tw-scale-y:1.05;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.hover\:scale-110:hover{--tw-scale-x:1.1;--tw-scale-y:1.1;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.hover\:border-brand:hover{--tw-border-opacity:1;border-color:rgb(17 25 71 / var(--tw-border-opacity, 1))}.hover\:bg-black:hover{--tw-bg-opacity:1;background-color:rgb(0 0 0 / var(--tw-bg-opacity, 1))}.hover\:bg-brand:hover{--tw-bg-opacity:1;background-color:rgb(17 25 71 / var(--tw-bg-opacity, 1))}.hover\:bg-brand-dark:hover{--tw-bg-opacity:1;background-color:rgb(10 15 46 / var(--tw-bg-opacity, 1))}.hover\:bg-brand\/10:hover{background-color:rgb(17 25 71 / 0.1)}.hover\:bg-brand\/40:hover{background-color:rgb(17 25 71 / 0.4)}.hover\:bg-gray-200:hover{--tw-bg-opacity:1;background-color:rgb(229 231 235 / var(--tw-bg-opacity, 1))}.hover\:bg-white:hover{--tw-bg-opacity:1;background-color:rgb(255 255 255 / var(--tw-bg-opacity, 1))}.hover\:text-black:hover{--tw-text-opacity:1;color:rgb(0 0 0 / var(--tw-text-opacity, 1))}.hover\:text-brand:hover{--tw-text-opacity:1;color:rgb(17 25 71 / var(--tw-text-opacity, 1))}.hover\:text-brand-dark:hover{--tw-text-opacity:1;color:rgb(10 15 46 / var(--tw-text-opacity, 1))}.hover\:text-brand-light:hover{--tw-text-opacity:1;color:rgb(223 186 137 / var(--tw-text-opacity, 1))}.hover\:text-red-600:hover{--tw-text-opacity:1;color:rgb(220 38 38 / var(--tw-text-opacity, 1))}.hover\:underline:hover{-webkit-text-decoration-line:underline;text-decoration-line:underline}.hover\:shadow-2xl:hover{--tw-shadow:0 25px 50px -12px rgb(0 0 0 / 0.25);--tw-shadow-colored:0 25px 50px -12px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.hover\:shadow-lg:hover{--tw-shadow:0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 10px 15px -3px var(--tw-shadow-color), 0 4px 6px -4px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.hover\:shadow-xl:hover{--tw-shadow:0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 20px 25px -5px var(--tw-shadow-color), 0 8px 10px -6px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.focus\:bg-white:focus{--tw-bg-opacity:1;background-color:rgb(255 255 255 / var(--tw-bg-opacity, 1))}.focus\:outline-none:focus{outline:2px solid transparent;outline-offset:2px}.focus\:outline-brand:focus{outline-color:#111947}.group:hover .group-hover\:scale-110{--tw-scale-x:1.1;--tw-scale-y:1.1;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.group:hover .group-hover\:text-white{--tw-text-opacity:1;color:rgb(255 255 255 / var(--tw-text-opacity, 1))}.peer:checked ~ .peer-checked\:border-brand{--tw-border-opacity:1;border-color:rgb(17 25 71 / var(--tw-border-opacity, 1))}.peer:checked ~ .peer-checked\:bg-brand{--tw-bg-opacity:1;background-color:rgb(17 25 71 / var(--tw-bg-opacity, 1))}.peer:checked ~ .peer-checked\:text-white{--tw-text-opacity:1;color:rgb(255 255 255 / var(--tw-text-opacity, 1))}@media (min-width: 640px){.sm\:grid-cols-3{grid-template-columns:repeat(3, minmax(0, 1fr))}}@media (min-width: 768px){.md\:col-span-1{grid-column:span 1 / span 1}.md\:col-span-4{grid-column:span 4 / span 4}.md\:col-span-5{grid-column:span 5 / span 5}.md\:row-span-2{grid-row:span 2 / span 2}.md\:row-span-3{grid-row:span 3 / span 3}.md\:mx-0{margin-left:0px;margin-right:0px}.md\:mt-0{margin-top:0px}.md\:block{display:block}.md\:inline{display:inline}.md\:flex{display:flex}.md\:h-12{height:3rem}.md\:h-\[700px\]{height:700px}.md\:h-auto{height:auto}.md\:min-h-\[500px\]{min-height:500px}.md\:w-5\/12{width:41.666667%}.md\:w-7\/12{width:58.333333%}.md\:grid-cols-2{grid-template-columns:repeat(2, minmax(0, 1fr))}.md\:grid-cols-4{grid-template-columns:repeat(4, minmax(0, 1fr))}.md\:grid-cols-5{grid-template-columns:repeat(5, minmax(0, 1fr))}.md\:grid-cols-9{grid-template-columns:repeat(9, minmax(0, 1fr))}.md\:flex-row{flex-direction:row}.md\:items-end{align-items:flex-end}.md\:justify-end{justify-content:flex-end}.md\:gap-4{gap:1rem}.md\:gap-6{gap:1.5rem}.md\:rounded-br-\[100px\]{border-bottom-right-radius:100px}.md\:rounded-tr-\[100px\]{border-top-right-radius:100px}.md\:border-b-0{border-bottom-width:0px}.md\:border-l{border-left-width:1px}.md\:border-r{border-right-width:1px}.md\:border-gray-200{--tw-border-opacity:1;border-color:rgb(229 231 235 / var(--tw-border-opacity, 1))}.md\:bg-white{--tw-bg-opacity:1;background-color:rgb(255 255 255 / var(--tw-bg-opacity, 1))}.md\:p-10{padding:2.5rem}.md\:p-12{padding:3rem}.md\:px-12{padding-left:3rem;padding-right:3rem}.md\:px-8{padding-left:2rem;padding-right:2rem}.md\:py-24{padding-top:6rem;padding-bottom:6rem}.md\:pb-8{padding-bottom:2rem}.md\:pl-10{padding-left:2.5rem}.md\:text-left{text-align:left}.md\:text-2xl{font-size:1.5rem;line-height:2rem}.md\:text-4xl{font-size:2.25rem;line-height:2.5rem}.md\:text-5xl{font-size:3rem;line-height:1}.md\:text-base{font-size:1rem;line-height:1.5rem}.md\:text-sm{font-size:0.875rem;line-height:1.25rem}.md\:text-xl{font-size:1.25rem;line-height:1.75rem}.md\:text-xs{font-size:0.75rem;line-height:1rem}.md\:shadow-2xl{--tw-shadow:0 25px 50px -12px rgb(0 0 0 / 0.25);--tw-shadow-colored:0 25px 50px -12px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}}@media (min-width: 1024px){.lg\:col-span-4{grid-column:span 4 / span 4}.lg\:col-span-5{grid-column:span 5 / span 5}.lg\:col-span-7{grid-column:span 7 / span 7}.lg\:col-span-8{grid-column:span 8 / span 8}.lg\:mt-0{margin-top:0px}.lg\:flex{display:flex}.lg\:hidden{display:none}.lg\:grid-cols-12{grid-template-columns:repeat(12, minmax(0, 1fr))}.lg\:grid-cols-5{grid-template-columns:repeat(5, minmax(0, 1fr))}.lg\:justify-start{justify-content:flex-start}.lg\:gap-12{gap:3rem}.lg\:pr-8{padding-right:2rem}.lg\:text-6xl{font-size:3.75rem;line-height:1}}</style><style></style></head>
+<body data-new-gr-c-s-check-loaded="14.1311.0" data-gr-ext-installed="" style="" data-new-gr-c-s-loaded="14.1311.0">
+
+    <!-- ===== MOBILE MENU OVERLAY ===== -->
+    <div id="mobileMenu" class="mobile-menu">
+        <button class="close-btn" onclick="closeMobileMenu()" aria-label="Close menu">
+            <img src="https://i.ibb.co/mVfNZTK9/down.webp" alt="Close" style="transform:rotate(45deg);filter:invert(1);width:28px;height:28px;">
+        </button>
+        <a href="#about" onclick="closeMobileMenu()">About Us</a>
+        <a href="#floorplan" onclick="closeMobileMenu()">Floor Plan</a>
+        <a href="#amenities" onclick="closeMobileMenu()">Amenities</a>
+        <a href="#connectivity" onclick="closeMobileMenu()">Connectivity</a>
+        <a href="#gallery" onclick="closeMobileMenu()">Gallery</a>
+        <a href="#contact" onclick="closeMobileMenu()">Contact Us</a>
+        <a href="tel:+919872490091" class="menu-cta">Call +91 98724 90091</a>
+    </div>
+
+    <!-- ===== HEADER ===== -->
+    <header class="bg-brand-bg py-4 px-4 md:px-8 flex justify-between items-center shadow-sm sticky top-0 z-50">
+        <div class="cursor-pointer">
+            <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg" alt="Anmol Avenue Logo" class="h-10 md:h-12 object-contain rounded-lg">
+        </div>
+
+        <nav class="hidden lg:flex space-x-6 text-sm font-semibold text-gray-800">
+            <a href="#about" class="hover:text-brand transition-colors duration-300" style="outline: none;">About Us</a>
+            <a href="#floorplan" class="hover:text-brand transition-colors duration-300" style="outline: none;">Floor Plan</a>
+            <a href="#amenities" class="hover:text-brand transition-colors duration-300" style="outline: none;">Amenities</a>
+            <a href="#connectivity" class="hover:text-brand transition-colors duration-300" style="outline: none;">Connectivity</a>
+            <a href="#gallery" class="hover:text-brand transition-colors duration-300" style="outline: none;">Gallery</a>
+            <a href="#contact" class="hover:text-brand transition-colors duration-300" style="outline: none;">Contact Us</a>
+        </nav>
+
+        <div class="flex items-center gap-4">
+            <div class="hidden md:flex flex-col items-end">
+                <div class="flex items-center gap-3">
+                    <a href="tel:+919872490091" class="text-brand font-bold text-base flex items-center gap-1 hover:text-brand-dark transition" style="outline: none;">
+                        <img src="https://i.ibb.co/nqsMJ2V9/phone.png" class="w-4 h-4 opacity-70" alt="Phone">
+                        +91 98724 90091
+                    </a>
+                    <button onclick="openModal()" class="bg-brand text-white px-5 py-2 rounded text-sm font-semibold hover:bg-brand-dark transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5" style="outline: none;">Request Details</button>
+                </div>
+                <span class="text-[10px] text-gray-900 font-bold mt-1" style="outline: none;">Premium Plots Near Mohali</span>
+            </div>
+
+            <button class="lg:hidden text-gray-800 focus:outline-none" style="outline: none;" onclick="toggleMobileMenu()" aria-label="Open menu">
+                <img src="https://i.ibb.co/4wpXYJCc/menus.png" class="w-6 h-6" alt="Menu">
+            </button>
+        </div>
+    </header>
+
+    <!-- ===== HERO SECTION WITH CAROUSEL ===== -->
+    <main class="relative min-h-[90vh] flex items-center px-4 md:px-12 py-16">
+        <div class="carousel-container" id="heroCarousel">
+            <div class="carousel-slide" style="background-image: url('https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png');"></div>
+            <div class="carousel-slide" style="background-image: url('https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg');"></div>
+            <div class="carousel-slide active" style="background-image: url('https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg');"></div>
+            <div class="carousel-overlay"></div>
+        </div>
+
+        <div class="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 relative z-10">
+            <div class="lg:col-span-8 text-white flex flex-col justify-center">
+                <div class="mb-4">
+                    <span class="bg-red-600 text-white font-bold py-1.5 px-4 rounded-md inline-block shadow-lg uppercase text-sm tracking-wide" style="outline: none;">Booking Open</span>
+                </div>
+                <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight mb-4 font-outfit" style="outline: none;">Build Your Custom Home At <span style="color: rgb(223, 186, 137); outline: none;">Anmol Avenue</span></h1>
+                <p class="text-lg md:text-xl font-medium mb-6 max-w-2xl text-gray-100" style="outline: none;">Secure Your Family's Future in a Premium 28-Acre Gated Township Near Mohali.</p>
+                <div class="mb-8">
+                    <span class="bg-red-600 text-white font-bold py-2 px-4 rounded-md text-lg md:text-xl inline-block shadow-lg" style="outline: none;">Plots starting at just ₹50,000/sq. yd.</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 mb-8 font-medium text-sm md:text-base max-w-xl">
+                    <div class="flex items-center gap-2"><img src="https://i.ibb.co/KjfxdC8j/home.webp" class="w-5" alt="Icon"> 400 Sq. Yd. – ₹2 Cr</div>
+                    <div class="flex items-center gap-2"><img src="https://i.ibb.co/KjfxdC8j/home.webp" class="w-5" alt="Icon"> 500 Sq. Yd. – ₹2.5 Cr</div>
+                    <div class="flex items-center gap-2"><img src="https://i.ibb.co/KjfxdC8j/home.webp" class="w-5" alt="Icon"> 600 Sq. Yd. – ₹3 Cr</div>
+                    <div class="flex items-center gap-2"><img src="https://i.ibb.co/BWsBKCr/pent-house.webp" class="w-5" alt="Icon"> Gated Community</div>
+                </div>
+
+                <div>
+                    <button onclick="openModal()" class="border-2 border-white text-white px-8 py-3 rounded font-semibold hover:bg-white hover:text-black transition-all duration-300 shadow-lg flex items-center gap-2" style="outline: none;">
+                        Schedule a Free Site Visit
+                        <img src="https://i.ibb.co/CpsMhxSb/open-icon.webp" class="w-4 h-4 filter invert" alt="Arrow">
+                    </button>
+                </div>
+            </div>
+
+            <div class="lg:col-span-4 mt-8 lg:mt-0">
+                <div class="bg-white rounded-lg p-6 shadow-2xl text-gray-800 border-t-4 border-brand">
+                    <div class="text-center mb-4 flex flex-col items-center">
+                        <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg" alt="Anmol Avenue" class="h-8 object-contain mb-2 rounded">
+                        <h2 class="text-brand-heading font-bold text-lg mt-2 font-outfit" style="outline: none;">Anmol Avenue Exclusive Price List!</h2>
+                        <p class="text-[10px] text-gray-500 mt-1 px-4" style="outline: none;">Complete Overview of Current Prices for All Plots to Guide Your Property Investment</p>
+                    </div>
+
+                    <!-- QUALIFICATION FORM CONTAINER – PRESERVED WITH ALL ATTRIBUTES -->
+                    
+                <div style="max-width: 500px; margin: 2rem auto; padding: 1.5rem 0; background: transparent; font-family: inherit; text-align: left; box-sizing: border-box;">
+                    <h3 style="margin-top: 0px; margin-bottom: 1.5rem; color: inherit; font-size: 1.5rem; font-weight: 800; text-align: center; letter-spacing: -0.025em; font-family: inherit; outline: none;">Check Price &amp; Availability</h3>
+            
+                    <div style="margin-bottom: 1.25rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit; outline: none;">Full Name</label>
+                        <input type="text" disabled="" placeholder="John Doe" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;">
+                    </div>
+                
+                    <div style="margin-bottom: 1.25rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit; outline: none;">WhatsApp Number</label>
+                        <input type="tel" disabled="" placeholder="+91 98765 43210" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;">
+                    </div>
+                
+                    <div style="margin-bottom: 1.25rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 700; color: inherit; opacity: 0.8; font-family: inherit; outline: none;">City</label>
+                        <input type="text" disabled="" placeholder="Mohali" style="width: 100%; padding: 0.75rem 1rem; border-radius: 0.75rem; border: 1px solid #cbd5e1; outline: none; font-size: 0.875rem; box-sizing: border-box; color: inherit; background-color: #ffffff;">
+                    </div>
+                
+                    <button disabled="" style="width: 100%; padding: 0.875rem; background: rgb(17, 25, 71); color: rgb(255, 255, 255); border-width: medium; border-style: none; border-color: currentcolor; border-image: none; font-size: 0.875rem; font-weight: 700; font-family: inherit; outline: none;">Download Complete Price List &amp; Brochure</button>
+                </div>
+            
+
+                    <hr class="my-4 border-gray-200">
+                    <div class="text-xs">
+                        <h3 class="font-bold mb-3 text-gray-800 text-sm" style="outline: none;">What You Get</h3>
+                        <ul class="space-y-2 text-gray-600 font-medium">
+                            <li class="flex gap-2 items-center" style="outline: none;"><img src="https://i.ibb.co/hR6C7MJn/operator.png" class="w-4" alt="Call"> Quick Call Back by Our Expert</li>
+                            <li class="flex gap-2 items-center" style="outline: none;"><img src="https://i.ibb.co/Q3HBSQ9S/car-icon.webp" class="w-4" alt="Car"> Free Site Visit with Pickup &amp; Drop</li>
+                            <li class="flex gap-2 items-center" style="outline: none;"><img src="https://i.ibb.co/nqsMJ2V9/phone.png" class="w-4" alt="Phone"> Brochure &amp; Pricing on WhatsApp</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ===== TRUST BANNER ===== -->
+    <div class="bg-white py-4 border-b">
+        <div class="max-w-7xl mx-auto px-4 flex flex-wrap justify-center gap-3 md:gap-6 text-xs md:text-sm font-bold text-brand text-center">
+            <span style="outline: none;">28-Acre Township</span><span class="hidden md:inline text-brand-light" style="outline: none;">|</span>
+            <span style="outline: none;">60-Ft Wide Roads</span><span class="hidden md:inline text-brand-light" style="outline: none;">|</span>
+            <span style="outline: none;">Gated Community</span><span class="hidden md:inline text-brand-light" style="outline: none;">|</span>
+            <span style="outline: none;">Clubhouse &amp; Parks</span><span class="hidden md:inline text-brand-light" style="outline: none;">|</span>
+            <span style="outline: none;">3-Tier Security</span>
+        </div>
+    </div>
+
+    <!-- ===== ABOUT US ===== -->
+    <section id="about" class="py-16 md:py-24 px-4 md:px-12 max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+        <div>
+            <h2 class="text-3xl md:text-4xl font-bold text-brand-heading mb-6 border-b-2 border-brand pb-2 inline-block font-outfit" style="outline: none;">About Us</h2>
+            <p class="text-gray-700 text-sm md:text-base leading-relaxed mb-4" style="outline: none;">
+                Discover Anmol Avenue, a premium residential plot development near Mohali that combines thoughtful planning with modern infrastructure. Spread across 28 acres, our project features 104 exclusive premium plots designed for families who value space, security, and community.
+            </p>
+            <p class="text-gray-700 text-sm md:text-base leading-relaxed" style="outline: none;">
+                Anmol Avenue seamlessly integrates modern amenities including a clubhouse, kids' play area, 3-tier security, and landscaped parks into a gated community. Perfectly positioned near Chitkara University, residents enjoy effortless connectivity to Mohali, Rajpura, and Chandigarh. Top-tier infrastructure with underground wiring, water supply, and sewage systems complete the experience. Welcome to Anmol Avenue — where your dream home begins.
+            </p>
+        </div>
+        <div class="flex justify-center md:justify-end relative">
+            <img src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101526846_e923d87c-a24c-468a-a66a-f228aa93e863.png" alt="About Anmol Avenue" class="w-full max-w-[450px] h-[500px] shadow-2xl border-b-[8px] border-brand object-cover" style="border-radius: 250px 250px 0 0;">
+        </div>
+    </section>
+
+    <!-- ===== FLOOR PLAN ===== -->
+    <section id="floorplan" class="py-16 px-4 md:px-12 bg-white max-w-7xl mx-auto">
+        <h2 class="text-3xl md:text-4xl font-bold text-brand-heading mb-8 border-b-2 border-brand pb-2 inline-block font-outfit" style="outline: none;">Plot Configurations</h2>
+
+        <div class="flex flex-wrap gap-2 md:gap-4 mb-10 pb-4 border-b border-gray-200">
+            <button onclick="changeFloorPlan(this, 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg', false, '400 SQ. YD. – ₹2 CR')" class="floor-tab bg-brand text-white px-5 py-2.5 text-sm rounded font-bold shadow-md transition-all hover:-translate-y-1" style="outline: none;">400 Sq. Yd. – ₹2 Cr</button>
+            <button onclick="changeFloorPlan(this, 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg', true, '500 SQ. YD. – ₹2.5 CR')" class="floor-tab border border-brand text-gray-700 px-5 py-2.5 text-sm rounded font-semibold hover:bg-brand/10 transition-all" style="outline: none;">500 Sq. Yd. – ₹2.5 Cr</button>
+            <button onclick="changeFloorPlan(this, 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg', true, '600 SQ. YD. – ₹3 CR')" class="floor-tab border border-brand text-gray-700 px-5 py-2.5 text-sm rounded font-semibold hover:bg-brand/10 transition-all" style="outline: none;">600 Sq. Yd. – ₹3 Cr</button>
+        </div>
+
+        <div class="relative w-full flex justify-center mb-8 bg-gray-50 rounded-lg p-4 shadow-inner overflow-hidden min-h-[300px] md:min-h-[500px]">
+            <img id="floorplan-img" src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg" alt="Floor Plan" class="w-full max-w-4xl object-contain transition-all duration-500">
+
+            <div id="floorplan-overlay" class="absolute inset-0 bg-white/40 backdrop-blur-md hidden flex-col items-center justify-center transition-all duration-500 z-10">
+                <img src="https://i.ibb.co/BVCNZNZ6/secure-shield.webp" class="w-12 mb-4 filter drop-shadow opacity-80" alt="Lock">
+                <p class="text-xl md:text-2xl font-bold text-brand-heading mb-6 drop-shadow-md text-center px-4 font-outfit" style="outline: none;">Submit Enquiry to Unlock Plot Layout</p>
+                <button onclick="openModal()" class="bg-brand text-white px-8 py-3.5 rounded-md shadow-xl font-bold hover:bg-brand-dark transition transform hover:scale-105 hover:-translate-y-1" style="outline: none;">View Full Details</button>
+            </div>
+        </div>
+
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-end max-w-4xl mx-auto">
+            <div>
+                <h3 id="floorplan-title" class="font-bold text-xl md:text-2xl text-gray-800 mb-2 font-outfit" style="outline: none;">400 SQ. YD. – ₹2 CR</h3>
+                <p class="text-sm text-gray-600 font-medium leading-relaxed" style="outline: none;">
+                    Plot Area - 400 sq. yd.<br>
+                    Road Width - 60 ft.<br>
+                    Gated Community with Clubhouse
+                </p>
+            </div>
+            <button onclick="openModal()" class="mt-6 md:mt-0 bg-[#4a4a4a] text-white px-8 py-3 rounded shadow-lg flex items-center gap-2 text-sm font-semibold hover:bg-black transition-colors duration-300" style="outline: none;">
+                <img src="https://i.ibb.co/CpsMhxSb/open-icon.webp" class="w-4 h-4 filter invert" alt="Explore">
+                Explore More
+            </button>
+        </div>
+    </section>
+
+    <!-- ===== SMART LIVING ===== -->
+    <section class="py-24 relative bg-cover bg-center text-white" style="background-color: #111947; background-image: linear-gradient(rgba(17, 25, 71, 0.9), rgba(17, 25, 71, 0.9)), url('https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png');">
+        <div class="max-w-7xl mx-auto px-4 md:px-12 grid grid-cols-1 lg:grid-cols-12 gap-12 relative z-10">
+
+            <div class="lg:col-span-5 flex flex-col justify-start h-full relative z-20">
+                <div class="mb-10 lg:pr-8">
+                    <h2 class="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight text-white drop-shadow-md font-outfit" style="outline: none;">Step into<br>Smart Living</h2>
+                    <p class="text-sm text-gray-200 leading-relaxed font-medium drop-shadow-md" style="outline: none;">
+                        Anmol Avenue redefines modern living not just with spacious plots and stunning amenities, but also with cutting-edge infrastructure seamlessly integrated into every corner of your community. From your elegantly designed gated plot near Mohali, experience the perfect blend of smart innovation and timeless comfort, crafted for those who truly value the finer things in life. Invest in your future today.
+                    </p>
+                </div>
+
+                <div class="w-full flex justify-center lg:justify-start mt-auto">
+                    <img src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101587325_e59ba5fb-c3f6-44b0-8904-e1e9ccd49885.png" alt="Smart Living" class="w-full max-w-[350px] h-[450px] object-cover shadow-2xl" style="border: 8px solid #0a0f2e; border-radius: 200px 200px 0 0; background-color: #fff;">
+                </div>
+            </div>
+
+            <div class="lg:col-span-7 grid grid-cols-2 sm:grid-cols-3 gap-[1px] border border-white/20 rounded-md overflow-hidden shadow-2xl z-20 h-fit mt-8 lg:mt-0 bg-white/5">
+                <div id="smart-tile-1" onclick="updateSmartFeature(1)" class="smart-tile p-6 text-center flex flex-col items-center justify-center h-32 hover:bg-brand transition cursor-pointer group bg-brand/80 border-b-[3px] border-white">
+                    <span class="text-4xl font-serif italic mb-1 text-white group-hover:scale-110 transition-transform" style="outline: none;">1</span>
+                    <span class="text-xs font-bold leading-tight text-white" style="outline: none;">Underground<br>Wiring</span>
+                </div>
+                <div id="smart-tile-2" onclick="updateSmartFeature(2)" class="smart-tile bg-transparent hover:bg-brand/40 p-6 text-center flex flex-col items-center justify-center h-32 transition cursor-pointer group">
+                    <span class="text-4xl font-serif italic mb-1 text-white/60 group-hover:text-white group-hover:scale-110 transition-all" style="outline: none;">2</span>
+                    <span class="text-xs font-medium text-gray-200 group-hover:text-white" style="outline: none;">Water Supply</span>
+                </div>
+                <div id="smart-tile-3" onclick="updateSmartFeature(3)" class="smart-tile bg-transparent hover:bg-brand/40 p-6 text-center flex flex-col items-center justify-center h-32 transition cursor-pointer group">
+                    <span class="text-4xl font-serif italic mb-1 text-white/60 group-hover:text-white group-hover:scale-110 transition-all" style="outline: none;">3</span>
+                    <span class="text-xs font-medium text-gray-200 group-hover:text-white" style="outline: none;">Sewage System</span>
+                </div>
+                <div id="smart-tile-4" onclick="updateSmartFeature(4)" class="smart-tile bg-transparent hover:bg-brand/40 p-6 text-center flex flex-col items-center justify-center h-32 transition cursor-pointer group">
+                    <span class="text-4xl font-serif italic mb-1 text-white/60 group-hover:text-white group-hover:scale-110 transition-all" style="outline: none;">4</span>
+                    <span class="text-xs font-medium text-gray-200 group-hover:text-white" style="outline: none;">Solar Ready</span>
+                </div>
+                <div id="smart-tile-5" onclick="updateSmartFeature(5)" class="smart-tile bg-transparent hover:bg-brand/40 p-6 text-center flex flex-col items-center justify-center h-32 transition cursor-pointer group">
+                    <span class="text-4xl font-serif italic mb-1 text-white/60 group-hover:text-white group-hover:scale-110 transition-all" style="outline: none;">5</span>
+                    <span class="text-xs font-medium text-gray-200 group-hover:text-white" style="outline: none;">3-Tier<br>Security</span>
+                </div>
+                <div id="smart-tile-6" onclick="updateSmartFeature(6)" class="smart-tile bg-transparent hover:bg-brand/40 p-6 text-center flex flex-col items-center justify-center h-32 transition cursor-pointer group">
+                    <span class="text-4xl font-serif italic mb-1 text-white/60 group-hover:text-white group-hover:scale-110 transition-all" style="outline: none;">6</span>
+                    <span class="text-xs font-medium text-gray-200 group-hover:text-white" style="outline: none;">Clubhouse</span>
+                </div>
+
+                <div class="col-span-2 bg-black/50 p-6 text-left flex flex-col justify-center min-h-[128px]">
+                    <h4 id="smart-title" class="font-bold text-lg mb-2 text-[#dfba89] transition-all font-outfit" style="opacity: 1; outline: none;">1. Underground Wiring</h4>
+                    <p id="smart-desc" class="text-xs text-gray-300 leading-relaxed transition-all" style="opacity: 1; outline: none;">No messy overhead cables. Safe, clean, and reliable power supply throughout the community.</p>
+                </div>
+
+                <div id="smart-tile-7" onclick="updateSmartFeature(7)" class="smart-tile bg-transparent hover:bg-brand/40 p-6 text-center flex flex-col items-center justify-center h-full transition cursor-pointer group">
+                    <span class="text-4xl font-serif italic mb-1 text-white/60 group-hover:text-white group-hover:scale-110 transition-all" style="outline: none;">7</span>
+                    <span class="text-xs font-medium text-gray-200 group-hover:text-white" style="outline: none;">Landscaped<br>Parks</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== AMENITIES ===== -->
+    <section id="amenities" class="py-16 md:py-24 px-4 md:px-12 bg-white max-w-7xl mx-auto relative z-10">
+        <h2 class="text-3xl md:text-4xl font-bold text-brand-heading mb-12 border-b-2 border-brand pb-2 inline-block font-outfit" style="outline: none;">Amenities</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">
+            <div class="bg-brand rounded-2xl p-4 text-center text-white aspect-square flex flex-col justify-center items-center shadow-lg hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 cursor-pointer">
+                <img src="https://i.ibb.co/ccp3KKNR/smart-home.webp" class="w-12 h-12 mb-3 object-contain filter invert" alt="Gated Community">
+                <span class="text-[10px] md:text-xs font-semibold px-2 leading-tight" style="outline: none;">Gated<br>Community</span>
+            </div>
+            <div class="bg-brand rounded-2xl p-4 text-center text-white aspect-square flex flex-col justify-center items-center shadow-lg hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 cursor-pointer">
+                <img src="https://i.ibb.co/gLQQg9mq/sketch.webp" class="w-12 h-12 mb-3 object-contain filter invert opacity-90" alt="Roads">
+                <span class="text-[10px] md:text-xs font-semibold px-2 leading-tight" style="outline: none;">60-Ft Wide<br>Roads</span>
+            </div>
+            <div class="bg-brand rounded-2xl p-4 text-center text-white aspect-square flex flex-col justify-center items-center shadow-lg hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 cursor-pointer">
+                <img src="https://i.ibb.co/1tmnhkX5/check-list.webp" class="w-12 h-12 mb-3 object-contain filter invert" alt="Clubhouse">
+                <span class="text-[10px] md:text-xs font-semibold px-2 leading-tight" style="outline: none;">Clubhouse</span>
+            </div>
+            <div class="bg-brand rounded-2xl p-4 text-center text-white aspect-square flex flex-col justify-center items-center shadow-lg hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 cursor-pointer">
+                <img src="https://i.ibb.co/F4jYBjcd/swimming-pool.webp" class="w-12 h-12 mb-3 object-contain filter invert" alt="Park">
+                <span class="text-[10px] md:text-xs font-semibold px-2 leading-tight" style="outline: none;">Landscaped<br>Parks</span>
+            </div>
+            <div class="bg-brand rounded-2xl p-4 text-center text-white aspect-square flex flex-col justify-center items-center shadow-lg hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 cursor-pointer">
+                <img src="https://i.ibb.co/whTk0qKH/park.webp" class="w-12 h-12 mb-3 object-contain filter invert" alt="Play Area">
+                <span class="text-[10px] md:text-xs font-semibold px-2 leading-tight" style="outline: none;">Children's Play<br>Area</span>
+            </div>
+            <div class="bg-brand rounded-2xl p-4 text-center text-white aspect-square flex flex-col justify-center items-center shadow-lg hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 cursor-pointer">
+                <img src="https://i.ibb.co/BVCNZNZ6/secure-shield.webp" class="w-12 h-12 mb-3 object-contain filter invert" alt="Security">
+                <span class="text-[10px] md:text-xs font-semibold px-2 leading-tight" style="outline: none;">3-Tier Security<br>System</span>
+            </div>
+            <div class="bg-brand rounded-2xl p-4 text-center text-white aspect-square flex flex-col justify-center items-center shadow-lg hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 cursor-pointer">
+                <img src="https://i.ibb.co/0j5kmyxt/weight.webp" class="w-12 h-12 mb-3 object-contain filter invert" alt="Infrastructure">
+                <span class="text-[10px] md:text-xs font-semibold px-2 leading-tight" style="outline: none;">Modern<br>Infrastructure</span>
+            </div>
+            <div class="bg-brand rounded-2xl p-4 text-center text-white aspect-square flex flex-col justify-center items-center shadow-lg hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 cursor-pointer">
+                <img src="https://i.ibb.co/wNDnYCh9/massage.webp" class="w-12 h-12 mb-3 object-contain filter invert" alt="Parking">
+                <span class="text-[10px] md:text-xs font-semibold px-2 leading-tight" style="outline: none;">Ample<br>Parking</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== CONNECTIVITY ===== -->
+    <section id="connectivity" class="py-20 px-4 md:px-12 bg-cover bg-center text-white" style="background-image: linear-gradient(rgba(10, 10, 10, 0.9), rgba(10, 10, 10, 0.95)), url('https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png');">
+        <div class="max-w-5xl mx-auto">
+            <h2 class="text-3xl md:text-4xl font-bold text-brand-light mb-10 border-b-2 border-brand pb-2 inline-block font-outfit" style="outline: none;">Project Connectivity</h2>
+            <div class="flex justify-center mb-12 hover:scale-105 transition duration-500">
+                <img src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg" alt="Location Map" class="w-full max-w-4xl object-cover shadow-2xl bg-white p-2 rounded-lg">
+            </div>
+
+            <div class="space-y-4">
+                <div class="border-b border-gray-600 pb-2">
+                    <button class="w-full flex justify-between items-center py-4 font-bold text-lg text-white hover:text-brand-light transition focus:outline-none" onclick="toggleAccordion('acc-1')" style="outline: none;">
+                        <span style="outline: none;">Accessibility</span>
+                        <img src="https://i.ibb.co/mVfNZTK9/down.webp" alt="Toggle" class="w-4 h-4 filter invert transform rotate-180 transition-transform duration-300" id="icon-acc-1">
+                    </button>
+                    <div id="acc-1" class="accordion-content open pb-6">
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-6 text-xs">
+                            <div class="border-l-2 border-brand pl-4 py-1">
+                                <span class="font-bold flex items-center gap-2 text-sm" style="outline: none;"><img src="https://i.ibb.co/JjQD5c5r/plane.webp" class="w-4 filter invert" alt="icon"> Mohali Int. Airport</span>
+                                <span class="text-brand-light block mt-2 font-bold" style="outline: none;">40 Mins</span>
+                            </div>
+                            <div class="border-l-2 border-brand pl-4 py-1">
+                                <span class="font-bold flex items-center gap-2 text-sm" style="outline: none;"><img src="https://i.ibb.co/v6Gzvf0d/train.webp" class="w-4 filter invert" alt="icon"> Rajpura Railway</span>
+                                <span class="text-brand-light block mt-2 font-bold" style="outline: none;">10 Mins</span>
+                            </div>
+                            <div class="border-l-2 border-brand pl-4 py-1">
+                                <span class="font-bold flex items-center gap-2 text-sm" style="outline: none;"><img src="https://i.ibb.co/JjQD5c5r/plane.webp" class="w-4 filter invert" alt="icon"> Chitkara University</span>
+                                <span class="text-brand-light block mt-2 font-bold" style="outline: none;">5 Mins</span>
+                            </div>
+                            <div class="border-l-2 border-brand pl-4 py-1">
+                                <span class="font-bold flex items-center gap-2 text-sm" style="outline: none;"><img src="https://i.ibb.co/v6Gzvf0d/train.webp" class="w-4 filter invert" alt="icon"> Mohali City Centre</span>
+                                <span class="text-brand-light block mt-2 font-bold" style="outline: none;">20 Mins</span>
+                            </div>
+                            <div class="border-l-2 border-brand pl-4 py-1">
+                                <span class="font-bold flex items-center gap-2 text-sm" style="outline: none;"><img src="https://i.ibb.co/JjQD5c5r/plane.webp" class="w-4 filter invert" alt="icon"> Chandigarh Airport</span>
+                                <span class="text-brand-light block mt-2 font-bold" style="outline: none;">40 Mins</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-b border-gray-600 pb-2">
+                    <button class="w-full flex justify-between items-center py-4 font-bold text-lg text-white hover:text-brand-light transition focus:outline-none" onclick="toggleAccordion('acc-2')" style="outline: none;">
+                        <span style="outline: none;">Hospitals &amp; Education</span>
+                        <img src="https://i.ibb.co/mVfNZTK9/down.webp" alt="Toggle" class="w-4 h-4 filter invert transition-transform duration-300" id="icon-acc-2">
+                    </button>
+                    <div id="acc-2" class="accordion-content">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-xs pb-6 pt-2">
+                            <div class="border-l-2 border-brand pl-4 py-1">
+                                <span class="font-bold flex items-center gap-2 text-sm" style="outline: none;">Fortis Hospital</span>
+                                <span class="text-brand-light block mt-2 font-bold" style="outline: none;">15 Mins</span>
+                            </div>
+                            <div class="border-l-2 border-brand pl-4 py-1">
+                                <span class="font-bold flex items-center gap-2 text-sm" style="outline: none;">Chitkara University</span>
+                                <span class="text-brand-light block mt-2 font-bold" style="outline: none;">5 Mins</span>
+                            </div>
+                            <div class="border-l-2 border-brand pl-4 py-1">
+                                <span class="font-bold flex items-center gap-2 text-sm" style="outline: none;">Rajpura Market</span>
+                                <span class="text-brand-light block mt-2 font-bold" style="outline: none;">10 Mins</span>
+                            </div>
+                            <div class="border-l-2 border-brand pl-4 py-1">
+                                <span class="font-bold flex items-center gap-2 text-sm" style="outline: none;">VR Mall Mohali</span>
+                                <span class="text-brand-light block mt-2 font-bold" style="outline: none;">20 Mins</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== GALLERY ===== -->
+    <section id="gallery" class="py-20 px-4 md:px-12 bg-black text-white">
+        <div class="max-w-7xl mx-auto">
+            <h2 class="text-3xl md:text-4xl font-bold mb-8 border-b-2 border-brand pb-2 inline-block font-outfit" style="outline: none;">Gallery</h2>
+
+            <div class="flex flex-wrap gap-3 mb-10 overflow-x-auto hide-scrollbar pb-2">
+                <button onclick="changeGalleryTab(this, 'Exterior')" class="gallery-tab bg-brand text-white px-5 py-2 text-sm rounded font-bold whitespace-nowrap transition-colors duration-300" style="outline: none;">Exterior</button>
+                <button onclick="changeGalleryTab(this, 'Interior')" class="gallery-tab bg-white text-black px-5 py-2 text-sm rounded font-bold whitespace-nowrap hover:bg-gray-200 transition-colors duration-300" style="outline: none;">Interior</button>
+                <button onclick="changeGalleryTab(this, 'Landscape')" class="gallery-tab bg-white text-black px-5 py-2 text-sm rounded font-bold whitespace-nowrap hover:bg-gray-200 transition-colors duration-300" style="outline: none;">Landscape</button>
+                <button onclick="changeGalleryTab(this, 'Clubhouse')" class="gallery-tab bg-white text-black px-5 py-2 text-sm rounded font-bold whitespace-nowrap hover:bg-gray-200 transition-colors duration-300" style="outline: none;">Clubhouse</button>
+                <button onclick="changeGalleryTab(this, 'Plots')" class="gallery-tab bg-white text-black px-5 py-2 text-sm rounded font-bold whitespace-nowrap hover:bg-gray-200 transition-colors duration-300" style="outline: none;">Plots</button>
+                <button onclick="changeGalleryTab(this, 'Lobby')" class="gallery-tab bg-white text-black px-5 py-2 text-sm rounded font-bold whitespace-nowrap hover:bg-gray-200 transition-colors duration-300" style="outline: none;">Lobby</button>
+            </div>
+
+            <div id="gallery-grid" class="grid grid-cols-2 md:grid-cols-4 grid-rows-3 gap-3 h-auto md:h-[700px] transition-opacity duration-500">
+                <div class="col-span-2 md:col-span-1 row-span-2 md:row-span-3 h-64 md:h-auto overflow-hidden">
+                    <img id="gal-img-0" src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg" class="rounded-t-full w-full h-full object-cover hover:scale-105 transition duration-500" alt="Gallery">
+                </div>
+                <div class="col-span-1 row-span-1 overflow-hidden">
+                    <img id="gal-img-1" src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg" class="w-full h-full object-cover hover:scale-105 transition duration-500" alt="Gallery">
+                </div>
+                <div class="col-span-1 row-span-1 overflow-hidden">
+                    <img id="gal-img-2" src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101587325_e59ba5fb-c3f6-44b0-8904-e1e9ccd49885.png" class="w-full h-full object-cover hover:scale-105 transition duration-500" alt="Gallery">
+                </div>
+                <div class="col-span-2 md:col-span-1 row-span-1 md:row-span-2 overflow-hidden rounded-tr-[50px] md:rounded-tr-[100px]">
+                    <img id="gal-img-3" src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png" class="w-full h-full object-cover hover:scale-105 transition duration-500" alt="Gallery">
+                </div>
+                <div class="col-span-2 row-span-1 overflow-hidden">
+                    <img id="gal-img-4" src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101526846_e923d87c-a24c-468a-a66a-f228aa93e863.png" class="w-full h-full object-cover hover:scale-105 transition duration-500" alt="Gallery">
+                </div>
+                <div class="col-span-2 md:col-span-1 row-span-1 overflow-hidden">
+                    <img id="gal-img-5" src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg" class="w-full h-full object-cover hover:scale-105 transition duration-500" alt="Gallery">
+                </div>
+                <div class="col-span-1 row-span-1 overflow-hidden">
+                    <img id="gal-img-6" src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg" class="w-full h-full object-cover hover:scale-105 transition duration-500" alt="Gallery">
+                </div>
+                <div class="col-span-1 row-span-1 overflow-hidden rounded-br-[50px] md:rounded-br-[100px]">
+                    <img id="gal-img-7" src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png" class="w-full h-full object-cover hover:scale-105 transition duration-500" alt="Gallery">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== CONTACT ===== -->
+    <section id="contact" class="py-20 px-4 md:px-12 bg-gray-50 flex justify-center">
+        <div class="max-w-6xl w-full grid grid-cols-1 md:grid-cols-2 gap-0 items-stretch bg-brand-bg md:bg-white md:shadow-2xl rounded-2xl overflow-hidden border border-gray-200">
+
+            <div class="flex flex-col items-center justify-center p-10 bg-white md:border-r border-gray-200">
+                <div class="relative w-[250px] h-[400px] mb-8 mx-auto">
+                    <img src="https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg" alt="Anmol Avenue" class="w-full h-full object-cover shadow-2xl" style="border: 8px solid #111947; border-radius: 150px; background-color: #fff;">
+                </div>
+                <p class="text-center text-sm text-gray-700 font-medium px-4 mb-6 leading-relaxed" style="outline: none;">
+                    Contact us today to schedule a visit to our premium residential plots near Mohali and experience the Anmol Avenue difference.
+                </p>
+                <div class="text-center bg-gray-50 py-3 px-6 rounded-lg border border-gray-100 w-full shadow-sm">
+                    <span class="font-bold text-gray-800 text-sm block mb-1" style="outline: none;">Contact us at:</span>
+                    <a href="mailto:infobluesquareinfra@gmail.com" class="text-brand font-bold hover:underline text-sm transition" style="outline: none;">infobluesquareinfra@gmail.com</a>
+                </div>
+            </div>
+
+            <div class="p-8 md:p-12 bg-[#ebebeb] flex flex-col justify-center">
+                <h3 class="text-3xl font-bold text-brand mb-8 font-outfit" style="outline: none;">Connect With Our Team</h3>
+
+                <form action="https://formsubmit.co/infobluesquareinfra@gmail.com" method="POST" class="space-y-5">
+                    <input type="hidden" name="_subject" value="New Lead: Anmol Avenue Contact Section">
+                    <input type="hidden" name="_captcha" value="false">
+                    <input type="hidden" name="_next" value="https://theanantaspire.in/thank-you.html">
+                    <input type="text" name="Name" placeholder="Name*" class="w-full border border-gray-300 rounded p-3 text-sm bg-transparent focus:outline-brand focus:bg-white transition" required="">
+
+                    <div class="flex border border-gray-300 rounded bg-transparent focus-within:bg-white transition overflow-hidden focus-within:outline-brand">
+                        <div class="px-3 flex items-center border-r border-gray-300 bg-gray-50/50">
+                            <img src="https://i.ibb.co/xKWRrZSs/IN.jpg" alt="India" class="w-5 rounded-sm">
+                        </div>
+                        <input type="tel" name="Phone" placeholder="Mobile Number*" class="w-full p-3 text-sm bg-transparent outline-none" required="">
+                    </div>
+
+                    <div class="pt-2">
+                        <label class="block text-xs font-bold mb-3 text-brand" style="outline: none;">Select Budget*</label>
+                        <div class="grid grid-cols-3 gap-2 text-[11px] text-center font-semibold">
+                            <div class="relative">
+                                <input type="radio" name="Budget" value="400 Sq Yd – ₹2 Cr" id="c-budget1" class="peer sr-only" required="">
+                                <label for="c-budget1" class="flex items-center justify-center border border-gray-400 rounded py-2.5 text-gray-600 bg-transparent hover:border-brand peer-checked:bg-brand peer-checked:text-white peer-checked:border-brand transition cursor-pointer" style="outline: none;">400 Sq Yd<br>₹2 Cr</label>
+                            </div>
+                            <div class="relative">
+                                <input type="radio" name="Budget" value="500 Sq Yd – ₹2.5 Cr" id="c-budget2" class="peer sr-only">
+                                <label for="c-budget2" class="flex items-center justify-center border border-gray-400 rounded py-2.5 text-gray-600 bg-transparent hover:border-brand peer-checked:bg-brand peer-checked:text-white peer-checked:border-brand transition cursor-pointer" style="outline: none;">500 Sq Yd<br>₹2.5 Cr</label>
+                            </div>
+                            <div class="relative">
+                                <input type="radio" name="Budget" value="600 Sq Yd – ₹3 Cr" id="c-budget3" class="peer sr-only">
+                                <label for="c-budget3" class="flex items-center justify-center border border-gray-400 rounded py-2.5 text-gray-600 bg-transparent hover:border-brand peer-checked:bg-brand peer-checked:text-white peer-checked:border-brand transition cursor-pointer" style="outline: none;">600 Sq Yd<br>₹3 Cr</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-3 mt-4">
+                        <input type="checkbox" name="Consent" value="Agreed" class="mt-1 w-4 h-4 cursor-pointer" required="" id="contact-agree" checked="">
+                        <label for="contact-agree" class="text-xs text-gray-600 leading-snug cursor-pointer" style="outline: none;">I agree to be contacted by 'Blue Square Infra' and agents via WhatsApp, SMS, phone, email etc.</label>
+                    </div>
+
+                    <button type="submit" class="w-full bg-[#dfba89] text-white font-bold py-3.5 rounded mt-4 hover:bg-brand transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 text-lg" style="outline: none;">Submit Enquiry</button>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== FOOTER ===== -->
+    <footer class="bg-white pt-16 pb-20 md:pb-8 px-4 md:px-12 border-t border-gray-200">
+        <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-9 gap-10 mb-12">
+
+            <div class="md:col-span-5">
+                <div class="mb-6">
+                    <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg" alt="Anmol Avenue Logo" class="h-10 md:h-12 object-contain rounded-lg">
+                </div>
+                <p class="text-sm text-gray-700 leading-relaxed mb-6 font-medium max-w-lg" style="outline: none;">
+                    We are the Authorized Channel Partner of 'Anmol Avenue'.<br>
+                    This website is not the official website of the developer &amp; property, it belongs to Blue Square Infra (Authorized Channel Partner) and is for informational purposes only.
+                </p>
+                <div class="flex flex-col gap-2 mb-4">
+                    <p class="text-sm font-bold text-gray-800" style="outline: none;">Email: <a href="mailto:infobluesquareinfra@gmail.com" class="text-brand hover:underline" style="outline: none;">infobluesquareinfra@gmail.com</a></p>
+                    <p class="text-sm font-bold text-gray-800" style="outline: none;">Phone: <a href="tel:+919872490091" class="text-brand hover:underline" style="outline: none;">+91 98724 90091</a></p>
+                </div>
+                <p class="font-bold text-brand text-sm bg-brand/10 inline-block px-3 py-1 rounded" style="outline: none;">Premium Plots Near Mohali</p>
+            </div>
+
+            <div class="md:col-span-4 md:border-l md:border-gray-200 md:pl-10">
+                <h4 class="font-bold text-xl mb-6 text-gray-900 font-outfit" style="outline: none;">Useful Links</h4>
+                <ul class="grid grid-cols-2 gap-y-3 gap-x-4 text-sm font-semibold text-gray-700">
+                    <li style="outline: none;"><a href="#about" class="hover:text-brand flex items-center gap-1 transition" style="outline: none;"><span class="text-brand" style="outline: none;">&gt;</span> About Us</a></li>
+                    <li style="outline: none;"><a href="#floorplan" class="hover:text-brand flex items-center gap-1 transition" style="outline: none;"><span class="text-brand" style="outline: none;">&gt;</span> Floor Plan</a></li>
+                    <li style="outline: none;"><a href="#amenities" class="hover:text-brand flex items-center gap-1 transition" style="outline: none;"><span class="text-brand" style="outline: none;">&gt;</span> Amenities</a></li>
+                    <li style="outline: none;"><a href="#gallery" class="hover:text-brand flex items-center gap-1 transition" style="outline: none;"><span class="text-brand" style="outline: none;">&gt;</span> Gallery</a></li>
+                    <li style="outline: none;"><a href="#contact" class="hover:text-brand flex items-center gap-1 transition" style="outline: none;"><span class="text-brand" style="outline: none;">&gt;</span> Contact Us</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="max-w-6xl mx-auto text-center border-t border-gray-200 pt-8">
+            <h5 class="font-bold text-brand text-xl mb-6 font-outfit" style="outline: none;">Disclaimer:</h5>
+            <div class="text-[10px] md:text-xs text-gray-600 space-y-4 px-4 font-medium leading-relaxed">
+                <p style="outline: none;">1. The images shown are for illustration purposes only and may not be an exact representation of the product</p>
+                <p style="outline: none;">2. Please be advised that this website is not an official site and serves solely as an informational portal managed by Blue Square Infra. We may share your data with Real Estate Regulatory Authority (RERA) registered Developers for further processing as necessary.</p>
+                <p class="mt-6 text-sm font-bold" style="outline: none;">
+                    <a href="#" class="text-brand hover:underline" style="outline: none;">Terms &amp; Conditions</a> and <a href="#" class="text-brand hover:underline" style="outline: none;">Privacy Policy</a>
+                </p>
+                <p class="pt-2 text-gray-500" style="outline: none;">Managed By: Blue Square Infra</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- ===== MOBILE FLOATING CTA ===== -->
+    <div class="floating-cta">
+        <a href="tel:+919872490091" class="call-btn" style="outline: none;">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
+            Call Now
+        </a>
+        <a href="https://wa.me/919872490091" target="_blank" class="whatsapp-btn" style="outline: none;">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.031 21.172c-1.604 0-3.155-.424-4.542-1.229l-5.064 1.33 1.353-4.94A8.995 8.995 0 0 1 2.55 12.015c0-4.966 4.04-9.006 9.008-9.006 2.408 0 4.672.938 6.375 2.64 1.702 1.702 2.639 3.967 2.639 6.375 0 4.966-4.04 9.006-9.006 9.006h-.495v-.852zM12.031 1.055C5.975 1.055 1.048 5.983 1.048 12.039c0 1.937.506 3.828 1.468 5.495L.5 24l6.634-1.741a10.957 10.957 0 0 0 4.897 1.144h.001c6.056 0 10.983-4.928 10.983-10.984 0-2.937-1.143-5.698-3.219-7.774-2.076-2.076-4.838-3.22-7.765-3.22zM18.06 15.65c-.31-.155-1.834-.905-2.118-1.009-.284-.104-.492-.155-.699.155-.207.31-.8 1.009-.981 1.216-.181.207-.363.233-.673.078-.31-.155-1.308-.482-2.493-1.541-.922-.823-1.545-1.84-1.727-2.15-.181-.31-.02-.477.135-.632.14-.14.31-.362.466-.543.155-.181.207-.31.31-.517.104-.207.052-.388-.026-.543-.078-.155-.699-1.688-.958-2.31-.253-.604-.51-.522-.699-.532-.181-.01-.389-.01-.596-.01-.207 0-.544.078-.828.388-.284.31-1.087 1.061-1.087 2.587 0 1.526 1.113 3.001 1.268 3.208.155.207 2.185 3.336 5.293 4.676.739.318 1.315.508 1.765.65.742.235 1.418.201 1.948.122.593-.088 1.834-.75 2.092-1.474.259-.724.259-1.344.181-1.474-.078-.13-.284-.207-.594-.362z"></path></svg>
+            WhatsApp
+        </a>
+    </div>
+
+    <!-- ===== ENQUIRY MODAL ===== -->
+    <div id="enquiryModal" class="modal active">
+        <div class="bg-white rounded-lg shadow-2xl max-w-4xl w-[95%] overflow-hidden relative flex flex-col md:flex-row">
+
+            <button onclick="closeModal()" class="absolute top-4 right-4 text-gray-500 hover:text-red-600 z-10 p-1 bg-white rounded-full shadow transition transform hover:scale-110" style="outline: none;">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+
+            <div class="bg-brand-bg p-8 md:p-10 md:w-5/12 border-b md:border-b-0 md:border-r border-brand/20">
+                <div class="text-center md:text-left mb-8">
+                    <img src="https://dvygrupphzjitzbrtlve.supabase.co/storage/v1/object/public/logos/2f62a259-f23b-48ee-a920-c436f36eaa4b-1777536311805.jpg" alt="Anmol Avenue Logo" class="h-10 object-contain mx-auto md:mx-0 mb-6 rounded">
+                    <h3 class="text-2xl font-bold text-brand-heading mb-2 leading-tight font-outfit" style="outline: none;">Get Complete Project Details</h3>
+                    <p class="text-sm text-gray-600" style="outline: none;">Share your information to receive all updates on Anmol Avenue's premium plots and offers.</p>
+                </div>
+
+                <div class="hidden md:block">
+                    <h4 class="font-bold text-brand-heading mb-4 text-lg font-outfit" style="outline: none;">What You Get</h4>
+                    <ul class="space-y-4 text-sm font-semibold text-gray-700">
+                        <li class="flex items-start gap-3" style="outline: none;"><img src="https://i.ibb.co/hR6C7MJn/operator.png" class="w-5 mt-0.5" alt="Icon"> <span style="outline: none;">Quick Call Back</span></li>
+                        <li class="flex items-start gap-3" style="outline: none;"><img src="https://i.ibb.co/Q3HBSQ9S/car-icon.webp" class="w-5 mt-0.5" alt="Icon"> <span style="outline: none;">Free Site Visit with Pickup &amp; Drop</span></li>
+                        <li class="flex items-start gap-3" style="outline: none;"><img src="https://i.ibb.co/nqsMJ2V9/phone.png" class="w-5 mt-0.5" alt="Icon"> <span style="outline: none;">Project Brochure &amp; Layout Plans</span></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="p-8 md:p-10 md:w-7/12 bg-white flex flex-col justify-center">
+                <form action="https://formsubmit.co/infobluesquareinfra@gmail.com" method="POST" class="space-y-5">
+                    <input type="hidden" name="_subject" value="New Lead: Anmol Avenue Popup Modal">
+                    <input type="hidden" name="_captcha" value="false">
+                    <input type="hidden" name="_next" value="https://theanantaspire.in/thank-you.html">
+                    <input type="text" name="Name" placeholder="Name*" class="w-full border border-gray-300 rounded-md p-3 focus:outline-brand text-sm shadow-sm transition" required="">
+
+                    <div class="flex border border-gray-300 rounded-md overflow-hidden shadow-sm focus-within:outline-brand transition">
+                        <div class="bg-gray-50 px-3 flex items-center border-r border-gray-300">
+                            <img src="https://i.ibb.co/xKWRrZSs/IN.jpg" alt="India" class="w-6 rounded-sm">
+                        </div>
+                        <input type="tel" name="Phone" placeholder="Mobile Number*" class="w-full p-3 text-sm outline-none" required="">
+                    </div>
+
+                    <div class="pt-2">
+                        <label class="block text-sm font-bold mb-3 text-brand-heading" style="outline: none;">Select Plot Size*</label>
+                        <div class="grid grid-cols-3 gap-2 text-xs text-center font-bold">
+                            <div class="relative">
+                                <input type="radio" name="Budget" value="400 Sq Yd – ₹2 Cr" id="m-budget1" class="peer sr-only" required="">
+                                <label for="m-budget1" class="flex items-center justify-center border border-gray-300 rounded-md py-3 text-gray-600 hover:border-brand peer-checked:bg-brand peer-checked:text-white peer-checked:border-brand transition cursor-pointer shadow-sm" style="outline: none;">400 Sq Yd<br>₹2 Cr</label>
+                            </div>
+                            <div class="relative">
+                                <input type="radio" name="Budget" value="500 Sq Yd – ₹2.5 Cr" id="m-budget2" class="peer sr-only">
+                                <label for="m-budget2" class="flex items-center justify-center border border-gray-300 rounded-md py-3 text-gray-600 hover:border-brand peer-checked:bg-brand peer-checked:text-white peer-checked:border-brand transition cursor-pointer shadow-sm" style="outline: none;">500 Sq Yd<br>₹2.5 Cr</label>
+                            </div>
+                            <div class="relative">
+                                <input type="radio" name="Budget" value="600 Sq Yd – ₹3 Cr" id="m-budget3" class="peer sr-only">
+                                <label for="m-budget3" class="flex items-center justify-center border border-gray-300 rounded-md py-3 text-gray-600 hover:border-brand peer-checked:bg-brand peer-checked:text-white peer-checked:border-brand transition cursor-pointer shadow-sm" style="outline: none;">600 Sq Yd<br>₹3 Cr</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-3 mt-4">
+                        <input type="checkbox" name="Consent" value="Agreed" class="mt-1 w-4 h-4 cursor-pointer" required="" id="modal-agree" checked="">
+                        <label for="modal-agree" class="text-xs text-gray-500 leading-relaxed cursor-pointer" style="outline: none;">I agree to be contacted by 'Blue Square Infra' via WhatsApp, SMS, phone, email etc.</label>
+                    </div>
+
+                    <div class="flex justify-end pt-4">
+                        <button type="submit" class="bg-[#dfba89] hover:bg-brand text-white font-bold py-3 px-10 rounded-md transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 text-lg" style="outline: none;">Enquire Now</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== JAVASCRIPT ===== -->
+    <script>
+        // Hero Carousel
+        document.addEventListener('DOMContentLoaded', () => {
+            const slides = document.querySelectorAll('.carousel-slide');
+            let currentSlide = 0;
+            if (slides.length > 0) {
+                setInterval(() => {
+                    slides[currentSlide].classList.remove('active');
+                    currentSlide = (currentSlide + 1) % slides.length;
+                    slides[currentSlide].classList.add('active');
+                }, 4000);
+            }
+
+            // Auto-open first accordion
+            const firstAcc = document.querySelector('.accordion-content');
+            if (firstAcc) firstAcc.classList.add('open');
+
+            // Set first smart tile active
+            updateSmartFeature(1);
+
+            // Ensure modal is hidden on page load if not triggered
+            const modal = document.getElementById('enquiryModal');
+            if (modal && !modal.classList.contains('active')) {
+                modal.style.display = 'none';
+            } else if (modal && modal.classList.contains('active')) {
+                modal.style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+            }
+        });
+
+        // Floor Plan Interactive Tabs & Blur Functionality
+        function changeFloorPlan(btn, imgSrc, isLocked, title) {
+            document.querySelectorAll('.floor-tab').forEach(el => {
+                el.classList.remove('bg-brand', 'text-white', 'shadow-md');
+                el.classList.add('border', 'border-brand', 'text-gray-700');
+            });
+            btn.classList.remove('border', 'border-brand', 'text-gray-700');
+            btn.classList.add('bg-brand', 'text-white', 'shadow-md');
+
+            document.getElementById('floorplan-title').innerText = title;
+
+            const img = document.getElementById('floorplan-img');
+            const overlay = document.getElementById('floorplan-overlay');
+
+            if (isLocked) {
+                img.classList.add('blur-md', 'scale-105');
+                overlay.classList.remove('hidden');
+                overlay.classList.add('flex');
+            } else {
+                img.classList.remove('blur-md', 'scale-105');
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
+            }
+        }
+
+        // Dynamic Gallery Image Swapping
+        const galleryData = {
+            'Exterior': [
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101587325_e59ba5fb-c3f6-44b0-8904-e1e9ccd49885.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101526846_e923d87c-a24c-468a-a66a-f228aa93e863.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png'
+            ],
+            'Interior': [
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101526846_e923d87c-a24c-468a-a66a-f228aa93e863.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101587325_e59ba5fb-c3f6-44b0-8904-e1e9ccd49885.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101526846_e923d87c-a24c-468a-a66a-f228aa93e863.png'
+            ],
+            'Landscape': [
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101526846_e923d87c-a24c-468a-a66a-f228aa93e863.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101587325_e59ba5fb-c3f6-44b0-8904-e1e9ccd49885.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101526846_e923d87c-a24c-468a-a66a-f228aa93e863.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101587325_e59ba5fb-c3f6-44b0-8904-e1e9ccd49885.png'
+            ],
+            'Clubhouse': [
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101526846_e923d87c-a24c-468a-a66a-f228aa93e863.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101587325_e59ba5fb-c3f6-44b0-8904-e1e9ccd49885.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png'
+            ],
+            'Plots': [
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101587325_e59ba5fb-c3f6-44b0-8904-e1e9ccd49885.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101526846_e923d87c-a24c-468a-a66a-f228aa93e863.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101587325_e59ba5fb-c3f6-44b0-8904-e1e9ccd49885.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png'
+            ],
+            'Lobby': [
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101526846_e923d87c-a24c-468a-a66a-f228aa93e863.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101577358_e0043d8c-b199-4c1d-a26a-ffbc17ea35f2.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101587325_e59ba5fb-c3f6-44b0-8904-e1e9ccd49885.png',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101444528.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1784101497296.jpg',
+                'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/creative_1784101526846_e923d87c-a24c-468a-a66a-f228aa93e863.png'
+            ]
+        };
+
+        function changeGalleryTab(btn, category) {
+            document.querySelectorAll('.gallery-tab').forEach(el => {
+                el.classList.remove('bg-brand', 'text-white');
+                el.classList.add('bg-white', 'text-black');
+            });
+            btn.classList.remove('bg-white', 'text-black');
+            btn.classList.add('bg-brand', 'text-white');
+
+            const grid = document.getElementById('gallery-grid');
+            grid.style.opacity = 0;
+
+            setTimeout(() => {
+                const images = galleryData[category] || galleryData['Exterior'];
+                for (let i = 0; i < 8; i++) {
+                    const imgEl = document.getElementById(`gal-img-${i}`);
+                    if (imgEl && images[i]) imgEl.src = images[i];
+                }
+                grid.style.opacity = 1;
+            }, 300);
+        }
+
+        // Smart Living Interactive Grid
+        const smartFeatures = {
+            1: { title: "1. Underground Wiring", desc: "No messy overhead cables. Safe, clean, and reliable power supply throughout the community." },
+            2: { title: "2. Water Supply", desc: "Dedicated water distribution system with overhead tanks for each sector ensuring 24/7 supply." },
+            3: { title: "3. Sewage System", desc: "Modern underground sewage network with treatment plant for optimal hygiene and cleanliness." },
+            4: { title: "4. Solar Ready", desc: "Infrastructure designed for solar panel installation. Go green and save on energy costs." },
+            5: { title: "5. 3-Tier Security", desc: "CCTV surveillance, security personnel, and gated entry for complete peace of mind." },
+            6: { title: "6. Clubhouse", desc: "Modern clubhouse for community events, gatherings, and recreation for residents." },
+            7: { title: "7. Landscaped Parks", desc: "Beautifully landscaped parks and green belts for morning walks, fresh air, and relaxation." }
+        };
+
+        function updateSmartFeature(id) {
+            const titleEl = document.getElementById('smart-title');
+            const descEl = document.getElementById('smart-desc');
+
+            titleEl.style.opacity = 0;
+            descEl.style.opacity = 0;
+            setTimeout(() => {
+                titleEl.innerText = smartFeatures[id].title;
+                descEl.innerText = smartFeatures[id].desc;
+                titleEl.style.opacity = 1;
+                descEl.style.opacity = 1;
+            }, 150);
+
+            document.querySelectorAll('.smart-tile').forEach(el => {
+                el.classList.remove('bg-brand/80', 'border-b-[3px]', 'border-white');
+                el.classList.add('bg-transparent');
+                const lastSpan = el.querySelector('span:last-child');
+                if (lastSpan) lastSpan.classList.replace('text-white', 'text-gray-200');
+            });
+
+            const activeTile = document.getElementById('smart-tile-' + id);
+            if (activeTile) {
+                activeTile.classList.remove('bg-transparent');
+                activeTile.classList.add('bg-brand/80', 'border-b-[3px]', 'border-white');
+                const lastSpan = activeTile.querySelector('span:last-child');
+                if (lastSpan) lastSpan.classList.replace('text-gray-200', 'text-white');
+            }
+        }
+
+        // Accordion
+        function toggleAccordion(id) {
+            const content = document.getElementById(id);
+            const icon = document.getElementById('icon-' + id);
+            if (content.classList.contains('open')) {
+                content.classList.remove('open');
+                icon.classList.remove('rotate-180');
+            } else {
+                content.classList.add('open');
+                icon.classList.add('rotate-180');
+            }
+        }
+
+        // Modal
+        function openModal() {
+            const modal = document.getElementById('enquiryModal');
+            modal.classList.add('active');
+            modal.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+        }
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('enquiryModal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('enquiryModal');
+            modal.classList.remove('active');
+            modal.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+
+        // Mobile Menu
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobileMenu');
+            if (menu.classList.contains('open')) {
+                closeMobileMenu();
+            } else {
+                menu.classList.add('open');
+                document.body.style.overflow = 'hidden';
+            }
+        }
+
+        function closeMobileMenu() {
+            const menu = document.getElementById('mobileMenu');
+            menu.classList.remove('open');
+            document.body.style.overflow = 'auto';
+        }
+
+        // Smooth scroll for all anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                const targetId = this.getAttribute('href');
+                if (targetId === '#') return;
+                const target = document.querySelector(targetId);
+                if (target) {
+                    e.preventDefault();
+                    const offset = 100;
+                    const top = target.getBoundingClientRect().top + window.scrollY - offset;
+                    window.scrollTo({ top, behavior: 'smooth' });
+                }
+            });
+        });
+
+        // Form submission enhancement: show loading state
+        document.querySelectorAll('form').forEach(form => {
+            form.addEventListener('submit', function(e) {
+                const btn = this.querySelector('button[type="submit"]');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = 'Sending...';
+                }
+            });
+        });
+    </script>
+
+
+            
+        
+</body><grammarly-desktop-integration data-grammarly-shadow-root="true" style="visibility: visible !important;"></grammarly-desktop-integration></html>
+
+i took this code from my saas, it generates landing page for it's own crm integration, i want you to change the form submissions to land on infobluesquareinfra@gmail.com without doing any further setup
+please give me full edited code

@@ -833,6 +833,26 @@ export default function AssetsPage() {
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         console.log("💾 Download triggered. Platform: ", isMobile ? "Mobile" : "Desktop");
 
+        // Resolve fileName
+        const urlPart = selectedAsset.url.split('?')[0];
+        const ext = urlPart.split('.').pop() || (selectedAsset.type === 'video' ? 'mp4' : 'png');
+        const fileName = `adrolls-asset-${Date.now()}.${ext}`;
+
+        if (!isMobile) {
+            // Desktop/Standard: Use direct attachment streaming link click
+            // This preserves user gesture 100%, downloads instantly, and prevents opening a new page/tab!
+            const downloadUrl = `/api/fetch-image?url=${encodeURIComponent(selectedAsset.url)}&download=true&name=${encodeURIComponent(fileName)}`;
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = downloadUrl;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            return;
+        }
+
+        // Mobile path: Keep Share API logic (which requires local file blob)
         const downloadPromise = async () => {
             setIsDownloading(true);
             try {
@@ -843,14 +863,9 @@ export default function AssetsPage() {
 
                 const blob = await response.blob();
                 const mimeType = blob.type || (selectedAsset.type === 'video' ? 'video/mp4' : 'image/png');
-                const ext = mimeType.split('/')[1] || (selectedAsset.type === 'video' ? 'mp4' : 'png');
-                const fileName = `adrolls-asset-${Date.now()}.${ext}`;
                 const file = new File([blob], fileName, { type: mimeType });
 
-                // 2. Platform-Specific Logic
-                // On Mobile/PWA: Use Share API to allow "Save to Photos"
-                // On Desktop: Use traditional download to avoid "User Gesture" errors and share sheet confusion
-                if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                     try {
                         console.log("📱 Mobile detected, using Share API...");
                         await navigator.share({
@@ -860,7 +875,6 @@ export default function AssetsPage() {
                         });
                         return "Share menu opened!";
                     } catch (shareError: any) {
-                        // If sharing was cancelled or failed (e.g. gesture lost), fallback to direct download
                         if (shareError.name === 'NotAllowedError' || shareError.name === 'AbortError') {
                             console.warn("Share failed or was blocked, falling back to direct download...");
                             triggerBlobDownload(blob, fileName);
@@ -869,8 +883,6 @@ export default function AssetsPage() {
                         throw shareError;
                     }
                 } else {
-                    // Desktop or Share API not supported
-                    console.log("💻 Desktop/Standard environment, using blob download...");
                     triggerBlobDownload(blob, fileName);
                     return "Download started!";
                 }
@@ -882,7 +894,6 @@ export default function AssetsPage() {
             }
         };
 
-        // Helper to trigger the actual download
         const triggerBlobDownload = (blob: Blob, fileName: string) => {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');

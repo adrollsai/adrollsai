@@ -4805,7 +4805,7 @@ export default function AdsPage() {
                                                 return;
                                             }
                                             if (isSelected) removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid); 
-                                            else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Library', type: a.type, thumbnailUrl: a.metadata?.thumbnailUrl }]); 
+                                            else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Library', type: a.type, thumbnailUrl: a.metadata?.thumbnailUrl, mappedProductId: a.property_id || '' }]); 
                                         }} className={`relative aspect-square rounded-[1.5rem] overflow-hidden border-[3px] transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}>
                                             {a.type === 'video' ? (
                                                 <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
@@ -4860,7 +4860,7 @@ export default function AdsPage() {
                                                             return;
                                                         }
                                                         if (isSelected) removeCreative(selectedCreatives.find(c => c.id === a.id)!.uid); 
-                                                        else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Batch Asset', type: a.type, thumbnailUrl: a.metadata?.thumbnailUrl }]); 
+                                                        else setSelectedCreatives(prev => [...prev, { uid: Math.random().toString(), sourceType: 'asset', id: a.id, previewUrl: a.url, name: 'Batch Asset', type: a.type, thumbnailUrl: a.metadata?.thumbnailUrl, mappedProductId: a.property_id || '' }]); 
                                                     }} className={`relative aspect-square rounded-xl overflow-hidden border-[3px] transition-all cursor-pointer ${isSelected ? 'border-blue-500' : 'border-transparent hover:border-blue-400 hover:shadow-lg bg-slate-100'}`}>
                                                         {a.type === 'video' ? (
                                                             <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
