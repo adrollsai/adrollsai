@@ -27,9 +27,11 @@ Camera characteristics:
 - The result should feel authentic and suitable for use in a high-end advertising campaign.
 
 Human subjects (when included):
-- Focus exclusively on close-up shots of fully visible, beautiful, photorealistic humans (e.g. happy families, couples, or professional individuals depending on the product) showing happy, positive, and smiling facial expressions of joy. Avoid distant, tiny, or blurry figures.
+- Focus exclusively on close-up portrait shots (chest up or head-and-shoulders framing) of fully visible, beautiful, photorealistic humans (e.g. happy families, elegant couples, or successful professionals) showing natural, happy, and smiling expressions of joy. Avoid distant, tiny, or blurry figures. The human subjects must be prominent and placed in the foreground.
+- The human subjects must look highly attractive, beautiful, successful, and aspirational.
+- Skin must have true-to-life detailing (natural skin pores, fine textures, real skin creases, and subtle micro-details) and look completely authentic, avoiding any plastic, airbrushed, synthetic, or shiny AI-generated look.
+- Eyes must look clear, lifelike, and expressive.
 - The ethnicity of the humans should match the geographical region of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).
-- Skin must have true-to-life detailing (real skin texture, pores, fine hair) and look completely natural, avoiding any plastic, synthetic, or shiny AI-generated look.
 - Avoid common AI errors like distorted fingers, unnatural expressions, extra limbs, or synthetic-looking eyes.
 - Candid expressions and natural facial asymmetry should be prioritized.
 

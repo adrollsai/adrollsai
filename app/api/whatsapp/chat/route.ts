@@ -163,13 +163,14 @@ export async function POST(req: Request) {
         // Fetch WABA credentials from the owner profile
         const { data: ownerProfile } = await supabaseAdmin
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, email')
+            .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, email, business_name')
             .eq('id', ownerUserId)
             .single()
 
         const isMasterDefaultUser = ownerProfile?.email === 'rchopra489@gmail.com' || ownerProfile?.email === 'infobluesquareinfra@gmail.com'
         const whatsappToken = ownerProfile?.whatsapp_access_token || ownerProfile?.facebook_token || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_ACCESS_TOKEN : null)
         const whatsappPhoneId = ownerProfile?.whatsapp_phone_number_id || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_PHONE_ID : null)
+        const whatsappWabaId = ownerProfile?.whatsapp_waba_id || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_WABA_ID : null)
 
         if (!whatsappToken || !whatsappPhoneId) {
             return NextResponse.json({ error: 'WhatsApp integration not configured.' }, { status: 400 })
@@ -197,6 +198,65 @@ export async function POST(req: Request) {
                 name: templateName,
                 language: {
                     code: language || 'en_US'
+                }
+            }
+
+            // Fetch template details from Meta to resolve component parameters
+            if (whatsappWabaId) {
+                try {
+                    const metaTemplateUrl = `https://graph.facebook.com/v20.0/${whatsappWabaId}/message_templates?name=${templateName}&access_token=${whatsappToken}`
+                    const tRes = await fetch(metaTemplateUrl)
+                    if (tRes.ok) {
+                        const tData = await tRes.json()
+                        const templateDef = tData.data?.[0]
+                        if (templateDef && templateDef.components) {
+                            const components: any[] = []
+                            
+                            // Check for IMAGE header component
+                            const headerComp = templateDef.components.find((c: any) => c.type === 'HEADER')
+                            if (headerComp && headerComp.format === 'IMAGE') {
+                                components.push({
+                                    type: 'header',
+                                    parameters: [
+                                        {
+                                            type: 'image',
+                                            image: {
+                                                link: 'https://designs.adrolls.in/processing' // placeholder/default header image
+                                            }
+                                        }
+                                    ]
+                                })
+                            }
+
+                            // Check for BODY component parameters
+                            const bodyComp = templateDef.components.find((c: any) => c.type === 'BODY')
+                            if (bodyComp && bodyComp.text) {
+                                const varCount = (bodyComp.text.match(/\{\{\d+\}\}/g) || []).length
+                                if (varCount > 0) {
+                                    const bodyParams = []
+                                    for (let i = 1; i <= varCount; i++) {
+                                        if (i === 1) {
+                                            bodyParams.push({ type: 'text', text: chat.recipient_name || 'Valued Lead' })
+                                        } else if (i === 2) {
+                                            bodyParams.push({ type: 'text', text: ownerProfile?.business_name || 'Partner' })
+                                        } else {
+                                            bodyParams.push({ type: 'text', text: 'details' })
+                                        }
+                                    }
+                                    components.push({
+                                        type: 'body',
+                                        parameters: bodyParams
+                                    })
+                                }
+                            }
+
+                            if (components.length > 0) {
+                                payload.template.components = components
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error('[CHAT API] Failed to fetch template structure from Meta:', err)
                 }
             }
         } else {

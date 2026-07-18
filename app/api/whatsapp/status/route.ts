@@ -82,10 +82,10 @@ export async function GET(request: Request) {
                     pendingTosUrl = 'https://fb.me/2bcZ0cOTE9VAxqQ'
                 }
             }
+            hasPaymentMethod = false
         } else {
-            // If data is returned, check if there's any active payment config
-            const configs = payData.data || []
-            hasPaymentMethod = configs.length > 0
+            // No error means the account is active and billing is set up successfully
+            hasPaymentMethod = true
         }
 
         return NextResponse.json({
