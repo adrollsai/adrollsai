@@ -127,6 +127,7 @@ export async function POST(request: Request) {
                         status: 'Ready',
                         caption: `Uploaded: ${fileName}`,
                         property_id: propertyId || null,
+                        created_at: new Date().toISOString(),
                         metadata: {
                             ...(thumbnailUrl ? { thumbnailUrl } : {}),
                             custom_instructions: customInstructions || null
@@ -196,6 +197,7 @@ export async function POST(request: Request) {
                         status: 'Ready',
                         caption: `Uploaded: ${fileName} (Original)`,
                         property_id: propertyId || null,
+                        created_at: new Date().toISOString(),
                         metadata: {
                             ...(thumbnailUrl ? { thumbnailUrl } : {}),
                             custom_instructions: customInstructions || null

@@ -267,7 +267,8 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
         url: persistedUrl,
         type: 'image',
         status: 'Draft',
-        caption: generatedCaption
+        caption: generatedCaption,
+        created_at: new Date().toISOString()
       });
 
       // G. Trigger Push Notification to user

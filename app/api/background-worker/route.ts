@@ -242,6 +242,7 @@ export async function POST(req: Request) {
                             type: 'image',
                             status: 'Draft',
                             caption: generatedCaption,
+                            created_at: new Date().toISOString(),
                             metadata: body.payload?.socialCaption ? { social_caption: body.payload.socialCaption } : {}
                         });
                     }

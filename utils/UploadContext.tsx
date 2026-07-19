@@ -219,6 +219,7 @@ export const UploadProvider = ({ children }: { children: React.ReactNode }) => {
                         status: 'Ready',
                         caption: `Uploaded: ${currentFile.name}`,
                         property_id: propertyId || null,
+                        created_at: new Date().toISOString(),
                         metadata: {
                             custom_instructions: customInstructions || null
                         }

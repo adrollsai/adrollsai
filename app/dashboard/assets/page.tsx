@@ -54,6 +54,11 @@ export default function AssetsPage() {
     // Filtering State
     const [activeFilter, setActiveFilter] = useState('All')
     const [selectedPropFilter, setSelectedPropFilter] = useState<string>('all')
+    const [displayLimit, setDisplayLimit] = useState(30)
+
+    useEffect(() => {
+        setDisplayLimit(30);
+    }, [activeFilter, selectedPropFilter])
 
     // Modal State
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
@@ -1252,7 +1257,7 @@ export default function AssetsPage() {
                         ))}
 
                         {/* Rendering actual assets */}
-                        {filteredAssets.map((asset) => (
+                        {filteredAssets.slice(0, displayLimit).map((asset) => (
                             <div
                                 key={asset.id}
                                 onClick={() => toggleSelection(asset.id)}
@@ -1396,6 +1401,19 @@ export default function AssetsPage() {
                                 </div>
                             </div>
                         ))}
+                        
+                        {/* Load More Button for client-side pagination */}
+                        {filteredAssets.length > displayLimit && (
+                            <div className="col-span-full flex justify-center mt-6">
+                                <button 
+                                    onClick={() => setDisplayLimit(prev => prev + 30)}
+                                    className="bg-slate-900 text-white font-bold px-8 py-3.5 rounded-2xl hover:bg-slate-800 transition-all text-xs active:scale-95 shadow-md shadow-slate-900/10"
+                                >
+                                    Load More Assets ({filteredAssets.length - displayLimit} remaining)
+                                </button>
+                            </div>
+                        )}
+
                         {filteredAssets.length === 0 && (
                             <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400 bg-white rounded-[2rem] border border-slate-200/60 border-dashed">
                                 <ImageIcon size={48} className="text-slate-200 mb-4" />
