@@ -595,7 +595,19 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         } else if (campaignType === 'whatsapp_chat') {
             adSetPayload.destination_type = 'WHATSAPP';
             adSetPayload.optimization_goal = 'REPLIES';
-            adSetPayload.promoted_object = { page_id: pageId };
+            
+            let cleanPhone = "";
+            if (whatsappNumber) {
+                cleanPhone = whatsappNumber.replace(/[^0-9]/g, '');
+                if (cleanPhone.length === 10) {
+                    cleanPhone = "91" + cleanPhone;
+                }
+            }
+
+            adSetPayload.promoted_object = { 
+                page_id: pageId,
+                ...(cleanPhone ? { whatsapp_phone_number: "+" + cleanPhone } : {})
+            };
         } else {
             adSetPayload.destination_type = 'ON_AD';
             adSetPayload.optimization_goal = optimizeForConversions ? 'QUALITY_LEAD' : 'LEAD_GENERATION';
@@ -684,16 +696,35 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                 access_token: facebookToken,
             };
 
-            const adRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
+            let adRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(adPayload),
             });
-            const adData = await adRes.json();
+            let adData = await adRes.json();
 
             if (!adRes.ok) {
-                logToFile(`Ad ${i + 1} Failed:`, adData);
-                if (adData.error?.error_subcode === 1359188 || adData.error?.code === 100) lastDraftError = true;
+                logToFile(`Ad ${i + 1} Failed with status ACTIVE, retrying with status PAUSED. Error details:`, adData);
+                
+                const pausedPayload = {
+                    ...adPayload,
+                    status: 'PAUSED'
+                };
+                const retryRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(pausedPayload),
+                });
+                const retryData = await retryRes.json();
+
+                if (!retryRes.ok) {
+                    logToFile(`Ad ${i + 1} Retry with status PAUSED also Failed:`, retryData);
+                    if (adData.error?.error_subcode === 1359188 || adData.error?.code === 100) lastDraftError = true;
+                } else {
+                    logToFile(`Ad ${i + 1} Created successfully as PAUSED/Draft.`);
+                    successfulAds++;
+                    lastDraftError = true;
+                }
             } else {
                 successfulAds++;
             }

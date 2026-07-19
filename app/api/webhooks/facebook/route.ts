@@ -1285,49 +1285,51 @@ IMPORTANT RULES:
                                                 }
                                                 
                                                 // Send "Connect with Expert" quick reply button as a subsequent message
-                                                await new Promise(resolve => setTimeout(resolve, 800));
-                                                const expertBodyText = "Would you like to speak directly with our expert on call?";
-                                                const expertRes = await fetch(metaUrl, {
-                                                    method: 'POST',
-                                                    headers: {
-                                                        'Authorization': `Bearer ${ownerWaToken}`,
-                                                        'Content-Type': 'application/json'
-                                                    },
-                                                    body: JSON.stringify({
-                                                        messaging_product: 'whatsapp',
-                                                        recipient_type: 'individual',
-                                                        to: cleanFrom,
-                                                        type: 'interactive',
-                                                        interactive: {
-                                                            type: 'button',
-                                                            body: {
-                                                                text: expertBodyText
-                                                            },
-                                                            action: {
-                                                                buttons: [
-                                                                    {
-                                                                        type: 'reply',
-                                                                        reply: {
-                                                                            id: 'connect_expert',
-                                                                            title: 'Connect with Expert'
+                                                if (chat?.recipient_name) {
+                                                    await new Promise(resolve => setTimeout(resolve, 800));
+                                                    const expertBodyText = "Would you like to speak directly with our expert on call?";
+                                                    const expertRes = await fetch(metaUrl, {
+                                                        method: 'POST',
+                                                        headers: {
+                                                            'Authorization': `Bearer ${ownerWaToken}`,
+                                                            'Content-Type': 'application/json'
+                                                        },
+                                                        body: JSON.stringify({
+                                                            messaging_product: 'whatsapp',
+                                                            recipient_type: 'individual',
+                                                            to: cleanFrom,
+                                                            type: 'interactive',
+                                                            interactive: {
+                                                                type: 'button',
+                                                                body: {
+                                                                    text: expertBodyText
+                                                                },
+                                                                action: {
+                                                                    buttons: [
+                                                                        {
+                                                                            type: 'reply',
+                                                                            reply: {
+                                                                                id: 'connect_expert',
+                                                                                title: 'Connect with Expert'
+                                                                            }
                                                                         }
-                                                                    }
-                                                                ]
+                                                                    ]
+                                                                }
                                                             }
-                                                        }
-                                                    })
-                                                });
-                                                if (expertRes.ok) {
-                                                    await supabaseAdmin
-                                                        .from('whatsapp_messages')
-                                                        .insert({
-                                                            chat_id: chat!.id,
-                                                            direction: 'outbound',
-                                                            message_text: expertBodyText + " [Button: Connect with Expert]"
-                                                        });
-                                                } else {
-                                                    const errData = await expertRes.json();
-                                                    console.error(`[Flow] Failed to send Connect with Expert button:`, errData);
+                                                        })
+                                                    });
+                                                    if (expertRes.ok) {
+                                                        await supabaseAdmin
+                                                            .from('whatsapp_messages')
+                                                            .insert({
+                                                                chat_id: chat!.id,
+                                                                direction: 'outbound',
+                                                                message_text: expertBodyText + " [Button: Connect with Expert]"
+                                                            });
+                                                    } else {
+                                                        const errData = await expertRes.json();
+                                                        console.error(`[Flow] Failed to send Connect with Expert button:`, errData);
+                                                    }
                                                 }
                                              } else {
                                                 const errData = await sendRes.json();

@@ -1342,16 +1342,35 @@ export async function POST(request: Request) {
                 access_token: facebookToken,
             };
 
-            const adRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
+            let adRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(adPayload),
             });
-            const adData = await adRes.json();
+            let adData = await adRes.json();
 
             if (!adRes.ok) {
-                logToFile(`❌ Final Ad ${i+1} Failed (Drafted):`, adData);
-                if (adData.error?.error_subcode === 1359188 || adData.error?.code === 100) {
+                logToFile(`❌ Final Ad ${i+1} Failed with status ACTIVE, retrying with status PAUSED. Error details:`, adData);
+                
+                const pausedPayload = {
+                    ...adPayload,
+                    status: 'PAUSED'
+                };
+                const retryRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(pausedPayload),
+                });
+                const retryData = await retryRes.json();
+
+                if (!retryRes.ok) {
+                    logToFile(`❌ Final Ad ${i+1} Retry with status PAUSED also Failed:`, retryData);
+                    if (adData.error?.error_subcode === 1359188 || adData.error?.code === 100) {
+                        lastDraftError = true;
+                    }
+                } else {
+                    logToFile(`Ad ${i + 1} Created successfully as PAUSED/Draft.`);
+                    successfulAds++;
                     lastDraftError = true;
                 }
             } else {
