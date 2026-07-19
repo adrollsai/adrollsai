@@ -1167,7 +1167,7 @@ IMPORTANT RULES:
                                          return; // Stop processing further automation rules/flows or Gemini
                                      }
 
-                                    // Helper: send WhatsApp interactive message with Connect with Expert button built-in
+                                    // Helper: send WhatsApp interactive message with customizable action buttons
                                     const sendWAMessage = async (text: string) => {
                                         try {
                                             const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
@@ -1176,7 +1176,7 @@ IMPORTANT RULES:
                                                 ? `https://${ownerCustomDomain}` 
                                                 : `${appUrl}/shared/${ownerUserId}`;
 
-                                            // Build buttons list for CTA links
+                                            // Build buttons list
                                             let buttons = [{ text: catalogueBtnText || 'View Products', url: catalogueLink }];
                                             if (ownerButtons && Array.isArray(ownerButtons) && ownerButtons.length > 0) {
                                                 buttons = ownerButtons.map((btn: any, idx: number) => {
@@ -1193,12 +1193,7 @@ IMPORTANT RULES:
                                                 });
                                             }
 
-                                            // Append catalogue link(s) to the body text so user can click them
-                                            let bodyWithLinks = text;
-                                            const linkLines = buttons.map(b => `🔗 ${b.text}: ${b.url}`).join('\n');
-                                            bodyWithLinks += `\n\n${linkLines}`;
-
-                                            // Send as interactive button type with "Connect with Expert" quick reply
+                                            // Send the primary button (cta_url type)
                                             const sendRes = await fetch(metaUrl, {
                                                 method: 'POST',
                                                 headers: {
@@ -1211,20 +1206,16 @@ IMPORTANT RULES:
                                                     to: cleanFrom,
                                                     type: 'interactive',
                                                     interactive: {
-                                                        type: 'button',
+                                                        type: 'cta_url',
                                                         body: {
-                                                            text: bodyWithLinks
+                                                            text: text
                                                         },
                                                         action: {
-                                                            buttons: [
-                                                                {
-                                                                    type: 'reply',
-                                                                    reply: {
-                                                                        id: 'connect_expert',
-                                                                        title: 'Connect with Expert'
-                                                                    }
-                                                                }
-                                                            ]
+                                                            name: 'cta_url',
+                                                            parameters: {
+                                                                display_text: buttons[0].text,
+                                                                url: buttons[0].url
+                                                            }
                                                         }
                                                     }
                                                 })
@@ -1291,6 +1282,52 @@ IMPORTANT RULES:
                                                         const errData = await extraRes.json();
                                                         console.error(`[Flow] Failed to send extra WA button ${i}:`, errData);
                                                     }
+                                                }
+                                                
+                                                // Send "Connect with Expert" quick reply button as a subsequent message
+                                                await new Promise(resolve => setTimeout(resolve, 800));
+                                                const expertBodyText = "Would you like to speak directly with our expert on call?";
+                                                const expertRes = await fetch(metaUrl, {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Authorization': `Bearer ${ownerWaToken}`,
+                                                        'Content-Type': 'application/json'
+                                                    },
+                                                    body: JSON.stringify({
+                                                        messaging_product: 'whatsapp',
+                                                        recipient_type: 'individual',
+                                                        to: cleanFrom,
+                                                        type: 'interactive',
+                                                        interactive: {
+                                                            type: 'button',
+                                                            body: {
+                                                                text: expertBodyText
+                                                            },
+                                                            action: {
+                                                                buttons: [
+                                                                    {
+                                                                        type: 'reply',
+                                                                        reply: {
+                                                                            id: 'connect_expert',
+                                                                            title: 'Connect with Expert'
+                                                                        }
+                                                                    }
+                                                                ]
+                                                            }
+                                                        }
+                                                    })
+                                                });
+                                                if (expertRes.ok) {
+                                                    await supabaseAdmin
+                                                        .from('whatsapp_messages')
+                                                        .insert({
+                                                            chat_id: chat!.id,
+                                                            direction: 'outbound',
+                                                            message_text: expertBodyText + " [Button: Connect with Expert]"
+                                                        });
+                                                } else {
+                                                    const errData = await expertRes.json();
+                                                    console.error(`[Flow] Failed to send Connect with Expert button:`, errData);
                                                 }
                                              } else {
                                                 const errData = await sendRes.json();
