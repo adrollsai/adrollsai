@@ -24,11 +24,11 @@ export async function POST(req: Request) {
 
     // Force overwrite debug log for a clean start on each new request
     if (!process.env.VERCEL) {
-        try { 
-            fs.writeFileSync(LOG_FILE, `=== AGENT CHAT DEBUG [${new Date().toISOString()}] ===\n\n--- INPUT MESSAGES ---\n${JSON.stringify(messages, null, 2)}\n\n`); 
-        } catch (e: any) {
-            console.error(`${logPrefix} Log write failed:`, e.message);
-        }
+      try {
+        fs.writeFileSync(LOG_FILE, `=== AGENT CHAT DEBUG [${new Date().toISOString()}] ===\n\n--- INPUT MESSAGES ---\n${JSON.stringify(messages, null, 2)}\n\n`);
+      } catch (e: any) {
+        console.error(`${logPrefix} Log write failed:`, e.message);
+      }
     }
 
     // 1. GATHER DYNAMIC CONTEXT
@@ -104,8 +104,8 @@ export async function POST(req: Request) {
               .maybeSingle();
 
             if (error) {
-                console.error(`[Tool Error] get_product_details:`, error);
-                return { success: false, message: `Database error: ${error.message}` };
+              console.error(`[Tool Error] get_product_details:`, error);
+              return { success: false, message: `Database error: ${error.message}` };
             }
 
             if (data) {
@@ -210,7 +210,7 @@ export async function POST(req: Request) {
           }),
           execute: async ({ productTitle, productDescription, quantity, additionalInstructions, previousContext }) => {
             console.log(`[Tool] generate_creative_angles`);
-            
+
             const prompt = `
               You are a world-class Direct Response Marketing Strategist. 
               Generate ${quantity || 5} unique high-converting ad angles/hooks for this product:
