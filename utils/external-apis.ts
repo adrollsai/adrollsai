@@ -350,7 +350,8 @@ async function getSuperAdminSelectedLLM(): Promise<string> {
 }
 
 export async function callDeepSeekWithUsage(prompt: string): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {
-    const apiKey = process.env.DEEPSEEK_API_KEY;
+    const rawApiKey = process.env.DEEPSEEK_API_KEY || '';
+    const apiKey = rawApiKey.replace(/^["']|["']$/g, '').trim();
     if (!apiKey) {
         throw new Error("DEEPSEEK_API_KEY environment variable is not set");
     }
@@ -412,8 +413,10 @@ export async function callGeminiWithUsage(prompt: string, imageUrls?: string[]):
 }
 
 export async function callGeminiWithUsageOriginal(prompt: string, imageUrls?: string[]): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {
-    const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
+    const rawKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || '';
+    const geminiKey = rawKey.replace(/^["']|["']$/g, '').trim();
+    const fileManager = new GoogleAIFileManager(geminiKey);
+    const genAI = new GoogleGenerativeAI(geminiKey);
     
     try {
         const contents: any[] = [prompt];

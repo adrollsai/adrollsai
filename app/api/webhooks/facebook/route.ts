@@ -982,6 +982,13 @@ IMPORTANT RULES:
                                         .from('whatsapp_messages')
                                         .insert(inboundInsert);
 
+                                     // Bypass bot execution for system verification code messages
+                                     const isVerificationMessage = /confirmation code|facebook code|verification code|security code/i.test(messageText);
+                                     if (isVerificationMessage) {
+                                         console.log(`[Flow] Logged verification message to CRM, skipping bot execution: "${messageText}"`);
+                                         return;
+                                     }
+
                                      // Check if this was a click on the "Connect with Expert" button
                                      const isConnectExpertClick = buttonReplyId === 'connect_expert';
                                      if (isConnectExpertClick) {
@@ -1382,12 +1389,17 @@ Guidelines:
 2. If they provide a nickname alongside their real name (e.g. "Rahul, nick name is manu" or "my name is John but you can call me Johnny"), format it as: "RealName (Nickname)" (e.g., "Rahul (Manu)", "John (Johnny)").
 3. Remove conversational filler (e.g., "my name is", "I am", "this is", spaces, weird characters).
 4. If they give a full name, return the full name (e.g. "Rahul Chopra").
-5. Return ONLY the clean extracted name string. Do not include any other text, explanation, or punctuation.
+5. CRITICAL: If the input is NOT a person's name (e.g. it is a system message, confirmation code, question, sentence, or random text like "17158 is your Facebook confirmation code", "what is the price", "hello", "hi"), output ONLY the string "INVALID_NAME".
+6. Return ONLY the clean extracted name string or "INVALID_NAME". Do not include any other text, explanation, or punctuation.
 
 User Input: "${providedName}"
 Clean Name:`;
                                             const nameRes = await callGeminiWithUsage(namePrompt);
                                             const cleanName = nameRes.text.trim();
+                                            if (cleanName === "INVALID_NAME" || /confirmation code|facebook code|verification code/i.test(cleanName)) {
+                                                await sendWAMessage("Please share your valid name to continue.");
+                                                return;
+                                            }
                                             if (cleanName && cleanName.length > 0 && cleanName.length <= 100) {
                                                 parsedName = cleanName;
                                             }
@@ -1399,6 +1411,12 @@ Clean Name:`;
                                             console.error("[Flow] Gemini name parsing failed, fallback to raw name:", geminiErr);
                                             // Fallback billing for webhook processing
                                             await deductCreditsByCost(supabaseAdmin, billingUserId, 0.05, 'whatsapp', 'WhatsApp Customer Flow - Name Parsing (Fallback)');
+                                        }
+
+                                        // Ensure parsedName is not a system verification string
+                                        if (/confirmation code|facebook code|verification code/i.test(parsedName)) {
+                                            await sendWAMessage("Please share your valid name to continue.");
+                                            return;
                                         }
 
                                         // Save the name

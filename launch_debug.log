@@ -64,3 +64,165 @@
   "leadgenTosAccepted": true
 }
 ------------------------------------------------
+[2026-07-20T05:07:07.477Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-07-20T05:07:07.484Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-07-20T05:07:07.609Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-07-20T05:07:07.665Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-07-20T05:07:07.667Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-07-20T05:07:08.464Z] [Campaigns API] Successfully fetched 9 campaigns
+------------------------------------------------
+[2026-07-20T05:07:10.577Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-07-20T05:07:10.580Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-07-20T05:07:10.704Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-07-20T05:07:11.186Z] [Campaigns API] Successfully fetched 9 campaigns
+------------------------------------------------
+[2026-07-20T05:07:12.310Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-07-20T05:07:12.312Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-07-20T05:07:12.434Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-07-20T05:07:12.436Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-07-20T05:07:12.560Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "74071",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-07-20T05:07:13.418Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "74071",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-07-20T05:07:13.468Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "74071",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-07-20T06:39:31.888Z] === [JOB PROCESSOR] STARTING CAMPAIGN CREATION ===
+{
+  "jobId": "c484e045-bd63-4d6d-a235-75723717174d"
+}
+------------------------------------------------
+[2026-07-20T06:39:32.046Z] --- UPLOADING CREATIVES TO META ---
+------------------------------------------------
+[2026-07-20T06:39:54.395Z] Uploaded 12 creatives to Meta.
+------------------------------------------------
+[2026-07-20T06:39:54.409Z] --- GENERATING AI AD COPIES WITH GEMINI ---
+------------------------------------------------
+[2026-07-20T06:39:54.669Z] [Processor] Generating AI copy for Creative 1 using Product: The Ananta Aspire
+------------------------------------------------
+[2026-07-20T06:39:56.179Z] [Processor] Generating AI copy for Creative 2 using Product: The Ananta Aspire
+------------------------------------------------
+[2026-07-20T06:39:57.608Z] [Processor] Generating AI copy for Creative 3 using Product: The Ananta Aspire
+------------------------------------------------
+[2026-07-20T06:39:59.068Z] [Processor] Generating AI copy for Creative 4 using Product: Affinity Belgravia
+------------------------------------------------
+[2026-07-20T06:40:00.585Z] [Processor] Generating AI copy for Creative 5 using Product: Affinity Belgravia
+------------------------------------------------
+[2026-07-20T06:40:02.001Z] [Processor] Generating AI copy for Creative 6 using Product: Affinity Belgravia
+------------------------------------------------
+[2026-07-20T06:40:03.455Z] [Processor] Generating AI copy for Creative 7 using Product: Anmol Avenue
+------------------------------------------------
+[2026-07-20T06:40:04.865Z] [Processor] Generating AI copy for Creative 8 using Product: Anmol Avenue
+------------------------------------------------
+[2026-07-20T06:40:06.282Z] [Processor] Generating AI copy for Creative 9 using Product: Anmol Avenue
+------------------------------------------------
+[2026-07-20T06:40:07.709Z] [Processor] Generating AI copy for Creative 10 using Product: vintage Green
+------------------------------------------------
+[2026-07-20T06:40:09.123Z] [Processor] Generating AI copy for Creative 11 using Product: vintage Green
+------------------------------------------------
+[2026-07-20T06:40:10.537Z] [Processor] Generating AI copy for Creative 12 using Product: vintage Green
+------------------------------------------------
+[2026-07-20T06:40:11.951Z] --- CREATING LEAD FORM ---
+------------------------------------------------
+[2026-07-20T06:40:13.717Z] Lead Form Created: 1594544822339971
+------------------------------------------------
+[2026-07-20T06:40:13.718Z] --- CREATING CAMPAIGN ---
+------------------------------------------------
+[2026-07-20T06:40:14.784Z] --- CREATING AD SET ---
+------------------------------------------------
+[2026-07-20T06:40:16.793Z] --- CREATING ADS ---
+------------------------------------------------
+[2026-07-20T06:40:55.566Z] === [JOB PROCESSOR] COMPLETED ===
+{
+  "jobId": "c484e045-bd63-4d6d-a235-75723717174d",
+  "campaignId": "120245261048450424",
+  "successfulAds": 12
+}
+------------------------------------------------
+[2026-07-20T07:21:27.358Z] === [JOB PROCESSOR] STARTING CAMPAIGN CREATION ===
+{
+  "jobId": "9d080596-2cc3-4838-a7a9-78b94537654c"
+}
+------------------------------------------------
+[2026-07-20T07:21:27.491Z] --- UPLOADING CREATIVES TO META ---
+------------------------------------------------
+[2026-07-20T07:21:53.118Z] Uploaded 12 creatives to Meta.
+------------------------------------------------
+[2026-07-20T07:21:53.122Z] --- GENERATING AI AD COPIES WITH GEMINI ---
+------------------------------------------------
+[2026-07-20T07:21:53.388Z] [Processor] Generating AI copy for Creative 1 using Product: The Ananta Aspire
+------------------------------------------------
+[2026-07-20T07:21:55.219Z] [Processor] Generating AI copy for Creative 2 using Product: The Ananta Aspire
+------------------------------------------------
+[2026-07-20T07:21:56.647Z] [Processor] Generating AI copy for Creative 3 using Product: The Ananta Aspire
+------------------------------------------------
+[2026-07-20T07:21:58.109Z] [Processor] Generating AI copy for Creative 4 using Product: Affinity Belgravia
+------------------------------------------------
+[2026-07-20T07:21:59.553Z] [Processor] Generating AI copy for Creative 5 using Product: Affinity Belgravia
+------------------------------------------------
+[2026-07-20T07:22:00.961Z] [Processor] Generating AI copy for Creative 6 using Product: Affinity Belgravia
+------------------------------------------------
+[2026-07-20T07:22:02.388Z] [Processor] Generating AI copy for Creative 7 using Product: Anmol Avenue
+------------------------------------------------
+[2026-07-20T07:22:03.798Z] [Processor] Generating AI copy for Creative 8 using Product: Anmol Avenue
+------------------------------------------------
+[2026-07-20T07:22:05.277Z] [Processor] Generating AI copy for Creative 9 using Product: Anmol Avenue
+------------------------------------------------
+[2026-07-20T07:22:06.708Z] [Processor] Generating AI copy for Creative 10 using Product: vintage Green
+------------------------------------------------
+[2026-07-20T07:22:08.169Z] [Processor] Generating AI copy for Creative 11 using Product: vintage Green
+------------------------------------------------
+[2026-07-20T07:22:09.596Z] [Processor] Generating AI copy for Creative 12 using Product: vintage Green
+------------------------------------------------
+[2026-07-20T07:22:11.112Z] --- CREATING LEAD FORM ---
+------------------------------------------------
+[2026-07-20T07:22:12.627Z] Lead Form Created: 27549739488022270
+------------------------------------------------
+[2026-07-20T07:22:12.628Z] --- CREATING CAMPAIGN ---
+------------------------------------------------
+[2026-07-20T07:22:13.844Z] --- CREATING AD SET ---
+------------------------------------------------
+[2026-07-20T07:22:16.815Z] --- CREATING ADS ---
+------------------------------------------------
+[2026-07-20T07:22:57.369Z] === [JOB PROCESSOR] COMPLETED ===
+{
+  "jobId": "9d080596-2cc3-4838-a7a9-78b94537654c",
+  "campaignId": "120245261691430424",
+  "successfulAds": 12
+}
+------------------------------------------------

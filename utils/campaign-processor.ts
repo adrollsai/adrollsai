@@ -15,7 +15,12 @@ export type UploadedCreative = {
     videoId?: string;
 };
 
-async function generateAICampaignCopy(product: any, businessName: string, contactNumber: string, customInstructions?: string): Promise<{ primary_text: string; headline: string; description: string }> {
+export async function generateAICampaignCopy(product: any, businessName: string, contactNumber: string, customInstructions?: string): Promise<{ primary_text: string; headline: string; description: string }> {
+    const forbidProjectName = customInstructions ? /do not mention|don't mention|no project name|omit project name|without project name|no name/i.test(customInstructions) : false;
+    const projectTitle = (product?.title || '').trim();
+
+    let resultCopy: { primary_text: string; headline: string; description: string } | null = null;
+
     try {
         const { callGemini } = await import('./external-apis');
         
@@ -23,7 +28,7 @@ async function generateAICampaignCopy(product: any, businessName: string, contac
 You are an expert real estate copywriter specialized in creating high-converting Facebook and Meta lead generation ads.
 
 Product Details:
-- Title: ${product.title || 'Exclusive Property'}
+${forbidProjectName ? `- Title: (SECRET/DO NOT MENTION)` : `- Title: ${projectTitle || 'Exclusive Property'}`}
 - Description: ${product.description || ''}
 - Price: ${product.price || 'Contact for Price'}
 - Location: ${product.location || ''}
@@ -32,12 +37,13 @@ Product Details:
 - Contact Number: ${contactNumber || ''}
 
 ${customInstructions ? `Custom Copywriting Instructions (MUST FOLLOW STRICTLY):\n"${customInstructions}"\n` : ''}
+${forbidProjectName ? `CRITICAL RULE: DO NOT MENTION THE PROJECT/PROPERTY NAME OR TITLE ("${projectTitle}") ANYWHERE IN THE HEADLINE, PRIMARY TEXT, OR DESCRIPTION.\n` : ''}
 
 Task:
 Generate a compelling, attractive, and highly engaging real estate ad copy and headline for this property.
 Follow these rules:
 1. Primary Text: Write an engaging description (1-2 paragraphs). Highlight key selling points (e.g. location, park-facing, luxury finishes, pricing). Use professional real estate tone, bullet points for features, and include a clear call-to-action (e.g., "Tap 'Learn More' to view images and pricing details!"). Keep it under 800 characters. Append the contact number 📞 ${contactNumber} and business name 🏢 ${businessName} at the bottom.
-2. Headline: Create a click-worthy, brief headline (under 40 characters) showcasing value (e.g., "Luxury 10 Marla House in Sector 7" or "Park-Facing covered area").
+2. Headline: Create a click-worthy, brief headline (under 40 characters) showcasing value (e.g., ${forbidProjectName ? '"Premium Residential Plots"' : '"Luxury 10 Marla House in Sector 7"'}). ${forbidProjectName ? 'DO NOT USE THE PROJECT NAME IN THE HEADLINE.' : ''}
 3. Description: Write a brief subtext under the headline (under 30 characters) like "View details & pricing".
 
 Return the response in JSON format matching this schema:
@@ -53,7 +59,7 @@ Return the response in JSON format matching this schema:
         const cleanJson = aiResponse.replace(/```json/g, '').replace(/```/g, '').trim();
         const copy = JSON.parse(cleanJson);
         if (copy.primary_text && copy.headline) {
-            return {
+            resultCopy = {
                 primary_text: copy.primary_text,
                 headline: copy.headline.substring(0, 40),
                 description: (copy.description || 'View details & pricing').substring(0, 30)
@@ -63,15 +69,31 @@ Return the response in JSON format matching this schema:
         console.error("[Processor] Failed to generate AI copy, falling back to static:", err.message);
     }
     
-    // Fallback static copy if AI fails
-    let primaryText = `${product.title || 'Exclusive Property'}\n\n${product.description || ''}`.substring(0, 600);
-    if (contactNumber) primaryText += `\n\n📞 ${contactNumber}`;
-    if (businessName) primaryText += `\n🏢 ${businessName}`;
-    return {
-        headline: (product.title || 'View Details').substring(0, 40),
-        primary_text: primaryText,
-        description: 'View details & pricing'
-    };
+    // Fallback static copy if AI fails or returns invalid copy
+    if (!resultCopy) {
+        let primaryText = forbidProjectName || !projectTitle ? `${product.description || 'Exclusive Property Details'}` : `${projectTitle}\n\n${product.description || ''}`;
+        primaryText = primaryText.substring(0, 600);
+        if (contactNumber) primaryText += `\n\n📞 ${contactNumber}`;
+        if (businessName) primaryText += `\n🏢 ${businessName}`;
+
+        const headlineText = forbidProjectName || !projectTitle ? (product.location ? `Property in ${product.location}` : 'View Details & Pricing') : projectTitle;
+
+        resultCopy = {
+            headline: headlineText.substring(0, 40),
+            primary_text: primaryText,
+            description: 'View details & pricing'
+        };
+    }
+
+    // Post-processing Sanitizer: If forbidProjectName is true, strip any occurrence of projectTitle
+    if (forbidProjectName && projectTitle && projectTitle.length > 2) {
+        const regex = new RegExp(projectTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        resultCopy.primary_text = resultCopy.primary_text.replace(regex, '').replace(/\n\s*\n\s*\n/g, '\n\n').trim();
+        resultCopy.headline = resultCopy.headline.replace(regex, 'Exclusive Property').trim();
+        resultCopy.description = resultCopy.description.replace(regex, 'View details').trim();
+    }
+
+    return resultCopy;
 }
 
 export async function runCampaignJob(jobId: string, incomingPayload?: any): Promise<{ campaignId: string; message: string } | undefined> {
@@ -622,6 +644,14 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         const adSetData = await adSetRes.json();
         if (!adSetRes.ok) {
             const metaErr = adSetData.error || {};
+            // Auto-archive orphaned empty campaign to prevent leaving an empty campaign shell
+            try {
+                await fetch(`${FB_MARKETING_URL}/${campaignId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'ARCHIVED', access_token: facebookToken })
+                });
+            } catch (cleanupErr) { /* ignore cleanup error */ }
             throw new Error(`Ad Set Error: ${metaErr.message || 'Unknown'}`);
         }
         const adSetId = adSetData.id;
