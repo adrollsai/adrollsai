@@ -593,6 +593,19 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
                             }
                         }
 
+                        if (l.ad_id || l.ad_name) {
+                            customFields.meta_ad_origin = {
+                                ad_id: l.ad_id || '',
+                                ad_name: l.ad_name || '',
+                                campaign_id: l.campaign_id || '',
+                                campaign_name: form.name || '',
+                                headline: l.ad_name || form.name || '',
+                                body: '',
+                                image_url: '',
+                                source_url: l.ad_id ? `https://www.facebook.com/ads/library/?id=${l.ad_id}` : 'https://www.facebook.com/ads/library/'
+                            };
+                        }
+
                         const sourceTag = l.ad_name ? `${l.ad_name} | ${form.name}` : form.name;
                         return {
                             facebook_lead_id: l.id,

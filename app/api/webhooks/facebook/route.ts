@@ -1497,13 +1497,13 @@ IMPORTANT RULES:
 
                                                 if (!matchedProp) {
                                                     if (searchText.includes('plot') || searchText.includes('land') || searchText.includes('anmol')) {
-                                                        matchedProp = userProps.find((p: any) => (p.title || '').toLowerCase().includes('anmol') || (p.title || '').toLowerCase().includes('plot')) || userProps[0];
+                                                        matchedProp = userProps.find((p: any) => (p.title || '').toLowerCase().includes('anmol') || (p.title || '').toLowerCase().includes('plot')) || null;
                                                     } else if (searchText.includes('township') || searchText.includes('16.25')) {
-                                                        matchedProp = userProps.find((p: any) => (p.title || '').toLowerCase().includes('anmol') || (p.title || '').toLowerCase().includes('township')) || userProps[0];
+                                                        matchedProp = userProps.find((p: any) => (p.title || '').toLowerCase().includes('anmol') || (p.title || '').toLowerCase().includes('township')) || null;
                                                     } else if (searchText.includes('apartment') || searchText.includes('aspire') || searchText.includes('bhk') || searchText.includes('tower')) {
-                                                        matchedProp = userProps.find((p: any) => (p.title || '').toLowerCase().includes('ananta aspire') || (p.title || '').toLowerCase().includes('aspire')) || userProps[0];
+                                                        matchedProp = userProps.find((p: any) => (p.title || '').toLowerCase().includes('ananta aspire') || (p.title || '').toLowerCase().includes('aspire')) || null;
                                                     } else {
-                                                        matchedProp = userProps[0];
+                                                        matchedProp = null;
                                                     }
                                                 }
 
@@ -2298,7 +2298,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
           // Find the User based on the Page ID using Admin Client
           const { data: profile, error: profileErr } = await supabaseAdmin
             .from('profiles')
-            .select('id, email, business_name, selected_page_token, pixel_id, enable_distribution, auto_call_new_leads')
+            .select('id, email, business_name, selected_page_token, facebook_token, pixel_id, enable_distribution, auto_call_new_leads')
             .eq('selected_page_id', page_id)
             .single()
 
@@ -2389,8 +2389,8 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
 
           if (ad_id) {
             try {
-                const metaToken = profile.selected_page_token || process.env.META_SYSTEM_USER_TOKEN || '';
-                const adRes = await fetch(`https://graph.facebook.com/v20.0/${ad_id}?fields=id,name,adset{id,name},campaign{id,name},creative{id,name,image_url,thumbnail_url,object_story_spec}&access_token=${metaToken}`)
+                const metaToken = profile.facebook_token || profile.selected_page_token || process.env.META_SYSTEM_USER_TOKEN || '';
+                const adRes = await fetch(`https://graph.facebook.com/v20.0/${ad_id}?fields=id,name,adset{id,name},campaign{id,name},creative{id,name,image_url,thumbnail_url,object_story_spec,asset_feed_spec}&access_token=${metaToken}`)
                 const adDetails = await adRes.json()
                 if (adDetails && !adDetails.error) {
                     campaignId = adDetails.campaign?.id || null
@@ -2399,9 +2399,24 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                     adCampaignString = `${campaignName} / ${adNameStr}`
 
                     const spec = adDetails.creative?.object_story_spec;
-                    const creativeImg = spec?.video_data?.image_url || spec?.link_data?.picture || adDetails.creative?.image_url || adDetails.creative?.thumbnail_url || null;
+                    const assetFeed = adDetails.creative?.asset_feed_spec;
+                    const creativeImg = spec?.video_data?.image_url || spec?.link_data?.picture || spec?.photo_data?.url || adDetails.creative?.image_url || adDetails.creative?.thumbnail_url || assetFeed?.images?.[0]?.url || null;
                     const headlineText = spec?.link_data?.name || spec?.video_data?.title || adNameStr;
-                    const bodyText = spec?.link_data?.message || spec?.video_data?.message || '';
+                    const bodyText = spec?.link_data?.message || spec?.video_data?.message || assetFeed?.bodies?.[0]?.text || '';
+
+                    const videoId = spec?.video_data?.video_id;
+                    let videoMp4Url: string | null = null;
+                    if (videoId) {
+                        try {
+                            const vidRes = await fetch(`https://graph.facebook.com/v20.0/${videoId}?fields=source&access_token=${metaToken}`);
+                            const vidData = await vidRes.json();
+                            if (vidData?.source) {
+                                videoMp4Url = vidData.source;
+                            }
+                        } catch (vidErr) {
+                            console.error("[Facebook Webhook] Could not fetch video MP4 URL:", vidErr);
+                        }
+                    }
 
                     metaAdOrigin = {
                         ad_id: ad_id,
@@ -2413,6 +2428,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                         headline: headlineText,
                         body: bodyText,
                         image_url: creativeImg,
+                        video_url: videoMp4Url || '',
                         source_id: ad_id,
                         source_url: `https://www.facebook.com/ads/library/?id=${ad_id}`
                     };
@@ -2420,6 +2436,31 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
             } catch (e) {
                 console.error("Could not fetch Ad metadata", e)
             }
+          }
+
+          // Match property in active inventory if it corresponds to an existing product
+          let matchedPropertyTitle = '';
+          let matchedPropertyId: string | null = null;
+          try {
+              const { data: properties } = await supabaseAdmin
+                  .from('properties')
+                  .select('id, title')
+                  .eq('user_id', profile.id);
+                  
+              if (properties && properties.length > 0) {
+                  const searchStr = `${campaignName} ${adCampaignString} ${formName}`.toLowerCase();
+                  const matched = properties.find(p => p.title && p.title.trim().length > 2 && searchStr.includes(p.title.toLowerCase().trim()));
+                  if (matched) {
+                      matchedPropertyTitle = matched.title;
+                      matchedPropertyId = matched.id;
+                      if (metaAdOrigin) {
+                          metaAdOrigin.product_name = matched.title;
+                          metaAdOrigin.product_id = matched.id;
+                      }
+                  }
+              }
+          } catch (propErr) {
+              console.error("[Facebook Webhook] Property attribution matching failed:", propErr);
           }
 
           if (metaAdOrigin) {
@@ -2470,24 +2511,25 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
             .from('leads')
             .select('id')
             .eq('facebook_lead_id', leadgen_id)
-            .maybeSingle();
+            .limit(1);
 
-          if (existingLead) {
+          if (existingLead && existingLead.length > 0) {
             console.log(`[Facebook Webhook] Lead ${leadgen_id} already exists in DB (by leadgen_id). Skipping.`);
             continue;
           }
 
-          // Also check by phone number for this user to prevent duplicate people (Meta can send same person with new leadgen_id on resubmission)
-          if (phone) {
+          // Also check by phone number (both raw and normalized last 10 digits) to prevent duplicate leads
+          const cleanPhoneDigits = phone ? phone.replace(/\D/g, '').slice(-10) : '';
+          if (cleanPhoneDigits && cleanPhoneDigits.length >= 7) {
             const { data: existingByPhone } = await supabaseAdmin
               .from('leads')
               .select('id')
               .eq('user_id', profile.id)
-              .eq('phone', phone)
-              .maybeSingle();
+              .or(`phone.eq.${phone},phone.ilike.%${cleanPhoneDigits}`)
+              .limit(1);
 
-            if (existingByPhone) {
-              console.log(`[Facebook Webhook] Lead with phone ${phone} already exists for user ${profile.id}. Skipping duplicate.`);
+            if (existingByPhone && existingByPhone.length > 0) {
+              console.log(`[Facebook Webhook] Lead with phone ${phone} / ${cleanPhoneDigits} already exists for user ${profile.id}. Skipping duplicate.`);
               continue;
             }
           }
@@ -2508,6 +2550,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
             ad_name: adCampaignString,
             assigned_to: assignedAgentId,
             campaign_id: campaignId,
+            property_id: matchedPropertyId || null,
             created_at: new Date().toISOString()
           }).select().single()
 
@@ -2577,7 +2620,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
           )
 
           // Personalize welcome template campaign name based on matched property in active inventory
-          let matchedPropertyTitle = '';
+          let welcomePropertyTitle = '';
           try {
               const { data: properties } = await supabaseAdmin
                   .from('properties')
@@ -2589,14 +2632,14 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                   const searchStr = `${campaignName} ${adCampaignString} ${formName}`.toLowerCase();
                   const matched = properties.find(p => p.title && searchStr.includes(p.title.toLowerCase().trim()));
                   if (matched) {
-                      matchedPropertyTitle = matched.title;
+                      welcomePropertyTitle = matched.title;
                   }
               }
           } catch (propErr) {
               console.error("[Facebook Webhook] Property attribution matching failed:", propErr);
           }
 
-          const targetCampaignName = matchedPropertyTitle || campaignName || 'our properties';
+          const targetCampaignName = welcomePropertyTitle || campaignName || 'our properties';
 
           // Trigger automated WhatsApp welcome drip campaign
           if (savedLead && phone) {

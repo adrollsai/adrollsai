@@ -417,6 +417,8 @@ export default function LeadProfilePage() {
         }
     }
 
+    const [properties, setProperties] = useState<any[]>([])
+
     const fetchLeadData = async () => {
         setNextLeadId(null)
         setPrevLeadId(null)
@@ -436,8 +438,82 @@ export default function LeadProfilePage() {
             setLead(data)
             updateLocalCRMCache(data)
             fetchNextLeadId(data)
+
+            try {
+                const { data: propsData } = await supabase.from('properties').select('id, title').eq('user_id', data.user_id)
+                if (propsData) setProperties(propsData)
+            } catch (e) {
+                console.error("Failed to fetch properties for lead detail:", e)
+            }
         }
         setLoading(false)
+    }
+
+    const handleAssignProduct = async (propertyId: string | null) => {
+        try {
+            const selectedProp = properties.find(p => p.id === propertyId);
+            const newPropTitle = selectedProp ? selectedProp.title : null;
+
+            let updatedCustomFields = lead?.custom_fields || {};
+            if (updatedCustomFields.meta_ad_origin) {
+                updatedCustomFields = {
+                    ...updatedCustomFields,
+                    meta_ad_origin: {
+                        ...updatedCustomFields.meta_ad_origin,
+                        product_name: newPropTitle,
+                        product_id: propertyId
+                    }
+                };
+            }
+
+            const { error } = await supabase
+                .from('leads')
+                .update({ 
+                    property_id: propertyId,
+                    custom_fields: updatedCustomFields
+                })
+                .eq('id', id);
+
+            if (error) throw error;
+
+            const updatedLead = {
+                ...lead,
+                property_id: propertyId,
+                custom_fields: updatedCustomFields
+            };
+            setLead(updatedLead);
+            updateLocalCRMCache(updatedLead);
+        } catch (err: any) {
+            alert("Failed to assign product: " + (err.message || String(err)));
+        }
+    }
+
+    const openMediaModal = async (origin: any, liveAdUrl: string) => {
+        setActiveMediaModal({ origin, liveAdUrl })
+        if (!origin?.video_url && (origin?.ad_id || id)) {
+            try {
+                const res = await fetch(`/api/meta-ads/video-source?adId=${origin.ad_id || ''}&leadId=${id || ''}`)
+                const data = await res.json()
+                if (data.success && data.video_url) {
+                    const updatedOrigin = { 
+                        ...origin, 
+                        video_url: data.video_url, 
+                        headline: data.headline || origin.headline, 
+                        body: data.body || origin.body 
+                    }
+                    setActiveMediaModal({ origin: updatedOrigin, liveAdUrl })
+                    
+                    setLead((prev: any) => {
+                        if (!prev) return prev
+                        let cf = prev.custom_fields || {}
+                        if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+                        return { ...prev, custom_fields: { ...cf, meta_ad_origin: updatedOrigin } }
+                    })
+                }
+            } catch (e) {
+                console.error("Failed to resolve video URL:", e)
+            }
+        }
     }
 
     const fetchLeadHistory = async () => {
@@ -862,12 +938,136 @@ END:VCARD`
                                 </select>
                             )}
                         </div>
-                        {lead.ad_name && (
-                            <p className="text-xs font-medium text-slate-600 mb-4 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                                <span className="font-bold text-slate-400 block mb-0.5 text-[10px] uppercase">Campaign / Ad</span>
-                                {lead.ad_name}
-                            </p>
-                        )}
+                        {/* Meta Ad Origin & Creative Preview */}
+                        {(() => {
+                            let customFields = lead.custom_fields;
+                            if (customFields && typeof customFields === 'string') {
+                                try {
+                                    while (typeof customFields === 'string') {
+                                        customFields = JSON.parse(customFields);
+                                    }
+                                } catch (e) {
+                                    customFields = {};
+                                }
+                            }
+                            const origin = customFields?.meta_ad_origin;
+                            const matchedProp = properties.find(p => p.id === lead.property_id || p.id === origin?.product_id || p.title === origin?.product_name);
+                            const productName = origin?.product_name || matchedProp?.title || null;
+
+                            const getLiveAdUrl = () => {
+                                if (!origin) return 'https://www.facebook.com/ads/library/';
+                                const rawUrl = origin.source_url;
+                                const adId = origin.ad_id || origin.source_id;
+                                if (rawUrl && rawUrl !== 'https://facebook.com' && rawUrl !== 'https://facebook.com/' && !rawUrl.endsWith('facebook.com')) {
+                                    return rawUrl;
+                                }
+                                if (adId) {
+                                    return `https://www.facebook.com/ads/library/?id=${adId}`;
+                                }
+                                return 'https://www.facebook.com/ads/library/';
+                            };
+
+                            const liveAdUrl = getLiveAdUrl();
+
+                            return (
+                                <div className="mb-4 space-y-3">
+                                    {origin ? (
+                                        <div className="p-3.5 bg-gradient-to-r from-indigo-50/90 via-blue-50/80 to-slate-50 border border-indigo-150 rounded-2xl shadow-xs space-y-3">
+                                            <div className="flex justify-between items-center">
+                                                <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-700 uppercase tracking-wider">
+                                                    <Target size={13} className="text-indigo-500" /> Meta Ad Origin & Inventory Mapping
+                                                </div>
+                                                <a 
+                                                    href={liveAdUrl} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className="text-[9px] font-extrabold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                                                >
+                                                    🔗 Live Ad
+                                                </a>
+                                            </div>
+
+                                            {(origin.image_url || origin.video_url || origin.body) && (
+                                                <div className="flex items-start gap-3 bg-white p-2.5 rounded-xl border border-indigo-100/70 shadow-xs">
+                                                    {(origin.image_url || origin.video_url) && (
+                                                        <div 
+                                                            onClick={() => openMediaModal(origin, liveAdUrl)}
+                                                            className="relative group cursor-pointer shrink-0 rounded-lg overflow-hidden border border-slate-200 shadow-xs w-20 h-20 bg-slate-900 flex items-center justify-center"
+                                                            title="Click to enlarge creative"
+                                                        >
+                                                            {origin.video_url ? (
+                                                                <>
+                                                                    <video src={origin.video_url} className="w-full h-full object-cover opacity-90" />
+                                                                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
+                                                                        <span className="p-1 bg-white/90 rounded-full text-indigo-700 shadow-md text-xs font-black">▶</span>
+                                                                    </div>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <img src={origin.image_url} alt="Ad Creative Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
+                                                                        <span className="opacity-0 group-hover:opacity-100 text-white font-extrabold text-[8px] bg-indigo-600/90 px-1.5 py-0.5 rounded shadow-xs">🔍 Zoom</span>
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    <div className="min-w-0 flex-1 text-xs">
+                                                        <div className="flex justify-between items-start gap-2">
+                                                            <span className="font-extrabold text-indigo-950 block truncate text-xs">{origin.headline || origin.ad_name}</span>
+                                                            {(origin.image_url || origin.video_url) && (
+                                                                <button 
+                                                                    onClick={() => openMediaModal(origin, liveAdUrl)}
+                                                                    className="text-[10px] font-extrabold text-indigo-600 hover:text-indigo-800 underline shrink-0"
+                                                                >
+                                                                    🔍 Enlarge
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        {origin.body && <p className="text-slate-600 text-xs mt-1 leading-relaxed bg-slate-50/70 p-2 rounded-lg border border-slate-100">{origin.body}</p>}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                                {origin.ad_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Name</span><span className="font-extrabold text-indigo-950 truncate block">{origin.ad_name}</span></div>}
+                                                {origin.campaign_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{origin.campaign_name}</span></div>}
+                                            </div>
+
+                                            <div className="flex items-center justify-between gap-2 bg-emerald-50/90 border border-emerald-200/80 p-2.5 rounded-xl text-xs">
+                                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                    <span className="p-1.5 bg-emerald-500 text-white rounded-lg font-black shrink-0 text-xs">📦</span>
+                                                    <div className="min-w-0 flex-1">
+                                                        <span className="text-[8px] font-black text-emerald-700 uppercase block tracking-wider">Mapped Inventory Product</span>
+                                                        <span className="font-extrabold text-emerald-950 text-xs truncate block">{productName || 'Unmapped Product'}</span>
+                                                    </div>
+                                                </div>
+                                                {properties.length > 0 && (
+                                                    <select
+                                                        value={lead.property_id || matchedProp?.id || ''}
+                                                        onChange={(e) => handleAssignProduct(e.target.value || null)}
+                                                        className="text-xs font-extrabold bg-white border border-emerald-300 text-emerald-900 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer hover:border-emerald-500 shrink-0 shadow-xs"
+                                                    >
+                                                        <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
+                                                        {properties.map((p: any) => (
+                                                            <option key={p.id} value={p.id}>{p.title}</option>
+                                                        ))}
+                                                        {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
+                                                    </select>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        lead.ad_name && (
+                                            <p className="text-xs font-medium text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                                <span className="font-bold text-slate-400 block mb-0.5 text-[10px] uppercase">Campaign / Ad</span>
+                                                {lead.ad_name}
+                                            </p>
+                                        )
+                                    )}
+                                </div>
+                            );
+                        })()}
                         <div className="mt-2">
                             <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5 ml-1">Static Notes</label>
                             <textarea
@@ -1026,13 +1226,14 @@ END:VCARD`
                             }
                             const origin = customFields?.meta_ad_origin;
                             const entries = Object.entries(customFields).filter(([k]) => k !== 'meta_ad_origin');
+                            const matchedProp = properties.find(p => p.id === lead.property_id || p.id === origin?.product_id || p.title === origin?.product_name);
+                            const productName = origin?.product_name || matchedProp?.title || null;
 
                             return (
                                 <div className="space-y-4">
                                      {origin && (() => {
                                          const imageUrl = origin.image_url;
                                          const videoUrl = origin.video_url;
-                                         const productName = origin.product_name || (lead.property_id ? 'The Ananta Aspire' : null);
 
                                          return (
                                              <div className="p-3.5 bg-gradient-to-r from-indigo-50/90 via-blue-50/80 to-slate-50 border border-indigo-150 rounded-2xl shadow-xs space-y-3">
@@ -1091,18 +1292,54 @@ END:VCARD`
                                                      {origin.headline && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Headline</span><span className="font-extrabold text-slate-800 truncate block">{origin.headline}</span></div>}
                                                  </div>
 
-                                                 {(productName || lead.property_id) && (
-                                                     <div className="flex items-center gap-2.5 bg-emerald-50/90 border border-emerald-200/80 p-2 rounded-xl text-[10px]">
+                                                 <div className="flex items-center justify-between gap-2 bg-emerald-50/90 border border-emerald-200/80 p-2.5 rounded-xl text-[10px]">
+                                                     <div className="flex items-center gap-2 min-w-0 flex-1">
                                                          <span className="p-1.5 bg-emerald-500 text-white rounded-lg font-black shrink-0">📦</span>
                                                          <div className="min-w-0 flex-1">
                                                              <span className="text-[8px] font-black text-emerald-700 uppercase block tracking-wider">Mapped Inventory Product</span>
-                                                             <span className="font-extrabold text-emerald-950 text-xs truncate block">{productName || 'The Ananta Aspire'}</span>
+                                                             <span className="font-extrabold text-emerald-950 text-xs truncate block">{productName || 'Unmapped Product'}</span>
                                                          </div>
                                                      </div>
-                                                 )}
+                                                     {properties.length > 0 && (
+                                                         <select
+                                                             value={lead.property_id || matchedProp?.id || ''}
+                                                             onChange={(e) => handleAssignProduct(e.target.value || null)}
+                                                             className="text-[11px] font-extrabold bg-white border border-emerald-300 text-emerald-900 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer hover:border-emerald-500 shrink-0 shadow-xs"
+                                                         >
+                                                             <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
+                                                             {properties.map((p: any) => (
+                                                                 <option key={p.id} value={p.id}>{p.title}</option>
+                                                             ))}
+                                                             {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
+                                                         </select>
+                                                     )}
+                                                 </div>
                                              </div>
                                          );
                                      })()}
+
+                                     {!origin && properties.length > 0 && (
+                                         <div className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 p-3 rounded-2xl text-[10px]">
+                                             <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                 <span className="p-1.5 bg-slate-400 text-white rounded-lg font-black shrink-0">📦</span>
+                                                 <div className="min-w-0 flex-1">
+                                                     <span className="text-[8px] font-bold text-slate-500 uppercase block tracking-wider">Inventory Product</span>
+                                                     <span className="font-bold text-slate-800 text-xs truncate block">{productName || 'Unmapped Product'}</span>
+                                                 </div>
+                                             </div>
+                                             <select
+                                                 value={lead.property_id || matchedProp?.id || ''}
+                                                 onChange={(e) => handleAssignProduct(e.target.value || null)}
+                                                 className="text-[11px] font-extrabold bg-white border border-slate-300 text-slate-700 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer hover:border-slate-400 shrink-0 shadow-xs"
+                                             >
+                                                 <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
+                                                 {properties.map((p: any) => (
+                                                     <option key={p.id} value={p.id}>{p.title}</option>
+                                                 ))}
+                                                 {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
+                                             </select>
+                                         </div>
+                                     )}
 
                                     {entries.length > 0 ? (
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

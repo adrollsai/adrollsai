@@ -827,7 +827,7 @@ export default function AutomationPage() {
                             const imageUrl = origin?.image_url;
                             const videoUrl = origin?.video_url;
                             const bodyText = origin?.body;
-                            const productName = origin?.product_name || (leadInfo.custom_fields?.property_id ? 'The Ananta Aspire' : null);
+                            const productName = origin?.product_name || null;
 
                             const getLiveAdUrl = () => {
                               if (!origin) return 'https://www.facebook.com/ads/library/';
@@ -901,12 +901,12 @@ export default function AutomationPage() {
                                   {headline && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Headline</span><span className="font-extrabold text-slate-800 truncate block">{headline}</span></div>}
                                 </div>
 
-                                {(productName || leadInfo.custom_fields?.property_id) && (
+                                {productName && (
                                   <div className="flex items-center gap-2 bg-emerald-50/90 border border-emerald-200/80 p-2 rounded-xl text-[10px]">
                                     <span className="p-1 bg-emerald-500 text-white rounded-md font-black shrink-0 text-[10px]">📦</span>
                                     <div className="min-w-0 flex-1">
                                       <span className="text-[8px] font-black text-emerald-700 uppercase block tracking-wider">Mapped Inventory Product</span>
-                                      <span className="font-extrabold text-emerald-950 text-[11px] truncate block">{productName || 'The Ananta Aspire'}</span>
+                                      <span className="font-extrabold text-emerald-950 text-[11px] truncate block">{productName}</span>
                                     </div>
                                   </div>
                                 )}

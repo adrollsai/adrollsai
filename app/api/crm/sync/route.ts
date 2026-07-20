@@ -52,19 +52,38 @@ export async function POST(request: Request) {
     );
     console.log(`Retrieved ${leads.length} leads from Meta API`);
 
-    // 1. Fetch existing facebook_lead_ids to filter out duplicates in advance
-    const incomingLeadIds = leads.map(l => l.facebook_lead_id).filter(Boolean);
-    let trulyNewLeads = [...leads];
-    
-    if (incomingLeadIds.length > 0) {
-        const { data: existingLeads } = await supabase
+    // 1. Fetch ALL existing facebook_lead_ids and phone numbers for targetUserId to filter out duplicates reliably
+    const existingFbidSet = new Set<string>();
+    const existingPhoneSet = new Set<string>();
+    let offset = 0;
+    while (true) {
+        const { data: existingPage, error: pageErr } = await supabase
             .from('leads')
-            .select('facebook_lead_id')
-            .in('facebook_lead_id', incomingLeadIds);
-            
-        const existingSet = new Set(existingLeads?.map(l => l.facebook_lead_id) || []);
-        trulyNewLeads = leads.filter(l => !existingSet.has(l.facebook_lead_id));
+            .select('facebook_lead_id, phone')
+            .eq('user_id', targetUserId)
+            .range(offset, offset + 999);
+
+        if (pageErr || !existingPage || existingPage.length === 0) break;
+        existingPage.forEach(l => { 
+            if (l.facebook_lead_id) existingFbidSet.add(l.facebook_lead_id);
+            if (l.phone) {
+                const digits = l.phone.replace(/\D/g, '').slice(-10);
+                if (digits.length >= 7) existingPhoneSet.add(digits);
+            }
+        });
+        if (existingPage.length < 1000) break;
+        offset += 1000;
     }
+
+    const trulyNewLeads = leads.filter(l => {
+        if (!l) return false;
+        if (l.facebook_lead_id && existingFbidSet.has(l.facebook_lead_id)) return false;
+        if (l.phone) {
+            const digits = l.phone.replace(/\D/g, '').slice(-10);
+            if (digits.length >= 7 && existingPhoneSet.has(digits)) return false;
+        }
+        return true;
+    });
 
     console.log(`Filtered out duplicates. Truly new leads to sync: ${trulyNewLeads.length}`);
 

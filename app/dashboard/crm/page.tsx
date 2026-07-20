@@ -43,8 +43,10 @@ export default function CRMPage() {
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(role)
 
-  // --- CRM STATE (LOCAL CACHE) ---
+  // --- CRM STATE ---
   const [leads, setLeads] = useState<any[]>([])
+  const [totalLeadsCount, setTotalLeadsCount] = useState(0)
+  const [properties, setProperties] = useState<any[]>([])
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -62,8 +64,12 @@ export default function CRMPage() {
   
   const setActiveStage = (stage: string) => {
     setActiveStageState(stage)
+    setCurrentPageState(1)
+    setLoading(true)
+    setLeads([])
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('crm_stage', stage)
+      sessionStorage.setItem('crm_page', '1')
     }
   }
 
@@ -97,15 +103,6 @@ export default function CRMPage() {
   useEffect(() => {
     setPageInputVal(currentPage.toString())
   }, [currentPage])
-
-  // Reset page when filters change
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false
-      return
-    }
-    setCurrentPage(1)
-  }, [activeStage, searchQuery, selectedCampaign, selectedForm, selectedCsvAudience])
 
   // --- MODAL STATE ---
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
@@ -230,7 +227,7 @@ export default function CRMPage() {
     }
   }
 
-  // 1. SAFE FETCH WITH LOCAL CACHING
+  // 1. SAFE FETCH WITH SERVER-SIDE PAGINATION
   const fetchLeads = async (force = false) => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -260,7 +257,7 @@ export default function CRMPage() {
                 .from('profiles')
                 .select('id')
                 .eq('id', impersonateId)
-                .eq('agency_id', profile?.agency_id || user.id) // Correctly check agency root
+                .eq('agency_id', profile?.agency_id || user.id)
                 .single()
               if (subAccount) targetUserId = impersonateId
           } else {
@@ -268,6 +265,10 @@ export default function CRMPage() {
           }
       }
       setTargetUserId(targetUserId)
+
+      // Fetch user properties for title resolution and manual product assignment
+      const { data: propsData } = await supabase.from('properties').select('id, title').eq('user_id', targetUserId)
+      if (propsData) setProperties(propsData)
 
       // Get campaign assignment rules for agents
       let activeCampaigns: string[] = []
@@ -293,26 +294,10 @@ export default function CRMPage() {
       }
       setAssignedCampaigns(activeCampaigns)
 
-      // Setup caching key (agent-specific cache key to prevent admin leads leak/conflicts)
-      const cacheKey = currentRole === 'agent' ? `crm_cache_${user.id}` : `crm_cache_${targetUserId}`;
-      const cached = force ? [] : getLocalCache<any>(cacheKey);
-
-      if (cached.length > 0 && leads.length === 0) {
-          setLeads(cached);
-          setLoading(false);
-          
-          // Restore scroll position gracefully
-          const savedScroll = sessionStorage.getItem('crm_scroll');
-          if (savedScroll) {
-              setTimeout(() => window.scrollTo({ top: parseInt(savedScroll, 10), behavior: 'instant' }), 50);
-          }
-      } else if (leads.length === 0 && !force) {
+      if (leads.length === 0 && !force) {
           setLoading(true);
       }
-
       if (force) setIsRefreshing(true);
-
-      const maxCreatedAt = getMaxCreatedAt(cached);
 
       // Fetch Meta Pixels for target account
       let adAccountId = profile?.ad_account_id
@@ -327,15 +312,12 @@ export default function CRMPage() {
       }
 
       if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
-          // Fetch all staff members under this agency/organization
           const { data: teamData } = await supabase.from('profiles')
             .select('id, business_name, role')
             .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
             .in('role', ['admin', 'agent', 'agency'])
           
           let finalTeam = teamData || []
-          
-          // Ensure the target user (Agency/Parent) is also in the team list if not already
           if (!finalTeam.find(t => t.id === targetUserId)) {
               const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, role').eq('id', targetUserId).single()
               if (targetProfile) finalTeam.push(targetProfile)
@@ -346,65 +328,51 @@ export default function CRMPage() {
           setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
       }
 
-      const fetchAllLeads = async () => {
-          let allData: any[] = [];
-          let start = 0;
-          const step = 250;
-          let hasMore = true;
+      // Query paginated leads from Supabase using range and count: 'exact'
+      const start = (currentPage - 1) * leadsPerPage;
+      const end = start + leadsPerPage - 1;
 
-          while (hasMore) {
-              let buildQuery = (selectClause: string) => {
-                  let q = supabase.from('leads')
-                    .select(selectClause)
-                    .order('created_at', { ascending: false, nullsFirst: false })
-                    .range(start, start + step - 1);
+      let buildQuery = (selectClause: string) => {
+          let q = supabase.from('leads')
+            .select(selectClause, { count: 'exact' })
+            .order('created_at', { ascending: false, nullsFirst: false });
 
-                  if (currentRole === 'super_admin') {
-                      q = q.eq('user_id', targetUserId);
-                  } else if (currentRole === 'agency') {
-                      if (impersonateId) {
-                          q = q.eq('user_id', targetUserId);
-                      } else {
-                          const clientIdsPromise = supabase.from('profiles').select('id').eq('agency_id', user.id);
-                          // will be handled outside if needed
-                          q = q.eq('user_id', targetUserId);
-                      }
-                  } else if (currentRole === 'admin' || currentRole === 'client') {
-                      q = q.eq('user_id', targetUserId);
-                  } else {
-                      q = q.eq('assigned_to', user.id);
-                  }
-
-                  if (searchQuery.trim() !== '') {
-                      const term = `%${searchQuery.trim()}%`;
-                      q = q.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`);
-                  }
-                  return q;
-              };
-
-              let { data, error } = await buildQuery('*, lead_history(action_type, description, created_at)');
-              if (error) {
-                  // Fallback to simple select without heavy join if statement timeout occurs
-                  const fallbackRes = await buildQuery('*');
-                  if (fallbackRes.error) throw fallbackRes.error;
-                  data = fallbackRes.data;
-              }
-              
-              if (data && data.length > 0) {
-                  allData.push(...data);
-                  if (data.length < step || allData.length >= 1000) hasMore = false;
-                  else start += step;
-              } else {
-                  hasMore = false;
-              }
+          if (currentRole === 'super_admin' || currentRole === 'agency' || currentRole === 'admin' || currentRole === 'client') {
+              q = q.eq('user_id', targetUserId);
+          } else {
+              q = q.eq('assigned_to', user.id);
           }
-          return allData;
+
+          if (searchQuery.trim() !== '') {
+              const term = `%${searchQuery.trim()}%`;
+              q = q.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`);
+          } else if (activeStage) {
+              q = q.eq('pipeline_stage', activeStage);
+          }
+
+          if (selectedCampaign.trim() !== '') {
+              q = q.or(`ad_name.eq.${selectedCampaign.trim()},campaign_name.eq.${selectedCampaign.trim()}`);
+          }
+          if (selectedForm.trim() !== '') {
+              q = q.or(`form_name.eq.${selectedForm.trim()},source.eq.${selectedForm.trim()}`);
+          }
+          if (selectedCsvAudience.trim() !== '') {
+              q = q.eq('csv_audience', selectedCsvAudience.trim());
+          }
+
+          return q.range(start, end);
       };
 
-      const data = await fetchAllLeads()
-      
+      let { data, count, error } = await buildQuery('*, lead_history(action_type, description, created_at)');
+      if (error) {
+          const fallbackRes = await buildQuery('*');
+          if (fallbackRes.error) throw fallbackRes.error;
+          data = fallbackRes.data;
+          count = fallbackRes.count;
+      }
+
       if (data) {
-          const parsedData = data.map(lead => {
+          const parsedData = (data as any[]).map((lead: any) => {
               let parsedCustomFields = lead.custom_fields;
               if (parsedCustomFields && typeof parsedCustomFields === 'string') {
                   try {
@@ -417,12 +385,12 @@ export default function CRMPage() {
               }
               return { ...lead, custom_fields: parsedCustomFields };
           });
-          const merged = force ? parsedData : mergeCacheData<any>(cached, parsedData);
-          setLeads(merged);
-          // Limit cache size to 150 items to avoid localStorage QuotaExceededError
-          setLocalCache(cacheKey, merged.slice(0, 150));
+          setLeads(parsedData);
+          if (count !== null && count !== undefined) {
+              setTotalLeadsCount(count);
+          }
       }
- 
+
       try {
           const res = await fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
           const campaignData = await res.json()
@@ -439,7 +407,93 @@ export default function CRMPage() {
       setIsRefreshing(false)
     }
   }
- 
+
+  const handleAssignProduct = async (leadId: string, propertyId: string | null) => {
+    try {
+      const selectedProp = properties.find(p => p.id === propertyId);
+      const newPropTitle = selectedProp ? selectedProp.title : null;
+
+      const targetLead = leads.find(l => l.id === leadId);
+      let updatedCustomFields = targetLead?.custom_fields || {};
+      if (updatedCustomFields.meta_ad_origin) {
+        updatedCustomFields = {
+          ...updatedCustomFields,
+          meta_ad_origin: {
+            ...updatedCustomFields.meta_ad_origin,
+            product_name: newPropTitle,
+            product_id: propertyId
+          }
+        };
+      }
+
+      const { error } = await supabase
+        .from('leads')
+        .update({ 
+          property_id: propertyId,
+          custom_fields: updatedCustomFields
+        })
+        .eq('id', leadId);
+
+      if (error) throw error;
+
+      setLeads(prev => prev.map(l => {
+        if (l.id === leadId) {
+          return {
+            ...l,
+            property_id: propertyId,
+            custom_fields: updatedCustomFields
+          };
+        }
+        return l;
+      }));
+    } catch (err: any) {
+      alert("Failed to assign product: " + (err.message || String(err)));
+    }
+  }
+
+  const openMediaModal = async (origin: any, liveAdUrl: string, leadId?: string) => {
+    setActiveMediaModal({ origin, liveAdUrl })
+    if (!origin?.video_url && (origin?.ad_id || leadId)) {
+      try {
+        const res = await fetch(`/api/meta-ads/video-source?adId=${origin.ad_id || ''}&leadId=${leadId || ''}`)
+        const data = await res.json()
+        if (data.success && data.video_url) {
+          const updatedOrigin = { 
+            ...origin, 
+            video_url: data.video_url, 
+            headline: data.headline || origin.headline, 
+            body: data.body || origin.body 
+          }
+          setActiveMediaModal({ origin: updatedOrigin, liveAdUrl })
+          
+          if (leadId) {
+            setLeads(prev => prev.map(l => {
+              if (l.id === leadId) {
+                let cf = l.custom_fields || {}
+                if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+                return { ...l, custom_fields: { ...cf, meta_ad_origin: updatedOrigin } }
+              }
+              return l
+            }))
+          }
+        }
+      } catch (e) {
+        console.error("Failed to resolve video URL:", e)
+      }
+    }
+  }
+
+  // Fetch leads when page or active filters change
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    setLoading(true)
+    setLeads([])
+    fetchLeads(true)
+  }, [currentPage, activeStage, selectedCampaign, selectedForm, selectedCsvAudience])
+
   // Trigger initial fetch & silent background auto-sync of Facebook leads
   useEffect(() => { 
     const initCRM = async () => {
@@ -1033,8 +1087,8 @@ END:VCARD\n`
     })
   }, [leadsMatchingFilters, activeStage, searchQuery])
 
-  const totalPages = Math.ceil(filteredLeads.length / leadsPerPage)
-  const currentLeads = filteredLeads.slice((currentPage - 1) * leadsPerPage, currentPage * leadsPerPage)
+  const totalPages = Math.max(1, Math.ceil(totalLeadsCount / leadsPerPage))
+  const currentLeads = leads
 
   const renderPagination = (position: 'top' | 'bottom') => {
     if (totalPages <= 1) return null
@@ -1260,9 +1314,11 @@ END:VCARD\n`
                         className={`whitespace-nowrap px-5 py-3 rounded-2xl text-sm font-bold transition-all shadow-sm flex items-center gap-2 ${activeStage === stage ? 'bg-slate-900 text-white border border-slate-900' : 'bg-white text-slate-600 border border-slate-200/60 hover:bg-slate-50 hover:border-slate-300'}`}
                     >
                         {stage} 
-                        <span className={`px-2 py-0.5 rounded-lg text-xs ${activeStage === stage ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                            {leadsMatchingFilters.filter(l => (l.pipeline_stage || 'New') === stage).length}
-                        </span>
+                        {activeStage === stage && (
+                            <span className="px-2 py-0.5 rounded-lg text-xs bg-slate-700 text-white">
+                                {totalLeadsCount}
+                            </span>
+                        )}
                     </button>
                 ))}
             </div>
@@ -1454,100 +1510,132 @@ END:VCARD\n`
                                     }
                                 }
                                 const origin = customFields?.meta_ad_origin;
-                                if (!customFields || typeof customFields !== 'object') {
-                                    return null;
-                                }
+                                const matchedProp = properties.find(p => p.id === lead.property_id || p.id === origin?.product_id || p.title === origin?.product_name);
+                                const productName = origin?.product_name || matchedProp?.title || null;
+
+                                const getLiveAdUrl = () => {
+                                     if (!origin) return 'https://www.facebook.com/ads/library/';
+                                     const rawUrl = origin.source_url;
+                                     const adId = origin.ad_id || origin.source_id;
+                                     if (rawUrl && rawUrl !== 'https://facebook.com' && rawUrl !== 'https://facebook.com/' && !rawUrl.endsWith('facebook.com')) {
+                                         return rawUrl;
+                                     }
+                                     if (adId) {
+                                         return `https://www.facebook.com/ads/library/?id=${adId}`;
+                                     }
+                                     return 'https://www.facebook.com/ads/library/';
+                                 };
+
+                                 const liveAdUrl = getLiveAdUrl();
+
                                 return (
                                     <>
-                                        {origin && (() => {
-                                             const getLiveAdUrl = () => {
-                                                 if (!origin) return 'https://www.facebook.com/ads/library/';
-                                                 const rawUrl = origin.source_url;
-                                                 const adId = origin.ad_id || origin.source_id;
-                                                 if (rawUrl && rawUrl !== 'https://facebook.com' && rawUrl !== 'https://facebook.com/' && !rawUrl.endsWith('facebook.com')) {
-                                                     return rawUrl;
-                                                 }
-                                                 if (adId) {
-                                                     return `https://www.facebook.com/ads/library/?id=${adId}`;
-                                                 }
-                                                 return 'https://www.facebook.com/ads/library/';
-                                             };
+                                        {origin && (
+                                            <div className="col-span-2 mt-2 p-3.5 bg-gradient-to-r from-indigo-50/90 via-blue-50/80 to-slate-50 border border-indigo-150 rounded-2xl shadow-xs space-y-3">
+                                                <div className="flex justify-between items-center">
+                                                    <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-700 uppercase tracking-wider">
+                                                        <Target size={13} className="text-indigo-500" /> Meta Ad Origin & Inventory Mapping
+                                                    </div>
+                                                </div>
 
-                                             const liveAdUrl = getLiveAdUrl();
-                                             const imageUrl = origin.image_url;
-                                             const videoUrl = origin.video_url;
-                                             const productName = origin.product_name || (lead.property_id ? 'The Ananta Aspire' : null);
+                                                {(origin.image_url || origin.video_url || origin.body) && (
+                                                    <div className="flex items-start gap-3 bg-white p-2.5 rounded-xl border border-indigo-100/70 shadow-xs">
+                                                        {(origin.image_url || origin.video_url) && (
+                                                            <div 
+                                                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); openMediaModal(origin, liveAdUrl, lead.id); }}
+                                                                className="relative group cursor-pointer shrink-0 rounded-lg overflow-hidden border border-slate-200 shadow-xs w-16 h-16 bg-slate-900 flex items-center justify-center"
+                                                                title="Click to enlarge creative"
+                                                            >
+                                                                {origin.video_url ? (
+                                                                    <>
+                                                                        <video src={origin.video_url} className="w-full h-full object-cover opacity-90" />
+                                                                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
+                                                                            <span className="p-1 bg-white/90 rounded-full text-indigo-700 shadow-md text-[10px] font-black">▶</span>
+                                                                        </div>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <img src={origin.image_url} alt="Ad Creative Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
+                                                                            <span className="opacity-0 group-hover:opacity-100 text-white font-extrabold text-[8px] bg-indigo-600/90 px-1 py-0.5 rounded shadow-xs">🔍 Zoom</span>
+                                                                        </div>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        <div className="min-w-0 flex-1 text-[10px]">
+                                                            <div className="flex justify-between items-start">
+                                                                <span className="font-extrabold text-indigo-950 block truncate text-xs max-w-[220px]">{origin.headline || origin.ad_name}</span>
+                                                                {(origin.image_url || origin.video_url) && (
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); openMediaModal(origin, liveAdUrl, lead.id); }}
+                                                                        className="text-[9px] font-extrabold text-indigo-600 hover:text-indigo-800 underline ml-1 shrink-0"
+                                                                    >
+                                                                        🔍 Enlarge
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                            {origin.body && <p className="text-slate-500 line-clamp-2 text-[9.5px] mt-0.5 leading-snug">{origin.body}</p>}
+                                                        </div>
+                                                    </div>
+                                                )}
 
-                                             return (
-                                                 <div className="col-span-2 mt-2 p-3.5 bg-gradient-to-r from-indigo-50/90 via-blue-50/80 to-slate-50 border border-indigo-150 rounded-2xl shadow-xs space-y-3">
-                                                     <div className="flex justify-between items-center">
-                                                         <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-700 uppercase tracking-wider">
-                                                             <Target size={13} className="text-indigo-500" /> Meta Ad Origin & Inventory Mapping
-                                                         </div>
-                                                     </div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                                                    {origin.ad_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Name</span><span className="font-extrabold text-indigo-950 truncate block">{origin.ad_name}</span></div>}
+                                                    {origin.adset_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Set</span><span className="font-extrabold text-slate-800 truncate block">{origin.adset_name}</span></div>}
+                                                    {origin.campaign_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{origin.campaign_name}</span></div>}
+                                                    {origin.headline && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Headline</span><span className="font-extrabold text-slate-800 truncate block">{origin.headline}</span></div>}
+                                                </div>
 
-                                                     {(imageUrl || videoUrl || origin.body) && (
-                                                         <div className="flex items-start gap-3 bg-white p-2.5 rounded-xl border border-indigo-100/70 shadow-xs">
-                                                             {(imageUrl || videoUrl) && (
-                                                                 <div 
-                                                                     onClick={(e) => { e.stopPropagation(); e.preventDefault(); setActiveMediaModal({ origin, liveAdUrl }); }}
-                                                                     className="relative group cursor-pointer shrink-0 rounded-lg overflow-hidden border border-slate-200 shadow-xs w-16 h-16 bg-slate-900 flex items-center justify-center"
-                                                                     title="Click to enlarge creative"
-                                                                 >
-                                                                     {videoUrl ? (
-                                                                         <>
-                                                                             <video src={videoUrl} className="w-full h-full object-cover opacity-90" />
-                                                                             <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
-                                                                                 <span className="p-1 bg-white/90 rounded-full text-indigo-700 shadow-md text-[10px] font-black">▶</span>
-                                                                             </div>
-                                                                         </>
-                                                                     ) : (
-                                                                         <>
-                                                                             <img src={imageUrl} alt="Ad Creative Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                                                                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
-                                                                                 <span className="opacity-0 group-hover:opacity-100 text-white font-extrabold text-[8px] bg-indigo-600/90 px-1 py-0.5 rounded shadow-xs">🔍 Zoom</span>
-                                                                             </div>
-                                                                         </>
-                                                                     )}
-                                                                 </div>
-                                                             )}
-                                                             <div className="min-w-0 flex-1 text-[10px]">
-                                                                 <div className="flex justify-between items-start">
-                                                                     <span className="font-extrabold text-indigo-950 block truncate text-xs max-w-[220px]">{origin.headline || origin.ad_name}</span>
-                                                                     {(imageUrl || videoUrl) && (
-                                                                         <button 
-                                                                             onClick={(e) => { e.stopPropagation(); e.preventDefault(); setActiveMediaModal({ origin, liveAdUrl }); }}
-                                                                             className="text-[9px] font-extrabold text-indigo-600 hover:text-indigo-800 underline ml-1 shrink-0"
-                                                                         >
-                                                                             🔍 Enlarge
-                                                                         </button>
-                                                                     )}
-                                                                 </div>
-                                                                 {origin.body && <p className="text-slate-500 line-clamp-2 text-[9.5px] mt-0.5 leading-snug">{origin.body}</p>}
-                                                             </div>
-                                                         </div>
-                                                     )}
+                                                <div className="flex items-center justify-between gap-2 bg-emerald-50/90 border border-emerald-200/80 p-2 rounded-xl text-[10px]" onClick={(e) => e.stopPropagation()}>
+                                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                        <span className="p-1.5 bg-emerald-500 text-white rounded-lg font-black shrink-0">📦</span>
+                                                        <div className="min-w-0 flex-1">
+                                                            <span className="text-[8px] font-black text-emerald-700 uppercase block tracking-wider">Mapped Inventory Product</span>
+                                                            <span className="font-extrabold text-emerald-950 text-xs truncate block">{productName || 'Unmapped Product'}</span>
+                                                        </div>
+                                                    </div>
+                                                    {properties.length > 0 && (
+                                                        <select
+                                                            value={lead.property_id || matchedProp?.id || ''}
+                                                            onChange={(e) => handleAssignProduct(lead.id, e.target.value || null)}
+                                                            className="text-[10px] font-extrabold bg-white border border-emerald-300 text-emerald-900 rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-emerald-500 shrink-0 shadow-xs"
+                                                        >
+                                                            <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
+                                                            {properties.map((p: any) => (
+                                                                <option key={p.id} value={p.id}>{p.title}</option>
+                                                            ))}
+                                                            {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
+                                                        </select>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
 
-                                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
-                                                         {origin.ad_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Name</span><span className="font-extrabold text-indigo-950 truncate block">{origin.ad_name}</span></div>}
-                                                         {origin.adset_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Set</span><span className="font-extrabold text-slate-800 truncate block">{origin.adset_name}</span></div>}
-                                                         {origin.campaign_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{origin.campaign_name}</span></div>}
-                                                         {origin.headline && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Headline</span><span className="font-extrabold text-slate-800 truncate block">{origin.headline}</span></div>}
-                                                     </div>
+                                        {!origin && properties.length > 0 && (
+                                            <div className="col-span-2 mt-1 flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 p-2 rounded-xl text-[10px]" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                    <span className="p-1 bg-slate-400 text-white rounded font-black shrink-0">📦</span>
+                                                    <div className="min-w-0 flex-1">
+                                                        <span className="text-[8px] font-bold text-slate-500 uppercase block tracking-wider">Inventory Product</span>
+                                                        <span className="font-bold text-slate-800 text-xs truncate block">{productName || 'Unmapped Product'}</span>
+                                                    </div>
+                                                </div>
+                                                <select
+                                                    value={lead.property_id || matchedProp?.id || ''}
+                                                    onChange={(e) => handleAssignProduct(lead.id, e.target.value || null)}
+                                                    className="text-[10px] font-extrabold bg-white border border-slate-300 text-slate-700 rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-slate-400 shrink-0 shadow-xs"
+                                                >
+                                                    <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
+                                                    {properties.map((p: any) => (
+                                                        <option key={p.id} value={p.id}>{p.title}</option>
+                                                    ))}
+                                                    {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
+                                                </select>
+                                            </div>
+                                        )}
 
-                                                     {(productName || lead.property_id) && (
-                                                         <div className="flex items-center gap-2.5 bg-emerald-50/90 border border-emerald-200/80 p-2 rounded-xl text-[10px]">
-                                                             <span className="p-1.5 bg-emerald-500 text-white rounded-lg font-black shrink-0">📦</span>
-                                                             <div className="min-w-0 flex-1">
-                                                                 <span className="text-[8px] font-black text-emerald-700 uppercase block tracking-wider">Mapped Inventory Product</span>
-                                                                 <span className="font-extrabold text-emerald-950 text-xs truncate block">{productName || 'The Ananta Aspire'}</span>
-                                                             </div>
-                                                         </div>
-                                                     )}
-                                                 </div>
-                                             );
-                                         })()}
-                                        {Object.entries(customFields).filter(([k]) => k !== 'meta_ad_origin').map(([key, value]) => (
+                                        {customFields && typeof customFields === 'object' && Object.entries(customFields).filter(([k]) => k !== 'meta_ad_origin').map(([key, value]) => (
                                             <div key={key} className="flex flex-col gap-1">
                                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider break-words">{key.replace(/_/g, ' ')}</span>
                                                 <span className="text-xs font-bold text-slate-700 break-words whitespace-normal">{String(value || '--')}</span>
