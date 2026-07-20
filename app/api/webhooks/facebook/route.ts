@@ -990,12 +990,25 @@ IMPORTANT RULES:
                                      }
 
                                      // Check if this was a click on the "Connect with Expert" button
-                                     const isConnectExpertClick = buttonReplyId === 'connect_expert';
+                                     const isConnectExpertClick = buttonReplyId === 'connect_expert' || /connect with expert|connect expert/i.test(messageText);
                                      if (isConnectExpertClick) {
-                                         console.log(`[Flow] Lead ${cleanFrom} requested to connect with an expert!`);
+                                         console.log(`[Flow] Lead ${cleanFrom} requested to connect with a human expert! Auto-pausing AI for 2 hours.`);
+                                         
+                                         // Auto-pause AI bot for 2 hours so human agent can interact without bot interference
+                                         const currentFlowAnswers = chat.flow_answers || {};
+                                         const pausedUntil = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+                                         const updatedFlowAnswers = { ...currentFlowAnswers, ai_disabled: true, ai_paused_until: pausedUntil };
+                                         
+                                         await supabaseAdmin
+                                             .from('whatsapp_chats')
+                                             .update({
+                                                 flow_answers: updatedFlowAnswers,
+                                                 updated_at: new Date().toISOString()
+                                             })
+                                             .eq('id', chat.id);
                                          
                                          // 1. Reply to lead on WhatsApp
-                                         const leadReplyText = "Thank you! An expert will get back to you shortly. 🙏";
+                                         const leadReplyText = "Thank you! Our property expert has been notified and will reach out to you directly shortly. 🙏";
                                          try {
                                              const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
                                              await fetch(metaUrl, {
@@ -1338,7 +1351,7 @@ IMPORTANT RULES:
                                                         console.error(`[Flow] Failed to send Connect with Expert button:`, errData);
                                                     }
                                                 }
-                                             } else {
+                                     } else {
                                                 const errData = await sendRes.json();
                                                 console.error(`[Flow] Failed to send WA message:`, errData);
                                             }
@@ -1347,13 +1360,180 @@ IMPORTANT RULES:
                                         }
                                     };
 
+                                    // Helper: send WhatsApp Media message (Image/Video/Document with caption)
+                                    const sendWAMediaMessage = async (mediaUrl: string, mediaType: 'image' | 'video' | 'document', captionText: string) => {
+                                        try {
+                                            const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
+                                            const res = await fetch(metaUrl, {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Authorization': `Bearer ${ownerWaToken}`,
+                                                    'Content-Type': 'application/json'
+                                                },
+                                                body: JSON.stringify({
+                                                    messaging_product: 'whatsapp',
+                                                    recipient_type: 'individual',
+                                                    to: cleanFrom,
+                                                    type: mediaType,
+                                                    [mediaType]: {
+                                                        link: mediaUrl,
+                                                        caption: captionText
+                                                    }
+                                                })
+                                            });
+                                            if (res.ok) {
+                                                await supabaseAdmin.from('whatsapp_messages').insert({
+                                                    chat_id: chat!.id,
+                                                    direction: 'outbound',
+                                                    message_text: `[${mediaType.toUpperCase()}] ${captionText}`
+                                                });
+                                                await supabaseAdmin.from('whatsapp_chats').update({
+                                                    last_message_text: captionText,
+                                                    updated_at: new Date().toISOString()
+                                                }).eq('id', chat!.id);
+                                            } else {
+                                                const errData = await res.json();
+                                                console.error('[Flow] Send WAMediaMessage failed:', errData);
+                                            }
+                                        } catch (err) {
+                                            console.error('[Flow] Error sending WA media message:', err);
+                                        }
+                                    };
+
                                     // 3. FLOW STATE MACHINE
+                                    // Check if AI Bot is PAUSED for human agent chat
+                                    const chatFlowAnswers = chat.flow_answers || {};
+                                    if (chatFlowAnswers.ai_disabled) {
+                                        if (chatFlowAnswers.ai_paused_until) {
+                                            const pausedUntilTime = new Date(chatFlowAnswers.ai_paused_until).getTime();
+                                            if (Date.now() > pausedUntilTime) {
+                                                // 2-hour timeout expired -> auto-resume AI bot!
+                                                chatFlowAnswers.ai_disabled = false;
+                                                chatFlowAnswers.ai_paused_until = null;
+                                                await supabaseAdmin.from('whatsapp_chats').update({ flow_answers: chatFlowAnswers }).eq('id', chat.id);
+                                                console.log(`[Flow] 2-hour AI pause expired for chat ${chat.id}. Auto-resuming AI Bot!`);
+                                            } else {
+                                                console.log(`[Flow] AI Bot is currently PAUSED for chat ${chat.id}. Message logged, skipping AI response.`);
+                                                return;
+                                            }
+                                        } else {
+                                            console.log(`[Flow] AI Bot is manually PAUSED for chat ${chat.id}. Message logged, skipping AI response.`);
+                                            return;
+                                        }
+                                    }
+
                                     const hasName = !!chat.recipient_name;
                                     const flowCompleted = chat.flow_completed || false;
 
                                     // Check for campaign-specific flow via referral
                                     const referral = message.referral;
                                     let campaignSourceId = referral?.source_id || null;
+                                    let metaAdOrigin: any = chat.flow_answers?.meta_ad_origin || null;
+
+                                    if (referral && !metaAdOrigin) {
+                                        metaAdOrigin = {
+                                            source_id: referral.source_id || '',
+                                            source_type: referral.source_type || 'ad',
+                                            source_url: (referral.source_url && referral.source_url !== 'https://facebook.com' && referral.source_url !== 'https://facebook.com/') 
+                                                ? referral.source_url 
+                                                : (referral.source_id ? `https://www.facebook.com/ads/library/?id=${referral.source_id}` : ''),
+                                            headline: referral.headline || '',
+                                            body: referral.body || '',
+                                            media_type: referral.media_type || '',
+                                            image_url: referral.image_url || '',
+                                            video_url: referral.video_url || '',
+                                            ctwa_clid: referral.ctwa_clid || ''
+                                        };
+
+                                        if (referral.source_id && ownerWaToken) {
+                                            try {
+                                                const adRes = await fetch(`https://graph.facebook.com/v20.0/${referral.source_id}?fields=id,name,adset{id,name},campaign{id,name},creative{id,name,image_url,thumbnail_url,effective_object_story_id,object_story_spec}&access_token=${ownerWaToken}`);
+                                                const adData = await adRes.json();
+                                                if (adData && !adData.error) {
+                                                    metaAdOrigin.ad_id = adData.id || referral.source_id;
+                                                    metaAdOrigin.ad_name = adData.name || referral.headline || 'Meta Ad';
+                                                    metaAdOrigin.adset_id = adData.adset?.id || '';
+                                                    metaAdOrigin.adset_name = adData.adset?.name || 'Smart AdSet';
+                                                    metaAdOrigin.campaign_id = adData.campaign?.id || '';
+                                                    metaAdOrigin.campaign_name = adData.campaign?.name || 'Meta Campaign';
+                                                    if (adData.creative?.effective_object_story_id) {
+                                                        metaAdOrigin.source_url = `https://www.facebook.com/${adData.creative.effective_object_story_id}`;
+                                                    }
+                                                    
+                                                    const spec = adData.creative?.object_story_spec;
+                                                    if (spec?.video_data?.image_url) {
+                                                        metaAdOrigin.image_url = spec.video_data.image_url;
+                                                        if (spec.video_data.title) metaAdOrigin.headline = spec.video_data.title;
+                                                        if (spec.video_data.message) metaAdOrigin.body = spec.video_data.message;
+                                                    } else if (spec?.link_data?.picture) {
+                                                        metaAdOrigin.image_url = spec.link_data.picture;
+                                                        if (spec.link_data.name) metaAdOrigin.headline = spec.link_data.name;
+                                                        if (spec.link_data.message) metaAdOrigin.body = spec.link_data.message;
+                                                    } else if (adData.creative?.image_url) {
+                                                        metaAdOrigin.image_url = adData.creative.image_url;
+                                                    } else if (adData.creative?.thumbnail_url) {
+                                                        metaAdOrigin.image_url = adData.creative.thumbnail_url;
+                                                    }
+                                                }
+                                            } catch (adErr) {
+                                                console.error("[Referral] Failed to fetch Graph API ad metadata:", adErr);
+                                            }
+                                        }
+
+                                        // Match inventory property
+                                        try {
+                                            const { data: userProps } = await supabaseAdmin
+                                                .from('properties')
+                                                .select('*')
+                                                .eq('user_id', ownerUserId);
+
+                                            if (userProps && userProps.length > 0) {
+                                                const searchText = (metaAdOrigin.headline + ' ' + metaAdOrigin.ad_name + ' ' + metaAdOrigin.body + ' ' + metaAdOrigin.campaign_name).toLowerCase();
+                                                
+                                                let matchedProp = userProps.find((p: any) => {
+                                                    const pTitle = (p.title || '').toLowerCase();
+                                                    return pTitle && (searchText.includes(pTitle) || pTitle.includes(searchText));
+                                                });
+
+                                                if (!matchedProp) {
+                                                    if (searchText.includes('plot') || searchText.includes('land') || searchText.includes('anmol')) {
+                                                        matchedProp = userProps.find((p: any) => (p.title || '').toLowerCase().includes('anmol') || (p.title || '').toLowerCase().includes('plot')) || userProps[0];
+                                                    } else if (searchText.includes('township') || searchText.includes('16.25')) {
+                                                        matchedProp = userProps.find((p: any) => (p.title || '').toLowerCase().includes('anmol') || (p.title || '').toLowerCase().includes('township')) || userProps[0];
+                                                    } else if (searchText.includes('apartment') || searchText.includes('aspire') || searchText.includes('bhk') || searchText.includes('tower')) {
+                                                        matchedProp = userProps.find((p: any) => (p.title || '').toLowerCase().includes('ananta aspire') || (p.title || '').toLowerCase().includes('aspire')) || userProps[0];
+                                                    } else {
+                                                        matchedProp = userProps[0];
+                                                    }
+                                                }
+
+                                                if (matchedProp) {
+                                                    metaAdOrigin.property_id = matchedProp.id;
+                                                    metaAdOrigin.product_name = matchedProp.title;
+                                                    metaAdOrigin.product_details = {
+                                                        title: matchedProp.title,
+                                                        price: matchedProp.price,
+                                                        address: matchedProp.address || matchedProp.location,
+                                                        description: matchedProp.description,
+                                                        image_url: matchedProp.image_url,
+                                                        video_url: matchedProp.video_url,
+                                                        brochure_url: matchedProp.brochure_url
+                                                    };
+                                                }
+                                            }
+                                        } catch (propErr) {
+                                            console.error("[Referral] Inventory property lookup error:", propErr);
+                                        }
+
+                                        const currentFlowAnswers = chat.flow_answers || {};
+                                        await supabaseAdmin
+                                            .from('whatsapp_chats')
+                                            .update({
+                                                flow_answers: { ...currentFlowAnswers, meta_ad_origin: metaAdOrigin }
+                                            })
+                                            .eq('id', chat.id);
+                                        chat.flow_answers = { ...currentFlowAnswers, meta_ad_origin: metaAdOrigin };
+                                    }
 
                                     // STEP A: Name not yet provided — ask for name
                                     if (!hasName) {
@@ -1495,11 +1675,16 @@ Clean Name:`;
                                             const firstQ = selectedFlow.questions[0];
                                             await sendWAMessage(`Thank you, ${parsedName}! 🙏\n\n${firstQ.question}`);
                                         } else {
-                                            // No qualification flow — just greet and create lead immediately
+                                            // No qualification flow — create lead with complete Meta Ad Origin & ask product follow-up question
                                             await supabaseAdmin
                                                 .from('whatsapp_chats')
                                                 .update({ flow_completed: true })
                                                 .eq('id', chat.id);
+
+                                            const leadCustomFields: any = {};
+                                            if (metaAdOrigin) {
+                                                leadCustomFields.meta_ad_origin = metaAdOrigin;
+                                            }
 
                                             // Create lead in CRM
                                             const { data: newLead } = await supabaseAdmin
@@ -1508,9 +1693,11 @@ Clean Name:`;
                                                     user_id: ownerUserId,
                                                     name: parsedName,
                                                     phone: cleanFrom,
-                                                    source: 'WhatsApp',
+                                                    source: 'WhatsApp Ad',
                                                     pipeline_stage: 'New',
-                                                    campaign_id: campaignSourceId,
+                                                    campaign_id: metaAdOrigin?.campaign_id || campaignSourceId,
+                                                    ad_name: metaAdOrigin?.ad_name || metaAdOrigin?.headline || null,
+                                                    custom_fields: leadCustomFields,
                                                     created_at: new Date().toISOString()
                                                  })
                                                  .select('id')
@@ -1522,26 +1709,50 @@ Clean Name:`;
                                                     .update({ lead_id: newLead.id })
                                                     .eq('id', chat.id);
 
-                                                // Trigger welcome drip
-                                                try {
-                                                    await triggerWelcomeDrip(supabaseAdmin, newLead.id, parsedName, cleanFrom, ownerUserId!, 'All');
-                                                } catch (dripErr) {
-                                                     console.error('[Flow] Welcome drip trigger failed:', dripErr);
-                                                }
-
                                                 // Trigger automated Voice Dialing if enabled
                                                 if (ownerAutoCallNewLeads) {
                                                     triggerOutboundCall(supabaseAdmin, newLead.id, ownerUserId!, true).catch(err => {
                                                         console.error('[AUTO CALL] Auto voice call trigger failed:', err);
                                                     });
                                                 }
+
+                                                // Send Product Details Card message to WhatsApp if mapped product details exist
+                                                const pDetails = metaAdOrigin?.product_details;
+                                                if (pDetails) {
+                                                    const productCardText = `Thank you, ${parsedName}! 🙏\n\n🏡 *Product Details for ${pDetails.title}:*\n📍 *Location:* ${pDetails.address || 'Prime Connectivity'}\n💰 *Price:* ${pDetails.price || 'Contact for Exclusive Pricing'}\n✨ *Highlights:* ${pDetails.description ? pDetails.description.substring(0, 180) + '...' : 'Luxury smart living, premium clubhouse & top-tier amenities.'}`;
+                                                    if (pDetails.image_url) {
+                                                        await sendWAMediaMessage(pDetails.image_url, 'image', productCardText);
+                                                    } else {
+                                                        await sendWAMessage(productCardText);
+                                                    }
+                                                    await new Promise(resolve => setTimeout(resolve, 1000));
+                                                }
+
+                                                // Generate natural, product-tailored follow-up question
+                                                let productText = pDetails?.title || metaAdOrigin?.headline || metaAdOrigin?.ad_name || metaAdOrigin?.body || 'our properties';
+                                                let followUpMessage = `What would you like to explore next regarding *${productText}*?\n1️⃣ Pricing & Offers\n2️⃣ Floor Plans & Layouts\n3️⃣ Site Visit & Location\n4️⃣ Connect with a Property Specialist`;
+
+                                                try {
+                                                    const followUpPrompt = `You are an expert real estate sales consultant responding on WhatsApp.
+Customer Name: ${parsedName}
+Product / Ad Title: "${productText}"
+
+Write a warm, engaging, and professional WhatsApp response asking ${parsedName} what specific information they would like to know about "${productText}".
+Provide 4 clear numbered options for them to pick from (e.g., 1️⃣ Pricing & Payment Plans, 2️⃣ Floor Plans, 3️⃣ Location & Amenities, 4️⃣ Speak with Specialist). Keep it clean, professional, and formatted for WhatsApp. Do not include any meta explanations.`;
+                                                    const aiRes = await callGeminiWithUsage(followUpPrompt);
+                                                    if (aiRes.text && aiRes.text.trim()) {
+                                                        followUpMessage = aiRes.text.trim();
+                                                    }
+                                                } catch (aiErr) {
+                                                    console.error('[Flow] Product follow-up question generation error:', aiErr);
+                                                }
+
+                                                await sendWAMessage(followUpMessage);
+
+                                                try {
+                                                    await sendPushNotification(ownerUserId!, `New WhatsApp Lead: ${parsedName}`, `Phone: ${cleanFrom} | Product: ${productText}`);
+                                                } catch (pushErr: any) {}
                                             }
-
-                                            await sendWAMessage(`Thank you, ${parsedName}! 🙏 We've received your message. Our team will get back to you shortly.`);
-
-                                            try {
-                                                await sendPushNotification(ownerUserId!, `New WhatsApp Lead: ${parsedName}`, `Phone: ${cleanFrom}`);
-                                            } catch (pushErr: any) {}
                                         }
                                         return;
                                     }
@@ -2047,8 +2258,8 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                                     })(),
                                                     // Booking if extracted
                                                     extractedBookingTime ? bookAppointment(supabaseAdmin, postReplyLeadId, extractedBookingTime, ownerUserId, true).catch(e => console.error('[WA AI] Booking failed:', e)) : Promise.resolve(),
-                                                    // Immediate outbound voice call if requested
-                                                    triggerCallRequested ? triggerOutboundCall(supabaseAdmin, postReplyLeadId, ownerUserId).catch(e => console.error('[WA AI] Outbound call trigger failed:', e)) : Promise.resolve(),
+                                                    // Immediate outbound voice call if requested AND auto_call_new_leads toggle is ON
+                                                    (triggerCallRequested && ownerAutoCallNewLeads) ? triggerOutboundCall(supabaseAdmin, postReplyLeadId, ownerUserId).catch(e => console.error('[WA AI] Outbound call trigger failed:', e)) : Promise.resolve(),
                                                     // Flag unanswered questions
                                                     unansweredQuestionToFlag ? supabaseAdmin.from('flagged_questions').insert({
                                                         user_id: ownerUserId,
@@ -2174,18 +2385,45 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
           let adCampaignString = 'Direct Lead Form'
           let campaignName = 'Unknown Campaign'
           let campaignId: string | null = null
+          let metaAdOrigin: any = null
+
           if (ad_id) {
             try {
-                const adRes = await fetch(`https://graph.facebook.com/v19.0/${ad_id}?fields=name,campaign{id,name}&access_token=${profile.selected_page_token}`)
+                const metaToken = profile.selected_page_token || process.env.META_SYSTEM_USER_TOKEN || '';
+                const adRes = await fetch(`https://graph.facebook.com/v20.0/${ad_id}?fields=id,name,adset{id,name},campaign{id,name},creative{id,name,image_url,thumbnail_url,object_story_spec}&access_token=${metaToken}`)
                 const adDetails = await adRes.json()
-                if (adDetails.name) {
+                if (adDetails && !adDetails.error) {
                     campaignId = adDetails.campaign?.id || null
                     campaignName = adDetails.campaign?.name || 'Unknown Campaign'
-                    adCampaignString = `${campaignName} / ${adDetails.name}`
+                    const adNameStr = adDetails.name || 'Facebook Lead Ad'
+                    adCampaignString = `${campaignName} / ${adNameStr}`
+
+                    const spec = adDetails.creative?.object_story_spec;
+                    const creativeImg = spec?.video_data?.image_url || spec?.link_data?.picture || adDetails.creative?.image_url || adDetails.creative?.thumbnail_url || null;
+                    const headlineText = spec?.link_data?.name || spec?.video_data?.title || adNameStr;
+                    const bodyText = spec?.link_data?.message || spec?.video_data?.message || '';
+
+                    metaAdOrigin = {
+                        ad_id: ad_id,
+                        ad_name: adNameStr,
+                        adset_id: adDetails.adset?.id || '',
+                        adset_name: adDetails.adset?.name || '',
+                        campaign_id: campaignId || '',
+                        campaign_name: campaignName,
+                        headline: headlineText,
+                        body: bodyText,
+                        image_url: creativeImg,
+                        source_id: ad_id,
+                        source_url: `https://www.facebook.com/ads/library/?id=${ad_id}`
+                    };
                 }
             } catch (e) {
                 console.error("Could not fetch Ad metadata", e)
             }
+          }
+
+          if (metaAdOrigin) {
+            customFields.meta_ad_origin = metaAdOrigin;
           }
 
           // ASSIGNMENT LOGIC: Campaign Rule First, then Global Rule

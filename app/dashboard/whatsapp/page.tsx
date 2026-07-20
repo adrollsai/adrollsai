@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard } from 'lucide-react'
+import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 
@@ -31,6 +31,7 @@ type Chat = {
   updated_at: string
   lead_id?: string | null
   flow_completed?: boolean
+  flow_answers?: any
 }
 
 type Message = {
@@ -90,6 +91,7 @@ export default function AutomationPage() {
   const [selectedPropertyId, setSelectedPropertyId] = useState('')
   const [showProductDropdown, setShowProductDropdown] = useState(false)
   const [loadingProperties, setLoadingProperties] = useState(false)
+  const [activeMediaModal, setActiveMediaModal] = useState<any>(null)
 
   type MetaTemplate = {
     name: string
@@ -118,6 +120,8 @@ export default function AutomationPage() {
     custom_fields: Record<string, any>
     source: string
     created_at: string
+    ad_name?: string
+    campaign_id?: string
   }
   const [leadInfo, setLeadInfo] = useState<LeadInfo | null>(null)
   const [showLeadPanel, setShowLeadPanel] = useState(false)
@@ -419,6 +423,29 @@ export default function AutomationPage() {
     setSavingLead(false)
   }
 
+  const toggleAiStatus = async (chatToToggle: Chat, enable: boolean) => {
+    try {
+      const currentAnswers = chatToToggle.flow_answers || {}
+      const updatedAnswers = {
+        ...currentAnswers,
+        ai_disabled: !enable,
+        ai_paused_until: enable ? null : new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
+      }
+      
+      setChats(prev => prev.map(c => c.id === chatToToggle.id ? { ...c, flow_answers: updatedAnswers } : c))
+      
+      const { error } = await supabase
+        .from('whatsapp_chats')
+        .update({ flow_answers: updatedAnswers, updated_at: new Date().toISOString() })
+        .eq('id', chatToToggle.id)
+        
+      if (error) throw error
+      toast.success(enable ? '🤖 AI Bot resumed for this chat!' : '⏸️ AI Bot paused for 2 hours for human agent chat.')
+    } catch (e: any) {
+      toast.error('Failed to update AI Bot status: ' + e.message)
+    }
+  }
+
   const handleSendMessage = async () => {
     if (!selectedChatId || !newMessageText.trim() || sendingMessage) return
     setSendingMessage(true)
@@ -431,7 +458,14 @@ export default function AutomationPage() {
       const data = await res.json()
       if (data.success) {
         setMessages(prev => [...prev, data.message])
-        setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, last_message_text: newMessageText, updated_at: new Date().toISOString() } : c))
+        setChats(prev => prev.map(c => {
+          if (c.id === selectedChatId) {
+            const currentAns = c.flow_answers || {};
+            const updatedAns = { ...currentAns, ai_disabled: true, ai_paused_until: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() };
+            return { ...c, last_message_text: newMessageText, flow_answers: updatedAns, updated_at: new Date().toISOString() };
+          }
+          return c;
+        }))
         setNewMessageText('')
       } else {
         alert("Failed to send message: " + data.error)
@@ -695,10 +729,42 @@ export default function AutomationPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {/* AI Bot Toggle Button */}
+                    {(() => {
+                      const flowAns = selectedChat.flow_answers || {};
+                      const isPaused = (() => {
+                        if (!flowAns.ai_disabled) return false;
+                        if (flowAns.ai_paused_until) {
+                          return Date.now() < new Date(flowAns.ai_paused_until).getTime();
+                        }
+                        return true;
+                      })();
+
+                      return isPaused ? (
+                        <button
+                          onClick={() => toggleAiStatus(selectedChat, true)}
+                          className="flex items-center gap-1.5 text-[10px] font-black bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 px-3 py-1.5 rounded-full transition-all shadow-xs cursor-pointer"
+                          title="AI Bot is paused for human agent chat. Click to resume AI Bot."
+                        >
+                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                          ⏸️ AI Bot: PAUSED (Click to Resume)
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => toggleAiStatus(selectedChat, false)}
+                          className="flex items-center gap-1.5 text-[10px] font-black bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-full transition-all shadow-xs cursor-pointer"
+                          title="AI Bot is active. Click to pause AI for human agent chat."
+                        >
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          🤖 AI Bot: ACTIVE
+                        </button>
+                      );
+                    })()}
+
                     {leadInfo && (
                       <button
                         onClick={() => setShowLeadPanel(!showLeadPanel)}
-                        className="flex items-center gap-1.5 text-[10px] font-bold bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-100 transition-colors border border-blue-100"
+                        className="flex items-center gap-1.5 text-[10px] font-bold bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-100 transition-colors border border-blue-100 cursor-pointer"
                       >
                         <User size={12} /> Lead Info
                         {showLeadPanel ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
@@ -751,17 +817,133 @@ export default function AutomationPage() {
                         </>
                       ) : (
                         <>
+                          {/* Meta Ad Origin & Inventory Mapping Section */}
+                          {(() => {
+                            const origin = leadInfo.custom_fields?.meta_ad_origin || selectedChat?.flow_answers?.meta_ad_origin;
+                            const adName = origin?.ad_name || leadInfo.ad_name;
+                            const campaign = origin?.campaign_name || leadInfo.campaign_id;
+                            const adset = origin?.adset_name;
+                            const headline = origin?.headline;
+                            const imageUrl = origin?.image_url;
+                            const videoUrl = origin?.video_url;
+                            const bodyText = origin?.body;
+                            const productName = origin?.product_name || (leadInfo.custom_fields?.property_id ? 'The Ananta Aspire' : null);
+
+                            const getLiveAdUrl = () => {
+                              if (!origin) return 'https://www.facebook.com/ads/library/';
+                              const rawUrl = origin.source_url;
+                              const adId = origin.ad_id || origin.source_id;
+                              if (rawUrl && rawUrl !== 'https://facebook.com' && rawUrl !== 'https://facebook.com/' && !rawUrl.endsWith('facebook.com')) {
+                                return rawUrl;
+                              }
+                              if (adId) {
+                                return `https://www.facebook.com/ads/library/?id=${adId}`;
+                              }
+                              return 'https://www.facebook.com/ads/library/';
+                            };
+
+                            if (!origin && !adName && !campaign) return null;
+
+                            return (
+                              <div className="col-span-2 my-1 p-3.5 bg-gradient-to-r from-indigo-50/90 via-blue-50/80 to-slate-50 border border-indigo-150 rounded-2xl shadow-xs space-y-2.5">
+                                <div className="flex justify-between items-center">
+                                  <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-700 uppercase tracking-wider">
+                                    <Target size={13} className="text-indigo-500" /> Meta Ad Origin & Inventory Mapping
+                                  </div>
+                                </div>
+
+                                {(imageUrl || videoUrl || bodyText) && (
+                                  <div className="flex items-start gap-2.5 bg-white p-2.5 rounded-xl border border-indigo-100/70 shadow-xs">
+                                    {(imageUrl || videoUrl) && (
+                                      <div 
+                                        onClick={() => setActiveMediaModal({ origin })}
+                                        className="relative group cursor-pointer shrink-0 rounded-lg overflow-hidden border border-slate-200 shadow-xs w-16 h-16 bg-slate-900 flex items-center justify-center"
+                                        title="Click to enlarge creative"
+                                      >
+                                        {videoUrl ? (
+                                          <>
+                                            <video src={videoUrl} className="w-full h-full object-cover opacity-90" />
+                                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
+                                              <span className="p-1 bg-white/90 rounded-full text-indigo-700 shadow-md text-[10px] font-black">▶</span>
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <img src={imageUrl} alt="Ad Creative Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
+                                              <span className="opacity-0 group-hover:opacity-100 text-white font-extrabold text-[8px] bg-indigo-600/90 px-1 py-0.5 rounded shadow-xs">🔍 Zoom</span>
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+                                    <div className="min-w-0 flex-1 text-[10px]">
+                                      <div className="flex justify-between items-start">
+                                        <span className="font-extrabold text-indigo-950 block truncate text-[11px] max-w-[170px]">{headline || adName}</span>
+                                        {(imageUrl || videoUrl) && (
+                                          <button 
+                                            onClick={() => setActiveMediaModal({ origin })}
+                                            className="text-[9px] font-extrabold text-indigo-600 hover:text-indigo-800 underline ml-1 shrink-0"
+                                          >
+                                            🔍 Enlarge
+                                          </button>
+                                        )}
+                                      </div>
+                                      {bodyText && <p className="text-slate-500 line-clamp-2 text-[9px] mt-0.5 leading-snug">{bodyText}</p>}
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                  {adName && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Name</span><span className="font-extrabold text-indigo-950 truncate block">{adName}</span></div>}
+                                  {adset && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Set</span><span className="font-extrabold text-slate-800 truncate block">{adset}</span></div>}
+                                  {campaign && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{campaign}</span></div>}
+                                  {headline && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Headline</span><span className="font-extrabold text-slate-800 truncate block">{headline}</span></div>}
+                                </div>
+
+                                {(productName || leadInfo.custom_fields?.property_id) && (
+                                  <div className="flex items-center gap-2 bg-emerald-50/90 border border-emerald-200/80 p-2 rounded-xl text-[10px]">
+                                    <span className="p-1 bg-emerald-500 text-white rounded-md font-black shrink-0 text-[10px]">📦</span>
+                                    <div className="min-w-0 flex-1">
+                                      <span className="text-[8px] font-black text-emerald-700 uppercase block tracking-wider">Mapped Inventory Product</span>
+                                      <span className="font-extrabold text-emerald-950 text-[11px] truncate block">{productName || 'The Ananta Aspire'}</span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
                           <div><span className="text-[8px] font-black text-slate-400 uppercase block">Name</span><span className="text-[11px] font-bold text-slate-800">{leadInfo.name}</span></div>
                           <div><span className="text-[8px] font-black text-slate-400 uppercase block">Phone</span><span className="text-[11px] font-bold text-slate-800">{leadInfo.phone}</span></div>
                           <div><span className="text-[8px] font-black text-slate-400 uppercase block">Email</span><span className="text-[11px] font-bold text-slate-800">{leadInfo.email || '—'}</span></div>
                           <div><span className="text-[8px] font-black text-slate-400 uppercase block">Stage</span><span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${leadInfo.pipeline_stage === 'Won' ? 'bg-emerald-100 text-emerald-700' : leadInfo.pipeline_stage === 'Lost' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{leadInfo.pipeline_stage}</span></div>
-                          <div><span className="text-[8px] font-black text-slate-400 uppercase block">Source</span><span className="text-[11px] font-bold text-slate-800">{leadInfo.source}</span></div>
-                          <div><span className="text-[8px] font-black text-slate-400 uppercase block">Remarks</span><span className="text-[11px] font-bold text-slate-800">{leadInfo.remarks || '—'}</span></div>
-                          {leadInfo.custom_fields && Object.keys(leadInfo.custom_fields).length > 0 && (
+                          <div className="col-span-2"><span className="text-[8px] font-black text-slate-400 uppercase block">Source</span><span className="text-[11px] font-bold text-slate-800">{leadInfo.source}</span></div>
+
+                          {/* Structured Remarks & Call Logs */}
+                          {leadInfo.remarks && (
+                            <div className="col-span-2 mt-2 pt-2 border-t border-blue-100">
+                              <span className="text-[8px] font-black text-slate-400 uppercase block mb-1.5">Activity & Call Logs</span>
+                              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                {leadInfo.remarks.split(/\[(?=[\w\s⚠️🎙️💬]+\]:)/g).filter(Boolean).map((logItem, idx) => {
+                                  const trimmed = logItem.trim();
+                                  if (!trimmed) return null;
+                                  const fullItem = trimmed.startsWith('[') ? trimmed : `[${trimmed}`;
+                                  return (
+                                    <div key={idx} className="text-[10px] bg-white border border-slate-200/80 p-2 rounded-lg text-slate-700 leading-relaxed font-medium">
+                                      {fullItem}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {leadInfo.custom_fields && Object.keys(leadInfo.custom_fields).filter(k => k !== 'meta_ad_origin').length > 0 && (
                             <div className="col-span-2 mt-1 pt-2 border-t border-blue-100">
                               <span className="text-[8px] font-black text-slate-400 uppercase block mb-1">Flow Answers</span>
                               <div className="flex flex-wrap gap-1.5">
-                                {Object.entries(leadInfo.custom_fields).map(([k, v]) => (
+                                {Object.entries(leadInfo.custom_fields).filter(([k]) => k !== 'meta_ad_origin').map(([k, v]) => (
                                   <span key={k} className="text-[9px] bg-white border border-slate-200 px-2 py-1 rounded-lg font-bold text-slate-700">
                                     <span className="text-slate-400">{k}:</span> {String(v)}
                                   </span>
@@ -1026,6 +1208,81 @@ export default function AutomationPage() {
             )}
         </div>
       </div>
+
+      {/* Enlargeable Ad Creative & Product Lightbox Modal */}
+      {activeMediaModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl relative space-y-4 max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 bg-indigo-600 rounded-xl text-sm font-black text-white shadow-md">🎯</span>
+                <div>
+                  <h3 className="font-extrabold text-base text-white">Meta Ad Creative & Product Mapping</h3>
+                  <p className="text-[11px] text-slate-400">View enlarged media or open live Meta ad post</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {activeMediaModal.liveAdUrl && (
+                  <a 
+                    href={activeMediaModal.liveAdUrl} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+                  >
+                    🔗 Open Live Ad on Meta
+                  </a>
+                )}
+                <button 
+                  onClick={() => setActiveMediaModal(null)} 
+                  className="w-9 h-9 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-base font-extrabold transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Media Player / Photo */}
+            <div className="bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center min-h-[260px] max-h-[62vh] shadow-inner">
+              {activeMediaModal.origin?.video_url ? (
+                <video 
+                  src={activeMediaModal.origin.video_url} 
+                  controls 
+                  autoPlay 
+                  className="w-full max-h-[60vh] object-contain rounded-xl"
+                />
+              ) : activeMediaModal.origin?.image_url ? (
+                <img 
+                  src={activeMediaModal.origin.image_url} 
+                  alt="Enlarged Creative" 
+                  className="w-full max-h-[60vh] object-contain rounded-xl"
+                />
+              ) : (
+                <div className="text-slate-500 text-xs py-10 font-semibold">No visual media creative thumbnail available</div>
+              )}
+            </div>
+
+            {/* Complete Ad Copy & Info Card */}
+            <div className="space-y-3 bg-slate-800/80 p-4 rounded-2xl border border-slate-700/80">
+              <div>
+                <span className="text-[9px] font-black uppercase text-indigo-400 tracking-wider block">Ad Headline</span>
+                <h4 className="font-extrabold text-sm text-white">{activeMediaModal.origin?.headline || activeMediaModal.origin?.ad_name}</h4>
+              </div>
+              {activeMediaModal.origin?.body && (
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block">Ad Copy (Primary Text)</span>
+                  <p className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed mt-1">{activeMediaModal.origin.body}</p>
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-2 pt-2.5 border-t border-slate-700/80 text-[10px]">
+                <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Name</span><span className="font-bold text-slate-200 truncate block">{activeMediaModal.origin?.ad_name || 'N/A'}</span></div>
+                <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Set</span><span className="font-bold text-slate-200 truncate block">{activeMediaModal.origin?.adset_name || 'N/A'}</span></div>
+                <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-bold text-slate-200 truncate block">{activeMediaModal.origin?.campaign_name || 'N/A'}</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
