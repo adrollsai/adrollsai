@@ -14,9 +14,21 @@ export interface UploadTask {
     type: 'image' | 'video'
 }
 
+export interface FileUploadItem {
+    file: File;
+    propertyId?: string;
+    customInstructions?: string;
+}
+
 interface UploadContextType {
     tasks: UploadTask[]
-    uploadAssets: (files: FileList | File[], targetUserId: string, impersonateId: string | null, propertyId?: string, customInstructions?: string) => void
+    uploadAssets: (
+        files: FileList | File[] | FileUploadItem[],
+        targetUserId: string,
+        impersonateId: string | null,
+        propertyId?: string,
+        customInstructions?: string
+    ) => void
     clearCompletedTasks: () => void
     removeTask: (id: string) => void
     hasActiveTasks: boolean
@@ -65,40 +77,59 @@ export const UploadProvider = ({ children }: { children: React.ReactNode }) => {
 
     const hasActiveTasks = tasks.some(t => ['compressing', 'uploading', 'processing'].includes(t.status))
 
-    const uploadAssets = (files: FileList | File[], targetUserId: string, impersonateId: string | null, propertyId?: string, customInstructions?: string) => {
-        const fileList = Array.from(files)
+    const uploadAssets = (
+        files: FileList | File[] | FileUploadItem[],
+        targetUserId: string,
+        impersonateId: string | null,
+        globalPropertyId?: string,
+        globalInstructions?: string
+    ) => {
+        const fileList = Array.from(files as any)
         if (fileList.length === 0) return
 
+        const items: FileUploadItem[] = fileList.map((item: any) => {
+            if (item instanceof File) {
+                return { file: item, propertyId: globalPropertyId, customInstructions: globalInstructions };
+            } else if (item && item.file instanceof File) {
+                return {
+                    file: item.file,
+                    propertyId: item.propertyId !== undefined ? item.propertyId : globalPropertyId,
+                    customInstructions: item.customInstructions !== undefined ? item.customInstructions : globalInstructions
+                };
+            }
+            return { file: item, propertyId: globalPropertyId, customInstructions: globalInstructions };
+        });
+
         const MAX_FILE_SIZE = 1024 * 1024 * 1024 // 1GB
-        const validFiles = fileList.filter(file => {
-            if (file.size > MAX_FILE_SIZE) {
-                toast.error(`File "${file.name}" is too large. Videos and photos larger than 1GB are not permitted.`);
+        const validItems = items.filter(item => {
+            if (item.file.size > MAX_FILE_SIZE) {
+                toast.error(`File "${item.file.name}" is too large. Videos and photos larger than 1GB are not permitted.`);
                 return false
             }
             return true
         })
 
-        if (validFiles.length === 0) return
+        if (validItems.length === 0) return
 
-        const newTasks: UploadTask[] = validFiles.map(file => ({
+        const newTasks: UploadTask[] = validItems.map(item => ({
             id: crypto.randomUUID(),
-            fileName: file.name,
+            fileName: item.file.name,
             progress: 0,
-            status: file.type.startsWith('image/') ? 'compressing' : 'uploading',
-            type: file.type.startsWith('video/') ? 'video' : 'image'
+            status: item.file.type.startsWith('image/') ? 'compressing' : 'uploading',
+            type: item.file.type.startsWith('video/') ? 'video' : 'image'
         }))
 
         setTasks(prev => [...prev, ...newTasks])
 
         // Add to queue
-        validFiles.forEach((file, index) => {
+        validItems.forEach((item, index) => {
             taskQueueRef.current.push({
-                file,
+                file: item.file,
                 id: newTasks[index].id,
                 targetUserId,
                 impersonateId,
-                propertyId,
-                customInstructions
+                propertyId: item.propertyId,
+                customInstructions: item.customInstructions
             })
         })
 

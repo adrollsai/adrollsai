@@ -683,12 +683,13 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             };
 
             if (creativeItem.type === 'video') {
+                const videoCtaValue = campaignType === 'whatsapp_chat' ? { app_destination: 'WHATSAPP' } : ctaValue;
                 creativePayload.object_story_spec.video_data = {
                     video_id: creativeItem.videoId,
                     message: copy.primary_text,
                     title: copy.headline,
                     image_hash: globalThumbHash,
-                    call_to_action: { type: ctaType, value: ctaValue }
+                    call_to_action: { type: ctaType, value: videoCtaValue }
                 };
             } else {
                 creativePayload.object_story_spec.link_data = {

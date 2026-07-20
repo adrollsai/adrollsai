@@ -348,44 +348,49 @@ export default function CRMPage() {
       const fetchAllLeads = async () => {
           let allData: any[] = [];
           let start = 0;
-          const step = 1000;
+          const step = 250;
           let hasMore = true;
 
           while (hasMore) {
-              let query = supabase.from('leads')
-                .select('*, lead_history(action_type, description, created_at)')
-                .order('created_at', { ascending: false, nullsFirst: false })
-                .range(start, start + step - 1)
+              let buildQuery = (selectClause: string) => {
+                  let q = supabase.from('leads')
+                    .select(selectClause)
+                    .order('created_at', { ascending: false, nullsFirst: false })
+                    .range(start, start + step - 1);
 
-              // Fetch complete fresh list to support pagination beyond cache slice
-
-              if (currentRole === 'super_admin') {
-                  query = query.eq('user_id', targetUserId)
-              } else if (currentRole === 'agency') {
-                  if (impersonateId) {
-                      query = query.eq('user_id', targetUserId)
+                  if (currentRole === 'super_admin') {
+                      q = q.eq('user_id', targetUserId);
+                  } else if (currentRole === 'agency') {
+                      if (impersonateId) {
+                          q = q.eq('user_id', targetUserId);
+                      } else {
+                          const clientIdsPromise = supabase.from('profiles').select('id').eq('agency_id', user.id);
+                          // will be handled outside if needed
+                          q = q.eq('user_id', targetUserId);
+                      }
+                  } else if (currentRole === 'admin' || currentRole === 'client') {
+                      q = q.eq('user_id', targetUserId);
                   } else {
-                      const { data: clientIds } = await supabase.from('profiles').select('id').eq('agency_id', user.id)
-                      const allIds = [user.id, ...(clientIds?.map(c => c.id) || [])]
-                      query = query.in('user_id', allIds)
+                      q = q.eq('assigned_to', user.id);
                   }
-              } else if (currentRole === 'admin' || currentRole === 'client') {
-                  query = query.eq('user_id', targetUserId)
-              } else {
-                  // Retrieve only leads assigned to the agent
-                  query = query.eq('assigned_to', user.id) 
-              }
 
-              if (searchQuery.trim() !== '') {
-                  const term = `%${searchQuery.trim()}%`
-                  query = query.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`)
-              }
+                  if (searchQuery.trim() !== '') {
+                      const term = `%${searchQuery.trim()}%`;
+                      q = q.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`);
+                  }
+                  return q;
+              };
 
-              const { data, error } = await query
-              if (error) throw error
+              let { data, error } = await buildQuery('*, lead_history(action_type, description, created_at)');
+              if (error) {
+                  // Fallback to simple select without heavy join if statement timeout occurs
+                  const fallbackRes = await buildQuery('*');
+                  if (fallbackRes.error) throw fallbackRes.error;
+                  data = fallbackRes.data;
+              }
               
               if (data && data.length > 0) {
-                  allData.push(...data)
+                  allData.push(...data);
                   if (data.length < step || allData.length >= 1000) hasMore = false;
                   else start += step;
               } else {
@@ -393,7 +398,7 @@ export default function CRMPage() {
               }
           }
           return allData;
-      }
+      };
 
       const data = await fetchAllLeads()
       
@@ -426,8 +431,8 @@ export default function CRMPage() {
       } catch (err) {
           console.error("Error fetching campaigns in CRM:", err)
       }
-    } catch (e) {
-      console.error("[CRM fetchLeads Error]:", e)
+    } catch (e: any) {
+      console.error("[CRM fetchLeads Error]:", e?.message || e?.details || String(e), e)
     } finally {
       setLoading(false)
       setIsRefreshing(false)

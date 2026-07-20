@@ -95,9 +95,17 @@ export async function GET(request: Request) {
             if (!actions || !Array.isArray(actions)) {
                 return { leads: 0, clicks: 0, landingPageViews: 0 };
             }
+            const waAction = actions.find((a: any) => 
+                a.action_type === 'onsite_conversion.messaging_conversation_started_7d' ||
+                a.action_type === 'messaging_conversation_started_7d' ||
+                a.action_type === 'onsite_conversion.messaging_first_reply' ||
+                a.action_type === 'messaging_user_depth_2_message_send'
+            );
             const leadAction = actions.find((a: any) => a.action_type === 'lead');
             const leadGroupedAction = actions.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped');
-            const leads = leadAction ? parseInt(leadAction.value || '0', 10) : (leadGroupedAction ? parseInt(leadGroupedAction.value || '0', 10) : 0);
+            const leads = waAction 
+                ? parseInt(waAction.value || '0', 10) 
+                : (leadAction ? parseInt(leadAction.value || '0', 10) : (leadGroupedAction ? parseInt(leadGroupedAction.value || '0', 10) : 0));
 
             const clicks = actions
                 .filter((a: any) => a.action_type === 'link_click')

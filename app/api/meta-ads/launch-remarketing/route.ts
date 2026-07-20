@@ -1290,14 +1290,18 @@ export async function POST(request: Request) {
             };
 
             if (creativeItem.type === 'video') {
+                const isWhatsAppRemarketing = campaignType === 'whatsapp_chat';
+                const videoCtaType = isWhatsAppRemarketing ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
+                const videoCtaValue = isWhatsAppRemarketing ? { app_destination: 'WHATSAPP' } : ctaValue;
+
                 creativePayload.object_story_spec.video_data = {
                     video_id: creativeItem.videoId,
                     message: copy.primary_text || "Welcome back! View our exclusive client details.",
                     title: copy.headline || "VIP Premium Access",
                     image_hash: globalThumbHash,
                     call_to_action: {
-                        type: 'LEARN_MORE',
-                        value: ctaValue
+                        type: videoCtaType,
+                        value: videoCtaValue
                     }
                 };
             } else {

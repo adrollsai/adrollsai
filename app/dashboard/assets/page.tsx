@@ -77,8 +77,13 @@ export default function AssetsPage() {
     const [customInstructions, setCustomInstructions] = useState('')
 
     // Upload Config Modal States
+    interface PendingFileItem {
+        file: File;
+        propertyId: string;
+        customInstructions: string;
+    }
     const [uploadModalOpen, setUploadModalOpen] = useState(false)
-    const [pendingFiles, setPendingFiles] = useState<File[]>([])
+    const [pendingFileItems, setPendingFileItems] = useState<PendingFileItem[]>([])
     const [uploadPropertyId, setUploadPropertyId] = useState<string>('')
     const [uploadInstructions, setUploadInstructions] = useState<string>('')
 
@@ -525,7 +530,12 @@ export default function AssetsPage() {
     const handleLibraryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
-        setPendingFiles(Array.from(files));
+        const fileList = Array.from(files);
+        setPendingFileItems(fileList.map(file => ({
+            file,
+            propertyId: '',
+            customInstructions: ''
+        })));
         setUploadPropertyId('');
         setUploadInstructions('');
         setUploadModalOpen(true);
@@ -533,7 +543,7 @@ export default function AssetsPage() {
     };
 
     const handleConfirmUpload = async () => {
-        if (pendingFiles.length === 0) return;
+        if (pendingFileItems.length === 0) return;
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) {
@@ -564,10 +574,10 @@ export default function AssetsPage() {
                 }
             }
 
-            uploadAssets(pendingFiles, targetUserId, impersonateId, uploadPropertyId || undefined, uploadInstructions || undefined);
-            toast.success(`Added ${pendingFiles.length} asset(s) to the upload queue!`);
+            uploadAssets(pendingFileItems, targetUserId, impersonateId);
+            toast.success(`Added ${pendingFileItems.length} asset(s) to the upload queue!`);
             setUploadModalOpen(false);
-            setPendingFiles([]);
+            setPendingFileItems([]);
         } catch (err: any) {
             console.error("Queue upload error:", err);
             toast.error(`Upload queue failed: ${err.message}`);
@@ -1881,70 +1891,107 @@ export default function AssetsPage() {
             {/* UPLOAD CONFIGURATION MODAL */}
             {uploadModalOpen && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
-                    <div className="bg-white w-full max-w-lg rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
+                    <div className="bg-white w-full max-w-xl rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
                         {/* HEADER */}
                         <div className="flex justify-between items-center p-6 bg-white border-b border-slate-100 flex-shrink-0">
                             <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                                 <Upload className="text-blue-600" size={20} />
                                 Asset Upload Settings
                             </h2>
-                            <button onClick={() => { setUploadModalOpen(false); setPendingFiles([]); }} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors">
+                            <button onClick={() => { setUploadModalOpen(false); setPendingFileItems([]); }} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors">
                                 <X size={20} />
                             </button>
                         </div>
 
                         {/* BODY */}
                         <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
-                            {/* Selected Files Preview */}
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Selected Files ({pendingFiles.length})</label>
-                                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                                    {pendingFiles.map((file, i) => (
-                                        <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                {file.type.startsWith('video') ? <Film size={14} className="text-slate-400 shrink-0" /> : <ImageIcon size={14} className="text-slate-400 shrink-0" />}
-                                                <span className="text-xs font-semibold text-slate-700 truncate">{file.name}</span>
-                                            </div>
-                                            <span className="text-[10px] text-slate-400 shrink-0">{(file.size / (1024 * 1024)).toFixed(2)} MB</span>
-                                        </div>
-                                    ))}
+                            {/* Bulk Quick Apply Section */}
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 space-y-3">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">⚡ Quick Apply to All Files</span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <select
+                                        value={uploadPropertyId}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setUploadPropertyId(val);
+                                            setPendingFileItems(prev => prev.map(pf => ({ ...pf, propertyId: val })));
+                                        }}
+                                        className="w-full bg-white border border-slate-200 text-slate-700 py-2 px-3 rounded-xl text-xs font-semibold outline-none cursor-pointer hover:bg-slate-100 transition-all focus:ring-2 focus:ring-blue-500/20"
+                                    >
+                                        <option value="">-- No Product (Unlinked) --</option>
+                                        {properties.map(p => (
+                                            <option key={p.id} value={p.id}>{p.title}</option>
+                                        ))}
+                                    </select>
+                                    <input
+                                        type="text"
+                                        value={uploadInstructions}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setUploadInstructions(val);
+                                            setPendingFileItems(prev => prev.map(pf => ({ ...pf, customInstructions: val })));
+                                        }}
+                                        placeholder="Copywriting instruction for all..."
+                                        className="w-full bg-white border border-slate-200 text-slate-700 py-2 px-3 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+                                    />
                                 </div>
                             </div>
 
-                            {/* Property Mapping dropdown */}
+                            {/* Per-File Product Mapping List */}
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Link to Inventory Product</label>
-                                <select
-                                    value={uploadPropertyId}
-                                    onChange={(e) => setUploadPropertyId(e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 text-slate-700 py-3 px-4 rounded-2xl text-xs font-bold outline-none cursor-pointer hover:bg-slate-100 transition-all focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400"
-                                >
-                                    <option value="">-- No Product Linked --</option>
-                                    {properties.map(p => (
-                                        <option key={p.id} value={p.id}>{p.title}</option>
-                                    ))}
-                                </select>
-                                <p className="text-[9px] text-slate-400 mt-1 ml-1">If the product is linked, the AI copywriter will automatically use its details for text generation.</p>
-                            </div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Configure Each Asset ({pendingFileItems.length})</label>
+                                <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                                    {pendingFileItems.map((item, i) => (
+                                        <div key={i} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+                                            <div className="flex items-center justify-between min-w-0">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    {item.file.type.startsWith('video') ? <Film size={14} className="text-blue-500 shrink-0" /> : <ImageIcon size={14} className="text-blue-500 shrink-0" />}
+                                                    <span className="text-xs font-bold text-slate-800 truncate max-w-[220px]">{item.file.name}</span>
+                                                </div>
+                                                <span className="text-[10px] font-medium text-slate-400 shrink-0">{(item.file.size / (1024 * 1024)).toFixed(2)} MB</span>
+                                            </div>
 
-                            {/* Custom Instructions */}
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Custom Copywriting Instructions</label>
-                                <textarea
-                                    value={uploadInstructions}
-                                    onChange={(e) => setUploadInstructions(e.target.value)}
-                                    placeholder="E.g. Highlight a 20% discount hook, use casual tone, focus on prime location..."
-                                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl text-xs font-medium outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 transition-all resize-none"
-                                    rows={3}
-                                />
-                                <p className="text-[9px] text-slate-400 mt-1 ml-1">Instructions will guide the AI writer when generating descriptions and headlines for these assets.</p>
+                                            {/* Product Selector for this file */}
+                                            <div>
+                                                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Mapped Product</label>
+                                                <select
+                                                    value={item.propertyId}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        setPendingFileItems(prev => prev.map((pf, idx) => idx === i ? { ...pf, propertyId: val } : pf));
+                                                    }}
+                                                    className="w-full bg-white border border-slate-200 text-slate-700 py-2 px-3 rounded-xl text-xs font-semibold outline-none cursor-pointer hover:bg-slate-100 transition-all focus:ring-2 focus:ring-blue-500/20"
+                                                >
+                                                    <option value="">-- No Product Linked (Upload As-Is) --</option>
+                                                    {properties.map(p => (
+                                                        <option key={p.id} value={p.id}>{p.title}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            {/* Optional Custom Instructions per file */}
+                                            <div>
+                                                <input
+                                                    type="text"
+                                                    value={item.customInstructions}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        setPendingFileItems(prev => prev.map((pf, idx) => idx === i ? { ...pf, customInstructions: val } : pf));
+                                                    }}
+                                                    placeholder="Custom instructions for this asset (optional)..."
+                                                    className="w-full bg-white border border-slate-200 text-slate-700 py-1.5 px-3 rounded-xl text-[11px] font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
                         {/* FOOTER */}
                         <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3 flex-shrink-0">
                             <button
-                                onClick={() => { setUploadModalOpen(false); setPendingFiles([]); }}
+                                onClick={() => { setUploadModalOpen(false); setPendingFileItems([]); }}
                                 className="flex-1 bg-white border border-slate-200 text-slate-700 py-3.5 rounded-2xl text-xs font-bold hover:bg-slate-100 transition-all active:scale-95"
                             >
                                 Cancel
@@ -1953,7 +2000,7 @@ export default function AssetsPage() {
                                 onClick={handleConfirmUpload}
                                 className="flex-1 bg-blue-600 text-white py-3.5 rounded-2xl text-xs font-bold hover:bg-blue-700 transition-all shadow-md active:scale-95"
                             >
-                                Start Upload ({pendingFiles.length})
+                                Start Upload ({pendingFileItems.length})
                             </button>
                         </div>
                     </div>

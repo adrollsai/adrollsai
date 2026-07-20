@@ -180,14 +180,18 @@ export async function POST(request: Request) {
       };
 
       if (fields.creative.isVideo && videoId) {
+        const isWhatsApp = fields.creative?.ctaType === 'WHATSAPP_MESSAGE';
+        const videoCtaType = isWhatsApp ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
+        const videoCtaValue = isWhatsApp ? { app_destination: 'WHATSAPP' } : ctaValue;
+
         creativePayload.object_story_spec.video_data = {
           video_id: videoId,
           message: fields.creative.primaryText || "Exclusive Property Deal. View pricing & details now.", 
           title: fields.creative.headline || "View Details", 
           image_hash: imageHash, 
           call_to_action: { 
-            type: 'LEARN_MORE', 
-            value: ctaValue
+            type: videoCtaType, 
+            value: videoCtaValue
           }
         };
       } else {

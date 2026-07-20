@@ -792,6 +792,11 @@ export default function AdsPage() {
               urlParams.append('datePreset', preset)
           }
           const res = await fetch(`/api/meta-ads/campaign-insights?${urlParams.toString()}`)
+          if (!res.ok) {
+              const errText = await res.text();
+              console.error("[Campaign Insights HTTP Error]:", res.status, errText.substring(0, 300));
+              throw new Error(`Failed to load insights (Status ${res.status})`);
+          }
           const data = await res.json()
           if (data.error) throw new Error(data.error)
           setStatsModal({ isOpen: true, campaign, insights: data, loading: false })
@@ -2699,17 +2704,27 @@ export default function AdsPage() {
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><MousePointerClick size={14} className="text-slate-400" /> Clicks</span>
                     <span className="text-xl font-black text-slate-800">{explorerData.campaign.metrics.clicks.toLocaleString()} <span className="text-[10px] text-slate-400 font-semibold ml-1">({explorerData.campaign.metrics.ctr.toFixed(2)}% CTR)</span></span>
                   </div>
-                  <div className="bg-blue-50 p-4 rounded-[1.5rem] border border-blue-100 shadow-sm flex flex-col justify-between">
-                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14} className="text-blue-400" /> Leads</span>
-                    <div>
-                      <span className="text-2xl font-black text-blue-700">{explorerData.campaign.metrics.leads}</span>
-                      {explorerData.campaign.metrics.leads > 0 && (
-                        <div className="text-[10px] text-blue-500 font-bold mt-1">
-                          {currency === 'INR' ? '₹' : '$'}{explorerData.campaign.metrics.cpl.toFixed(2)} / lead
+                  {(() => {
+                    const c = explorerData.campaign as any;
+                    const isWA = c?.objective === 'WHATSAPP' || 
+                                 c?.objective === 'OUTCOME_ENGAGEMENT' || 
+                                 c?.campaign_type === 'whatsapp_chat' || 
+                                 c?.destination_type === 'WHATSAPP' ||
+                                 explorerData.adsets?.some((as: any) => as.destination_type === 'WHATSAPP' || as.promoted_object?.whatsapp_phone_number || as.ads?.some((ad: any) => (ad.creative?.linkUrl || '').includes('whatsapp') || (ad.creative?.linkUrl || '').includes('wa.me')));
+                    return (
+                      <div className="bg-blue-50 p-4 rounded-[1.5rem] border border-blue-100 shadow-sm flex flex-col justify-between">
+                        <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14} className="text-blue-400" /> {isWA ? 'WhatsApp Conversations' : 'Leads'}</span>
+                        <div>
+                          <span className="text-2xl font-black text-blue-700">{explorerData.campaign.metrics.leads}</span>
+                          {explorerData.campaign.metrics.leads > 0 && (
+                            <div className="text-[10px] text-blue-500 font-bold mt-1">
+                              {currency === 'INR' ? '₹' : '$'}{explorerData.campaign.metrics.cpl.toFixed(2)} / {isWA ? 'conv' : 'lead'}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* 3. Hierarchy Section */}
@@ -2991,8 +3006,15 @@ export default function AdsPage() {
                             <div className="grid grid-cols-4 gap-2 bg-slate-50/50 p-3.5 rounded-[1.5rem] border border-slate-100 text-center">
                               <div><div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Spend</div><div className="text-xs font-bold text-slate-700">{currency === 'INR' ? '₹' : '$'}{adset.metrics.spend.toFixed(1)}</div></div>
                               <div><div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Clicks</div><div className="text-xs font-bold text-slate-700">{adset.metrics.clicks} <span className="text-[8px] text-slate-400">({adset.metrics.ctr.toFixed(1)}%)</span></div></div>
-                              <div><div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Leads</div><div className="text-xs font-bold text-blue-600">{adset.metrics.leads}</div></div>
-                              <div><div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">CPL</div><div className="text-xs font-bold text-slate-700">{adset.metrics.leads > 0 ? `${currency === 'INR' ? '₹' : '$'}${adset.metrics.cpl.toFixed(1)}` : '—'}</div></div>
+                              {(() => {
+                                const isWA = (explorerData.campaign as any)?.objective === 'WHATSAPP' || (explorerData.campaign as any)?.objective === 'OUTCOME_ENGAGEMENT' || (explorerData.campaign as any)?.campaign_type === 'whatsapp_chat' || (explorerData.campaign as any)?.destination_type === 'WHATSAPP';
+                                return (
+                                  <>
+                                    <div><div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{isWA ? 'Conversations' : 'Leads'}</div><div className="text-xs font-bold text-blue-600">{adset.metrics.leads}</div></div>
+                                    <div><div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{isWA ? 'Cost / Conv.' : 'CPL'}</div><div className="text-xs font-bold text-slate-700">{adset.metrics.leads > 0 ? `${currency === 'INR' ? '₹' : '$'}${adset.metrics.cpl.toFixed(1)}` : '—'}</div></div>
+                                  </>
+                                );
+                              })()}
                             </div>
 
                             {/* Expandable Ads Section */}
@@ -3673,7 +3695,10 @@ export default function AdsPage() {
                                             <div className="flex items-center gap-3 bg-white px-2.5 py-1 rounded-xl border border-slate-150 text-[9px] font-semibold text-slate-500">
                                               <span>Spend: {currency === 'INR' ? '₹' : '$'}{ad.metrics.spend.toFixed(0)}</span>
                                               <span className="text-slate-200">|</span>
-                                              <span>Leads: <b className="text-blue-600">{ad.metrics.leads}</b></span>
+                                              {(() => {
+                                                const isWA = (explorerData.campaign as any)?.objective === 'WHATSAPP' || (explorerData.campaign as any)?.objective === 'OUTCOME_ENGAGEMENT' || (explorerData.campaign as any)?.campaign_type === 'whatsapp_chat' || (explorerData.campaign as any)?.destination_type === 'WHATSAPP';
+                                                return <span>{isWA ? 'Conversations' : 'Leads'}: <b className="text-blue-600">{ad.metrics.leads}</b></span>;
+                                              })()}
                                             </div>
 
                                             {/* Status */}
@@ -3839,16 +3864,22 @@ export default function AdsPage() {
                                           <div className="text-2xl font-black text-slate-800">{statsModal.insights.summary?.clicks?.toLocaleString() || '0'}</div>
                                       </div>
 
-                                      {/* Results (Leads) */}
-                                      <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100 shadow-sm hover:border-blue-200 transition-colors">
-                                          <div className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14}/> Results (Leads)</div>
-                                          <div className="text-2xl font-black text-blue-700">{statsModal.insights.summary?.leads?.toLocaleString() || '0'}</div>
-                                          {statsModal.insights.summary?.leads > 0 && (
-                                              <div className="text-[9px] font-black text-blue-500/80 mt-1 uppercase tracking-wider">
-                                                  CPL: {currency === 'INR' ? '₹' : '$'}{(statsModal.insights.summary.spend / statsModal.insights.summary.leads).toFixed(1)}
+                                      {/* Results (Leads / WhatsApp Conversations) */}
+                                      {(() => {
+                                          const camp = statsModal.campaign as any;
+                                          const isWAStats = camp?.objective === 'WHATSAPP' || camp?.objective === 'OUTCOME_ENGAGEMENT' || camp?.campaign_type === 'whatsapp_chat' || camp?.destination_type === 'WHATSAPP';
+                                          return (
+                                              <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100 shadow-sm hover:border-blue-200 transition-colors">
+                                                  <div className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14}/> {isWAStats ? 'WhatsApp Conversations' : 'Results (Leads)'}</div>
+                                                  <div className="text-2xl font-black text-blue-700">{statsModal.insights.summary?.leads?.toLocaleString() || '0'}</div>
+                                                  {statsModal.insights.summary?.leads > 0 && (
+                                                      <div className="text-[9px] font-black text-blue-500/80 mt-1 uppercase tracking-wider">
+                                                          {isWAStats ? 'Cost / Conv.: ' : 'CPL: '}{currency === 'INR' ? '₹' : '$'}{(statsModal.insights.summary.spend / statsModal.insights.summary.leads).toFixed(1)}
+                                                      </div>
+                                                  )}
                                               </div>
-                                          )}
-                                      </div>
+                                          );
+                                      })()}
 
                                       {/* CTR */}
                                       <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 hover:border-blue-100 transition-colors">

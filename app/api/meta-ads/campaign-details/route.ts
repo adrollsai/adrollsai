@@ -73,7 +73,7 @@ export async function GET(request: Request) {
 
   try {
     // Nested Graph API call: Fetch Campaign, its Ad Sets, its Ads, and dynamic insights (delivery stats) for each
-    const fields = 'id,name,status,daily_budget,lifetime_budget,budget_remaining,insights.date_preset(maximum){spend,impressions,clicks,actions},adsets{id,name,status,daily_budget,lifetime_budget,insights.date_preset(maximum){spend,impressions,clicks,actions},optimization_goal,billing_event,targeting},ads{id,name,status,adset_id,creative{id,name,image_url,thumbnail_url,object_story_spec},insights.date_preset(maximum){spend,impressions,clicks,actions}}';
+    const fields = 'id,name,status,objective,daily_budget,lifetime_budget,budget_remaining,insights.date_preset(maximum){spend,impressions,clicks,actions},adsets{id,name,status,destination_type,promoted_object,daily_budget,lifetime_budget,insights.date_preset(maximum){spend,impressions,clicks,actions},optimization_goal,billing_event,targeting},ads{id,name,status,adset_id,creative{id,name,image_url,thumbnail_url,object_story_spec},insights.date_preset(maximum){spend,impressions,clicks,actions}}';
     const fbUrl = `${FB_GRAPH_URL}/${campaignId}?fields=${fields}&access_token=${token}`;
 
     const response = await fetch(fbUrl);
@@ -94,9 +94,18 @@ export async function GET(request: Request) {
       const impressions = parseInt(insight.impressions || '0', 10);
       const clicks = parseInt(insight.clicks || '0', 10);
       
+      const waAction = insight.actions?.find((a: any) => 
+        a.action_type === 'onsite_conversion.messaging_conversation_started_7d' ||
+        a.action_type === 'messaging_conversation_started_7d' ||
+        a.action_type === 'onsite_conversion.messaging_first_reply' ||
+        a.action_type === 'messaging_user_depth_2_message_send'
+      );
       const leadAction = insight.actions?.find((a: any) => a.action_type === 'lead');
       const leadGroupedAction = insight.actions?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped');
-      const leads = leadAction ? parseInt(leadAction.value || '0', 10) : (leadGroupedAction ? parseInt(leadGroupedAction.value || '0', 10) : 0);
+      
+      const leads = waAction 
+        ? parseInt(waAction.value || '0', 10) 
+        : (leadAction ? parseInt(leadAction.value || '0', 10) : (leadGroupedAction ? parseInt(leadGroupedAction.value || '0', 10) : 0));
 
       const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
       const cpc = clicks > 0 ? spend / clicks : 0;
@@ -141,6 +150,8 @@ export async function GET(request: Request) {
         id: adset.id,
         name: adset.name,
         status: adset.status,
+        destination_type: adset.destination_type,
+        promoted_object: adset.promoted_object || {},
         budget: parseFloat(budgetRaw) / 100, // standard display format
         budgetType,
         optimization_goal: adset.optimization_goal,
@@ -217,6 +228,7 @@ export async function GET(request: Request) {
         id: data.id,
         name: data.name,
         status: data.status,
+        objective: data.objective,
         budget: parseFloat(budgetRaw) / 100,
         budgetType,
         metrics: campaignMetrics,

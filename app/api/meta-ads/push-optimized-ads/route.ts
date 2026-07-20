@@ -296,6 +296,10 @@ export async function POST(request: Request) {
                 ctaValue.link = finalLinkUrl;
             }
 
+            const isWhatsApp = adSet.destination_type === 'WHATSAPP';
+            const ctaType = isWhatsApp ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
+            const videoCtaValue = isWhatsApp ? { app_destination: 'WHATSAPP' } : ctaValue;
+
             if (isVideo) {
                 creativePayload.object_story_spec.video_data = {
                     video_id: videoId,
@@ -303,8 +307,8 @@ export async function POST(request: Request) {
                     title: headline,
                     image_hash: globalThumbHash, // Meta requires a thumbnail
                     call_to_action: {
-                        type: 'LEARN_MORE',
-                        value: ctaValue
+                        type: ctaType,
+                        value: videoCtaValue
                     }
                 };
             } else {
