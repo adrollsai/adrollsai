@@ -22,15 +22,16 @@ export async function GET(request: Request) {
         if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
 
         // Resolve Primary User ID (Owner of the limits)
-        const primaryUserId = profile.parent_id || user.id;
+        const primaryUserId = profile.parent_id || profile.agency_id || user.id;
 
         // If part of a team, fetch the primary profile for limits and usage reset date
         let primaryProfile = profile;
-        if (profile.parent_id) {
+        if (profile.parent_id || profile.agency_id) {
+            const parentId = profile.parent_id || profile.agency_id;
             const { data: parentProfile } = await supabase
                 .from('profiles')
                 .select('*')
-                .eq('id', profile.parent_id)
+                .eq('id', parentId)
                 .single();
             if (parentProfile) primaryProfile = parentProfile;
         }

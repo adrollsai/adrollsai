@@ -951,13 +951,31 @@ END:VCARD`
                                 }
                             }
                             const origin = customFields?.meta_ad_origin;
-                            const matchedProp = properties.find(p => p.id === lead.property_id || p.id === origin?.product_id || p.title === origin?.product_name);
+                            const matchedProp = properties.find(p => 
+                                p.id === lead.property_id || 
+                                p.id === origin?.product_id || 
+                                p.title === origin?.product_name ||
+                                (p.title && (lead.ad_name || '').toLowerCase().includes(p.title.toLowerCase().trim())) ||
+                                (p.title && (origin?.ad_name || '').toLowerCase().includes(p.title.toLowerCase().trim())) ||
+                                (p.title && (origin?.campaign_name || '').toLowerCase().includes(p.title.toLowerCase().trim()))
+                            );
                             const productName = origin?.product_name || matchedProp?.title || null;
+                            const previewImageUrl = origin?.image_url || matchedProp?.image_url || (matchedProp?.images && matchedProp.images[0]) || null;
+                            const previewVideoUrl = origin?.video_url || null;
+
+                            const displayOrigin = origin || (lead.ad_name ? {
+                                ad_name: lead.ad_name.includes(' | ') ? lead.ad_name.split(' | ')[0] : lead.ad_name,
+                                campaign_name: lead.ad_name.includes(' | ') ? lead.ad_name.split(' | ')[1] : (lead.source || 'Meta Ad'),
+                                headline: matchedProp?.title || lead.ad_name,
+                                image_url: previewImageUrl,
+                                video_url: previewVideoUrl,
+                                source_url: 'https://www.facebook.com/ads/library/'
+                            } : null);
 
                             const getLiveAdUrl = () => {
-                                if (!origin) return 'https://www.facebook.com/ads/library/';
-                                const rawUrl = origin.source_url;
-                                const adId = origin.ad_id || origin.source_id;
+                                if (!displayOrigin) return 'https://www.facebook.com/ads/library/';
+                                const rawUrl = displayOrigin.source_url;
+                                const adId = displayOrigin.ad_id || displayOrigin.source_id;
                                 if (rawUrl && rawUrl !== 'https://facebook.com' && rawUrl !== 'https://facebook.com/' && !rawUrl.endsWith('facebook.com')) {
                                     return rawUrl;
                                 }
@@ -968,10 +986,12 @@ END:VCARD`
                             };
 
                             const liveAdUrl = getLiveAdUrl();
+                            const finalImgUrl = displayOrigin?.image_url || previewImageUrl;
+                            const finalVidUrl = displayOrigin?.video_url || previewVideoUrl;
 
                             return (
                                 <div className="mb-4 space-y-3">
-                                    {origin ? (
+                                    {displayOrigin ? (
                                         <div className="p-3.5 bg-gradient-to-r from-indigo-50/90 via-blue-50/80 to-slate-50 border border-indigo-150 rounded-2xl shadow-xs space-y-3">
                                             <div className="flex justify-between items-center">
                                                 <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-700 uppercase tracking-wider">
@@ -987,24 +1007,24 @@ END:VCARD`
                                                 </a>
                                             </div>
 
-                                            {(origin.image_url || origin.video_url || origin.body) && (
+                                            {(finalImgUrl || finalVidUrl || displayOrigin.body) && (
                                                 <div className="flex items-start gap-3 bg-white p-2.5 rounded-xl border border-indigo-100/70 shadow-xs">
-                                                    {(origin.image_url || origin.video_url) && (
+                                                    {(finalImgUrl || finalVidUrl) && (
                                                         <div 
-                                                            onClick={() => openMediaModal(origin, liveAdUrl)}
+                                                            onClick={() => openMediaModal({ ...displayOrigin, image_url: finalImgUrl, video_url: finalVidUrl }, liveAdUrl)}
                                                             className="relative group cursor-pointer shrink-0 rounded-lg overflow-hidden border border-slate-200 shadow-xs w-20 h-20 bg-slate-900 flex items-center justify-center"
                                                             title="Click to enlarge creative"
                                                         >
-                                                            {origin.video_url ? (
+                                                            {finalVidUrl ? (
                                                                 <>
-                                                                    <video src={origin.video_url} className="w-full h-full object-cover opacity-90" />
+                                                                    <video src={finalVidUrl} className="w-full h-full object-cover opacity-90" />
                                                                     <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
                                                                         <span className="p-1 bg-white/90 rounded-full text-indigo-700 shadow-md text-xs font-black">▶</span>
                                                                     </div>
                                                                 </>
                                                             ) : (
                                                                 <>
-                                                                    <img src={origin.image_url} alt="Ad Creative Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                                    <img src={finalImgUrl} alt="Ad Creative Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                                                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
                                                                         <span className="opacity-0 group-hover:opacity-100 text-white font-extrabold text-[8px] bg-indigo-600/90 px-1.5 py-0.5 rounded shadow-xs">🔍 Zoom</span>
                                                                     </div>
@@ -1014,27 +1034,29 @@ END:VCARD`
                                                     )}
                                                     <div className="min-w-0 flex-1 text-xs">
                                                         <div className="flex justify-between items-start gap-2">
-                                                            <span className="font-extrabold text-indigo-950 block truncate text-xs">{origin.headline || origin.ad_name}</span>
-                                                            {(origin.image_url || origin.video_url) && (
+                                                            <span className="font-extrabold text-indigo-950 block truncate text-xs">{displayOrigin.headline || displayOrigin.ad_name}</span>
+                                                            {(finalImgUrl || finalVidUrl) && (
                                                                 <button 
-                                                                    onClick={() => openMediaModal(origin, liveAdUrl)}
+                                                                    onClick={() => openMediaModal({ ...displayOrigin, image_url: finalImgUrl, video_url: finalVidUrl }, liveAdUrl)}
                                                                     className="text-[10px] font-extrabold text-indigo-600 hover:text-indigo-800 underline shrink-0"
                                                                 >
                                                                     🔍 Enlarge
                                                                 </button>
                                                             )}
                                                         </div>
-                                                        {origin.body && <p className="text-slate-600 text-xs mt-1 leading-relaxed bg-slate-50/70 p-2 rounded-lg border border-slate-100">{origin.body}</p>}
+                                                        {displayOrigin.body && <p className="text-slate-600 text-xs mt-1 leading-relaxed bg-slate-50/70 p-2 rounded-lg border border-slate-100">{displayOrigin.body}</p>}
                                                     </div>
                                                 </div>
                                             )}
 
-                                            <div className="grid grid-cols-2 gap-2 text-[10px]">
-                                                {origin.ad_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Name</span><span className="font-extrabold text-indigo-950 truncate block">{origin.ad_name}</span></div>}
-                                                {origin.campaign_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{origin.campaign_name}</span></div>}
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                                                {displayOrigin.ad_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Name</span><span className="font-extrabold text-indigo-950 truncate block">{displayOrigin.ad_name}</span></div>}
+                                                {displayOrigin.adset_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Set</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.adset_name}</span></div>}
+                                                {displayOrigin.campaign_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.campaign_name}</span></div>}
+                                                {displayOrigin.headline && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Headline</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.headline}</span></div>}
                                             </div>
 
-                                            <div className="flex items-center justify-between gap-2 bg-emerald-50/90 border border-emerald-200/80 p-2.5 rounded-xl text-xs">
+                                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-emerald-50/90 border border-emerald-200/80 p-2.5 rounded-xl text-xs">
                                                 <div className="flex items-center gap-2 min-w-0 flex-1">
                                                     <span className="p-1.5 bg-emerald-500 text-white rounded-lg font-black shrink-0 text-xs">📦</span>
                                                     <div className="min-w-0 flex-1">
@@ -1046,7 +1068,7 @@ END:VCARD`
                                                     <select
                                                         value={lead.property_id || matchedProp?.id || ''}
                                                         onChange={(e) => handleAssignProduct(e.target.value || null)}
-                                                        className="text-xs font-extrabold bg-white border border-emerald-300 text-emerald-900 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer hover:border-emerald-500 shrink-0 shadow-xs"
+                                                        className="w-full sm:w-auto bg-white border border-emerald-300 text-emerald-900 rounded-lg px-2.5 py-1.5 text-xs font-bold shrink-0 outline-none hover:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 transition-all cursor-pointer shadow-xs"
                                                     >
                                                         <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
                                                         {properties.map((p: any) => (
@@ -1231,93 +1253,6 @@ END:VCARD`
 
                             return (
                                 <div className="space-y-4">
-                                     {origin && (() => {
-                                         const imageUrl = origin.image_url;
-                                         const videoUrl = origin.video_url;
-
-                                         return (
-                                             <div className="p-3.5 bg-gradient-to-r from-indigo-50/90 via-blue-50/80 to-slate-50 border border-indigo-150 rounded-2xl shadow-xs space-y-3">
-                                                 <div className="flex justify-between items-center">
-                                                     <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-700 uppercase tracking-wider">
-                                                         <Target size={13} className="text-indigo-500" /> Meta Ad Origin & Inventory Mapping
-                                                     </div>
-                                                 </div>
-
-                                                 {(imageUrl || videoUrl || origin.body) && (
-                                                     <div className="flex items-start gap-3 bg-white p-2.5 rounded-xl border border-indigo-100/70 shadow-xs">
-                                                         {(imageUrl || videoUrl) && (
-                                                             <div 
-                                                                 onClick={() => setActiveMediaModal({ origin })}
-                                                                 className="relative group cursor-pointer shrink-0 rounded-lg overflow-hidden border border-slate-200 shadow-xs w-16 h-16 bg-slate-900 flex items-center justify-center"
-                                                                 title="Click to enlarge creative"
-                                                             >
-                                                                 {videoUrl ? (
-                                                                     <>
-                                                                         <video src={videoUrl} className="w-full h-full object-cover opacity-90" />
-                                                                         <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
-                                                                             <span className="p-1 bg-white/90 rounded-full text-indigo-700 shadow-md text-[10px] font-black">▶</span>
-                                                                         </div>
-                                                                     </>
-                                                                 ) : (
-                                                                     <>
-                                                                         <img src={imageUrl} alt="Ad Creative Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                                                                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
-                                                                             <span className="opacity-0 group-hover:opacity-100 text-white font-extrabold text-[8px] bg-indigo-600/90 px-1 py-0.5 rounded shadow-xs">🔍 Zoom</span>
-                                                                         </div>
-                                                                     </>
-                                                                 )}
-                                                             </div>
-                                                         )}
-                                                         <div className="min-w-0 flex-1 text-[10px]">
-                                                             <div className="flex justify-between items-start">
-                                                                 <span className="font-extrabold text-indigo-950 block truncate text-xs max-w-[240px]">{origin.headline || origin.ad_name}</span>
-                                                                 {(imageUrl || videoUrl) && (
-                                                                     <button 
-                                                                         onClick={() => setActiveMediaModal({ origin })}
-                                                                         className="text-[9px] font-extrabold text-indigo-600 hover:text-indigo-800 underline ml-1 shrink-0"
-                                                                     >
-                                                                         🔍 Enlarge
-                                                                     </button>
-                                                                 )}
-                                                             </div>
-                                                             {origin.body && <p className="text-slate-500 line-clamp-2 text-[9.5px] mt-0.5 leading-snug">{origin.body}</p>}
-                                                         </div>
-                                                     </div>
-                                                 )}
-
-                                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
-                                                     {origin.ad_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Name</span><span className="font-extrabold text-indigo-950 truncate block">{origin.ad_name}</span></div>}
-                                                     {origin.adset_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Set</span><span className="font-extrabold text-slate-800 truncate block">{origin.adset_name}</span></div>}
-                                                     {origin.campaign_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{origin.campaign_name}</span></div>}
-                                                     {origin.headline && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Headline</span><span className="font-extrabold text-slate-800 truncate block">{origin.headline}</span></div>}
-                                                 </div>
-
-                                                 <div className="flex items-center justify-between gap-2 bg-emerald-50/90 border border-emerald-200/80 p-2.5 rounded-xl text-[10px]">
-                                                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                                                         <span className="p-1.5 bg-emerald-500 text-white rounded-lg font-black shrink-0">📦</span>
-                                                         <div className="min-w-0 flex-1">
-                                                             <span className="text-[8px] font-black text-emerald-700 uppercase block tracking-wider">Mapped Inventory Product</span>
-                                                             <span className="font-extrabold text-emerald-950 text-xs truncate block">{productName || 'Unmapped Product'}</span>
-                                                         </div>
-                                                     </div>
-                                                     {properties.length > 0 && (
-                                                         <select
-                                                             value={lead.property_id || matchedProp?.id || ''}
-                                                             onChange={(e) => handleAssignProduct(e.target.value || null)}
-                                                             className="text-[11px] font-extrabold bg-white border border-emerald-300 text-emerald-900 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer hover:border-emerald-500 shrink-0 shadow-xs"
-                                                         >
-                                                             <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
-                                                             {properties.map((p: any) => (
-                                                                 <option key={p.id} value={p.id}>{p.title}</option>
-                                                             ))}
-                                                             {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
-                                                         </select>
-                                                     )}
-                                                 </div>
-                                             </div>
-                                         );
-                                     })()}
-
                                      {!origin && properties.length > 0 && (
                                          <div className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 p-3 rounded-2xl text-[10px]">
                                              <div className="flex items-center gap-2 min-w-0 flex-1">

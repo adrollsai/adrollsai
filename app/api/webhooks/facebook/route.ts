@@ -2324,13 +2324,15 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
           // Match property in active inventory if it corresponds to an existing product
           let matchedPropertyTitle = '';
           let matchedPropertyId: string | null = null;
+          let propertiesList: any[] = [];
           try {
               const { data: properties } = await supabaseAdmin
                   .from('properties')
-                  .select('id, title')
+                  .select('id, title, image_url, images')
                   .eq('user_id', profile.id);
                   
               if (properties && properties.length > 0) {
+                  propertiesList = properties;
                   const searchStr = `${campaignName} ${adCampaignString} ${formName}`.toLowerCase();
                   const matched = properties.find(p => p.title && p.title.trim().length > 2 && searchStr.includes(p.title.toLowerCase().trim()));
                   if (matched) {
@@ -2339,11 +2341,31 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                       if (metaAdOrigin) {
                           metaAdOrigin.product_name = matched.title;
                           metaAdOrigin.product_id = matched.id;
+                          if (!metaAdOrigin.image_url && (matched.image_url || matched.images?.[0])) {
+                              metaAdOrigin.image_url = matched.image_url || matched.images?.[0];
+                          }
                       }
                   }
               }
           } catch (propErr) {
               console.error("[Facebook Webhook] Property attribution matching failed:", propErr);
+          }
+
+          if (!metaAdOrigin && (adCampaignString || formName)) {
+            const matchedPropObj = propertiesList.find((p: any) => matchedPropertyId === p.id);
+            const fallbackImg = matchedPropObj?.image_url || matchedPropObj?.images?.[0] || '';
+            metaAdOrigin = {
+              ad_id: ad_id || '',
+              ad_name: adCampaignString.includes(' / ') ? adCampaignString.split(' / ')[1] : adCampaignString,
+              campaign_name: campaignName || (adCampaignString.includes(' / ') ? adCampaignString.split(' / ')[0] : formName),
+              headline: matchedPropertyTitle || adCampaignString,
+              body: formName ? `Submitted via form: ${formName}` : '',
+              image_url: fallbackImg,
+              video_url: '',
+              source_url: ad_id ? `https://www.facebook.com/ads/library/?id=${ad_id}` : 'https://www.facebook.com/ads/library/',
+              product_name: matchedPropertyTitle || null,
+              product_id: matchedPropertyId || null
+            };
           }
 
           if (metaAdOrigin) {
