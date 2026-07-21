@@ -161,6 +161,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             customQuestionsStr,
             inventoryIds,
             assetIds,
+            creativeUrls = [],
             creativeProductIds,
             whatsappNumber,
             campaignType,
@@ -189,8 +190,18 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         }
         const creativeItems: CreativeItem[] = [];
 
-        // 1. First, build creative items from assetIds (explicitly selected assets)
-        if (assetIds && assetIds.length > 0) {
+        // 1. First, build creative items from explicit creativeUrls passed in payload
+        if (creativeUrls && creativeUrls.length > 0) {
+            creativeUrls.forEach((url: string) => {
+                if (url && typeof url === 'string' && url.startsWith('http')) {
+                    const isVideo = url.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/);
+                    creativeItems.push({ type: isVideo ? 'video' : 'image', url });
+                }
+            });
+        }
+
+        // 2. Next, build creative items from assetIds (explicitly selected assets)
+        if (creativeItems.length === 0 && assetIds && assetIds.length > 0) {
             const { data: rawAssets } = await supabaseAdmin
                 .from('assets')
                 .select('id, url, type')
@@ -210,7 +221,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             }
         }
 
-        // 2. Only fall back to inventoryIds (product images) if no specific assets were selected
+        // 3. Only fall back to inventoryIds (product primary image) if no specific assets/urls were selected
         if (creativeItems.length === 0 && inventoryIds && inventoryIds.length > 0) {
             const { data: props } = await supabaseAdmin
                 .from('properties')
@@ -218,14 +229,13 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                 .in('id', inventoryIds);
             if (props) {
                 props.forEach((prop: any) => {
-                    if (prop.images && Array.isArray(prop.images) && prop.images.length > 0) {
-                        prop.images.forEach((img: string) => {
-                            if (img && img.startsWith('http')) {
-                                creativeItems.push({ type: 'image', url: img });
-                            }
-                        });
-                    } else if (prop.image_url) {
+                    if (prop.image_url) {
                         creativeItems.push({ type: 'image', url: prop.image_url });
+                    } else if (prop.images && Array.isArray(prop.images) && prop.images.length > 0) {
+                        const firstImg = prop.images.find((i: string) => i && i.startsWith('http'));
+                        if (firstImg) {
+                            creativeItems.push({ type: 'image', url: firstImg });
+                        }
                     }
                 });
             }
@@ -587,9 +597,9 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         }
 
         targetingConfig.age_min = ageMin !== undefined && ageMin !== null ? ageMin : 18;
-        targetingConfig.age_max = 65;
+        targetingConfig.age_max = ageMax !== undefined && ageMax !== null ? ageMax : 65;
         targetingConfig.targeting_relaxation_types = { custom_audience: 1, lookalike: 1 };
-        targetingConfig.targeting_automation = { advantage_audience: 1 };
+        targetingConfig.targeting_automation = { advantage_audience: targetingConfig.age_min <= 25 ? 1 : 0 };
         targetingConfig.device_platforms = ['mobile', 'desktop'];
         targetingConfig.publisher_platforms = ['facebook', 'instagram'];
 
@@ -652,7 +662,8 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     body: JSON.stringify({ status: 'ARCHIVED', access_token: facebookToken })
                 });
             } catch (cleanupErr) { /* ignore cleanup error */ }
-            throw new Error(`Ad Set Error: ${metaErr.message || 'Unknown'}`);
+            const metaErrMsg = metaErr.error_user_msg || metaErr.error_user_title || metaErr.message || 'Unknown error';
+            throw new Error(`Ad Set Error: ${metaErrMsg}`);
         }
         const adSetId = adSetData.id;
 

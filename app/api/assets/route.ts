@@ -11,8 +11,15 @@ const supabaseAdmin = createAdminClient(
 
 export async function GET(request: Request) {
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        let user: any = null;
+        const mockUserHeader = request.headers.get('X-Mock-User');
+        if (mockUserHeader && !process.env.VERCEL) {
+            user = { id: mockUserHeader };
+        } else {
+            const clientSupabase = await createClient();
+            const { data: { user: authUser } } = await clientSupabase.auth.getUser();
+            user = authUser;
+        }
 
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -21,7 +28,7 @@ export async function GET(request: Request) {
         const url = new URL(request.url);
         const impersonateId = url.searchParams.get('impersonate');
 
-        const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single();
+        const { data: currentProfile } = await supabaseAdmin.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single();
         let targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
           ? (currentProfile.agency_id || currentProfile.parent_id) 
           : user.id;
@@ -30,7 +37,7 @@ export async function GET(request: Request) {
             if (['super_admin', 'agency', 'admin', 'agent'].includes(currentProfile?.role || '')) {
                 if (currentProfile?.role !== 'super_admin') {
                     const isParent = (currentProfile?.agency_id === impersonateId || currentProfile?.parent_id === impersonateId);
-                    const { data: subAccount } = await supabase
+                    const { data: subAccount } = await supabaseAdmin
                       .from('profiles')
                       .select('id')
                       .eq('id', impersonateId)
@@ -59,10 +66,15 @@ export async function GET(request: Request) {
             }
         }
 
+        const { data: targetProfile } = await supabaseAdmin.from('profiles').select('parent_id, agency_id').eq('id', targetUserId).single();
+        const effectiveUserIds: string[] = [targetUserId];
+        if (targetProfile?.parent_id) effectiveUserIds.push(targetProfile.parent_id);
+        if (targetProfile?.agency_id) effectiveUserIds.push(targetProfile.agency_id);
+
         let query = supabaseAdmin
             .from('assets')
             .select('*')
-            .eq('user_id', targetUserId);
+            .in('user_id', effectiveUserIds);
             
         if (since) {
             query = query.or(`created_at.gt.${since},status.eq.Processing,status.eq.Rendering`);

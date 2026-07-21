@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil, Maximize2, Tag } from 'lucide-react'
+import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil, Maximize2, Tag, Building } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner' 
@@ -782,8 +782,15 @@ export default function ProductsPage() {
                   </div>
               )}
 
-              <div className="relative h-56 w-full bg-slate-100 overflow-hidden">
-                <img src={prop.image_url} alt="Product" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+               <div className="relative h-56 w-full bg-slate-100 overflow-hidden flex items-center justify-center">
+                {(prop.image_url || prop.images?.[0]) ? (
+                  <img src={prop.image_url || prop.images[0]} alt={prop.title || 'Product'} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-slate-400 gap-1">
+                    <Building size={32} />
+                    <span className="text-xs font-semibold">No image available</span>
+                  </div>
+                )}
                 <div className="absolute top-3 left-3 flex gap-2">
                     <span className="px-3 py-1.5 rounded-full text-xs font-bold shadow-sm bg-white/95 text-slate-800 backdrop-blur-md border border-white/20">
                        {prop.status}

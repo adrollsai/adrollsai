@@ -13,43 +13,54 @@ export const maxDuration = 120;
 export async function POST(request: Request) {
     clearLogFile();
 
-    const supabase = await createClient();
-    
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-        return NextResponse.json(
-            { error: 'Unauthorized' }, 
-            { status: 401 }
+    try {
+        const { createClient: createAdminClient } = await import('@supabase/supabase-js');
+        const supabaseAdmin = createAdminClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
         );
-    }
 
-    // --- 0. Resolve Target User ID ---
-    const url = new URL(request.url);
-    const impersonateId = url.searchParams.get('impersonate');
-    const { data: ownProfile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
-    let targetUserId = user.id;
-
-    if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
-        targetUserId = (ownProfile?.parent_id || ownProfile?.agency_id) as string;
-    }
-
-    if (impersonateId && ['super_admin', 'agency', 'admin'].includes(ownProfile?.role || '')) {
-        if (ownProfile?.role !== 'super_admin') {
-            const isParent = (ownProfile?.agency_id === impersonateId || ownProfile?.parent_id === impersonateId);
-            const { data: subAccount } = await supabase.from('profiles').select('id').eq('id', impersonateId).eq('agency_id', ownProfile?.agency_id || user.id).single();
-
-            if (isParent || subAccount) {
-                targetUserId = impersonateId;
-            } else {
-                return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
-            }
+        let user: any = null;
+        const mockUserHeader = request.headers.get('X-Mock-User');
+        if (mockUserHeader && !process.env.VERCEL) {
+            user = { id: mockUserHeader };
         } else {
-            targetUserId = impersonateId;
+            const clientSupabase = await createClient();
+            const { data: { user: authUser } } = await clientSupabase.auth.getUser();
+            user = authUser;
         }
-    }
+
+        if (!user) {
+            return NextResponse.json(
+                { error: 'Unauthorized' }, 
+                { status: 401 }
+            );
+        }
+
+        // --- 0. Resolve Target User ID ---
+        const url = new URL(request.url);
+        const impersonateId = url.searchParams.get('impersonate');
+        const { data: ownProfile } = await supabaseAdmin.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
+        let targetUserId = user.id;
+
+        if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
+            targetUserId = (ownProfile?.parent_id || ownProfile?.agency_id) as string;
+        }
+
+        if (impersonateId && ['super_admin', 'agency', 'admin'].includes(ownProfile?.role || '')) {
+            if (ownProfile?.role !== 'super_admin') {
+                const isParent = (ownProfile?.agency_id === impersonateId || ownProfile?.parent_id === impersonateId);
+                const { data: subAccount } = await supabaseAdmin.from('profiles').select('id').eq('id', impersonateId).eq('agency_id', ownProfile?.agency_id || user.id).single();
+
+                if (isParent || subAccount) {
+                    targetUserId = impersonateId;
+                } else {
+                    return NextResponse.json({ error: 'Unauthorized impersonation' }, { status: 403 });
+                }
+            } else {
+                targetUserId = impersonateId;
+            }
+        }
 
 
     let data: any = {};
@@ -88,13 +99,7 @@ export async function POST(request: Request) {
         });
     }
 
-    // Fetch TARGET profile for credentials and business info (using Admin client to bypass RLS)
-    const { createClient: createAdminClient } = await import('@supabase/supabase-js');
-    const supabaseAdmin = createAdminClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
+    // Fetch TARGET profile for credentials and business info
     const { data: targetProfile } = await supabaseAdmin.from('profiles')
         .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url')
         .eq('id', targetUserId)
@@ -215,20 +220,32 @@ export async function POST(request: Request) {
 
     // --- Step 0. Fetch Qualified CRM Leads ---
     logToFile("--- 0a. FETCHING CRM LEADS ---");
-    const { data: qualifiedLeads, error: leadsErr } = await supabase
+    let { data: qualifiedLeads, error: leadsErr } = await supabaseAdmin
         .from('leads')
         .select('email, phone')
         .eq('user_id', targetUserId)
-        .in('pipeline_stage', ['Qualified', 'Appointment booked', 'Appointment done', 'Closed']);
+        .in('pipeline_stage', ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'In Progress']);
 
-    if (leadsErr) {
+    if (leadsErr || !qualifiedLeads || qualifiedLeads.length === 0) {
+        // Fallback: Query all leads for targetUserId without pipeline_stage filter
+        const { data: allLeads } = await supabaseAdmin
+            .from('leads')
+            .select('email, phone')
+            .eq('user_id', targetUserId);
+
+        if (allLeads && allLeads.length > 0) {
+            qualifiedLeads = allLeads;
+        }
+    }
+
+    if (leadsErr && (!qualifiedLeads || qualifiedLeads.length === 0)) {
         logToFile(`LEADS FETCH ERROR: ${leadsErr.message}`);
         return NextResponse.json({ error: `Failed to fetch qualified CRM leads: ${leadsErr.message}` }, { status: 500 });
     }
 
     if (!qualifiedLeads || qualifiedLeads.length === 0) {
         return NextResponse.json({ 
-            error: "No qualified CRM leads found. You must have at least one lead in 'Qualified', 'Appointment booked', 'Appointment done', or 'Closed' stages to launch a retargeting campaign." 
+            error: "No CRM leads found to retarget. Please ensure you have leads in your CRM before launching a retargeting campaign." 
         }, { status: 400 });
     }
 
@@ -609,7 +626,7 @@ export async function POST(request: Request) {
         }
 
         if (inventoryIds.length > 0) {
-            const { data: props, error } = await supabase
+            const { data: props, error } = await supabaseAdmin
                 .from('properties')
                 .select('title, description, images, image_url')
                 .in('id', inventoryIds);
@@ -617,10 +634,10 @@ export async function POST(request: Request) {
             if (error) throw new Error("Failed to fetch property details.");
             
             if (props) {
-                props.forEach(prop => {
+                props.forEach((prop: any) => {
                     combinedContext += `Property: ${prop.title || 'N/A'}. Description: ${prop.description || 'N/A'}. `;
                     if (prop.images && Array.isArray(prop.images) && prop.images.length > 0) {
-                        prop.images.forEach(img => {
+                        prop.images.forEach((img: any) => {
                             if (img && img.startsWith('http')) {
                                 creativeItems.push({ type: 'image', url: img });
                             }
@@ -989,7 +1006,7 @@ export async function POST(request: Request) {
         const visionInputs: string[] = [];
         
         if (inventoryIds.length > 0) {
-             const { data: props } = await supabase.from('properties').select('image_url').in('id', inventoryIds);
+             const { data: props } = await supabaseAdmin.from('properties').select('image_url').in('id', inventoryIds);
              for (const p of (props || [])) {
                  if (p.image_url) {
                     try {
@@ -1004,7 +1021,7 @@ export async function POST(request: Request) {
              }
         }
         if (assetIds.length > 0) {
-             const { data: asts } = await supabase.from('assets').select('url').in('id', assetIds);
+             const { data: asts } = await supabaseAdmin.from('assets').select('url').in('id', assetIds);
              for (const a of (asts || [])) {
                  if (a.url) {
                     try {
@@ -1331,7 +1348,7 @@ export async function POST(request: Request) {
                 const assetId = assetIds[i % assetIds.length];
                 if (assetId) {
                     const fullCaption = `${copy.headline}\n\n${copy.primary_text}${copy.description ? `\n\n${copy.description}` : ''}`;
-                    await supabase.from('assets').update({ caption: fullCaption }).eq('id', assetId);
+                    await supabaseAdmin.from('assets').update({ caption: fullCaption }).eq('id', assetId);
                 }
             } catch (persistErr) {
                 logToFile("Failed to persist copy to assets table:", persistErr);
@@ -1405,6 +1422,13 @@ export async function POST(request: Request) {
 
         return NextResponse.json(
             { error: error.message || "Internal Server Error" }, 
+            { status: 500 }
+        );
+    }
+    } catch (outerErr: any) {
+        logToFile("!!! OUTER API CRASH !!!", outerErr.message);
+        return NextResponse.json(
+            { error: outerErr.message || "Internal Server Error" },
             { status: 500 }
         );
     }

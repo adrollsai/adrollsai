@@ -20,6 +20,9 @@ type SelectedCreative = {
   uid: string;
   sourceType: 'inventory' | 'asset' | 'local';
   id?: string;
+  url?: string;
+  imageUrl?: string;
+  image_url?: string;
   file?: File;
   previewUrl: string;
   name: string;
@@ -605,15 +608,19 @@ export default function AdsPage() {
       const maxFormTime = getMaxCreatedAt(cachedForms);
       const maxAssetTime = getMaxCreatedAt(cachedAssets as any[]);
 
-      let propQuery = supabase.from('properties').select('id, title, price, image_url, description').eq('user_id', targetUserId);
+      const effectiveUserIds: string[] = [targetUserId];
+      if (targetProfile?.parent_id) effectiveUserIds.push(targetProfile.parent_id);
+      if (targetProfile?.agency_id) effectiveUserIds.push(targetProfile.agency_id);
 
-      let pageQuery = supabase.from('landing_pages').select('*').eq('user_id', targetUserId);
+      let propQuery = supabase.from('properties').select('id, title, price, image_url, description').in('user_id', effectiveUserIds);
 
-      let formQuery = supabase.from('qualification_forms').select('*').eq('user_id', targetUserId);
+      let pageQuery = supabase.from('landing_pages').select('*').in('user_id', effectiveUserIds);
+
+      let formQuery = supabase.from('qualification_forms').select('*').in('user_id', effectiveUserIds);
 
       const [propsRes, leadsRes, pagesRes, formsRes, apiAssetsData, metaFormsData] = await Promise.all([
           propQuery.order('created_at', { ascending: false }),
-          supabase.from('leads').select('campaign_id').eq('user_id', targetUserId),
+          supabase.from('leads').select('campaign_id').in('user_id', effectiveUserIds),
           pageQuery.order('created_at', { ascending: false }),
           formQuery.order('created_at', { ascending: false }),
           fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}${maxAssetTime && !force ? `${impersonateId ? '&' : '?'}since=${encodeURIComponent(maxAssetTime)}` : ''}`).then(r => r.json()).catch(e => {
@@ -1661,15 +1668,19 @@ export default function AdsPage() {
 
     try {
       const finalAssetIds: string[] = [];
+      const creativeUrls: string[] = [];
       const adCopies: any[] = [];
       
       const creativeProductIds: string[] = [];
       // Upload local files in-place and build copy mappings
       for (const c of selectedCreatives) {
           let assetId = c.id;
+          let creativeUrl = c.url || c.imageUrl || c.image_url || '';
+
           if (c.sourceType === 'local' && c.file) {
               toast.info(`Uploading creative ${c.name}...`);
               const publicUrl = await uploadToR2(c.file, 'campaign_creatives');
+              creativeUrl = publicUrl;
               // Insert asset record into Supabase
               const { data: newAsset, error: assetErr } = await supabase
                   .from('assets')
@@ -1690,18 +1701,40 @@ export default function AdsPage() {
                   throw new Error(`Failed to save uploaded creative database entry: ${assetErr?.message || 'unknown'}`);
               }
               assetId = newAsset.id;
+          } else if (creativeUrl && (!assetId || !assetId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i))) {
+              const { data: newAsset } = await supabase
+                  .from('assets')
+                  .insert({
+                      url: creativeUrl,
+                      type: c.type || 'image',
+                      user_id: tUserId,
+                      status: 'Active',
+                      property_id: c.mappedProductId || null,
+                      metadata: {
+                          custom_instructions: adForm.customInstructions || null
+                      }
+                  })
+                  .select('id')
+                  .single();
+
+              if (newAsset?.id) {
+                  assetId = newAsset.id;
+              }
           }
           
           if (assetId) {
               finalAssetIds.push(assetId);
-              
-              // Resolve mapped product for this creative
-              const mappedProduct = activeProducts.find(ap => ap.id === c.mappedProductId) || activeProducts[0];
-              creativeProductIds.push(mappedProduct.id);
-              
-              const copy = generateAdCopy(mappedProduct, targetProfile?.business_name, targetProfile?.contact_number);
-              adCopies.push(copy);
           }
+          if (creativeUrl) {
+              creativeUrls.push(creativeUrl);
+          }
+          
+          // Resolve mapped product for this creative
+          const mappedProduct = activeProducts.find(ap => ap.id === c.mappedProductId) || activeProducts[0];
+          creativeProductIds.push(mappedProduct.id);
+          
+          const copy = generateAdCopy(mappedProduct, targetProfile?.business_name, targetProfile?.contact_number);
+          adCopies.push(copy);
       }
 
       const formPayload = new FormData();
@@ -1739,6 +1772,11 @@ export default function AdsPage() {
           formPayload.append('assetIds', id);
       });
 
+      // Append all creative URLs
+      creativeUrls.forEach(url => {
+          formPayload.append('creativeUrls', url);
+      });
+
       // Append mapped creative product IDs in order
       creativeProductIds.forEach(id => {
           formPayload.append('creativeProductIds', id);
@@ -1761,12 +1799,14 @@ export default function AdsPage() {
         ? `/api/meta-ads/launch-remarketing${impersonateId ? `?impersonate=${impersonateId}` : ''}`
         : `/api/meta-ads/launch-campaign${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
 
-      const res = await fetch(endpoint, { method: 'POST', body: formPayload })
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error('Server returned a non-JSON response. Please try again.');
+      const res = await fetch(endpoint, { method: 'POST', body: formPayload });
+      const responseText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(responseText);
+      } catch (jsonErr) {
+        throw new Error(`Server returned unexpected response (Status ${res.status}). Please try again.`);
       }
-      const data = await res.json()
       if (res.ok) {
         if (data.jobId) {
           // Job-based async launch
@@ -1777,7 +1817,7 @@ export default function AdsPage() {
           setRemarketSourceCampaign(null);
           setSelectedProduct(null);
           setSelectedProducts([]);
-          setAdForm(prev => ({ ...prev, metaLocations: [], dailyBudgetINR: 500, ageMin: 18, ageMax: 65 }));
+          setAdForm(prev => ({ ...prev, metaLocations: [], ageMin: 18, ageMax: 65 }));
           setSelectedCreatives([]);
           setFormQuestions([]);
         } else {
@@ -1787,16 +1827,21 @@ export default function AdsPage() {
           setRemarketSourceCampaign(null);
           setSelectedProduct(null);
           setSelectedProducts([]);
-          setAdForm(prev => ({ ...prev, metaLocations: [], dailyBudgetINR: 500, ageMin: 18, ageMax: 65 }));
+          setAdForm(prev => ({ ...prev, metaLocations: [], ageMin: 18, ageMax: 65 }));
           setSelectedCreatives([]);
           setFormQuestions([]);
           fetchAdsData(true);
         }
       } else {
         const metaError = data.metaError;
-        if (metaError?.error_subcode === 1815089) {
+        const errorSubcode = data.error_subcode || metaError?.error_subcode;
+        if (errorSubcode === 1815089) {
             if (confirm("Facebook Terms Not Accepted: You need to accept Facebook's Lead Generation Terms of Service for your Page before launching lead ads.\n\nWould you like to open the terms page now?")) {
                 window.open(`https://www.facebook.com/ads/leadgen/tos/?page_id=${adForm.pageId}`, '_blank');
+            }
+        } else if (errorSubcode === 2663 || data.tosLink) {
+            if (confirm("Facebook Custom Audience Terms Not Accepted: You need to accept Facebook's Custom Audience Terms of Service before launching retargeting campaigns.\n\nWould you like to open the terms page now?")) {
+                window.open(data.tosLink || `https://www.facebook.com/customaudiences/app/tos/?act=${selectedAdAccountId.replace('act_', '')}`, '_blank');
             }
         } else {
             toast.error('Launch Failed: ' + (data.error || 'Unknown error'));
