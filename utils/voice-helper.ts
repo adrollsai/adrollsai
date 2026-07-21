@@ -582,6 +582,21 @@ export async function bookAppointment(
 
         if (updateError) throw updateError
 
+        // Trigger multi-channel alert to admin (Push, Free-form WhatsApp, Email)
+        try {
+            const { sendAdminMultiChannelNotification } = await import('./notification-helper')
+            const formattedSlotDate = new Date(formattedSlot).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' })
+            await sendAdminMultiChannelNotification({
+                ownerUserId: lead.user_id,
+                title: '🎙️ Meeting Booked via AI Call!',
+                body: `AI Voice Agent successfully booked a meeting with ${lead.name} (${lead.phone || 'No Phone'}) for ${formattedSlotDate}.${hangoutLink ? `\nMeet Link: ${hangoutLink}` : ''}`,
+                url: `/dashboard/crm/${leadId}`,
+                type: 'meeting_booked'
+            })
+        } catch (notifErr: any) {
+            console.error('[VOICE HELPER] Failed to send multi-channel admin alert:', notifErr)
+        }
+
 
         // 5. Send confirmation email to lead
         let leadEmail = lead.email || ''

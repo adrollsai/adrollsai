@@ -683,4 +683,21 @@ export async function sendConnectExpertNotificationEmail(
     console.error("Connect Expert Email Notification Error:", error);
     return { success: false, error: error.message };
   }
-}
+}
+
+export async function sendGenericEmail(to: string, subject: string, html: string) {
+  try {
+    if (!to) return { success: false, error: 'No recipient email provided' };
+    const info = await transporter.sendMail({
+      from: `"Nobogent Alerts" <no-reply@mail.nobogent.com>`,
+      to,
+      subject,
+      html
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    console.error("Generic Email Error:", error);
+    return { success: false, error: error.message };
+  }
+}
+

@@ -123,6 +123,7 @@ export async function POST(request: Request) {
           image_url: propertyData.image_url || '',
           images: propertyData.images || [],
           youtube_url: propertyData.youtube_url || null,
+          configurations: propertyData.configurations || null,
           auto_generate: false,
           show_on_landing_page: propertyData.show_on_landing_page !== false
         })
@@ -137,16 +138,21 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Missing propertyData for update' }, { status: 400 })
       }
 
+      const updatePayload: any = {
+        title: propertyData.title,
+        description: propertyData.description,
+        image_url: propertyData.image_url,
+        images: propertyData.images,
+        youtube_url: propertyData.youtube_url,
+        show_on_landing_page: propertyData.show_on_landing_page !== false
+      }
+      if (propertyData.configurations !== undefined) {
+        updatePayload.configurations = propertyData.configurations
+      }
+
       const { data, error } = await supabaseAdmin
         .from('properties')
-        .update({
-          title: propertyData.title,
-          description: propertyData.description,
-          image_url: propertyData.image_url,
-          images: propertyData.images,
-          youtube_url: propertyData.youtube_url,
-          show_on_landing_page: propertyData.show_on_landing_page !== false
-        })
+        .update(updatePayload)
         .eq('id', propertyId)
         .select()
         .single()

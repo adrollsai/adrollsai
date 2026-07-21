@@ -267,6 +267,22 @@ export async function POST(request: Request) {
     
     console.log(`[EOD Report Worker] EOD email status for ${profile.email}: success=${emailResult.success}`)
     
+    // Dispatch Push Notification & WhatsApp Free-form Text Message to Admin
+    try {
+      const { sendAdminMultiChannelNotification } = await import('@/utils/notification-helper')
+      const todayFormatted = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium' })
+      await sendAdminMultiChannelNotification({
+        ownerUserId: profileId,
+        title: `📊 Daily EOD Operations Summary (${todayFormatted})`,
+        body: `Your End-of-Day Performance Report for ${businessName} is ready!\n• New Leads Today: ${leadsToday} (Total CRM: ${totalLeads})\n• WhatsApp Messages Today: ${totalWaToday} (${inboundWaToday} Inbound, ${outboundWaToday} Outbound)\n• AI Calls Handled Today: ${callsTodayCount}`,
+        url: '/dashboard',
+        type: 'eod_report',
+        skipEmail: true // Email is already sent by sendDailyEodReportEmail right above
+      })
+    } catch (notifErr: any) {
+      console.error(`[EOD Report Worker] Failed to send multi-channel Push/WhatsApp notification:`, notifErr)
+    }
+
     if (emailResult.success) {
       try {
         await deductCredits(supabaseAdmin, profileId, 1, 'ai_generation', 'Daily EOD Operations Report Email')

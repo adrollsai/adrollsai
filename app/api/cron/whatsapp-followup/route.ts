@@ -72,11 +72,8 @@ async function handleWhatsappFollowups(request: Request) {
             const inboundTime = new Date(lastInbound.created_at).getTime()
             const timeSinceInbound = now - inboundTime
             const twentyFourHours = 24 * 60 * 60 * 1000
-
-            // Skip if the customer's last message is older than 24 hours (outside the free-form window)
-            if (timeSinceInbound > twentyFourHours) {
-                continue
-            }
+            const fortyEightHours = 48 * 60 * 60 * 1000
+            const seventyTwoHours = 72 * 60 * 60 * 1000
 
             // Guardrail: Skip if the very last message in the chat (inbound or outbound) was sent less than 2 hours ago
             const lastMessage = messages[0]
@@ -100,24 +97,34 @@ async function handleWhatsappFollowups(request: Request) {
 
             let isDue = false
             let followupStage = 0
+            let isTemplate = false
+            let templateName = ''
+            let templateParams: string[] = []
 
-            if (numFollowups === 0) {
-                // Stage 1: Send 2 hours after customer's last message
-                if (timeSinceInbound >= 2 * 60 * 60 * 1000) {
+            if (timeSinceInbound <= twentyFourHours) {
+                if (numFollowups === 0 && timeSinceInbound >= 2 * 60 * 60 * 1000) {
                     isDue = true
                     followupStage = 1
-                }
-            } else if (numFollowups === 1) {
-                // Stage 2: Send 8 hours after customer's last message
-                if (timeSinceInbound >= 8 * 60 * 60 * 1000) {
+                } else if (numFollowups === 1 && timeSinceInbound >= 8 * 60 * 60 * 1000) {
                     isDue = true
                     followupStage = 2
-                }
-            } else if (numFollowups === 2) {
-                // Stage 3: Send 20 hours after customer's last message
-                if (timeSinceInbound >= 20 * 60 * 60 * 1000) {
+                } else if (numFollowups === 2 && timeSinceInbound >= 20 * 60 * 60 * 1000) {
                     isDue = true
                     followupStage = 3
+                }
+            } else if (timeSinceInbound <= fortyEightHours) {
+                if (numFollowups <= 3) {
+                    isDue = true
+                    followupStage = 4
+                    isTemplate = true
+                    templateName = 'auto_drip_followup_24h'
+                }
+            } else if (timeSinceInbound <= seventyTwoHours) {
+                if (numFollowups <= 4) {
+                    isDue = true
+                    followupStage = 5
+                    isTemplate = true
+                    templateName = 'auto_drip_followup_48h'
                 }
             }
 
@@ -133,6 +140,8 @@ async function handleWhatsappFollowups(request: Request) {
             if (!profile || !profile.whatsapp_access_token || !profile.whatsapp_phone_number_id) {
                 continue
             }
+
+            templateParams = [chat.recipient_name || 'there', profile.business_name || 'our team']
 
             // Fetch active properties in owner's inventory to enrich the AI context
             const { data: properties } = await supabaseAdmin
@@ -189,43 +198,100 @@ Guidelines:
 4. Output ONLY the raw response string. No JSON, no markdown code blocks, no quotes around the reply.`
 
             try {
-                const aiRes = await callGemini(systemPrompt)
-                const replyText = aiRes.trim().replace(/^"|"$/g, '')
+                let metaPayload: any = null
+                let logText = ''
 
-                if (!replyText) continue
+                if (isTemplate) {
+                    metaPayload = {
+                        messaging_product: 'whatsapp',
+                        to: chat.recipient_phone,
+                        type: 'template',
+                        template: {
+                            name: templateName,
+                            language: { code: 'en_US' },
+                            components: [
+                                {
+                                    type: 'body',
+                                    parameters: templateParams.map(val => ({ type: 'text', text: val }))
+                                }
+                            ]
+                        }
+                    }
+                    logText = `Sent Template: ${templateName}`
+                } else {
+                    const aiRes = await callGemini(systemPrompt)
+                    const replyText = aiRes.trim().replace(/^"|"$/g, '')
+                    if (!replyText) continue
 
-                // Send the free-form text message via Meta API
-                const metaUrl = `https://graph.facebook.com/v20.0/${profile.whatsapp_phone_number_id}/messages`
-                const metaRes = await fetch(metaUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${profile.whatsapp_access_token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
+                    metaPayload = {
                         messaging_product: 'whatsapp',
                         recipient_type: 'individual',
                         to: chat.recipient_phone,
                         type: 'text',
                         text: { body: replyText }
-                    })
+                    }
+                    logText = replyText
+                }
+
+                // Send message via Meta API
+                const metaUrl = `https://graph.facebook.com/v20.0/${profile.whatsapp_phone_number_id}/messages`
+                let metaRes = await fetch(metaUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${profile.whatsapp_access_token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(metaPayload)
                 })
 
-                if (metaRes.ok) {
+                let sendData = await metaRes.json()
+
+                // Fallback to Template if free-form text failed due to 24h customer service window expiration
+                if (sendData.error && !isTemplate && (sendData.error.code === 131047 || sendData.error.error_subcode === 2494010)) {
+                    console.log(`[WhatsApp Followup Cron] Free-form failed due to 24h limit for ${chat.recipient_phone}, falling back to Meta template...`)
+                    const fallbackPayload = {
+                        messaging_product: 'whatsapp',
+                        to: chat.recipient_phone,
+                        type: 'template',
+                        template: {
+                            name: 'auto_drip_followup_24h',
+                            language: { code: 'en_US' },
+                            components: [
+                                {
+                                    type: 'body',
+                                    parameters: templateParams.map(val => ({ type: 'text', text: val }))
+                                }
+                            ]
+                        }
+                    }
+
+                    metaRes = await fetch(metaUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${profile.whatsapp_access_token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(fallbackPayload)
+                    })
+                    sendData = await metaRes.json()
+                    logText = `Sent Template: auto_drip_followup_24h`
+                }
+
+                if (!sendData.error) {
                     // Log message in whatsapp_messages
                     await supabaseAdmin
                         .from('whatsapp_messages')
                         .insert({
                             chat_id: chat.id,
                             direction: 'outbound',
-                            message_text: replyText
+                            message_text: logText
                         })
 
                     // Update chat details
                     await supabaseAdmin
                         .from('whatsapp_chats')
                         .update({
-                            last_message_text: replyText,
+                            last_message_text: logText,
                             updated_at: new Date().toISOString()
                         })
                         .eq('id', chat.id)
@@ -236,15 +302,14 @@ Guidelines:
                             .insert({
                                 lead_id: matchedLead.id,
                                 action_type: 'REMARK',
-                                description: `💬 Automated WhatsApp 24h follow-up (Stage ${followupStage}) sent: "${replyText.substring(0, 100)}"`
+                                description: `💬 Automated WhatsApp follow-up (Stage ${followupStage}) sent: "${logText.substring(0, 100)}"`
                             })
                     }
 
                     sentCount++
                     diagnostics.push({ phone: chat.recipient_phone, stage: followupStage, success: true })
                 } else {
-                    const errText = await metaRes.text()
-                    diagnostics.push({ phone: chat.recipient_phone, stage: followupStage, success: false, error: errText })
+                    diagnostics.push({ phone: chat.recipient_phone, stage: followupStage, success: false, error: JSON.stringify(sendData.error) })
                 }
             } catch (err: any) {
                 console.error(`Error generating/sending follow-up for chat ${chat.id}:`, err)

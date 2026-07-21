@@ -142,6 +142,21 @@ export async function POST(request: Request) {
       }
     }
 
+    // Dispatch multi-channel notification to admin (Push, Free-form WhatsApp, Email)
+    try {
+      const { sendAdminMultiChannelNotification } = await import('@/utils/notification-helper')
+      const formattedSlotDate = new Date(slot).toLocaleString('en-IN', { timeZone: timeZone || 'Asia/Kolkata', dateStyle: 'full', timeStyle: 'short' })
+      await sendAdminMultiChannelNotification({
+        ownerUserId: user_id,
+        title: '📅 New Meeting Booked!',
+        body: `Lead ${lead.name} (${lead.phone || 'No Phone'}) booked an appointment for ${formattedSlotDate}.${hangoutLink ? `\nMeet Link: ${hangoutLink}` : ''}`,
+        url: `/dashboard/crm/${lead_id}`,
+        type: 'meeting_booked'
+      })
+    } catch (notifErr: any) {
+      console.error("[Booking Create API] Failed to send multi-channel admin alert:", notifErr)
+    }
+
     // 5.5. Save History Log
     try {
       const localSlotDate = new Date(slot)

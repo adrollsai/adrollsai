@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendPushNotification } from '@/utils/notification-helper'
+import { sendPushNotification, sendAdminMultiChannelNotification } from '@/utils/notification-helper'
 import { sendCAPIEvent, callGemini, callGeminiWithUsage } from '@/utils/external-apis'
 import { createOpenAI } from '@ai-sdk/openai'
 import { google } from '@ai-sdk/google'
@@ -982,6 +982,19 @@ IMPORTANT RULES:
                                         .from('whatsapp_messages')
                                         .insert(inboundInsert);
 
+                                     // Trigger multi-channel alert to Admin (Push + Free-form WhatsApp + Email)
+                                     const leadDisplayName = chat.recipient_name || latestLead?.name || 'Customer';
+                                     const leadDisplayPhone = '+' + cleanFrom;
+                                     const messagePreview = messageText || `[${inboundMediaType || 'media'}]`;
+
+                                     sendAdminMultiChannelNotification({
+                                         ownerUserId,
+                                         title: `💬 WhatsApp Message from ${leadDisplayName}`,
+                                         body: `${leadDisplayName} (${leadDisplayPhone}): "${messagePreview}"`,
+                                         url: '/dashboard/whatsapp',
+                                         type: 'inbound_message'
+                                     }).catch(err => console.error('[Webhook] Multi-channel notification error:', err));
+
                                      // Bypass bot execution for system verification code messages
                                      const isVerificationMessage = /confirmation code|facebook code|verification code|security code/i.test(messageText);
                                      if (isVerificationMessage) {
@@ -1042,147 +1055,17 @@ IMPORTANT RULES:
                                              console.error('[Flow] Error sending expert connection response to lead:', waErr);
                                          }
                                          
-                                         // 2. Fetch business profile details to send alerts
-                                         const { data: ownerProfile } = await supabaseAdmin
-                                             .from('profiles')
-                                             .select('id, email, business_name, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
-                                             .eq('id', ownerUserId)
-                                             .single();
-                                             
+                                         // 2. Trigger Multi-Channel Alert to Admin (Push + Free-form WhatsApp + Email)
                                          const leadName = chat.recipient_name || latestLead?.name || 'Prospect';
                                          const leadPhone = '+' + cleanFrom;
                                          
-                                         if (ownerProfile) {
-                                             // A. Trigger Email Notification to Admin
-                                             try {
-                                                 const { sendConnectExpertNotificationEmail } = await import('@/utils/email-helper');
-                                                 await sendConnectExpertNotificationEmail(
-                                                     ownerProfile.email,
-                                                     ownerProfile.business_name || 'Nobogent CRM Client',
-                                                     leadName,
-                                                     leadPhone
-                                                 );
-                                                 console.log(`[Flow] Expert request email sent to ${ownerProfile.email}`);
-                                             } catch (emailErr: any) {
-                                                 console.error('[Flow] Failed to send expert request email:', emailErr.message);
-                                             }
-                                             
-                                             // B. Trigger Push Notification to Admin
-                                             try {
-                                                 await sendPushNotification(
-                                                     ownerProfile.id,
-                                                     '☎️ Expert Callback Requested!',
-                                                     `Lead ${leadName} (${leadPhone}) has requested to connect with an expert immediately.`,
-                                                     '/dashboard/crm'
-                                                 );
-                                                 console.log(`[Flow] Expert request push notification sent to owner ${ownerProfile.id}`);
-                                             } catch (pushErr: any) {
-                                                 console.error('[Flow] Failed to send expert request push:', pushErr.message);
-                                             }
-                                             
-                                             // C. Trigger WhatsApp Template Message to Admin's Personal Number
-                                             const personalPhone = ownerProfile.whatsapp_personal_number;
-                                             if (personalPhone) {
-                                                 let cleanPersonal = personalPhone.replace(/\D/g, '');
-                                                 if (cleanPersonal.length === 10) {
-                                                     cleanPersonal = '91' + cleanPersonal;
-                                                 }
-                                                 
-                                                 const token = ownerProfile.whatsapp_access_token || ownerProfile.facebook_token || ownerWaToken;
-                                                 const phoneId = ownerProfile.whatsapp_phone_number_id || ownerWaPhoneId;
-                                                 
-                                                 if (cleanPersonal && token && phoneId) {
-                                                     try {
-                                                         const adminWaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
-                                                         console.log(`[Flow] Sending WhatsApp template alert to admin personal number: ${cleanPersonal}`);
-                                                         const waAlertRes = await fetch(adminWaUrl, {
-                                                             method: 'POST',
-                                                             headers: {
-                                                                 'Authorization': `Bearer ${token}`,
-                                                                 'Content-Type': 'application/json'
-                                                             },
-                                                             body: JSON.stringify({
-                                                                 messaging_product: 'whatsapp',
-                                                                 recipient_type: 'individual',
-                                                                 to: cleanPersonal,
-                                                                 type: 'template',
-                                                                 template: {
-                                                                     name: 'expert_connection_notification',
-                                                                     language: {
-                                                                         code: 'en_US'
-                                                                     },
-                                                                     components: [
-                                                                         {
-                                                                             type: 'body',
-                                                                             parameters: [
-                                                                                 { type: 'text', text: leadName },
-                                                                                 { type: 'text', text: leadPhone }
-                                                                             ]
-                                                                         }
-                                                                     ]
-                                                                 }
-                                                             })
-                                                         });
-                                                         
-                                                         const waAlertData = await waAlertRes.json();
-                                                         if (!waAlertRes.ok) {
-                                                             console.error('[Flow] Failed to send WhatsApp template alert to admin:', waAlertData);
-                                                         } else {
-                                                             console.log(`[Flow] WhatsApp template alert sent to admin: ${cleanPersonal}`);
-                                                             
-                                                             // Log the template message in the CRM WhatsApp inbox so it's visible
-                                                             try {
-                                                                 const templateBodyText = `🔔 Expert Connection Request!\n\nLead *${leadName}* (${leadPhone}) has requested to connect with an expert.\n\nPlease call them back as soon as possible.`;
-                                                                 
-                                                                 // Upsert chat for admin's personal number
-                                                                 const { data: existingAdminChat } = await supabaseAdmin
-                                                                     .from('whatsapp_chats')
-                                                                     .select('id')
-                                                                     .eq('user_id', ownerUserId)
-                                                                     .eq('recipient_phone', cleanPersonal)
-                                                                     .maybeSingle();
-                                                                 
-                                                                 let adminChatId = existingAdminChat?.id;
-                                                                 
-                                                                 if (!adminChatId) {
-                                                                     const { data: newAdminChat } = await supabaseAdmin
-                                                                         .from('whatsapp_chats')
-                                                                         .insert({
-                                                                             user_id: ownerUserId,
-                                                                             recipient_phone: cleanPersonal,
-                                                                             recipient_name: ownerProfile.business_name ? `${ownerProfile.business_name} (Admin)` : 'Admin',
-                                                                             last_message_text: templateBodyText,
-                                                                             updated_at: new Date().toISOString()
-                                                                         })
-                                                                         .select('id')
-                                                                         .single();
-                                                                     adminChatId = newAdminChat?.id;
-                                                                 } else {
-                                                                     await supabaseAdmin
-                                                                         .from('whatsapp_chats')
-                                                                         .update({ last_message_text: templateBodyText, updated_at: new Date().toISOString() })
-                                                                         .eq('id', adminChatId);
-                                                                 }
-                                                                 
-                                                                 if (adminChatId) {
-                                                                     await supabaseAdmin
-                                                                         .from('whatsapp_messages')
-                                                                         .insert({
-                                                                             chat_id: adminChatId,
-                                                                             direction: 'outbound',
-                                                                             message_text: templateBodyText
-                                                                         });
-                                                                 }
-                                                             } catch (logErr) {
-                                                                 console.error('[Flow] Failed to log admin template in CRM inbox:', logErr);
-                                                             }
-                                                         }
-                                                     } catch (waAlertErr: any) {
-                                                         console.error('[Flow] Exception sending WhatsApp alert to admin:', waAlertErr.message);
-                                                     }
-                                                 }
-                                             }
-                                         }
+                                         sendAdminMultiChannelNotification({
+                                             ownerUserId,
+                                             title: '☎️ Connect with Expert Requested!',
+                                             body: `Lead ${leadName} (${leadPhone}) has requested to connect with an expert immediately. Please contact them on call as soon as possible.`,
+                                             url: '/dashboard/crm',
+                                             type: 'connect_expert'
+                                         }).catch(err => console.error('[Flow] Multi-channel expert request alert failed:', err));
                                          
                                          return; // Stop processing further automation rules/flows or Gemini
                                      }
@@ -2608,16 +2491,24 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                   console.error("[Facebook Webhook] Failed to send auto-response email to lead:", autoEmailErr);
               }
           }
+          const cleanSource = (adCampaignString || 'Meta Ads').split(' / ')[0];
 
-          // FIRE THE RICHER NOTIFICATION
-          const cleanSource = adCampaignString.split(' / ')[0];
-          
-          await sendPushNotification(
-              assignedAgentId || profile.id,
-              "🔥 New Facebook Lead!",
-              `${name} • ${phone} • ${cleanSource}`,
-              `/dashboard/crm/${savedLead.id}` 
-          )
+          await sendAdminMultiChannelNotification({
+              ownerUserId: profile.id,
+              title: "🎯 New Facebook Lead!",
+              body: `Lead: ${name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
+              url: `/dashboard/crm/${savedLead.id}`,
+              type: 'new_lead'
+          });
+          if (assignedAgentId && assignedAgentId !== profile.id) {
+              await sendAdminMultiChannelNotification({
+                  ownerUserId: assignedAgentId,
+                  title: "🎯 Lead Assigned to You!",
+                  body: `Lead: ${name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
+                  url: `/dashboard/crm/${savedLead.id}`,
+                  type: 'new_lead'
+              });
+          }
 
           // Personalize welcome template campaign name based on matched property in active inventory
           let welcomePropertyTitle = '';

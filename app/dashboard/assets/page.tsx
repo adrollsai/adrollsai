@@ -298,19 +298,14 @@ export default function AssetsPage() {
             
             if (assetData?.error) throw new Error(assetData.error)
 
-            let propQuery = supabase
+            const { data: propData } = await supabase
                 .from('properties')
                 .select('id, title')
-                .eq('user_id', targetUserId);
-
-            if (maxPropTime && !force) {
-                propQuery = propQuery.gt('created_at', maxPropTime);
-            }
-
-            const { data: propData } = await propQuery.order('created_at', { ascending: false });
+                .eq('user_id', targetUserId)
+                .order('created_at', { ascending: false });
 
             let mergedAssets = force ? assetData : mergeCacheData<any>(cachedAssets, assetData || []);
-            let mergedProps = force ? (propData || []) : mergeCacheData<any>(cachedProps, propData || []);
+            let mergedProps = propData || [];
 
             if (mergedAssets && Array.isArray(mergedAssets)) {
                 // Filter out distributed assets to keep the library clean

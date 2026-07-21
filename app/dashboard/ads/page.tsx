@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight, Link2, Pencil, BarChart4, Trash2 } from 'lucide-react'
+import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight, Link2, Pencil, BarChart4, Trash2, Search } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
@@ -44,6 +44,7 @@ export default function AdsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [campaignSearchQuery, setCampaignSearchQuery] = useState('')
   const [remarketSourceCampaign, setRemarketSourceCampaign] = useState<Campaign | null>(null)
   const [activeExplorerCampaign, setActiveExplorerCampaign] = useState<Campaign | null>(null)
   const [explorerData, setExplorerData] = useState<any>(null)
@@ -605,13 +606,10 @@ export default function AdsPage() {
       const maxAssetTime = getMaxCreatedAt(cachedAssets as any[]);
 
       let propQuery = supabase.from('properties').select('id, title, price, image_url, description').eq('user_id', targetUserId);
-      if (maxPropTime && !force) propQuery = propQuery.gt('created_at', maxPropTime);
 
       let pageQuery = supabase.from('landing_pages').select('*').eq('user_id', targetUserId);
-      if (maxPageTime && !force) pageQuery = pageQuery.gt('created_at', maxPageTime);
 
       let formQuery = supabase.from('qualification_forms').select('*').eq('user_id', targetUserId);
-      if (maxFormTime && !force) formQuery = formQuery.gt('created_at', maxFormTime);
 
       const [propsRes, leadsRes, pagesRes, formsRes, apiAssetsData, metaFormsData] = await Promise.all([
           propQuery.order('created_at', { ascending: false }),
@@ -628,8 +626,7 @@ export default function AdsPage() {
           })
       ])
 
-      const freshProps = propsRes.data || []
-      const mergedProps = force ? freshProps : mergeCacheData<any>(cachedProps, freshProps);
+      const mergedProps = propsRes.data || []
 
       const freshPages = pagesRes.data || []
       const mergedPages = force ? freshPages : mergeCacheData<any>(cachedPages, freshPages);
@@ -2006,6 +2003,28 @@ export default function AdsPage() {
           </div>
         )}
 
+        {/* CAMPAIGN SEARCH BAR */}
+        {!loading && campaigns.length > 0 && (
+          <div className="mb-6 relative max-w-md">
+            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input 
+              type="text" 
+              value={campaignSearchQuery}
+              onChange={(e) => setCampaignSearchQuery(e.target.value)}
+              placeholder="Search campaigns by name or objective..." 
+              className="w-full bg-white border border-slate-200 py-3.5 pl-12 pr-4 rounded-[1.25rem] shadow-sm text-sm text-slate-700 font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all" 
+            />
+            {campaignSearchQuery && (
+              <button 
+                onClick={() => setCampaignSearchQuery('')}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )}
+
         {loading ? (
             <div className="flex flex-col items-center justify-center min-h-[40vh] text-slate-400 gap-4"><Loader2 size={32} className="animate-spin text-slate-300" /><p className="text-sm font-medium animate-pulse">Syncing with Meta...</p></div>
         ) : (
@@ -2013,7 +2032,13 @@ export default function AdsPage() {
                 {campaigns.length === 0 ? (
                     <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400 bg-white rounded-[1.75rem] xs:rounded-[2.5rem] border border-slate-200/60 border-dashed"><LayoutGrid size={48} className="text-slate-200 mb-4" /><p className="text-base font-bold text-slate-600">No active campaigns</p><p className="text-sm mt-1">Tap 'New Campaign' to launch your first AI-optimized ad.</p></div>
                 ) : (
-                    [...campaigns].sort((a, b) => {
+                    [...campaigns]
+                    .filter(c => {
+                        const q = campaignSearchQuery.trim().toLowerCase();
+                        if (!q) return true;
+                        return (c.name || '').toLowerCase().includes(q) || (c.objective || '').toLowerCase().includes(q);
+                    })
+                    .sort((a, b) => {
                         if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1;
                         if (a.status !== 'ACTIVE' && b.status === 'ACTIVE') return 1;
                         return 0;

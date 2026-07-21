@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil, Maximize2 } from 'lucide-react'
+import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil, Maximize2, Tag } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner' 
@@ -9,6 +9,7 @@ import { uploadToR2, compressImage } from '@/utils/upload-helper'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 import LazyVideo from '@/components/LazyVideo'
+import { getPropertyTags, formatPropertyConfigWithTags } from '@/utils/property-tags'
 
 
 // Custom WhatsApp SVG Icon
@@ -42,6 +43,8 @@ type Property = {
   auto_generate?: boolean 
   youtube_url?: string | null
   show_on_landing_page?: boolean
+  configurations?: string | null
+  tags?: string[]
 }
 
 type Asset = {
@@ -96,12 +99,13 @@ export default function ProductsPage() {
   const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string, type?: 'image' | 'video' }>({ isOpen: false, url: '', title: '' })
   
   // Add Form State
-  const [newProp, setNewProp] = useState({ title: '', description: '', youtube_url: '', show_on_landing_page: true })
+  const [newProp, setNewProp] = useState<{ title: string; description: string; youtube_url: string; show_on_landing_page: boolean; tags: string }>({ title: '', description: '', youtube_url: '', show_on_landing_page: true, tags: '' })
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
 
   // Edit Form State
   const [editProp, setEditProp] = useState<Property | null>(null)
+  const [editTagsInput, setEditTagsInput] = useState<string>('')
   const [editFiles, setEditFiles] = useState<File[]>([])
   const [editPreviews, setEditPreviews] = useState<string[]>([])
   const [existingImages, setExistingImages] = useState<string[]>([])
@@ -165,7 +169,7 @@ export default function ProductsPage() {
 
       // Setup caching key
       const cacheKey = `properties_cache_${targetUserId}`;
-      const cached = force ? [] : getLocalCache<Property>(cacheKey);
+      const cached = getLocalCache<Property>(cacheKey);
 
       if (cached.length > 0 && properties.length === 0) {
           setProperties(cached);
@@ -176,24 +180,17 @@ export default function ProductsPage() {
 
       if (force) setIsRefreshing(true);
 
-      const maxCreatedAt = getMaxCreatedAt(cached as any[]);
-      let query = supabase
+      const { data, error: dbError } = await supabase
         .from('properties')
         .select('*')
-        .eq('user_id', targetUserId);
-
-      if (maxCreatedAt && !force) {
-          query = query.gt('created_at', maxCreatedAt);
-      }
-
-      const { data, error: dbError } = await query.order('created_at', { ascending: false });
+        .eq('user_id', targetUserId)
+        .order('created_at', { ascending: false });
 
       if (dbError) throw new Error(dbError.message || JSON.stringify(dbError))
       
       if (data) {
-          const merged = force ? data : mergeCacheData<any>(cached, data);
-          setProperties(merged);
-          setLocalCache(cacheKey, merged);
+          setProperties(data);
+          setLocalCache(cacheKey, data);
       }
 
     } catch (error: any) {
@@ -268,6 +265,7 @@ export default function ProductsPage() {
 
   const openEditModal = (prop: Property) => {
     setEditProp({ ...prop }) // clone object
+    setEditTagsInput(getPropertyTags(prop).join(', '))
     // Initialize existing images
     setExistingImages(prop.images && prop.images.length > 0 ? prop.images : (prop.image_url ? [prop.image_url] : []))
     setEditFiles([])
@@ -309,6 +307,8 @@ export default function ProductsPage() {
       // Combine existing un-deleted images with newly uploaded images
       const finalImages = [...existingImages, ...uploadedUrls]
       const finalMainImage = finalImages.length > 0 ? finalImages[0] : ""
+      const updatedTags = editTagsInput.split(',').map((t: string) => t.trim()).filter(Boolean)
+      const updatedConfigurations = formatPropertyConfigWithTags(editProp.configurations, updatedTags)
 
       const apiRes = await fetch('/api/inventory', {
         method: 'POST',
@@ -322,7 +322,8 @@ export default function ProductsPage() {
             image_url: finalMainImage,
             images: finalImages,
             youtube_url: editProp.youtube_url || null,
-            show_on_landing_page: editProp.show_on_landing_page !== false
+            show_on_landing_page: editProp.show_on_landing_page !== false,
+            configurations: updatedConfigurations
           }
         })
       })
@@ -338,7 +339,9 @@ export default function ProductsPage() {
           image_url: finalMainImage,
           images: finalImages,
           youtube_url: editProp.youtube_url || null,
-          show_on_landing_page: editProp.show_on_landing_page !== false
+          show_on_landing_page: editProp.show_on_landing_page !== false,
+          configurations: updatedConfigurations,
+          tags: updatedTags
       } : p)
       
       setProperties(updatedProps)
@@ -552,6 +555,9 @@ export default function ProductsPage() {
         }
       }
 
+      const newTagsArr = (newProp.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean)
+      const newConfigurations = formatPropertyConfigWithTags(null, newTagsArr)
+
       const apiRes = await fetch('/api/inventory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -568,7 +574,8 @@ export default function ProductsPage() {
             image_url: uploadedUrls[0] || "",
             images: uploadedUrls,
             youtube_url: newProp.youtube_url || null,
-            show_on_landing_page: newProp.show_on_landing_page !== false
+            show_on_landing_page: newProp.show_on_landing_page !== false,
+            configurations: newConfigurations
           }
         })
       })
@@ -578,7 +585,7 @@ export default function ProductsPage() {
 
       await fetchProperties(true)
       setShowAddModal(false)
-      setNewProp({ title: '', description: '', youtube_url: '', show_on_landing_page: true })
+      setNewProp({ title: '', description: '', youtube_url: '', show_on_landing_page: true, tags: '' })
       setSelectedFiles([])
       setPreviews([])
 
@@ -661,11 +668,13 @@ export default function ProductsPage() {
   const filteredProperties = properties.filter(p => {
     const query = searchQuery.trim().toLowerCase()
     if (!query) return true
+    const tags = getPropertyTags(p)
     return (
       (p.title || '').toLowerCase().includes(query) ||
       (p.description || '').toLowerCase().includes(query) ||
       (p.address || '').toLowerCase().includes(query) ||
-      (p.property_type || '').toLowerCase().includes(query)
+      (p.property_type || '').toLowerCase().includes(query) ||
+      tags.some(tag => tag.toLowerCase().includes(query))
     )
   })
 
@@ -817,6 +826,21 @@ export default function ProductsPage() {
                   {prop.description || 'No description provided.'}
                 </p>
 
+                {/* Internal Tags (App Users Only) */}
+                {(() => {
+                  const tags = getPropertyTags(prop);
+                  if (tags.length === 0) return null;
+                  return (
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      {tags.map((t, idx) => (
+                        <span key={idx} className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 text-[10px] font-extrabold px-2.5 py-0.5 rounded-md border border-slate-200/60">
+                          <Tag size={9} className="text-blue-500 shrink-0" /> {t}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
+
                 {/* Auto Generate & Landing Page Toggles */}
                 {isAdminLike && (
                   <div className="mt-4 pt-4 border-t border-slate-100 space-y-2.5">
@@ -955,6 +979,19 @@ export default function ProductsPage() {
                 />
               </div>
 
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1">
+                  <Tag size={12} className="text-blue-500" /> Internal Tags (App Users Only, Hidden Publicly)
+                </label>
+                <input 
+                  type="text" 
+                  value={newProp.tags || ''} 
+                  onChange={(e) => setNewProp({...newProp, tags: e.target.value})} 
+                  className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-medium text-slate-900 transition-all" 
+                  placeholder="e.g. luxury, 3bhk, prime-location (comma separated)" 
+                />
+              </div>
+
               <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 mt-2">
                 <input 
                   type="checkbox" 
@@ -1054,6 +1091,19 @@ export default function ProductsPage() {
                   onChange={(e) => setEditProp({...editProp, youtube_url: e.target.value})} 
                   className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-medium text-slate-900 transition-all" 
                   placeholder="e.g. https://www.youtube.com/watch?v=..." 
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1">
+                  <Tag size={12} className="text-blue-500" /> Internal Tags (App Users Only, Hidden Publicly)
+                </label>
+                <input 
+                  type="text" 
+                  value={editTagsInput} 
+                  onChange={(e) => setEditTagsInput(e.target.value)} 
+                  className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-medium text-slate-900 transition-all" 
+                  placeholder="e.g. luxury, 3bhk, prime-location (comma separated)" 
                 />
               </div>
 
