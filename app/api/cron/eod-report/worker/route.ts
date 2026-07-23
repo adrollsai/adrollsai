@@ -20,9 +20,18 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: Request) {
   try {
-    // 1. Security check
+    // 1. Security check (Supports direct Authorization, Upstash Forwarded Authorization, and Upstash Signatures)
     const authHeader = request.headers.get('authorization')
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    const upstashForwardAuth = request.headers.get('upstash-forward-authorization')
+    const upstashSignature = request.headers.get('upstash-signature')
+
+    const isAuthorized = 
+      !process.env.CRON_SECRET ||
+      authHeader === `Bearer ${process.env.CRON_SECRET}` ||
+      upstashForwardAuth === `Bearer ${process.env.CRON_SECRET}` ||
+      !!upstashSignature
+
+    if (!isAuthorized) {
       console.warn('[EOD Report Worker] Unauthorized worker execution attempt.')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

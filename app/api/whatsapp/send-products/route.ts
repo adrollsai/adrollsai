@@ -46,7 +46,7 @@ export async function GET(req: Request) {
         // Fetch properties for the owner
         const { data: properties, error: propErr } = await supabase
             .from('properties')
-            .select('id, title, price, address, configurations, youtube_url')
+            .select('id, title, price, address, configurations, youtube_url, image_url, images')
             .eq('user_id', ownerUserId)
             .order('created_at', { ascending: false })
 
@@ -237,7 +237,9 @@ export async function POST(req: Request) {
             .insert({
                 chat_id: chatId,
                 direction: 'outbound',
-                message_text: logText
+                message_text: logText,
+                media_url: (imageUrl && isRealPublicImageUrl(imageUrl)) ? imageUrl : null,
+                media_type: (imageUrl && isRealPublicImageUrl(imageUrl)) ? 'image' : null
             })
             .select('*')
             .single()

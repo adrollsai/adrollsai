@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target } from 'lucide-react'
+import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target, Check, CheckCheck } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 
@@ -61,6 +61,135 @@ export default function AutomationPage() {
     return qs ? `${base}?${qs}` : base
   }
   
+  // Helper to resolve media URLs (bypassing media proxy for direct public URLs like Cloudflare R2 or standard web images)
+  const getResolvedMediaUrl = (url: string | null | undefined): string | null => {
+    if (!url) return null;
+    const cleanUrl = url.trim();
+    if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
+      if (!cleanUrl.includes('graph.facebook.com') && !cleanUrl.includes('lookaside.fbsbx.com')) {
+        return cleanUrl;
+      }
+    }
+    return `/api/whatsapp/media-proxy?url=${encodeURIComponent(cleanUrl)}`;
+  }
+
+  // Helper to extract image URL from message text if media_url is missing in DB
+  const extractImageFromText = (text: string | null | undefined): string | null => {
+    if (!text) return null;
+    // 1. Direct image link (jpg, png, webp, gif, r2, supabase storage)
+    const imgRegex = /(https?:\/\/[^\s<>'"]+\.(?:jpg|jpeg|png|webp|gif)(\?[^\s<>'"]*)?|https?:\/\/[^\s<>'"]+\/storage\/v1\/object\/public\/[^\s<>'"]+|https?:\/\/pub-[^\s<>'"]+\.[^\s<>'"]+)/i;
+    const match = text.match(imgRegex);
+    if (match) return match[0];
+
+    // 2. Match property ID in URL (e.g. property=31f442a8-971d-4ead-9e05-a8eccc1a0f43)
+    const propMatch = text.match(/property=([a-f0-9-]{36})/i);
+    if (propMatch && propMatch[1]) {
+      const propId = propMatch[1];
+      const matchedProp = properties.find(p => p.id === propId);
+      if (matchedProp) {
+        const propImg = matchedProp.image_url || (matchedProp.images && matchedProp.images.length > 0 ? matchedProp.images[0] : null);
+        if (propImg) return propImg;
+      }
+    }
+
+    // 3. Match property title if message contains [Image Product Card], [IMAGE], or 🏷️
+    if (text.includes('[Image Product Card]') || text.includes('[IMAGE]') || text.includes('🏷️')) {
+      for (const p of properties) {
+        if (p.title && text.toLowerCase().includes(p.title.toLowerCase())) {
+          const propImg = p.image_url || (p.images && p.images.length > 0 ? p.images[0] : null);
+          if (propImg) return propImg;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // Pre-approved template text map for fallback expansion
+  const TEMPLATE_BODY_MAP: Record<string, string> = {
+    'auto_lead_welcome': 'Hi {{1}}, thank you for reaching out to {{2}}. We have received your inquiry and our team will get back to you shortly. In the meantime, if you have any questions, feel free to reply directly to this message!',
+    'auto_drip_followup_24h': 'Hi {{1}}, just checking in on your request with {{2}} from yesterday. Do you have any questions or would you like to schedule a quick call to discuss how we can help you?',
+    'auto_drip_followup_48h': 'Hello {{1}}, we\'d love to help you get started at {{2}}. Let us know if you\'d like to book a demo slot or speak with one of our representatives.',
+    'auto_reminder_24h': 'Hi {{1}}, this is a quick reminder of your scheduled appointment with {{2}} tomorrow. We look forward to speaking with you!',
+    'auto_reminder_4h': 'Hi {{1}}, looking forward to our appointment today in 4 hours. Please let us know if you need to reschedule.',
+    'auto_reminder_1h': 'Hi {{1}}, our meeting starts in 1 hour. We look forward to connecting with you shortly!',
+    'auto_reminder_15m': 'Hi {{1}}, we are starting in 15 minutes! Please get ready for our call.',
+    'hello_world': 'Welcome and thank you for choosing {{2}}. How can we help you today?',
+    'lead_auto_response': 'Thank you for reaching out to {{2}}! We have received your request and our team will connect with you shortly.'
+  };
+
+  // Helper to resolve full template content and body text
+  const resolveTemplateContent = (text: string, leadName?: string, bizName?: string) => {
+    if (!text || !text.startsWith('Sent Template:')) return null;
+    const templateName = text.replace('Sent Template:', '').trim();
+    
+    // Check Meta API templates loaded in state first
+    const metaMatch = templates.find(t => t.name === templateName);
+    let rawBody = '';
+    if (metaMatch && metaMatch.components) {
+      const bodyComp = metaMatch.components.find((c: any) => c.type === 'BODY');
+      if (bodyComp && bodyComp.text) rawBody = bodyComp.text;
+    }
+
+    if (!rawBody) {
+      rawBody = TEMPLATE_BODY_MAP[templateName] || `Hello! This is an automated update regarding your inquiry with ${bizName || 'our team'}. Please reply if you have any questions.`;
+    }
+
+    // Replace template parameters
+    const filledText = rawBody
+      .replace(/\{\{1\}\}/g, leadName || 'there')
+      .replace(/\{\{2\}\}/g, bizName || 'our team')
+      .replace(/\{\{3\}\}/g, 'your inquiry')
+      .replace(/\{\{4\}\}/g, 'soon');
+
+    return {
+      templateName,
+      bodyText: filledText
+    };
+  }
+
+  // Helper to format WhatsApp markdown formatting (*bold*, _italic_, ~strike~, code, and links)
+  const renderFormattedWhatsAppText = (text: string) => {
+    if (!text) return null;
+    const lines = text.split('\n');
+    return lines.map((line, lIdx) => {
+      const tokenRegex = /(https?:\/\/[^\s<>'"]+|\*[^*]+\*|_[^_]+_|~[^~]+~)/g;
+      const parts = line.split(tokenRegex);
+
+      return (
+        <span key={lIdx} className="block min-h-[1.1em]">
+          {parts.map((part, pIdx) => {
+            if (!part) return null;
+            if (part.startsWith('http://') || part.startsWith('https://')) {
+              return (
+                <a
+                  key={pIdx}
+                  href={part}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline font-semibold break-all"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {part}
+                </a>
+              );
+            }
+            if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+              return <strong key={pIdx} className="font-bold text-[#111b21]">{part.slice(1, -1)}</strong>;
+            }
+            if (part.startsWith('_') && part.endsWith('_') && part.length > 2) {
+              return <em key={pIdx} className="italic">{part.slice(1, -1)}</em>;
+            }
+            if (part.startsWith('~') && part.endsWith('~') && part.length > 2) {
+              return <s key={pIdx} className="line-through">{part.slice(1, -1)}</s>;
+            }
+            return <span key={pIdx}>{part}</span>;
+          })}
+        </span>
+      );
+    });
+  }
+  
   // Live Chat Inbox states (Cached in localStorage)
   const [chats, setChats] = useState<Chat[]>(() => {
     if (typeof window !== 'undefined') {
@@ -86,6 +215,8 @@ export default function AutomationPage() {
     price?: string
     address?: string
     configurations?: string
+    image_url?: string
+    images?: string[]
   }
   const [properties, setProperties] = useState<Property[]>([])
   const [selectedPropertyId, setSelectedPropertyId] = useState('')
@@ -681,7 +812,7 @@ export default function AutomationPage() {
   })()
 
   return (
-    <div className="p-5 mx-auto min-h-screen pb-24 max-w-5xl">
+    <div className="p-5 mx-auto min-h-screen pb-36 max-w-5xl mb-16">
       
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
@@ -769,7 +900,7 @@ export default function AutomationPage() {
         )}
       </div>
 
-      <div className="bg-white border border-slate-200/80 rounded-[2rem] shadow-xl overflow-hidden h-[600px] flex">
+      <div className="bg-white border border-slate-200/80 rounded-[2rem] shadow-xl overflow-hidden h-[calc(100vh-230px)] min-h-[500px] max-h-[620px] flex mb-12">
           
           {/* Chats Sidebar */}
           <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-1/3 border-r border-slate-100 flex-col bg-slate-50/50`}>
@@ -1074,71 +1205,148 @@ export default function AutomationPage() {
                 )}
 
                 {/* Messages View */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#f0f2f5]/40 scrollbar-thin">
+                <div className="flex-1 overflow-y-auto p-4 space-y-2.5 bg-[#efeae2] bg-[radial-gradient(#cbd5e1_0.75px,transparent_0.75px)] [background-size:16px_16px] scrollbar-thin">
                   {loadingMessages ? (
-                    <div className="text-center text-xs text-slate-400 flex items-center justify-center gap-1.5 h-full"><Loader2 className="animate-spin text-blue-600" size={14} /> Loading messages...</div>
+                    <div className="text-center text-xs text-slate-500 font-semibold flex items-center justify-center gap-1.5 h-full bg-white/70 backdrop-blur-xs rounded-2xl p-4 shadow-xs max-w-xs mx-auto my-auto"><Loader2 className="animate-spin text-emerald-600" size={14} /> Loading conversation...</div>
                   ) : messages.length === 0 ? (
-                    <div className="text-center text-xs text-slate-400 py-10 mt-10">No messages in this conversation.</div>
+                    <div className="text-center text-xs text-slate-500 bg-white/80 backdrop-blur-xs border border-slate-200/60 font-semibold py-3 px-6 rounded-2xl max-w-sm mx-auto shadow-xs mt-10">No messages in this conversation yet.</div>
                   ) : (
                     messages.map((m) => {
                       const isOutbound = m.direction === 'outbound'
+                      
+                      // Clean text and resolve template info & interactive buttons
+                      let displayText = m.message_text || ''
+
+                      // 1. Template Resolution
+                      const templateInfo = resolveTemplateContent(displayText, leadInfo?.name || selectedChat?.recipient_phone, profile?.business_name)
+                      if (templateInfo) {
+                        displayText = templateInfo.bodyText
+                      }
+
+                      // 2. Interactive Button Extraction
+                      let extractedButtonLabel: string | null = null
+                      const buttonMatch = displayText.match(/\[(?:Button|Interactive Button|Quick Reply):\s*([^\]]+)\]/i)
+                      if (buttonMatch) {
+                        extractedButtonLabel = buttonMatch[1].trim()
+                        displayText = displayText.replace(/\[(?:Button|Interactive Button|Quick Reply):\s*([^\]]+)\]/gi, '').trim()
+                      }
+
+                      if (displayText.startsWith('[Image Product Card]')) {
+                        displayText = displayText.replace('[Image Product Card]', '').trim()
+                      }
+
+                      // 3. Resolve direct public URL vs proxy URL for media
+                      const directMediaUrl = getResolvedMediaUrl(m.media_url)
+                      const extractedImgFromText = !m.media_url ? extractImageFromText(m.message_text) : null
+                      const displayImageUrl = directMediaUrl || extractedImgFromText
+                      const isImage = (m.media_type === 'image' || m.media_type === 'sticker') || !!extractedImgFromText
+
                       return (
                         <div 
                           key={m.id}
                           className={`flex ${isOutbound ? 'justify-end' : 'justify-start'}`}
                         >
                           <div className={`
-                            max-w-[70%] p-3 rounded-2xl text-xs shadow-sm leading-relaxed
+                            relative max-w-[85%] sm:max-w-[72%] p-2.5 rounded-xl text-[12.5px] leading-relaxed shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]
                             ${isOutbound 
-                              ? 'bg-emerald-500 text-white rounded-tr-none' 
-                              : 'bg-white text-slate-800 rounded-tl-none border border-slate-100'
+                              ? 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none' 
+                              : 'bg-white text-[#111b21] rounded-tl-none border border-slate-100/60'
                             }
                           `}>
-                            {/* Render media if present */}
-                            {m.media_url && (m.media_type === 'image' || m.media_type === 'sticker') && (
-                              <img 
-                                src={`/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url)}`}
-                                alt="Shared image" 
-                                className="rounded-lg mb-2 max-w-full max-h-60 object-contain cursor-pointer"
-                                onClick={() => window.open(`/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url!)}`, '_blank')}
-                                loading="lazy"
-                              />
+                            {/* Template Badge Header */}
+                            {templateInfo && (
+                              <div className="mb-2 pb-1.5 border-b border-black/10 flex items-center justify-between gap-2">
+                                <span className="text-[9.5px] font-extrabold uppercase tracking-wider text-emerald-900 bg-emerald-150/80 border border-emerald-300/50 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+                                  📋 Template Message
+                                </span>
+                                <span className="text-[9px] font-mono text-slate-500 font-bold truncate">{templateInfo.templateName}</span>
+                              </div>
                             )}
+
+                            {/* Render Image Media if present or extracted */}
+                            {displayImageUrl && isImage && (
+                              <div className="mb-2 rounded-lg overflow-hidden border border-black/5 bg-black/5 max-w-full">
+                                <img 
+                                  src={displayImageUrl}
+                                  alt="Shared image" 
+                                  className="max-w-full max-h-72 w-full object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                                  onClick={() => window.open(displayImageUrl, '_blank')}
+                                  loading="lazy"
+                                  onError={(e) => {
+                                    const target = e.currentTarget;
+                                    if (!target.dataset.triedProxy && m.media_url) {
+                                      target.dataset.triedProxy = 'true';
+                                      target.src = `/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url)}`;
+                                    }
+                                  }}
+                                />
+                              </div>
+                            )}
+
+                            {/* Render Video */}
                             {m.media_url && m.media_type === 'video' && (
                               <video 
-                                src={`/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url)}`}
+                                src={getResolvedMediaUrl(m.media_url)!}
                                 controls 
-                                className="rounded-lg mb-2 max-w-full max-h-60"
+                                className="rounded-lg mb-2 max-w-full max-h-60 bg-black"
                                 preload="metadata"
                               />
                             )}
+
+                            {/* Render Audio */}
                             {m.media_url && m.media_type === 'audio' && (
                               <audio 
-                                src={`/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url)}`}
+                                src={getResolvedMediaUrl(m.media_url)!}
                                 controls 
                                 className="mb-2 max-w-full"
                                 preload="metadata"
                               />
                             )}
+
+                            {/* Render Document */}
                             {m.media_url && m.media_type === 'document' && (
                               <a 
-                                href={`/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url)}`}
+                                href={getResolvedMediaUrl(m.media_url)!}
                                 target="_blank" 
                                 rel="noopener noreferrer"
-                                className={`flex items-center gap-2 mb-2 p-2 rounded-lg text-xs font-medium ${isOutbound ? 'bg-emerald-600/30 text-white' : 'bg-slate-100 text-blue-600'}`}
+                                className="flex items-center gap-2 mb-2 p-2 rounded-lg text-xs font-semibold bg-emerald-700/10 text-emerald-900 border border-emerald-200/50 hover:bg-emerald-700/20 transition-colors"
                               >
                                 📄 View Document
                               </a>
                             )}
-                            {m.message_text && !(['[image]', '[video]', '[audio]', '[sticker]', '[document]'].includes(m.message_text?.toLowerCase())) && (
-                              <p className="whitespace-pre-wrap">{m.message_text}</p>
+
+                            {/* Main Formatted Text Content */}
+                            {displayText && !(['[image]', '[video]', '[audio]', '[sticker]', '[document]'].includes(displayText.toLowerCase())) && (
+                              <div className="text-[12.5px] text-[#111b21] leading-relaxed break-words">
+                                {renderFormattedWhatsAppText(displayText)}
+                              </div>
                             )}
-                            {(!m.message_text || ['[image]', '[video]', '[audio]', '[sticker]', '[document]'].includes(m.message_text?.toLowerCase())) && !m.media_url && (
-                              <p className="whitespace-pre-wrap italic opacity-60">{m.message_text || '[media]'}</p>
+
+                            {(!displayText || ['[image]', '[video]', '[audio]', '[sticker]', '[document]'].includes(displayText.toLowerCase())) && !displayImageUrl && (
+                              <p className="italic opacity-60 text-[11px]">{displayText || '[Media Message]'}</p>
                             )}
-                            <span className={`text-[8px] block text-right mt-1.5 font-medium ${isOutbound ? 'text-emerald-100' : 'text-slate-400'}`}>
-                              {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
+
+                            {/* Render WhatsApp Interactive Reply Button */}
+                            {extractedButtonLabel && (
+                              <div className="mt-2.5 pt-2 border-t border-black/10">
+                                <button 
+                                  onClick={() => toast.info(`Interactive action: ${extractedButtonLabel}`)}
+                                  className="w-full py-2 px-3 bg-white hover:bg-slate-50 text-[#008069] active:bg-slate-100 border border-[#00a884]/30 rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer hover:shadow-md"
+                                >
+                                  <span className="text-sm">📞</span> {extractedButtonLabel}
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Timestamp & WhatsApp Double Ticks Bar */}
+                            <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-500 font-medium select-none">
+                              <span>
+                                {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              {isOutbound && (
+                                <CheckCheck size={15} className="text-[#53bdeb] font-black shrink-0 stroke-[2.5]" />
+                              )}
+                            </div>
                           </div>
                         </div>
                       )

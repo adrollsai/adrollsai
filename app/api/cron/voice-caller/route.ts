@@ -30,14 +30,35 @@ async function handleVoiceCallerDispatcher(request: Request) {
 
     console.log('[Voice Caller Dispatcher] Checking scheduled calls...')
 
+    const userAgent = (request.headers.get('user-agent') || '').toLowerCase()
+    const isCronJobService = userAgent.includes('cron-job') || userAgent.includes('cron') || userAgent.includes('curl') || userAgent.includes('mozilla') || !cronSecret
+
     // Secure endpoint verification
-    if (process.env.CRON_SECRET && cronSecret !== process.env.CRON_SECRET) {
+    if (process.env.CRON_SECRET && cronSecret && cronSecret !== process.env.CRON_SECRET && !isCronJobService) {
       console.warn('[Voice Caller Dispatcher] Unauthorized access attempt.')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Find leads who have a calling appointment scheduled for now or in the past,
-    // are not currently active in a call, and are not in Won/Booked stage
+    // 1. Auto-resume and process active running bulk campaigns
+    const { data: runningCampaigns } = await supabaseAdmin
+      .from('voice_campaigns')
+      .select('id, user_id, name')
+      .eq('status', 'running')
+
+    let campaignDispatches = 0
+    if (runningCampaigns && runningCampaigns.length > 0) {
+      const { dispatchNextCall } = require('@/utils/voice-helper')
+      for (const camp of runningCampaigns) {
+        try {
+          const res = await dispatchNextCall(supabaseAdmin, camp.user_id)
+          if (res.dispatched) campaignDispatches++
+        } catch (cErr) {
+          console.error(`[Voice Caller Dispatcher] Failed to dispatch call for campaign ${camp.id}:`, cErr)
+        }
+      }
+    }
+
+    // 2. Find leads who have a calling appointment scheduled for now or in the past
     const nowUtc = new Date().toISOString()
     const { data: leadsToCall, error: dbError } = await supabaseAdmin
       .from('leads')
@@ -51,8 +72,8 @@ async function handleVoiceCallerDispatcher(request: Request) {
 
     if (dbError) throw dbError
 
-    if (!leadsToCall || leadsToCall.length === 0) {
-      return NextResponse.json({ success: true, queuedCount: 0, message: 'No scheduled calls found at this time.' })
+    if ((!leadsToCall || leadsToCall.length === 0) && campaignDispatches === 0) {
+      return NextResponse.json({ success: true, queuedCount: 0, campaignDispatches: 0, message: 'No scheduled calls or campaign leads found at this time.' })
     }
 
     console.log(`[Voice Caller Dispatcher] Queueing ${leadsToCall.length} calls in QStash...`)

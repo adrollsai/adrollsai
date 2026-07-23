@@ -77,18 +77,29 @@ export async function triggerOutboundCall(
             return { success: false, error: 'SUBSCRIPTION_EXPIRED' }
         }
 
-        // Concurrency Check: Only allow one active call at a time per user
+        // Concurrency Check: Only allow one active call at a time per user (with 7-min stale auto-recovery)
         const { data: activeLeads } = await supabaseAdmin
             .from('leads')
-            .select('id, updated_at')
+            .select('id, last_called_at, voice_call_scheduled_at, created_at')
             .eq('user_id', profileId)
             .eq('voice_call_status', 'calling');
 
         const nowTs = Date.now();
-        const activeCalls = (activeLeads || []).filter((c: any) => {
-            const updatedAtTime = new Date(c.updated_at).getTime();
-            return (nowTs - updatedAtTime) < 7 * 60 * 1000; // 7 minutes timeout
-        });
+        const activeCalls: any[] = [];
+
+        for (const c of (activeLeads || [])) {
+            const updatedAtTime = new Date(c.last_called_at || c.voice_call_scheduled_at || c.created_at || 0).getTime();
+            const elapsed = nowTs - updatedAtTime;
+            if (updatedAtTime > 0 && elapsed >= 7 * 60 * 1000) {
+                console.warn(`[VOICE HELPER] Auto-recovering stale call stuck in calling status for lead ${c.id}`);
+                await supabaseAdmin
+                    .from('leads')
+                    .update({ voice_call_status: 'no_answer' })
+                    .eq('id', c.id);
+            } else {
+                activeCalls.push(c);
+            }
+        }
 
         if (activeCalls.length > 0 && activeCalls[0].id !== leadId) {
             console.warn(`[VOICE HELPER] Outbound call aborted for lead ${leadId}: User ${profileId} already has an active call in progress.`);

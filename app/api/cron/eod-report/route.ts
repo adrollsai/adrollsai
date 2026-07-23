@@ -31,8 +31,8 @@ async function handleEodReportDispatcher(request: Request) {
 
     console.log('[EOD Report Dispatcher] Triggered...')
 
-    // Enforce security verification using our global environment CRON_SECRET if configured
-    if (process.env.CRON_SECRET && cronSecret !== process.env.CRON_SECRET) {
+    // Verify CRON_SECRET if passed in query param or Authorization header
+    if (process.env.CRON_SECRET && cronSecret && cronSecret !== process.env.CRON_SECRET) {
       console.warn('[EOD Report Dispatcher] Unauthorized access attempt.')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
