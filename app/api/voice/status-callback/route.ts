@@ -12,9 +12,10 @@ const supabaseAdmin = createClient(
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 export async function POST(req: Request) {
+    let leadId: string | null = null
     try {
         const { searchParams } = new URL(req.url)
-        let leadId = searchParams.get('leadId')
+        leadId = searchParams.get('leadId')
 
         const formData = await req.formData()
         const callSid = formData.get('CallSid') as string || ''
@@ -812,6 +813,18 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
         return NextResponse.json({ success: true })
     } catch (e: any) {
         console.error('[TWILIO STATUS CALLBACK] Error:', e.message)
+        if (leadId) {
+            try {
+                const { data: lead } = await supabaseAdmin.from('leads').select('user_id').eq('id', leadId).single();
+                if (lead?.user_id) {
+                    dispatchNextCall(supabaseAdmin, lead.user_id).catch(err => {
+                        console.error('[TWILIO STATUS CALLBACK] next dispatch failed in catch block:', err)
+                    })
+                }
+            } catch (dispatchErr) {
+                console.error('[TWILIO STATUS CALLBACK] next dispatch failed in catch block:', dispatchErr)
+            }
+        }
         return NextResponse.json({ success: false, error: e.message })
     }
 }

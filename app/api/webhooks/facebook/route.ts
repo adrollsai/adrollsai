@@ -80,6 +80,62 @@ async function getNextRoundRobinAgent(supabaseAdmin: any, agentIds: string[]) {
     return selectedAgent;
 }
 
+async function logPastWhatsAppHistory(supabaseAdmin: any, chatId: string, leadId: string, cutoffCreatedAt: string | null) {
+  try {
+    let query = supabaseAdmin
+      .from('whatsapp_messages')
+      .select('*')
+      .eq('chat_id', chatId);
+      
+    if (cutoffCreatedAt) {
+      query = query.lt('created_at', cutoffCreatedAt);
+    }
+    
+    const { data: messages, error } = await query.order('created_at', { ascending: true });
+    
+    if (error || !messages || messages.length === 0) return;
+    
+    const historyItems: any[] = [];
+    let i = 0;
+    while (i < messages.length) {
+      const current = messages[i];
+      if (current.direction === 'inbound') {
+        const user_msg = current.message_text;
+        let bot_reply = '';
+        const nextMsg = messages[i + 1];
+        if (nextMsg && nextMsg.direction === 'outbound') {
+          bot_reply = nextMsg.message_text;
+          i += 2;
+        } else {
+          i += 1;
+        }
+        
+        historyItems.push({
+          lead_id: leadId,
+          action_type: 'WHATSAPP_CHAT',
+          description: `💬 WA_JSON:${JSON.stringify({ user_msg, bot_reply, booking_time: null })}`,
+          created_at: current.created_at
+        });
+      } else {
+        historyItems.push({
+          lead_id: leadId,
+          action_type: 'WHATSAPP_CHAT',
+          description: `💬 WA_JSON:${JSON.stringify({ user_msg: '', bot_reply: current.message_text, booking_time: null })}`,
+          created_at: current.created_at
+        });
+        i += 1;
+      }
+    }
+    
+    if (historyItems.length > 0) {
+      await supabaseAdmin.from('lead_history').insert(historyItems);
+      console.log(`[Flow] Successfully back-populated ${historyItems.length} history logs for lead ${leadId}`);
+    }
+  } catch (e) {
+    console.error('[Flow] Error back-populating WhatsApp history logs:', e);
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -978,9 +1034,12 @@ IMPORTANT RULES:
                                     if (inboundMediaUrl) inboundInsert.media_url = inboundMediaUrl;
                                     if (inboundMediaType) inboundInsert.media_type = inboundMediaType;
 
-                                    await supabaseAdmin
-                                        .from('whatsapp_messages')
-                                        .insert(inboundInsert);
+                                    const { data: currentInboundMsg } = await supabaseAdmin
+                                         .from('whatsapp_messages')
+                                         .insert(inboundInsert)
+                                         .select('created_at')
+                                         .single();
+                                     const currentInboundMsgCreatedAt = currentInboundMsg?.created_at || null;
 
                                      // Trigger multi-channel alert to Admin (Push + Free-form WhatsApp + Email)
                                      const leadDisplayName = chat.recipient_name || latestLead?.name || 'Customer';
@@ -1588,9 +1647,12 @@ Clean Name:`;
 
                                             if (newLead) {
                                                 await supabaseAdmin
-                                                    .from('whatsapp_chats')
-                                                    .update({ lead_id: newLead.id })
-                                                    .eq('id', chat.id);
+                                                     .from('whatsapp_chats')
+                                                     .update({ lead_id: newLead.id })
+                                                     .eq('id', chat.id);
+                                                 
+                                                 chat.lead_id = newLead.id;
+                                                 await logPastWhatsAppHistory(supabaseAdmin, chat.id, newLead.id, currentInboundMsgCreatedAt);
 
                                                 // Trigger automated Voice Dialing if enabled
                                                 if (ownerAutoCallNewLeads) {
@@ -1704,6 +1766,10 @@ Provide 4 clear numbered options for them to pick from (e.g., 1️⃣ Pricing & 
                                             chat.lead_id = newLead?.id || null;
                                             chat.flow_answers = currentAnswers;
 
+                                            if (newLead) {
+                                                await logPastWhatsAppHistory(supabaseAdmin, chat.id, newLead.id, currentInboundMsgCreatedAt);
+                                            }
+
                                             await sendWAMessage(`Thank you for your responses, ${leadName}! ✅ Our team will reach out to you very soon. Feel free to ask any questions in the meantime!`);
 
                                             // Send push notification
@@ -1808,6 +1874,10 @@ Provide 4 clear numbered options for them to pick from (e.g., 1️⃣ Pricing & 
                                             chat.flow_completed = true;
                                             chat.lead_id = newLead?.id || null;
                                             chat.flow_answers = currentAnswers;
+
+                                            if (newLead) {
+                                                await logPastWhatsAppHistory(supabaseAdmin, chat.id, newLead.id, currentInboundMsgCreatedAt);
+                                            }
 
                                             await sendWAMessage(`Thank you for your responses, ${leadName}! ✅ Our team will reach out to you very soon. Feel free to ask any questions in the meantime!`);
 

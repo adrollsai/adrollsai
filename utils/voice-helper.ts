@@ -960,99 +960,96 @@ export async function dispatchNextCall(supabaseAdmin: any, userId: string): Prom
     console.log(`[CALL DISPATCHER] Dispatching next call for user ${userId}...`);
 
     // 1. Check if there is already an active call in progress for this user
+    // Since leads table doesn't have updated_at, we select id and check if any lead has voice_call_status = 'calling'
     const { data: activeLeads } = await supabaseAdmin
         .from('leads')
-        .select('id, updated_at')
+        .select('id')
         .eq('user_id', userId)
         .eq('voice_call_status', 'calling');
 
-    const now = Date.now();
-    const activeCalls = (activeLeads || []).filter((c: any) => {
-        const updatedAtTime = new Date(c.updated_at).getTime();
-        return (now - updatedAtTime) < 7 * 60 * 1000; // 7 minutes timeout
-    });
-
-    if (activeCalls.length > 0) {
-        console.log(`[CALL DISPATCHER] Call deferred: Lead ${activeCalls[0].id} is currently in progress.`);
-        return { deferred: true, activeLeadId: activeCalls[0].id };
+    if (activeLeads && activeLeads.length > 0) {
+        console.log(`[CALL DISPATCHER] Call deferred: Lead ${activeLeads[0].id} is currently in progress.`);
+        return { deferred: true, activeLeadId: activeLeads[0].id };
     }
 
-    // 2. Priority 1: Check for scheduled calls whose reminder time has come
-    const nowUtc = new Date().toISOString();
-    const { data: scheduledLeads } = await supabaseAdmin
-        .from('leads')
-        .select('id, name')
-        .eq('user_id', userId)
-        .not('voice_call_scheduled_at', 'is', null)
-        .lte('voice_call_scheduled_at', nowUtc)
-        .neq('voice_call_status', 'calling')
-        .neq('voice_call_status', 'failed')
-        .neq('calling_enabled', false)
-        .not('pipeline_stage', 'in', '("Won", "Appointment booked")')
-        .order('voice_call_scheduled_at', { ascending: true })
-        .limit(1);
-
-    if (scheduledLeads && scheduledLeads.length > 0) {
-        const targetLead = scheduledLeads[0];
-        console.log(`[CALL DISPATCHER] Prioritizing scheduled call for lead: ${targetLead.name} (ID: ${targetLead.id})`);
-        
-        // Clear scheduled time first to prevent double-calls
-        await supabaseAdmin
-            .from('leads')
-            .update({ voice_call_scheduled_at: null })
-            .eq('id', targetLead.id);
-
-        const callRes = await triggerOutboundCall(supabaseAdmin, targetLead.id, userId, true);
-        if (!callRes.success) {
-            console.log(`[CALL DISPATCHER] Scheduled call failed to initiate. Dispatching next immediately...`);
-            setTimeout(() => {
-                dispatchNextCall(supabaseAdmin, userId).catch(err => console.error('[RECURSIVE DISPATCH ERROR]', err));
-            }, 500);
-        }
-        return { dispatched: true, type: 'scheduled', leadId: targetLead.id, success: callRes.success };
-    }
-
-    // 3. Check for campaign calls
-    // Find any voice campaigns for this user that are currently 'running'
-    const { data: runningCampaigns } = await supabaseAdmin
-        .from('voice_campaigns')
-        .select('id, name')
-        .eq('user_id', userId)
-        .eq('status', 'running')
-        .limit(1);
-
-    if (runningCampaigns && runningCampaigns.length > 0) {
-        const activeCampaign = runningCampaigns[0];
-        console.log(`[CALL DISPATCHER] Active campaign found: ${activeCampaign.name} (ID: ${activeCampaign.id})`);
-
-        // Find the next lead in this campaign that hasn't been called yet
-        const { data: campaignLeads } = await supabaseAdmin
+    // Loop to dial the next available lead. If one fails to trigger (e.g. invalid phone/credits), 
+    // it loops to the next immediately to prevent the bulk campaign from getting stuck.
+    while (true) {
+        // 2. Priority 1: Check for scheduled calls whose reminder time has come
+        const nowUtc = new Date().toISOString();
+        const { data: scheduledLeads } = await supabaseAdmin
             .from('leads')
             .select('id, name')
             .eq('user_id', userId)
-            .eq('voice_campaign_id', activeCampaign.id)
-            .or('voice_call_status.is.null,voice_call_status.eq.not_called')
+            .not('voice_call_scheduled_at', 'is', null)
+            .lte('voice_call_scheduled_at', nowUtc)
+            .neq('voice_call_status', 'calling')
+            .neq('voice_call_status', 'failed')
+            .neq('calling_enabled', false)
+            .not('pipeline_stage', 'in', '("Won", "Appointment booked")')
+            .order('voice_call_scheduled_at', { ascending: true })
             .limit(1);
 
-        if (campaignLeads && campaignLeads.length > 0) {
-            const nextLead = campaignLeads[0];
-            console.log(`[CALL DISPATCHER] Dialing next campaign lead: ${nextLead.name} (ID: ${nextLead.id})`);
-            const callRes = await triggerOutboundCall(supabaseAdmin, nextLead.id, userId, false, activeCampaign.id);
-            if (!callRes.success) {
-                console.log(`[CALL DISPATCHER] Campaign call failed to initiate. Dispatching next immediately...`);
-                setTimeout(() => {
-                    dispatchNextCall(supabaseAdmin, userId).catch(err => console.error('[RECURSIVE DISPATCH ERROR]', err));
-                }, 500);
-            }
-            return { dispatched: true, type: 'campaign', leadId: nextLead.id, success: callRes.success };
-        } else {
-            // No more leads left in the campaign, mark it as completed
-            console.log(`[CALL DISPATCHER] Campaign ${activeCampaign.name} completed all calls.`);
+        if (scheduledLeads && scheduledLeads.length > 0) {
+            const targetLead = scheduledLeads[0];
+            console.log(`[CALL DISPATCHER] Prioritizing scheduled call for lead: ${targetLead.name} (ID: ${targetLead.id})`);
+            
+            // Clear scheduled time first to prevent double-calls
             await supabaseAdmin
-                .from('voice_campaigns')
-                .update({ status: 'completed' })
-                .eq('id', activeCampaign.id);
+                .from('leads')
+                .update({ voice_call_scheduled_at: null })
+                .eq('id', targetLead.id);
+
+            const callRes = await triggerOutboundCall(supabaseAdmin, targetLead.id, userId, true);
+            if (callRes.success) {
+                return { dispatched: true, type: 'scheduled', leadId: targetLead.id, success: true };
+            }
+            console.log(`[CALL DISPATCHER] Scheduled call failed to initiate for ${targetLead.name}. Retrying next in loop...`);
+            continue;
         }
+
+        // 3. Check for campaign calls
+        // Find any voice campaigns for this user that are currently 'running'
+        const { data: runningCampaigns } = await supabaseAdmin
+            .from('voice_campaigns')
+            .select('id, name')
+            .eq('user_id', userId)
+            .eq('status', 'running')
+            .limit(1);
+
+        if (runningCampaigns && runningCampaigns.length > 0) {
+            const activeCampaign = runningCampaigns[0];
+            console.log(`[CALL DISPATCHER] Active campaign found: ${activeCampaign.name} (ID: ${activeCampaign.id})`);
+
+            // Find the next lead in this campaign that hasn't been called yet
+            const { data: campaignLeads } = await supabaseAdmin
+                .from('leads')
+                .select('id, name')
+                .eq('user_id', userId)
+                .eq('voice_campaign_id', activeCampaign.id)
+                .or('voice_call_status.is.null,voice_call_status.eq.not_called')
+                .limit(1);
+
+            if (campaignLeads && campaignLeads.length > 0) {
+                const nextLead = campaignLeads[0];
+                console.log(`[CALL DISPATCHER] Dialing next campaign lead: ${nextLead.name} (ID: ${nextLead.id})`);
+                const callRes = await triggerOutboundCall(supabaseAdmin, nextLead.id, userId, false, activeCampaign.id);
+                if (callRes.success) {
+                    return { dispatched: true, type: 'campaign', leadId: nextLead.id, success: true };
+                }
+                console.log(`[CALL DISPATCHER] Campaign call failed to initiate for ${nextLead.name}. Retrying next in loop...`);
+                continue;
+            } else {
+                // No more leads left in the campaign, mark it as completed
+                console.log(`[CALL DISPATCHER] Campaign ${activeCampaign.name} completed all calls.`);
+                await supabaseAdmin
+                    .from('voice_campaigns')
+                    .update({ status: 'completed' })
+                    .eq('id', activeCampaign.id);
+            }
+        }
+
+        break;
     }
 
     console.log(`[CALL DISPATCHER] No calls to dispatch at this time.`);

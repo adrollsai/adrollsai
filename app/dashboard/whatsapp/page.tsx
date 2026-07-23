@@ -207,6 +207,24 @@ export default function AutomationPage() {
       const chat = chats.find(c => c.id === selectedChatId)
       if (chat?.lead_id) {
         fetchLeadInfo(chat.lead_id)
+      } else if (chat) {
+        setLeadInfo({
+          id: '',
+          name: chat.recipient_name || '',
+          phone: chat.recipient_phone || '',
+          email: '',
+          pipeline_stage: 'New',
+          remarks: '',
+          custom_fields: {},
+          source: 'WhatsApp',
+          created_at: new Date().toISOString()
+        })
+        setLeadEditForm({
+          name: chat.recipient_name || '',
+          email: '',
+          pipeline_stage: 'New',
+          remarks: ''
+        })
       } else {
         setLeadInfo(null)
       }
@@ -396,29 +414,127 @@ export default function AutomationPage() {
     if (!leadInfo) return
     setSavingLead(true)
     try {
-      const { error } = await supabase
-        .from('leads')
-        .update({
-          name: leadEditForm.name,
-          email: leadEditForm.email,
-          pipeline_stage: leadEditForm.pipeline_stage,
-          notes: leadEditForm.remarks
-        })
-        .eq('id', leadInfo.id)
-      if (error) throw error
-      setLeadInfo({ ...leadInfo, ...leadEditForm })
-      setEditingLead(false)
-      toast.success('Lead info updated!')
-      // Also update the chat name if it changed
-      if (leadEditForm.name !== leadInfo.name && selectedChatId) {
-        await supabase
-          .from('whatsapp_chats')
-          .update({ recipient_name: leadEditForm.name })
-          .eq('id', selectedChatId)
-        setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, recipient_name: leadEditForm.name } : c))
+      if (leadInfo.id) {
+        const { error } = await supabase
+          .from('leads')
+          .update({
+            name: leadEditForm.name,
+            email: leadEditForm.email,
+            pipeline_stage: leadEditForm.pipeline_stage,
+            notes: leadEditForm.remarks
+          })
+          .eq('id', leadInfo.id)
+        if (error) throw error
+        setLeadInfo({ ...leadInfo, ...leadEditForm })
+        setEditingLead(false)
+        toast.success('Lead info updated!')
+        // Also update the chat name if it changed
+        if (leadEditForm.name !== leadInfo.name && selectedChatId) {
+          await supabase
+            .from('whatsapp_chats')
+            .update({ recipient_name: leadEditForm.name })
+            .eq('id', selectedChatId)
+          setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, recipient_name: leadEditForm.name } : c))
+        }
+      } else {
+        if (!leadEditForm.name.trim()) {
+          toast.error("Name is required to save lead in CRM.")
+          setSavingLead(false)
+          return
+        }
+
+        // 1. Create lead in CRM
+        const { data: newLead, error: insertError } = await supabase
+          .from('leads')
+          .insert({
+            user_id: profile?.id,
+            name: leadEditForm.name.trim(),
+            email: leadEditForm.email.trim(),
+            phone: leadInfo.phone,
+            pipeline_stage: leadEditForm.pipeline_stage || 'New',
+            notes: leadEditForm.remarks,
+            source: 'WhatsApp'
+          })
+          .select()
+          .single()
+
+        if (insertError) throw insertError
+
+        // 2. Associate the new lead's ID with the whatsapp_chat record
+        if (selectedChatId) {
+          const { error: chatUpdateErr } = await supabase
+            .from('whatsapp_chats')
+            .update({ 
+              lead_id: newLead.id,
+              recipient_name: leadEditForm.name.trim() 
+            })
+            .eq('id', selectedChatId)
+
+          if (chatUpdateErr) throw chatUpdateErr
+
+          setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, lead_id: newLead.id, recipient_name: leadEditForm.name.trim() } : c))
+        }
+
+        // 3. Back-populate whatsapp chat messages to lead_history for this new lead
+        if (selectedChatId) {
+          try {
+            const { data: messages } = await supabase
+              .from('whatsapp_messages')
+              .select('*')
+              .eq('chat_id', selectedChatId)
+              .order('created_at', { ascending: true })
+
+            if (messages && messages.length > 0) {
+              const historyItems: any[] = []
+              let i = 0
+              while (i < messages.length) {
+                const current = messages[i]
+                if (current.direction === 'inbound') {
+                  const user_msg = current.message_text
+                  let bot_reply = ''
+                  const nextMsg = messages[i + 1]
+                  if (nextMsg && nextMsg.direction === 'outbound') {
+                    bot_reply = nextMsg.message_text
+                    i += 2
+                  } else {
+                    i += 1
+                  }
+                  
+                  historyItems.push({
+                    lead_id: newLead.id,
+                    action_type: 'WHATSAPP_CHAT',
+                    description: `💬 WA_JSON:${JSON.stringify({ user_msg, bot_reply, booking_time: null })}`,
+                    created_at: current.created_at
+                  })
+                } else {
+                  historyItems.push({
+                    lead_id: newLead.id,
+                    action_type: 'WHATSAPP_CHAT',
+                    description: `💬 WA_JSON:${JSON.stringify({ user_msg: '', bot_reply: current.message_text, booking_time: null })}`,
+                    created_at: current.created_at
+                  })
+                  i += 1
+                }
+              }
+
+              if (historyItems.length > 0) {
+                await supabase.from('lead_history').insert(historyItems)
+              }
+            }
+          } catch (historyErr) {
+            console.error("Failed to backpopulate lead history:", historyErr)
+          }
+        }
+
+        setLeadInfo({
+          ...newLead,
+          remarks: newLead.notes || ''
+        } as any)
+        setEditingLead(false)
+        toast.success('Lead created and linked to chat!')
       }
     } catch (e: any) {
-      toast.error('Failed to update lead: ' + (e.message || ''))
+      toast.error('Failed to save lead: ' + (e.message || ''))
     }
     setSavingLead(false)
   }
