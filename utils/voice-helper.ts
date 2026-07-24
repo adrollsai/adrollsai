@@ -1032,18 +1032,20 @@ export async function dispatchNextCall(supabaseAdmin: any, userId: string): Prom
             const activeCampaign = runningCampaigns[0];
             console.log(`[CALL DISPATCHER] Active campaign found: ${activeCampaign.name} (ID: ${activeCampaign.id})`);
 
-            // Find the next lead in this campaign that hasn't been called yet
+            // Find the next lead in this campaign that needs to be called (fresh or due retries)
+            const nowUtc = new Date().toISOString();
             const { data: campaignLeads } = await supabaseAdmin
                 .from('leads')
                 .select('id, name')
                 .eq('user_id', userId)
                 .eq('voice_campaign_id', activeCampaign.id)
-                .or('voice_call_status.is.null,voice_call_status.eq.not_called')
+                .or(`voice_call_status.is.null,voice_call_status.eq.not_called,and(voice_call_status.eq.scheduled_retry,voice_call_scheduled_at.lte.${nowUtc})`)
+                .order('created_at', { ascending: false })
                 .limit(1);
 
             if (campaignLeads && campaignLeads.length > 0) {
                 const nextLead = campaignLeads[0];
-                console.log(`[CALL DISPATCHER] Dialing next campaign lead: ${nextLead.name} (ID: ${nextLead.id})`);
+                console.log(`[CALL DISPATCHER] Dialing campaign lead: ${nextLead.name} (ID: ${nextLead.id})`);
                 const callRes = await triggerOutboundCall(supabaseAdmin, nextLead.id, userId, false, activeCampaign.id);
                 if (callRes.success) {
                     return { dispatched: true, type: 'campaign', leadId: nextLead.id, success: true };
@@ -1051,12 +1053,24 @@ export async function dispatchNextCall(supabaseAdmin: any, userId: string): Prom
                 console.log(`[CALL DISPATCHER] Campaign call failed to initiate for ${nextLead.name}. Retrying next in loop...`);
                 continue;
             } else {
-                // No more leads left in the campaign, mark it as completed
-                console.log(`[CALL DISPATCHER] Campaign ${activeCampaign.name} completed all calls.`);
-                await supabaseAdmin
-                    .from('voice_campaigns')
-                    .update({ status: 'completed' })
-                    .eq('id', activeCampaign.id);
+                // Check if any leads in this campaign are still pending future retries, callbacks, or active calling
+                const { data: pendingLeads } = await supabaseAdmin
+                    .from('leads')
+                    .select('id')
+                    .eq('user_id', userId)
+                    .eq('voice_campaign_id', activeCampaign.id)
+                    .in('voice_call_status', ['scheduled_retry', 'scheduled_callback', 'calling'])
+                    .limit(1);
+
+                if (!pendingLeads || pendingLeads.length === 0) {
+                    console.log(`[CALL DISPATCHER] Campaign ${activeCampaign.name} completed all calls and retries.`);
+                    await supabaseAdmin
+                        .from('voice_campaigns')
+                        .update({ status: 'completed' })
+                        .eq('id', activeCampaign.id);
+                } else {
+                    console.log(`[CALL DISPATCHER] Campaign ${activeCampaign.name} waiting for scheduled retries/callbacks.`);
+                }
             }
         }
 

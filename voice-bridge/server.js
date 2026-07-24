@@ -151,7 +151,10 @@ wss.on('connection', (wsConnection) => {
         }
     }, 15000);
 
-    // Helper to process and forward media packets
+    // Helper to process and forward media packets (with 80ms batch buffering to slash latency & WebSocket overhead)
+    let audioBufferList = [];
+    let audioBufferSamples = 0;
+
     function sendMediaToGemini(payload) {
         try {
             const muLawBytes = Buffer.from(payload, 'base64');
@@ -162,23 +165,35 @@ wss.on('connection', (wsConnection) => {
 
             // Upsample to 16kHz
             const pcm16 = upsample8To16(pcm8);
+            audioBufferList.push(pcm16);
+            audioBufferSamples += pcm16.length;
 
-            // Convert back to binary buffer
-            const outBuffer = Buffer.alloc(pcm16.length * 2);
-            for (let i = 0; i < pcm16.length; i++) {
-                outBuffer.writeInt16LE(pcm16[i], i * 2);
-            }
+            // Batch ~80ms of audio (1280 samples at 16kHz) to reduce JSON serialization and WebSocket frame overhead by 75%
+            if (audioBufferSamples >= 1280) {
+                const combinedPcm = new Int16Array(audioBufferSamples);
+                let offset = 0;
+                for (const chunk of audioBufferList) {
+                    combinedPcm.set(chunk, offset);
+                    offset += chunk.length;
+                }
+                audioBufferList = [];
+                audioBufferSamples = 0;
 
-            // Send PCM 16-bit to Gemini Live
-            if (geminiSocket && geminiSocket.readyState === ws.OPEN) {
-                geminiSocket.send(JSON.stringify({
-                    realtimeInput: {
-                        audio: {
-                            mimeType: "audio/pcm;rate=16000",
-                            data: outBuffer.toString('base64')
+                const outBuffer = Buffer.alloc(combinedPcm.length * 2);
+                for (let i = 0; i < combinedPcm.length; i++) {
+                    outBuffer.writeInt16LE(combinedPcm[i], i * 2);
+                }
+
+                if (geminiSocket && geminiSocket.readyState === ws.OPEN) {
+                    geminiSocket.send(JSON.stringify({
+                        realtimeInput: {
+                            audio: {
+                                mimeType: "audio/pcm;rate=16000",
+                                data: outBuffer.toString('base64')
+                            }
                         }
-                    }
-                }));
+                    }));
+                }
             }
         } catch (err) {
             console.error('[BRIDGE] Error sending media to Gemini:', err);
@@ -354,17 +369,44 @@ wss.on('connection', (wsConnection) => {
                         const firstName = leadName.split(' ')[0] || 'there';
                         const isFirstCall = !previousCallsHistory && !whatsappHistory;
 
+                        // Parse Meta Ad Origin / Specific Product Attribution
+                        let adName = lead.ad_name || '';
+                        let adHeadline = '';
+                        let adProductName = '';
+                        let adCampaignName = '';
+                        let adBody = '';
+
+                        if (lead.custom_fields) {
+                            try {
+                                const customObj = typeof lead.custom_fields === 'string' ? JSON.parse(lead.custom_fields) : lead.custom_fields;
+                                const origin = customObj?.meta_ad_origin || customObj;
+                                if (origin) {
+                                    if (!adName && origin.ad_name) adName = origin.ad_name;
+                                    if (origin.headline) adHeadline = origin.headline;
+                                    if (origin.product_name) adProductName = origin.product_name;
+                                    if (origin.campaign_name) adCampaignName = origin.campaign_name;
+                                    if (origin.body) adBody = origin.body;
+                                }
+                            } catch (e) {
+                                console.warn('[BRIDGE] Could not parse custom_fields for ad origin:', e);
+                            }
+                        }
+
+                        const targetProduct = adProductName || (props && props.length > 0 ? props[0].title : null) || adHeadline || adName;
+
                         // Build proactive context instruction for the agent's second turn (after greeting response)
                         let sourceInstructions = "";
                         let contextInstruction = "";
                         if (isFirstCall) {
                             sourceInstructions = `\nThis is your FIRST call to this lead.`;
-                            if (lead.source) {
+                            if (targetProduct) {
+                                contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, explicitly reference the SPECIFIC project/product they showed interest in ("${targetProduct}"). Say something like: "Aapne ${companyName} ki ad dekhi thi ${targetProduct} ke regarding, main usi project ki complete details aur consultation schedule karne ke liye call kar rahi hoon." If asked "kiske regarding call hai?", answer directly: "Ye call ${companyName} ke ${targetProduct} project ki details share karne aur consultation schedule karne ke regarding hai."`;
+                            } else if (lead.source) {
                                 const cleanSource = lead.source.toLowerCase();
                                 if (cleanSource.includes('facebook') || cleanSource.includes('fb') || cleanSource.includes('instagram') || cleanSource.includes('ad')) {
-                                    contextInstruction = `   After the lead responds to your greeting, proactively establish context. Say something like: "Aapne hamaari ad dekhi hogi ${companyName} ki, ussi ke regarding call kar rahi hoon." Then naturally ask about their availability.`;
+                                    contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, say: "Aapne hamaari ad dekhi hogi ${companyName} ki, ussi ke regarding call kar rahi hoon."`;
                                 } else {
-                                    contextInstruction = `   After the lead responds to your greeting, proactively establish context. Say something like: "Aapne ${lead.source} par interest dikhaya tha, ussi ke regarding ${companyName} se call kar rahi hoon." Then naturally ask about their availability.`;
+                                    contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, say: "Aapne ${lead.source} par interest dikhaya tha, ussi ke regarding ${companyName} se call kar rahi hoon."`;
                                 }
                             } else {
                                 contextInstruction = `   After the lead responds to your greeting, introduce yourself and what the business does. ${productContext ? 'Mention the product/property they may be interested in from the LEAD INTEREST section below.' : (profile?.business_info ? `Briefly mention what the business deals in based on this info: "${profile.business_info.substring(0, 150).replace(/"/g, "'")}"` : '')} Say something like: "Main ${companyName} se baat kar rahi hoon, hum [mention product/service] mein deal karte hain." Then naturally ask about their availability.`;
@@ -428,21 +470,25 @@ Your primary objective is to make the lead, ${leadName}, book an appointment/con
 
 CONVERSATION FLOW:
 1. Your first greeting is: "Hi ${firstName} ji, kaise ho aap?". (This is already spoken initially).
-2. Once the lead responds to your greeting, your NEXT response must proactively establish context and recognition:
+2. Once the lead responds to your greeting, your NEXT response must proactively establish context:
 ${contextInstruction}
-3. After establishing context, proceed with the conversation (guide them to schedule a consultation/appointment with ${companyName}).
+3. After establishing context, act as a helpful advisor. Focus on answering their queries about ${targetProduct || 'the property'} first.
 
-CRITICAL RULES (CLOSED-WORLD GROUNDING):
+CRITICAL RULES (NATURAL HELPFUL AGENT & CLOSED-WORLD GROUNDING):
 1. STRICT CLOSED-WORLD ASSUMPTION: You must ONLY speak about the facts explicitly provided in the business profile info, catalog, and lead details.
-2. NO HALLUCINATIONS: Do NOT assume, extrapolate, guess, or invent any information (such as builder/developer names, completion dates, materials used, amenities, or specific project features) if they are not explicitly written in the description or details for that specific property.
-3. PROPERTY INDEPENDENCE: Keep property information completely separate. Do NOT mix details (like price, location, or builder) from one property (e.g., Homeland) and apply them to another property (e.g., Ananta).
-4. UNANSWERABLE QUESTIONS: If a user asks a question about a property, project, or business that is not explicitly answered in the context provided below, you MUST reply: "That is a great question. I don't have that specific detail on hand, but let's book a quick consultation call so our representative can get that exact info for you."
-5. Be polite, friendly, and brief in your responses. Keep responses under 45 words.
-6. Your single goal is to find a suitable date and time slot for a meeting.
-7. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish) when responding to the user.
-8. ENDING THE CALL: Once the call objective is met or the lead wants to end, say a brief polite goodbye and trigger your "end_call" tool to hang up the call immediately.
-9. GENDER & PRONOUNS: You are a female assistant. You must always use female grammar and pronouns when speaking Hindi/Hinglish (e.g., use "karti hoon" instead of "karta hoon", "karungi" instead of "karunga", "baat kar rahi hoon" instead of "baat kar raha hoon", "de sakti hoon" instead of "de sakta hoon", "bhejti hoon" instead of "bhejta hoon").
-10. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear a voicemail greeting, answering machine message, or any automated message (such as "please leave a message", "after the beep", or an automated robot voice), you must immediately trigger your "end_call" tool to hang up the call. Do NOT speak, say hello, or say goodbye; just trigger "end_call" instantly.
+2. NO HALLUCINATIONS: Do NOT assume, extrapolate, guess, or invent any information if not explicitly written in the context below.
+3. NATURAL HELPFUL AGENT (NO AGGRESSIVE PITCHING): You are a friendly, helpful representative for "${companyName}". Focus on helping the lead and answering their questions first. DO NOT ask to book an appointment/consultation in every single response. NEVER ask to book a call/visit in back-to-back consecutive responses. Only suggest a consultation/visit naturally when they ask specific technical questions (such as floor plans, site visits, or exact custom quotes) or express strong interest.
+4. UNANSWERABLE QUESTIONS: If a user asks a question about a property, project, or business that is not explicitly answered in the context provided below, reply naturally: "That is a great question. I don't have that specific detail right now, but let's book a quick consultation call so our team can get that exact info for you."
+5. Be polite, friendly, warm, and concise. Keep responses under 40 words.
+6. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish) when responding to the user.
+7. ENDING THE CALL: Once the call objective is met or the lead wants to end, say a brief polite goodbye and trigger your "end_call" tool to hang up the call immediately.
+8. GENDER & PRONOUNS: You are a female assistant. Always use female grammar and pronouns in Hinglish (e.g. "karti hoon", "karungi", "baat kar rahi hoon", "de sakti hoon").
+9. APPLE LIVE VOICEMAIL & CALL SCREENING PROTOCOL: If you detect that an automated screening robot is speaking (such as iOS Live Voicemail saying "State your name and reason for calling" or Android Call Screen asking "who is calling"):
+   - Do NOT hang up.
+   - State your name & reason clearly once: "Hi, I am calling from ${companyName} regarding ${targetProduct || 'your property inquiry'} for ${firstName}. Please connect the call."
+   - Then WAIT silently for the human prospect to press answer and speak before resuming your normal conversation.
+10. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear an automated machine prompt to leave a message after the beep, trigger "end_call" to hang up.
+11. AD & PRODUCT SPECIFICITY RULE: When the prospect asks "Aap kiske regarding call kar rahe ho?", "Kiska call hai?", or "What is this call about?", state the specific product clearly: "Main ${companyName} se ${targetProduct || 'hamaare project'} ki details aur consultation ke regarding call kar rahi hoon."
 
 ${sourceInstructions}
 ${resolvedQuestionsInstruction}

@@ -47,8 +47,9 @@ export async function POST(req: Request) {
         // Fetch all leads of the user using admin client to bypass RLS select policy
         const { data: leads, error: leadsErr } = await supabaseAdmin
             .from('leads')
-            .select('id, phone, source, pipeline_stage, campaign_id, ad_name, csv_audience')
+            .select('id, phone, source, pipeline_stage, campaign_id, ad_name, csv_audience, created_at')
             .eq('user_id', targetId)
+            .order('created_at', { ascending: false })
 
         if (leadsErr || !leads) {
             console.error('[CAMPAIGN START] leads query error:', leadsErr)
