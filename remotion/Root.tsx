@@ -34,7 +34,9 @@ export const RemotionRoot: React.FC = () => {
                 width={1080}
                 height={1920}
                 defaultProps={{
-                    videoUrls: [] as string[]
+                    videoUrls: [] as string[],
+                    audioUrl: "",
+                    clipDurationInSeconds: 15
                 }}
             />
         </>

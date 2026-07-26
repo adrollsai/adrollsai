@@ -77,18 +77,21 @@ export async function POST(request: Request) {
             targetProfile = selectWithAvatars.data;
         }
 
+        const videoModel = body.videoModel || 'seedance';
         const presenterType = body.presenterType || (useCharacterVideo ? 'video' : 'none');
 
-        if (presenterType === 'video' && (!targetProfile || !targetProfile.character_url)) {
-            return NextResponse.json({ 
-                error: 'Please upload a reference video in your Profile settings or Creation tab first before generating video scripts.' 
-            }, { status: 400 });
-        }
+        if (videoModel !== 'grok') {
+            if (presenterType === 'video' && (!targetProfile || !targetProfile.character_url)) {
+                return NextResponse.json({ 
+                    error: 'Please upload a reference video in your Profile settings or Creation tab first before generating video scripts.' 
+                }, { status: 400 });
+            }
 
-        if (presenterType === 'avatar' && (!targetProfile || !targetProfile.avatar_url)) {
-            return NextResponse.json({ 
-                error: 'Please upload an avatar photo in your Profile settings or Creation tab first before generating video scripts.' 
-            }, { status: 400 });
+            if (presenterType === 'avatar' && (!targetProfile || !targetProfile.avatar_url)) {
+                return NextResponse.json({ 
+                    error: 'Please upload an avatar photo in your Profile settings or Creation tab first before generating video scripts.' 
+                }, { status: 400 });
+            }
         }
 
         let profile: any = targetProfile || {};
@@ -284,6 +287,14 @@ Amenities/Features: ${property.amenities || "N/A"}
 4. THE WARM CALL TO ACTION (Scene 4: 0:45 - 1:00): Conclude with a friendly, welcoming, and low-friction invitation to take the next step.`;
         }
 
+        const targetWordCountMin = videoModel === 'grok' ? Math.round(duration * 2.2) : (numClips * 36);
+        const targetWordCountMax = videoModel === 'grok' ? Math.round(duration * 2.4) : (numClips * 44);
+        const targetAudioDurationSec = Math.round(duration * 0.85);
+
+        const wordCountRule = videoModel === 'grok'
+            ? `11. GROK BACKGROUND VOICEOVER WORD COUNT & PACING RULE: The full dialogue narration script MUST be written as a continuous, high-converting, energetic, and punchy background voiceover copy containing STRICTLY between ${targetWordCountMin} and ${targetWordCountMax} words total. This exact word count ensures that the generated TTS voiceover spans ${targetAudioDurationSec} seconds of the total ${duration}-second video duration. Do NOT write fluff or extra long sentences. Write tight, fast-flowing, punchy sentences weaving in specific, concrete product facts, features, pricing, location, and key selling points.`
+            : `11. Speech length & Word Count limits: Keep the dialogue for EACH scene strictly between 36 and 44 words so it can be naturally and comfortably spoken in 15 seconds, filling the scene time without feeling empty. Ensure dialogue is distributed proportionally to scene timestamps.`;
+
         const masterPrompt = `You are a world-class Ad Copywriter and UGC Creative Director specializing in TikTok, Instagram Reels, and Meta UGC ads.
 Your goal is to write a deeply emotional, highly engaging, and highly converting ${duration}-second ad script split into EXACTLY ${numClips} sequential 15-second scenes, using the Emotional Storytelling UGC Framework.
 
@@ -318,10 +329,8 @@ CONSTRAINTS & RULES:
    - Scene 1 visuals MUST open with an instant, scroll-stopping visual hook.
 1. Duration: STRICTLY ${duration} seconds total, split into exactly ${numClips} sequential 15-second clips (Scene 1 to Scene ${numClips}). Deeply emotional, slow-paced, warm, and natural.
 2. Dialogue language: ${languageInstruction}
-3. Speaker Character & Scenes Layout: The speaker in all scenes MUST be ${presenterType !== 'none' ? (characterDescription || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion") : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera"} (speaking directly to the camera and showcasing/talking about the product/service with warm relatable energy).
-   - For EACH scene, describe an appropriate outfit and location for the presenter, altering and customizing them based on the specific project or property theme (e.g., luxury penthouse office, elegant corporate desk, cozy modern living room) to fit the project tier.
-   - There MUST be specific cuts or b-rolls of the property or product (visualized from the reference images/info) integrated into each scene, showing details that matter to the viewer, with the presenter momentarily off-screen during the b-roll before cutting back to the presenter speaking directly to the camera.
-   - Medium closeup shots chest-up are required when the presenter is on camera to avoid facial mutations. Avoid wide shots of the presenter.
+3. Speaker Character & Scenes Layout: ${videoModel === 'grok' ? 'Background Voiceover Narration over dynamic 9:16 product collages and B-rolls.' : (presenterType !== 'none' ? (characterDescription || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion") : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera")}
+   - Describe property/product B-rolls cuts showcasing key features using matching reference image details.
 4. Spoken Dialogue Tone, Voice Quality & Deep Psychological Depth: The voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging.
    - ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or fast-talking hooks.
    - The script must have immense depth and empathy. You must dig deep into the psychological pain points of the business's target audience. E.g., if selling real estate, target the deep emotional anxiety of wastefully paying rent, landlord hassles, security and comfort for children/parents, the fear of delayed projects, wanting luxury/status, or needing peace of mind.
@@ -330,19 +339,18 @@ CONSTRAINTS & RULES:
 4.3. CRITICAL CONCRETE PRODUCT DETAILS RULE (DO NOT BE VAGUE):
    - You MUST explicitly weave the actual, concrete facts, features, price, and specifications of the product/property (such as the specific location, name, price, unique layouts, or key amenities) directly into the spoken dialogue. Describe the features that actually matter to the viewer (e.g. only 2 apartments per floor, fully automated smart features, rooftop pool) to drive conversions.
    - Do NOT use vague marketing terms, generic placeholders (like "[price]", "[location]", "[insert details]"), or broad fluff. The script must communicate real, informative details about the product so that the video provides actual, concrete information to the viewer. Do NOT mention RERA IDs or registration numbers in the video dialogue.
-4.1. NATURAL BODY LANGUAGE & GESTURES: In all visual instructions, the character must have highly natural, dynamic, and expressive body language — real hand gestures while talking, subtle head tilts, natural eye contact shifts, genuine smiling, leaning in/out, touching/pointing at products naturally. Their movements should feel organic and alive like a real UGC creator, NOT stiff, static, or robotic.
+4.1. NATURAL BODY LANGUAGE & GESTURES: In all visual instructions, movements should feel organic and alive like a real UGC creator.
 ${isEnglish ? `4.2. PRONUNCIATION: Use clear, standard English vocabulary. Keep the language accessible and professional. Avoid jargon or overly complex words.` : `4.2. PRONUNCIATION WORKAROUND (STRICTLY AVOID COMPLEX HINDI WORDS):
-   - The AI speech synthesizer frequently stumbles or produces errors when trying to pronounce complex, formal, or Sanskritized Hindi words.
    - To guarantee flawless natural pronunciation, you MUST strictly avoid complex, bookish, or heavy Hindi vocabulary (e.g. absolutely DO NOT write words phonetically like 'susajjit', 'aalishan', 'vastukala', 'pratishthit', 'suvidhajanak', 'vatankoolit', 'aakanksha', 'pratishtha', 'surakshit', 'parikalpana', 'keemat').
    - Instead, ALWAYS use extremely simple, clear, conversational, everyday spoken Hindi words phonetically (e.g. 'ghar' instead of complex synonyms, 'chain', 'sukoon', 'khushi', 'aasan', 'budget', 'best').
-   - Write Hindi words in Roman letters phonetically as they are pronounced (e.g., 'shuruaat', 'dhoondh', 'apna', 'achha'). Everyday English loanwords (like 'luxury', 'location', 'perfect', 'amenities', 'living', 'security', 'space', 'safe', 'family', 'balance') are highly preferred and pronounced perfectly by the voice model.`}
-5. STRICT NO-CTA IN EARLY SCENES RULE: Under no circumstances should early scenes contain any call to action, phone number, contact prompt, social handle reference, or request to purchase/visit. Early scenes must focus exclusively on the scroll-stopping hook and problem bridge. The Call to Action (CTA) to contact, buy, or get in touch must ONLY appear at the very end of the final Scene ${numClips} (the last 5 seconds).
-6. DYNAMIC AUDIENCE & NICHING ALIGNMENT: Analyze the product context and target buyer carefully. Tailor the hook and pain points exactly to the product's value tier. Do NOT use mismatched defaults (e.g. do NOT talk about 'renting vs buying' or 'saving rent money' if the product is a luxury 1.6 Cr home, commercial estate, or high-end service; instead, focus on exclusive lifestyle, status, growth, smart wealth investment, and ROI). Keep it fully aligned so that the copywriting angle naturally scales from premium commercial/residential buyers to budget-conscious daily e-commerce shoppers based on the product description provided.
-7. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue. If the product info or call-to-action implies a phone number, the creator must ONLY say ${isEnglish ? '"get in touch" or "contact us today"' : '"get in touch" (or natural Hinglish equivalents like "humein contact karein" or "get in touch ho jao")'} instead. Under no circumstances should the spoken dialogue contain any digits, numbers, or spoken phone numbers.
-8. STRICT ENVIRONMENT CONSTRAINT (Prevents Hallucinations): Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images. Do NOT invent, assume, or hallucinate rooms, structures, product features, or details that are not shown in the reference photos.
-9. Visual scene descriptions: Refer to the reference images by their actual visual descriptions naturally so the video generator knows exactly which image is used in each scene. Do NOT use abstract placeholders like "@Image 1", "@Image 2", "Image 1", or "Image 2" in the script or visual description.
-10. NEVER instruct to display any text overlay, subtitles, captions, watermarks, or logos on screen in any script or visuals section, as the video AI generates garbled text and distorted logos.
-11. Speech length & Word Count limits: Keep the dialogue for EACH scene strictly between 36 and 44 words so it can be naturally and comfortably spoken in 15 seconds, filling the scene time without feeling empty. Ensure dialogue is distributed proportionally to scene timestamps.
+   - Write Hindi words in Roman letters phonetically as they are pronounced (e.g., 'shuruaat', 'dhoondh', 'apna', 'achha'). Everyday English loanwords (like 'luxury', 'location', 'perfect', 'amenities', 'living', 'security', 'space', 'safe', 'family', 'balance') are highly preferred.`}
+5. STRICT NO-CTA IN EARLY SCENES RULE: Under no circumstances should early scenes contain any call to action. The Call to Action (CTA) must ONLY appear at the very end of the script.
+6. DYNAMIC AUDIENCE & NICHING ALIGNMENT: Tailor the hook and pain points exactly to the product's value tier.
+7. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue.
+8. STRICT ENVIRONMENT CONSTRAINT: Constrain all environment and visual action sequences strictly to the physical details actually visible in the reference images.
+9. Visual scene descriptions: Refer to the reference images by their actual visual descriptions naturally.
+10. NEVER instruct to display any text overlay, subtitles, captions, watermarks, or logos on screen.
+${wordCountRule}
 12. ${variationInstruction}
 
 Output format must be a single, valid JSON object:

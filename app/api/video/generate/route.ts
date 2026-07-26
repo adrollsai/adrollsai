@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-import { createKieTask } from '@/utils/external-apis';
+import { createKieTask, createGrokVideoTask, createGeminiTTS, queryKieTask } from '@/utils/external-apis';
+import { createCollageImages } from '@/utils/collage-generator';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
@@ -437,18 +438,21 @@ export async function POST(request: Request) {
             targetProfile = selectWithAvatars.data;
         }
 
+        const videoModel = body.videoModel || 'seedance';
         const presenterType = body.presenterType || (useCharacterVideo ? 'video' : 'none');
 
-        if (presenterType === 'video' && (!targetProfile || !targetProfile.character_url)) {
-            return NextResponse.json({ 
-                error: 'Please upload a reference video in your Profile settings or Creation tab first before generating videos.' 
-            }, { status: 400 });
-        }
+        if (videoModel !== 'grok') {
+            if (presenterType === 'video' && (!targetProfile || !targetProfile.character_url)) {
+                return NextResponse.json({ 
+                    error: 'Please upload a reference video in your Profile settings or Creation tab first before generating videos.' 
+                }, { status: 400 });
+            }
 
-        if (presenterType === 'avatar' && (!targetProfile || !targetProfile.avatar_url)) {
-            return NextResponse.json({ 
-                error: 'Please upload an avatar photo in your Profile settings or Creation tab first before generating videos.' 
-            }, { status: 400 });
+            if (presenterType === 'avatar' && (!targetProfile || !targetProfile.avatar_url)) {
+                return NextResponse.json({ 
+                    error: 'Please upload an avatar photo in your Profile settings or Creation tab first before generating videos.' 
+                }, { status: 400 });
+            }
         }
 
         let profile: any = targetProfile || {};
@@ -822,101 +826,246 @@ High-end commercial production quality.
             console.warn("[Video Generate] WARNING: Using localhost for callback! Kie.ai will NOT be able to reach your server.");
         }
 
-        // 5. Launch Bytedance Seedance 2.0 Fast tasks in parallel
+        const audioUrl = body.audioUrl || null;
+        const selectedDuration = body.duration || 30;
+
+        // 5. Launch Tasks based on Model (Seedance vs Grok)
         const taskIds: string[] = [];
         const launchErrors: string[] = [];
-        
-        const launchPromises = prompts.map(async (promptText, index) => {
-            const payload: any = {
-                model: "bytedance/seedance-2-fast",
-                callBackUrl: callbackUrl,
-                input: {
-                    prompt: promptText,
-                    aspect_ratio: "9:16",
-                    duration: 15,
-                    generate_audio: true,
-                    resolution: "480p",
-                    nsfw_checker: true,
-                    web_search: false
+
+        if (videoModel === 'grok') {
+            console.log(`[Video Generate] Running GROK IMAGINE 1.5 pipeline for target user ${targetUserId}...`);
+
+            // Generate TTS voiceover from script dialogue upfront (before Grok clips finish)
+            let grokAudioUrl: string | null = audioUrl;
+            if (!grokAudioUrl && script.dialogue && script.dialogue.trim().length > 10) {
+                try {
+                    console.log(`[Video Generate] Pre-generating Gemini TTS voiceover for Grok pipeline...`);
+                    const { taskId: ttsTaskId, error: ttsCreateError } = await createGeminiTTS({
+                        dialogueText: script.dialogue.trim(),
+                        speakerName: 'Aoede',
+                        style: 'Confident',
+                        scene: 'Professional real estate commercial voiceover studio',
+                        sampleContext: 'High converting luxury real estate marketing video'
+                    });
+
+                    if (ttsTaskId && !ttsCreateError) {
+                        // Poll for up to 60s
+                        for (let t = 0; t < 20; t++) {
+                            await new Promise(r => setTimeout(r, 3000));
+                            const ttsStatus = await queryKieTask(ttsTaskId);
+                            if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
+                                // Persist to R2 as mp3
+                                try {
+                                    const audioRes = await fetch(ttsStatus.resultUrl);
+                                    if (audioRes.ok) {
+                                        const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                                        const r2Key = `voiceover/${Date.now()}_grok_tts.mp3`;
+                                        await r2.send(new PutObjectCommand({
+                                            Bucket: R2_BUCKET,
+                                            Key: r2Key,
+                                            Body: audioBuffer,
+                                            ContentType: 'audio/mpeg'
+                                        }));
+                                        grokAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
+                                        console.log(`[Video Generate] Grok TTS voiceover generated and persisted: ${grokAudioUrl}`);
+                                    }
+                                } catch (r2Err) {
+                                    grokAudioUrl = ttsStatus.resultUrl;
+                                }
+                                break;
+                            }
+                            if (ttsStatus.state === 'fail') { break; }
+                        }
+                    }
+                    if (!grokAudioUrl) {
+                        console.warn('[Video Generate] TTS voiceover timed out or failed. Continuing without voiceover.');
+                    }
+                } catch (ttsErr: any) {
+                    console.warn('[Video Generate] TTS voiceover generation failed, continuing without voiceover:', ttsErr.message);
                 }
-            };
-            
+            }
+            let grokPrompts: string[] = [];
+            let collageUrls: (string | undefined)[] = [];
+
             if (convertedRefImages.length > 0) {
-                payload.input.reference_image_urls = convertedRefImages.slice(0, 9);
-            }
-            
-            // If character is a video, pass it via reference_video_urls (Seedance 2.0 spec)
-            if (referenceVideoUrls.length > 0) {
-                payload.input.reference_video_urls = referenceVideoUrls;
-                console.log(`[Video Generate] Passing character video reference: ${referenceVideoUrls[0]}`);
-            }
+                // Generate 9:16 Collages using GPT 2.0 (with Sharp fallback)
+                console.log(`[Video Generate] Generating 9:16 collages for ${convertedRefImages.length} images...`);
+                const generatedCollages = await createCollageImages(convertedRefImages, targetUserId);
+                console.log(`[Video Generate] Created ${generatedCollages.length} collages:`, generatedCollages);
 
-            // Pass the extracted reference audio URL.
-            // DO NOT fall back to passing the .mp4 video URL as the audio URL, as this breaks voice cloning.
-            if ((isCharacterVideo || isAvatarPhoto) && useUploadedAudio) {
-                if (!referenceAudioUrl) {
-                    throw new Error("Reference audio extraction failed. Please ensure your Cloud Run service is deployed and running, and that your uploaded presenter asset has a valid, audible voice sample.");
+                if (generatedCollages.length > 0) {
+                    // Calculate required Grok clips (each Grok clip is 15s, e.g. 30s -> 2 clips of 15s, 45s -> 3 clips of 15s)
+                    const requiredClips = Math.max(1, Math.round(selectedDuration / 15));
+                    
+                    const dynamicStyles = [
+                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll of the products with a slow dramatic push-in zoom, soft studio lighting, and elegant depth of field. Silent video clip without any voiceover, speech, talking, background narration, ambient audio, or text overlays.",
+                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with an orbital 360 camera move showcasing product textures and sleek reflections. Silent video clip without any voiceover, speech, talking, background narration, ambient audio, or text overlays.",
+                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with a smooth vertical tilt up, high contrast cinematic lighting, and background parallax. Silent video clip without any voiceover, speech, talking, background narration, ambient audio, or text overlays.",
+                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with macro lens focus pull and dynamic commercial lighting shifts. Silent video clip without any voiceover, speech, talking, background narration, ambient audio, or text overlays.",
+                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with slow motion camera tracking move across the product details. Silent video clip without any voiceover, speech, talking, background narration, ambient audio, or text overlays.",
+                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with high-key studio lighting transitions and smooth camera pan. Silent video clip without any voiceover, speech, talking, background narration, ambient audio, or text overlays."
+                    ];
+
+                    for (let i = 0; i < requiredClips; i++) {
+                        const colUrl = generatedCollages[i % generatedCollages.length];
+                        grokPrompts.push(dynamicStyles[i % dynamicStyles.length]);
+                        collageUrls.push(colUrl);
+                    }
                 }
-                payload.input.reference_audio_urls = [referenceAudioUrl];
-                console.log(`[Video Generate] Passing character audio reference: ${referenceAudioUrl}`);
-            }
-            
-            console.log(`[Video Generate] Launching Kie task for Scene ${index + 1}...`);
-            const { taskId, error: kieError } = await createKieTask(payload);
-            if (kieError || !taskId) {
-                launchErrors.push(kieError || `Scene ${index + 1} task failed to launch`);
             } else {
-                taskIds[index] = taskId;
-                console.log(`[Video Generate] Launched Kie task for Scene ${index + 1}: ${taskId}`);
+                // NO images: generate generic 9:16 scenes based on selected duration (15s per clip)
+                const requiredClips = Math.max(1, Math.round(selectedDuration / 15));
+                console.log(`[Video Generate] No images provided. Generating ${requiredClips} generic AI video clips for ${selectedDuration}s video...`);
+
+                for (let i = 0; i < requiredClips; i++) {
+                    grokPrompts.push(`Create an ultrarealistic live-action 9:16 commercial video scene for "${script.title || 'Product Ad'}". Scene ${i + 1} of ${requiredClips}. Professional 35mm anamorphic camera, cinematic lighting, 9:16 aspect ratio, high-converting aesthetic video ad asset.`);
+                    collageUrls.push(undefined);
+                }
             }
-        });
-        
-        await Promise.all(launchPromises);
-        
-        if (launchErrors.length > 0 || taskIds.filter(Boolean).length !== prompts.length) {
-            // Delete placeholder and refund credit if any task failed to start
-            await supabaseAdmin.from('assets').delete().eq('id', newAsset.id);
-            await refundLimit(targetUserId, 'videos');
-            
-            // Refund credits
-            await addCredits(supabaseAdmin, targetUserId, totalCreditsRequired, 'ai_generation', `Refund: AI Video Generation failed to launch`);
-            creditsDeductedSuccess = false;
 
-            return NextResponse.json({ error: launchErrors.join(', ') || "Failed to start parallel video generations" }, { status: 500 });
-        }
+            const grokLaunchPromises = grokPrompts.map(async (promptText, index) => {
+                const colUrl = collageUrls[index];
+                console.log(`[Video Generate] Launching Grok Imagine task ${index + 1}/${grokPrompts.length}...`);
 
-        // 6. Record state in video_tasks (parallel records sharing the same asset_id)
-        const insertPromises = taskIds.map((taskId, index) => {
-            return supabaseAdmin
-                .from('video_tasks')
-                .insert({
-                    id: crypto.randomUUID(),
-                    user_id: targetUserId,
-                    property_id: propertyId || null,
-                    asset_id: newAsset.id,
-                    prompts: prompts, // Store the prompts array
-                    current_index: index, // Scene index (0 for Scene 1, 1 for Scene 2)
-                    last_task_id: taskId,
-                    last_successful_task_id: avatarUrl, // Store avatarUrl here for retry consistency!
-                    aspect_ratio: "9:16",
-                    status: 'Processing',
-                    final_caption: script.finalCaption || null
+                const { taskId, error: grokError } = await createGrokVideoTask({
+                    prompt: promptText,
+                    collageImageUrl: colUrl,
+                    aspectRatio: "9:16",
+                    resolution: "480p",
+                    duration: 15,
+                    callBackUrl: callbackUrl
                 });
-        });
-        
-        const insertResults = await Promise.all(insertPromises);
-        for (const res of insertResults) {
-            if (res.error) {
-                console.error("DB Error saving video task record:", res.error);
-            }
-        }
 
-        return NextResponse.json({ 
-            success: true, 
-            assetId: newAsset.id,
-            taskIds, 
-            message: `${prompts.length}-clip parallel Seedance 2.0 Fast video generation started.` 
-        });
+                if (grokError || !taskId) {
+                    launchErrors.push(grokError || `Grok Scene ${index + 1} task failed to launch`);
+                } else {
+                    taskIds[index] = taskId;
+                    console.log(`[Video Generate] Launched Grok task ${index + 1}: ${taskId}`);
+                }
+            });
+
+            await Promise.all(grokLaunchPromises);
+
+            if (launchErrors.length > 0 || taskIds.filter(Boolean).length !== grokPrompts.length) {
+                await supabaseAdmin.from('assets').delete().eq('id', newAsset.id);
+                await refundLimit(targetUserId, 'videos');
+                await addCredits(supabaseAdmin, targetUserId, totalCreditsRequired, 'ai_generation', `Refund: Grok Video Generation failed to launch`);
+                creditsDeductedSuccess = false;
+
+                return NextResponse.json({ error: launchErrors.join(', ') || "Failed to start Grok video generation" }, { status: 500 });
+            }
+
+            // Save records in video_tasks table
+            const insertPromises = taskIds.map((taskId, index) => {
+                return supabaseAdmin
+                    .from('video_tasks')
+                    .insert({
+                        id: crypto.randomUUID(),
+                        user_id: targetUserId,
+                        property_id: propertyId || null,
+                        asset_id: newAsset.id,
+                        prompts: grokPrompts,
+                        current_index: index,
+                        last_task_id: taskId,
+                        last_successful_task_id: collageUrls[index] || null,
+                        aspect_ratio: "9:16",
+                        status: 'Processing',
+                        final_caption: script.finalCaption || null,
+                        audio_url: grokAudioUrl, // Use pre-generated TTS voiceover URL
+                        video_model: 'grok'
+                    });
+            });
+
+            await Promise.all(insertPromises);
+
+            return NextResponse.json({
+                success: true,
+                assetId: newAsset.id,
+                taskIds,
+                message: `${grokPrompts.length}-clip Grok Imagine 1.5 video generation started.`
+            });
+
+        } else {
+            // 5. Launch Bytedance Seedance 2.0 Fast tasks in parallel
+            const launchPromises = prompts.map(async (promptText, index) => {
+                const payload: any = {
+                    model: "bytedance/seedance-2-fast",
+                    callBackUrl: callbackUrl,
+                    input: {
+                        prompt: promptText,
+                        aspect_ratio: "9:16",
+                        duration: 15,
+                        generate_audio: true,
+                        resolution: "480p",
+                        nsfw_checker: true,
+                        web_search: false
+                    }
+                };
+                
+                if (convertedRefImages.length > 0) {
+                    payload.input.reference_image_urls = convertedRefImages.slice(0, 9);
+                }
+                
+                if (referenceVideoUrls.length > 0) {
+                    payload.input.reference_video_urls = referenceVideoUrls;
+                }
+
+                if ((isCharacterVideo || isAvatarPhoto) && useUploadedAudio) {
+                    if (!referenceAudioUrl) {
+                        throw new Error("Reference audio extraction failed. Please ensure your Cloud Run service is deployed and running, and that your uploaded presenter asset has a valid, audible voice sample.");
+                    }
+                    payload.input.reference_audio_urls = [referenceAudioUrl];
+                }
+                
+                console.log(`[Video Generate] Launching Kie task for Scene ${index + 1}...`);
+                const { taskId, error: kieError } = await createKieTask(payload);
+                if (kieError || !taskId) {
+                    launchErrors.push(kieError || `Scene ${index + 1} task failed to launch`);
+                } else {
+                    taskIds[index] = taskId;
+                }
+            });
+            
+            await Promise.all(launchPromises);
+            
+            if (launchErrors.length > 0 || taskIds.filter(Boolean).length !== prompts.length) {
+                await supabaseAdmin.from('assets').delete().eq('id', newAsset.id);
+                await refundLimit(targetUserId, 'videos');
+                await addCredits(supabaseAdmin, targetUserId, totalCreditsRequired, 'ai_generation', `Refund: AI Video Generation failed to launch`);
+                creditsDeductedSuccess = false;
+
+                return NextResponse.json({ error: launchErrors.join(', ') || "Failed to start parallel video generations" }, { status: 500 });
+            }
+
+            const insertPromises = taskIds.map((taskId, index) => {
+                return supabaseAdmin
+                    .from('video_tasks')
+                    .insert({
+                        id: crypto.randomUUID(),
+                        user_id: targetUserId,
+                        property_id: propertyId || null,
+                        asset_id: newAsset.id,
+                        prompts: prompts,
+                        current_index: index,
+                        last_task_id: taskId,
+                        last_successful_task_id: avatarUrl,
+                        aspect_ratio: "9:16",
+                        status: 'Processing',
+                        final_caption: script.finalCaption || null,
+                        video_model: 'seedance'
+                    });
+            });
+            
+            await Promise.all(insertPromises);
+
+            return NextResponse.json({ 
+                success: true, 
+                assetId: newAsset.id,
+                taskIds, 
+                message: `${prompts.length}-clip parallel Seedance 2.0 Fast video generation started.` 
+            });
+        }
 
     } catch (error: any) {
         console.error("Video Generate Error:", error);

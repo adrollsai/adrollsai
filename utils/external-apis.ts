@@ -102,6 +102,154 @@ export async function createKieTask(payload: any): Promise<{ taskId: string | nu
 }
 
 /**
+ * Query task status from Kie.ai (GET /api/v1/jobs/recordInfo)
+ */
+export async function queryKieTask(taskId: string): Promise<{ state: string; resultUrl: string | null; error: string | null }> {
+    if (!KIE_API_KEY) return { state: 'fail', resultUrl: null, error: "KIE_API_KEY is not configured." };
+    
+    try {
+        const response = await fetchWithRetry(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${KIE_API_KEY}`
+            }
+        });
+
+        const result = await response.json();
+        if (!response.ok || (result.code !== 0 && result.code !== 200)) {
+            return { state: 'fail', resultUrl: null, error: result.msg || "Query task failed" };
+        }
+
+        const data = result.data;
+        const state = data?.state || 'waiting';
+
+        if (state === 'fail') {
+            return { state: 'fail', resultUrl: null, error: data?.failMsg || "Task failed on server" };
+        }
+
+        if (state === 'success') {
+            let resultUrl: string | null = null;
+            if (data?.resultJson) {
+                try {
+                    const parsed = typeof data.resultJson === 'string' ? JSON.parse(data.resultJson) : data.resultJson;
+                    const urls = parsed.resultUrls || parsed.result_urls || parsed.fullResultUrls || parsed.urls;
+                    if (Array.isArray(urls) && urls.length > 0) {
+                        resultUrl = urls[0];
+                    } else if (parsed.url) {
+                        resultUrl = parsed.url;
+                    } else if (parsed.resultObject?.url) {
+                        resultUrl = parsed.resultObject.url;
+                    } else if (parsed.audio_url || parsed.audioUrl) {
+                        resultUrl = parsed.audio_url || parsed.audioUrl;
+                    }
+                } catch (e) {
+                    console.error("[queryKieTask] Error parsing resultJson:", e);
+                }
+            }
+
+            if (!resultUrl && data?.resultUrl) {
+                resultUrl = data.resultUrl;
+            }
+
+            return { state: 'success', resultUrl, error: null };
+        }
+
+        return { state, resultUrl: null, error: null };
+
+    } catch (e: any) {
+        return { state: 'fail', resultUrl: null, error: e.message };
+    }
+}
+
+/**
+ * Helper to generate voiceover audio using google/gemini-3-1-flash-tts via Kie.ai
+ */
+export async function createGeminiTTS({
+    dialogueText,
+    speakerName = "Zephyr",
+    style = "Deadpan",
+    scene = "Professional studio recording",
+    sampleContext = "High converting marketing voiceover",
+    callBackUrl
+}: {
+    dialogueText: string;
+    speakerName?: string;
+    style?: string;
+    scene?: string;
+    sampleContext?: string;
+    callBackUrl?: string;
+}): Promise<{ taskId: string | null; error: string | null }> {
+    const payload: any = {
+        model: "google/gemini-3-1-flash-tts",
+        input: {
+            speakers: [{
+                speaker_id: "Speaker 1",
+                voice_name: speakerName,
+                audio_profile: "",
+                style,
+                pace: "Natural",
+                accent: "Neutral"
+            }],
+            dialogue_turns: [{
+                speaker_id: "Speaker 1",
+                text: dialogueText
+            }],
+            temperature: 1,
+            scene,
+            sample_context: sampleContext
+        }
+    };
+
+    if (callBackUrl) {
+        payload.callBackUrl = callBackUrl;
+    }
+
+    return createKieTask(payload);
+}
+
+/**
+ * Helper to create video task using Grok Imagine Video 1.5 Preview via Kie.ai
+ */
+export async function createGrokVideoTask({
+    prompt,
+    collageImageUrl,
+    aspectRatio = "9:16",
+    resolution = "480p",
+    duration = 15,
+    callBackUrl
+}: {
+    prompt: string;
+    collageImageUrl?: string;
+    aspectRatio?: string;
+    resolution?: string;
+    duration?: number;
+    callBackUrl?: string;
+}): Promise<{ taskId: string | null; error: string | null }> {
+    const inputPayload: any = {
+        prompt,
+        aspect_ratio: aspectRatio,
+        resolution,
+        duration,      // Range: [1, 15], default is 8. Must be inside input!
+        nsfw_checker: true
+    };
+
+    if (collageImageUrl) {
+        inputPayload.image_urls = [collageImageUrl];
+    }
+
+    const payload: any = {
+        model: "grok-imagine-video-1-5-preview",
+        input: inputPayload
+    };
+
+    if (callBackUrl) {
+        payload.callBackUrl = callBackUrl;
+    }
+
+    return createKieTask(payload);
+}
+
+/**
  * 2. Facebook Posting 
  */
 export async function postToFacebook(accessToken: string, imageUrl: string, caption: string): Promise<any> {

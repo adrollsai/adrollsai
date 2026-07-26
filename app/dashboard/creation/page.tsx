@@ -24,6 +24,9 @@ type Message = {
   prompts?: string[]
   isError?: boolean
   failedConcept?: any
+  grokStep?: 'script_review' | 'tts_review' | 'completed'
+  audioUrl?: string
+  videoModel?: 'seedance' | 'grok'
 }
 
 type Property = { 
@@ -260,6 +263,8 @@ export default function CreationPage() {
   
   // NEW: Creation Mode Toggle
   const [creationMode, setCreationMode] = useState<'image' | 'video'>('image')
+  const [videoModel, setVideoModel] = useState<'seedance' | 'grok'>('seedance')
+  const [grokVoice, setGrokVoice] = useState<string>('Aoede')
   
   // Presenter settings mode: 'video' (reference video), 'avatar' (avatar photo), or 'none'
   const [presenterMode, setPresenterMode] = useState<'video' | 'avatar' | 'none'>('none')
@@ -716,14 +721,42 @@ export default function CreationPage() {
                 imageDescriptions,
                 presenterType: presenterMode,
                 duration: selectedDuration,
-                language: videoLanguage
+                language: videoLanguage,
+                videoModel
             })
         });
 
         const scriptData = await scriptResponse.json();
         if (scriptData.error) throw new Error(scriptData.error);
 
-        // Fetch prompts immediately to bypass "Review Final Prompts" step
+        if (videoModel === 'grok') {
+            const aiMsg: Message = {
+                id: activeMsgId,
+                role: 'ai',
+                text: `Here is the high-converting script drafted for **${scriptData.title}**! 🎬\n\nReview the dialogue below. You can edit the text before generating the voiceover.`,
+                script: {
+                    title: scriptData.title,
+                    dialogue: scriptData.dialogue,
+                    visuals: scriptData.visuals,
+                    scenes: scriptData.scenes,
+                    finalCaption: scriptData.finalCaption,
+                    concept
+                },
+                refImages: scriptData.refImages || refImages,
+                imageDescriptions: scriptData.imageDescriptions || imageDescriptions,
+                grokStep: 'script_review',
+                videoModel: 'grok'
+            };
+
+            if (msgIdToReplace) {
+                setMessages(prev => prev.map(m => m.id === msgIdToReplace ? aiMsg : m));
+            } else {
+                setMessages(prev => [...prev, aiMsg]);
+            }
+            return;
+        }
+
+        // Fetch prompts immediately to bypass "Review Final Prompts" step for Seedance
         setCurrentStep('AI Creative Director is generating physical scenes prompts for review...')
         let prompts = []
         try {
@@ -821,12 +854,36 @@ export default function CreationPage() {
                 variation: true,
                 presenterType: presenterMode,
                 duration: selectedDuration,
-                language: videoLanguage
+                language: videoLanguage,
+                videoModel
             })
         });
 
         const scriptData = await scriptResponse.json();
         if (scriptData.error) throw new Error(scriptData.error);
+
+        if (videoModel === 'grok') {
+            const aiMsg: Message = {
+                id: messageId,
+                role: 'ai',
+                text: `Here is a new script variation for **${scriptData.title}**! 🎬\n\nReview the dialogue below. You can edit the text before generating the voiceover.`,
+                script: {
+                    title: scriptData.title,
+                    dialogue: scriptData.dialogue,
+                    visuals: scriptData.visuals,
+                    scenes: scriptData.scenes,
+                    finalCaption: scriptData.finalCaption,
+                    concept
+                },
+                refImages: scriptData.refImages || refImages,
+                imageDescriptions: scriptData.imageDescriptions || imageDescriptions,
+                grokStep: 'script_review',
+                videoModel: 'grok'
+            };
+
+            setMessages(prev => prev.map(m => m.id === messageId ? aiMsg : m));
+            return;
+        }
 
         // Fetch prompts immediately to bypass "Review Final Prompts" step
         setCurrentStep('AI Creative Director is generating physical scenes prompts for review...')
@@ -950,6 +1007,98 @@ export default function CreationPage() {
         setCurrentStep('')
     }
   }
+
+  const handleGenerateGrokTTS = async (messageId: number, dialogueText: string, script: any, refImages: string[]) => {
+    if (isThinking) return;
+    setIsThinking(true);
+    setCurrentStep('Generating voiceover using Gemini 3.1 Flash TTS...');
+
+    try {
+        const res = await fetch('/api/video/grok/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                dialogueText,
+                speakerName: grokVoice,
+                language: videoLanguage
+            })
+        });
+
+        const data = await res.json();
+        if (data.error || !data.audioUrl) throw new Error(data.error || 'Voiceover generation failed.');
+
+        toast.success("Voiceover generated successfully! 🎙️");
+
+        setMessages(prev => prev.map(m => {
+            if (m.id === messageId) {
+                return {
+                    ...m,
+                    text: `Voiceover generated successfully! 🎙️\n\nListen to the preview below. You can tweak the script and regenerate, or approve to start video production!`,
+                    script: { ...m.script, dialogue: dialogueText },
+                    grokStep: 'tts_review',
+                    audioUrl: data.audioUrl
+                };
+            }
+            return m;
+        }));
+    } catch (err: any) {
+        toast.error("TTS Generation Error: " + err.message);
+    } finally {
+        setIsThinking(false);
+        setCurrentStep('');
+    }
+  };
+
+  const handleApproveGrokVideo = async (messageId: number, script: any, refImages: string[], audioUrl: string) => {
+    if (isThinking) return;
+    setIsThinking(true);
+    setCurrentStep(`Generating 9:16 collages and starting Grok Imagine 1.5 video task...`);
+
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const impersonateId = urlParams.get('impersonate');
+
+        const response = await fetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                propertyId: selectedPropId || null,
+                script,
+                images: refImages,
+                videoModel: 'grok',
+                audioUrl,
+                duration: selectedDuration,
+                language: videoLanguage
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+
+        toast.success("Grok Video Production Started! 🎬", {
+            description: `Your ${selectedDuration}s Grok video is generating & stitching.`
+        });
+
+        setMessages(prev => prev.map(m => {
+            if (m.id === messageId) {
+                return { ...m, grokStep: 'completed' };
+            }
+            return m;
+        }));
+
+        const aiMsg: Message = {
+            id: Date.now(),
+            role: 'ai',
+            text: "Grok Imagine 1.5 video generation launched in the background! 🎬\n\nGPT 2.0 9:16 grid collages are being processed and animated by Grok. The video and voiceover will be stitched on AWS Lambda. Check your **Assets** tab in 2-3 minutes!"
+        };
+        setMessages(prev => [...prev, aiMsg]);
+    } catch (error: any) {
+        toast.error("Failed to start Grok video: " + error.message);
+    } finally {
+        setIsThinking(false);
+        setCurrentStep('');
+    }
+  };
 
   const handlePreviewPrompts = async (script: any, refImages: string[], imageDescriptions: string[] | undefined, messageId: number) => {
     if (isThinking) return
@@ -1324,6 +1473,26 @@ export default function CreationPage() {
                         className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition-all duration-300 flex items-center justify-center gap-1 ${videoLanguage === 'english' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
                     >
                         <Globe size={12} className="hidden sm:block" /> English
+                    </button>
+                </div>
+            )}
+
+            {/* Video Model Toggle (Seedance vs Grok) */}
+            {creationMode === 'video' && (
+                <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full animate-in fade-in duration-200">
+                    <button 
+                        type="button"
+                        onClick={() => setVideoModel('seedance')}
+                        className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition-all duration-300 flex items-center justify-center gap-1 ${videoModel === 'seedance' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <Zap size={12} className="hidden sm:block text-amber-500" /> Seedance
+                    </button>
+                    <button 
+                        type="button"
+                        onClick={() => setVideoModel('grok')}
+                        className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition-all duration-300 flex items-center justify-center gap-1 ${videoModel === 'grok' ? 'bg-gradient-to-r from-purple-600 to-indigo-600 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <Sparkles size={12} className="hidden sm:block text-purple-200" /> Grok
                     </button>
                 </div>
             )}
@@ -2003,14 +2172,74 @@ export default function CreationPage() {
                       </div>
                     </div>
 
+                    {/* Voice Selection control for Grok Script Review */}
+                    {msg.grokStep === 'script_review' && (
+                      <div className="flex items-center justify-between bg-purple-50/50 p-2.5 rounded-xl border border-purple-100 mt-1">
+                        <span className="text-[10px] font-extrabold text-purple-700 uppercase tracking-wider flex items-center gap-1">
+                          <Mic size={12} /> AI Voice Persona:
+                        </span>
+                        <select
+                          value={grokVoice}
+                          onChange={(e) => setGrokVoice(e.target.value)}
+                          className="bg-white border border-purple-200 text-xs font-bold text-slate-800 rounded-lg px-2.5 py-1 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                        >
+                          <option value="Aoede">Aoede (Warm & Energetic Female)</option>
+                          <option value="Puck">Puck (Upbeat & Conversational Male)</option>
+                          <option value="Kore">Kore (Deep & Confident Female)</option>
+                          <option value="Fenrir">Fenrir (Bold & Authoritative Male)</option>
+                          <option value="Charon">Charon (Smooth & Professional Male)</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Voiceover Preview Audio Player for Grok Model */}
+                    {msg.audioUrl && (
+                      <div className="bg-purple-50/70 border border-purple-200/60 rounded-2xl p-3.5 flex flex-col gap-2 animate-in fade-in mt-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-purple-700 uppercase tracking-widest flex items-center gap-1.5">
+                            <Mic size={14} className="text-purple-600 animate-pulse" /> Gemini 3.1 Flash Voiceover Audio ({grokVoice})
+                          </span>
+                          <span className="text-[9px] font-bold bg-purple-200/80 text-purple-800 px-2 py-0.5 rounded-full">
+                            Kie.ai TTS
+                          </span>
+                        </div>
+                        <audio controls src={msg.audioUrl} className="w-full h-10 accent-purple-600 rounded-xl outline-none" />
+                      </div>
+                    )}
+
                     {/* Interactive Action Buttons */}
                     {msg.id === messages[messages.length - 1]?.id && (
                       <div className="flex gap-2 mt-2 border-t border-slate-100 pt-3">
-                        {msg.prompts ? (
+                        {msg.grokStep === 'script_review' ? (
+                          <button
+                            onClick={() => handleGenerateGrokTTS(msg.id, msg.script.dialogue, msg.script, msg.refImages || [])}
+                            disabled={isThinking}
+                            className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-purple-500/10 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                          >
+                            <Mic size={14} /> Approve Script & Generate Voiceover 🎙️
+                          </button>
+                        ) : msg.grokStep === 'tts_review' ? (
+                          <>
+                            <button
+                              onClick={() => setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, grokStep: 'script_review' } : m))}
+                              disabled={isThinking}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                            >
+                              ✏️ Tweak Script
+                            </button>
+                            <button
+                              onClick={() => handleApproveGrokVideo(msg.id, msg.script, msg.refImages || [], msg.audioUrl!)}
+                              disabled={isThinking}
+                              className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-500/10 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                            >
+                              <Sparkles size={14} /> Approve Voiceover & Generate Grok Video 🎬
+                            </button>
+                          </>
+                        ) : msg.prompts ? (
                           <button
                             onClick={() => handleApproveVideo(msg.script, msg.refImages || [], msg.imageDescriptions, msg.prompts)}
                             disabled={isThinking}
-                            className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-500/10 active:scale-95 transition-all disabled:opacity-50"
+                            className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-500/10 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                           >
                             <Sparkles size={14} /> Confirm & Launch Video Task 🚀
                           </button>
@@ -2018,7 +2247,7 @@ export default function CreationPage() {
                           <button
                             onClick={() => handlePreviewPrompts(msg.script, msg.refImages || [], msg.imageDescriptions, msg.id)}
                             disabled={isThinking}
-                            className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-500/10 active:scale-95 transition-all disabled:opacity-50"
+                            className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-500/10 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                           >
                             <Sparkles size={14} /> Review Final Prompts 👁️
                           </button>

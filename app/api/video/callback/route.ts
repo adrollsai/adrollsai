@@ -382,8 +382,8 @@ export async function POST(request: Request) {
         // All scenes are completed! Stitch them together
         siblings.sort((a, b) => a.current_index - b.current_index);
 
-        // If there is only 1 scene, bypass the stitcher and finalize the asset immediately on Vercel!
-        if (siblings.length === 1) {
+        // If there is only 1 scene AND no voiceover audio attached, bypass the stitcher and finalize immediately
+        if (siblings.length === 1 && !videoTask.audio_url && videoTask.video_model !== 'grok') {
             const clipUrl = siblings[0].last_successful_task_id;
             console.log(`[Video Callback] Single-clip video detected (15s). Finalizing asset and applying faststart: ${clipUrl}`);
             
@@ -509,26 +509,143 @@ export async function POST(request: Request) {
             const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
 
             // Dynamically calculate framesPerLambda to stay below the AWS account concurrency limit (10)
-            const totalFrames = siblings.length * 15 * 30;
+            const clipDurationSec = 15;
+            const totalFrames = siblings.length * clipDurationSec * 30;
             const maxLambdas = 4;
             const framesPerLambda = Math.max(200, Math.ceil(totalFrames / maxLambdas));
 
             console.log(`[Video Callback] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambda} frames per lambda (total frames: ${totalFrames})`);
+
+            // Probe actual clip durations to avoid freeze at end of short Grok clips
+            let clipDurationsInSeconds: number[] | undefined = undefined;
+            const isGrokModel = videoTask.video_model === 'grok';
+            if (isGrokModel) {
+                try {
+                    const ffmpegBinary = path.join(
+                        process.cwd(),
+                        'node_modules',
+                        'ffmpeg-static',
+                        os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+                    );
+                    const ffprobeBinary = ffmpegBinary.replace(/ffmpeg(\.exe)?$/, (_, ext) => `ffprobe${ext || ''}`);
+                    const ffprobeExec = fs.existsSync(ffprobeBinary) ? ffprobeBinary : 'ffprobe';
+
+                    clipDurationsInSeconds = await Promise.all(
+                        siblings.map(async (s) => {
+                            try {
+                                const probeResult = await new Promise<string>((res, rej) => {
+                                    exec(
+                                        `"${ffprobeExec}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${s.last_successful_task_id}"`,
+                                        (err, stdout) => { if (err) rej(err); else res(stdout.trim()); }
+                                    );
+                                });
+                                const dur = parseFloat(probeResult);
+                                if (!isNaN(dur) && dur > 0) {
+                                    console.log(`[Video Callback] Probed clip duration: ${dur}s for ${s.last_successful_task_id}`);
+                                    return dur;
+                                }
+                            } catch (probeErr) {
+                                console.warn(`[Video Callback] ffprobe failed for clip, defaulting to 15s:`, probeErr);
+                            }
+                            return 15; // Grok clips are 15s when duration:15 is passed
+                        })
+                    );
+                    console.log(`[Video Callback] Per-clip durations: ${clipDurationsInSeconds.join(', ')}s`);
+                } catch (probeErr) {
+                    console.warn('[Video Callback] Duration probing failed, using 15s fallback for all Grok clips:', probeErr);
+                    clipDurationsInSeconds = siblings.map(() => 15);
+                }
+            }
+
+            // Calculate actual total frames from real clip durations
+            const realClipDurations = clipDurationsInSeconds ?? siblings.map(() => clipDurationSec);
+            const actualTotalFrames = Math.round(realClipDurations.reduce((sum, d) => sum + d, 0) * 30);
+            const framesPerLambdaActual = Math.max(200, Math.ceil(actualTotalFrames / maxLambdas));
+
+            console.log(`[Video Callback] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambdaActual} frames per lambda (actual total frames: ${actualTotalFrames})`);
+
+            // Generate TTS voiceover inline for Grok if none was attached during task creation
+            let finalAudioUrl = videoTask.audio_url || null;
+            if (isGrokModel && !finalAudioUrl) {
+                try {
+                    // Pull dialogue from the prompts stored in the task (the first prompt has the dialogue context)
+                    // Look up the asset caption to use as voiceover text
+                    const { data: assetRecord } = await supabaseAdmin
+                        .from('assets')
+                        .select('caption')
+                        .eq('id', videoTask.asset_id)
+                        .single();
+
+                    const voiceoverText = assetRecord?.caption || '';
+                    if (voiceoverText && voiceoverText.length > 10) {
+                        console.log(`[Video Callback] Generating Grok voiceover for asset ${videoTask.asset_id}...`);
+                        const { createGeminiTTS, queryKieTask } = await import('@/utils/external-apis');
+                        const { taskId: ttsTaskId, error: ttsError } = await createGeminiTTS({
+                            dialogueText: voiceoverText,
+                            speakerName: 'Aoede',
+                            style: 'Confident',
+                            scene: 'Professional real estate commercial voiceover studio',
+                            sampleContext: 'High converting luxury real estate marketing video'
+                        });
+
+                        if (ttsTaskId && !ttsError) {
+                            // Poll TTS for up to 60s
+                            for (let t = 0; t < 20; t++) {
+                                await new Promise(r => setTimeout(r, 3000));
+                                const ttsStatus = await queryKieTask(ttsTaskId);
+                                if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
+                                    // Persist to R2 as mp3
+                                    try {
+                                        const audioRes = await fetch(ttsStatus.resultUrl);
+                                        if (audioRes.ok) {
+                                            const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                                            const r2Key = `voiceover/${Date.now()}_grok_stitch.mp3`;
+                                            await r2.send(new PutObjectCommand({
+                                                Bucket: R2_BUCKET,
+                                                Key: r2Key,
+                                                Body: audioBuffer,
+                                                ContentType: 'audio/mpeg'
+                                            }));
+                                            finalAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
+                                            console.log(`[Video Callback] Grok voiceover generated and persisted: ${finalAudioUrl}`);
+                                        }
+                                    } catch (r2VoiceErr) {
+                                        finalAudioUrl = ttsStatus.resultUrl;
+                                    }
+                                    break;
+                                }
+                                if (ttsStatus.state === 'fail') break;
+                            }
+                        }
+                    }
+                } catch (ttsErr) {
+                    console.warn('[Video Callback] Inline TTS generation failed, continuing without voiceover:', ttsErr);
+                }
+            }
+
+            const inputPropsPayload: any = {
+                videoUrls: siblings.map(s => s.last_successful_task_id),
+                clipDurationInSeconds: realClipDurations[0] ?? 8,
+                ...(clipDurationsInSeconds ? { clipDurationsInSeconds } : {})
+            };
+
+            if (finalAudioUrl) {
+                inputPropsPayload.audioUrl = finalAudioUrl;
+                console.log(`[Video Callback] Including voiceover audio in stitch render: ${finalAudioUrl}`);
+            }
 
             const renderResult = await renderMediaOnLambda({
                 region,
                 functionName,
                 serveUrl: `https://${bucketName}.s3.${region}.amazonaws.com/sites/${siteName}/index.html`,
                 composition: 'StitchComposition',
-                inputProps: {
-                    videoUrls: siblings.map(s => s.last_successful_task_id)
-                },
+                inputProps: inputPropsPayload,
                 codec: 'h264',
                 imageFormat: 'jpeg',
                 maxRetries: 2,
                 privacy: 'public',
-                framesPerLambda,
-                forceDurationInFrames: totalFrames, // Override duration dynamically
+                framesPerLambda: framesPerLambdaActual,
+                forceDurationInFrames: actualTotalFrames, // Override duration to match actual probed clip lengths
                 webhook: {
                     url: callbackUrl,
                     secret: null,
