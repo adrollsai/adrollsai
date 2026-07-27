@@ -152,11 +152,17 @@ ${imageMap.join('\n')}
 
 The visual layout design, element placements, and aesthetic theme of the reference creative are described in text details within the prompt. 
 
+STRICT EXCLUSION & UNIVERSAL REPRODUCTION RULES FOR REFERENCE STYLE:
+- The reference image is ONLY a style, color, and layout guide.
+- Do NOT copy, reproduce, or imitate the specific building, house structure, architectural elements, or physical objects from the reference creative image.
+- The property/building visual MUST come strictly from the user's property/product photos (Image 1..N) or property details.
+- FAITHFULLY REPRODUCE SIGNATURE LAYOUT & CONTAINER GEOMETRY: Place the user's property photo inside the exact signature container frame, silhouette, shape mask, or grid layout described in the design blueprint.
+- LUXURY TYPOGRAPHY SYSTEM: Main headline text MUST be rendered in ultra-high-end haute-couture typography (such as an elegant serif font with refined stroke contrast or a sleek high-fashion geometric font). Never use cheap yellow gradients or crude Arial fonts. Use subtle champagne gold foil, warm ivory-white, or metallic bronze lettering with authentic directional lighting highlights. Sub-headers and location tags MUST feature wide, generous letter-spacing (wide tracking) for an expensive, agency-level aesthetic.
+
 The final generated ad MUST closely match the reference's:
 - Layout structure and spatial composition
 - Typography hierarchy and text placement
-- Image framing and visual balance
-- Design style, color palette treatment, and overall aesthetic
+- Color palette treatment, lighting atmosphere, and overall aesthetic
 - Element positioning (where headlines, images, logos, and CTAs are placed)
 
 Do NOT create a random layout from scratch.
@@ -345,4 +351,161 @@ Output ONLY the single lowercase category string (e.g. "real_estate"). No explan
     console.error(`[Industry Detection] Failed to classify industry: ${err.message}. Falling back to "general".`);
     return 'general';
   }
+}
+
+// ============================================================================
+// DYNAMIC VISUAL ARCHETYPE & HUMAN PERSONA VARIATION ENGINE
+// Ensures every creative generation without custom prompts has distinct design,
+// lighting, camera angles, color palettes, and diverse human personas.
+// ============================================================================
+
+export interface VisualArchetype {
+  id: string;
+  name: string;
+  lighting: string;
+  composition: string;
+  typography: string;
+  promptInstructions: string;
+}
+
+export interface HumanPersona {
+  id: string;
+  name: string;
+  hasHumans: boolean;
+  promptDirective: string;
+}
+
+export function getRandomVisualArchetype(
+  propertyTitle?: string,
+  propertyDescription?: string,
+  seedString?: string
+): VisualArchetype {
+  const archetypes: VisualArchetype[] = [
+    {
+      id: 'editorial_archdigest',
+      name: 'Architectural Digest Editorial',
+      lighting: 'Golden Hour warm sunlight casting soft linear architectural shadows',
+      composition: 'Dramatic asymmetrical low-angle architectural perspective with off-center hero framing and high-end luxury editorial spacing',
+      typography: 'Elegant serif headline paired with refined minimalist geometric sub-headers',
+      promptInstructions: 'DESIGN ARCHETYPE: Architectural Digest Editorial. Create a dramatic, asymmetrical visual composition with low-angle perspective, refined luxury spacing, elegant serif headers, and warm golden hour sunlight.'
+    },
+    {
+      id: 'bold_billboard',
+      name: 'Bold High-Converting Social Billboard',
+      lighting: 'Crisp bright high-exposure morning sunlight with vibrant contrast',
+      composition: 'High-impact promotional layout featuring bold benefit badges, sharp geometric color blocks, and high visual contrast',
+      typography: 'Ultra-bold geometric sans-serif lettering with prominent size hierarchy and badge overlays',
+      promptInstructions: 'DESIGN ARCHETYPE: Bold High-Converting Social Billboard. Create a high-energy, vibrant promotional ad layout with prominent benefit badges, bold geometric typography, and crisp commercial lighting.'
+    },
+    {
+      id: 'scandinavian_minimalist',
+      name: 'Minimalist Scandinavian Luxury',
+      lighting: 'Soft diffused natural daylight with airy white-balanced highlights',
+      composition: 'Ultra-clean minimalist layout with generous negative space, understated framing, and soft translucent backdrop cards',
+      typography: 'Minimalist lightweight geometric sans-serif typography with generous kerning and letter spacing',
+      promptInstructions: 'DESIGN ARCHETYPE: Minimalist Scandinavian Luxury. Create an ultra-clean, serene layout with generous negative space, soft ambient daylight, and minimal geometric typography.'
+    },
+    {
+      id: 'cinematic_lifestyle',
+      name: 'Cinematic Lifestyle Story',
+      lighting: 'Warm ambient filmic sunlight with natural lens flare and soft atmospheric glow',
+      composition: 'Candid lifestyle hero shot with soft shallow depth-of-field background, warm organic textures, and cinematic 35mm photography feel',
+      typography: 'Subtle, modern luxury serif header integrated cleanly into the natural scene composition',
+      promptInstructions: 'DESIGN ARCHETYPE: Cinematic Lifestyle Story. Create a warm, candid 35mm film-style photography scene with shallow depth of field, organic textures, and natural lifestyle framing.'
+    },
+    {
+      id: 'glassmorphism_infographic',
+      name: 'Premium Glassmorphism & Infographic Card',
+      lighting: 'Bright studio lighting with subtle translucent reflections and 3D depth highlights',
+      composition: 'Modern tech-forward layout featuring floating frosted glass specs cards (highlighting key features, location, and BHK details) with 3D shadow depth',
+      typography: 'Clean modern sans-serif typography on translucent glass backdrop pills',
+      promptInstructions: 'DESIGN ARCHETYPE: Premium Glassmorphism & Infographic Card. Create a modern layout featuring floating frosted glass cards for property highlights and key metrics, with rich 3D depth and clean modern typography.'
+    }
+  ];
+
+  let seed = 0;
+  const combinedStr = (seedString || '') + (propertyTitle || '') + (propertyDescription || '') + Math.random().toString();
+  for (let i = 0; i < combinedStr.length; i++) {
+    seed = (seed * 31 + combinedStr.charCodeAt(i)) % 1000000;
+  }
+  const index = Math.abs(seed) % archetypes.length;
+  return archetypes[index];
+}
+
+export function getRandomHumanPersona(
+  propertyTitle?: string,
+  propertyDescription?: string,
+  userInstructions?: string,
+  seedString?: string
+): HumanPersona {
+  const combinedText = `${propertyTitle || ''} ${propertyDescription || ''} ${userInstructions || ''}`.toLowerCase();
+
+  const isCommercial = /\b(office|commercial|retail|shop|co-working|business|desk|workspace|store|industrial)\b/.test(combinedText);
+  const isStudioOr1BHK = /\b(1bhk|1 bhk|studio|studio apartment|1 bed|single)\b/.test(combinedText);
+  const isFamilyProperty = /\b(3bhk|4bhk|5bhk|villa|kothi|bungalow|duplex|penthouse|family|townhouse)\b/.test(combinedText);
+  const isLand = /\b(plot|plots|farmland|land|farmhouse|acres|bigha)\b/.test(combinedText);
+
+  const personas: HumanPersona[] = [
+    {
+      id: 'solo_professional',
+      name: 'Single Independent Buyer / Professional',
+      hasHumans: true,
+      promptDirective: 'HUMAN PERSONA: Include a close-up portrait shot (chest up) of a stylish, confident young independent professional or entrepreneur (man or woman in late 20s or 30s) in smart casual attire (e.g. linen shirt or blazer) showing a candid, genuine smile of joy while holding a coffee cup or sitting near a sunlit window. Authentic skin textures with fine pores, avoid airbrushed look.'
+    },
+    {
+      id: 'young_family',
+      name: 'Young Modern Family',
+      hasHumans: true,
+      promptDirective: 'HUMAN PERSONA: Include a warm portrait shot of a happy, attractive young modern family (parents in 30s with a young child) sharing a cheerful, authentic moment of laughter together in a bright, modern living area. Authentic photorealistic expressions and real skin textures.'
+    },
+    {
+      id: 'solo_lifestyle',
+      name: 'Solo Lifestyle Aspirant',
+      hasHumans: true,
+      promptDirective: 'HUMAN PERSONA: Include a candid portrait shot of a relaxed individual (early 30s) enjoying a peaceful morning coffee on a sunlit balcony or reading near a floor-to-ceiling glass window, conveying tranquility and aspirational luxury living.'
+    },
+    {
+      id: 'modern_couple',
+      name: 'Modern Elegant Couple',
+      hasHumans: true,
+      promptDirective: 'HUMAN PERSONA: Include a portrait of a modern, stylish couple (late 20s or 30s) sharing an authentic, unposed moment of laughter and affection on a terrace or living area. Authentic facial detailing and natural skin textures.'
+    },
+    {
+      id: 'mature_homeowner',
+      name: 'Mature Luxury Homeowner',
+      hasHumans: true,
+      promptDirective: 'HUMAN PERSONA: Include a portrait of a successful, distinguished homeowner or investor (40s-50s) in elegant casual attire enjoying a serene moment in a high-end luxury space, expressing success and peaceful satisfaction.'
+    },
+    {
+      id: 'no_humans',
+      name: 'Pure Architectural & Interior Focus (No Humans)',
+      hasHumans: false,
+      promptDirective: 'HUMAN PERSONA (STRICT DIRECTIVE): Do NOT include any humans or people in this creative image. Focus 100% of the visual spotlight on the gorgeous property architecture, luxury interior design, crisp lighting, and graphic typography overlays.'
+    }
+  ];
+
+  if (isCommercial) {
+    const commercialOptions = [personas[0], personas[4], personas[5]];
+    return commercialOptions[Math.floor(Math.random() * commercialOptions.length)];
+  }
+  if (isStudioOr1BHK) {
+    const soloOptions = [personas[0], personas[2], personas[3], personas[5]];
+    return soloOptions[Math.floor(Math.random() * soloOptions.length)];
+  }
+  if (isFamilyProperty) {
+    const familyOptions = [personas[1], personas[3], personas[4], personas[5]];
+    return familyOptions[Math.floor(Math.random() * familyOptions.length)];
+  }
+  if (isLand) {
+    const landOptions = [personas[5], personas[4], personas[1]];
+    return landOptions[Math.floor(Math.random() * landOptions.length)];
+  }
+
+  let seed = 0;
+  const combinedStr = (seedString || '') + Math.random().toString();
+  for (let i = 0; i < combinedStr.length; i++) {
+    seed = (seed * 37 + combinedStr.charCodeAt(i)) % 1000000;
+  }
+  const index = Math.abs(seed) % personas.length;
+  return personas[index];
 }

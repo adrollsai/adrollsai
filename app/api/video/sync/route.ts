@@ -214,7 +214,7 @@ export async function POST(request: Request) {
                             ContentType: 'video/mp4'
                         }));
                         
-                        persistedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${fileName}`;
+                        persistedUrl = `${R2_PUBLIC_URL}/${fileName.replace(/^\//, '')}`;
                         console.log(`[Sync Endpoint] Successfully uploaded scene to R2: ${persistedUrl}`);
                     } catch (r2Error) {
                         console.error("[Sync Endpoint] R2 upload failed. Falling back to direct Kie URL.", r2Error);

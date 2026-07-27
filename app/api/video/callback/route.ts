@@ -383,7 +383,7 @@ export async function POST(request: Request) {
         siblings.sort((a, b) => a.current_index - b.current_index);
 
         // If there is only 1 scene AND no voiceover audio attached, bypass the stitcher and finalize immediately
-        if (siblings.length === 1 && !videoTask.audio_url && videoTask.video_model !== 'grok') {
+        if (siblings.length === 1 && !videoTask.audio_url) {
             const clipUrl = siblings[0].last_successful_task_id;
             console.log(`[Video Callback] Single-clip video detected (15s). Finalizing asset and applying faststart: ${clipUrl}`);
             
@@ -518,7 +518,7 @@ export async function POST(request: Request) {
 
             // Probe actual clip durations to avoid freeze at end of short Grok clips
             let clipDurationsInSeconds: number[] | undefined = undefined;
-            const isGrokModel = videoTask.video_model === 'grok';
+            const isGrokModel = !!videoTask.audio_url || videoTask.prompts?.[0]?.toLowerCase().includes('grok') || videoTask.prompts?.[0]?.toLowerCase().includes('identity lock');
             if (isGrokModel) {
                 try {
                     const ffmpegBinary = path.join(
@@ -564,17 +564,68 @@ export async function POST(request: Request) {
 
             console.log(`[Video Callback] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambdaActual} frames per lambda (actual total frames: ${actualTotalFrames})`);
 
-            // Generate TTS voiceover inline for Grok if none was attached during task creation
+            // Resolve TTS voiceover audio for Grok if a task ID or URL was attached
             let finalAudioUrl = videoTask.audio_url || null;
+            if (finalAudioUrl && finalAudioUrl.startsWith('tts:')) {
+                const ttsTaskId = finalAudioUrl.replace(/^tts:/, '');
+                try {
+                    console.log(`[Video Callback] Resolving asynchronous Gemini TTS task ${ttsTaskId}...`);
+                    const { queryKieTask } = await import('@/utils/external-apis');
+                    const ttsStatus = await queryKieTask(ttsTaskId);
+                    if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
+                        try {
+                            const audioRes = await fetch(ttsStatus.resultUrl);
+                            if (audioRes.ok) {
+                                const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                                const r2Key = `voiceover/${Date.now()}_grok_async_tts.mp3`;
+                                await r2.send(new PutObjectCommand({
+                                    Bucket: R2_BUCKET,
+                                    Key: r2Key,
+                                    Body: audioBuffer,
+                                    ContentType: 'audio/mpeg'
+                                }));
+                                finalAudioUrl = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
+                                console.log(`[Video Callback] Async Gemini TTS voiceover resolved and persisted: ${finalAudioUrl}`);
+                            } else {
+                                finalAudioUrl = ttsStatus.resultUrl;
+                            }
+                        } catch (r2Err) {
+                            finalAudioUrl = ttsStatus.resultUrl;
+                        }
+                    } else {
+                        console.warn(`[Video Callback] Async Gemini TTS task state is '${ttsStatus.state}'.`);
+                        finalAudioUrl = null;
+                    }
+                } catch (ttsErr: any) {
+                    console.warn(`[Video Callback] Async Gemini TTS resolution error:`, ttsErr.message);
+                    finalAudioUrl = null;
+                }
+            }
+
             if (isGrokModel && !finalAudioUrl) {
                 try {
-                    // Pull dialogue from the prompts stored in the task (the first prompt has the dialogue context)
-                    // Look up the asset caption to use as voiceover text
                     const { data: assetRecord } = await supabaseAdmin
                         .from('assets')
-                        .select('caption')
+                        .select('caption, metadata')
                         .eq('id', videoTask.asset_id)
                         .single();
+
+                    if (assetRecord?.metadata?.audioUrl) {
+                        finalAudioUrl = assetRecord.metadata.audioUrl;
+                        if (finalAudioUrl.startsWith('tts:')) {
+                            const ttsTaskId = finalAudioUrl.replace(/^tts:/, '');
+                            console.log(`[Video Callback] Resolving Gemini TTS task ${ttsTaskId} from asset metadata...`);
+                            const { queryKieTask } = await import('@/utils/external-apis');
+                            for (let t = 0; t < 15; t++) {
+                                const ttsStatus = await queryKieTask(ttsTaskId);
+                                if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
+                                    finalAudioUrl = ttsStatus.resultUrl;
+                                    break;
+                                }
+                                await new Promise(r => setTimeout(r, 2000));
+                            }
+                        }
+                    }
 
                     const voiceoverText = assetRecord?.caption || '';
                     if (voiceoverText && voiceoverText.length > 10) {
@@ -589,8 +640,8 @@ export async function POST(request: Request) {
                         });
 
                         if (ttsTaskId && !ttsError) {
-                            // Poll TTS for up to 60s
-                            for (let t = 0; t < 20; t++) {
+                            // Poll TTS for up to 30s
+                            for (let t = 0; t < 10; t++) {
                                 await new Promise(r => setTimeout(r, 3000));
                                 const ttsStatus = await queryKieTask(ttsTaskId);
                                 if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
@@ -606,7 +657,7 @@ export async function POST(request: Request) {
                                                 Body: audioBuffer,
                                                 ContentType: 'audio/mpeg'
                                             }));
-                                            finalAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
+                                            finalAudioUrl = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
                                             console.log(`[Video Callback] Grok voiceover generated and persisted: ${finalAudioUrl}`);
                                         }
                                     } catch (r2VoiceErr) {

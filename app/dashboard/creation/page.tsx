@@ -213,6 +213,7 @@ export default function CreationPage() {
   // Reference Library State
   const [userReferences, setUserReferences] = useState<any[]>([])
   const [selectedUserRefId, setSelectedUserRefId] = useState<string | null>(null)
+  const [selectedUserRefUrl, setSelectedUserRefUrl] = useState<string | null>(null)
 
   // Style Gallery Modal State
   const [isGalleryOpen, setIsGalleryOpen] = useState(false)
@@ -231,12 +232,13 @@ export default function CreationPage() {
     setPreviewId(id)
   }
 
-  const isPreviewSelected = 
+  const isPreviewSelected = Boolean(
     previewType === 'template' ? (selectedTemplate === previewId) :
-    previewType === 'userRef' ? (selectedUserRefId === previewId) :
+    previewType === 'userRef' ? (selectedUserRefId === previewId || (Boolean(previewImageUrl) && selectedUserRefUrl === previewImageUrl)) :
     previewType === 'localRef' && previewImageUrl ? localRefImages.includes(previewImageUrl) :
     previewType === 'uploaded' ? (uploadedRefUrl === previewImageUrl) :
-    false;
+    false
+  );
 
   const handleSelectFromPreview = () => {
     if (!previewImageUrl) return;
@@ -244,10 +246,12 @@ export default function CreationPage() {
       setSelectedTemplate(previewId);
       setUploadedRefUrl(null);
       setSelectedUserRefId(null);
+      setSelectedUserRefUrl(null);
     } else if (previewType === 'userRef') {
       setSelectedTemplate(null);
       setUploadedRefUrl(null);
       setSelectedUserRefId(previewId);
+      setSelectedUserRefUrl(previewImageUrl);
     } else if (previewType === 'localRef') {
       if (localRefImages.includes(previewImageUrl)) {
         setLocalRefImages(prev => prev.filter(url => url !== previewImageUrl));
@@ -508,11 +512,11 @@ export default function CreationPage() {
           setProperties(data)
       }
 
-      // Fetch User's Reference Library creatives
+      // Fetch User's Reference Library creatives (both personal and global library items)
       const { data: userRefs, error: refsError } = await supabase
         .from('reference_creatives')
         .select('id, category, url')
-        .eq('user_id', tUserId)
+        .or(`user_id.eq.${tUserId},user_id.is.null`)
         .order('created_at', { ascending: false })
       if (!refsError && userRefs) {
         setUserReferences(userRefs)
@@ -691,6 +695,7 @@ export default function CreationPage() {
         setUploadedRefUrl(publicUrl);
         setSelectedTemplate(null); 
         setSelectedUserRefId(null);
+        setSelectedUserRefUrl(null);
     } catch (error: any) {
         alert("Upload failed: " + error.message);
     } finally {
@@ -1245,7 +1250,7 @@ export default function CreationPage() {
   const isEditMode = chatAttachments.length > 0 || isEditingLastImage;
 
   const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
-  const activeReferenceUrl = uploadedRefUrl || templateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || null
+  const activeReferenceUrl = uploadedRefUrl || templateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null
 
   const startResponse = await fetch(`/api/chat${window.location.search}`, {
     method: 'POST',
@@ -1361,7 +1366,7 @@ export default function CreationPage() {
   }
 
   const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
-  const activeReferenceUrl = uploadedRefUrl || templateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || null
+  const activeReferenceUrl = uploadedRefUrl || templateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null
 
   return (
     <div className="flex flex-col h-[calc(100dvh-70px)] sm:h-screen bg-[#F8FAFC] relative">
@@ -1663,8 +1668,8 @@ export default function CreationPage() {
             <div className="px-4 flex gap-2 w-full overflow-x-auto scrollbar-hide items-center">
                  {/* Auto layout button */}
                  <button 
-                    onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); setSelectedUserRefId(null); }}
-                    className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate === null && uploadedRefUrl === null && selectedUserRefId === null ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                    onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); setSelectedUserRefId(null); setSelectedUserRefUrl(null); }}
+                    className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate === null && uploadedRefUrl === null && selectedUserRefId === null && selectedUserRefUrl === null ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
                  >
                     <Layout size={16} />
                     <span className="text-[9px] font-bold uppercase tracking-wider">Auto</span>
@@ -1724,6 +1729,7 @@ export default function CreationPage() {
                                         if (data) {
                                             setUserReferences(prev => [data, ...prev]);
                                             setSelectedUserRefId(data.id);
+                                            setSelectedUserRefUrl(data.url || uploadedRefUrl);
                                             setUploadedRefUrl(null);
                                             toast.success("Saved to Reference Library! 💎");
                                         }
@@ -1756,7 +1762,7 @@ export default function CreationPage() {
                         setGalleryTab('all');
                         setIsGalleryOpen(true);
                     }}
-                    className={`w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate !== null || selectedUserRefId !== null ? 'border-purple-500 bg-purple-50 text-purple-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                    className={`w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate !== null || selectedUserRefId !== null || selectedUserRefUrl !== null ? 'border-purple-500 bg-purple-50 text-purple-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
                  >
                     <ImageIcon size={16} />
                     <span className="text-[8px] font-bold text-center px-1 leading-tight uppercase">Library</span>
@@ -1783,7 +1789,7 @@ export default function CreationPage() {
                          </div>
                          <button 
                              type="button"
-                             onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); setSelectedUserRefId(null); }}
+                             onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); setSelectedUserRefId(null); setSelectedUserRefUrl(null); }}
                              className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 rounded-full transition-all"
                          >
                              <X size={14} />
@@ -2172,23 +2178,42 @@ export default function CreationPage() {
                       </div>
                     </div>
 
-                    {/* Voice Selection control for Grok Script Review */}
+                    {/* Voice Selection & Audio Preview control for Grok Script Review */}
                     {msg.grokStep === 'script_review' && (
-                      <div className="flex items-center justify-between bg-purple-50/50 p-2.5 rounded-xl border border-purple-100 mt-1">
-                        <span className="text-[10px] font-extrabold text-purple-700 uppercase tracking-wider flex items-center gap-1">
-                          <Mic size={12} /> AI Voice Persona:
-                        </span>
-                        <select
-                          value={grokVoice}
-                          onChange={(e) => setGrokVoice(e.target.value)}
-                          className="bg-white border border-purple-200 text-xs font-bold text-slate-800 rounded-lg px-2.5 py-1 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
-                        >
-                          <option value="Aoede">Aoede (Warm & Energetic Female)</option>
-                          <option value="Puck">Puck (Upbeat & Conversational Male)</option>
-                          <option value="Kore">Kore (Deep & Confident Female)</option>
-                          <option value="Fenrir">Fenrir (Bold & Authoritative Male)</option>
-                          <option value="Charon">Charon (Smooth & Professional Male)</option>
-                        </select>
+                      <div className="flex flex-col gap-2 bg-gradient-to-r from-purple-50/70 to-indigo-50/70 p-3.5 rounded-2xl border border-purple-200/80 mt-1 shadow-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-black text-purple-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <Mic size={14} className="text-purple-600" /> Choose AI Voice Persona:
+                          </span>
+                          <select
+                            value={grokVoice}
+                            onChange={(e) => setGrokVoice(e.target.value)}
+                            className="bg-white border border-purple-300 text-xs font-bold text-purple-950 rounded-xl px-3 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer"
+                          >
+                            <option value="Aoede">Aoede (Warm & Energetic Female)</option>
+                            <option value="Puck">Puck (Upbeat & Conversational Male)</option>
+                            <option value="Kore">Kore (Deep & Confident Female)</option>
+                            <option value="Fenrir">Fenrir (Bold & Authoritative Male)</option>
+                            <option value="Charon">Charon (Smooth & Professional Male)</option>
+                          </select>
+                        </div>
+
+                        {/* Audio Sample Preview */}
+                        <div className="flex items-center justify-between bg-white/80 backdrop-blur-sm p-2 rounded-xl border border-purple-100/80 mt-1">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></span>
+                            <span className="text-[10px] font-extrabold text-slate-700">
+                              Preview Voice Sample ({grokVoice})
+                            </span>
+                          </div>
+                          <audio 
+                            key={grokVoice}
+                            controls 
+                            controlsList="nodownload noplaybackrate"
+                            src={`/voices/${grokVoice.toLowerCase()}.wav`} 
+                            className="h-7 w-48 accent-purple-600 rounded-lg outline-none" 
+                          />
+                        </div>
                       </div>
                     )}
 
@@ -2301,7 +2326,7 @@ export default function CreationPage() {
           }
 
           const selectedTemplateObj = TEMPLATES.find(t => t.id === selectedTemplate);
-          const currentActiveReferenceUrl = uploadedRefUrl || selectedTemplateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || null;
+          const currentActiveReferenceUrl = uploadedRefUrl || selectedTemplateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null;
           const currentAccountLogo = profile?.logo_url || "";
 
           const potentialInputImages = [
@@ -2467,7 +2492,7 @@ export default function CreationPage() {
           }
 
           const selectedTemplateObj = TEMPLATES.find(t => t.id === selectedTemplate);
-          const currentActiveReferenceUrl = uploadedRefUrl || selectedTemplateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || null;
+          const currentActiveReferenceUrl = uploadedRefUrl || selectedTemplateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null;
           const currentAccountLogo = profile?.logo_url || "";
 
           const potentialInputImages = [
@@ -3091,6 +3116,7 @@ export default function CreationPage() {
                                   setSelectedTemplate(null);
                                   setUploadedRefUrl(null);
                                   setSelectedUserRefId(ref.id);
+                                  setSelectedUserRefUrl(ref.url);
                                   setIsGalleryOpen(false);
                                   toast.success("Applied reference style! 💎");
                                 }

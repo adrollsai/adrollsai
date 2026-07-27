@@ -167,7 +167,7 @@ export async function queryKieTask(taskId: string): Promise<{ state: string; res
 export async function createGeminiTTS({
     dialogueText,
     speakerName = "Zephyr",
-    style = "Deadpan",
+    style = "",
     scene = "Professional studio recording",
     sampleContext = "High converting marketing voiceover",
     callBackUrl

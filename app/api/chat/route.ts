@@ -5,7 +5,7 @@ import { createKieTask } from '@/utils/external-apis';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google'; 
 import { checkLimitAndIncrement, refundLimit, checkStorageLimit } from '@/utils/subscription-server';
-import { buildImageSystemPrompt, buildReferenceCreativePreamble, buildImageDisambiguationPreamble, detectIndustry } from '@/utils/image-prompt-master';
+import { buildImageSystemPrompt, buildReferenceCreativePreamble, buildImageDisambiguationPreamble, detectIndustry, getRandomVisualArchetype, getRandomHumanPersona } from '@/utils/image-prompt-master';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -210,7 +210,6 @@ export async function POST(request: Request) {
     logToFile(`STARTING GENERATION | MODEL: ${model} | Target User ID: ${targetUserId} | Business Name: ${businessName} | Industry: ${industry} | Category: ${normalizedCategory || 'None'}`);
     
     // Consolidate and filter images (Remove placeholders, SVGs and invalid URLs)
-    // SVGs are often rejected by Image-to-Image models as 'unsupported file type'.
     const filterImages = (urls: any[]) => (urls || []).filter(url => 
         url && 
         typeof url === 'string' && 
@@ -230,13 +229,23 @@ export async function POST(request: Request) {
       userInstructions?.toLowerCase().includes('misrepresent') ||
       userInstructions?.toLowerCase().includes('mis represents');
 
-    let validPropImages = filterImages(propImages);
+    // Helper to encode and sanitize image URLs (handles unencoded spaces and query params)
+    const sanitizeImageUrl = (rawUrl: string): string => {
+        try {
+            const parsed = new URL(rawUrl);
+            return parsed.href;
+        } catch (e) {
+            return encodeURI(rawUrl);
+        }
+    };
+
+    let validPropImages = filterImages(propImages).map(sanitizeImageUrl);
     if (excludeHousePhoto) {
         logToFile("[CHAT ROUTE] Negative constraint detected (excludeHousePhoto): Suppressing input property photos.");
         validPropImages = [];
     }
-    const validLogo = logoUrl && !excludedImages.includes(logoUrl) ? filterImages([logoUrl]) : [];
-    const validTemplate = templateUrl && !excludedImages.includes(templateUrl) ? filterImages([templateUrl]) : [];
+    const validLogo = logoUrl && !excludedImages.includes(logoUrl) ? filterImages([logoUrl]).map(sanitizeImageUrl) : [];
+    const validTemplate = templateUrl && !excludedImages.includes(templateUrl) ? filterImages([templateUrl]).map(sanitizeImageUrl) : [];
     
     // Capped at 16 images maximum for GPT 2 model
     const allInputImages = [...validPropImages, ...validLogo].slice(0, 16);
@@ -255,8 +264,21 @@ export async function POST(request: Request) {
           const refMimeType = refRes.headers.get('content-type') || 'image/png';
           
           logToFile("Calling Gemini to analyze reference creative style...");
-          const styleAnalysisInstruction = `Analyze the visual style, design aesthetic, layout composition, typography styling, and color palette of this reference ad in detail. Describe it in a way that guides an AI image generator (like Stable Diffusion or DALL-E) to match this exact aesthetic, layout, and composition. Focus on colors, lighting, placing of objects, backgrounds, design hierarchy, and overall mood. Write a single detailed paragraph.
-IMPORTANT: Do NOT transcribe or include any specific text contents, business names, telephone numbers, barcodes, QR codes, website URLs, or licensing/registration numbers (like RERA) found on the reference ad. Instead, refer to them generally as layout placeholders (e.g., "a logo placeholder in the corner", "licensing text placeholder", "contact detail placeholder").`;
+          const styleAnalysisInstruction = `You are a Master Creative Director & Visual System Architect. 
+Your task is to analyze this reference creative advertisement and deconstruct it into a universal "Graphic Design System Blueprint".
+
+UNIVERSAL TWO-LAYER DECONSTRUCTION METHOD:
+Layer 1 — STRIP & OMIT CONTENT ASSETS (ZERO-ELEMENT-BLEED):
+- Do NOT describe, transcribe, or mention any specific physical building, house, villa, car, human face, specific brand name, telephone number, address, or QR code found in this image. They are content assets and MUST NOT be mentioned.
+
+Layer 2 — FAITHFULLY EXTRACT VISUAL DESIGN BLUEPRINT:
+Deconstruct the visual creative strictly into its 4 universal design parameters:
+1. GRAPHIC CONTAINER & SIGNATURE FRAMING GEOMETRY: Describe the exact layout structure and geometric container shape framing or holding the hero image (e.g. custom icon silhouette, floating card, geometric mask, split container, or full-bleed grid). Explicitly instruct how the hero image should be framed.
+2. COLOR PALETTE & LIGHTING MOOD: Primary background colors, accent colors, translucent pill gradients, contrast ratio, and ambient lighting mood.
+3. HAUTE-COUTURE TYPOGRAPHY SYSTEM: Font pairing styles (e.g., high-fashion serif header like Bodoni/Cormorant or sleek geometric sans-serif like Trajan/Futura), champagne gold foil or crisp ivory-white tones (NEVER cheap flat yellow gradients), wide kerning/letter-spacing for subtext, and text alignment.
+4. DECORATIVE BADGES & ICON PLACEMENT: Placement zones for feature pills, logo stamps, CTA banners, and decorative badge elements.
+
+Write a structured, single-paragraph VISUAL DESIGN BLUEPRINT describing this complete advertising design system so an AI image model can apply this exact layout framework and visual branding to ANY new product.`;
 
           let geminiResult;
           try {
@@ -311,12 +333,46 @@ IMPORTANT: Do NOT transcribe or include any specific text contents, business nam
       }
     }
 
-    // Call Master Designer LLM if no reference style is selected and we are NOT in edit mode
+    // Call Master Designer LLM if we are NOT in edit mode (handles both reference-guided and promptless generations)
     const finalContactNumber = contactNumber || profile?.contact_number || '';
     let designerPrompt = "";
-    if (!hasReference && !isEdit) {
+    if (!isEdit) {
       try {
         logToFile("Calling Gemini Master Designer to compose optimized image generation prompt...");
+        
+        // Dynamically compute unique visual archetype & human persona for maximum generation variety
+        const requestSeed = `${Date.now()}_${Math.random()}_${propertyTitle || ''}_${userInstructions || ''}`;
+        const activeArchetype = getRandomVisualArchetype(propertyTitle, propertyDescription, requestSeed);
+        let activePersona = getRandomHumanPersona(propertyTitle, propertyDescription, userInstructions, requestSeed);
+        
+        // Check for explicit user exclusion of people
+        const userExcludedHumans = userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip)\s+(people|humans|person|family|man|woman)\b/i);
+        if (userExcludedHumans) {
+          activePersona = {
+            id: 'no_humans',
+            name: 'Pure Architectural & Interior Focus (No Humans)',
+            hasHumans: false,
+            promptDirective: 'HUMAN PERSONA (STRICT DIRECTIVE): Do NOT include any humans or people in this creative image. Focus 100% of the visual spotlight on the gorgeous property architecture, luxury interior design, crisp lighting, and graphic typography overlays.'
+          };
+        }
+
+        logToFile(`DYNAMIC VARIATION GENERATED | HasReference: ${hasReference} | Archetype: ${activeArchetype.name} | Persona: ${activePersona.name}`);
+
+        const styleGuidanceSection = hasReference && styleDescription
+          ? `CRITICAL REFERENCE DESIGN BLUEPRINT (Extracted from User Reference Image):
+${styleDescription}
+
+UNIVERSAL MASTER DESIGNER SYNTHESIS INSTRUCTION:
+Synthesize the extracted reference blueprint above into a 5-star luxury social media campaign creative for the user's product.
+- Faithfully preserve and reproduce the reference creative's exact visual layout structure, container framing geometry, color scheme, and typography placement.
+- Place the user's actual property/product photos as the hero visual inside the reference's signature container framing geometry.
+- Render all text in modern, crisp, flat typography with high-contrast legibility.`
+          : `MANDATORY CREATIVE DESIGN BLUEPRINT (FOR VARIETY & UNIQUENESS):
+- ${activeArchetype.promptInstructions}
+- LIGHTING & ATMOSPHERE: ${activeArchetype.lighting}.
+- VISUAL COMPOSITION: ${activeArchetype.composition}.
+- TYPOGRAPHY & OVERLAYS: ${activeArchetype.typography}.`;
+
         const designComposerPrompt = `You are a Master Advertising Designer with 20+ years of experience in creating high-converting, visually stunning ad creatives for premium social media campaigns.
 Your job is to write a highly detailed, optimized image generation prompt that will be sent to an AI image model (like Stable Diffusion or DALL-E) to produce a professional, premium ad poster.
 
@@ -329,15 +385,17 @@ Here is the information provided by the user:
 - Contact Number / Call to Action: ${finalContactNumber || 'N/A'}
 - Custom User Instructions: ${userInstructions || 'None'}
 
+${styleGuidanceSection}
+
 Your goal is to synthesize this information and output an extremely detailed, descriptive visual prompt for the image generation model.
 Follow these master designer rules to ensure the prompt is premium, attention-grabbing, and informative:
-1. BRIGHT LIGHT THEME & COMPOSITION: Describe a highly detailed, premium, and professional visual layout. The design should default to a bright, clean, airy light theme with high-exposure natural morning sunlight, clear bright blue skies, and a vibrant, crisp commercial aesthetic. Avoid dark, moody, dim, twilight, or sunset settings unless explicitly requested.
-2. INFORMATION & CREATIVE COPYWRITING Hooks: Unless the user's custom instructions explicitly request to exclude text overlays, make the creative highly informative. Include clear, high-converting text overlay instructions: a bold benefit-driven headline highlighting the product value proposition, and a sub-headline listing key features or pricing details. You MUST prominently include and highlight the property's city or location name (e.g. "Zirakpur", "Mohali", "Chandigarh", or "Near Chandigarh" based on the product description or details) in the text overlays so viewers immediately know where the property is located. If the city or location is NOT mentioned in the product description/details, you MUST NOT hallucinate or invent one; instead, keep it generic or omit the location name entirely (e.g., use "In a Prime Location" or focus solely on property benefits). Avoid boring, lazy generic slogans like "elevated luxury living" or "experience luxury". Instead, write catchy, fresh, creative, and highly specific copywriting hooks tailored to the actual property facts (e.g. BHK size, exact locations, price points). Instruct the model to use modern, clean, and stylized typography (such as elegant serif headers paired with clean minimalist geometric sans-serif sub-headers, crisp lettering with high contrast size hierarchy, and subtle light legibility overlays).
-3. MANDATORY CONTACT INFO & BRANDING: Unless the user's custom instructions explicitly request to exclude the contact number or business info, you MUST instruct the model to display the contact number "${finalContactNumber || ''}" cleanly, professionally, and prominently. It should be positioned elegantly at the bottom footer or banner of the design (e.g., "For info, contact: ${finalContactNumber || ''}" or "Call ${finalContactNumber || ''}").
-4. LOGO INTEGRATION: Unless the user's custom instructions explicitly request to exclude the logo, instruct the image model to place the business logo cleanly and integrate it seamlessly (blending the background smoothly into the surrounding theme/sky, avoiding unblended raw shapes).
-5. HUMAN SUBJECT INCLUSION & VISIBILITY: Unless the user's custom instructions explicitly request to exclude humans/people (e.g. "no people", "no humans"), you MUST instruct the model to include close-up portrait shots (chest up or head-and-shoulders framing) of fully visible, beautiful, highly attractive, photorealistic humans (such as a happy family, an elegant couple, or a successful professional individual depending on the product context) in the foreground showing happy, positive, and smiling facial expressions of joy and satisfaction. Instruct the model that skin must have true-to-life detailing (natural skin pores, fine textures, real skin creases, and subtle micro-details) and look completely authentic, avoiding any plastic, airbrushed, synthetic, or shiny AI-generated look. Avoid distant, tiny, or blurry figures. The ethnicity of the humans must match the geographical region/country of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).
-6. IMAGE HERO & FIDELITY: ${excludeHousePhoto ? 'CRITICAL EXCLUSION: The user explicitly specified not to show a kothi/house/building photo. OVERRIDE Rule 6 entirely. Do NOT describe or include any house, villa, kothi, or building exterior in the visual design or generated prompt. Instead, instruct the model to create an abstract luxury graphic design, location map highlight, or high-end lifestyle detail.' : 'Instruct the model to analyze the provided product/property photos, keep the generated property/building visuals extremely close, faithful, and visually consistent with the actual structures in the photos, and place it as the main subject of the canvas.'}
-7. EXPLICIT EXCLUSION HANDLING: If the custom user instructions explicitly ask to remove, exclude, or skip text overlays, headlines, contact numbers, logos, or house/property photos, you MUST follow this strictly. ${excludeHousePhoto ? 'ABSOLUTELY NO house, villa, or kothi exterior visual must be included in the output prompt.' : ''}
+1. DESIGN ARCHETYPE & ATMOSPHERE: Create a visually captivating layout with high-exposure, bright natural sunlight, clear skies, and a clean commercial aesthetic.
+2. INFORMATION & HAUTE-COUTURE COPYWRITING HOOKS: Unless the user's custom instructions explicitly request to exclude text overlays, make the creative highly informative. Include clear, high-converting text overlay instructions: a bold benefit-driven headline highlighting the product value proposition, and a sub-headline listing key features or pricing details. You MUST prominently include and highlight the property's city or location name (e.g. "Zirakpur", "Mohali", "Chandigarh", or "Near Chandigarh" based on the product description or details) in the text overlays so viewers immediately know where the property is located. If the city or location is NOT mentioned in the product description/details, keep it generic (e.g. "In a Prime Location"). Avoid boring generic slogans like "experience luxury". Write catchy, specific hooks.
+3. LUXURY BRAND TYPOGRAPHY DIRECTIVES: Instruct the model to render the main headline text in ultra-high-end haute-couture typography (such as an elegant serif with refined stroke contrast like Bodoni/Cormorant, or an ultra-sleek high-fashion geometric font like Trajan/Futura). ABSOLUTELY FORBID cheap flat yellow gradients or crude Arial fonts. Use subtle champagne gold foil, warm ivory-white, or metallic bronze lettering with natural directional lighting highlights. Sub-headers and location badges MUST feature wide, generous letter-spacing (wide tracking) for an expensive, agency-level aesthetic.
+4. MANDATORY CONTACT INFO & BRANDING: Unless the user's custom instructions explicitly request to exclude the contact number or business info, you MUST instruct the model to display the contact number "${finalContactNumber || ''}" cleanly, professionally, and prominently at the bottom footer or banner.
+5. LOGO INTEGRATION: Unless requested to exclude, place the business logo cleanly in a corner and integrate it seamlessly (blending the background smoothly into the surrounding theme/sky).
+6. DYNAMIC HUMAN SUBJECT PERSONA: ${activePersona.promptDirective} The ethnicity of the humans must match the geographical region/country of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).
+7. IMAGE HERO & FIDELITY: ${excludeHousePhoto ? 'CRITICAL EXCLUSION: The user explicitly specified not to show a kothi/house/building photo. OVERRIDE Rule 6 entirely. Do NOT describe or include any house, villa, kothi, or building exterior in the visual design or generated prompt.' : 'Instruct the model to analyze the provided product/property photos, keep the generated property/building visuals extremely close and faithful to the actual structures in the photos, and place it as the main hero of the canvas inside full-bleed or clean rectangular framing.'}
 8. OUTPUT FORMAT: The output should be a single cohesive, highly detailed, descriptive paragraph containing the exact scene description, layouts, styling, text overlays, and details for the image model. Do NOT include any intro, conversational text, or metadata in your output. Just output the final prompt.`;
 
         const imageParts: any[] = [];
@@ -403,20 +461,29 @@ Follow these master designer rules to ensure the prompt is premium, attention-gr
     if (isEdit) {
       finalImagePrompt = `Modify the input image according to these custom instructions: "${userInstructions}". 
 Make the edits clean, professional, and blend seamlessly with the original content. Do NOT add any messy or gibberish text overlays unless explicitly requested. Keep the visual theme intact while applying the edits.`;
+    } else if (hasReference && designerPrompt) {
+      finalImagePrompt = `${referencePreamble}${designerPrompt}`;
     } else if (hasReference) {
       const promptParts = [
           referencePreamble,
-          `Create a clean, high quality, professional ad creative design.`,
+          `Create a clean, ultra-premium, agency-level ad creative design using the Graphic Design Blueprint below.`,
+          `CRITICAL QUALITY DIRECTIVES (NO CHEAP CANVA OR VECTOR GRAPHICS):`,
+          `- PROHIBITION ON OVAL MASKS & CHEAP GRAPHICS: Render the property visual as full-bleed commercial photography or a clean rectangular architectural frame. ABSOLUTELY NEVER enclose the image inside an oval mask, circular cut-out, or heavy white border frame.`,
+          `- NO 3D GOLD EMBOSSED FONTS OR DOTTED ICON LINES: Typography must be modern, flat, clean, and crisp (minimalist geometric sans-serif or elegant high-contrast serif). Avoid fake 3D gold bevel gradients or lines of circular clip-art icons connected by dotted lines across the header.`,
+          `- SEAMLESS NATURAL INTEGRATION: Human subjects and property visuals must be seamlessly integrated into natural photorealistic scene lighting, never floating over graphic shapes.`,
+          `CRITICAL RULE FOR HERO SUBJECT: The building, product, or property MUST come 100% strictly from the provided input property photos (or property description). Do NOT invent or copy any building/structure. Place the user's property inside the design layout specified below.`,
+          excludeHousePhoto 
+            ? `STRICT NEGATIVE DIRECTIVE: Do NOT render any house, kothi, villa, or building exterior image. Focus on abstract luxury backgrounds, minimalist typography, location map graphics, or lifestyle close-ups.` 
+            : `Use the user's actual property photos as the central visual hero asset of the canvas.`,
           propertyTitle ? `Subject: ${propertyTitle}` : '',
           propertyDescription ? `Details/Description: ${propertyDescription}` : '',
           (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
           (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly. Integrate the brand logo seamlessly with the design and background. Do NOT place it inside a raw, unblended black or white box/circle; blend its background shape smoothly into the background sky/theme.` : '',
-          (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Include the contact number "${finalContactNumber}" clearly and elegantly, placed according to the reference creative layout.` : '',
-          excludeHousePhoto ? `STRICT NEGATIVE DIRECTIVE: Do NOT render any house, kothi, villa, or building exterior image. Focus on abstract luxury backgrounds, minimalist typography, location map graphics, or lifestyle close-ups.` : `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`,
+          (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Display the contact number "${finalContactNumber}" cleanly and prominently according to the layout blueprint.` : '',
           `Do NOT add any messy or gibberish text overlays on the image unless explicitly requested. Keep the image clean, professional, and visually focused.`,
           `IMPORTANT NEGATIVE CONSTRAINT: Do NOT copy any text, barcodes, QR codes, website URLs, or license/RERA numbers (such as RERA registration numbers) directly from the reference image. If the reference creative contains a QR code, license number, or specific website address, omit them entirely from the final generated image.`,
           (!userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip)\s+(people|humans|person|family|man|woman)\b/i)) ? `Include close-up portrait shots (chest up or head-and-shoulders framing) of fully visible, beautiful, highly attractive, photorealistic humans (e.g. a happy family, an elegant couple, or a professional individual, depending on the product context) in the foreground showing happy, positive, and smiling facial expressions of joy. Skin must have true-to-life detailing (natural skin pores, fine textures, real skin creases, and subtle micro-details) looking completely authentic, avoiding any plastic, airbrushed, synthetic, or shiny AI-generated look. The ethnicity of the humans must match the geographical region of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).` : '',
-          styleDescription ? `MATCH THE FOLLOWING STYLE, LAYOUT, AND COMPOSITION EXACTLY:\n${styleDescription}` : '',
+          styleDescription ? `=== EXTRACTED GRAPHIC DESIGN BLUEPRINT (APPLY THIS STYLE FRAMEWORK TO THE USER'S PRODUCT) ===\n${styleDescription}` : '',
           userInstructions ? `Custom Instructions: ${userInstructions}` : ''
       ].filter(Boolean);
       finalImagePrompt = promptParts.join("\n");
@@ -488,33 +555,20 @@ Make the edits clean, professional, and blend seamlessly with the original conte
             throw new Error(errMsg);
         }
     } catch (primaryError: any) {
-        logToFile(`FAILOVER TRIGGERED: ${primaryError.message}. Switching to nano-banana-2...`);
+        logToFile(`FAILOVER TRIGGERED: ${primaryError.message}. Switching to text-to-image / nano-banana-2...`);
         
-        // FAILOVER to nano-banana-2
-        if (kieModel !== 'nano-banana-2') {
-            const failoverModel = 'nano-banana-2';
-            
-            // SIMPLIFIED PROMPT for failover to avoid content policy rejections
-            const simplifiedPrompt = `High-converting ad design for: "${propertyTitle}". 
-Context: "${propertyDescription}". 
-Brand: "${businessName}". 
-Premium design, clean layout, bold headline.`;
-
-            const failoverPayload = {
-                model: failoverModel,
-                input: {
-                    prompt: simplifiedPrompt,
-                    image_input: allInputImages,
-                    aspect_ratio: aspectRatio,
-                    resolution: "1K"
-                }
-            };
-            
-            logToFile(`KIE PAYLOAD (Attempt 2 - ${failoverModel}): ${JSON.stringify(failoverPayload, null, 2)}`);
-            kieResult = await createKieTask(failoverPayload);
-        } else {
-            throw primaryError;
-        }
+        // FAILOVER: Fall back to text-to-image if image fetch failed on primary model
+        const failoverPayload = {
+            model: "gpt-image-2-text-to-image",
+            input: {
+                prompt: finalImagePrompt,
+                aspect_ratio: aspectRatio,
+                resolution: "1K",
+                output_format: "png"
+            }
+        };
+        logToFile(`KIE PAYLOAD (Attempt 2 Failover): ${JSON.stringify(failoverPayload, null, 2)}`);
+        kieResult = await createKieTask(failoverPayload);
     }
 
     if (!kieResult || kieResult.error || !kieResult.taskId) {

@@ -836,55 +836,31 @@ High-end commercial production quality.
         if (videoModel === 'grok') {
             console.log(`[Video Generate] Running GROK IMAGINE 1.5 pipeline for target user ${targetUserId}...`);
 
-            // Generate TTS voiceover from script dialogue upfront (before Grok clips finish)
+            // Generate TTS voiceover task asynchronously from script dialogue (without blocking HTTP response)
             let grokAudioUrl: string | null = audioUrl;
             if (!grokAudioUrl && script.dialogue && script.dialogue.trim().length > 10) {
                 try {
-                    console.log(`[Video Generate] Pre-generating Gemini TTS voiceover for Grok pipeline...`);
-                    const { taskId: ttsTaskId, error: ttsCreateError } = await createGeminiTTS({
+                    console.log(`[Video Generate] Launching asynchronous Gemini TTS task for Grok pipeline...`);
+                    const { taskId: ttsTaskId } = await createGeminiTTS({
                         dialogueText: script.dialogue.trim(),
-                        speakerName: 'Aoede',
+                        speakerName: body.grokVoice || 'Aoede',
                         style: 'Confident',
                         scene: 'Professional real estate commercial voiceover studio',
                         sampleContext: 'High converting luxury real estate marketing video'
                     });
-
-                    if (ttsTaskId && !ttsCreateError) {
-                        // Poll for up to 60s
-                        for (let t = 0; t < 20; t++) {
-                            await new Promise(r => setTimeout(r, 3000));
-                            const ttsStatus = await queryKieTask(ttsTaskId);
-                            if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
-                                // Persist to R2 as mp3
-                                try {
-                                    const audioRes = await fetch(ttsStatus.resultUrl);
-                                    if (audioRes.ok) {
-                                        const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-                                        const r2Key = `voiceover/${Date.now()}_grok_tts.mp3`;
-                                        await r2.send(new PutObjectCommand({
-                                            Bucket: R2_BUCKET,
-                                            Key: r2Key,
-                                            Body: audioBuffer,
-                                            ContentType: 'audio/mpeg'
-                                        }));
-                                        grokAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
-                                        console.log(`[Video Generate] Grok TTS voiceover generated and persisted: ${grokAudioUrl}`);
-                                    }
-                                } catch (r2Err) {
-                                    grokAudioUrl = ttsStatus.resultUrl;
-                                }
-                                break;
-                            }
-                            if (ttsStatus.state === 'fail') { break; }
-                        }
-                    }
-                    if (!grokAudioUrl) {
-                        console.warn('[Video Generate] TTS voiceover timed out or failed. Continuing without voiceover.');
+                    if (ttsTaskId) {
+                        console.log(`[Video Generate] Gemini TTS task launched: ${ttsTaskId}`);
+                        // Store the TTS task ID format so callback can resolve audio URL if needed
+                        grokAudioUrl = `tts:${ttsTaskId}`;
+                        await supabaseAdmin.from('assets').update({ metadata: { audioUrl: grokAudioUrl } }).eq('id', newAsset.id);
                     }
                 } catch (ttsErr: any) {
-                    console.warn('[Video Generate] TTS voiceover generation failed, continuing without voiceover:', ttsErr.message);
+                    console.warn('[Video Generate] Asynchronous TTS voiceover launch warning:', ttsErr.message);
                 }
+            } else if (grokAudioUrl) {
+                await supabaseAdmin.from('assets').update({ metadata: { audioUrl: grokAudioUrl } }).eq('id', newAsset.id);
             }
+
             let grokPrompts: string[] = [];
             let collageUrls: (string | undefined)[] = [];
 
@@ -899,12 +875,12 @@ High-end commercial production quality.
                     const requiredClips = Math.max(1, Math.round(selectedDuration / 15));
                     
                     const dynamicStyles = [
-                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll of the products with a slow dramatic push-in zoom, soft studio lighting, and elegant depth of field. Silent video clip without any voiceover, speech, talking, background narration, ambient audio, or text overlays.",
-                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with an orbital 360 camera move showcasing product textures and sleek reflections. Silent video clip without any voiceover, speech, talking, background narration, ambient audio, or text overlays.",
-                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with a smooth vertical tilt up, high contrast cinematic lighting, and background parallax. Silent video clip without any voiceover, speech, talking, background narration, ambient audio, or text overlays.",
-                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with macro lens focus pull and dynamic commercial lighting shifts. Silent video clip without any voiceover, speech, talking, background narration, ambient audio, or text overlays.",
-                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with slow motion camera tracking move across the product details. Silent video clip without any voiceover, speech, talking, background narration, ambient audio, or text overlays.",
-                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with high-key studio lighting transitions and smooth camera pan. Silent video clip without any voiceover, speech, talking, background narration, ambient audio, or text overlays."
+                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll of the property architecture with a slow dramatic push-in camera zoom, soft studio lighting, and an elegant background music track. Absolutely NO human presenters, NO actors, NO people, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.",
+                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with an orbital 360 camera move showcasing interior design textures, luxury finishes, sleek reflections, and upbeat background music. Absolutely NO human presenters, NO actors, NO people, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.",
+                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with a smooth vertical tilt up across the building facade, high contrast cinematic lighting, background parallax, and soft commercial background music. Absolutely NO human presenters, NO actors, NO people, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.",
+                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with macro lens focus pull across architectural materials, dynamic commercial lighting shifts, and subtle background music. Absolutely NO human presenters, NO actors, NO people, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.",
+                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with slow motion camera tracking move across property features with background music. Absolutely NO human presenters, NO actors, NO people, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.",
+                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with high-key lighting transitions, smooth camera pan across 9:16 collage visuals, and inspiring background music. Absolutely NO human presenters, NO actors, NO people, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind."
                     ];
 
                     for (let i = 0; i < requiredClips; i++) {
@@ -914,12 +890,36 @@ High-end commercial production quality.
                     }
                 }
             } else {
-                // NO images: generate generic 9:16 scenes based on selected duration (15s per clip)
+                // NO images: synthesize product-relevant 9:16 scenes without human actors using Gemini AI
                 const requiredClips = Math.max(1, Math.round(selectedDuration / 15));
-                console.log(`[Video Generate] No images provided. Generating ${requiredClips} generic AI video clips for ${selectedDuration}s video...`);
+                console.log(`[Video Generate] No images provided. Synthesizing ${requiredClips} product-relevant AI video scenes for ${selectedDuration}s video...`);
 
                 for (let i = 0; i < requiredClips; i++) {
-                    grokPrompts.push(`Create an ultrarealistic live-action 9:16 commercial video scene for "${script.title || 'Product Ad'}". Scene ${i + 1} of ${requiredClips}. Professional 35mm anamorphic camera, cinematic lighting, 9:16 aspect ratio, high-converting aesthetic video ad asset.`);
+                    const scenePromptGen = `You are a high-converting video ad director. Write an ultra-realistic 9:16 commercial video prompt for Scene ${i + 1} of ${requiredClips} for an AI video model (Grok Imagine).
+PRODUCT/BUSINESS TITLE: "${script.title || 'Property Ad'}"
+AD CAPTION & CONTEXT: "${(script.finalCaption || '').slice(0, 300)}"
+
+REQUIREMENTS:
+1. Visual Relevance: Create a stunning, highly photorealistic live-action 9:16 commercial video scene directly showcasing the property/building architecture, interior design, or product details.
+2. NO PEOPLE RULE: ABSOLUTELY NO human presenters, NO actors, NO people, NO faces, NO talking heads in the video. Show ONLY animated product/property visuals and architectural spaces.
+3. Camera & Lighting: Cinematic 35mm anamorphic lens, 9:16 portrait aspect ratio, dynamic lighting, professional commercial camera movement (dolly zoom, orbital pan, or tracking shot).
+4. Audio & Text Rules: Include uplifting commercial background music track. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind. No spoken voiceover in the video prompt.
+
+Output ONLY the raw final prompt text in 2-3 sentences. Do NOT use markdown code blocks or quotes.`;
+
+                    let synthesizedGrokPrompt = "";
+                    try {
+                        const { text } = await generateText({
+                            model: google('gemini-3.5-flash'),
+                            prompt: scenePromptGen
+                        });
+                        synthesizedGrokPrompt = text.trim();
+                    } catch (genErr) {
+                        console.warn(`[Video Generate] Gemini Grok prompt synthesis failed for scene ${i + 1}, using intelligent fallback:`, genErr);
+                        synthesizedGrokPrompt = `Create an ultrarealistic live-action 9:16 commercial video scene for "${script.title || 'Luxury Commercial Property'}" showing animated A-roll architecture and property interiors. Professional 35mm anamorphic camera, cinematic lighting, 9:16 aspect ratio, uplifting background music track. Absolutely NO human presenters, NO actors, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.`;
+                    }
+
+                    grokPrompts.push(synthesizedGrokPrompt);
                     collageUrls.push(undefined);
                 }
             }
@@ -971,9 +971,7 @@ High-end commercial production quality.
                         last_successful_task_id: collageUrls[index] || null,
                         aspect_ratio: "9:16",
                         status: 'Processing',
-                        final_caption: script.finalCaption || null,
-                        audio_url: grokAudioUrl, // Use pre-generated TTS voiceover URL
-                        video_model: 'grok'
+                        final_caption: script.finalCaption || null
                     });
             });
 
@@ -993,7 +991,7 @@ High-end commercial production quality.
                     model: "bytedance/seedance-2-fast",
                     callBackUrl: callbackUrl,
                     input: {
-                        prompt: promptText,
+                        prompt: `${promptText} Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.`,
                         aspect_ratio: "9:16",
                         duration: 15,
                         generate_audio: true,
@@ -1052,8 +1050,7 @@ High-end commercial production quality.
                         last_successful_task_id: avatarUrl,
                         aspect_ratio: "9:16",
                         status: 'Processing',
-                        final_caption: script.finalCaption || null,
-                        video_model: 'seedance'
+                        final_caption: script.finalCaption || null
                     });
             });
             

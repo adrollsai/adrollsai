@@ -133,7 +133,7 @@ async function handleWhatsappFollowups(request: Request) {
             // Fetch owner's WhatsApp credentials and business profile info
             const { data: profile } = await supabaseAdmin
                 .from('profiles')
-                .select('whatsapp_access_token, whatsapp_phone_number_id, business_name, business_info')
+                .select('whatsapp_access_token, whatsapp_phone_number_id, business_name, business_info, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain')
                 .eq('id', chat.user_id)
                 .maybeSingle()
 
@@ -200,6 +200,7 @@ Guidelines:
             try {
                 let metaPayload: any = null
                 let logText = ''
+                let isFallback = false
 
                 if (isTemplate) {
                     metaPayload = {
@@ -223,12 +224,46 @@ Guidelines:
                     const replyText = aiRes.trim().replace(/^"|"$/g, '')
                     if (!replyText) continue
 
+                    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
+                    const catalogueLink = profile.custom_domain 
+                        ? `https://${profile.custom_domain}` 
+                        : `${appUrl}/shared/${chat.user_id}`
+
+                    const catalogueBtnText = profile.whatsapp_catalogue_button_text || 'See Products'
+                    let buttons = [{ text: catalogueBtnText, url: catalogueLink }]
+                    if (profile.whatsapp_buttons && Array.isArray(profile.whatsapp_buttons) && profile.whatsapp_buttons.length > 0) {
+                        buttons = profile.whatsapp_buttons.map((btn: any, idx: number) => {
+                            let url = btn.url ? btn.url.trim() : ''
+                            if (!url) {
+                                url = catalogueLink
+                            } else if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                                url = 'https://' + url
+                            }
+                            return {
+                                text: (btn.text || (idx === 0 ? catalogueBtnText : 'View Link')).slice(0, 20),
+                                url: url
+                            }
+                        })
+                    }
+
                     metaPayload = {
                         messaging_product: 'whatsapp',
                         recipient_type: 'individual',
                         to: chat.recipient_phone,
-                        type: 'text',
-                        text: { body: replyText }
+                        type: 'interactive',
+                        interactive: {
+                            type: 'cta_url',
+                            body: {
+                                text: replyText
+                            },
+                            action: {
+                                name: 'cta_url',
+                                parameters: {
+                                    display_text: buttons[0].text,
+                                    url: buttons[0].url
+                                }
+                            }
+                        }
                     }
                     logText = replyText
                 }
@@ -249,6 +284,7 @@ Guidelines:
                 // Fallback to Template if free-form text failed due to 24h customer service window expiration
                 if (sendData.error && !isTemplate && (sendData.error.code === 131047 || sendData.error.error_subcode === 2494010)) {
                     console.log(`[WhatsApp Followup Cron] Free-form failed due to 24h limit for ${chat.recipient_phone}, falling back to Meta template...`)
+                    isFallback = true
                     const fallbackPayload = {
                         messaging_product: 'whatsapp',
                         to: chat.recipient_phone,
@@ -295,6 +331,58 @@ Guidelines:
                             updated_at: new Date().toISOString()
                         })
                         .eq('id', chat.id)
+
+                    // Send "Connect with Expert" button message as a follow-up interactive message
+                    if (!isTemplate && !isFallback) {
+                        try {
+                            await new Promise(resolve => setTimeout(resolve, 800))
+                            const expertBodyText = "Would you like to speak directly with our expert on call?"
+                            const expertPayload = {
+                                messaging_product: 'whatsapp',
+                                recipient_type: 'individual',
+                                to: chat.recipient_phone,
+                                type: 'interactive',
+                                interactive: {
+                                    type: 'button',
+                                    body: {
+                                        text: expertBodyText
+                                    },
+                                    action: {
+                                        buttons: [
+                                            {
+                                                type: 'reply',
+                                                reply: {
+                                                    id: 'connect_expert',
+                                                    title: 'Connect with Expert'
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+
+                            const expertRes = await fetch(metaUrl, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${profile.whatsapp_access_token}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify(expertPayload)
+                            })
+
+                            if (expertRes.ok) {
+                                await supabaseAdmin
+                                    .from('whatsapp_messages')
+                                    .insert({
+                                        chat_id: chat.id,
+                                        direction: 'outbound',
+                                        message_text: `${expertBodyText} [Button: Connect with Expert]`
+                                    })
+                            }
+                        } catch (expertErr) {
+                            console.error('[WhatsApp Followup Cron] Error sending Connect with Expert button:', expertErr)
+                        }
+                    }
 
                     if (matchedLead) {
                         await supabaseAdmin

@@ -189,6 +189,56 @@ export default function AutomationPage() {
       );
     });
   }
+
+  // Helper to format date & time for chats and messages (e.g. Today, 10:45 AM | Yesterday, 4:30 PM | 25 Jul, 10:45 AM)
+  const formatChatDate = (dateString?: string | null) => {
+    if (!dateString) return ''
+    const d = new Date(dateString)
+    if (isNaN(d.getTime())) return ''
+
+    const now = new Date()
+    const isToday = d.toDateString() === now.toDateString()
+
+    const yesterday = new Date(now)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const isYesterday = d.toDateString() === yesterday.toDateString()
+
+    const isSameYear = d.getFullYear() === now.getFullYear()
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+    if (isToday) {
+      return `Today, ${timeStr}`
+    }
+    if (isYesterday) {
+      return `Yesterday, ${timeStr}`
+    }
+    if (isSameYear) {
+      const monthDay = d.toLocaleDateString([], { day: 'numeric', month: 'short' })
+      return `${monthDay}, ${timeStr}`
+    }
+    const fullDate = d.toLocaleDateString([], { day: 'numeric', month: 'short', year: '2-digit' })
+    return `${fullDate}, ${timeStr}`
+  }
+
+  // Helper to format date headers in message timeline (e.g. Today, Yesterday, Mon, Jul 27)
+  const getMessageDateHeader = (dateString?: string | null) => {
+    if (!dateString) return ''
+    const d = new Date(dateString)
+    if (isNaN(d.getTime())) return ''
+
+    const now = new Date()
+    if (d.toDateString() === now.toDateString()) return 'Today'
+
+    const yesterday = new Date(now)
+    yesterday.setDate(yesterday.getDate() - 1)
+    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
+
+    const isSameYear = d.getFullYear() === now.getFullYear()
+    if (isSameYear) {
+      return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+    }
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+  }
   
   // Live Chat Inbox states (Cached in localStorage)
   const [chats, setChats] = useState<Chat[]>(() => {
@@ -938,7 +988,7 @@ export default function AutomationPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-baseline mb-0.5">
                           <span className="text-xs font-bold text-slate-800 truncate">{c.recipient_name || c.recipient_phone}</span>
-                          <span className="text-[9px] text-slate-400 font-medium">{new Date(c.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span className="text-[9px] text-slate-400 font-medium whitespace-nowrap ml-1">{formatChatDate(c.updated_at)}</span>
                         </div>
                         <p className="text-[11px] text-slate-400 truncate leading-relaxed">
                           {c.last_message_text || 'No messages yet'}
@@ -1211,9 +1261,16 @@ export default function AutomationPage() {
                   ) : messages.length === 0 ? (
                     <div className="text-center text-xs text-slate-500 bg-white/80 backdrop-blur-xs border border-slate-200/60 font-semibold py-3 px-6 rounded-2xl max-w-sm mx-auto shadow-xs mt-10">No messages in this conversation yet.</div>
                   ) : (
-                    messages.map((m) => {
+                    messages.map((m, mIdx) => {
                       const isOutbound = m.direction === 'outbound'
                       
+                      const showDateHeader = (() => {
+                        if (mIdx === 0) return true
+                        const prevDate = new Date(messages[mIdx - 1].created_at).toDateString()
+                        const currentDate = new Date(m.created_at).toDateString()
+                        return prevDate !== currentDate
+                      })()
+
                       // Clean text and resolve template info & interactive buttons
                       let displayText = m.message_text || ''
 
@@ -1242,110 +1299,119 @@ export default function AutomationPage() {
                       const isImage = (m.media_type === 'image' || m.media_type === 'sticker') || !!extractedImgFromText
 
                       return (
-                        <div 
-                          key={m.id}
-                          className={`flex ${isOutbound ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div className={`
-                            relative max-w-[85%] sm:max-w-[72%] p-2.5 rounded-xl text-[12.5px] leading-relaxed shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]
-                            ${isOutbound 
-                              ? 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none' 
-                              : 'bg-white text-[#111b21] rounded-tl-none border border-slate-100/60'
-                            }
-                          `}>
-                            {/* Template Badge Header */}
-                            {templateInfo && (
-                              <div className="mb-2 pb-1.5 border-b border-black/10 flex items-center justify-between gap-2">
-                                <span className="text-[9.5px] font-extrabold uppercase tracking-wider text-emerald-900 bg-emerald-150/80 border border-emerald-300/50 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
-                                  📋 Template Message
-                                </span>
-                                <span className="text-[9px] font-mono text-slate-500 font-bold truncate">{templateInfo.templateName}</span>
-                              </div>
-                            )}
-
-                            {/* Render Image Media if present or extracted */}
-                            {displayImageUrl && isImage && (
-                              <div className="mb-2 rounded-lg overflow-hidden border border-black/5 bg-black/5 max-w-full">
-                                <img 
-                                  src={displayImageUrl}
-                                  alt="Shared image" 
-                                  className="max-w-full max-h-72 w-full object-cover cursor-pointer hover:opacity-95 transition-opacity"
-                                  onClick={() => window.open(displayImageUrl, '_blank')}
-                                  loading="lazy"
-                                  onError={(e) => {
-                                    const target = e.currentTarget;
-                                    if (!target.dataset.triedProxy && m.media_url) {
-                                      target.dataset.triedProxy = 'true';
-                                      target.src = `/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url)}`;
-                                    }
-                                  }}
-                                />
-                              </div>
-                            )}
-
-                            {/* Render Video */}
-                            {m.media_url && m.media_type === 'video' && (
-                              <video 
-                                src={getResolvedMediaUrl(m.media_url)!}
-                                controls 
-                                className="rounded-lg mb-2 max-w-full max-h-60 bg-black"
-                                preload="metadata"
-                              />
-                            )}
-
-                            {/* Render Audio */}
-                            {m.media_url && m.media_type === 'audio' && (
-                              <audio 
-                                src={getResolvedMediaUrl(m.media_url)!}
-                                controls 
-                                className="mb-2 max-w-full"
-                                preload="metadata"
-                              />
-                            )}
-
-                            {/* Render Document */}
-                            {m.media_url && m.media_type === 'document' && (
-                              <a 
-                                href={getResolvedMediaUrl(m.media_url)!}
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-2 mb-2 p-2 rounded-lg text-xs font-semibold bg-emerald-700/10 text-emerald-900 border border-emerald-200/50 hover:bg-emerald-700/20 transition-colors"
-                              >
-                                📄 View Document
-                              </a>
-                            )}
-
-                            {/* Main Formatted Text Content */}
-                            {displayText && !(['[image]', '[video]', '[audio]', '[sticker]', '[document]'].includes(displayText.toLowerCase())) && (
-                              <div className="text-[12.5px] text-[#111b21] leading-relaxed break-words">
-                                {renderFormattedWhatsAppText(displayText)}
-                              </div>
-                            )}
-
-                            {(!displayText || ['[image]', '[video]', '[audio]', '[sticker]', '[document]'].includes(displayText.toLowerCase())) && !displayImageUrl && (
-                              <p className="italic opacity-60 text-[11px]">{displayText || '[Media Message]'}</p>
-                            )}
-
-                            {/* Render WhatsApp Interactive Reply Button */}
-                            {extractedButtonLabel && (
-                              <div className="mt-2.5 pt-2 border-t border-black/10">
-                                <button 
-                                  onClick={() => toast.info(`Interactive action: ${extractedButtonLabel}`)}
-                                  className="w-full py-2 px-3 bg-white hover:bg-slate-50 text-[#008069] active:bg-slate-100 border border-[#00a884]/30 rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer hover:shadow-md"
-                                >
-                                  <span className="text-sm">📞</span> {extractedButtonLabel}
-                                </button>
-                              </div>
-                            )}
-
-                            {/* Timestamp & WhatsApp Double Ticks Bar */}
-                            <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-500 font-medium select-none">
-                              <span>
-                                {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        <div key={m.id} className="space-y-2.5">
+                          {showDateHeader && (
+                            <div className="flex justify-center my-3.5">
+                              <span className="bg-white/90 backdrop-blur-md text-slate-600 text-[10px] font-black px-3.5 py-1 rounded-full shadow-xs border border-slate-200/80 uppercase tracking-wider">
+                                {getMessageDateHeader(m.created_at)}
                               </span>
-                              {isOutbound && (
-                                <CheckCheck size={15} className="text-[#53bdeb] font-black shrink-0 stroke-[2.5]" />
+                            </div>
+                          )}
+
+                          <div 
+                            className={`flex ${isOutbound ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div className={`
+                              relative max-w-[85%] sm:max-w-[72%] p-2.5 rounded-xl text-[12.5px] leading-relaxed shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]
+                              ${isOutbound 
+                                ? 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none' 
+                                : 'bg-white text-[#111b21] rounded-tl-none border border-slate-100/60'
+                              }
+                            `}>
+                              {/* Template Badge Header */}
+                              {templateInfo && (
+                                <div className="mb-2 pb-1.5 border-b border-black/10 flex items-center justify-between gap-2">
+                                  <span className="text-[9.5px] font-extrabold uppercase tracking-wider text-emerald-900 bg-emerald-150/80 border border-emerald-300/50 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+                                    📋 Template Message
+                                  </span>
+                                  <span className="text-[9px] font-mono text-slate-500 font-bold truncate">{templateInfo.templateName}</span>
+                                </div>
                               )}
+
+                              {/* Render Image Media if present or extracted */}
+                              {displayImageUrl && isImage && (
+                                <div className="mb-2 rounded-lg overflow-hidden border border-black/5 bg-black/5 max-w-full">
+                                  <img 
+                                    src={displayImageUrl}
+                                    alt="Shared image" 
+                                    className="max-w-full max-h-72 w-full object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                                    onClick={() => window.open(displayImageUrl, '_blank')}
+                                    loading="lazy"
+                                    onError={(e) => {
+                                      const target = e.currentTarget;
+                                      if (!target.dataset.triedProxy && m.media_url) {
+                                        target.dataset.triedProxy = 'true';
+                                        target.src = `/api/whatsapp/media-proxy?url=${encodeURIComponent(m.media_url)}`;
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              )}
+
+                              {/* Render Video */}
+                              {m.media_url && m.media_type === 'video' && (
+                                <video 
+                                  src={getResolvedMediaUrl(m.media_url)!}
+                                  controls 
+                                  className="rounded-lg mb-2 max-w-full max-h-60 bg-black"
+                                  preload="metadata"
+                                />
+                              )}
+
+                              {/* Render Audio */}
+                              {m.media_url && m.media_type === 'audio' && (
+                                <audio 
+                                  src={getResolvedMediaUrl(m.media_url)!}
+                                  controls 
+                                  className="mb-2 max-w-full"
+                                  preload="metadata"
+                                />
+                              )}
+
+                              {/* Render Document */}
+                              {m.media_url && m.media_type === 'document' && (
+                                <a 
+                                  href={getResolvedMediaUrl(m.media_url)!}
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-2 mb-2 p-2 rounded-lg text-xs font-semibold bg-emerald-700/10 text-emerald-900 border border-emerald-200/50 hover:bg-emerald-700/20 transition-colors"
+                                >
+                                  📄 View Document
+                                </a>
+                              )}
+
+                              {/* Main Formatted Text Content */}
+                              {displayText && !(['[image]', '[video]', '[audio]', '[sticker]', '[document]'].includes(displayText.toLowerCase())) && (
+                                <div className="text-[12.5px] text-[#111b21] leading-relaxed break-words">
+                                  {renderFormattedWhatsAppText(displayText)}
+                                </div>
+                              )}
+
+                              {(!displayText || ['[image]', '[video]', '[audio]', '[sticker]', '[document]'].includes(displayText.toLowerCase())) && !displayImageUrl && (
+                                <p className="italic opacity-60 text-[11px]">{displayText || '[Media Message]'}</p>
+                              )}
+
+                              {/* Render WhatsApp Interactive Reply Button */}
+                              {extractedButtonLabel && (
+                                <div className="mt-2.5 pt-2 border-t border-black/10">
+                                  <button 
+                                    onClick={() => toast.info(`Interactive action: ${extractedButtonLabel}`)}
+                                    className="w-full py-2 px-3 bg-white hover:bg-slate-50 text-[#008069] active:bg-slate-100 border border-[#00a884]/30 rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer hover:shadow-md"
+                                  >
+                                    <span className="text-sm">📞</span> {extractedButtonLabel}
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Timestamp & WhatsApp Double Ticks Bar */}
+                              <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-500 font-medium select-none">
+                                <span title={new Date(m.created_at).toLocaleString()}>
+                                  {formatChatDate(m.created_at)}
+                                </span>
+                                {isOutbound && (
+                                  <CheckCheck size={15} className="text-[#53bdeb] font-black shrink-0 stroke-[2.5]" />
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
