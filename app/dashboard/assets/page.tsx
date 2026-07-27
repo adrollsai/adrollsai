@@ -785,7 +785,7 @@ export default function AssetsPage() {
         if (!selectedAsset) return
         setIsPosting(true)
 
-        let targets = ['facebook', 'instagram']
+        let targets = ['facebook', 'instagram', 'linkedin']
 
         try {
             if (selectedAsset.type === 'image') {

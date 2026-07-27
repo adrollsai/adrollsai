@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   
   const type = searchParams.get('type') || 'personal'
   const scopeList = type === 'company'
-    ? 'openid profile email w_member_social w_organization_social rw_organization_admin'
+    ? 'openid profile email w_member_social w_organization_social rw_organization_admin r_organization_social'
     : 'openid profile email w_member_social'
   const scope = encodeURIComponent(scopeList)
   

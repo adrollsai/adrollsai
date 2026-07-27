@@ -2753,7 +2753,7 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {false && isAdminLike && authRole !== 'agent' && (
+            {isAdminLike && authRole !== 'agent' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md mb-6">
                 <div className="p-6 sm:p-7">
                   <div className="flex items-center justify-between">
