@@ -31,12 +31,9 @@ export async function GET(req: Request) {
   try {
     const rawHost = req.headers.get('host') || 'app.nobogent.com'
     const cleanHost = rawHost.split(':')[0]
-    const protocol = req.headers.get('x-forwarded-proto') || (rawHost.includes('localhost') || rawHost.includes('local.') ? 'http' : 'https')
+    const protocol = req.headers.get('x-forwarded-proto') || (rawHost.includes('localhost') || rawHost.includes('local.') ? 'https' : 'https')
     
-    const primaryDomain = (process.env.LINKEDIN_REDIRECT_URI && process.env.LINKEDIN_REDIRECT_URI.startsWith('http'))
-      ? process.env.LINKEDIN_REDIRECT_URI.replace('/api/auth/linkedin/callback', '')
-      : `${protocol}://${cleanHost}`
-
+    const primaryDomain = `${protocol}://${cleanHost}`
     const redirectUri = `${primaryDomain}/api/auth/linkedin/callback`
 
     // 1. Exchange code for access token
