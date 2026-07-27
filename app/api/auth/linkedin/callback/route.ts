@@ -54,11 +54,29 @@ export async function GET(req: Request) {
 
     const accessToken = tokenData.access_token
 
-    // 2. Fetch User Profile from LinkedIn (OpenID Connect)
+    // 2. Fetch User Profile from LinkedIn (supports both OIDC and v2/me r_basicprofile)
+    let linkedinSub = ''
+    let linkedinName = 'LinkedIn Account'
+
     const profileResponse = await fetch('https://api.linkedin.com/v2/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
     const profileData = await profileResponse.json()
+
+    if (profileResponse.ok && profileData.sub) {
+      linkedinSub = profileData.sub
+      linkedinName = profileData.name || `${profileData.given_name || ''} ${profileData.family_name || ''}`.trim() || 'LinkedIn Account'
+    } else {
+      // Fallback to legacy v2/me endpoint for r_basicprofile
+      const meResponse = await fetch('https://api.linkedin.com/v2/me', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      const meData = await meResponse.json()
+      if (meResponse.ok && meData.id) {
+        linkedinSub = meData.id
+        linkedinName = `${meData.localizedFirstName || ''} ${meData.localizedLastName || ''}`.trim() || 'LinkedIn Account'
+      }
+    }
     
     // 3. Save to Supabase Profile
     const supabase = await createClient()
@@ -80,8 +98,8 @@ export async function GET(req: Request) {
 
       const updates: any = {
         linkedin_token: accessToken,
-        linkedin_id: profileData.sub, // sub is the unique ID in OIDC
-        linkedin_name: profileData.name
+        linkedin_id: linkedinSub,
+        linkedin_name: linkedinName
       }
       if (connectionType === 'personal') {
         updates.linkedin_urn = null
