@@ -15,10 +15,13 @@ export async function GET(req: Request) {
   const type = searchParams.get('type') || 'personal'
   const customScope = searchParams.get('scope')
   
-  // Valid OIDC and Community Management API scopes for LinkedIn
-  const scopeList = customScope || (type === 'company'
-    ? 'openid profile email w_member_social w_organization_social rw_organization_admin'
-    : 'openid profile email w_member_social')
+  // Valid LinkedIn OAuth Scopes:
+  // For Community Management API & Company Pages: w_member_social w_organization_social rw_organization_admin
+  // For Personal Profile: openid profile email w_member_social (or w_member_social if legacy)
+  const companyScopes = 'w_member_social w_organization_social rw_organization_admin'
+  const personalScopes = 'openid profile email w_member_social'
+  
+  const scopeList = customScope || (type === 'company' ? companyScopes : personalScopes)
   const scope = encodeURIComponent(scopeList)
   
   const impersonate = searchParams.get('impersonate') || ''
