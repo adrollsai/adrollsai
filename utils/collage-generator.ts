@@ -171,7 +171,7 @@ async function buildSharpCollageFallback(chunk: string[], chunkIdx: number, user
                     'Authorization': `Bearer ${serviceKey}`,
                     'Content-Type': 'image/jpeg'
                 },
-                body: compositeBuffer
+                body: new Uint8Array(compositeBuffer)
             });
 
             if (uploadRes.ok) {
