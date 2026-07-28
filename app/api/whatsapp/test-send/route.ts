@@ -9,7 +9,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { recipient, templateName, isSandboxTest } = await req.json();
+        const { recipient, templateName, isSandboxTest, parameters, variableValues } = await req.json();
         if (!recipient) {
             return NextResponse.json({ error: 'Recipient phone number is required' }, { status: 400 });
         }
@@ -51,9 +51,29 @@ export async function POST(req: Request) {
             }
         };
 
-        // Inject parameters if using actual real estate templates
+        // Inject parameters if provided directly from client or fallback to default hardcoded templates
         if (!isSandboxTest) {
-            if (templateName === 'real_estate_welcome_1') {
+            if (Array.isArray(parameters) && parameters.length > 0) {
+                messagePayload.template.components = [
+                    {
+                        type: 'body',
+                        parameters: parameters.map((p: any) => ({
+                            type: 'text',
+                            text: typeof p === 'string' ? p : (p?.text || 'Valued Customer')
+                        }))
+                    }
+                ];
+            } else if (Array.isArray(variableValues) && variableValues.length > 0) {
+                messagePayload.template.components = [
+                    {
+                        type: 'body',
+                        parameters: variableValues.map((val: string) => ({
+                            type: 'text',
+                            text: val || 'Valued Customer'
+                        }))
+                    }
+                ];
+            } else if (templateName === 'real_estate_welcome_1') {
                 messagePayload.template.components = [
                     {
                         type: 'body',
@@ -88,6 +108,7 @@ export async function POST(req: Request) {
                 ];
             }
         }
+
 
         const metaUrl = `https://graph.facebook.com/v20.0/${profile.whatsapp_phone_number_id}/messages`;
         const metaRes = await fetch(metaUrl, {

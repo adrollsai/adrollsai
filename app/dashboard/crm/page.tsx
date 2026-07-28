@@ -133,6 +133,24 @@ export default function CRMPage() {
   const [selectedTemplateBody, setSelectedTemplateBody] = useState('')
   const [isSendingTemplates, setIsSendingTemplates] = useState(false)
   const [isCallingCampaign, setIsCallingCampaign] = useState(false)
+  const [templateVarMappings, setTemplateVarMappings] = useState<Record<string, { field: string; customVal: string }>>({})
+  const [userBusinessName, setUserBusinessName] = useState('Nobogent')
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('profiles').select('business_name').eq('id', user.id).single().then(({ data }) => {
+          if (data?.business_name) setUserBusinessName(data.business_name)
+        })
+      }
+    })
+  }, [supabase])
+
+  const getDetectedTemplateVars = (bodyText: string): number[] => {
+    const matches = bodyText.match(/\{\{(\d+)\}\}/g) || []
+    const parsed = matches.map((m: string) => parseInt(m.replace(/\D/g, '')))
+    return Array.from<number>(new Set(parsed)).sort((a, b) => a - b)
+  }
 
   const fetchApprovedTemplates = async () => {
     try {
@@ -157,6 +175,7 @@ export default function CRMPage() {
     setIsSendingTemplates(true)
 
     const selectedLeads = leads.filter(l => selectedLeadIds.includes(l.id))
+    const detectedVars = getDetectedTemplateVars(selectedTemplateBody)
     
     let sentCount = 0
     let failedCount = 0
@@ -165,6 +184,24 @@ export default function CRMPage() {
       const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
       if (!displayPhone) continue
 
+      const parameters = detectedVars.map(vNum => {
+        const mapping = templateVarMappings[vNum.toString()] || { 
+          field: vNum === 1 ? 'name' : vNum === 2 ? 'property_title' : 'business_name', 
+          customVal: '' 
+        }
+        let val = ''
+        if (mapping.field === 'custom') val = mapping.customVal || 'Valued Customer'
+        else if (mapping.field === 'name') val = lead.name || 'Valued Customer'
+        else if (mapping.field === 'phone') val = lead.phone || ''
+        else if (mapping.field === 'email') val = lead.email || ''
+        else if (mapping.field === 'property_title') val = lead.custom_fields?.property_title || 'Premium Property'
+        else if (mapping.field === 'business_name') val = userBusinessName
+        else val = mapping.field || 'Valued Customer'
+        
+        return { type: 'text', text: val }
+      })
+
+
       try {
         const res = await fetch('/api/whatsapp/test-send', {
           method: 'POST',
@@ -172,9 +209,11 @@ export default function CRMPage() {
           body: JSON.stringify({
             recipient: displayPhone,
             templateName: selectedTemplateName,
-            isSandboxTest: selectedTemplateName === 'hello_world'
+            isSandboxTest: selectedTemplateName === 'hello_world',
+            parameters
           })
         })
+
         if (res.ok) {
           sentCount++
           await fetch('/api/crm/lead-action', {
@@ -1948,19 +1987,86 @@ END:VCARD\n`
                           </div>
                       </div>
 
-                      {selectedTemplateBody && (
-                          <div className="space-y-3">
-                              <div className="space-y-1">
-                                  <label className="text-[10px] font-black text-slate-400 uppercase block ml-1">Template Content</label>
-                                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/50 text-xs text-slate-600 leading-relaxed font-semibold font-sans whitespace-pre-wrap">
-                                      {selectedTemplateBody}
+                      {selectedTemplateBody && (() => {
+                          const detectedVars = getDetectedTemplateVars(selectedTemplateBody);
+                          return (
+                              <div className="space-y-3">
+                                  <div className="space-y-1">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase block ml-1">Template Content</label>
+                                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/50 text-xs text-slate-600 leading-relaxed font-semibold font-sans whitespace-pre-wrap">
+                                          {selectedTemplateBody}
+                                      </div>
                                   </div>
+
+                                  {detectedVars.length > 0 ? (
+                                      <div className="bg-blue-50/60 border border-blue-100 p-4 rounded-2xl space-y-3">
+                                          <div className="flex justify-between items-center">
+                                              <span className="text-xs font-black text-blue-900 uppercase tracking-wider">⚡ Assign Variables ({detectedVars.length} detected)</span>
+                                              <span className="text-[9px] font-bold text-blue-600">Manual Field Mapping</span>
+                                          </div>
+
+                                          <div className="space-y-2.5">
+                                              {detectedVars.map(vNum => {
+                                                  const current = templateVarMappings[vNum.toString()] || { 
+                                                      field: vNum === 1 ? 'name' : vNum === 2 ? 'property_title' : 'business_name', 
+                                                      customVal: '' 
+                                                  };
+                                                  return (
+                                                      <div key={vNum} className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-2">
+                                                          <div className="flex items-center justify-between">
+                                                              <label className="text-[10px] font-black text-blue-600 uppercase">Variable {"{{" + vNum + "}}"} value:</label>
+                                                          </div>
+
+                                                          <div className="grid grid-cols-1 gap-2">
+                                                              <select
+                                                                  value={current.field}
+                                                                  onChange={(e) => {
+                                                                      const fieldVal = e.target.value;
+                                                                      setTemplateVarMappings(prev => ({
+                                                                          ...prev,
+                                                                          [vNum.toString()]: { ...current, field: fieldVal }
+                                                                      }))
+                                                                  }}
+                                                                  className="w-full bg-slate-50 border border-slate-200 py-1.5 px-3 rounded-lg text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                                                              >
+                                                                  <option value="name">Lead Name</option>
+                                                                  <option value="property_title">Project / Property Title</option>
+                                                                  <option value="business_name">Business Name ({userBusinessName})</option>
+                                                                  <option value="phone">Lead Phone</option>
+                                                                  <option value="email">Lead Email</option>
+                                                                  <option value="custom">Custom Static Text...</option>
+                                                              </select>
+
+                                                              {current.field === 'custom' && (
+                                                                  <input 
+                                                                      type="text"
+                                                                      value={current.customVal}
+                                                                      onChange={(e) => {
+                                                                          const textVal = e.target.value;
+                                                                          setTemplateVarMappings(prev => ({
+                                                                              ...prev,
+                                                                              [vNum.toString()]: { ...current, customVal: textVal }
+                                                                          }))
+                                                                      }}
+                                                                      placeholder={`Enter custom value for {{${vNum}}}...`}
+                                                                      className="w-full bg-slate-50 border border-slate-200 py-1.5 px-3 rounded-lg text-xs font-bold text-slate-800 outline-none focus:border-blue-400"
+                                                                  />
+                                                              )}
+                                                          </div>
+                                                      </div>
+                                                  )
+                                              })}
+                                          </div>
+                                      </div>
+                                  ) : (
+                                      <div className="bg-slate-50 border border-slate-100 p-3.5 rounded-2xl text-[10px] text-slate-500 leading-normal font-bold">
+                                          ℹ️ Standard template with 0 variables.
+                                      </div>
+                                  )}
                               </div>
-                              <div className="bg-blue-50/50 border border-blue-100 p-3.5 rounded-2xl text-[10px] text-blue-800 leading-normal font-bold">
-                                  ℹ️ Variables like lead name and company name are mapped automatically when sent to Meta.
-                              </div>
-                          </div>
-                      )}
+                          )
+                      })()}
+
 
                       <button 
                           onClick={handleBulkSendTemplate} 
