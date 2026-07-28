@@ -40,23 +40,33 @@ export async function GET(req: Request) {
 
             const recipientPhones = (recipients || []).map(r => r.phone_number.replace(/\D/g, '')).filter(Boolean)
             
-            const { data: chats } = await supabaseAdmin
-                .from('whatsapp_chats')
-                .select('id, recipient_phone, recipient_name, updated_at, last_message_text')
-                .eq('user_id', targetUserId)
-                .in('recipient_phone', recipientPhones)
+            // Batch fetch whatsapp_chats in chunks of 100
+            let chats: any[] = []
+            for (let i = 0; i < recipientPhones.length; i += 100) {
+                const batch = recipientPhones.slice(i, i + 100)
+                const { data: bChats } = await supabaseAdmin
+                    .from('whatsapp_chats')
+                    .select('id, recipient_phone, recipient_name, updated_at, last_message_text')
+                    .eq('user_id', targetUserId)
+                    .in('recipient_phone', batch)
+                if (bChats) chats = chats.concat(bChats)
+            }
 
             const chatMap = new Map((chats || []).map(c => [c.recipient_phone, c]))
 
+            // Batch fetch leads in chunks of 100
             const leadIds = (recipients || []).map(r => r.lead_id).filter(Boolean)
             let leadsMap = new Map()
-            if (leadIds.length > 0) {
-                const { data: leads } = await supabaseAdmin
+            for (let i = 0; i < leadIds.length; i += 100) {
+                const batch = leadIds.slice(i, i + 100)
+                const { data: bLeads } = await supabaseAdmin
                     .from('leads')
                     .select('id, name, phone')
-                    .in('id', leadIds.slice(0, 500))
-                if (leads) {
-                    leadsMap = new Map(leads.map(l => [l.id, l]))
+                    .in('id', batch)
+                if (bLeads) {
+                    for (const l of bLeads) {
+                        leadsMap.set(l.id, l)
+                    }
                 }
             }
 
@@ -68,7 +78,7 @@ export async function GET(req: Request) {
                 const lead = leadsMap.get(r.lead_id)
                 const chat = chatMap.get(cleanPhone) || chatMap.get('91' + cleanPhone)
 
-                const name = lead?.name || 'Prospect'
+                const name = lead?.name || chat?.recipient_name || 'Valued Lead'
                 const hasReplied = !!chat && (chat.last_message_text !== `Sent Template: ${broadcast.template_name}`)
                 if (hasReplied) replyCount++
 

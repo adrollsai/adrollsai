@@ -2128,8 +2128,8 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
 
       {/* LIVE CAMPAIGN STATS MODAL */}
       {selectedStatsBroadcast && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200 rounded-[2.5rem] w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[999] bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4 pb-24 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-[2.5rem] w-full max-w-4xl max-h-[78vh] overflow-hidden shadow-2xl flex flex-col animate-in zoom-in-95 duration-200">
             
             {/* Modal Header */}
             <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
@@ -2199,7 +2199,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                     <div className="bg-amber-50/60 border border-amber-100 p-4 rounded-2xl shadow-xs space-y-1">
                       <span className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Failed / Bounced</span>
                       <div className="text-2xl font-black text-amber-900">{statsData.stats.failed}</div>
-                      <span className="text-[10px] font-extrabold text-amber-600">Invalid phone format</span>
+                      <span className="text-[10px] font-extrabold text-amber-600">Delivery failed or pending</span>
                     </div>
                   </div>
 
