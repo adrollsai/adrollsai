@@ -23,7 +23,11 @@ import {
   ListChecks,
   GripVertical,
   Pencil,
-  Link2
+  Link2,
+  BarChart2,
+  Search,
+  RefreshCw,
+  X
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
@@ -124,6 +128,35 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
     { text: 'View Products', url: '' }
   ])
   const [savingButtonText, setSavingButtonText] = useState(false)
+
+  // Live Campaign Stats Modal State
+  const [selectedStatsBroadcast, setSelectedStatsBroadcast] = useState<any>(null)
+  const [loadingStats, setLoadingStats] = useState(false)
+  const [statsData, setStatsData] = useState<any>(null)
+  const [statsSearchQuery, setStatsSearchQuery] = useState('')
+  const [statsFilterStatus, setStatsFilterStatus] = useState<'all' | 'sent' | 'replied' | 'failed'>('all')
+
+  const fetchBroadcastStats = async (broadcastId: string) => {
+    setLoadingStats(true)
+    try {
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonate = urlParams.get('impersonate')
+      let url = buildUrl(`/api/whatsapp/broadcasts?broadcastId=${broadcastId}`)
+      if (impersonate) url += `&impersonate=${impersonate}`
+
+      const res = await fetch(url)
+      const data = await res.json()
+      if (data.success) {
+        setStatsData(data)
+      } else {
+        toast.error('Failed to load campaign stats: ' + (data.error || ''))
+      }
+    } catch (e: any) {
+      toast.error('Error fetching broadcast stats: ' + e.message)
+    } finally {
+      setLoadingStats(false)
+    }
+  }
 
   // WhatsApp API Business Profile state
   const [waProfile, setWaProfile] = useState<any>({
@@ -2050,11 +2083,22 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                               Template: {b.template_name} • Audience: Stage ({b.recipient_stage})
                             </p>
                           </div>
-                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
-                            b.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : b.status === 'processing' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
-                          }`}>
-                            {b.status}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setSelectedStatsBroadcast(b)
+                                fetchBroadcastStats(b.id)
+                              }}
+                              className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 text-[10px] font-black px-3 py-1.5 rounded-full transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                            >
+                              <BarChart2 size={12} className="text-indigo-600" /> View Live Stats
+                            </button>
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                              b.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : b.status === 'processing' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {b.status}
+                            </span>
+                          </div>
                         </div>
 
                         {/* Progress Bar */}
@@ -2081,6 +2125,225 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               )}
             </div>
           )}
+
+      {/* LIVE CAMPAIGN STATS MODAL */}
+      {selectedStatsBroadcast && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-[2.5rem] w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col animate-in zoom-in-95 duration-200">
+            
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="bg-indigo-100 text-indigo-700 text-[10px] font-black px-2.5 py-0.5 rounded-md uppercase tracking-wider">
+                    📊 Live Analytics
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-400">ID: {selectedStatsBroadcast.id.slice(0, 8)}</span>
+                </div>
+                <h3 className="text-lg font-black text-slate-900 mt-1">{selectedStatsBroadcast.title}</h3>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  Template: <span className="font-mono text-slate-700">{selectedStatsBroadcast.template_name}</span> • Audience: Stage ({selectedStatsBroadcast.recipient_stage})
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => fetchBroadcastStats(selectedStatsBroadcast.id)}
+                  disabled={loadingStats}
+                  className="p-2 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-full transition-all text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  title="Refresh Live Analytics"
+                >
+                  <RefreshCw size={14} className={loadingStats ? 'animate-spin text-indigo-600' : ''} />
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedStatsBroadcast(null)
+                    setStatsData(null)
+                  }}
+                  className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/30">
+              {loadingStats ? (
+                <div className="py-20 text-center text-xs font-bold text-slate-400 flex flex-col items-center justify-center gap-2">
+                  <Loader2 size={28} className="animate-spin text-indigo-600" />
+                  <span>Fetching live recipient responses and delivery stats...</span>
+                </div>
+              ) : statsData ? (
+                <>
+                  {/* KPI Cards Row */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs space-y-1">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Target Recipients</span>
+                      <div className="text-2xl font-black text-slate-900">{statsData.stats.total}</div>
+                      <span className="text-[10px] font-extrabold text-slate-500">100% Segment Total</span>
+                    </div>
+
+                    <div className="bg-emerald-50/60 border border-emerald-100 p-4 rounded-2xl shadow-xs space-y-1">
+                      <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider">Delivered</span>
+                      <div className="text-2xl font-black text-emerald-900">{statsData.stats.sent}</div>
+                      <span className="text-[10px] font-extrabold text-emerald-600">{statsData.stats.deliveryRate}% Delivery Rate</span>
+                    </div>
+
+                    <div className="bg-blue-50/60 border border-blue-100 p-4 rounded-2xl shadow-xs space-y-1">
+                      <span className="text-[10px] font-black text-blue-700 uppercase tracking-wider">Total Responses</span>
+                      <div className="text-2xl font-black text-blue-900">{statsData.stats.replyCount}</div>
+                      <span className="text-[10px] font-extrabold text-blue-600">{statsData.stats.responseRate}% Response Rate</span>
+                    </div>
+
+                    <div className="bg-amber-50/60 border border-amber-100 p-4 rounded-2xl shadow-xs space-y-1">
+                      <span className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Failed / Bounced</span>
+                      <div className="text-2xl font-black text-amber-900">{statsData.stats.failed}</div>
+                      <span className="text-[10px] font-extrabold text-amber-600">Invalid phone format</span>
+                    </div>
+                  </div>
+
+                  {/* Recipient List & Search Filters */}
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs space-y-4">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Recipient Details Breakdown</span>
+                        <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                          {statsData.recipients?.length || 0} Leads
+                        </span>
+                      </div>
+
+                      {/* Filter Pills */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          onClick={() => setStatsFilterStatus('all')}
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+                            statsFilterStatus === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          All ({statsData.recipients?.length || 0})
+                        </button>
+                        <button
+                          onClick={() => setStatsFilterStatus('sent')}
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+                            statsFilterStatus === 'sent' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                          }`}
+                        >
+                          Delivered ({statsData.stats.sent})
+                        </button>
+                        <button
+                          onClick={() => setStatsFilterStatus('replied')}
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+                            statsFilterStatus === 'replied' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                          }`}
+                        >
+                          Replied ({statsData.stats.replyCount})
+                        </button>
+                        <button
+                          onClick={() => setStatsFilterStatus('failed')}
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+                            statsFilterStatus === 'failed' ? 'bg-red-600 text-white' : 'bg-red-50 text-red-700 hover:bg-red-100'
+                          }`}
+                        >
+                          Failed ({statsData.stats.failed})
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Search Bar */}
+                    <div className="relative">
+                      <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                      <input
+                        type="text"
+                        value={statsSearchQuery}
+                        onChange={(e) => setStatsSearchQuery(e.target.value)}
+                        placeholder="Search recipient by name or phone..."
+                        className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-indigo-400"
+                      />
+                    </div>
+
+                    {/* Recipient Table */}
+                    <div className="overflow-x-auto max-h-72 overflow-y-auto border border-slate-100 rounded-xl">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                            <th className="p-3">Lead Name & Phone</th>
+                            <th className="p-3">Delivery Status</th>
+                            <th className="p-3">Response Activity</th>
+                            <th className="p-3">Sent Time</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-xs">
+                          {(() => {
+                            const filtered = (statsData.recipients || []).filter((r: any) => {
+                              const matchesSearch = !statsSearchQuery || 
+                                r.name.toLowerCase().includes(statsSearchQuery.toLowerCase()) || 
+                                r.phone.includes(statsSearchQuery);
+                              
+                              if (!matchesSearch) return false;
+                              if (statsFilterStatus === 'sent') return r.status === 'sent';
+                              if (statsFilterStatus === 'replied') return r.has_replied;
+                              if (statsFilterStatus === 'failed') return r.status === 'failed';
+                              return true;
+                            });
+
+                            if (filtered.length === 0) {
+                              return (
+                                <tr>
+                                  <td colSpan={4} className="p-6 text-center text-xs text-slate-400 font-medium">
+                                    No recipients match the selected criteria.
+                                  </td>
+                                </tr>
+                              );
+                            }
+
+                            return filtered.map((r: any) => (
+                              <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="p-3">
+                                  <div className="font-bold text-slate-800">{r.name}</div>
+                                  <div className="text-[10px] text-slate-400 font-semibold">{r.phone}</div>
+                                </td>
+                                <td className="p-3">
+                                  {r.status === 'sent' ? (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60">
+                                      ✓ Delivered
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-black text-red-700 bg-red-50 px-2 py-0.5 rounded-md border border-red-200/60" title={r.error_message}>
+                                      ✕ Failed
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-3">
+                                  {r.has_replied ? (
+                                    <div className="space-y-0.5">
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200/60">
+                                        💬 Replied
+                                      </span>
+                                      {r.last_message && (
+                                        <p className="text-[10px] text-slate-500 font-semibold truncate max-w-xs">{r.last_message}</p>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 font-medium">No reply yet</span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-[10px] text-slate-400 font-semibold">
+                                  {r.sent_at ? new Date(r.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                                </td>
+                              </tr>
+                            ));
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
 
           {/* TAB CONTENT: QUALIFICATION FLOWS */}
           {activeTab === 'qualification' && (

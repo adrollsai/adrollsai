@@ -15,7 +15,97 @@ export async function GET(req: Request) {
 
         const { searchParams } = new URL(req.url)
         const impersonateId = searchParams.get('impersonate')
+        const broadcastId = searchParams.get('broadcastId')
         const targetUserId = impersonateId || user.id
+
+        // If specific broadcastId stats requested
+        if (broadcastId) {
+            const { data: broadcast } = await supabase
+                .from('whatsapp_broadcasts')
+                .select('*')
+                .eq('id', broadcastId)
+                .single()
+
+            if (!broadcast) return NextResponse.json({ error: 'Broadcast not found' }, { status: 404 })
+
+            const { data: recipients } = await supabaseAdmin
+                .from('whatsapp_broadcast_recipients')
+                .select('*')
+                .eq('broadcast_id', broadcastId)
+
+            const total = recipients?.length || 0
+            const sent = recipients?.filter(r => r.status === 'sent').length || 0
+            const failed = recipients?.filter(r => r.status === 'failed').length || 0
+            const pending = recipients?.filter(r => r.status === 'pending').length || 0
+
+            const recipientPhones = (recipients || []).map(r => r.phone_number.replace(/\D/g, '')).filter(Boolean)
+            
+            const { data: chats } = await supabaseAdmin
+                .from('whatsapp_chats')
+                .select('id, recipient_phone, recipient_name, updated_at, last_message_text')
+                .eq('user_id', targetUserId)
+                .in('recipient_phone', recipientPhones)
+
+            const chatMap = new Map((chats || []).map(c => [c.recipient_phone, c]))
+
+            const leadIds = (recipients || []).map(r => r.lead_id).filter(Boolean)
+            let leadsMap = new Map()
+            if (leadIds.length > 0) {
+                const { data: leads } = await supabaseAdmin
+                    .from('leads')
+                    .select('id, name, phone')
+                    .in('id', leadIds.slice(0, 500))
+                if (leads) {
+                    leadsMap = new Map(leads.map(l => [l.id, l]))
+                }
+            }
+
+            let replyCount = 0
+            let buttonClickCount = 0
+
+            const recipientDetails = (recipients || []).map(r => {
+                const cleanPhone = r.phone_number.replace(/\D/g, '')
+                const lead = leadsMap.get(r.lead_id)
+                const chat = chatMap.get(cleanPhone) || chatMap.get('91' + cleanPhone)
+
+                const name = lead?.name || 'Prospect'
+                const hasReplied = !!chat && (chat.last_message_text !== `Sent Template: ${broadcast.template_name}`)
+                if (hasReplied) replyCount++
+
+                const isButtonClick = hasReplied && (chat?.last_message_text === 'View Properties' || chat?.last_message_text?.includes('Button'))
+                if (isButtonClick) buttonClickCount++
+
+                return {
+                    id: r.id,
+                    phone: r.phone_number,
+                    name,
+                    status: r.status,
+                    sent_at: r.sent_at,
+                    error_message: r.error_message,
+                    has_replied: hasReplied,
+                    last_message: chat?.last_message_text || null
+                }
+            })
+
+            const deliveryRate = total > 0 ? ((sent / total) * 100).toFixed(1) : '0'
+            const responseRate = sent > 0 ? ((replyCount / sent) * 100).toFixed(1) : '0'
+
+            return NextResponse.json({
+                success: true,
+                broadcast,
+                stats: {
+                    total,
+                    sent,
+                    failed,
+                    pending,
+                    replyCount,
+                    buttonClickCount,
+                    deliveryRate,
+                    responseRate
+                },
+                recipients: recipientDetails
+            })
+        }
 
         // Fetch broadcasts
         const { data: broadcasts, error: bErr } = await supabase
