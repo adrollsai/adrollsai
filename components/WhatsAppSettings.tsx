@@ -239,7 +239,8 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const [newTemplate, setNewTemplate] = useState({
     name: '',
     category: 'MARKETING',
-    bodyText: ''
+    bodyText: '',
+    buttons: ['', '']
   })
   const [submittingTemplate, setSubmittingTemplate] = useState(false)
 
@@ -249,9 +250,23 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
     templateName: '',
     recipientStage: 'All',
     recipientPropertyId: '',
-    scheduledAt: ''
+    scheduledAt: '',
+    variableMappings: {} as Record<string, string>
   })
   const [submittingBroadcast, setSubmittingBroadcast] = useState(false)
+
+  const getDetectedTemplateVars = (tplName: string): number[] => {
+    const tpl = templates.find(t => t.name === tplName)
+    if (!tpl) return []
+    const bodyObj = tpl.components?.find((c: any) => c.type === 'BODY')
+    const bodyText = bodyObj?.text || ''
+    const matches = bodyText.match(/\{\{(\d+)\}\}/g) || []
+    const parsed = matches.map((m: string) => parseInt(m.replace(/\D/g, '')))
+    const unique = Array.from<number>(new Set(parsed)).sort((a, b) => a - b)
+    return unique
+  }
+
+
 
   // Fetch initial profile & properties
   const fetchData = async () => {
@@ -665,16 +680,20 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
     e.preventDefault()
     setSubmittingTemplate(true)
     try {
+      const cleanButtons = (newTemplate.buttons || []).map(b => b.trim()).filter(Boolean)
       const res = await fetch(buildUrl('/api/whatsapp/templates'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newTemplate)
+        body: JSON.stringify({
+          ...newTemplate,
+          buttons: cleanButtons
+        })
       })
       const data = await res.json()
       if (data.success) {
         toast.success("Template submitted to Meta successfully! 🎉")
         setIsCreateTemplateOpen(false)
-        setNewTemplate({ name: '', category: 'MARKETING', bodyText: '' })
+        setNewTemplate({ name: '', category: 'MARKETING', bodyText: '', buttons: ['', ''] })
         await fetchTemplates()
       } else {
         toast.error(data.error || "Submission failed.")
@@ -696,6 +715,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...newBroadcast,
+          variableMappings: newBroadcast.variableMappings,
           recipientPropertyId: newBroadcast.recipientPropertyId || null,
           scheduledAt: newBroadcast.scheduledAt || null,
           impersonateId: userId
@@ -705,7 +725,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
       if (data.success) {
         toast.success(data.message || "Broadcast campaign scheduled successfully!")
         setIsCreateBroadcastOpen(false)
-        setNewBroadcast({ title: '', templateName: '', recipientStage: 'All', recipientPropertyId: '', scheduledAt: '' })
+        setNewBroadcast({ title: '', templateName: '', recipientStage: 'All', recipientPropertyId: '', scheduledAt: '', variableMappings: {} })
         await fetchBroadcasts()
       } else {
         toast.error(data.error || "Failed to create campaign")
@@ -716,6 +736,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
       setSubmittingBroadcast(false)
     }
   }
+
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -1583,6 +1604,34 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                     />
                     <span className="text-[9px] text-slate-400 block ml-1 font-semibold leading-normal">{"Include placeholders like {{1}} for variables. Values are mapped dynamically on send."}</span>
                   </div>
+
+                  {/* Quick Reply Buttons Section */}
+                  <div className="space-y-2 pt-2 border-t border-slate-200">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block ml-1">
+                      Quick Reply Buttons (Optional - Max 2 Buttons)
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {(newTemplate.buttons || ['', '']).map((btnText, bIdx) => (
+                        <div key={bIdx} className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 block ml-1">Button {bIdx + 1} Text:</label>
+                          <input 
+                            type="text" 
+                            value={btnText}
+                            onChange={(e) => {
+                              const updated = [...(newTemplate.buttons || ['', ''])]
+                              updated[bIdx] = e.target.value
+                              setNewTemplate({ ...newTemplate, buttons: updated })
+                            }}
+                            placeholder={bIdx === 0 ? "e.g. Yes, Interested" : "e.g. Not Right Now"}
+                            className="w-full bg-white border border-slate-200 py-2 px-3 rounded-xl text-xs font-bold outline-none focus:border-blue-400"
+                            maxLength={25}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <span className="text-[9px] text-slate-400 block ml-1 font-medium">Quick reply buttons allow leads to respond in 1 click.</span>
+                  </div>
+
                   <button 
                     type="submit"
                     disabled={submittingTemplate}
@@ -1692,6 +1741,57 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                     </div>
                   </div>
 
+                  {/* Dynamic Variable Mapping Section */}
+                  {newBroadcast.templateName && (() => {
+                    const detectedVars = getDetectedTemplateVars(newBroadcast.templateName);
+                    if (detectedVars.length === 0) return null;
+
+                    return (
+                      <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                            ⚡ Assign Template Variables ({detectedVars.length} detected)
+                          </span>
+                          <span className="text-[9px] text-blue-600 font-extrabold uppercase">Dynamic Lead Mapping</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {detectedVars.map(varNum => {
+                            const currentVal = newBroadcast.variableMappings[varNum.toString()] || (varNum === 1 ? 'name' : varNum === 2 ? 'property_title' : 'business_name');
+                            return (
+                              <div key={varNum} className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-1">
+                                <label className="text-[10px] font-black text-blue-600 uppercase tracking-wider block">
+                                  Variable {"{{" + varNum + "}}"} maps to:
+                                </label>
+                                <select 
+                                  value={currentVal}
+                                  onChange={(e) => {
+                                    setNewBroadcast(prev => ({
+                                      ...prev,
+                                      variableMappings: {
+                                        ...prev.variableMappings,
+                                        [varNum.toString()]: e.target.value
+                                      }
+                                    }))
+                                  }}
+                                  className="w-full bg-slate-50 border border-slate-200 py-1.5 px-3 rounded-lg text-xs font-bold outline-none cursor-pointer"
+                                >
+                                  <option value="name">Lead Full Name (e.g. Rahul Sharma)</option>
+                                  <option value="phone">Lead Phone Number</option>
+                                  <option value="email">Lead Email Address</option>
+                                  <option value="property_title">Project / Listing Title</option>
+                                  <option value="business_name">Your Business Name</option>
+                                  <option value="csv_audience">CSV Audience Tag</option>
+                                  <option value="pipeline_stage">Lead Pipeline Stage</option>
+                                </select>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Target Pipeline Stage</label>
@@ -1724,6 +1824,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                       </select>
                     </div>
                   </div>
+
 
                   <button 
                     type="submit"

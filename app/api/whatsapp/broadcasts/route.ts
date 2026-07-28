@@ -59,7 +59,7 @@ export async function POST(req: Request) {
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
         const body = await req.json()
-        const { title, templateName, recipientStage, recipientPropertyId, scheduledAt, impersonateId } = body
+        const { title, templateName, recipientStage, recipientPropertyId, scheduledAt, impersonateId, variableMappings } = body
         const targetUserId = impersonateId || user.id
 
         if (!title || !templateName) {
@@ -173,7 +173,7 @@ export async function POST(req: Request) {
         }
 
         // Otherwise execute immediately in background (don't block the HTTP response)
-        executeBroadcastImmediately(broadcast.id, targetUserId, profile, templateName, leads, recipientPayloads).catch(console.error)
+        executeBroadcastImmediately(broadcast.id, targetUserId, profile, templateName, leads, recipientPayloads, variableMappings).catch(console.error)
 
         return NextResponse.json({ 
             success: true, 
@@ -194,7 +194,8 @@ async function executeBroadcastImmediately(
     profile: any, 
     templateName: string, 
     leads: any[], 
-    recipients: any[]
+    recipients: any[],
+    variableMappings?: Record<string, string>
 ) {
     console.log(`[BROADCAST EXECUTION] Starting Broadcast ID ${broadcastId} for ${recipients.length} recipients...`)
     
@@ -219,17 +220,38 @@ async function executeBroadcastImmediately(
             cleanPhone = '91' + cleanPhone; // Auto-format 10-digit Indian numbers with country code
         }
 
-
         // Resolve property title
         const property = (properties || []).find(p => p.id === lead.property_id)
         const propertyTitle = property ? property.title : 'Premium Listings'
 
-        // Map template variables
-        const parameters = [
-            { type: 'text', text: lead.name || 'Valued Lead' },
-            { type: 'text', text: propertyTitle },
-            { type: 'text', text: businessName }
-        ]
+        // Map template variables dynamically based on user UI selection
+        const varKeys = Object.keys(variableMappings || {}).sort((a, b) => parseInt(a) - parseInt(b))
+        
+        let parameters: any[] = []
+        if (varKeys.length > 0) {
+            parameters = varKeys.map(k => {
+                const mappedField = variableMappings![k]
+                let val = ''
+                if (mappedField === 'name') val = lead.name || 'Valued Customer'
+                else if (mappedField === 'phone') val = lead.phone || ''
+                else if (mappedField === 'email') val = lead.email || ''
+                else if (mappedField === 'property_title') val = propertyTitle
+                else if (mappedField === 'business_name') val = businessName
+                else if (mappedField === 'csv_audience') val = lead.csv_audience || ''
+                else if (mappedField === 'pipeline_stage') val = lead.pipeline_stage || ''
+                else val = mappedField || 'Valued Customer' // Custom text
+                
+                return { type: 'text', text: val }
+            })
+        } else {
+            // Default fallback positional mapping
+            parameters = [
+                { type: 'text', text: lead.name || 'Valued Customer' },
+                { type: 'text', text: propertyTitle },
+                { type: 'text', text: businessName }
+            ]
+        }
+
 
         const messagePayload = {
             messaging_product: 'whatsapp',
