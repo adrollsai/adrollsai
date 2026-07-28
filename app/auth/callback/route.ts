@@ -99,13 +99,20 @@ export async function GET(request: Request) {
       }
 
       // Success! Redirect back to the requested page
-      return NextResponse.redirect(`${baseUrl}${next}`)
+      const targetPath = next.includes('/auth/reset-password')
+        ? (next.includes('?') ? `${next}&verified=true` : `${next}?verified=true`)
+        : next
+      return NextResponse.redirect(`${baseUrl}${targetPath}`)
     } else if (error) {
       console.error("[AUTH CALLBACK] Verification error:", error.message)
       return NextResponse.redirect(`${baseUrl}${next}?error=${encodeURIComponent(error.message)}`)
     }
   }
 
-  // Fallback for missing code or session
+  // Fallback for missing code or session (e.g. hash fragment redirects like #access_token=...)
+  if (next.includes('/auth/reset-password')) {
+    return NextResponse.redirect(`${baseUrl}${next}`)
+  }
+
   return NextResponse.redirect(`${baseUrl}${next}?error=No session could be established`)
 }

@@ -23,12 +23,44 @@ export default function ResetPasswordPage() {
     const initResetFlow = async () => {
       const urlParams = new URLSearchParams(window.location.search)
       const code = urlParams.get('code')
+      const verified = urlParams.get('verified') === 'true'
       const error = urlParams.get('error_description') || urlParams.get('error')
 
-      if (error) {
+      // Check for Hash Fragment (#access_token=...&refresh_token=...)
+      const hashString = typeof window !== 'undefined' ? window.location.hash.substring(1) : ''
+      const hashParams = new URLSearchParams(hashString)
+      const accessToken = hashParams.get('access_token')
+      const refreshToken = hashParams.get('refresh_token')
+
+      if (accessToken) {
+        try {
+          const { data, error: setSessionErr } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || ''
+          })
+          if (!setSessionErr && data?.session && mounted) {
+            setCheckingLink(false)
+            setLinkError(null)
+            return
+          }
+        } catch (e) {
+          console.error('Error setting session from hash fragment:', e)
+        }
+      }
+
+      if (error && !accessToken) {
         if (mounted) {
           setLinkError(decodeURIComponent(error))
           setCheckingLink(false)
+        }
+        return
+      }
+
+      // If redirected from server callback with verified=true, link is verified!
+      if (verified) {
+        if (mounted) {
+          setCheckingLink(false)
+          setLinkError(null)
         }
         return
       }
