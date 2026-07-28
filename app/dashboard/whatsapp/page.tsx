@@ -118,7 +118,13 @@ export default function AutomationPage() {
     'lead_auto_response': 'Thank you for reaching out to {{2}}! We have received your request and our team will connect with you shortly.'
   };
 
-  // Helper to resolve full template content and body text
+  // Pre-approved template buttons map for fallback expansion
+  const TEMPLATE_BUTTONS_MAP: Record<string, string[]> = {
+    'investment_inquiry': ['View Properties'],
+    'auto_drip_followup_48h': ['Connect with Expert']
+  };
+
+  // Helper to resolve full template content, body text, and interactive buttons
   const resolveTemplateContent = (text: string, leadName?: string, bizName?: string) => {
     if (!text || !text.startsWith('Sent Template:')) return null;
     const templateName = text.replace('Sent Template:', '').trim();
@@ -126,13 +132,24 @@ export default function AutomationPage() {
     // Check Meta API templates loaded in state first
     const metaMatch = templates.find(t => t.name === templateName);
     let rawBody = '';
+    let templateButtons: string[] = [];
+
     if (metaMatch && metaMatch.components) {
       const bodyComp = metaMatch.components.find((c: any) => c.type === 'BODY');
       if (bodyComp && bodyComp.text) rawBody = bodyComp.text;
+
+      const btnComp = metaMatch.components.find((c: any) => c.type === 'BUTTONS');
+      if (btnComp && btnComp.buttons && Array.isArray(btnComp.buttons)) {
+        templateButtons = btnComp.buttons.map((b: any) => b.text || b.payload || 'Action').filter(Boolean);
+      }
     }
 
     if (!rawBody) {
       rawBody = TEMPLATE_BODY_MAP[templateName] || `Hello! This is an automated update regarding your inquiry with ${bizName || 'our team'}. Please reply if you have any questions.`;
+    }
+
+    if (templateButtons.length === 0 && TEMPLATE_BUTTONS_MAP[templateName]) {
+      templateButtons = TEMPLATE_BUTTONS_MAP[templateName];
     }
 
     // Replace template parameters
@@ -144,7 +161,8 @@ export default function AutomationPage() {
 
     return {
       templateName,
-      bodyText: filledText
+      bodyText: filledText,
+      buttons: templateButtons
     };
   }
 
@@ -1384,6 +1402,20 @@ export default function AutomationPage() {
                               {displayText && !(['[image]', '[video]', '[audio]', '[sticker]', '[document]'].includes(displayText.toLowerCase())) && (
                                 <div className="text-[12.5px] text-[#111b21] leading-relaxed break-words">
                                   {renderFormattedWhatsAppText(displayText)}
+                                </div>
+                              )}
+
+                              {/* Render Template Quick Reply Buttons inside template card */}
+                              {templateInfo && templateInfo.buttons && templateInfo.buttons.length > 0 && (
+                                <div className="mt-2.5 pt-2 border-t border-black/10 space-y-1.5">
+                                  {templateInfo.buttons.map((btnText, bIdx) => (
+                                    <div 
+                                      key={bIdx}
+                                      className="w-full py-2 px-3 bg-white text-[#008069] border border-[#00a884]/30 rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-2"
+                                    >
+                                      <span className="text-sm">🔘</span> {btnText}
+                                    </div>
+                                  ))}
                                 </div>
                               )}
 
