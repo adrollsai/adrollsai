@@ -213,8 +213,12 @@ async function executeBroadcastImmediately(
         const lead = leads.find(l => l.id === r.lead_id)
         if (!lead) continue
 
-        const cleanPhone = r.phone_number.replace(/\D/g, '')
+        let cleanPhone = r.phone_number.replace(/\D/g, '')
         if (!cleanPhone) continue
+        if (cleanPhone.length === 10) {
+            cleanPhone = '91' + cleanPhone; // Auto-format 10-digit Indian numbers with country code
+        }
+
 
         // Resolve property title
         const property = (properties || []).find(p => p.id === lead.property_id)
