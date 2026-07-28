@@ -422,6 +422,9 @@ async function executeBroadcastImmediately(
                 else if (mappedField === 'csv_audience') val = lead.csv_audience || ''
                 else if (mappedField === 'pipeline_stage') val = lead.pipeline_stage || ''
                 else val = mappedField || 'Valued Customer'
+
+                // Strip non-printable unicode whitespace (e.g. U+3164) that triggers Meta Error #132018
+                val = val.replace(/[\u3164\u200B-\u200D\uFEFF]/g, '').trim() || 'Valued Customer'
                 
                 parameters.push({ type: 'text', text: val })
             }
