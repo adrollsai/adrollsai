@@ -59,7 +59,7 @@ export async function POST(req: Request) {
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
         const body = await req.json()
-        const { title, templateName, recipientStage, recipientPropertyId, scheduledAt, impersonateId, variableMappings } = body
+        const { title, templateName, recipientStage, recipientPropertyId, recipientCsvAudience, scheduledAt, impersonateId, variableMappings } = body
         const targetUserId = impersonateId || user.id
 
         if (!title || !templateName) {
@@ -79,8 +79,9 @@ export async function POST(req: Request) {
             }, { status: 400 })
         }
 
-        // Create the broadcast record
-        const { data: broadcast, error: cErr } = await supabase
+        // Create the broadcast record with fallback
+        let broadcast: any = null
+        const { data: bData, error: cErr } = await supabase
             .from('whatsapp_broadcasts')
             .insert({
                 user_id: targetUserId,
@@ -88,6 +89,7 @@ export async function POST(req: Request) {
                 template_name: templateName,
                 recipient_stage: recipientStage || 'All',
                 recipient_property_id: recipientPropertyId || null,
+                recipient_csv_audience: recipientCsvAudience || null,
                 scheduled_at: scheduledAt || null,
                 status: scheduledAt ? 'pending' : 'processing'
             })
@@ -95,8 +97,27 @@ export async function POST(req: Request) {
             .single()
 
         if (cErr) {
-            console.error('[BROADCAST API] Error creating broadcast:', cErr)
-            return NextResponse.json({ error: cErr.message }, { status: 500 })
+            const { data: bDataFallback, error: cErrFallback } = await supabase
+                .from('whatsapp_broadcasts')
+                .insert({
+                    user_id: targetUserId,
+                    title,
+                    template_name: templateName,
+                    recipient_stage: recipientStage || 'All',
+                    recipient_property_id: recipientPropertyId || null,
+                    scheduled_at: scheduledAt || null,
+                    status: scheduledAt ? 'pending' : 'processing'
+                })
+                .select()
+                .single()
+
+            if (cErrFallback) {
+                console.error('[BROADCAST API] Error creating broadcast:', cErrFallback)
+                return NextResponse.json({ error: cErrFallback.message }, { status: 500 })
+            }
+            broadcast = bDataFallback
+        } else {
+            broadcast = bData
         }
 
         // Filter and find matching leads in DB
@@ -113,7 +134,12 @@ export async function POST(req: Request) {
             leadQuery = leadQuery.eq('property_id', recipientPropertyId)
         }
 
+        if (recipientCsvAudience) {
+            leadQuery = leadQuery.eq('csv_audience', recipientCsvAudience)
+        }
+
         const { data: leads } = await leadQuery
+
 
         if (!leads || leads.length === 0) {
             // No matching leads, mark sent/empty

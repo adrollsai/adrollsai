@@ -244,12 +244,14 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   })
   const [submittingTemplate, setSubmittingTemplate] = useState(false)
 
+  const [csvAudiences, setCsvAudiences] = useState<string[]>([])
   const [isCreateBroadcastOpen, setIsCreateBroadcastOpen] = useState(false)
   const [newBroadcast, setNewBroadcast] = useState({
     title: '',
     templateName: '',
     recipientStage: 'All',
     recipientPropertyId: '',
+    recipientCsvAudience: '',
     scheduledAt: '',
     variableMappings: {} as Record<string, string>
   })
@@ -283,16 +285,20 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
       // Fetch unique campaigns from leads
       const { data: leadCampaigns } = await supabase
         .from('leads')
-        .select('ad_name')
+        .select('ad_name, csv_audience')
         .eq('user_id', userId)
 
       const uniqueCamps = new Set<string>()
+      const uniqueCsvs = new Set<string>()
       if (leadCampaigns) {
         leadCampaigns.forEach((l: any) => {
           if (l.ad_name) uniqueCamps.add(l.ad_name)
+          if (l.csv_audience) uniqueCsvs.add(l.csv_audience)
         })
       }
       setCampaigns(Array.from(uniqueCamps))
+      setCsvAudiences(Array.from(uniqueCsvs))
+
 
       // Fetch profile credentials
       const { data: profileData } = await supabase
@@ -717,6 +723,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
           ...newBroadcast,
           variableMappings: newBroadcast.variableMappings,
           recipientPropertyId: newBroadcast.recipientPropertyId || null,
+          recipientCsvAudience: newBroadcast.recipientCsvAudience || null,
           scheduledAt: newBroadcast.scheduledAt || null,
           impersonateId: userId
         })
@@ -725,7 +732,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
       if (data.success) {
         toast.success(data.message || "Broadcast campaign scheduled successfully!")
         setIsCreateBroadcastOpen(false)
-        setNewBroadcast({ title: '', templateName: '', recipientStage: 'All', recipientPropertyId: '', scheduledAt: '', variableMappings: {} })
+        setNewBroadcast({ title: '', templateName: '', recipientStage: 'All', recipientPropertyId: '', recipientCsvAudience: '', scheduledAt: '', variableMappings: {} })
         await fetchBroadcasts()
       } else {
         toast.error(data.error || "Failed to create campaign")
@@ -1792,7 +1799,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                     )
                   })()}
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Target Pipeline Stage</label>
                       <select 
@@ -1823,7 +1830,22 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                         ))}
                       </select>
                     </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Target CSV Audience</label>
+                      <select 
+                        value={newBroadcast.recipientCsvAudience}
+                        onChange={(e) => setNewBroadcast({ ...newBroadcast, recipientCsvAudience: e.target.value })}
+                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                      >
+                        <option value="">All CSV Audiences (No CSV filter)</option>
+                        {csvAudiences.map(aud => (
+                          <option key={aud} value={aud}>{aud}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
+
 
 
                   <button 
