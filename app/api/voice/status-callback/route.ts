@@ -806,12 +806,15 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                 const transcriptText = Array.isArray(transcript) 
                     ? transcript.map((t: any) => t.message || t.text || '').join(' ').toLowerCase() 
                     : '';
-                const isExpertRequested = transcriptText.includes('expert') || 
-                                          transcriptText.includes('specialist') || 
-                                          transcriptText.includes('connect me') || 
-                                          transcriptText.includes('human') || 
-                                          transcriptText.includes('agent se baat') ||
-                                          (summary && summary.toLowerCase().includes('expert'));
+                const isExpertRequested = Boolean(
+                    transcriptText.includes('expert') || 
+                    transcriptText.includes('specialist') || 
+                    transcriptText.includes('connect me') || 
+                    transcriptText.includes('human') || 
+                    transcriptText.includes('agent se baat') ||
+                    (summary && summary.toLowerCase().includes('expert'))
+                );
+
 
                 const { data: flaggedRows } = await supabaseAdmin
                     .from('flagged_questions')
