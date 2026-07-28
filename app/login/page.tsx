@@ -59,15 +59,15 @@ export default function LoginPage() {
         router.push('/dashboard')
         
       } else if (mode === 'forgot_password') {
-        const resetClient = createBrowserClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          { auth: { flowType: 'implicit' } }
-        )
-        const { error } = await resetClient.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
+        const res = await fetch('/api/auth/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
         })
-        if (error) throw error
+        const data = await res.json()
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to send password reset email.')
+        }
         setSuccessMessage('Password reset instructions have been sent to your email.')
         toast.success("Reset link sent!")
       }
