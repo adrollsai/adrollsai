@@ -27,7 +27,8 @@ import {
   BarChart2,
   Search,
   RefreshCw,
-  X
+  X,
+  Download
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
@@ -134,7 +135,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const [loadingStats, setLoadingStats] = useState(false)
   const [statsData, setStatsData] = useState<any>(null)
   const [statsSearchQuery, setStatsSearchQuery] = useState('')
-  const [statsFilterStatus, setStatsFilterStatus] = useState<'all' | 'sent' | 'replied' | 'failed'>('all')
+  const [statsFilterStatus, setStatsFilterStatus] = useState<'all' | 'sent' | 'replied' | 'pending' | 'failed'>('all')
 
   const fetchBroadcastStats = async (broadcastId: string) => {
     setLoadingStats(true)
@@ -156,6 +157,52 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
     } finally {
       setLoadingStats(false)
     }
+  }
+
+  const downloadFilteredCSV = () => {
+    if (!statsData || !statsData.recipients) return
+
+    const filtered = (statsData.recipients || []).filter((r: any) => {
+      const matchesSearch = !statsSearchQuery || 
+        r.name.toLowerCase().includes(statsSearchQuery.toLowerCase()) || 
+        r.phone.includes(statsSearchQuery)
+      
+      if (!matchesSearch) return false
+      if (statsFilterStatus === 'sent') return r.status === 'sent'
+      if (statsFilterStatus === 'replied') return r.has_replied
+      if (statsFilterStatus === 'pending') return r.status === 'pending'
+      if (statsFilterStatus === 'failed') return r.status === 'failed'
+      return true
+    })
+
+    if (filtered.length === 0) {
+      toast.error('No recipients match current filter to download.')
+      return
+    }
+
+    const escapeCsv = (str: string) => `"${(str || '').replace(/"/g, '""')}"`
+
+    const headers = ['Lead Name', 'Phone Number', 'Delivery Status', 'Response Status', 'Last Response / Error', 'Sent Time']
+    const rows = filtered.map((r: any) => [
+      escapeCsv(r.name),
+      escapeCsv(r.phone),
+      escapeCsv(r.status),
+      escapeCsv(r.has_replied ? 'Replied' : 'No Reply'),
+      escapeCsv(r.last_message || r.error_message || ''),
+      escapeCsv(r.sent_at ? new Date(r.sent_at).toLocaleString() : '')
+    ])
+
+    const csvContent = [headers.join(','), ...rows.map((row: string[]) => row.join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const safeTitle = (selectedStatsBroadcast?.title || 'broadcast').replace(/[^a-z0-9]/gi, '_')
+    link.href = url
+    link.setAttribute('download', `${safeTitle}_${statsFilterStatus}_leads.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    toast.success(`Downloaded CSV with ${filtered.length} leads! 📥`)
   }
 
   // WhatsApp API Business Profile state
@@ -2177,75 +2224,99 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               ) : statsData ? (
                 <>
                   {/* KPI Cards Row */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs space-y-1">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Target Recipients</span>
-                      <div className="text-2xl font-black text-slate-900">{statsData.stats.total}</div>
-                      <span className="text-[10px] font-extrabold text-slate-500">100% Segment Total</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    <div className="bg-white border border-slate-200/80 p-3.5 rounded-2xl shadow-xs space-y-1">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Target Recipients</span>
+                      <div className="text-xl font-black text-slate-900">{statsData.stats.total}</div>
+                      <span className="text-[9px] font-extrabold text-slate-500 block">100% Total Segment</span>
                     </div>
 
-                    <div className="bg-emerald-50/60 border border-emerald-100 p-4 rounded-2xl shadow-xs space-y-1">
-                      <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider">Delivered</span>
-                      <div className="text-2xl font-black text-emerald-900">{statsData.stats.sent}</div>
-                      <span className="text-[10px] font-extrabold text-emerald-600">{statsData.stats.deliveryRate}% Delivery Rate</span>
+                    <div className="bg-emerald-50/60 border border-emerald-100 p-3.5 rounded-2xl shadow-xs space-y-1">
+                      <span className="text-[9px] font-black text-emerald-700 uppercase tracking-wider block">Delivered</span>
+                      <div className="text-xl font-black text-emerald-900">{statsData.stats.sent}</div>
+                      <span className="text-[9px] font-extrabold text-emerald-600 block">{statsData.stats.deliveryRate}% Delivery Rate</span>
                     </div>
 
-                    <div className="bg-blue-50/60 border border-blue-100 p-4 rounded-2xl shadow-xs space-y-1">
-                      <span className="text-[10px] font-black text-blue-700 uppercase tracking-wider">Total Responses</span>
-                      <div className="text-2xl font-black text-blue-900">{statsData.stats.replyCount}</div>
-                      <span className="text-[10px] font-extrabold text-blue-600">{statsData.stats.responseRate}% Response Rate</span>
+                    <div className="bg-blue-50/60 border border-blue-100 p-3.5 rounded-2xl shadow-xs space-y-1">
+                      <span className="text-[9px] font-black text-blue-700 uppercase tracking-wider block">Total Responses</span>
+                      <div className="text-xl font-black text-blue-900">{statsData.stats.replyCount}</div>
+                      <span className="text-[9px] font-extrabold text-blue-600 block">{statsData.stats.responseRate}% Response Rate</span>
                     </div>
 
-                    <div className="bg-amber-50/60 border border-amber-100 p-4 rounded-2xl shadow-xs space-y-1">
-                      <span className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Failed / Bounced</span>
-                      <div className="text-2xl font-black text-amber-900">{statsData.stats.failed}</div>
-                      <span className="text-[10px] font-extrabold text-amber-600">Delivery failed or pending</span>
+                    <div className="bg-amber-50/60 border border-amber-100 p-3.5 rounded-2xl shadow-xs space-y-1">
+                      <span className="text-[9px] font-black text-amber-700 uppercase tracking-wider block">Pending Queue</span>
+                      <div className="text-xl font-black text-amber-900">{statsData.stats.pending || 0}</div>
+                      <span className="text-[9px] font-extrabold text-amber-600 block">Sending in progress</span>
+                    </div>
+
+                    <div className="bg-rose-50/60 border border-rose-100 p-3.5 rounded-2xl shadow-xs space-y-1">
+                      <span className="text-[9px] font-black text-rose-700 uppercase tracking-wider block">Failed / Rejected</span>
+                      <div className="text-xl font-black text-rose-900">{statsData.stats.failed}</div>
+                      <span className="text-[9px] font-extrabold text-rose-600 block">Delivery errors</span>
                     </div>
                   </div>
 
                   {/* Recipient List & Search Filters */}
                   <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs space-y-4">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                      <div className="flex items-center gap-1.5">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
                         <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Recipient Details Breakdown</span>
                         <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full">
                           {statsData.recipients?.length || 0} Leads
                         </span>
                       </div>
 
-                      {/* Filter Pills */}
-                      <div className="flex flex-wrap items-center gap-1.5">
+                      {/* Download Filtered CSV Button & Filter Pills */}
+                      <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-between md:justify-end">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            onClick={() => setStatsFilterStatus('all')}
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+                              statsFilterStatus === 'all' ? 'bg-slate-900 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            All ({statsData.recipients?.length || 0})
+                          </button>
+                          <button
+                            onClick={() => setStatsFilterStatus('sent')}
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+                              statsFilterStatus === 'sent' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                            }`}
+                          >
+                            Delivered ({statsData.stats.sent})
+                          </button>
+                          <button
+                            onClick={() => setStatsFilterStatus('replied')}
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+                              statsFilterStatus === 'replied' ? 'bg-blue-600 text-white shadow-xs' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                            }`}
+                          >
+                            Replied ({statsData.stats.replyCount})
+                          </button>
+                          <button
+                            onClick={() => setStatsFilterStatus('pending')}
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+                              statsFilterStatus === 'pending' ? 'bg-amber-600 text-white shadow-xs' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                            }`}
+                          >
+                            Pending ({statsData.stats.pending || 0})
+                          </button>
+                          <button
+                            onClick={() => setStatsFilterStatus('failed')}
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+                              statsFilterStatus === 'failed' ? 'bg-red-600 text-white shadow-xs' : 'bg-red-50 text-red-700 hover:bg-red-100'
+                            }`}
+                          >
+                            Failed ({statsData.stats.failed})
+                          </button>
+                        </div>
+
                         <button
-                          onClick={() => setStatsFilterStatus('all')}
-                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
-                            statsFilterStatus === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                          }`}
+                          onClick={downloadFilteredCSV}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black px-3 py-1.5 rounded-full transition-all flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95 shrink-0"
+                          title="Download leads matching the currently selected filter as CSV"
                         >
-                          All ({statsData.recipients?.length || 0})
-                        </button>
-                        <button
-                          onClick={() => setStatsFilterStatus('sent')}
-                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
-                            statsFilterStatus === 'sent' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                          }`}
-                        >
-                          Delivered ({statsData.stats.sent})
-                        </button>
-                        <button
-                          onClick={() => setStatsFilterStatus('replied')}
-                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
-                            statsFilterStatus === 'replied' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                          }`}
-                        >
-                          Replied ({statsData.stats.replyCount})
-                        </button>
-                        <button
-                          onClick={() => setStatsFilterStatus('failed')}
-                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
-                            statsFilterStatus === 'failed' ? 'bg-red-600 text-white' : 'bg-red-50 text-red-700 hover:bg-red-100'
-                          }`}
-                        >
-                          Failed ({statsData.stats.failed})
+                          <Download size={12} /> Download Filtered CSV
                         </button>
                       </div>
                     </div>
@@ -2283,6 +2354,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                               if (!matchesSearch) return false;
                               if (statsFilterStatus === 'sent') return r.status === 'sent';
                               if (statsFilterStatus === 'replied') return r.has_replied;
+                              if (statsFilterStatus === 'pending') return r.status === 'pending';
                               if (statsFilterStatus === 'failed') return r.status === 'failed';
                               return true;
                             });
@@ -2307,6 +2379,10 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                                   {r.status === 'sent' ? (
                                     <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60">
                                       ✓ Delivered
+                                    </span>
+                                  ) : r.status === 'pending' ? (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60">
+                                      ⏳ Pending
                                     </span>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 text-[9px] font-black text-red-700 bg-red-50 px-2 py-0.5 rounded-md border border-red-200/60" title={r.error_message}>
