@@ -59,7 +59,7 @@ export async function POST(req: Request) {
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
         const body = await req.json()
-        const { title, templateName, recipientStage, recipientPropertyId, recipientCsvAudience, scheduledAt, impersonateId, variableMappings } = body
+        const { title, templateName, recipientStage, recipientPropertyId, recipientCsvAudience, scheduledAt, impersonateId, variableMappings, audienceFilter } = body
         const targetUserId = impersonateId || user.id
 
         if (!title || !templateName) {
@@ -126,19 +126,44 @@ export async function POST(req: Request) {
             .select('*')
             .eq('user_id', targetUserId)
 
-        if (recipientStage && recipientStage !== 'All') {
-            leadQuery = leadQuery.eq('pipeline_stage', recipientStage)
-        }
+        if (audienceFilter && audienceFilter.targetType === 'custom') {
+            const { csvAudiences, sources, metaCampaigns, pipelineStages, propertyIds } = audienceFilter
 
-        if (recipientPropertyId) {
-            leadQuery = leadQuery.eq('property_id', recipientPropertyId)
-        }
+            if (csvAudiences && Array.isArray(csvAudiences) && csvAudiences.length > 0) {
+                leadQuery = leadQuery.in('csv_audience', csvAudiences)
+            }
 
-        if (recipientCsvAudience) {
-            leadQuery = leadQuery.eq('csv_audience', recipientCsvAudience)
+            if (sources && Array.isArray(sources) && sources.length > 0) {
+                leadQuery = leadQuery.in('source', sources)
+            }
+
+            if (metaCampaigns && Array.isArray(metaCampaigns) && metaCampaigns.length > 0) {
+                leadQuery = leadQuery.in('ad_name', metaCampaigns)
+            }
+
+            if (pipelineStages && Array.isArray(pipelineStages) && pipelineStages.length > 0) {
+                leadQuery = leadQuery.in('pipeline_stage', pipelineStages)
+            }
+
+            if (propertyIds && Array.isArray(propertyIds) && propertyIds.length > 0) {
+                leadQuery = leadQuery.in('property_id', propertyIds)
+            }
+        } else {
+            if (recipientStage && recipientStage !== 'All') {
+                leadQuery = leadQuery.eq('pipeline_stage', recipientStage)
+            }
+
+            if (recipientPropertyId) {
+                leadQuery = leadQuery.eq('property_id', recipientPropertyId)
+            }
+
+            if (recipientCsvAudience) {
+                leadQuery = leadQuery.eq('csv_audience', recipientCsvAudience)
+            }
         }
 
         const { data: leads } = await leadQuery
+
 
 
         if (!leads || leads.length === 0) {

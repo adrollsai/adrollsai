@@ -245,6 +245,14 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const [submittingTemplate, setSubmittingTemplate] = useState(false)
 
   const [csvAudiences, setCsvAudiences] = useState<string[]>([])
+  const [leadSources, setLeadSources] = useState<string[]>([])
+  const [broadcastTargetAudienceType, setBroadcastTargetAudienceType] = useState<'all' | 'custom'>('all')
+  const [selectedBroadcastSources, setSelectedBroadcastSources] = useState<string[]>([])
+  const [selectedBroadcastMetaCampaigns, setSelectedBroadcastMetaCampaigns] = useState<string[]>([])
+  const [selectedBroadcastCsvAudiences, setSelectedBroadcastCsvAudiences] = useState<string[]>([])
+  const [selectedBroadcastStages, setSelectedBroadcastStages] = useState<string[]>([])
+  const [selectedBroadcastProperties, setSelectedBroadcastProperties] = useState<string[]>([])
+
   const [isCreateBroadcastOpen, setIsCreateBroadcastOpen] = useState(false)
   const [newBroadcast, setNewBroadcast] = useState({
     title: '',
@@ -282,22 +290,26 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
         .eq('user_id', userId)
       if (propData) setProperties(propData)
 
-      // Fetch unique campaigns from leads
-      const { data: leadCampaigns } = await supabase
+      // Fetch unique campaigns, sources, and csv_audiences from leads
+      const { data: leadData } = await supabase
         .from('leads')
-        .select('ad_name, csv_audience')
+        .select('source, ad_name, csv_audience')
         .eq('user_id', userId)
 
       const uniqueCamps = new Set<string>()
       const uniqueCsvs = new Set<string>()
-      if (leadCampaigns) {
-        leadCampaigns.forEach((l: any) => {
+      const uniqueSources = new Set<string>()
+      if (leadData) {
+        leadData.forEach((l: any) => {
+          if (l.source) uniqueSources.add(l.source)
           if (l.ad_name) uniqueCamps.add(l.ad_name)
           if (l.csv_audience) uniqueCsvs.add(l.csv_audience)
         })
       }
+      setLeadSources(Array.from(uniqueSources))
       setCampaigns(Array.from(uniqueCamps))
       setCsvAudiences(Array.from(uniqueCsvs))
+
 
 
       // Fetch profile credentials
@@ -722,6 +734,14 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
         body: JSON.stringify({
           ...newBroadcast,
           variableMappings: newBroadcast.variableMappings,
+          audienceFilter: {
+            targetType: broadcastTargetAudienceType,
+            sources: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastSources,
+            metaCampaigns: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastMetaCampaigns,
+            csvAudiences: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastCsvAudiences,
+            pipelineStages: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastStages,
+            propertyIds: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastProperties,
+          },
           recipientPropertyId: newBroadcast.recipientPropertyId || null,
           recipientCsvAudience: newBroadcast.recipientCsvAudience || null,
           scheduledAt: newBroadcast.scheduledAt || null,
@@ -733,6 +753,12 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
         toast.success(data.message || "Broadcast campaign scheduled successfully!")
         setIsCreateBroadcastOpen(false)
         setNewBroadcast({ title: '', templateName: '', recipientStage: 'All', recipientPropertyId: '', recipientCsvAudience: '', scheduledAt: '', variableMappings: {} })
+        setBroadcastTargetAudienceType('all')
+        setSelectedBroadcastSources([])
+        setSelectedBroadcastMetaCampaigns([])
+        setSelectedBroadcastCsvAudiences([])
+        setSelectedBroadcastStages([])
+        setSelectedBroadcastProperties([])
         await fetchBroadcasts()
       } else {
         toast.error(data.error || "Failed to create campaign")
@@ -1799,51 +1825,195 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                     )
                   })()}
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Target Audience Configuration */}
+                  <div className="space-y-3 pt-2 border-t border-slate-100">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Target Pipeline Stage</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase block ml-1">Target Audience Selection</label>
                       <select 
-                        value={newBroadcast.recipientStage}
-                        onChange={(e) => setNewBroadcast({ ...newBroadcast, recipientStage: e.target.value })}
-                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                        value={broadcastTargetAudienceType}
+                        onChange={(e) => setBroadcastTargetAudienceType(e.target.value as 'all' | 'custom')}
+                        className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
                       >
-                        <option value="All">All Leads (No stage filter)</option>
-                        <option value="New">New</option>
-                        <option value="Contacted">Contacted</option>
-                        <option value="Qualified">Qualified</option>
-                        <option value="Appointment booked">Appointment booked</option>
-                        <option value="Appointment done">Appointment done</option>
-                        <option value="Closed">Closed</option>
+                        <option value="all">All Contacts / Leads (No Filters)</option>
+                        <option value="custom">Custom Multi-Filter Audience (Checkboxes)</option>
                       </select>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Target Project Interest</label>
-                      <select 
-                        value={newBroadcast.recipientPropertyId}
-                        onChange={(e) => setNewBroadcast({ ...newBroadcast, recipientPropertyId: e.target.value })}
-                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
-                      >
-                        <option value="">All Leads (No project filter)</option>
-                        {properties.map(p => (
-                          <option key={p.id} value={p.id}>{p.title}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {broadcastTargetAudienceType === 'custom' && (
+                      <div className="space-y-4 border border-slate-200/80 bg-slate-50/60 p-4 rounded-2xl animate-in fade-in duration-200">
+                        <span className="block text-[10px] font-black text-slate-400 uppercase border-b border-slate-200 pb-1.5">
+                          Select Specific Target Categories (Check all that apply)
+                        </span>
 
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Target CSV Audience</label>
-                      <select 
-                        value={newBroadcast.recipientCsvAudience}
-                        onChange={(e) => setNewBroadcast({ ...newBroadcast, recipientCsvAudience: e.target.value })}
-                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
-                      >
-                        <option value="">All CSV Audiences (No CSV filter)</option>
-                        {csvAudiences.map(aud => (
-                          <option key={aud} value={aud}>{aud}</option>
-                        ))}
-                      </select>
-                    </div>
+                        {/* 1. CSV Audiences Checkboxes */}
+                        {csvAudiences.length > 0 && (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-indigo-600 uppercase block ml-1 flex items-center justify-between">
+                              <span>📁 CSV Upload Audiences ({csvAudiences.length})</span>
+                              {selectedBroadcastCsvAudiences.length > 0 && (
+                                <span className="text-[9px] text-indigo-600 font-bold">{selectedBroadcastCsvAudiences.length} Selected</span>
+                              )}
+                            </label>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-36 overflow-y-auto">
+                              {csvAudiences.map(aud => {
+                                const isChecked = selectedBroadcastCsvAudiences.includes(aud);
+                                return (
+                                  <label key={aud} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none truncate" title={aud}>
+                                    <input 
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        if (isChecked) {
+                                          setSelectedBroadcastCsvAudiences(selectedBroadcastCsvAudiences.filter(a => a !== aud));
+                                        } else {
+                                          setSelectedBroadcastCsvAudiences([...selectedBroadcastCsvAudiences, aud]);
+                                        }
+                                      }}
+                                      className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
+                                    />
+                                    <span className="truncate">{aud}</span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 2. Lead Pipeline Stages Checkboxes */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-600 uppercase block ml-1 flex items-center justify-between">
+                            <span>📊 CRM Pipeline Stages</span>
+                            {selectedBroadcastStages.length > 0 && (
+                              <span className="text-[9px] text-indigo-600 font-bold">{selectedBroadcastStages.length} Selected</span>
+                            )}
+                          </label>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 bg-white p-3 rounded-xl border border-slate-200">
+                            {['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed'].map(stg => {
+                              const isChecked = selectedBroadcastStages.includes(stg);
+                              return (
+                                <label key={stg} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                                  <input 
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      if (isChecked) {
+                                        setSelectedBroadcastStages(selectedBroadcastStages.filter(s => s !== stg));
+                                      } else {
+                                        setSelectedBroadcastStages([...selectedBroadcastStages, stg]);
+                                      }
+                                    }}
+                                    className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                                  />
+                                  <span>{stg}</span>
+                                </label>
+                              )
+                            })}
+                          </div>
+                        </div>
+
+                        {/* 3. Lead Sources Checkboxes */}
+                        {leadSources.length > 0 && (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-600 uppercase block ml-1 flex items-center justify-between">
+                              <span>🏷️ Lead Sources ({leadSources.length})</span>
+                              {selectedBroadcastSources.length > 0 && (
+                                <span className="text-[9px] text-indigo-600 font-bold">{selectedBroadcastSources.length} Selected</span>
+                              )}
+                            </label>
+                            <div className="grid grid-cols-2 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-32 overflow-y-auto">
+                              {leadSources.map(src => {
+                                const isChecked = selectedBroadcastSources.includes(src);
+                                return (
+                                  <label key={src} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none truncate">
+                                    <input 
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        if (isChecked) {
+                                          setSelectedBroadcastSources(selectedBroadcastSources.filter(s => s !== src));
+                                        } else {
+                                          setSelectedBroadcastSources([...selectedBroadcastSources, src]);
+                                        }
+                                      }}
+                                      className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
+                                    />
+                                    <span className="truncate">{src}</span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 4. Meta Ads Campaigns Checkboxes */}
+                        {campaigns.length > 0 && (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-600 uppercase block ml-1 flex items-center justify-between">
+                              <span>🎯 Meta Ads Campaigns ({campaigns.length})</span>
+                              {selectedBroadcastMetaCampaigns.length > 0 && (
+                                <span className="text-[9px] text-indigo-600 font-bold">{selectedBroadcastMetaCampaigns.length} Selected</span>
+                              )}
+                            </label>
+                            <div className="grid grid-cols-1 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-32 overflow-y-auto">
+                              {campaigns.map(camp => {
+                                const isChecked = selectedBroadcastMetaCampaigns.includes(camp);
+                                return (
+                                  <label key={camp} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none truncate" title={camp}>
+                                    <input 
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        if (isChecked) {
+                                          setSelectedBroadcastMetaCampaigns(selectedBroadcastMetaCampaigns.filter(c => c !== camp));
+                                        } else {
+                                          setSelectedBroadcastMetaCampaigns([...selectedBroadcastMetaCampaigns, camp]);
+                                        }
+                                      }}
+                                      className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
+                                    />
+                                    <span className="truncate">{camp}</span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 5. Project Interest Checkboxes */}
+                        {properties.length > 0 && (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-600 uppercase block ml-1 flex items-center justify-between">
+                              <span>🏢 Project Interest ({properties.length})</span>
+                              {selectedBroadcastProperties.length > 0 && (
+                                <span className="text-[9px] text-indigo-600 font-bold">{selectedBroadcastProperties.length} Selected</span>
+                              )}
+                            </label>
+                            <div className="grid grid-cols-1 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-32 overflow-y-auto">
+                              {properties.map(p => {
+                                const isChecked = selectedBroadcastProperties.includes(p.id);
+                                return (
+                                  <label key={p.id} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none truncate" title={p.title}>
+                                    <input 
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        if (isChecked) {
+                                          setSelectedBroadcastProperties(selectedBroadcastProperties.filter(id => id !== p.id));
+                                        } else {
+                                          setSelectedBroadcastProperties([...selectedBroadcastProperties, p.id]);
+                                        }
+                                      }}
+                                      className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
+                                    />
+                                    <span className="truncate">{p.title}</span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
 
