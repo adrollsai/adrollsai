@@ -53,6 +53,28 @@ export async function GET(req: Request) {
             }
 
             const chatMap = new Map((chats || []).map(c => [c.recipient_phone, c]))
+            const chatIds = (chats || []).map(c => c.id).filter(Boolean)
+
+            // Batch fetch inbound messages for these chat IDs to get the LEAD's actual response
+            let inboundMsgs: any[] = []
+            for (let i = 0; i < chatIds.length; i += 100) {
+                const batch = chatIds.slice(i, i + 100)
+                const { data: bMsgs } = await supabaseAdmin
+                    .from('whatsapp_messages')
+                    .select('chat_id, message_text, created_at')
+                    .in('chat_id', batch)
+                    .eq('direction', 'inbound')
+                    .order('created_at', { ascending: false })
+                if (bMsgs) inboundMsgs = inboundMsgs.concat(bMsgs)
+            }
+
+            // Map latest inbound message by chat_id
+            const latestInboundMap = new Map()
+            for (const msg of inboundMsgs) {
+                if (!latestInboundMap.has(msg.chat_id)) {
+                    latestInboundMap.set(msg.chat_id, msg)
+                }
+            }
 
             // Batch fetch leads in chunks of 100
             const leadIds = (recipients || []).map(r => r.lead_id).filter(Boolean)
@@ -79,10 +101,12 @@ export async function GET(req: Request) {
                 const chat = chatMap.get(cleanPhone) || chatMap.get('91' + cleanPhone)
 
                 const name = lead?.name || chat?.recipient_name || 'Valued Lead'
-                const hasReplied = !!chat && (chat.last_message_text !== `Sent Template: ${broadcast.template_name}`)
+                const latestInbound = chat ? latestInboundMap.get(chat.id) : null
+                const hasReplied = !!latestInbound
                 if (hasReplied) replyCount++
 
-                const isButtonClick = hasReplied && (chat?.last_message_text === 'View Properties' || chat?.last_message_text?.includes('Button'))
+                const leadResponseText = latestInbound?.message_text || null
+                const isButtonClick = hasReplied && (leadResponseText === 'View Properties' || leadResponseText?.includes('Button'))
                 if (isButtonClick) buttonClickCount++
 
                 return {
@@ -93,7 +117,7 @@ export async function GET(req: Request) {
                     sent_at: r.sent_at,
                     error_message: r.error_message,
                     has_replied: hasReplied,
-                    last_message: chat?.last_message_text || null
+                    last_message: leadResponseText
                 }
             })
 
