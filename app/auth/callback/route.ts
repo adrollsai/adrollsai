@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { type EmailOtpType } from '@supabase/supabase-js'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
+  const tokenHash = searchParams.get('token_hash') || searchParams.get('token')
+  const type = searchParams.get('type') as EmailOtpType | null
   
   // 1. Capture parameters
   // linkIdentity redirects might pass 'provider' or it might be in the fragment
@@ -25,20 +28,33 @@ export async function GET(request: Request) {
 
   // Handle OAuth Errors immediately
   if (errorCode === 'identity_already_exists') {
-  return NextResponse.redirect(`${baseUrl}${next}?error=This Facebook account is already linked to another user.`);
-}
+    return NextResponse.redirect(`${baseUrl}${next}?error=This Facebook account is already linked to another user.`);
+  }
 
   if (errorCode || errorDescription) {
     console.error(`[AUTH CALLBACK] OAuth Error: ${errorCode} - ${errorDescription}`)
     return NextResponse.redirect(`${baseUrl}${next}?error=${encodeURIComponent(errorDescription || 'Authentication failed')}`)
   }
 
-  if (code) {
+  if (code || (tokenHash && type)) {
     const supabase = await createClient()
     
-    // 2. Exchange code for session
-    // This method handles both new logins and linking to existing sessions
-    const { error, data } = await supabase.auth.exchangeCodeForSession(code)
+    let error: any = null
+    let data: any = null
+
+    // 2. Exchange code or verify OTP token_hash for session
+    if (code) {
+      const res = await supabase.auth.exchangeCodeForSession(code)
+      error = res.error
+      data = res.data
+    } else if (tokenHash && type) {
+      const res = await supabase.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: type
+      })
+      error = res.error
+      data = res.data
+    }
     
     if (!error && data?.session) {
       const token = data.session.provider_token
@@ -48,19 +64,14 @@ export async function GET(request: Request) {
       const updates: any = {}
       
       // 3. Robust Token Capture Logic
-      // We check for the provider tag or common token prefixes
-      
-      // --- FACEBOOK ---
       if ((provider === 'facebook' || (token && token.startsWith('EAA'))) && token) {
           console.log("✅ Saving Facebook Token...")
           updates.facebook_token = token
       } 
-      // --- LINKEDIN ---
       else if (provider === 'linkedin_oidc' && token) {
           console.log("✅ Saving LinkedIn Token...")
           updates.linkedin_token = token
       }
-      // --- GOOGLE BUSINESS ---
       else if (provider === 'google_business' && token) {
           console.log("✅ Saving Google Business Tokens...")
           updates.google_business_token = token
@@ -68,7 +79,6 @@ export async function GET(request: Request) {
               updates.google_business_refresh_token = refreshToken
           }
       }
-      // --- YOUTUBE ---
       else if (provider === 'youtube' && token) {
           console.log("✅ Saving YouTube Tokens...")
           updates.youtube_token = token
@@ -88,11 +98,10 @@ export async function GET(request: Request) {
           if (updateError) console.error("[AUTH CALLBACK] Profile update error:", updateError)
       }
 
-      
       // Success! Redirect back to the requested page
       return NextResponse.redirect(`${baseUrl}${next}`)
     } else if (error) {
-      console.error("[AUTH CALLBACK] Exchange error:", error.message)
+      console.error("[AUTH CALLBACK] Verification error:", error.message)
       return NextResponse.redirect(`${baseUrl}${next}?error=${encodeURIComponent(error.message)}`)
     }
   }
