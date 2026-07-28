@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { warmupVoiceBridge } from '@/utils/voice-helper'
 
 // Using service role client because this is a public webhook requested by Twilio
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
 
 export async function POST(req: Request) {
     try {
@@ -204,7 +206,11 @@ export async function POST(req: Request) {
             const streamUrl = `${bridgeHost}/gemini-live-stream`
             console.log(`[TWIML BRIDGE] Redirecting Twilio Media Stream to Gemini Live Bridge: ${streamUrl}`)
             
+            // Fire session pre-warming in background to pre-connect Gemini WS & pre-load DB context
+            warmupVoiceBridge(leadId, profileId, campaignId || undefined).catch(e => console.warn('[TWIML BRIDGE] Prewarm trigger error:', e));
+
             const voiceName = campaign?.audience_filter?.voice_name || profile?.voice_name || 'Aoede'
+
             const isFemale = ['aoede', 'kore'].includes(voiceName.toLowerCase())
             const twilioVoice = isFemale ? 'Polly.Aditi' : 'Google.hi-IN-Wavenet-B'
             

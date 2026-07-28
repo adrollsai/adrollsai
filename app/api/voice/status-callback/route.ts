@@ -801,6 +801,43 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                 }
             }
 
+            // 7. Trigger Expert Escalation & Flagged Questions Notifications (WhatsApp, Push, Email)
+            try {
+                const transcriptText = Array.isArray(transcript) 
+                    ? transcript.map((t: any) => t.message || t.text || '').join(' ').toLowerCase() 
+                    : '';
+                const isExpertRequested = transcriptText.includes('expert') || 
+                                          transcriptText.includes('specialist') || 
+                                          transcriptText.includes('connect me') || 
+                                          transcriptText.includes('human') || 
+                                          transcriptText.includes('agent se baat') ||
+                                          (summary && summary.toLowerCase().includes('expert'));
+
+                const { data: flaggedRows } = await supabaseAdmin
+                    .from('flagged_questions')
+                    .select('question')
+                    .eq('lead_id', leadId)
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                const unansweredQuestions = (flaggedRows || []).map((f: any) => f.question);
+
+                if (isExpertRequested || unansweredQuestions.length > 0) {
+                    console.log('[TWILIO STATUS CALLBACK] Triggering Expert Escalation Notifications (WhatsApp, Push, Email)...');
+                    const { sendExpertEscalationNotification } = await import('@/utils/notification-helper');
+                    await sendExpertEscalationNotification({
+                        leadId,
+                        userId: lead.user_id,
+                        summary,
+                        unansweredQuestions,
+                        publicRecordingUrl,
+                        isExpertRequested
+                    });
+                }
+            } catch (escalateErr: any) {
+                console.error('[TWILIO STATUS CALLBACK] Expert escalation notification error:', escalateErr.message);
+            }
+
             if (lead?.user_id) {
                 dispatchNextCall(supabaseAdmin, lead.user_id).catch((dispatchErr: any) => {
                     console.error('[TWILIO STATUS CALLBACK] next dispatch failed:', dispatchErr)
@@ -808,6 +845,7 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
             }
 
             console.log(`[TWILIO STATUS CALLBACK] Successfully processed post-call details for lead ${leadId}`)
+
         }
 
         return NextResponse.json({ success: true })

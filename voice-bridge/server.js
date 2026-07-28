@@ -29,13 +29,73 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 const app = express();
 app.use(express.json());
 
+const prewarmedPool = new Map();
+
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'gemini-voice-bridge' });
+});
+
+app.post('/prewarm', async (req, res) => {
+    try {
+        const { leadId, profileId, campaignId } = req.body;
+        if (!leadId || !profileId) {
+            return res.status(400).json({ error: 'Missing leadId or profileId in prewarm request.' });
+        }
+        console.log(`[PREWARM] Pre-warming session for lead: ${leadId}, profile: ${profileId}`);
+
+        if (prewarmedPool.has(leadId)) {
+            return res.json({ status: 'already_prewarmed', leadId });
+        }
+
+        const campaignPromise = campaignId
+            ? supabaseAdmin.from('voice_campaigns').select('*').eq('id', campaignId).maybeSingle()
+            : Promise.resolve({ data: null });
+
+        const dbPromise = Promise.all([
+            supabaseAdmin.from('profiles').select('*').eq('id', profileId).maybeSingle(),
+            supabaseAdmin.from('leads').select('*').eq('id', leadId).maybeSingle(),
+            supabaseAdmin.from('properties').select('*').eq('user_id', profileId).limit(5),
+            campaignPromise,
+            supabaseAdmin.from('flagged_questions').select('*').eq('lead_id', leadId).eq('resolved', true).not('answer', 'is', null)
+        ]);
+
+        const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+        const tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${defaultApiKey || ''}`);
+
+        const prewarmedEntry = {
+            leadId,
+            profileId,
+            campaignId,
+            dbPromise,
+            tempSocket,
+            used: false,
+            createdAt: Date.now()
+        };
+
+        prewarmedPool.set(leadId, prewarmedEntry);
+
+        setTimeout(() => {
+            const entry = prewarmedPool.get(leadId);
+            if (entry && entry.createdAt === prewarmedEntry.createdAt && !entry.used) {
+                console.log(`[PREWARM] Cleaning up expired unused prewarmed session for lead ${leadId}`);
+                if (entry.tempSocket && entry.tempSocket.readyState === ws.OPEN) {
+                    entry.tempSocket.close();
+                }
+                prewarmedPool.delete(leadId);
+            }
+        }, 45000);
+
+        res.json({ status: 'prewarmed', leadId });
+    } catch (err) {
+        console.error('[PREWARM] Error in prewarm handler:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 const server = app.listen(PORT, () => {
     console.log(`[BRIDGE SERVER] Listening on port ${PORT}`);
 });
+
 
 // WebSocket Server setup
 const wss = new ws.Server({ server });
@@ -111,6 +171,186 @@ function downsample24To8(inputInt16) {
     return output;
 }
 
+// Phone Ringback Tone Synthesizer (400Hz + 450Hz dual tone, 8kHz mu-law)
+function generateRingbackToneBuffer(durationSec = 6.0) {
+    const sampleRate = 8000;
+    const totalSamples = Math.floor(sampleRate * durationSec);
+    const muLawBuffer = Buffer.alloc(totalSamples);
+    const f1 = 400;
+    const f2 = 450;
+    const gain = 0.22; // Comfortable soft ringing volume
+
+    for (let i = 0; i < totalSamples; i++) {
+        const timeSec = i / sampleRate;
+        const cycleTime = timeSec % 3.2; // 1.2s tone, 2.0s pause ring cycle
+
+        let pcmSample = 0;
+        if (cycleTime < 1.2) {
+            const s1 = Math.sin(2 * Math.PI * f1 * timeSec);
+            const s2 = Math.sin(2 * Math.PI * f2 * timeSec);
+            let env = 1.0;
+            if (cycleTime < 0.05) env = cycleTime / 0.05;
+            else if (cycleTime > 1.15) env = (1.2 - cycleTime) / 0.05;
+
+            pcmSample = Math.round((s1 + s2) * 0.5 * gain * env * 32767);
+        }
+        muLawBuffer[i] = encodeMuLaw(pcmSample);
+    }
+    return muLawBuffer;
+}
+
+const GLOBAL_RINGBACK_BUFFER = generateRingbackToneBuffer(6.0);
+
+// Realistic Vocal Backchannel Synthesizers ("ahaan", "hmm", "haan ji")
+function generateAhaanBackchannelBuffer() {
+    const sampleRate = 8000;
+    const durationSec = 0.42; // 420ms "ahaan..."
+    const totalSamples = Math.floor(sampleRate * durationSec);
+    const muLawBuffer = Buffer.alloc(totalSamples);
+    const gain = 0.28; // Comfortable vocal volume
+
+    for (let i = 0; i < totalSamples; i++) {
+        const t = i / sampleRate;
+        const freq = t < 0.2 ? (220 + (40 * (t / 0.2))) : (260 - (50 * ((t - 0.2) / 0.22)));
+        const env = Math.sin(Math.PI * (t / durationSec));
+        const s1 = Math.sin(2 * Math.PI * freq * t);
+        const s2 = 0.35 * Math.sin(2 * Math.PI * (freq * 2) * t);
+        const pcmSample = Math.round((s1 + s2) * 0.5 * gain * env * 32767);
+        muLawBuffer[i] = encodeMuLaw(pcmSample);
+    }
+    return muLawBuffer;
+}
+
+function generateHmmBackchannelBuffer() {
+    const sampleRate = 8000;
+    const durationSec = 0.35;
+    const totalSamples = Math.floor(sampleRate * durationSec);
+    const muLawBuffer = Buffer.alloc(totalSamples);
+    const gain = 0.28;
+
+    for (let i = 0; i < totalSamples; i++) {
+        const t = i / sampleRate;
+        const freq = 210 - (40 * (t / durationSec));
+        const env = Math.sin(Math.PI * (t / durationSec));
+        const s1 = Math.sin(2 * Math.PI * freq * t);
+        const s2 = 0.3 * Math.sin(2 * Math.PI * (freq * 2) * t);
+        const pcmSample = Math.round((s1 + s2) * 0.5 * gain * env * 32767);
+        muLawBuffer[i] = encodeMuLaw(pcmSample);
+    }
+    return muLawBuffer;
+}
+
+function generateHaanBackchannelBuffer() {
+    const sampleRate = 8000;
+    const durationSec = 0.30; // 300ms "haan"
+    const totalSamples = Math.floor(sampleRate * durationSec);
+    const muLawBuffer = Buffer.alloc(totalSamples);
+    const gain = 0.28;
+
+    for (let i = 0; i < totalSamples; i++) {
+        const t = i / sampleRate;
+        const freq = 250 - (30 * (t / durationSec));
+        const env = Math.sin(Math.PI * (t / durationSec));
+        const s1 = Math.sin(2 * Math.PI * freq * t);
+        const s2 = 0.4 * Math.sin(2 * Math.PI * (freq * 2) * t);
+        const pcmSample = Math.round((s1 + s2) * 0.5 * gain * env * 32767);
+        muLawBuffer[i] = encodeMuLaw(pcmSample);
+    }
+    return muLawBuffer;
+}
+
+const GLOBAL_AHAAN_BUFFER = generateAhaanBackchannelBuffer();
+const GLOBAL_HMM_BUFFER = generateHmmBackchannelBuffer();
+const GLOBAL_HAAN_BUFFER = generateHaanBackchannelBuffer();
+const GLOBAL_BACKCHANNEL_POOL = [GLOBAL_AHAAN_BUFFER, GLOBAL_HMM_BUFFER, GLOBAL_HAAN_BUFFER];
+
+// Twilio Media Stream Packet Streamer (Streams mu-law buffers in strict 160-byte 20ms frames to prevent Twilio frame drops)
+function playBackchannelToTwilio(muLawBuffer, wsConn, streamSid) {
+    if (!wsConn || wsConn.readyState !== ws.OPEN || !streamSid) return;
+    const chunkSize = 160; // 20ms mu-law chunk size required by Twilio
+    let offset = 0;
+    const interval = setInterval(() => {
+        if (offset >= muLawBuffer.length || wsConn.readyState !== ws.OPEN) {
+            clearInterval(interval);
+            return;
+        }
+        const chunk = muLawBuffer.subarray(offset, offset + chunkSize);
+        offset += chunkSize;
+        wsConn.send(JSON.stringify({
+            event: 'media',
+            streamSid: streamSid,
+            media: { payload: chunk.toString('base64') }
+        }));
+    }, 20);
+}
+
+// Audio Signal Processing & Noise-Suppressed Stream Processor
+function calculateRMS(pcm16Array) {
+    let sumSquare = 0;
+    for (let i = 0; i < pcm16Array.length; i++) {
+        sumSquare += pcm16Array[i] * pcm16Array[i];
+    }
+    return Math.sqrt(sumSquare / pcm16Array.length);
+}
+
+class NoiseSuppressedAudioProcessor {
+    constructor(options = {}) {
+        this.noiseThreshold = options.noiseThreshold || 380; // RMS noise floor threshold
+        this.bargeInThreshold = options.bargeInThreshold || 1800; // RMS needed for barge-in during AI playback
+        this.isAiSpeaking = false;
+        this.aiSpeakingTimeout = null;
+        this.userSpeechDurationMs = 0;
+        this.lastBackchannelTime = 0;
+    }
+
+    markAiSpeaking(durationMs = 1200) {
+        this.isAiSpeaking = true;
+        this.userSpeechDurationMs = 0;
+        if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
+        this.aiSpeakingTimeout = setTimeout(() => {
+            this.isAiSpeaking = false;
+        }, durationMs);
+    }
+
+    processFrame(pcm16Chunk) {
+        const rms = calculateRMS(pcm16Chunk);
+        let shouldBackchannel = false;
+
+        // If AI is currently outputting voice to caller, filter out mic noise completely unless loud barge-in
+        if (this.isAiSpeaking) {
+            this.userSpeechDurationMs = 0;
+            if (rms < this.bargeInThreshold) {
+                return { pcmOutput: new Int16Array(pcm16Chunk.length).fill(0), rms, isVoice: false, shouldBackchannel: false };
+            } else {
+                this.isAiSpeaking = false;
+                if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
+            }
+        }
+
+        if (rms < this.noiseThreshold) {
+            this.userSpeechDurationMs = 0;
+            // Replace room noise/static/hum with pure zero silence
+            return { pcmOutput: new Int16Array(pcm16Chunk.length).fill(0), rms, isVoice: false, shouldBackchannel: false };
+        } else {
+            // Active human voice detected! Pass raw audio frame
+            this.userSpeechDurationMs += 20; // 20ms frame
+            const now = Date.now();
+            // Trigger mid-speech backchannel at 1.0s into continuous user speech
+            if (this.userSpeechDurationMs >= 1000 && (now - this.lastBackchannelTime > 2800)) {
+                this.lastBackchannelTime = now;
+                this.userSpeechDurationMs = 0;
+                shouldBackchannel = true;
+            }
+            return { pcmOutput: pcm16Chunk, rms, isVoice: true, shouldBackchannel };
+        }
+    }
+}
+
+
+
+
+
+
 // WSS Handlers
 wss.on('connection', (wsConnection) => {
     console.log('[BRIDGE] New WebSocket connection request from Twilio.');
@@ -131,6 +371,12 @@ wss.on('connection', (wsConnection) => {
     let greetingPlayed = false;
     let voiceName = 'Aoede';
 
+    const audioProcessor = new NoiseSuppressedAudioProcessor();
+    let ringbackInterval = null;
+    let ringbackOffset = 0;
+    let geminiGreetingStarted = false;
+
+
     // Connection health check (heartbeat to prevent lingering ghost connections)
     let isAlive = true;
     wsConnection.on('pong', () => { isAlive = true; });
@@ -139,6 +385,7 @@ wss.on('connection', (wsConnection) => {
         if (!isAlive) {
             console.log('[BRIDGE] Twilio WS connection timed out. Closing...');
             clearInterval(pingInterval);
+            if (ringbackInterval) clearInterval(ringbackInterval);
             wsConnection.terminate();
             if (geminiSocket && geminiSocket.readyState === ws.OPEN) {
                 geminiSocket.close();
@@ -155,48 +402,46 @@ wss.on('connection', (wsConnection) => {
     let audioBufferList = [];
     let audioBufferSamples = 0;
 
-    function sendMediaToGemini(payload) {
+    function flushAudioBufferToGemini() {
+        if (audioBufferSamples === 0 || !geminiSocket || geminiSocket.readyState !== ws.OPEN) return;
         try {
-            const muLawBytes = Buffer.from(payload, 'base64');
-            const pcm8 = new Int16Array(muLawBytes.length);
-            for (let i = 0; i < muLawBytes.length; i++) {
-                pcm8[i] = decodeMuLaw(muLawBytes[i]);
+            const combinedPcm = new Int16Array(audioBufferSamples);
+            let offset = 0;
+            for (const chunk of audioBufferList) {
+                combinedPcm.set(chunk, offset);
+                offset += chunk.length;
+            }
+            audioBufferList = [];
+            audioBufferSamples = 0;
+
+            const outBuffer = Buffer.alloc(combinedPcm.length * 2);
+            for (let i = 0; i < combinedPcm.length; i++) {
+                outBuffer.writeInt16LE(combinedPcm[i], i * 2);
             }
 
-            // Upsample to 16kHz
-            const pcm16 = upsample8To16(pcm8);
+            geminiSocket.send(JSON.stringify({
+                realtimeInput: {
+                    audio: {
+                        mimeType: "audio/pcm;rate=16000",
+                        data: outBuffer.toString('base64')
+                    }
+                }
+            }));
+        } catch (err) {
+            console.error('[BRIDGE] Error flushing media to Gemini:', err);
+        }
+    }
+
+    function sendPcmChunkToGemini(pcm16) {
+        try {
             audioBufferList.push(pcm16);
             audioBufferSamples += pcm16.length;
 
-            // Batch ~80ms of audio (1280 samples at 16kHz) to reduce JSON serialization and WebSocket frame overhead by 75%
             if (audioBufferSamples >= 1280) {
-                const combinedPcm = new Int16Array(audioBufferSamples);
-                let offset = 0;
-                for (const chunk of audioBufferList) {
-                    combinedPcm.set(chunk, offset);
-                    offset += chunk.length;
-                }
-                audioBufferList = [];
-                audioBufferSamples = 0;
-
-                const outBuffer = Buffer.alloc(combinedPcm.length * 2);
-                for (let i = 0; i < combinedPcm.length; i++) {
-                    outBuffer.writeInt16LE(combinedPcm[i], i * 2);
-                }
-
-                if (geminiSocket && geminiSocket.readyState === ws.OPEN) {
-                    geminiSocket.send(JSON.stringify({
-                        realtimeInput: {
-                            audio: {
-                                mimeType: "audio/pcm;rate=16000",
-                                data: outBuffer.toString('base64')
-                            }
-                        }
-                    }));
-                }
+                flushAudioBufferToGemini();
             }
         } catch (err) {
-            console.error('[BRIDGE] Error sending media to Gemini:', err);
+            console.error('[BRIDGE] Error queueing media to Gemini:', err);
         }
     }
 
@@ -222,6 +467,28 @@ wss.on('connection', (wsConnection) => {
                     return;
                 }
 
+                // Start instant phone ringback tone stream to caller while Gemini WS setup takes place
+                if (!ringbackInterval) {
+                    console.log('[BRIDGE] Playing instant phone ringback tone while connecting to Gemini...');
+                    ringbackInterval = setInterval(() => {
+                        if (wsConnection.readyState === ws.OPEN && twilioStreamSid && !geminiGreetingStarted) {
+                            const chunk = GLOBAL_RINGBACK_BUFFER.subarray(ringbackOffset, ringbackOffset + 160);
+                            ringbackOffset += 160;
+                            if (ringbackOffset >= GLOBAL_RINGBACK_BUFFER.length) ringbackOffset = 0;
+                            wsConnection.send(JSON.stringify({
+                                event: 'media',
+                                streamSid: twilioStreamSid,
+                                media: { payload: chunk.toString('base64') }
+                            }));
+                        } else if (geminiGreetingStarted && ringbackInterval) {
+                            clearInterval(ringbackInterval);
+                            ringbackInterval = null;
+                            console.log('[BRIDGE] Ringback tone stopped. AI greeting voice output took over.');
+                        }
+                    }, 20);
+                }
+
+
                 // 1. Fetch details from Supabase and connect to Gemini in parallel
                 let systemInstruction = 'You are a helpful representative. Focus on booking an appointment.';
                 let greetingMessage = 'Hello, how are you?';
@@ -242,21 +509,34 @@ wss.on('connection', (wsConnection) => {
                     console.error('[BRIDGE] Failed to clear stale voice call fields:', dbClearErr);
                 }
 
-                const campaignPromise = campaignId
-                    ? supabaseAdmin.from('voice_campaigns').select('*').eq('id', campaignId).maybeSingle()
-                    : Promise.resolve({ data: null });
-
-                const dbPromise = Promise.all([
-                    supabaseAdmin.from('profiles').select('*').eq('id', profileId).maybeSingle(),
-                    supabaseAdmin.from('leads').select('*').eq('id', leadId).maybeSingle(),
-                    supabaseAdmin.from('properties').select('*').eq('user_id', profileId).limit(5),
-                    campaignPromise,
-                    supabaseAdmin.from('flagged_questions').select('*').eq('lead_id', leadId).eq('resolved', true).not('answer', 'is', null)
-                ]);
-
+                let dbPromise;
+                let tempSocket;
                 const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-                console.log('[BRIDGE] Connecting to Gemini Live WebSocket concurrently...');
-                let tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${defaultApiKey || ''}`);
+
+                const prewarmed = prewarmedPool.get(leadId);
+                if (prewarmed && !prewarmed.used) {
+                    console.log(`[BRIDGE] Found PRE-WARMED session for lead ${leadId}! Reusing pre-fetched socket & DB context...`);
+                    prewarmed.used = true;
+                    prewarmedPool.delete(leadId);
+                    dbPromise = prewarmed.dbPromise;
+                    tempSocket = prewarmed.tempSocket;
+                } else {
+                    const campaignPromise = campaignId
+                        ? supabaseAdmin.from('voice_campaigns').select('*').eq('id', campaignId).maybeSingle()
+                        : Promise.resolve({ data: null });
+
+                    dbPromise = Promise.all([
+                        supabaseAdmin.from('profiles').select('*').eq('id', profileId).maybeSingle(),
+                        supabaseAdmin.from('leads').select('*').eq('id', leadId).maybeSingle(),
+                        supabaseAdmin.from('properties').select('*').eq('user_id', profileId).limit(5),
+                        campaignPromise,
+                        supabaseAdmin.from('flagged_questions').select('*').eq('lead_id', leadId).eq('resolved', true).not('answer', 'is', null)
+                    ]);
+
+                    console.log('[BRIDGE] Connecting to Gemini Live WebSocket concurrently...');
+                    tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${defaultApiKey || ''}`);
+                }
+
 
                 let profile = null;
                 let lead = null;
@@ -489,6 +769,8 @@ CRITICAL RULES (NATURAL HELPFUL AGENT & CLOSED-WORLD GROUNDING):
    - Then WAIT silently for the human prospect to press answer and speak before resuming your normal conversation.
 10. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear an automated machine prompt to leave a message after the beep, trigger "end_call" to hang up.
 11. AD & PRODUCT SPECIFICITY RULE: When the prospect asks "Aap kiske regarding call kar rahe ho?", "Kiska call hai?", or "What is this call about?", state the specific product clearly: "Main ${companyName} se ${targetProduct || 'hamaare project'} ki details aur consultation ke regarding call kar rahi hoon."
+12. NATURAL BACKCHANNELING & HUMAN FILLERS: You MUST naturally use short Hinglish backchannels such as "Hmm", "Haan", "Ahaan", "Ji", "Hmm-mm" to acknowledge the lead while listening or at the start of your response turns (e.g., "Hmm, right", "Ahaan, samjha", "Haan ji"). This makes you sound exceptionally attentive, empathetic, and human.
+
 
 ${sourceInstructions}
 ${resolvedQuestionsInstruction}
@@ -614,6 +896,17 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
 
                         // 1. Handle audio chunks from Gemini output (24kHz PCM)
                         if (serverMsg.serverContent?.modelTurn?.parts) {
+                            if (!geminiGreetingStarted) {
+                                geminiGreetingStarted = true;
+                                if (ringbackInterval) {
+                                    clearInterval(ringbackInterval);
+                                    ringbackInterval = null;
+                                    console.log('[BRIDGE] Gemini AI audio output started. Ringback tone stopped.');
+                                }
+                            }
+                            audioProcessor.markAiSpeaking(1200);
+
+
                             for (const part of serverMsg.serverContent.modelTurn.parts) {
                                 // Record agent text transcription
                                 if (part.text) {
@@ -745,12 +1038,36 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
             if (data.event === 'media') {
                 const payload = data.media.payload;
                 if (geminiReady && geminiSocket && geminiSocket.readyState === ws.OPEN) {
-                    sendMediaToGemini(payload);
+                    const muLawBytes = Buffer.from(payload, 'base64');
+                    const pcm8 = new Int16Array(muLawBytes.length);
+                    for (let i = 0; i < muLawBytes.length; i++) {
+                        pcm8[i] = decodeMuLaw(muLawBytes[i]);
+                    }
+                    const pcm16 = upsample8To16(pcm8);
+                    const procRes = audioProcessor.processFrame(pcm16);
+
+                    // Continuously send noise-suppressed 16kHz PCM audio stream to Gemini
+                    sendPcmChunkToGemini(procRes.pcmOutput);
+
+                    // If caller speaks continuously for >1.0s, stream a real-time 160-byte chunked vocal backchannel ("ahaan"/"hmm"/"haan") into caller's ear while they talk
+                    if (procRes.shouldBackchannel && wsConnection.readyState === ws.OPEN && twilioStreamSid) {
+                        const randomBuf = GLOBAL_BACKCHANNEL_POOL[Math.floor(Math.random() * GLOBAL_BACKCHANNEL_POOL.length)];
+                        console.log('[BRIDGE BACKCHANNEL] Playing real-time chunked mid-speech vocal backchannel ("ahaan"/"hmm"/"haan") to Twilio...');
+                        playBackchannelToTwilio(randomBuf, wsConnection, twilioStreamSid);
+                    }
+
+
+
                 }
             }
 
+
             if (data.event === 'stop') {
                 console.log('[BRIDGE] Twilio call stopped.');
+                if (ringbackInterval) {
+                    clearInterval(ringbackInterval);
+                    ringbackInterval = null;
+                }
                 wsConnection.close();
             }
         } catch (err) {
@@ -760,7 +1077,12 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
 
      wsConnection.on('close', async (code, reason) => {
         clearInterval(pingInterval);
+        if (ringbackInterval) {
+            clearInterval(ringbackInterval);
+            ringbackInterval = null;
+        }
         console.log(`[BRIDGE] Twilio Stream closed. Code: ${code}, Reason: ${reason ? reason.toString() : 'none'}. Performing cleanups and summary logs...`);
+
         if (geminiSocket && geminiSocket.readyState === ws.OPEN) {
             geminiSocket.close();
         }
