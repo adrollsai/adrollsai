@@ -19,23 +19,7 @@ export async function POST(request: Request) {
     const baseUrl = origin.replace(/\/$/, '')
     const redirectTo = `${baseUrl}/auth/callback?next=/auth/reset-password`
 
-    // Generate link using admin client (bypasses browser PKCE code_verifier requirement)
-    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'recovery',
-      email,
-      options: {
-        redirectTo
-      }
-    })
-
-    if (error) {
-      console.error('[FORGOT PASSWORD API] Error generating link:', error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 400 })
-    }
-
-    console.log('[FORGOT PASSWORD API] Generated action link:', data.properties?.action_link)
-
-    // Alternatively, use resetPasswordForEmail on admin client to deliver email directly
+    // Send the password reset email via admin client (bypasses browser PKCE requirement)
     const { error: resetErr } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
       redirectTo
     })
