@@ -166,7 +166,7 @@ export async function POST(request: Request) {
       .from('profiles')
       .select('role, agency_id, parent_id')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
     let authorized = false
 
@@ -187,7 +187,8 @@ export async function POST(request: Request) {
             .select('id')
             .eq('id', targetUserId)
             .eq('agency_id', profile?.agency_id || user.id)
-            .single()
+            .maybeSingle()
+
           
           if (subAccount) {
             authorized = true
@@ -224,7 +225,7 @@ export async function POST(request: Request) {
           .from('profiles')
           .select('character_url, character_description')
           .eq('id', targetUserId)
-          .single()
+          .maybeSingle()
 
         if (!existingProfile || existingProfile.character_url !== updates.character_url) {
           console.log(`[Profile Update API] Character URL changed from "${existingProfile?.character_url || ''}" to "${updates.character_url}". Starting processing and Gemini Vision analysis...`)
@@ -285,7 +286,8 @@ export async function POST(request: Request) {
           .from('profiles')
           .select('avatar_url, avatar_description')
           .eq('id', targetUserId)
-          .single()
+          .maybeSingle()
+
 
         if (!existingProfile || existingProfile.avatar_url !== updates.avatar_url) {
           console.log(`[Profile Update API] Avatar URL changed from "${existingProfile?.avatar_url || ''}" to "${updates.avatar_url}". Starting Gemini Vision analysis...`)
@@ -330,10 +332,9 @@ export async function POST(request: Request) {
 
     let { data, error } = await supabaseAdmin
       .from('profiles')
-      .update(allowedUpdates)
-      .eq('id', targetUserId)
+      .upsert({ id: targetUserId, ...allowedUpdates }, { onConflict: 'id' })
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) {
       // Self-healing database update retry: if missing new avatar columns, retry without them
@@ -350,7 +351,7 @@ export async function POST(request: Request) {
             .from('profiles')
             .select('*')
             .eq('id', targetUserId)
-            .single()
+            .maybeSingle()
 
           return NextResponse.json({ 
             success: true, 
@@ -361,10 +362,9 @@ export async function POST(request: Request) {
 
         const retryResult = await supabaseAdmin
           .from('profiles')
-          .update(healedUpdates)
-          .eq('id', targetUserId)
+          .upsert({ id: targetUserId, ...healedUpdates }, { onConflict: 'id' })
           .select()
-          .single()
+          .maybeSingle()
 
         if (!retryResult.error) {
           return NextResponse.json({ 
@@ -375,6 +375,7 @@ export async function POST(request: Request) {
         }
         error = retryResult.error
       }
+
 
       console.error("[Profile Update API] Database update error:", error)
       return NextResponse.json({ error: error.message }, { status: 500 })
