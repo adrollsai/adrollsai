@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { Lock, Loader2, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Lock, Loader2, Sparkles, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
 
 export default function ResetPasswordPage() {
@@ -11,44 +11,91 @@ export default function ResetPasswordPage() {
   const supabase = createClient()
   
   const [newPassword, setNewPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [checkingLink, setCheckingLink] = useState(true)
   const [linkError, setLinkError] = useState<string | null>(null)
 
   useEffect(() => {
-    const checkAuthAndExchange = async () => {
+    let mounted = true
+
+    const initResetFlow = async () => {
       const urlParams = new URLSearchParams(window.location.search)
       const code = urlParams.get('code')
-      
-      try {
-        // 1. Check if user is already authenticated (e.g. redirected from auth/callback route)
-        const { data: { session } } = await supabase.auth.getSession()
-        
-        if (session) {
-          console.log('User is already authenticated via session.')
+      const error = urlParams.get('error_description') || urlParams.get('error')
+
+      if (error) {
+        if (mounted) {
+          setLinkError(decodeURIComponent(error))
           setCheckingLink(false)
+        }
+        return
+      }
+
+      // 1. Check existing session (set via /auth/callback route or cookies)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        if (mounted) {
+          setCheckingLink(false)
+        }
+        return
+      }
+
+      // 2. If code parameter is present in URL, exchange for session directly
+      if (code) {
+        try {
+          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+          if (exchangeError) throw exchangeError
+          if (data?.session && mounted) {
+            setCheckingLink(false)
+            return
+          }
+        } catch (err: any) {
+          console.error('Error exchanging code:', err)
+          if (mounted) {
+            setLinkError('The reset link is invalid or has expired. Please request a new password reset link.')
+            setCheckingLink(false)
+          }
           return
         }
+      }
 
-        // 2. If no active session, try to exchange the code parameter
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code)
-          if (error) throw error
-          console.log('Successfully exchanged reset code for session.')
-        } else {
-          // No active session and no code in URL means they visited directly without a link
-          setLinkError('No active session or reset code found. Please request a new link.')
+      // 3. Listen for Auth State Changes (e.g. hash fragments or PASSWORD_RECOVERY events)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (!mounted) return
+        if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || session) {
+          setCheckingLink(false)
+          setLinkError(null)
         }
-      } catch (error: any) {
-        console.error('Error during password reset initialization:', error)
-        setLinkError('The reset link is invalid or has expired. Please request a new link.')
-      } finally {
-        setCheckingLink(false)
+      })
+
+      // 4. Bounded timeout fallback
+      const timeout = setTimeout(() => {
+        if (mounted && checkingLink) {
+          supabase.auth.getSession().then(({ data: { session: s } }) => {
+            if (!mounted) return
+            if (s) {
+              setCheckingLink(false)
+            } else {
+              setLinkError('No active session or valid reset code found. Please request a new link.')
+              setCheckingLink(false)
+            }
+          })
+        }
+      }, 2500)
+
+      return () => {
+        subscription.unsubscribe()
+        clearTimeout(timeout)
       }
     }
 
-    checkAuthAndExchange()
+    initResetFlow()
+
+    return () => {
+      mounted = false
+    }
   }, [supabase])
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -101,7 +148,7 @@ export default function ResetPasswordPage() {
                     <p className="text-sm text-slate-500 font-medium leading-relaxed mb-6">{linkError}</p>
                     <button 
                        onClick={() => router.push('/login')}
-                       className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-md transition-all"
+                       className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-md transition-all cursor-pointer"
                     >
                         Go to Login Page
                     </button>
@@ -115,7 +162,7 @@ export default function ResetPasswordPage() {
                    <p className="text-sm text-slate-500 font-medium leading-relaxed mb-6">Your password has been changed successfully. You can now access your dashboard.</p>
                    <button 
                        onClick={() => router.push('/dashboard')}
-                       className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-md transition-all"
+                       className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-md transition-all cursor-pointer"
                    >
                        Go to Dashboard
                    </button>
@@ -127,21 +174,29 @@ export default function ResetPasswordPage() {
                         <div className="relative">
                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                             <input 
-                                type="password" 
+                                type={showPassword ? "text" : "password"} 
                                 required
                                 minLength={6}
                                 value={newPassword}
                                 onChange={(e) => setNewPassword(e.target.value)}
-                                className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-4 pl-12 pr-4 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none border border-slate-200/60 transition-all" 
+                                className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-4 pl-12 pr-12 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none border border-slate-200/60 transition-all" 
                                 placeholder="Enter a strong password" 
                             />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 active:scale-90 transition-all p-1"
+                              aria-label={showPassword ? "Hide password" : "Show password"}
+                            >
+                              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
                         </div>
                     </div>
 
                     <button 
                         type="submit" 
                         disabled={loading || !newPassword}
-                        className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:scale-100 mt-2"
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:scale-100 mt-2 cursor-pointer"
                     >
                         {loading ? <Loader2 size={18} className="animate-spin" /> : null}
                         Update Password
