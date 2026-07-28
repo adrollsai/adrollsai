@@ -261,6 +261,34 @@ async function executeBroadcastImmediately(
     const businessName = profile.business_name || 'Adrolls Partner'
     const metaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`
 
+    // Fetch template details to get exact language and parameter count
+    let templateLanguageCode = 'en_US'
+    let templateVarCount = 0
+
+    try {
+        const wabaId = profile.whatsapp_waba_id
+        if (wabaId && accessToken) {
+            const tplRes = await fetch(`https://graph.facebook.com/v20.0/${wabaId}/message_templates?name=${templateName}`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            })
+            if (tplRes.ok) {
+                const tplData = await tplRes.json()
+                const foundTpl = (tplData.data || []).find((t: any) => t.name === templateName)
+                if (foundTpl) {
+                    if (foundTpl.language) templateLanguageCode = foundTpl.language
+                    const bodyComp = (foundTpl.components || []).find((c: any) => c.type === 'BODY')
+                    if (bodyComp && bodyComp.text) {
+                        const matches = bodyComp.text.match(/\{\{(\d+)\}\}/g) || []
+                        const parsed = matches.map((m: string) => parseInt(m.replace(/\D/g, '')))
+                        templateVarCount = new Set(parsed).size
+                    }
+                }
+            }
+        }
+    } catch (tplErr) {
+        console.error('[BROADCAST EXECUTION] Error fetching template info from Meta:', tplErr)
+    }
+
     for (const r of recipients) {
         const lead = leads.find(l => l.id === r.lead_id)
         if (!lead) continue
@@ -275,13 +303,14 @@ async function executeBroadcastImmediately(
         const property = (properties || []).find(p => p.id === lead.property_id)
         const propertyTitle = property ? property.title : 'Premium Listings'
 
-        // Map template variables dynamically based on user UI selection
-        const varKeys = Object.keys(variableMappings || {}).sort((a, b) => parseInt(a) - parseInt(b))
-        
+        // Map template variables dynamically based on user UI selection or exact template variable count
         let parameters: any[] = []
-        if (varKeys.length > 0) {
-            parameters = varKeys.map(k => {
-                const mappedField = variableMappings![k]
+        
+        if (templateVarCount > 0) {
+            for (let i = 1; i <= templateVarCount; i++) {
+                const k = i.toString()
+                const mappedField = variableMappings?.[k] || (i === 1 ? 'name' : i === 2 ? 'property_title' : 'business_name')
+                
                 let val = ''
                 if (mappedField === 'name') val = lead.name || 'Valued Customer'
                 else if (mappedField === 'phone') val = lead.phone || ''
@@ -290,35 +319,49 @@ async function executeBroadcastImmediately(
                 else if (mappedField === 'business_name') val = businessName
                 else if (mappedField === 'csv_audience') val = lead.csv_audience || ''
                 else if (mappedField === 'pipeline_stage') val = lead.pipeline_stage || ''
-                else val = mappedField || 'Valued Customer' // Custom text
+                else val = mappedField || 'Valued Customer'
+                
+                parameters.push({ type: 'text', text: val })
+            }
+        } else if (variableMappings && Object.keys(variableMappings).length > 0) {
+            const varKeys = Object.keys(variableMappings).sort((a, b) => parseInt(a) - parseInt(b))
+            parameters = varKeys.map(k => {
+                const mappedField = variableMappings[k]
+                let val = ''
+                if (mappedField === 'name') val = lead.name || 'Valued Customer'
+                else if (mappedField === 'phone') val = lead.phone || ''
+                else if (mappedField === 'email') val = lead.email || ''
+                else if (mappedField === 'property_title') val = propertyTitle
+                else if (mappedField === 'business_name') val = businessName
+                else if (mappedField === 'csv_audience') val = lead.csv_audience || ''
+                else if (mappedField === 'pipeline_stage') val = lead.pipeline_stage || ''
+                else val = mappedField || 'Valued Customer'
                 
                 return { type: 'text', text: val }
             })
-        } else {
-            // Default fallback positional mapping
-            parameters = [
-                { type: 'text', text: lead.name || 'Valued Customer' },
-                { type: 'text', text: propertyTitle },
-                { type: 'text', text: businessName }
-            ]
         }
 
+        const templatePayload: any = {
+            name: templateName,
+            language: { code: templateLanguageCode }
+        }
+
+        if (parameters.length > 0) {
+            templatePayload.components = [
+                {
+                    type: 'body',
+                    parameters
+                }
+            ]
+        }
 
         const messagePayload = {
             messaging_product: 'whatsapp',
             to: cleanPhone,
             type: 'template',
-            template: {
-                name: templateName,
-                language: { code: 'en_US' },
-                components: [
-                    {
-                        type: 'body',
-                        parameters
-                    }
-                ]
-            }
+            template: templatePayload
         }
+
 
         try {
             const metaRes = await fetch(metaUrl, {
