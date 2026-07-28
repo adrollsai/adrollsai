@@ -109,7 +109,7 @@ export async function POST(req: Request) {
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
         const body = await req.json()
-        const { name, category, bodyText } = body
+        const { name, category, bodyText, buttons } = body
 
         if (!name || !category || !bodyText) {
             return NextResponse.json({ error: 'Missing required template configurations (name, category, bodyText)' }, { status: 400 })
@@ -163,6 +163,18 @@ export async function POST(req: Request) {
                 body_text: [examplesList]
             }
         }
+
+        // If Quick Reply buttons are specified, format and attach BUTTONS component
+        if (Array.isArray(buttons) && buttons.length > 0) {
+            templatePayload.components.push({
+                type: 'BUTTONS',
+                buttons: buttons.map((btnText: string) => ({
+                    type: 'QUICK_REPLY',
+                    text: typeof btnText === 'string' ? btnText.trim() : (btnText as any).text || 'Click Here'
+                }))
+            })
+        }
+
 
         const metaUrl = `https://graph.facebook.com/v20.0/${whatsappWabaId}/message_templates`
         const metaRes = await fetch(metaUrl, {
