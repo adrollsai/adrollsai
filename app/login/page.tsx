@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
+import { createBrowserClient } from '@supabase/ssr'
 import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight, CheckCircle2, ChevronLeft } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -58,7 +59,12 @@ export default function LoginPage() {
         router.push('/dashboard')
         
       } else if (mode === 'forgot_password') {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        const resetClient = createBrowserClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          { auth: { flowType: 'implicit' } }
+        )
+        const { error } = await resetClient.auth.resetPasswordForEmail(email, {
           redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
         })
         if (error) throw error
