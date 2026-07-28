@@ -83,11 +83,11 @@ export async function GET(request: Request) {
       if (Object.keys(updates).length > 0) {
           const { error: updateError } = await supabase
             .from('profiles')
-            .update(updates)
-            .eq('id', userId)
+            .upsert({ id: userId, ...updates }, { onConflict: 'id' })
           
           if (updateError) console.error("[AUTH CALLBACK] Profile update error:", updateError)
       }
+
       
       // Success! Redirect back to the requested page
       return NextResponse.redirect(`${baseUrl}${next}`)

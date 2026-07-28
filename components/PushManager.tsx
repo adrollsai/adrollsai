@@ -91,7 +91,7 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
           }
       }
 
-      // 2. Use existing active service worker or wait for ready status
+      // 2. Ensure active service worker registration
       let registration = await navigator.serviceWorker.getRegistration()
       if (!registration) {
         registration = await navigator.serviceWorker.register('/sw.js', {
@@ -110,39 +110,47 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
       }
       vapidKey = vapidKey.replace(/^['"]|['"]$/g, '').trim();
 
-      const sub = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey)
-      })
+      // Check if an existing subscription is already active
+      let sub = await registration.pushManager.getSubscription()
+      if (!sub) {
+        sub = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey)
+        })
+      }
 
       setSubscription(sub)
       setPermissionState('granted')
 
-      toast.success("Notifications Enabled!", {
-        description: "You are now subscribed to real-time updates."
-      })
-
-      // Sync with backend in background
-      fetch('/api/web-push/subscribe', {
+      // Sync with backend before confirming success to the user
+      const syncRes = await fetch('/api/web-push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subscription: sub, ownerId }),
-      }).catch(err => {
-        console.error('Failed to sync subscription with backend:', err)
+      })
+
+      if (!syncRes.ok) {
+        const syncData = await syncRes.json().catch(() => ({}))
+        throw new Error(syncData.error || 'Failed to save push subscription to backend')
+      }
+
+      toast.success("Notifications Enabled!", {
+        description: "You are now subscribed to real-time updates."
       })
 
     } catch (error: any) {
       console.error('Failed to subscribe:', error)
       if (Notification.permission === 'denied') {
           setPermissionState('denied')
-          toast.error("Permission Denied")
+          toast.error("Permission Denied", { description: "Please enable notifications in your browser settings." })
       } else {
-          toast.error("Failed to enable notifications.")
+          toast.error("Failed to enable notifications.", { description: error.message || "Push service error. Please try again." })
       }
     } finally {
         setLoading(false)
     }
   }
+
 
   async function triggerBackgroundTest() {
       setLoading(true)
