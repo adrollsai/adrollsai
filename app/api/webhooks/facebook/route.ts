@@ -186,8 +186,17 @@ export async function POST(request: Request) {
 
                         const fromPhone = message.from; 
                         const isInteractive = message.type === 'interactive';
-                        const buttonReplyId = isInteractive ? message.interactive?.button_reply?.id : null;
-                        const buttonReplyTitle = isInteractive ? message.interactive?.button_reply?.title : null;
+                        const isButton = message.type === 'button';
+                        const buttonReplyId = isInteractive 
+                          ? message.interactive?.button_reply?.id 
+                          : isButton 
+                          ? (message.button?.payload || message.button?.text) 
+                          : null;
+                        const buttonReplyTitle = isInteractive 
+                          ? message.interactive?.button_reply?.title 
+                          : isButton 
+                          ? (message.button?.text || message.button?.payload) 
+                          : null;
                         
                         // Handle media messages (image, video, document, audio, sticker)
                         const mediaTypes = ['image', 'video', 'document', 'audio', 'sticker'];
@@ -210,6 +219,7 @@ export async function POST(request: Request) {
                         }
 
                         const messageText = buttonReplyTitle || message.text?.body || mediaCaption || (isMediaMessage ? `[${message.type}]` : '');
+
                         
                         console.log(`💬 Received message from ${fromPhone}: "${messageText}"${isMediaMessage ? ` [media: ${message.type}]` : ''}`);
                         if (!messageText && !isMediaMessage) continue;
@@ -1342,6 +1352,57 @@ IMPORTANT RULES:
                                         }
                                     };
 
+                                    // Quick Reply & Interactive Button Click Action Handlers
+                                    const isViewPropertiesClick = buttonReplyId === 'view_properties' || /view properties|view property|view products|view product|view listing|explore properties/i.test(messageText);
+                                    if (isViewPropertiesClick) {
+                                        console.log(`[Flow] Lead ${cleanFrom} clicked "View Properties"! Sending product catalogue link.`);
+                                        const catalogueMsg = "Here are our featured property listings and projects! 🏢✨ Click the button below to view complete details:";
+                                        await sendWAMessage(catalogueMsg);
+                                        return;
+                                    }
+
+                                    const isInterestedClick = buttonReplyId === 'interested' || /interested|yes interested|looking for property|i am interested/i.test(messageText);
+                                    if (isInterestedClick) {
+                                        console.log(`[Flow] Lead ${cleanFrom} clicked "Interested"! Sending property options.`);
+                                        const responseText = "Awesome! 🎉 We have incredible residential & commercial investment opportunities available right now in top locations.\n\nWhich type of property are you interested in?\n1️⃣ Residential Apartments / Villas\n2️⃣ Commercial / Retail Spaces\n3️⃣ Residential / Commercial Plots\n4️⃣ Talk to a Property Specialist";
+                                        await sendWAMessage(responseText);
+                                        return;
+                                    }
+
+                                    const isNotInterestedClick = buttonReplyId === 'not_interested' || /not interested|not right now|no thanks|maybe later/i.test(messageText);
+                                    if (isNotInterestedClick) {
+                                        console.log(`[Flow] Lead ${cleanFrom} clicked "Not Right Now / Not Interested".`);
+                                        const responseText = "Thank you for letting us know! 🙏 We won't disturb you further. If your plans change, feel free to message us anytime.";
+                                        try {
+                                            const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
+                                            await fetch(metaUrl, {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Authorization': `Bearer ${ownerWaToken}`,
+                                                    'Content-Type': 'application/json'
+                                                },
+                                                body: JSON.stringify({
+                                                    messaging_product: 'whatsapp',
+                                                    recipient_type: 'individual',
+                                                    to: cleanFrom,
+                                                    type: 'text',
+                                                    text: { body: responseText }
+                                                })
+                                            });
+                                            await supabaseAdmin.from('whatsapp_messages').insert({
+                                                chat_id: chat.id,
+                                                direction: 'outbound',
+                                                message_text: responseText
+                                            });
+                                        } catch (err) {
+                                            console.error('[Flow] Error sending not interested response:', err);
+                                        }
+                                        return;
+                                    }
+
+                                    const isExpertClick = buttonReplyId === 'connect_expert' || /connect with expert|speak to expert|talk to expert|call expert/i.test(messageText);
+                                    const isButtonClick = isInteractive || isButton || isViewPropertiesClick || isInterestedClick || isNotInterestedClick || isExpertClick;
+
                                     // 3. FLOW STATE MACHINE
                                     // Check if AI Bot is PAUSED for human agent chat
                                     const chatFlowAnswers = chat.flow_answers || {};
@@ -1477,8 +1538,8 @@ IMPORTANT RULES:
                                         chat.flow_answers = { ...currentFlowAnswers, meta_ad_origin: metaAdOrigin };
                                     }
 
-                                    // STEP A: Name not yet provided — ask for name
-                                    if (!hasName) {
+                                    // STEP A: Name not yet provided — ask for name (unless responding to a button click)
+                                    if (!hasName && !isButtonClick) {
                                         // Check if we already asked for the name by looking at outbound messages (exclude templates)
                                         const { count: outboundCount } = await supabaseAdmin
                                             .from('whatsapp_messages')
