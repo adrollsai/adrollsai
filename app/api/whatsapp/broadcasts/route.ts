@@ -91,7 +91,8 @@ export async function POST(req: Request) {
                 recipient_property_id: recipientPropertyId || null,
                 recipient_csv_audience: recipientCsvAudience || null,
                 scheduled_at: scheduledAt || null,
-                status: scheduledAt ? 'pending' : 'processing'
+                status: scheduledAt ? 'pending' : 'processing',
+                created_at: new Date().toISOString()
             })
             .select()
             .single()
@@ -106,7 +107,8 @@ export async function POST(req: Request) {
                     recipient_stage: recipientStage || 'All',
                     recipient_property_id: recipientPropertyId || null,
                     scheduled_at: scheduledAt || null,
-                    status: scheduledAt ? 'pending' : 'processing'
+                    status: scheduledAt ? 'pending' : 'processing',
+                    created_at: new Date().toISOString()
                 })
                 .select()
                 .single()
@@ -394,6 +396,62 @@ async function executeBroadcastImmediately(
                     })
                     .eq('broadcast_id', broadcastId)
                     .eq('lead_id', r.lead_id)
+
+                // Log outbound chat & message in WhatsApp CRM tab
+                try {
+                    const recipientName = lead.name || 'Prospect'
+                    const summaryText = `Sent Template: ${templateName}`
+
+                    let { data: chat } = await supabaseAdmin
+                        .from('whatsapp_chats')
+                        .select('id')
+                        .eq('user_id', userId)
+                        .eq('recipient_phone', cleanPhone)
+                        .maybeSingle()
+
+                    if (!chat) {
+                        const { data: newChat } = await supabaseAdmin
+                            .from('whatsapp_chats')
+                            .insert({
+                                user_id: userId,
+                                recipient_phone: cleanPhone,
+                                recipient_name: recipientName,
+                                lead_id: lead.id,
+                                last_message_text: summaryText,
+                                unread_count: 0,
+                                flow_answers: {},
+                                flow_completed: false,
+                                updated_at: new Date().toISOString()
+                            })
+                            .select('id')
+                            .maybeSingle()
+
+                        chat = newChat
+                    } else {
+                        await supabaseAdmin
+                            .from('whatsapp_chats')
+                            .update({
+                                last_message_text: summaryText,
+                                lead_id: lead.id,
+                                recipient_name: recipientName,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', chat.id)
+                    }
+
+                    if (chat) {
+                        await supabaseAdmin
+                            .from('whatsapp_messages')
+                            .insert({
+                                chat_id: chat.id,
+                                direction: 'outbound',
+                                message_text: summaryText,
+                                created_at: new Date().toISOString()
+                            })
+                    }
+                } catch (chatErr) {
+                    console.error('[BROADCAST EXECUTION] Error syncing chat message:', chatErr)
+                }
             }
         } catch (sendErr: any) {
             console.error(`[BROADCAST EXECUTION] Exception sending to phone ${cleanPhone}:`, sendErr)
