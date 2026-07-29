@@ -38,7 +38,14 @@ export default function VideoEditorPage() {
         return url
     }
 
+    const getBrowserMediaUrl = (url: string) => {
+        const clean = fixR2Url(url)
+        if (!clean) return ''
+        return `/api/fetch-image?url=${encodeURIComponent(clean)}`
+    }
+
     const [loading, setLoading] = useState(true)
+    const [videoReady, setVideoReady] = useState(false)
     const [asset, setAsset] = useState<any>(null)
     const [captions, setCaptions] = useState<Caption[]>([])
     const [effects, setEffects] = useState<Effect[]>([])
@@ -54,6 +61,7 @@ export default function VideoEditorPage() {
     useEffect(() => {
         const fetchAssetAndProfile = async () => {
             setLoading(true)
+            setVideoReady(false)
             
             // 1. Fetch Asset
             const { data: assetData, error: assetError } = await supabase
@@ -69,7 +77,7 @@ export default function VideoEditorPage() {
             }
 
             setAsset(assetData)
-            if (assetData.metadata?.captions) {
+            if (assetData.metadata?.captions && Array.isArray(assetData.metadata.captions)) {
                 setCaptions(assetData.metadata.captions)
             }
             if (assetData.metadata?.effects) {
@@ -87,15 +95,26 @@ export default function VideoEditorPage() {
                 setProfile(profileData)
             }
 
-            // 3. Load Video Duration dynamically in browser
+            // 3. Load Video Duration dynamically in browser via CORS proxy
             if (assetData.url) {
+                const proxyUrl = getBrowserMediaUrl(assetData.url)
                 const video = document.createElement('video')
-                video.src = fixR2Url(assetData.url)
-                video.addEventListener('loadedmetadata', () => {
+                video.crossOrigin = 'anonymous'
+                video.preload = 'auto'
+
+                const handleDuration = () => {
                     const videoDuration = video.duration
-                    // add 4 seconds for the outro (4 * 30fps = 120 frames)
-                    setDurationInFrames(Math.ceil(videoDuration * 30) + 120)
-                })
+                    if (videoDuration && !isNaN(videoDuration) && isFinite(videoDuration) && videoDuration > 0) {
+                        const calculatedFrames = Math.ceil(videoDuration * 30) + 120
+                        setDurationInFrames(calculatedFrames)
+                        setVideoReady(true)
+                    }
+                }
+
+                video.onloadedmetadata = handleDuration
+                video.onloadeddata = handleDuration
+                video.oncanplay = handleDuration
+                video.src = proxyUrl
             }
 
             setLoading(false)
@@ -113,7 +132,7 @@ export default function VideoEditorPage() {
                 body: JSON.stringify({ videoUrl: fixR2Url(asset.url), assetId: asset.id })
             })
             const data = await res.json()
-            if (data.success) {
+            if (data.success && data.captions) {
                 setCaptions(data.captions)
                 setEffects(data.effects || [])
                 toast.success("Captions generated successfully!")
@@ -168,6 +187,26 @@ export default function VideoEditorPage() {
         )
     }
 
+    if (asset?.status === 'Rendering' || asset?.status === 'Processing') {
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-white p-6 text-center space-y-4">
+                <div className="w-16 h-16 bg-blue-600/10 border border-blue-500/20 rounded-2xl flex items-center justify-center text-blue-400">
+                    <Loader2 className="w-8 h-8 animate-spin" />
+                </div>
+                <h2 className="text-2xl font-black">Video Processing in Progress</h2>
+                <p className="text-sm text-slate-400 max-w-md leading-relaxed">
+                    Your video is currently being generated or rendered in the cloud. Please wait a few moments for processing to complete.
+                </p>
+                <button
+                    onClick={() => window.location.reload()}
+                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-600/20"
+                >
+                    Check Status
+                </button>
+            </div>
+        )
+    }
+
     return (
         <div className="min-h-screen bg-slate-950 text-white flex flex-col md:flex-row overflow-y-auto">
 
@@ -182,6 +221,13 @@ export default function VideoEditorPage() {
                 </button>
 
                 <div className="w-full max-w-[400px] aspect-[9/16] bg-black rounded-[2rem] overflow-hidden shadow-2xl shadow-blue-500/10 border border-white/10 relative group">
+                    {!videoReady && (
+                        <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center z-30 space-y-3">
+                            <Loader2 size={36} className="text-blue-500 animate-spin" />
+                            <p className="font-extrabold text-sm text-white">Loading & Pre-buffering Video...</p>
+                            <p className="text-xs text-slate-400 font-medium">Extracting video metadata and timeline</p>
+                        </div>
+                    )}
                     <Player
                         ref={playerRef}
                         component={CaptionsComposition}
@@ -192,7 +238,7 @@ export default function VideoEditorPage() {
                         controls
                         style={{ width: '100%', height: '100%' }}
                         inputProps={{
-                            videoUrl: fixR2Url(asset.url),
+                            videoUrl: getBrowserMediaUrl(asset.url),
                             captions: captions,
                             effects: effects,
                             theme: SUBTITLE_THEMES[selectedTheme],

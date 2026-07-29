@@ -138,7 +138,7 @@ export async function sendAdminMultiChannelNotification({
       }
     }
 
-    // 2. WhatsApp Free-form Text Message to Admin
+    // 2. WhatsApp Notification to Admin (Template-first with text fallback)
     if (!skipWhatsApp) {
       try {
         const rawPhone = ownerProfile.whatsapp_personal_number || ownerProfile.contact_number || ownerProfile.whatsapp_phone_number;
@@ -152,27 +152,96 @@ export async function sendAdminMultiChannelNotification({
           const phoneId = ownerProfile.whatsapp_phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID;
 
           if (cleanPhone && token && phoneId) {
-            const waText = `${title}\n\n${body}`;
             const metaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
-            const waRes = await fetch(metaUrl, {
+            
+            let payload: any = null;
+            if (type === 'meeting_booked' || title.toLowerCase().includes('meeting') || title.toLowerCase().includes('booked')) {
+              payload = {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: cleanPhone,
+                type: 'template',
+                template: {
+                  name: 'booking_notification_admin',
+                  language: { code: 'en_US' },
+                  components: [
+                    {
+                      type: 'body',
+                      parameters: [
+                        { type: 'text', text: title || 'Lead Booking' },
+                        { type: 'text', text: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) },
+                        { type: 'text', text: ownerProfile.business_name || 'Nobogent' },
+                        { type: 'text', text: cleanPhone },
+                        { type: 'text', text: ownerProfile.email || 'N/A' }
+                      ]
+                    }
+                  ]
+                }
+              };
+            } else if (type === 'expert_escalation' || title.toLowerCase().includes('expert')) {
+              payload = {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: cleanPhone,
+                type: 'template',
+                template: {
+                  name: 'expert_connection_notification',
+                  language: { code: 'en_US' },
+                  components: [
+                    {
+                      type: 'body',
+                      parameters: [
+                        { type: 'text', text: title || 'Lead Request' },
+                        { type: 'text', text: cleanPhone }
+                      ]
+                    }
+                  ]
+                }
+              };
+            } else {
+              payload = {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: cleanPhone,
+                type: 'text',
+                text: { body: `${title}\n\n${body}` }
+              };
+            }
+
+            let waRes = await fetch(metaUrl, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
               },
-              body: JSON.stringify({
+              body: JSON.stringify(payload)
+            });
+            let waData = await waRes.json();
+
+            if (!waRes.ok && payload.type === 'template') {
+              console.warn(`[MULTI-CHANNEL WA TEMPLATE FALLBACK] Template failed (${waData.error?.message}), falling back to text:`, waData);
+              const textPayload = {
                 messaging_product: 'whatsapp',
                 recipient_type: 'individual',
                 to: cleanPhone,
                 type: 'text',
-                text: { body: waText }
-              })
-            });
-            const waData = await waRes.json();
+                text: { body: `${title}\n\n${body}` }
+              };
+              waRes = await fetch(metaUrl, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(textPayload)
+              });
+              waData = await waRes.json();
+            }
+
             if (!waRes.ok) {
               console.error(`[MULTI-CHANNEL WA ERROR] to ${cleanPhone}:`, waData);
             } else {
-              console.log(`[MULTI-CHANNEL WA SUCCESS] Free-form text sent to admin: ${cleanPhone}`);
+              console.log(`[MULTI-CHANNEL WA SUCCESS] WhatsApp message delivered to admin: ${cleanPhone}`);
             }
           } else {
             console.warn(`[MULTI-CHANNEL WA SKIP] Missing WABA token or phoneId for ${cleanPhone}`);

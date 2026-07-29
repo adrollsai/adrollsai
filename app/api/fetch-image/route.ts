@@ -17,32 +17,50 @@ export async function GET(request: Request) {
         targetUrl = targetUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
     }
 
-    // Fetch the image/video on the server side (bypasses browser CORS)
-    let response = await fetch(targetUrl);
+    const range = request.headers.get('range');
+    const fetchHeaders: Record<string, string> = {};
+    if (range) {
+      fetchHeaders['range'] = range;
+    }
+
+    // Fetch the image/video on the server side (bypasses browser CORS while preserving Range requests)
+    let response = await fetch(targetUrl, { headers: fetchHeaders });
 
     // Fallback attempt if original URL failed
     if (!response.ok && targetUrl !== imageUrl) {
-        response = await fetch(imageUrl);
+      response = await fetch(imageUrl, { headers: fetchHeaders });
     }
     
-    if (!response.ok) throw new Error('Failed to fetch image from source');
+    if (!response.ok && response.status !== 206) {
+      throw new Error(`Failed to fetch media from source: ${response.status}`);
+    }
     
     const mimeType = response.headers.get('Content-Type') || 'application/octet-stream';
     
     const headers: Record<string, string> = {
       'Content-Type': mimeType,
       'Access-Control-Allow-Origin': '*',
-      'Content-Length': response.headers.get('Content-Length') || '',
+      'Access-Control-Allow-Headers': '*',
+      'Accept-Ranges': response.headers.get('Accept-Ranges') || 'bytes',
       'Cache-Control': 'public, max-age=31536000, immutable'
     };
+
+    if (response.headers.get('Content-Length')) {
+      headers['Content-Length'] = response.headers.get('Content-Length')!;
+    }
+
+    if (response.headers.get('Content-Range')) {
+      headers['Content-Range'] = response.headers.get('Content-Range')!;
+    }
 
     if (triggerDownload) {
       // Direct browser download attachment header
       headers['Content-Disposition'] = `attachment; filename="${customName}"`;
     }
 
-    // Return the response body stream directly (prevents buffering in memory)
+    // Return response with original status (206 for Range/Partial Content or 200)
     return new NextResponse(response.body, {
+      status: response.status,
       headers,
     });
   } catch (error) {

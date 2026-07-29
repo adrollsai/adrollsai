@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { warmupVoiceBridge } from '@/utils/voice-helper'
+import { refreshGoogleAccessToken, getCalendarTimezone } from '@/utils/google-calendar'
 
 // Using service role client because this is a public webhook requested by Twilio
 const supabaseAdmin = createClient(
@@ -285,9 +286,12 @@ Configurations: ${JSON.stringify(prop.configurations || {})}`
 
             if (props && props.length > 0) {
                 catalogContext = props
-                    .map((p, idx) => `${idx + 1}. ${p.title || 'N/A'}${p.property_type ? ` (${p.property_type})` : ''}
-   Price: ${p.price || 'N/A'}
-   Description: ${p.description || 'N/A'}${p.address ? `\n   Location: ${p.address}` : ''}`)
+                    .map((p, idx) => `[PROJECT ITEM ${idx + 1}: "${p.title || 'Untitled Project'}"]
+Type: ${p.property_type || 'Real Estate'}
+Price: ${p.price || 'Contact Developer'}
+Location: ${p.address || 'N/A'}
+Details: ${p.description || 'N/A'}
+---`)
                     .join('\n\n')
             }
         } catch (catErr) {
@@ -370,13 +374,36 @@ Configurations: ${JSON.stringify(prop.configurations || {})}`
             }
         }
 
+        // Resolve calendar timezone if integrated or default to Asia/Kolkata
+        let callTimeZone = 'Asia/Kolkata'
+        if (profile?.google_refresh_token && profile?.google_booking_enabled) {
+            try {
+                const accessToken = await refreshGoogleAccessToken(profile.google_refresh_token)
+                callTimeZone = await getCalendarTimezone(accessToken)
+            } catch (tzErr: any) {
+                console.warn('[TWIML BRIDGE] Failed to fetch calendar timezone:', tzErr.message)
+            }
+        }
+
+        const formattedCurrentTime = new Date().toLocaleString('en-US', {
+            timeZone: callTimeZone,
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true
+        })
+
         // Compose full contextual background for ElevenLabs LLM prompt injection
         const leadContextText = `
 Lead Name: ${lead.name || 'Unknown'}
 Source: ${lead.source || 'Direct Registration'}
 Email: ${lead.email || 'None'}
 Attributed Details: ${JSON.stringify(lead.custom_fields || {})}
-Current Time: ${new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+Current Time: ${formattedCurrentTime} (${callTimeZone})
 
 --- BUSINESS PROFILE INFO ---
 Company/Business Name: ${profile?.business_name || 'N/A'}
@@ -451,6 +478,8 @@ CRITICAL RULES:
 6. PAST CALLS AND SCHEDULES: If the lead asks about when they requested a callback, how much time they asked to be called back in, or what you talked about in the last call, read the '--- LEAD CRM NOTES & SCHEDULE HISTORY ---' and 'Previous Call History' sections to answer them accurately in Hinglish (e.g. 'Aapne mujhe 1 minute baad call karne ko bola tha').
 7. ENDING THE CALL: Once the call objective is met (e.g. appointment is booked, callback is scheduled) or the lead wants to end the conversation, say a brief polite goodbye and immediately trigger your "End conversation" tool to hang up the call. Do not wait for the user to respond after your goodbye.
 8. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear a voicemail greeting, answering machine message, or any automated message (such as "please leave a message", "after the beep", or an automated robot voice), you must immediately trigger your "End conversation" tool to hang up the call. Do NOT speak, say hello, or say goodbye; just trigger the hangup tool instantly.
+9. STRICT PROJECT DISAMBIGUATION & INVENTORY ISOLATION: Each project or inventory product listed in the catalog is a COMPLETELY SEPARATE and INDEPENDENT real estate project. NEVER mix, blend, or cross-combine the locations, prices, plot sizes, rental yields, or amenities of one project with another. 
+10. PRIMARY INTEREST PRIORITY: If the lead inquired about a specific project (shown under 'PRIMARY INTEREST PRODUCT'), focus strictly on that specific project. Only discuss details, amenities, and location of THAT project. Do NOT introduce or describe features of other catalog projects unless the prospect explicitly asks to explore other inventory options.
 
 CONVERSATION FLOW:
 1. Your first greeting is already spoken: "Hi ${firstName} ji, kaise ho aap?".
@@ -462,7 +491,7 @@ ${contextInstruction}
 Lead Name: ${leadName}
 Email: ${lead.email || 'None'}
 Attributed Details: ${JSON.stringify(lead.custom_fields || {})}
-Current Time: ${new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+Current Time: ${formattedCurrentTime} (${callTimeZone})
 
 Business Profile:
 ${profile?.business_info || 'N/A'}
@@ -490,7 +519,7 @@ ${campaign.custom_prompt}
 Lead Name: ${leadName}
 Email: ${lead.email || 'None'}
 Attributed Details: ${JSON.stringify(lead.custom_fields || {})}
-Current Time: ${new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+Current Time: ${formattedCurrentTime} (${callTimeZone})
 
 --- LEAD CRM NOTES & SCHEDULE HISTORY ---
 ${lead.notes || 'None'}

@@ -205,7 +205,7 @@ export async function POST(request: Request) {
                     try {
                         const videoRes = await fetch(videoUrl);
                         const buffer = Buffer.from(await videoRes.arrayBuffer());
-                        const fileName = `generated/${task.user_id}/scene_${task.current_index}_${Date.now()}.mp4`;
+                        const fileName = `adrolls-storage/generated/${task.user_id}/scene_${task.current_index}_${Date.now()}.mp4`;
                         
                         await r2.send(new PutObjectCommand({
                             Bucket: R2_BUCKET,
@@ -214,7 +214,7 @@ export async function POST(request: Request) {
                             ContentType: 'video/mp4'
                         }));
                         
-                        persistedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${fileName.replace(/^\//, '')}`;
+                        persistedUrl = `${R2_PUBLIC_URL}/${fileName}`;
                         console.log(`[Sync Endpoint] Successfully uploaded scene to R2: ${persistedUrl}`);
                     } catch (r2Error) {
                         console.error("[Sync Endpoint] R2 upload failed. Falling back to direct Kie URL.", r2Error);
@@ -294,14 +294,14 @@ export async function POST(request: Request) {
                             
                             // Upload faststart file to R2
                             const faststartBuffer = fs.readFileSync(outputPath);
-                            const finalFileName = `generated/${task.user_id}/faststart_${Date.now()}.mp4`;
+                            const finalFileName = `adrolls-storage/generated/${task.user_id}/faststart_${Date.now()}.mp4`;
                             await r2.send(new PutObjectCommand({
                                 Bucket: R2_BUCKET,
                                 Key: finalFileName,
                                 Body: faststartBuffer,
                                 ContentType: 'video/mp4'
                             }));
-                            finalUrl = `${R2_PUBLIC_URL}/adrolls-storage/${finalFileName}`;
+                            finalUrl = `${R2_PUBLIC_URL}/${finalFileName}`;
                             console.log(`[Sync Endpoint] Faststart single video uploaded to R2: ${finalUrl}`);
                         } catch (faststartErr) {
                             console.error("[Sync Endpoint] Faststart process failed, falling back to original clip URL:", faststartErr);

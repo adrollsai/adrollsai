@@ -655,11 +655,11 @@ export async function POST(request: Request) {
         if (body.prompts && Array.isArray(body.prompts) && body.prompts.length > 0) {
             console.log(`[Video Generate] Using user-provided custom prompts (length: ${body.prompts.length})`);
             prompts = body.prompts;
-        } else {
+        } else if (videoModel !== 'grok') {
             // Extrapolate ethnicity based on where the business is based
             const extrapolatedEthnicity = extrapolateEthnicity(profile, property, customInstructions);
             
-const profileDesc = presenterType === 'video' ? profile.character_description : (presenterType === 'avatar' ? profile.avatar_description : null);
+            const profileDesc = presenterType === 'video' ? profile.character_description : (presenterType === 'avatar' ? profile.avatar_description : null);
 
             // Character description — fed directly to Gemini
             const characterDescription = presenterType !== 'none'
@@ -713,9 +713,7 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
                         finalPrompt = text.trim();
                     } catch (fallbackErr: any) {
                         console.error(`[Generate API] Fallback prompt synthesis also failed for scene ${i + 1}:`, fallbackErr);
-                        // Fallback prompt using the new structured template
                         const targetImageLabel = (avatarUrl && !isCharacterVideo) ? "Image_2" : "Image_1";
-                        // Keep dialogue exactly as-is without stripping Devanagari characters
                         const cleanFallbackDialogue = scene.dialogue;
                         finalPrompt = `${characterAppearanceText}
 
@@ -758,7 +756,9 @@ High-end commercial production quality.
         }
 
         // --- CREDITS CHECK & DEDUCTION ---
-        totalCreditsRequired = prompts.length * 250;
+        const totalDurationForCredits = videoModel === 'grok' ? (body.duration || 30) : (prompts.length * 15);
+        const requiredClipCount = Math.max(1, Math.round(totalDurationForCredits / 15));
+        totalCreditsRequired = requiredClipCount * 250;
         const { hasEnoughCredits, deductCredits, addCredits } = await import('@/utils/credits');
         const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, totalCreditsRequired);
         if (!hasCredits) {
@@ -864,64 +864,73 @@ High-end commercial production quality.
             let grokPrompts: string[] = [];
             let collageUrls: (string | undefined)[] = [];
 
+            const requiredClips = Math.max(1, Math.round(selectedDuration / 15));
+            console.log(`[Grok Pipeline] Video duration: ${selectedDuration}s -> Generating ${requiredClips} Grok scene clips...`);
+
+            // Generate 9:16 collages if reference images are provided
+            let generatedCollages: string[] = [];
             if (convertedRefImages.length > 0) {
-                // Generate 9:16 Collages using GPT 2.0 (with Sharp fallback)
-                console.log(`[Video Generate] Generating 9:16 collages for ${convertedRefImages.length} images...`);
-                const generatedCollages = await createCollageImages(convertedRefImages, targetUserId);
-                console.log(`[Video Generate] Created ${generatedCollages.length} collages:`, generatedCollages);
+                console.log(`[Grok Pipeline] Creating 9:16 collages for ${convertedRefImages.length} input image(s)...`);
+                generatedCollages = await createCollageImages(convertedRefImages, targetUserId);
+                console.log(`[Grok Pipeline] Created ${generatedCollages.length} collages:`, generatedCollages);
+            }
 
-                if (generatedCollages.length > 0) {
-                    // Calculate required Grok clips (each Grok clip is 15s, e.g. 30s -> 2 clips of 15s, 45s -> 3 clips of 15s)
-                    const requiredClips = Math.max(1, Math.round(selectedDuration / 15));
-                    
-                    const dynamicStyles = [
-                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll of the property architecture with a slow dramatic push-in camera zoom, soft studio lighting, and an elegant background music track. Absolutely NO human presenters, NO actors, NO people, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.",
-                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with an orbital 360 camera move showcasing interior design textures, luxury finishes, sleek reflections, and upbeat background music. Absolutely NO human presenters, NO actors, NO people, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.",
-                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with a smooth vertical tilt up across the building facade, high contrast cinematic lighting, background parallax, and soft commercial background music. Absolutely NO human presenters, NO actors, NO people, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.",
-                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with macro lens focus pull across architectural materials, dynamic commercial lighting shifts, and subtle background music. Absolutely NO human presenters, NO actors, NO people, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.",
-                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with slow motion camera tracking move across property features with background music. Absolutely NO human presenters, NO actors, NO people, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.",
-                        "Reference 9:16 collage image as identity lock. Create an ultrarealistic live-action 9:16 commercial featuring an animated A-roll with high-key lighting transitions, smooth camera pan across 9:16 collage visuals, and inspiring background music. Absolutely NO human presenters, NO actors, NO people, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind."
-                    ];
+            for (let i = 0; i < requiredClips; i++) {
+                const hasImageForClip = i < generatedCollages.length;
+                let colUrl: string | undefined = hasImageForClip ? generatedCollages[i] : undefined;
 
-                    for (let i = 0; i < requiredClips; i++) {
-                        const colUrl = generatedCollages[i % generatedCollages.length];
-                        grokPrompts.push(dynamicStyles[i % dynamicStyles.length]);
-                        collageUrls.push(colUrl);
+                const currentSceneObj = scenes[i % scenes.length];
+                const sceneDialogue = currentSceneObj?.dialogue || script.dialogue || '';
+                const sceneVisuals = currentSceneObj?.visuals || script.visuals || script.concept?.visualConcept || '';
+                const productTitle = script.title || property?.title || 'Featured Product/Business';
+                const productContext = property?.description || script.finalCaption || '';
+
+                console.log(`[Grok Pipeline] Synthesizing Master Multi-Cut Grok prompt for Scene ${i + 1}/${requiredClips}...`);
+
+                const scenePromptGen = `You are an elite commercial ad director specializing in high-converting, fast-paced commercial ads across all industries (Real Estate, SaaS, E-Commerce, Hospitality, Health, Fashion, Automotive, etc.).
+
+Write an ultra-realistic 9:16 commercial video prompt for Scene ${i + 1} of ${requiredClips} for an AI video model (Grok Imagine 1.5).
+
+PRODUCT / BRAND / INDUSTRY CONTEXT:
+- Business/Product Title: "${productTitle}"
+- Product Description & Context: "${productContext.slice(0, 400)}"
+
+SCRIPT SCENE ${i + 1} DIRECTIVES:
+- Visual Action: "${sceneVisuals}"
+- Audio/Voiceover Context: "${sceneDialogue}"
+
+MASTER AD PROMPTING RULES:
+1. SCENE START & DYNAMIC CUTS DIRECTIVE: The prompt MUST strictly begin with: "The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 seconds where..."
+2. MULTI-SHOT SEQUENCE STRUCTURE (Rapid Cuts Every 2 Seconds):
+   - Shot 1 (0-2s): Instant macro detail or hero product shot highlighting key benefits of "${productTitle}".
+   - Shot 2 (2-4s): Authentic human emotional reaction (e.g. customer gasping in delight, smiling warmly, nodding in approval, sharing a joyful moment, or experiencing relief).
+   - Shot 3 (4-6s): Dynamic action shot showcasing the product in use or sweeping visual environment (${sceneVisuals}).
+   - Shot 4 (6-8s+): Macro texture close-up or satisfying result sequence reflecting high value and satisfaction.
+3. NO DIALOGUE / TALKING HEADS RULE: People in the video show real human emotions, genuine expressions, and physical interactions, but ABSOLUTELY NO talking to the camera, NO speaking lips, NO voiceover dialogue from actors, and NO talking heads.
+4. REFERENCE IMAGE INTEGRATION: ${hasImageForClip ? `"Reference 9:16 collage image as visual identity lock. Seamlessly integrate the colors, product design, architectural style, and visual aesthetics from the reference image across the fast-cut sequence."` : `"Create photorealistic 9:16 commercial visuals representing the product in action."`}
+5. CINEMATOGRAPHY: 35mm anamorphic camera, cinematic lighting, 9:16 portrait aspect ratio, dynamic camera whip pans, macro focus transitions, and an upbeat background music track.
+6. NO ON-SCREEN TEXT: Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.
+
+Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do NOT use markdown code blocks or quotes.`;
+
+                let finalGrokPrompt = "";
+                try {
+                    const { text } = await generateText({
+                        model: google('gemini-3.5-flash'),
+                        prompt: scenePromptGen
+                    });
+                    let synthesized = text.trim();
+                    if (!synthesized.toLowerCase().includes('starts immediately from second 0') && !synthesized.toLowerCase().includes('starts from second 0')) {
+                        synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 seconds where... ${synthesized}`;
                     }
+                    finalGrokPrompt = synthesized;
+                } catch (genErr) {
+                    console.warn(`[Grok Pipeline] Gemini master prompt synthesis failed for scene ${i + 1}, using intelligent multi-cut fallback:`, genErr);
+                    finalGrokPrompt = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 seconds where an opening hero macro shot showcases "${productTitle}", cutting instantly to an delighted customer smiling warmly with genuine excitement, followed by a dynamic tracking shot of ${sceneVisuals || 'the featured product in action'}, ending on a sleek macro texture close-up. Cinematic 35mm anamorphic camera, dynamic lighting, 9:16 portrait aspect ratio, upbeat background music track. People show emotion but strictly NO talking to camera, NO speaking lips. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, or text overlays of any kind.`;
                 }
-            } else {
-                // NO images: synthesize product-relevant 9:16 scenes without human actors using Gemini AI
-                const requiredClips = Math.max(1, Math.round(selectedDuration / 15));
-                console.log(`[Video Generate] No images provided. Synthesizing ${requiredClips} product-relevant AI video scenes for ${selectedDuration}s video...`);
 
-                for (let i = 0; i < requiredClips; i++) {
-                    const scenePromptGen = `You are a high-converting video ad director. Write an ultra-realistic 9:16 commercial video prompt for Scene ${i + 1} of ${requiredClips} for an AI video model (Grok Imagine).
-PRODUCT/BUSINESS TITLE: "${script.title || 'Property Ad'}"
-AD CAPTION & CONTEXT: "${(script.finalCaption || '').slice(0, 300)}"
-
-REQUIREMENTS:
-1. Visual Relevance: Create a stunning, highly photorealistic live-action 9:16 commercial video scene directly showcasing the property/building architecture, interior design, or product details.
-2. NO PEOPLE RULE: ABSOLUTELY NO human presenters, NO actors, NO people, NO faces, NO talking heads in the video. Show ONLY animated product/property visuals and architectural spaces.
-3. Camera & Lighting: Cinematic 35mm anamorphic lens, 9:16 portrait aspect ratio, dynamic lighting, professional commercial camera movement (dolly zoom, orbital pan, or tracking shot).
-4. Audio & Text Rules: Include uplifting commercial background music track. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind. No spoken voiceover in the video prompt.
-
-Output ONLY the raw final prompt text in 2-3 sentences. Do NOT use markdown code blocks or quotes.`;
-
-                    let synthesizedGrokPrompt = "";
-                    try {
-                        const { text } = await generateText({
-                            model: google('gemini-3.5-flash'),
-                            prompt: scenePromptGen
-                        });
-                        synthesizedGrokPrompt = text.trim();
-                    } catch (genErr) {
-                        console.warn(`[Video Generate] Gemini Grok prompt synthesis failed for scene ${i + 1}, using intelligent fallback:`, genErr);
-                        synthesizedGrokPrompt = `Create an ultrarealistic live-action 9:16 commercial video scene for "${script.title || 'Luxury Commercial Property'}" showing animated A-roll architecture and property interiors. Professional 35mm anamorphic camera, cinematic lighting, 9:16 aspect ratio, uplifting background music track. Absolutely NO human presenters, NO actors, NO faces, NO talking heads. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.`;
-                    }
-
-                    grokPrompts.push(synthesizedGrokPrompt);
-                    collageUrls.push(undefined);
-                }
+                grokPrompts.push(finalGrokPrompt);
+                collageUrls.push(colUrl);
             }
 
             const grokLaunchPromises = grokPrompts.map(async (promptText, index) => {
@@ -957,8 +966,8 @@ Output ONLY the raw final prompt text in 2-3 sentences. Do NOT use markdown code
             }
 
             // Save records in video_tasks table
-            const insertPromises = taskIds.map((taskId, index) => {
-                return supabaseAdmin
+            const insertPromises = taskIds.map(async (taskId, index) => {
+                const { error: insertErr } = await supabaseAdmin
                     .from('video_tasks')
                     .insert({
                         id: crypto.randomUUID(),
@@ -973,6 +982,9 @@ Output ONLY the raw final prompt text in 2-3 sentences. Do NOT use markdown code
                         status: 'Processing',
                         final_caption: script.finalCaption || null
                     });
+                if (insertErr) {
+                    console.error(`[Video Generate] Failed to insert video_tasks row for scene ${index + 1}:`, insertErr);
+                }
             });
 
             await Promise.all(insertPromises);

@@ -989,8 +989,15 @@ export default function CreationPage() {
             })
         });
 
-        const data = await response.json();
-        if (data.error) throw new Error(data.error);
+        const rawText = await response.text();
+        let data: any = {};
+        try {
+            data = JSON.parse(rawText);
+        } catch (e) {
+            throw new Error(`Server returned unexpected error (${response.status}): ${rawText.slice(0, 100)}`);
+        }
+
+        if (!response.ok || data.error) throw new Error(data.error || `Generation failed with status ${response.status}`);
 
         const totalDuration = (script.scenes?.length || 1) * 15;
         toast.success("Video Production Started! 🎬", {
@@ -1077,8 +1084,15 @@ export default function CreationPage() {
             })
         });
 
-        const data = await response.json();
-        if (data.error) throw new Error(data.error);
+        const rawText = await response.text();
+        let data: any = {};
+        try {
+            data = JSON.parse(rawText);
+        } catch (e) {
+            throw new Error(`Server returned unexpected error (${response.status}): ${rawText.slice(0, 100)}`);
+        }
+
+        if (!response.ok || data.error) throw new Error(data.error || `Generation failed with status ${response.status}`);
 
         toast.success("Grok Video Production Started! 🎬", {
             description: `Your ${selectedDuration}s Grok video is generating & stitching.`

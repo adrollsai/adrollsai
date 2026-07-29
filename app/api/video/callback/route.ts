@@ -337,7 +337,7 @@ export async function POST(request: Request) {
         try {
             const videoRes = await fetch(resultUrl);
             const buffer = Buffer.from(await videoRes.arrayBuffer());
-            const fileName = `generated/${videoTask.user_id}/scene_${videoTask.current_index}_${Date.now()}.mp4`;
+            const fileName = `adrolls-storage/generated/${videoTask.user_id}/scene_${videoTask.current_index}_${Date.now()}.mp4`;
             
             await r2.send(new PutObjectCommand({
                 Bucket: R2_BUCKET,
@@ -346,7 +346,7 @@ export async function POST(request: Request) {
                 ContentType: 'video/mp4'
             }));
             
-            sceneR2Url = `${R2_PUBLIC_URL}/adrolls-storage/${fileName}`;
+            sceneR2Url = `${R2_PUBLIC_URL}/${fileName}`;
             console.log(`[Video Callback] Scene ${videoTask.current_index + 1} persisted to R2: ${sceneR2Url}`);
         } catch (r2Error) {
             console.error("[Video Callback] R2 Scene Persistence Failed:", r2Error);
@@ -426,14 +426,14 @@ export async function POST(request: Request) {
                 
                 // Upload faststart file to R2
                 const faststartBuffer = fs.readFileSync(outputPath);
-                const finalFileName = `generated/${videoTask.user_id}/faststart_${Date.now()}.mp4`;
+                const finalFileName = `adrolls-storage/generated/${videoTask.user_id}/faststart_${Date.now()}.mp4`;
                 await r2.send(new PutObjectCommand({
                     Bucket: R2_BUCKET,
                     Key: finalFileName,
                     Body: faststartBuffer,
                     ContentType: 'video/mp4'
                 }));
-                finalUrl = `${R2_PUBLIC_URL}/adrolls-storage/${finalFileName}`;
+                finalUrl = `${R2_PUBLIC_URL}/${finalFileName}`;
                 console.log(`[Video Callback] Faststart single video uploaded to R2: ${finalUrl}`);
 
                 // Generate video thumbnail
@@ -569,40 +569,45 @@ export async function POST(request: Request) {
             if (finalAudioUrl && finalAudioUrl.startsWith('tts:')) {
                 const ttsTaskId = finalAudioUrl.replace(/^tts:/, '');
                 try {
-                    console.log(`[Video Callback] Resolving asynchronous Gemini TTS task ${ttsTaskId}...`);
+                    console.log(`[Video Callback] Polling asynchronous Gemini TTS task ${ttsTaskId}...`);
                     const { queryKieTask } = await import('@/utils/external-apis');
-                    const ttsStatus = await queryKieTask(ttsTaskId);
-                    if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
-                        try {
-                            const audioRes = await fetch(ttsStatus.resultUrl);
-                            if (audioRes.ok) {
-                                const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-                                const r2Key = `voiceover/${Date.now()}_grok_async_tts.mp3`;
-                                await r2.send(new PutObjectCommand({
-                                    Bucket: R2_BUCKET,
-                                    Key: r2Key,
-                                    Body: audioBuffer,
-                                    ContentType: 'audio/mpeg'
-                                }));
-                                finalAudioUrl = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
-                                console.log(`[Video Callback] Async Gemini TTS voiceover resolved and persisted: ${finalAudioUrl}`);
-                            } else {
+                    for (let t = 0; t < 20; t++) {
+                        const ttsStatus = await queryKieTask(ttsTaskId);
+                        if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
+                            try {
+                                const audioRes = await fetch(ttsStatus.resultUrl);
+                                if (audioRes.ok) {
+                                    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                                    const r2Key = `voiceover/${Date.now()}_grok_async_tts.mp3`;
+                                    await r2.send(new PutObjectCommand({
+                                        Bucket: R2_BUCKET,
+                                        Key: r2Key,
+                                        Body: audioBuffer,
+                                        ContentType: 'audio/mpeg'
+                                    }));
+                                    finalAudioUrl = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
+                                    console.log(`[Video Callback] Async Gemini TTS voiceover resolved and persisted to R2: ${finalAudioUrl}`);
+                                } else {
+                                    finalAudioUrl = ttsStatus.resultUrl;
+                                }
+                            } catch (r2Err) {
                                 finalAudioUrl = ttsStatus.resultUrl;
                             }
-                        } catch (r2Err) {
-                            finalAudioUrl = ttsStatus.resultUrl;
+                            break;
                         }
-                    } else {
-                        console.warn(`[Video Callback] Async Gemini TTS task state is '${ttsStatus.state}'.`);
-                        finalAudioUrl = null;
+                        if (ttsStatus.state === 'fail') {
+                            console.warn(`[Video Callback] Gemini TTS task ${ttsTaskId} failed.`);
+                            finalAudioUrl = null;
+                            break;
+                        }
+                        await new Promise(r => setTimeout(r, 2000));
                     }
                 } catch (ttsErr: any) {
                     console.warn(`[Video Callback] Async Gemini TTS resolution error:`, ttsErr.message);
-                    finalAudioUrl = null;
                 }
             }
 
-            if (isGrokModel && !finalAudioUrl) {
+            if (isGrokModel && (!finalAudioUrl || finalAudioUrl.startsWith('tts:'))) {
                 try {
                     const { data: assetRecord } = await supabaseAdmin
                         .from('assets')
@@ -611,61 +616,64 @@ export async function POST(request: Request) {
                         .single();
 
                     if (assetRecord?.metadata?.audioUrl) {
-                        finalAudioUrl = assetRecord.metadata.audioUrl;
-                        if (finalAudioUrl.startsWith('tts:')) {
-                            const ttsTaskId = finalAudioUrl.replace(/^tts:/, '');
+                        let candidateUrl = assetRecord.metadata.audioUrl;
+                        if (candidateUrl.startsWith('tts:')) {
+                            const ttsTaskId = candidateUrl.replace(/^tts:/, '');
                             console.log(`[Video Callback] Resolving Gemini TTS task ${ttsTaskId} from asset metadata...`);
                             const { queryKieTask } = await import('@/utils/external-apis');
                             for (let t = 0; t < 15; t++) {
                                 const ttsStatus = await queryKieTask(ttsTaskId);
                                 if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
-                                    finalAudioUrl = ttsStatus.resultUrl;
+                                    candidateUrl = ttsStatus.resultUrl;
                                     break;
                                 }
                                 await new Promise(r => setTimeout(r, 2000));
                             }
                         }
+                        if (candidateUrl && (candidateUrl.startsWith('http://') || candidateUrl.startsWith('https://'))) {
+                            finalAudioUrl = candidateUrl;
+                        }
                     }
 
-                    const voiceoverText = assetRecord?.caption || '';
-                    if (voiceoverText && voiceoverText.length > 10) {
-                        console.log(`[Video Callback] Generating Grok voiceover for asset ${videoTask.asset_id}...`);
-                        const { createGeminiTTS, queryKieTask } = await import('@/utils/external-apis');
-                        const { taskId: ttsTaskId, error: ttsError } = await createGeminiTTS({
-                            dialogueText: voiceoverText,
-                            speakerName: 'Aoede',
-                            style: 'Confident',
-                            scene: 'Professional real estate commercial voiceover studio',
-                            sampleContext: 'High converting luxury real estate marketing video'
-                        });
+                    if (!finalAudioUrl || finalAudioUrl.startsWith('tts:')) {
+                        const voiceoverText = assetRecord?.caption || '';
+                        if (voiceoverText && voiceoverText.length > 10) {
+                            console.log(`[Video Callback] Generating fallback Grok voiceover for asset ${videoTask.asset_id}...`);
+                            const { createGeminiTTS, queryKieTask } = await import('@/utils/external-apis');
+                            const { taskId: ttsTaskId, error: ttsError } = await createGeminiTTS({
+                                dialogueText: voiceoverText,
+                                speakerName: 'Aoede',
+                                style: 'Confident',
+                                scene: 'Professional real estate commercial voiceover studio',
+                                sampleContext: 'High converting luxury real estate marketing video'
+                            });
 
-                        if (ttsTaskId && !ttsError) {
-                            // Poll TTS for up to 30s
-                            for (let t = 0; t < 10; t++) {
-                                await new Promise(r => setTimeout(r, 3000));
-                                const ttsStatus = await queryKieTask(ttsTaskId);
-                                if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
-                                    // Persist to R2 as mp3
-                                    try {
-                                        const audioRes = await fetch(ttsStatus.resultUrl);
-                                        if (audioRes.ok) {
-                                            const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-                                            const r2Key = `voiceover/${Date.now()}_grok_stitch.mp3`;
-                                            await r2.send(new PutObjectCommand({
-                                                Bucket: R2_BUCKET,
-                                                Key: r2Key,
-                                                Body: audioBuffer,
-                                                ContentType: 'audio/mpeg'
-                                            }));
-                                            finalAudioUrl = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
-                                            console.log(`[Video Callback] Grok voiceover generated and persisted: ${finalAudioUrl}`);
+                            if (ttsTaskId && !ttsError) {
+                                for (let t = 0; t < 12; t++) {
+                                    await new Promise(r => setTimeout(r, 2500));
+                                    const ttsStatus = await queryKieTask(ttsTaskId);
+                                    if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
+                                        try {
+                                            const audioRes = await fetch(ttsStatus.resultUrl);
+                                            if (audioRes.ok) {
+                                                const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                                                const r2Key = `voiceover/${Date.now()}_grok_stitch.mp3`;
+                                                await r2.send(new PutObjectCommand({
+                                                    Bucket: R2_BUCKET,
+                                                    Key: r2Key,
+                                                    Body: audioBuffer,
+                                                    ContentType: 'audio/mpeg'
+                                                }));
+                                                finalAudioUrl = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
+                                                console.log(`[Video Callback] Grok voiceover generated and persisted: ${finalAudioUrl}`);
+                                            }
+                                        } catch (r2VoiceErr) {
+                                            finalAudioUrl = ttsStatus.resultUrl;
                                         }
-                                    } catch (r2VoiceErr) {
-                                        finalAudioUrl = ttsStatus.resultUrl;
+                                        break;
                                     }
-                                    break;
+                                    if (ttsStatus.state === 'fail') break;
                                 }
-                                if (ttsStatus.state === 'fail') break;
                             }
                         }
                     }
@@ -680,9 +688,11 @@ export async function POST(request: Request) {
                 ...(clipDurationsInSeconds ? { clipDurationsInSeconds } : {})
             };
 
-            if (finalAudioUrl) {
+            if (finalAudioUrl && (finalAudioUrl.startsWith('http://') || finalAudioUrl.startsWith('https://'))) {
                 inputPropsPayload.audioUrl = finalAudioUrl;
-                console.log(`[Video Callback] Including voiceover audio in stitch render: ${finalAudioUrl}`);
+                console.log(`[Video Callback] Including verified HTTP voiceover audio in stitch render: ${finalAudioUrl}`);
+            } else {
+                console.warn(`[Video Callback] Warning: No valid HTTP voiceover audio URL resolved. Dispatched stitch render without audio.`);
             }
 
             const renderResult = await renderMediaOnLambda({
