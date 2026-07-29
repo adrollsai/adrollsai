@@ -12,8 +12,18 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Fetch the image on the server side (bypasses browser CORS)
-    const response = await fetch(imageUrl);
+    let targetUrl = imageUrl;
+    if (targetUrl.includes('.r2.dev/') && !targetUrl.includes('/adrolls-storage/')) {
+        targetUrl = targetUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+    }
+
+    // Fetch the image/video on the server side (bypasses browser CORS)
+    let response = await fetch(targetUrl);
+
+    // Fallback attempt if original URL failed
+    if (!response.ok && targetUrl !== imageUrl) {
+        response = await fetch(imageUrl);
+    }
     
     if (!response.ok) throw new Error('Failed to fetch image from source');
     

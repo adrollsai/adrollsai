@@ -1050,11 +1050,48 @@ export default function ProfilePage() {
     }
   }
 
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'FACEBOOK_CONNECTED') {
+        setIsConnectingFb(false)
+        if (event.data.success) {
+          toast.success("Facebook connected successfully!")
+          fetchProfile(true)
+        } else {
+          toast.error("Facebook connection failed: " + (event.data.message || event.data.error || 'Unknown error'))
+        }
+      }
+    }
+
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [])
+
   const handleConnectFacebook = async () => {
     setIsConnectingFb(true)
-    // EMERGENCY BYPASS: Use custom route to avoid Supabase Auth email errors
-    // This acquires the marketing token without requiring a unique email match
-    window.location.href = `/api/facebook/connect${impersonateId ? `?impersonate=${impersonateId}` : ''}`
+    const connectUrl = `/api/facebook/connect${impersonateId ? `?impersonate=${impersonateId}` : ''}`
+    
+    const width = 600
+    const height = 750
+    const left = window.screenX + (window.outerWidth - width) / 2
+    const top = window.screenY + (window.outerHeight - height) / 2
+
+    const popup = window.open(
+      connectUrl,
+      'FacebookConnectWindow',
+      `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,status=yes`
+    )
+
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+      window.location.href = connectUrl
+    } else {
+      const timer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(timer)
+          setIsConnectingFb(false)
+        }
+      }, 1000)
+    }
   }
 
   const handleDisconnectFacebook = async () => {

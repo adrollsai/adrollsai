@@ -34,7 +34,7 @@ export async function GET(req: Request) {
     // Pass impersonateId in state so callback knows which profile to update
     const state = impersonateId ? encodeURIComponent(JSON.stringify({ impersonateId })) : '';
 
-    const fbUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&response_type=code&auth_type=reauthenticate,rerequest${state ? `&state=${state}` : ''}`;
+    const fbUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&response_type=code&auth_type=reauthenticate,rerequest&display=popup${state ? `&state=${state}` : ''}#weblink`;
 
     return NextResponse.redirect(fbUrl);
 }

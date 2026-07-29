@@ -104,12 +104,14 @@ export async function POST(request: Request) {
             const publicUrl = process.env.NEXT_PUBLIC_APP_URL;
             let baseUrl = requestOrigin;
             
-            if (forwardedHost && !forwardedHost.includes('localhost')) {
+            if (forwardedHost && !forwardedHost.includes('localhost') && !forwardedHost.includes('local.')) {
                 baseUrl = `${forwardedProto}://${forwardedHost}`;
-            } else if (!requestOrigin.includes('localhost')) {
+            } else if (!requestOrigin.includes('localhost') && !requestOrigin.includes('local.')) {
                 baseUrl = requestOrigin;
-            } else if (publicUrl && publicUrl.startsWith('http')) {
+            } else if (publicUrl && publicUrl.startsWith('http') && !publicUrl.includes('localhost') && !publicUrl.includes('local.')) {
                 baseUrl = publicUrl;
+            } else {
+                baseUrl = 'https://app.nobogent.com';
             }
             
             const callbackUrl = `${baseUrl.replace(/\/$/, '')}/api/video/render/callback`;

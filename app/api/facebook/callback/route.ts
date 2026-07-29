@@ -23,7 +23,46 @@ export async function GET(req: Request) {
 
     const redirectBackBase = `${baseUrl}/dashboard/profile${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
 
-    if (!code) return NextResponse.redirect(`${redirectBackBase}${impersonateId ? '&' : '?'}error=No code received`);
+    const sendResponse = (success: boolean, message: string, redirectUrl: string) => {
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+  <title>${success ? 'Facebook Connected' : 'Connection Failed'}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f8fafc; color: #0f172a; }
+    .card { background: white; padding: 2.5rem 2rem; border-radius: 20px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.08); text-align: center; max-width: 340px; width: 90%; }
+    .icon { width: 56px; height: 56px; background: ${success ? '#dcfce7' : '#fee2e2'}; color: ${success ? '#16a34a' : '#dc2626'}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; margin: 0 auto 16px; }
+    h2 { margin: 0 0 8px; font-size: 20px; font-weight: 700; }
+    p { margin: 0; color: #64748b; font-size: 14px; line-height: 1.5; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${success ? '✓' : '✕'}</div>
+    <h2>${success ? 'Facebook Connected!' : 'Connection Failed'}</h2>
+    <p>${message}</p>
+  </div>
+  <script>
+    if (window.opener) {
+      try {
+        window.opener.postMessage({ type: 'FACEBOOK_CONNECTED', success: ${success}, message: ${JSON.stringify(message)} }, '*');
+      } catch (e) {}
+      setTimeout(function() {
+        window.close();
+      }, ${success ? 600 : 2000});
+    } else {
+      window.location.href = "${redirectUrl}";
+    }
+  </script>
+</body>
+</html>`;
+        return new NextResponse(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    };
+
+    if (!code) {
+        return sendResponse(false, 'No code received from Facebook.', `${redirectBackBase}${impersonateId ? '&' : '?'}error=No code received`);
+    }
 
     try {
         // 1. Exchange code for Token
@@ -57,12 +96,12 @@ export async function GET(req: Request) {
 
             if (updateError) throw updateError;
 
-            return NextResponse.redirect(`${redirectBackBase}${impersonateId ? '&' : '?'}success=Facebook Connected`);
+            return sendResponse(true, 'Facebook account connected successfully.', `${redirectBackBase}${impersonateId ? '&' : '?'}success=Facebook Connected`);
         }
         
         throw new Error(tokenData.error?.message || "Failed to get token from Facebook");
     } catch (err: any) {
         console.error("[FB CALLBACK] Error:", err.message);
-        return NextResponse.redirect(`${baseUrl}/dashboard/profile?error=${encodeURIComponent(err.message)}`);
+        return sendResponse(false, err.message || 'Failed to connect Facebook account.', `${baseUrl}/dashboard/profile?error=${encodeURIComponent(err.message)}`);
     }
 }
