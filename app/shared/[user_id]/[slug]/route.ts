@@ -122,7 +122,7 @@ export async function GET(request: Request, { params }: RouteProps) {
 
         // Always render the form wizard inline on the page
         formHtml = `
-            <div id="survey-wizard-container" style="width: 100%; max-width: 500px; background: #ffffff; border-radius: 1.5rem; padding: 2.25rem 2rem; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; box-sizing: border-box; display: flex; flex-direction: column; gap: 1.5rem; margin: 0 auto;">
+            <div id="survey-wizard-container" style="width: 100%; max-width: 500px; background: #ffffff; border-radius: 1.5rem; padding: 1.5rem 1.25rem; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; box-sizing: border-box; display: flex; flex-direction: column; gap: 1.25rem; margin: 0 auto;">
                 <!-- Back Button & Progress -->
                 <div id="survey-progress-container" style="display: flex; align-items: center; gap: 0.75rem; width: 100%; box-sizing: border-box;">
                     <button id="survey-back-btn" style="display: none; background: #f1f5f9; border: none; border-radius: 50%; width: 2rem; height: 2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; font-weight: bold; font-size: 1.25rem; transition: background 0.2s;">←</button>
@@ -137,9 +137,14 @@ export async function GET(request: Request, { params }: RouteProps) {
                 </div>
             </div>
         `
- 
+
         let scriptHtml = `
             <style>
+            @media (min-width: 640px) {
+                #survey-wizard-container {
+                    padding: 2.25rem 2rem !important;
+                }
+            }
             @keyframes survey-step-in {
                 from { opacity: 0; transform: translateY(8px); }
                 to { opacity: 1; transform: translateY(0); }

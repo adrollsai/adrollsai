@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { 
     Globe, Plus, Trash2, Edit3, Eye, Copy, Check, MessageSquare, 
     Sparkles, ArrowRight, Loader2, List, Clipboard, ArrowLeft, Send, Paperclip,
-    Code, Image as ImageIcon, X
+    Code, Image as ImageIcon, X, Smartphone, Tablet, Monitor
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2, compressImage } from '@/utils/upload-helper'
@@ -111,6 +111,8 @@ export default function PagesDashboard() {
     ])
     const [editorView, setEditorView] = useState<'preview' | 'code'>('preview')
     const [editedHtml, setEditedHtml] = useState('')
+    const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop')
+    const [editorMobileTab, setEditorMobileTab] = useState<'chat' | 'preview'>('chat')
 
     useEffect(() => {
         if (activeEditorPage) {
@@ -1274,10 +1276,32 @@ const handleSendChatEdit = async () => {
 
             {/* CONVERSATIONAL EDITOR DRAWER PANEL */}
             {activeEditorPage ? (
-                <div className="max-w-7xl mx-auto bg-white border border-slate-200 rounded-[2.5rem] p-6 shadow-xl flex flex-col lg:flex-row gap-6 h-[80vh] overflow-hidden animate-in zoom-in-95 duration-300">
+                <div className="max-w-7xl mx-auto bg-white border border-slate-200 rounded-[2.5rem] p-4 sm:p-6 shadow-xl flex flex-col gap-4 lg:flex-row h-[85vh] lg:h-[80vh] overflow-hidden animate-in zoom-in-95 duration-300">
                     
+                    {/* Mobile View Switcher */}
+                    <div className="flex lg:hidden bg-slate-100 p-1 rounded-2xl border border-slate-200 justify-between shrink-0">
+                        <button
+                            onClick={() => setEditorMobileTab('chat')}
+                            className={`flex-1 py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
+                                editorMobileTab === 'chat' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                            }`}
+                        >
+                            <MessageSquare size={14} /> Assistant Chat
+                        </button>
+                        <button
+                            onClick={() => setEditorMobileTab('preview')}
+                            className={`flex-1 py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
+                                editorMobileTab === 'preview' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                            }`}
+                        >
+                            <Eye size={14} /> Page Preview
+                        </button>
+                    </div>
+
                     {/* Left Pane: Conversation console */}
-                    <div className="w-full lg:w-[400px] flex flex-col h-full bg-slate-50 border border-slate-200 rounded-[2rem] p-4">
+                    <div className={`w-full lg:w-[400px] flex flex-col h-full bg-slate-50 border border-slate-200 rounded-[2rem] p-4 ${
+                        editorMobileTab === 'chat' ? 'flex' : 'hidden lg:flex'
+                    }`}>
                         <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-3">
                             <div>
                                 <h3 className="text-base font-black text-slate-800">Lander Assistant</h3>
@@ -1387,8 +1411,10 @@ const handleSendChatEdit = async () => {
                     </div>
 
                     {/* Right Pane: Live iFrame Preview or HTML Code Editor */}
-                    <div className="flex-1 flex flex-col h-full bg-slate-50 border border-slate-200 rounded-[2rem] p-4 relative overflow-hidden">
-                        <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-3 gap-4">
+                    <div className={`flex-1 flex flex-col h-full bg-slate-50 border border-slate-200 rounded-[2rem] p-4 relative overflow-hidden ${
+                        editorMobileTab === 'preview' ? 'flex' : 'hidden lg:flex'
+                    }`}>
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-3 gap-2 flex-wrap">
                             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-full border border-slate-200/50">
                                 <button
                                     onClick={() => setEditorView('preview')}
@@ -1411,6 +1437,39 @@ const handleSendChatEdit = async () => {
                                     <Code size={12} /> HTML Code
                                 </button>
                             </div>
+
+                            {/* Device Viewport Selector */}
+                            {editorView === 'preview' && (
+                                <div className="flex items-center gap-1 bg-slate-200/70 p-1 rounded-xl border border-slate-300/60">
+                                    <button
+                                        onClick={() => setPreviewDevice('desktop')}
+                                        className={`p-1.5 rounded-lg transition-all ${
+                                            previewDevice === 'desktop' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                                        }`}
+                                        title="Desktop View (100%)"
+                                    >
+                                        <Monitor size={14} />
+                                    </button>
+                                    <button
+                                        onClick={() => setPreviewDevice('tablet')}
+                                        className={`p-1.5 rounded-lg transition-all ${
+                                            previewDevice === 'tablet' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                                        }`}
+                                        title="Tablet View (768px)"
+                                    >
+                                        <Tablet size={14} />
+                                    </button>
+                                    <button
+                                        onClick={() => setPreviewDevice('mobile')}
+                                        className={`p-1.5 rounded-lg transition-all ${
+                                            previewDevice === 'mobile' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                                        }`}
+                                        title="Mobile View (375px)"
+                                    >
+                                        <Smartphone size={14} />
+                                    </button>
+                                </div>
+                            )}
 
                             <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
                                 {editorView === 'code' ? (
@@ -1435,11 +1494,19 @@ const handleSendChatEdit = async () => {
                         </div>
 
                         {editorView === 'preview' ? (
-                            <div className="flex-1 rounded-[1.5rem] overflow-hidden border border-slate-200 shadow-inner relative bg-white">
-                                <iframe 
-                                    srcDoc={getPreviewHtml(activeEditorPage)} 
-                                    className="w-full h-full border-none"
-                                />
+                            <div className="flex-1 overflow-auto flex items-center justify-center bg-slate-200/50 rounded-[1.5rem] p-2 relative">
+                                <div className={`transition-all duration-300 bg-white shadow-xl overflow-hidden ${
+                                    previewDevice === 'mobile'
+                                        ? 'w-[375px] h-[667px] max-h-full rounded-[2.5rem] border-[8px] border-slate-900 shadow-2xl relative my-auto'
+                                        : previewDevice === 'tablet'
+                                            ? 'w-[768px] h-full max-h-full rounded-[2rem] border-[8px] border-slate-900 shadow-2xl relative my-auto'
+                                            : 'w-full h-full rounded-[1.5rem] border border-slate-200'
+                                }`}>
+                                    <iframe 
+                                        srcDoc={getPreviewHtml(activeEditorPage)} 
+                                        className="w-full h-full border-none"
+                                    />
+                                </div>
                             </div>
                         ) : (
                             <div className="flex-1 rounded-[1.5rem] overflow-hidden border border-slate-200 shadow-inner relative bg-slate-950 flex flex-col p-2">

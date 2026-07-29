@@ -603,72 +603,108 @@ CRITICAL RULES:
             return NextResponse.json({ error: "Failed to initialize background task tracking." }, { status: 500 })
         }
 
-        // Fire and forget: run the heavy Gemini generation in background
-        (async () => {
-            try {
-                console.log(`[Lander API BG] Calling Gemini for job ${job.id} / page ${pageRecord.id} in mode: ${mode}...`)
-                const generateRes = await callGeminiWithUsage(systemPrompt, imageUrls)
-                const aiRawResult = generateRes.text
-                
-                // Deduct credits dynamically
-                const generateInr = calculateLLMCost(generateRes.modelName, generateRes.promptTokens, generateRes.completionTokens)
-                await deductCreditsByCost(supabaseAdmin, targetUserId, generateInr, 'ai_generation', `AI Landing Page - Page Copy Generation (${mode})`)
-                
-                // Clean markdown formatting if LLM failed to follow the instruction
-                const htmlResult = aiRawResult
-                    .replace(/^```html\s*/i, '')
-                    .replace(/^```\s*/, '')
-                    .replace(/\s*```$/, '')
-                    .trim()
+        // Execute Gemini generation synchronously to guarantee completion before response
+        let cleanedHtml = mode === 'edit' ? currentHtml : ''
+        try {
+            console.log(`[Lander API] Calling Gemini for job ${job.id} / page ${pageRecord.id} in mode: ${mode}...`)
+            const generateRes = await callGeminiWithUsage(systemPrompt, imageUrls)
+            const aiRawResult = generateRes.text
+            
+            // Deduct credits dynamically
+            const generateInr = calculateLLMCost(generateRes.modelName, generateRes.promptTokens, generateRes.completionTokens)
+            await deductCreditsByCost(supabaseAdmin, targetUserId, generateInr, 'ai_generation', `AI Landing Page - Page Copy Generation (${mode})`)
+            
+            // Clean markdown formatting if LLM failed to follow the instruction
+            const htmlResult = aiRawResult
+                .replace(/^```html\s*/i, '')
+                .replace(/^```\s*/, '')
+                .replace(/\s*```$/, '')
+                .trim()
 
-                // Clean spaces
-                const cleanedHtml = htmlResult.replace(/\u00a0/g, ' ')
+            // Clean spaces
+            cleanedHtml = htmlResult.replace(/\u00a0/g, ' ')
 
-                // Save final HTML content to landing page
-                const { error: pageUpdateErr } = await supabaseAdmin
-                    .from('landing_pages')
-                    .update({
-                        html_content: cleanedHtml,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', pageRecord.id)
+            // Save final HTML content to landing page
+            const { error: pageUpdateErr } = await supabaseAdmin
+                .from('landing_pages')
+                .update({
+                    html_content: cleanedHtml,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', pageRecord.id)
 
-                if (pageUpdateErr) {
-                    throw pageUpdateErr
-                }
-
-                // Update job status to completed
-                await supabaseAdmin
-                    .from('campaign_jobs')
-                    .update({
-                        status: 'completed',
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', job.id)
-
-                console.log(`[Lander API BG] Successfully generated and updated landing page ${pageRecord.id}`)
-            } catch (bgError: any) {
-                console.error(`[Lander API BG] Background generation error for job ${job.id}:`, bgError)
-                
-                // Update job status to failed and save the error message
-                await supabaseAdmin
-                    .from('campaign_jobs')
-                    .update({
-                        status: 'failed',
-                        message: bgError.message || "Background landing page generation failed.",
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', job.id)
+            if (pageUpdateErr) {
+                throw pageUpdateErr
             }
-        })()
+
+            // Update job status to completed
+            await supabaseAdmin
+                .from('campaign_jobs')
+                .update({
+                    status: 'completed',
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', job.id)
+
+            console.log(`[Lander API] Successfully generated and updated landing page ${pageRecord.id}`)
+        } catch (genError: any) {
+            console.error(`[Lander API] Generation error for job ${job.id}:`, genError)
+            
+            // Update job status to failed
+            await supabaseAdmin
+                .from('campaign_jobs')
+                .update({
+                    status: 'failed',
+                    message: genError.message || "Landing page generation failed.",
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', job.id)
+
+            if (!cleanedHtml || cleanedHtml.includes('Generating page content')) {
+                // If initial creation failed to generate HTML, fallback to a clean responsive template
+                cleanedHtml = `<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>${resolvedProductName || 'Offer'} | ${profile?.business_name || 'Exclusive Offer'}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased max-w-full overflow-x-hidden">
+    <header class="bg-white border-b border-slate-200 py-4 px-4 sm:px-8 flex justify-between items-center">
+        <h1 class="text-xl font-black text-slate-900 truncate">${resolvedProductName || 'Special Offer'}</h1>
+        ${profile?.contact_number ? `<a href="tel:${profile.contact_number}" class="bg-blue-600 text-white font-bold text-xs px-4 py-2 rounded-xl">Call Us</a>` : ''}
+    </header>
+    <main class="max-w-4xl mx-auto px-4 py-8 sm:py-12 flex flex-col gap-8">
+        <section class="text-center space-y-4">
+            <h2 class="text-2xl sm:text-4xl font-extrabold text-slate-900 leading-tight">${resolvedProductName || 'Exclusive Opportunity'}</h2>
+            <p class="text-slate-600 text-sm sm:text-base leading-relaxed max-w-2xl mx-auto">${resolvedContext || 'Welcome to our official landing page. Fill out your details below to connect with our team.'}</p>
+        </section>
+        <section class="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-xl max-w-md mx-auto w-full">
+            <div id="qualification-form-container" data-button-text="Submit Details"></div>
+        </section>
+    </main>
+</body>
+</html>`
+                await supabaseAdmin
+                    .from('landing_pages')
+                    .update({ html_content: cleanedHtml, updated_at: new Date().toISOString() })
+                    .eq('id', pageRecord.id)
+            }
+        }
 
         const domainBase = profile?.custom_domain || `app.nobogent.com/shared/${targetUserId}`
         const publicUrl = `https://${domainBase}/${slug}`
 
+        const updatedPageRecord = {
+            ...pageRecord,
+            html_content: cleanedHtml
+        }
+
         return NextResponse.json({
             success: true,
             jobId: job.id,
-            page: pageRecord,
+            page: updatedPageRecord,
             publicUrl
         })
 
