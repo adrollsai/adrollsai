@@ -559,6 +559,7 @@ wss.on('connection', (wsConnection) => {
                         
                         // Build Product Context
                         let productContext = '';
+                        let interestedPropertyTitle = null;
                         if (lead.property_id) {
                             const { data: prop } = await supabaseAdmin
                                 .from('properties')
@@ -566,6 +567,7 @@ wss.on('connection', (wsConnection) => {
                                 .eq('id', lead.property_id)
                                 .maybeSingle();
                             if (prop) {
+                                interestedPropertyTitle = prop.title || null;
                                 productContext = `<interested_property>
   <title>${prop.title || 'N/A'}</title>
   <type>${prop.property_type || 'N/A'}</type>
@@ -672,7 +674,7 @@ wss.on('connection', (wsConnection) => {
                             }
                         }
 
-                        const targetProduct = adProductName || (props && props.length > 0 ? props[0].title : null) || adHeadline || adName;
+                        const targetProduct = adProductName || interestedPropertyTitle || adHeadline || adName || null;
 
                         // Build proactive context instruction for the agent's second turn (after greeting response)
                         let sourceInstructions = "";
@@ -685,11 +687,13 @@ wss.on('connection', (wsConnection) => {
                                 const cleanSource = lead.source.toLowerCase();
                                 if (cleanSource.includes('facebook') || cleanSource.includes('fb') || cleanSource.includes('instagram') || cleanSource.includes('ad')) {
                                     contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, say: "Aapne hamaari ad dekhi hogi ${companyName} ki, ussi ke regarding call kar rahi hoon."`;
+                                } else if (cleanSource.includes('manual') || cleanSource.includes('direct') || cleanSource.includes('import')) {
+                                    contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. ${lead.notes ? `Refer naturally to their requirement noted in CRM notes: "${lead.notes}". Say something like: "Main ${companyName} se baat kar rahi hoon, aapki requirement (${lead.notes}) ke regarding call kar rahi hoon."` : `Say something like: "Main ${companyName} se baat kar rahi hoon, aapki inquiry ke regarding call kar rahi hoon."`} Then naturally ask how you can assist them.`;
                                 } else {
-                                    contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, say: "Aapne ${lead.source} par interest dikhaya tha, ussi ke regarding ${companyName} se call kar rahi hoon."`;
+                                    contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, say: "Aapne ${lead.source} par interest dikhaya tha, ussi ke regarding ${companyName} se call kar rahi hoon." ${lead.notes ? `Mention their requirement noted in CRM notes: "${lead.notes}".` : ''}`;
                                 }
                             } else {
-                                contextInstruction = `   After the lead responds to your greeting, introduce yourself and what the business does. ${productContext ? 'Mention the product/property they may be interested in from the LEAD INTEREST section below.' : (profile?.business_info ? `Briefly mention what the business deals in based on this info: "${profile.business_info.substring(0, 150).replace(/"/g, "'")}"` : '')} Say something like: "Main ${companyName} se baat kar rahi hoon, hum [mention product/service] mein deal karte hain." Then naturally ask about their availability.`;
+                                contextInstruction = `   After the lead responds to your greeting, introduce yourself from ${companyName}. ${lead.notes ? `Reference their requirement from CRM notes: "${lead.notes}".` : (profile?.business_info ? `Briefly mention what the business deals in based on this info: "${profile.business_info.substring(0, 150).replace(/"/g, "'")}"` : '')} Say something like: "Main ${companyName} se baat kar rahi hoon, hum [mention product/service] mein deal karte hain." Then naturally ask how you can help them.`;
                             }
                         } else {
                             sourceInstructions = `\nThis is a FOLLOW-UP call. The lead has been contacted before.`;
@@ -752,7 +756,7 @@ CONVERSATION FLOW:
 1. Your first greeting is: "Hi ${firstName} ji, kaise ho aap?". (This is already spoken initially).
 2. Once the lead responds to your greeting, your NEXT response must proactively establish context:
 ${contextInstruction}
-3. After establishing context, act as a helpful advisor. Focus on answering their queries about ${targetProduct || 'the property'} first.
+3. After establishing context, act as a helpful advisor. Focus on answering their queries about ${targetProduct || 'their requirement / property inquiry'} first.
 
 CRITICAL RULES (NATURAL HELPFUL AGENT & CLOSED-WORLD GROUNDING):
 1. STRICT CLOSED-WORLD ASSUMPTION: You must ONLY speak about the facts explicitly provided in the business profile info, catalog, and lead details.
@@ -768,7 +772,7 @@ CRITICAL RULES (NATURAL HELPFUL AGENT & CLOSED-WORLD GROUNDING):
    - State your name & reason clearly once: "Hi, I am calling from ${companyName} regarding ${targetProduct || 'your property inquiry'} for ${firstName}. Please connect the call."
    - Then WAIT silently for the human prospect to press answer and speak before resuming your normal conversation.
 10. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear an automated machine prompt to leave a message after the beep, trigger "end_call" to hang up.
-11. AD & PRODUCT SPECIFICITY RULE: When the prospect asks "Aap kiske regarding call kar rahe ho?", "Kiska call hai?", or "What is this call about?", state the specific product clearly: "Main ${companyName} se ${targetProduct || 'hamaare project'} ki details aur consultation ke regarding call kar rahi hoon."
+11. AD & PRODUCT SPECIFICITY RULE: When the prospect asks "Aap kiske regarding call kar rahe ho?", "Kiska call hai?", or "What is this call about?", state the reason clearly: ${targetProduct ? `"Main ${companyName} se ${targetProduct} project ki details aur consultation ke regarding call kar rahi hoon."` : `"Main ${companyName} se aapki inquiry / requirement ke regarding call kar rahi hoon."`}
 12. NATURAL BACKCHANNELING & HUMAN FILLERS: You MUST naturally use short Hinglish backchannels such as "Hmm", "Haan", "Ahaan", "Ji", "Hmm-mm" to acknowledge the lead while listening or at the start of your response turns (e.g., "Hmm, right", "Ahaan, samjha", "Haan ji"). This makes you sound exceptionally attentive, empathetic, and human.
 
 

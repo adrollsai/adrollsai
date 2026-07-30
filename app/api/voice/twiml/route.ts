@@ -430,11 +430,13 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
                 const cleanSource = lead.source.toLowerCase()
                 if (cleanSource.includes('facebook') || cleanSource.includes('fb') || cleanSource.includes('instagram') || cleanSource.includes('ad')) {
                     contextInstruction = `After the lead responds to your greeting, proactively establish context. Say something like: "Aapne hamaari ad dekhi hogi ${companyName} ki, ussi ke regarding call kar raha hoon." Then naturally ask about their availability.`
+                } else if (cleanSource.includes('manual') || cleanSource.includes('direct') || cleanSource.includes('import')) {
+                    contextInstruction = `After the lead responds to your greeting, proactively establish context. Introduce yourself from ${companyName}. ${lead.notes ? `Refer naturally to their requirement noted in CRM notes: "${lead.notes}". Say something like: "Main ${companyName} se call kar raha hoon, aapki requirement (${lead.notes}) ke regarding."` : `Say something like: "Main ${companyName} se call kar raha hoon, aapki inquiry ke regarding."`} Then naturally ask about their availability.`
                 } else {
-                    contextInstruction = `After the lead responds to your greeting, proactively establish context. Say something like: "Aapne ${lead.source} par interest dikhaya tha, ussi ke regarding ${companyName} se call kar raha hoon." Then naturally ask about their availability.`
+                    contextInstruction = `After the lead responds to your greeting, proactively establish context. Say something like: "Aapne ${lead.source} par interest dikhaya tha, ussi ke regarding ${companyName} se call kar raha hoon." ${lead.notes ? `Reference their requirement from CRM notes: "${lead.notes}".` : ''} Then naturally ask about their availability.`
                 }
             } else {
-                contextInstruction = `After the lead responds to your greeting, introduce yourself and what the business does. ${productContext ? 'Mention the product/property they may be interested in from the LEAD INTEREST section below.' : (profile?.business_info ? `Briefly mention what the business deals in based on this info: "${profile.business_info.substring(0, 150).replace(/"/g, "'")}"` : '')} Say something like: "Main ${companyName} se baat kar raha hoon, hum [mention product/service] mein deal karte hain." Then naturally ask about their availability.`
+                contextInstruction = `After the lead responds to your greeting, introduce yourself and what the business does. ${lead.notes ? `Refer to their requirement from CRM notes: "${lead.notes}".` : (profile?.business_info ? `Briefly mention what the business deals in based on this info: "${profile.business_info.substring(0, 150).replace(/"/g, "'")}"` : '')} Say something like: "Main ${companyName} se baat kar raha hoon, hum [mention product/service] mein deal karte hain." Then naturally ask about their availability.`
             }
         } else {
             if (previousCallsHistory) {
