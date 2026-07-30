@@ -16,7 +16,18 @@ async function checkBroadcastStatus() {
         .select('id, email, full_name, business_name, whatsapp_phone_number, whatsapp_phone_number_id, whatsapp_access_token')
         .or('business_name.ilike.%bluesquare%,business_name.ilike.%blue square%,email.ilike.%bluesquare%,full_name.ilike.%bluesquare%');
 
-    console.log('Matched Profiles:', profiles);
+    // Fetch Meta template info for investment_inquiry
+    const profile = (profiles || []).find((p: any) => p.email === 'infobluesquareinfra@gmail.com');
+    if (profile) {
+        const wabaId = '1961706644524869'; // profile.whatsapp_waba_id
+        const token = profile.whatsapp_access_token;
+        const res = await fetch(`https://graph.facebook.com/v20.0/${wabaId}/message_templates?name=investment_inquiry`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        console.log('\n--- META TEMPLATE DETAILS FOR investment_inquiry ---');
+        console.log(JSON.stringify(data, null, 2));
+    }
 
     // 2. Fetch recent broadcasts
     const { data: broadcasts, error: bErr } = await supabaseAdmin
@@ -39,22 +50,23 @@ async function checkBroadcastStatus() {
         console.log(`CSV Audience: ${latest.recipient_csv_audience}`);
         console.log(`Created At: ${latest.created_at}`);
 
-        // Check leads count matching this user / filters
-        let leadQ = supabaseAdmin.from('leads').select('id, name, phone, csv_audience, pipeline_stage', { count: 'exact' }).eq('user_id', latest.user_id);
-        if (latest.recipient_csv_audience) {
-            leadQ = leadQ.eq('csv_audience', latest.recipient_csv_audience);
+        // Check recipients table
+        const { count: totalR } = await supabaseAdmin.from('whatsapp_broadcast_recipients').select('id', { count: 'exact', head: true }).eq('broadcast_id', latest.id);
+        const { count: sentR } = await supabaseAdmin.from('whatsapp_broadcast_recipients').select('id', { count: 'exact', head: true }).eq('broadcast_id', latest.id).eq('status', 'sent');
+        const { count: failedR } = await supabaseAdmin.from('whatsapp_broadcast_recipients').select('id', { count: 'exact', head: true }).eq('broadcast_id', latest.id).eq('status', 'failed');
+        const { count: pendingR } = await supabaseAdmin.from('whatsapp_broadcast_recipients').select('id', { count: 'exact', head: true }).eq('broadcast_id', latest.id).eq('status', 'pending');
+
+        console.log(`\n--- RECIPIENTS BREAKDOWN FOR BROADCAST ${latest.id} ---`);
+        console.log(`Total Recipients in Table: ${totalR}`);
+        console.log(`Sent: ${sentR}`);
+        console.log(`Failed: ${failedR}`);
+        console.log(`Pending: ${pendingR}`);
+
+        // Fetch sample failed reason if any
+        if (failedR && failedR > 0) {
+            const { data: failedSamples } = await supabaseAdmin.from('whatsapp_broadcast_recipients').select('phone_number, status, error_message').eq('broadcast_id', latest.id).eq('status', 'failed').limit(3);
+            console.log('Sample Failed Recipients:', failedSamples);
         }
-        const { count, data: sampleLeads } = await leadQ.limit(5);
-        console.log(`\nTargeted Matching Leads Count: ${count}`);
-        console.log('Sample Leads:', sampleLeads);
-
-        // Check outbound messages created for this chat / broadcast
-        const { count: msgCount } = await supabaseAdmin
-            .from('whatsapp_messages')
-            .select('id', { count: 'exact', head: true })
-            .ilike('message_text', `%${latest.template_name}%`);
-
-        console.log(`Messages logged for template '${latest.template_name}': ${msgCount}`);
     }
 }
 

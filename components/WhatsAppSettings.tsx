@@ -624,6 +624,8 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
 
     window.addEventListener('message', messageListener);
 
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
+
     (window as any).FB.login((response: any) => {
       if (response.authResponse) {
         code = response.authResponse.code
@@ -636,7 +638,8 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
     }, {
       config_id: process.env.NEXT_PUBLIC_FACEBOOK_LOGIN_CONFIG_ID || '4311232925804423',
       response_type: 'code',
-      override_default_response_type: true
+      override_default_response_type: true,
+      display: isMobile ? 'touch' : 'popup'
     })
   }
 

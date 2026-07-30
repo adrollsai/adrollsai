@@ -158,3 +158,98 @@ export async function triggerWelcomeDrip(
         console.error('[DRIP TRIGGER] Error in triggerWelcomeDrip:', err);
     }
 }
+
+export async function sendInstantFormCatalogMessage(
+    supabaseAdmin: any,
+    leadId: string,
+    leadName: string,
+    leadPhone: string,
+    ownerId: string,
+    campaignName?: string
+) {
+    try {
+        console.log(`[INSTANT CATALOG WA] Dispatching instant form WhatsApp catalog template to lead: ${leadName} (${leadPhone}), owner: ${ownerId}`);
+
+        // Fetch owner's WhatsApp credentials & Business profile
+        const { data: profile } = await supabaseAdmin
+            .from('profiles')
+            .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, custom_domain')
+            .eq('id', ownerId)
+            .maybeSingle();
+
+        const token = profile?.whatsapp_access_token || profile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN;
+        const phoneId = profile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID;
+
+        if (!token || !phoneId) {
+            console.warn('[INSTANT CATALOG WA] Owner WhatsApp credentials not fully configured.');
+            return;
+        }
+
+        let cleanPhone = leadPhone.replace(/\D/g, '');
+        if (cleanPhone.startsWith('00')) {
+            cleanPhone = cleanPhone.substring(2);
+        }
+        if (cleanPhone.length === 10) {
+            cleanPhone = '91' + cleanPhone;
+        } else if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) {
+            cleanPhone = '91' + cleanPhone.substring(1);
+        }
+        if (!cleanPhone) return;
+
+        const companyName = profile.business_name || 'our company';
+        const catalogUrlParam = ownerId;
+
+        const messagePayload = {
+            messaging_product: 'whatsapp',
+            to: cleanPhone,
+            type: 'template',
+            template: {
+                name: 'instant_lead_catalog_welcome',
+                language: { code: 'en_US' },
+                components: [
+                    {
+                        type: 'body',
+                        parameters: [
+                            { type: 'text', text: leadName || 'Valued Lead' },
+                            { type: 'text', text: companyName }
+                        ]
+                    },
+                    {
+                        type: 'button',
+                        sub_type: 'url',
+                        index: '0',
+                        parameters: [
+                            { type: 'text', text: catalogUrlParam }
+                        ]
+                    }
+                ]
+            }
+        };
+
+        const metaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
+        
+        console.log(`[INSTANT CATALOG WA] Sending template 'instant_lead_catalog_welcome' to ${cleanPhone}...`);
+        const metaRes = await fetch(metaUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(messagePayload)
+        });
+
+        const metaData = await metaRes.json();
+        if (metaData.error) {
+            console.error('[INSTANT CATALOG WA] Meta API send failed:', metaData.error);
+        } else {
+            console.log(`[INSTANT CATALOG WA] WhatsApp catalog message sent successfully to ${cleanPhone}: ${metaData.messages?.[0]?.id}`);
+            await supabaseAdmin.from('lead_history').insert({
+                lead_id: leadId,
+                action_type: 'REMARK',
+                description: `💬 Instant WhatsApp catalog welcome template sent ("View Listings" button)`
+            });
+        }
+    } catch (err: any) {
+        console.error('[INSTANT CATALOG WA] Exception sending instant catalog message:', err);
+    }
+}

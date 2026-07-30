@@ -546,10 +546,29 @@ wss.on('connection', (wsConnection) => {
 
                 try {
                     const [profileRes, leadRes, propsRes, campaignRes, flaggedRes] = await dbPromise;
-                    profile = profileRes.data;
-                    profileData = profile;
                     lead = leadRes.data;
-                    props = propsRes.data;
+                    const effectiveProfileId = (lead && lead.user_id) ? lead.user_id : profileId;
+
+                    if (effectiveProfileId && (effectiveProfileId !== profileId || !profileRes.data)) {
+                        const { data: ownerProfile } = await supabaseAdmin
+                            .from('profiles')
+                            .select('*')
+                            .eq('id', effectiveProfileId)
+                            .maybeSingle();
+                        profile = ownerProfile || profileRes.data;
+
+                        const { data: ownerProps } = await supabaseAdmin
+                            .from('properties')
+                            .select('*')
+                            .eq('user_id', effectiveProfileId)
+                            .limit(5);
+                        props = ownerProps || propsRes.data;
+                    } else {
+                        profile = profileRes.data;
+                        props = propsRes.data;
+                    }
+
+                    profileData = profile;
                     campaign = campaignRes ? campaignRes.data : null;
                     resolvedQuestions = flaggedRes?.data || [];
 

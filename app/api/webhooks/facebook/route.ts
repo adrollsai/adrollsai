@@ -6,7 +6,7 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { google } from '@ai-sdk/google'
 import { generateText, tool, stepCountIs } from 'ai'
 import { z } from 'zod'
-import { triggerWelcomeDrip } from '@/utils/whatsapp/drips'
+import { triggerWelcomeDrip, sendInstantFormCatalogMessage } from '@/utils/whatsapp/drips'
 import { bookAppointment, triggerOutboundCall } from '@/utils/voice-helper'
 import { deductCreditsByCost, calculateLLMCost } from '@/utils/credits'
 
@@ -37,6 +37,7 @@ const supabaseAdmin = createClient(
 )
 
 const processedMessageIds = new Set<string>();
+const activeProcessingLeadIds = new Set<string>();
 
 function isRealPublicImageUrl(url: string | null | undefined): boolean {
     if (!url) return false;
@@ -2309,6 +2310,16 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
           const { leadgen_id, page_id, ad_id } = leadData
           console.log(`🔍 Processing Lead: ${leadgen_id} for Page: ${page_id}`)
 
+          if (leadgen_id && leadgen_id !== '999999999999999') {
+            if (activeProcessingLeadIds.has(leadgen_id)) {
+              console.log(`[Facebook Webhook] Lead ID ${leadgen_id} is currently being processed by another concurrent thread. Skipping duplicate.`);
+              continue;
+            }
+            activeProcessingLeadIds.add(leadgen_id);
+          }
+
+          try {
+
           // Find the User based on the Page ID using Admin Client
           const { data: profile, error: profileErr } = await supabaseAdmin
             .from('profiles')
@@ -2685,8 +2696,19 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
 
           const targetCampaignName = welcomePropertyTitle || campaignName || 'our properties';
 
-          // Trigger automated WhatsApp welcome drip campaign
+          // Trigger automated WhatsApp welcome drip campaign & instant catalog template with 'View Listings' button
           if (savedLead && phone) {
+              sendInstantFormCatalogMessage(
+                  supabaseAdmin,
+                  savedLead.id,
+                  name,
+                  phone,
+                  profile.id,
+                  targetCampaignName
+              ).catch(err => {
+                  console.error('[INSTANT CATALOG WA] Instant form WhatsApp catalog message failed:', err);
+              });
+
               triggerWelcomeDrip(
                   supabaseAdmin,
                   savedLead.id,
@@ -2704,6 +2726,11 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
               triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true).catch(err => {
                   console.error('[AUTO CALL] Auto voice call trigger failed:', err);
               });
+          }
+          } finally {
+            if (leadgen_id) {
+              activeProcessingLeadIds.delete(leadgen_id);
+            }
           }
         }
       }

@@ -58,20 +58,32 @@ export async function triggerOutboundCall(
                 .single(),
             supabaseAdmin
                 .from('leads')
-                .select('id, name, phone, custom_fields')
+                .select('id, user_id, name, phone, custom_fields')
                 .eq('id', leadId)
                 .single()
         ])
 
-        const profile = profResult.data
+        let profile = profResult.data
         const lead = leadResult.data
-
-        if (profResult.error || !profile) {
-            return { success: false, error: 'Failed to fetch user voice configuration.' }
-        }
 
         if (leadResult.error || !lead || !lead.phone) {
             return { success: false, error: 'Lead not found or has no phone number.' }
+        }
+
+        const effectiveProfileId = lead.user_id || profileId
+        if (effectiveProfileId !== profileId) {
+            const { data: ownerProfile } = await supabaseAdmin
+                .from('profiles')
+                .select('elevenlabs_api_key, elevenlabs_agent_id, voice_twilio_sid, voice_twilio_token, voice_twilio_number, google_refresh_token, google_booking_enabled, subscription_status, subscription_valid_until, email')
+                .eq('id', effectiveProfileId)
+                .maybeSingle()
+            if (ownerProfile) {
+                profile = ownerProfile
+            }
+        }
+
+        if (!profile) {
+            return { success: false, error: 'Failed to fetch user voice configuration.' }
         }
 
         // Subscription Validation Check
@@ -287,7 +299,7 @@ export async function triggerOutboundCall(
         const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64')
 
         const params = new URLSearchParams()
-        params.append('Url', `${appUrl}/api/voice/twiml?leadId=${lead.id}&profileId=${profileId}${campaignId ? `&campaignId=${campaignId}` : ''}`)
+        params.append('Url', `${appUrl}/api/voice/twiml?leadId=${lead.id}&profileId=${effectiveProfileId}${campaignId ? `&campaignId=${campaignId}` : ''}`)
         params.append('To', cleanPhone)
         params.append('From', voiceNumber.trim())
         params.append('StatusCallback', `${appUrl}/api/voice/status-callback?leadId=${lead.id}`)

@@ -392,7 +392,7 @@ async function executeBroadcastImmediately(
     let templateVarCount = 0
 
     try {
-        const wabaId = profile.whatsapp_waba_id
+        const wabaId = profile.whatsapp_waba_id || profile.whatsapp_business_account_id || process.env.DEV_WHATSAPP_WABA_ID
         if (wabaId && accessToken) {
             const tplRes = await fetch(`https://graph.facebook.com/v20.0/${wabaId}/message_templates?name=${templateName}`, {
                 headers: { 'Authorization': `Bearer ${accessToken}` }

@@ -32,8 +32,28 @@ export async function POST(req: Request) {
             }
         }
 
+        const targets: string[] = []
+        if (leadId) targets.push(leadId)
+        if (Array.isArray(leadIds)) targets.push(...leadIds)
+
+        if (targets.length === 0) {
+            return NextResponse.json({ error: 'No lead targets provided.' }, { status: 400 })
+        }
+
+        // If targetLead has an owner user_id and targetId wasn't explicitly impersonated, resolve to lead's owner
+        if (targets.length === 1 && !impersonateId) {
+            const { data: leadOwner } = await supabaseAdmin
+                .from('leads')
+                .select('user_id')
+                .eq('id', targets[0])
+                .maybeSingle()
+            if (leadOwner?.user_id) {
+                targetId = leadOwner.user_id
+            }
+        }
+
         // Fetch credentials of targetId
-        const { data: profile, error: profErr } = await supabase
+        const { data: profile, error: profErr } = await supabaseAdmin
             .from('profiles')
             .select('*')
             .eq('id', targetId)
@@ -47,20 +67,12 @@ export async function POST(req: Request) {
         const twilioToken = profile.voice_twilio_token || process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
         
         const isMasterDefaultUser = profile.email === 'rchopra489@gmail.com' || profile.email === 'infobluesquareinfra@gmail.com'
-        const voiceNumber = profile.voice_twilio_number || (isMasterDefaultUser ? process.env.MASTER_TWILIO_NUMBER : null)
+        const voiceNumber = profile.voice_twilio_number || process.env.MASTER_TWILIO_NUMBER || (isMasterDefaultUser ? process.env.MASTER_TWILIO_NUMBER : null)
 
         if (!twilioSid || !twilioToken || !voiceNumber) {
             return NextResponse.json({ 
                 error: 'Voice calling credentials or phone number are not configured. Please provision a phone number in Voice settings.' 
             }, { status: 400 })
-        }
-
-        const targets: string[] = []
-        if (leadId) targets.push(leadId)
-        if (Array.isArray(leadIds)) targets.push(...leadIds)
-
-        if (targets.length === 0) {
-            return NextResponse.json({ error: 'No lead targets provided.' }, { status: 400 })
         }
 
         const isAuto = !!isAutoTrigger

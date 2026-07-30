@@ -189,6 +189,53 @@ export async function registerDefaultTemplates(
             results.push({ name: 'expert_connection_notification', success: true, cached: true });
         }
 
+        // D. instant_lead_catalog_welcome
+        if (!existingNames.has('instant_lead_catalog_welcome')) {
+            console.log('[TEMPLATE SEEDER] Registering instant_lead_catalog_welcome template with Meta...');
+            const payload = {
+                name: 'instant_lead_catalog_welcome',
+                category: 'MARKETING',
+                language: 'en_US',
+                components: [
+                    {
+                        type: 'BODY',
+                        text: 'Hi {{1}}, thank you for showing interest in {{2}}! We have received your inquiry. Click the button below to view our complete inventory catalog and current listings:',
+                        example: {
+                            body_text: [
+                                ['John', 'Nobogent']
+                            ]
+                        }
+                    },
+                    {
+                        type: 'BUTTONS',
+                        buttons: [
+                            {
+                                type: 'URL',
+                                text: 'View Listings',
+                                url: 'https://app.nobogent.com/shared/{{1}}',
+                                example: [
+                                    'default'
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            };
+
+            const res = await fetch(postMetaUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${whatsappToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            results.push({ name: 'instant_lead_catalog_welcome', success: !data.error, error: data.error?.message || null });
+        } else {
+            results.push({ name: 'instant_lead_catalog_welcome', success: true, cached: true });
+        }
+
         return { success: true, results };
     } catch (err: any) {
         console.error('[TEMPLATE SEEDER] Seeding failed:', err);

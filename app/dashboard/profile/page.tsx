@@ -1067,31 +1067,118 @@ export default function ProfilePage() {
     return () => window.removeEventListener('message', handleMessage)
   }, [])
 
+  // Load Meta Facebook JS SDK for embedded in-app login
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!document.getElementById('facebook-jssdk')) {
+      const js = document.createElement('script')
+      js.id = 'facebook-jssdk'
+      js.src = 'https://connect.facebook.net/en_US/sdk.js'
+      const fjs = document.getElementsByTagName('script')[0]
+      if (fjs && fjs.parentNode) {
+        fjs.parentNode.insertBefore(js, fjs)
+      } else {
+        document.head.appendChild(js)
+      }
+    }
+    (window as any).fbAsyncInit = function () {
+      (window as any).FB.init({
+        appId: process.env.NEXT_PUBLIC_FACEBOOK_APP_ID,
+        cookie: true,
+        xfbml: true,
+        version: 'v19.0'
+      })
+    }
+  }, [])
+
   const handleConnectFacebook = async () => {
     setIsConnectingFb(true)
-    const connectUrl = `/api/facebook/connect${impersonateId ? `?impersonate=${impersonateId}` : ''}`
-    
-    const width = 600
-    const height = 750
-    const left = window.screenX + (window.outerWidth - width) / 2
-    const top = window.screenY + (window.outerHeight - height) / 2
+    const impersonateParam = impersonateId ? `?impersonate=${impersonateId}` : ''
+    const connectUrl = `/api/facebook/connect${impersonateParam}`
 
-    const popup = window.open(
-      connectUrl,
-      'FacebookConnectWindow',
-      `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,status=yes`
-    )
+    const isMobile = typeof window !== 'undefined' && (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768 || window.matchMedia('(display-mode: standalone)').matches)
 
-    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
-      window.location.href = connectUrl
-    } else {
-      const timer = setInterval(() => {
-        if (popup.closed) {
-          clearInterval(timer)
-          setIsConnectingFb(false)
-        }
-      }, 1000)
+    const triggerFbSdkLogin = () => {
+      try {
+        (window as any).FB.login((response: any) => {
+          const auth = response?.authResponse;
+          const accessToken = auth?.accessToken;
+          const code = auth?.code;
+
+          if (accessToken || code) {
+            fetch('/api/facebook/callback', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                accessToken: accessToken || null,
+                code: code || null,
+                impersonateId: impersonateId || null,
+                redirectUri: typeof window !== 'undefined' ? window.location.origin : undefined
+              })
+            })
+              .then(res => res.json())
+              .then(data => {
+                if (data.success) {
+                  toast.success("Facebook account connected successfully! ✨")
+                  fetchProfile(true)
+                } else {
+                  toast.error(data.error || "Failed to connect Facebook")
+                }
+              })
+              .catch(err => {
+                toast.error("Connection failed: " + err.message)
+              })
+              .finally(() => {
+                setIsConnectingFb(false)
+              })
+          } else {
+            console.warn('[FB LOGIN] AuthResponse missing or cancelled:', response)
+            setIsConnectingFb(false)
+          }
+        }, {
+          scope: 'public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management,pages_manage_ads,pages_read_user_content,leads_retrieval,pages_manage_metadata',
+          display: isMobile ? 'touch' : 'popup'
+        })
+      } catch (err) {
+        console.warn('[FB LOGIN] JS SDK invocation failed, navigating to connectUrl:', err)
+        window.location.href = connectUrl
+      }
     }
+
+    if (typeof window !== 'undefined' && (window as any).FB) {
+      triggerFbSdkLogin()
+      return
+    }
+
+    // Dynamically load JS SDK if not present yet
+    if (typeof window !== 'undefined') {
+      if (!document.getElementById('facebook-jssdk')) {
+        const js = document.createElement('script')
+        js.id = 'facebook-jssdk'
+        js.src = 'https://connect.facebook.net/en_US/sdk.js'
+        js.onload = () => {
+          if ((window as any).FB) {
+            (window as any).FB.init({
+              appId: process.env.NEXT_PUBLIC_FACEBOOK_APP_ID,
+              cookie: true,
+              xfbml: true,
+              version: 'v19.0'
+            })
+            triggerFbSdkLogin()
+          } else {
+            window.location.href = connectUrl
+          }
+        }
+        js.onerror = () => {
+          window.location.href = connectUrl
+        }
+        document.head.appendChild(js)
+        return
+      }
+    }
+
+    // Fallback: Direct Navigation / Window Popup
+    window.location.href = connectUrl
   }
 
   const handleDisconnectFacebook = async () => {

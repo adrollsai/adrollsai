@@ -8,7 +8,7 @@ const supabaseAdmin = createClient(
 );
 
 async function completeBroadcastSend() {
-    const broadcastId = 'ecd17a20-5f12-4a2d-902b-542492e1e9b0';
+    const broadcastId = '2997f5e6-18af-4d2f-abad-9da087b67178';
     console.log(`--- COMPLETING BROADCAST SEND FOR ${broadcastId} ---`);
 
     const { data: broadcast } = await supabaseAdmin
@@ -27,14 +27,14 @@ async function completeBroadcastSend() {
 
     if (!profile) return console.error('Profile not found');
 
-    // Fetch recipients with status 'failed'
+    // Fetch recipients with status 'failed' or 'pending'
     const { data: recipients } = await supabaseAdmin
         .from('whatsapp_broadcast_recipients')
         .select('*')
         .eq('broadcast_id', broadcastId)
-        .eq('status', 'failed');
+        .in('status', ['failed', 'pending']);
 
-    if (!recipients || recipients.length === 0) return console.log('No failed recipients to process');
+    if (!recipients || recipients.length === 0) return console.log('No pending or failed recipients to process');
 
     console.log(`Processing remaining ${recipients.length} failed recipients...`);
 

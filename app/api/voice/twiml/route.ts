@@ -163,11 +163,26 @@ export async function POST(req: Request) {
             });
         }
 
+        const { data: lead } = await supabaseAdmin
+            .from('leads')
+            .select('id, user_id, name, phone, email, source, custom_fields, voice_call_summary, voice_call_transcript, property_id, notes')
+            .eq('id', leadId)
+            .single()
+
+        if (!lead) {
+            console.error('[TWIML BRIDGE] Lead not found:', leadId)
+            return new NextResponse('<Response><Reject /></Response>', {
+                headers: { 'Content-Type': 'application/xml' }
+            })
+        }
+
+        const effectiveProfileId = lead.user_id || profileId
+
         // Fetch user voice credentials including business_info
         const { data: profile } = await supabaseAdmin
             .from('profiles')
             .select('*')
-            .eq('id', profileId)
+            .eq('id', effectiveProfileId)
             .single()
 
         // Fetch campaign if campaignId is present
@@ -187,19 +202,6 @@ export async function POST(req: Request) {
             }
         }
 
-        const { data: lead } = await supabaseAdmin
-            .from('leads')
-            .select('id, name, phone, email, source, custom_fields, voice_call_summary, voice_call_transcript, property_id, notes')
-            .eq('id', leadId)
-            .single()
-
-        if (!lead) {
-            console.error('[TWIML BRIDGE] Lead not found:', leadId)
-            return new NextResponse('<Response><Reject /></Response>', {
-                headers: { 'Content-Type': 'application/xml' }
-            })
-        }
-
         const voiceProvider = 'gemini' // Force Gemini 3.1 Flash Live API for all accounts
 
         if (voiceProvider === 'gemini') {
@@ -208,7 +210,7 @@ export async function POST(req: Request) {
             console.log(`[TWIML BRIDGE] Redirecting Twilio Media Stream to Gemini Live Bridge: ${streamUrl}`)
             
             // Fire session pre-warming in background to pre-connect Gemini WS & pre-load DB context
-            warmupVoiceBridge(leadId, profileId, campaignId || undefined).catch(e => console.warn('[TWIML BRIDGE] Prewarm trigger error:', e));
+            warmupVoiceBridge(leadId, effectiveProfileId, campaignId || undefined).catch(e => console.warn('[TWIML BRIDGE] Prewarm trigger error:', e));
 
             const voiceName = campaign?.audience_filter?.voice_name || profile?.voice_name || 'Aoede'
 
@@ -227,7 +229,7 @@ export async function POST(req: Request) {
     <Connect>
         <Stream url="${streamUrl}">
             <Parameter name="leadId" value="${leadId}" />
-            <Parameter name="profileId" value="${profileId}" />
+            <Parameter name="profileId" value="${effectiveProfileId}" />
             ${campaignId ? `<Parameter name="campaignId" value="${campaignId}" />` : ''}
             <Parameter name="voiceName" value="${voiceName}" />
         </Stream>
