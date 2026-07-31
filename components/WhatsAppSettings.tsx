@@ -31,6 +31,7 @@ import {
   Download
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { toast } from 'sonner'
 
 // Map template icon names to actual Lucide Icon components
@@ -2088,7 +2089,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                                       }}
                                       className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
                                     />
-                                    <span className="truncate">{p.title}</span>
+                                    <span className="truncate">{getPropertyDisplayLabel(p)}</span>
                                   </label>
                                 )
                               })}

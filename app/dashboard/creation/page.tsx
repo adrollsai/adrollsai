@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { motion, AnimatePresence } from 'framer-motion'
+import { getPropertyDisplayLabel } from '@/utils/property-helper'
 
 // --- TYPES ---
 type Message = {
@@ -1530,7 +1531,7 @@ export default function CreationPage() {
                 >
                     <option value="">{isLoadingProperties ? 'Loading catalog...' : '-- Attach Product --'}</option>
                     {properties.map(p => (
-                         <option key={p.id} value={p.id}>{p.title}</option>
+                         <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
                     ))}
                 </select>
                 {isLoadingProperties ? (

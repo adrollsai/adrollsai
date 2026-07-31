@@ -7,8 +7,10 @@ import {
   Plus, CheckCircle2, X, Download, Trash2, UserPlus, 
   Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, FileText, Send, HelpCircle, Target
 } from 'lucide-react'
+import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { createClient } from '@/utils/supabase/client'
 import TestNotificationBtn from '@/components/TestNotificationBtn'
+import { toast } from 'sonner'
 
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
@@ -489,6 +491,23 @@ export default function CRMPage() {
       alert("Failed to assign product: " + (err.message || String(err)));
     }
   }
+
+  const handleToggleWhatsAppEnabled = async (leadId: string, currentlyDisabled: boolean) => {
+    const nextState = currentlyDisabled ? true : false;
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .update({ whatsapp_enabled: nextState })
+        .eq('id', leadId);
+      
+      if (error) throw error;
+
+      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, whatsapp_enabled: nextState } : l));
+      toast.success(nextState ? "WhatsApp auto-messaging enabled" : "WhatsApp auto-messaging paused");
+    } catch(e: any) {
+      toast.error("Failed to update WhatsApp settings: " + (e.message || String(e)));
+    }
+  };
 
   const openMediaModal = async (origin: any, liveAdUrl: string, leadId?: string) => {
     setActiveMediaModal({ origin, liveAdUrl })
@@ -1459,6 +1478,21 @@ END:VCARD\n`
                                         >
                                             <UserPlus size={16} />
                                         </button>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleToggleWhatsAppEnabled(lead.id, lead.whatsapp_enabled === false);
+                                            }}
+                                            className={`p-2.5 rounded-full transition-all border shadow-sm ${
+                                                lead.whatsapp_enabled !== false 
+                                                    ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100' 
+                                                    : 'bg-red-50 text-red-500 border-red-200 hover:bg-red-100'
+                                            }`}
+                                            title={lead.whatsapp_enabled !== false ? 'WhatsApp Auto-Messaging: Active (Click to Pause)' : 'WhatsApp Auto-Messaging: Stopped (Click to Resume)'}
+                                        >
+                                            <MessageCircle size={16} className={lead.whatsapp_enabled === false ? 'line-through opacity-70' : ''} />
+                                        </button>
                                         <a 
                                             href={`https://wa.me/${displayPhone.replace(/[^0-9]/g, '')}`} 
                                             onClick={e => { 
@@ -1468,8 +1502,9 @@ END:VCARD\n`
                                             target="_blank" 
                                             rel="noopener noreferrer" 
                                             className="p-2.5 bg-slate-50 text-slate-600 hover:bg-[#25D366] hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
+                                            title="Chat on WhatsApp"
                                         >
-                                            <MessageCircle size={16} />
+                                            <Send size={16} />
                                         </a>
                                         <a 
                                             href={`tel:${displayPhone}`} 
@@ -1662,7 +1697,7 @@ END:VCARD\n`
                                                         >
                                                             <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
                                                             {properties.map((p: any) => (
-                                                                <option key={p.id} value={p.id}>{p.title}</option>
+                                                                <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
                                                             ))}
                                                             {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
                                                         </select>
@@ -1677,7 +1712,7 @@ END:VCARD\n`
                                                     <span className="p-1 bg-slate-400 text-white rounded font-black shrink-0">📦</span>
                                                     <div className="min-w-0 flex-1">
                                                         <span className="text-[8px] font-bold text-slate-500 uppercase block tracking-wider">Inventory Product</span>
-                                                        <span className="font-bold text-slate-800 text-xs truncate block">{productName || 'Unmapped Product'}</span>
+                                                        <span className="font-bold text-slate-800 text-xs truncate block">{productName ? getPropertyDisplayLabel(matchedProp || properties.find((p: any) => p.id === lead.property_id)) : 'Unmapped Product'}</span>
                                                     </div>
                                                 </div>
                                                 <select
@@ -1687,7 +1722,7 @@ END:VCARD\n`
                                                 >
                                                     <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
                                                     {properties.map((p: any) => (
-                                                        <option key={p.id} value={p.id}>{p.title}</option>
+                                                        <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
                                                     ))}
                                                     {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
                                                 </select>

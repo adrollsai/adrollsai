@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target, Check, CheckCheck } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { toast } from 'sonner'
 
 // Map String names to Actual Icons
@@ -1512,7 +1513,7 @@ export default function AutomationPage() {
                               ) : (
                                 properties.map(p => (
                                   <option key={p.id} value={p.id}>
-                                    {p.title} {p.price ? `(${p.price})` : ''}
+                                    {getPropertyDisplayLabel(p)}
                                   </option>
                                 ))
                               )}

@@ -34,7 +34,7 @@ async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Prom
     }
     
     const cacheKey = `generated/${userId}/trimmed_ref_v2_${hash}.mp4`;
-    const cachedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${cacheKey}`;
+    const cachedUrl = `${R2_PUBLIC_URL}/${cacheKey}`;
     
     try {
         await r2.send(new HeadObjectCommand({
@@ -151,7 +151,7 @@ async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Prom
 
 async function extractReferenceAudio(videoUrl: string, userId: string): Promise<string> {
     const cacheKey = `generated/${userId}/ref_audio_${crypto.createHash('md5').update(videoUrl).digest('hex')}.mp3`;
-    const cachedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${cacheKey}`;
+    const cachedUrl = `${R2_PUBLIC_URL}/${cacheKey}`;
     
     try {
         await r2.send(new HeadObjectCommand({

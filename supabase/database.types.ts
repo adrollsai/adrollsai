@@ -823,6 +823,7 @@ export type Database = {
           voice_call_transcript: Json | null
           voice_campaign_id: string | null
           voice_recording_url: string | null
+          whatsapp_enabled: boolean | null
         }
         Insert: {
           ad_name?: string | null
@@ -870,6 +871,7 @@ export type Database = {
           voice_call_transcript?: Json | null
           voice_campaign_id?: string | null
           voice_recording_url?: string | null
+          whatsapp_enabled?: boolean | null
         }
         Update: {
           ad_name?: string | null
@@ -917,6 +919,7 @@ export type Database = {
           voice_call_transcript?: Json | null
           voice_campaign_id?: string | null
           voice_recording_url?: string | null
+          whatsapp_enabled?: boolean | null
         }
         Relationships: [
           {
@@ -1220,6 +1223,7 @@ export type Database = {
           id: string
           instagram_url: string | null
           last_activity_date: string | null
+          last_ai_analysis: Json | null
           level: number | null
           linkedin_id: string | null
           linkedin_name: string | null
@@ -1322,6 +1326,7 @@ export type Database = {
           id?: string
           instagram_url?: string | null
           last_activity_date?: string | null
+          last_ai_analysis?: Json | null
           level?: number | null
           linkedin_id?: string | null
           linkedin_name?: string | null
@@ -1424,6 +1429,7 @@ export type Database = {
           id?: string
           instagram_url?: string | null
           last_activity_date?: string | null
+          last_ai_analysis?: Json | null
           level?: number | null
           linkedin_id?: string | null
           linkedin_name?: string | null
@@ -1740,6 +1746,7 @@ export type Database = {
         Row: {
           aspect_ratio: string | null
           asset_id: string | null
+          audio_url: string | null
           created_at: string | null
           current_index: number | null
           final_caption: string | null
@@ -1753,10 +1760,12 @@ export type Database = {
           status: string | null
           updated_at: string | null
           user_id: string | null
+          video_model: string | null
         }
         Insert: {
           aspect_ratio?: string | null
           asset_id?: string | null
+          audio_url?: string | null
           created_at?: string | null
           current_index?: number | null
           final_caption?: string | null
@@ -1770,10 +1779,12 @@ export type Database = {
           status?: string | null
           updated_at?: string | null
           user_id?: string | null
+          video_model?: string | null
         }
         Update: {
           aspect_ratio?: string | null
           asset_id?: string | null
+          audio_url?: string | null
           created_at?: string | null
           current_index?: number | null
           final_caption?: string | null
@@ -1787,6 +1798,7 @@ export type Database = {
           status?: string | null
           updated_at?: string | null
           user_id?: string | null
+          video_model?: string | null
         }
         Relationships: [
           {
@@ -2156,21 +2168,27 @@ export type Database = {
           created_at: string
           direction: string
           id: string
-          message_text: string
+          media_type: string | null
+          media_url: string | null
+          message_text: string | null
         }
         Insert: {
           chat_id: string
           created_at?: string
           direction: string
           id?: string
-          message_text: string
+          media_type?: string | null
+          media_url?: string | null
+          message_text?: string | null
         }
         Update: {
           chat_id?: string
           created_at?: string
           direction?: string
           id?: string
-          message_text?: string
+          media_type?: string | null
+          media_url?: string | null
+          message_text?: string | null
         }
         Relationships: [
           {

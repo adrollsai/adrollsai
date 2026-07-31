@@ -596,15 +596,19 @@ wss.on('connection', (wsConnection) => {
                             }
                         }
 
-                        // Build Catalog Context
+                        // Build Catalog Context with complete property details & location
                         let catalogContext = '';
                         if (props && props.length > 0) {
                             catalogContext = props.map((p) => {
                                 return `<property>
+  <id>${p.id}</id>
   <title>${p.title || 'N/A'}</title>
   <type>${p.property_type || 'N/A'}</type>
   <price>${p.price || 'N/A'}</price>
+  <location_address>${p.address || p.location || 'N/A'}</location_address>
+  <configurations>${p.configurations || 'N/A'}</configurations>
   <description>${p.description || 'N/A'}</description>
+  ${p.rera_number ? `<rera_number>${p.rera_number}</rera_number>` : ''}
 </property>`;
                             }).join('\n');
                         }
@@ -698,21 +702,24 @@ wss.on('connection', (wsConnection) => {
                         // Build proactive context instruction for the agent's second turn (after greeting response)
                         let sourceInstructions = "";
                         let contextInstruction = "";
+                        const cleanSource = (lead.source || '').toLowerCase();
+                        const isFromAd = cleanSource.includes('facebook') || cleanSource.includes('fb') || cleanSource.includes('instagram') || cleanSource.includes('ad') || cleanSource.includes('meta');
+
                         if (isFirstCall) {
                             sourceInstructions = `\nThis is your FIRST call to this lead.`;
-                            if (targetProduct) {
+                            if (isFromAd && targetProduct) {
                                 contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, explicitly reference the SPECIFIC project/product they showed interest in ("${targetProduct}"). Say something like: "Aapne ${companyName} ki ad dekhi thi ${targetProduct} ke regarding, main usi project ki complete details aur consultation schedule karne ke liye call kar rahi hoon." If asked "kiske regarding call hai?", answer directly: "Ye call ${companyName} ke ${targetProduct} project ki details share karne aur consultation schedule karne ke regarding hai."`;
-                            } else if (lead.source) {
-                                const cleanSource = lead.source.toLowerCase();
-                                if (cleanSource.includes('facebook') || cleanSource.includes('fb') || cleanSource.includes('instagram') || cleanSource.includes('ad')) {
-                                    contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, say: "Aapne hamaari ad dekhi hogi ${companyName} ki, ussi ke regarding call kar rahi hoon."`;
-                                } else if (cleanSource.includes('manual') || cleanSource.includes('direct') || cleanSource.includes('import')) {
-                                    contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. ${lead.notes ? `Refer naturally to their requirement noted in CRM notes: "${lead.notes}". Say something like: "Main ${companyName} se baat kar rahi hoon, aapki requirement (${lead.notes}) ke regarding call kar rahi hoon."` : `Say something like: "Main ${companyName} se baat kar rahi hoon, aapki inquiry ke regarding call kar rahi hoon."`} Then naturally ask how you can assist them.`;
-                                } else {
-                                    contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, say: "Aapne ${lead.source} par interest dikhaya tha, ussi ke regarding ${companyName} se call kar rahi hoon." ${lead.notes ? `Mention their requirement noted in CRM notes: "${lead.notes}".` : ''}`;
-                                }
+                            } else if (isFromAd) {
+                                contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, say: "Aapne hamaari ad dekhi hogi ${companyName} ki, ussi ke regarding call kar rahi hoon."`;
                             } else {
-                                contextInstruction = `   After the lead responds to your greeting, introduce yourself from ${companyName}. ${lead.notes ? `Reference their requirement from CRM notes: "${lead.notes}".` : (profile?.business_info ? `Briefly mention what the business deals in based on this info: "${profile.business_info.substring(0, 150).replace(/"/g, "'")}"` : '')} Say something like: "Main ${companyName} se baat kar rahi hoon, hum [mention product/service] mein deal karte hain." Then naturally ask how you can help them.`;
+                                // Manual, Direct, CSV Import, or non-Ad lead: NEVER say "Aapne ad dekhi thi"!
+                                if (lead.notes) {
+                                    contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. Refer naturally to their requirement noted in CRM notes: "${lead.notes}". Say something like: "Main ${companyName} se baat kar rahi hoon, aapki requirement (${lead.notes}) ke regarding call kar rahi hoon." Then naturally ask how you can assist them.`;
+                                } else if (targetProduct) {
+                                    contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. Say something like: "Main ${companyName} se ${targetProduct} ke regarding call kar rahi hoon, aapki requirement/inquiry ke regarding." Then naturally ask how you can assist them.`;
+                                } else {
+                                    contextInstruction = `   After the lead responds to your greeting, introduce yourself from ${companyName}. ${profile?.business_info ? `Briefly mention what the business deals in based on this info: "${profile.business_info.substring(0, 150).replace(/"/g, "'")}"` : ''} Say something like: "Main ${companyName} se baat kar rahi hoon, aapki property requirement/inquiry ke regarding call kar rahi hoon." Then naturally ask how you can help them.`;
+                                }
                             }
                         } else {
                             sourceInstructions = `\nThis is a FOLLOW-UP call. The lead has been contacted before.`;
@@ -793,6 +800,7 @@ CRITICAL RULES (NATURAL HELPFUL AGENT & CLOSED-WORLD GROUNDING):
 10. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear an automated machine prompt to leave a message after the beep, trigger "end_call" to hang up.
 11. AD & PRODUCT SPECIFICITY RULE: When the prospect asks "Aap kiske regarding call kar rahe ho?", "Kiska call hai?", or "What is this call about?", state the reason clearly: ${targetProduct ? `"Main ${companyName} se ${targetProduct} project ki details aur consultation ke regarding call kar rahi hoon."` : `"Main ${companyName} se aapki inquiry / requirement ke regarding call kar rahi hoon."`}
 12. NATURAL BACKCHANNELING & HUMAN FILLERS: You MUST naturally use short Hinglish backchannels such as "Hmm", "Haan", "Ahaan", "Ji", "Hmm-mm" to acknowledge the lead while listening or at the start of your response turns (e.g., "Hmm, right", "Ahaan, samjha", "Haan ji"). This makes you sound exceptionally attentive, empathetic, and human.
+13. PROPERTY MATCHING & GENERIC TITLES RULE: If inventory items have generic titles (such as "Commercial Space", "Luxury Flat", "Premium Property"), match the lead's requirement against the <location_address>, <configurations>, and <description> fields in the PROPERTIES CATALOG. When discussing a property with the prospect, ALWAYS mention its specific location (e.g., "Mohali", "Sector 82"), configuration, and key details so the prospect knows EXACTLY which property is being discussed.
 
 
 ${sourceInstructions}

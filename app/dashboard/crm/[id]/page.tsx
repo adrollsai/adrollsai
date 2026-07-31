@@ -642,6 +642,26 @@ export default function LeadProfilePage() {
         }
     }
 
+    const handleToggleWhatsAppEnabled = async (checked: boolean) => {
+        if (!lead) return
+        try {
+            const { error } = await supabase
+                .from('leads')
+                .update({ whatsapp_enabled: checked })
+                .eq('id', lead.id)
+            
+            if (error) throw error
+            
+            const updatedLead = { ...lead, whatsapp_enabled: checked }
+            setLead(updatedLead)
+            updateLocalCRMCache(updatedLead)
+            toast.success(checked ? "WhatsApp auto-messaging enabled" : "WhatsApp auto-messaging stopped")
+        } catch (e) {
+            console.error("Failed to toggle WhatsApp messaging:", e)
+            toast.error("Failed to update WhatsApp settings")
+        }
+    }
+
     const toLocalDateTimeString = (utcStr: string) => {
         if (!utcStr) return ''
         const d = new Date(utcStr)
@@ -1405,6 +1425,24 @@ END:VCARD`
                                         className="sr-only peer"
                                     />
                                     <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                                </label>
+                            </div>
+
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/50 flex justify-between items-center">
+                                <div>
+                                    <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">WhatsApp Auto-Messaging</span>
+                                    <span className={`font-black uppercase tracking-wider ${lead.whatsapp_enabled !== false ? 'text-emerald-600' : 'text-red-500'}`}>
+                                        {lead.whatsapp_enabled !== false ? 'Active' : 'Stopped'}
+                                    </span>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={lead.whatsapp_enabled !== false} 
+                                        onChange={(e) => handleToggleWhatsAppEnabled(e.target.checked)}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
                                 </label>
                             </div>
 

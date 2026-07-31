@@ -122,8 +122,14 @@ export async function POST(request: Request) {
             Body: buffer,
             ContentType: 'video/mp4'
         }));
+        await r2.send(new PutObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: `adrolls-storage/${r2Key}`,
+            Body: buffer,
+            ContentType: 'video/mp4'
+        }));
 
-        const r2Url = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key.replace(/^\//, '')}`;
+        const r2Url = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
         console.log(`[Lambda Callback] Upload complete. R2 URL: ${r2Url}`);
 
         // Generate video thumbnail

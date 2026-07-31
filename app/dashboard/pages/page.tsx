@@ -8,6 +8,7 @@ import {
     Code, Image as ImageIcon, X, Smartphone, Tablet, Monitor
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { uploadToR2, compressImage } from '@/utils/upload-helper'
 
 
@@ -2274,7 +2275,7 @@ const handleSendChatEdit = async () => {
                                 >
                                     <option value="">Custom Product / Raw Input</option>
                                     {properties.map(p => (
-                                        <option key={p.id} value={p.id}>{p.title}</option>
+                                        <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
                                     ))}
                                 </select>
                             </div>
