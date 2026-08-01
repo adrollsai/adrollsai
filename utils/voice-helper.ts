@@ -475,7 +475,7 @@ export async function bookAppointment(
             try {
                 const { data: overlappingLeads, error: dbErr } = await supabaseAdmin
                     .from('leads')
-                    .select('id, name, booked_time')
+                    .select('id, name, phone, booked_time')
                     .eq('user_id', profileId)
                     .not('booked_time', 'is', null)
                     .neq('id', leadId)
@@ -483,7 +483,15 @@ export async function bookAppointment(
                 if (dbErr) throw dbErr
 
                 if (overlappingLeads && overlappingLeads.length > 0) {
+                    const currentLeadDigits = lead?.phone ? lead.phone.replace(/\D/g, '').slice(-10) : ''
                     for (const otherLead of overlappingLeads) {
+                        const otherDigits = otherLead.phone ? otherLead.phone.replace(/\D/g, '').slice(-10) : ''
+                        
+                        // If it's the same lead/phone number rebooking, ignore conflict
+                        if (currentLeadDigits && otherDigits && currentLeadDigits === otherDigits) {
+                            continue
+                        }
+
                         const otherStart = new Date(otherLead.booked_time)
                         const otherEnd = new Date(otherStart.getTime() + (duration * 60000))
                         if (
@@ -491,9 +499,11 @@ export async function bookAppointment(
                             (end > otherStart && end <= otherEnd) ||
                             (start <= otherStart && end >= otherEnd)
                         ) {
-                            isSlotAvailable = false
-                            console.warn(`[VOICE HELPER] DB fallback slot taken. Overlaps with lead: ${otherLead.name} (${otherLead.booked_time})`)
-                            break
+                            if (!bypassHoursCheck) {
+                                isSlotAvailable = false
+                                console.warn(`[VOICE HELPER] DB fallback slot taken. Overlaps with lead: ${otherLead.name} (${otherLead.booked_time})`)
+                                break
+                            }
                         }
                     }
                 }
@@ -502,7 +512,7 @@ export async function bookAppointment(
             }
         }
 
-        if (!isSlotAvailable) {
+        if (!isSlotAvailable && !bypassHoursCheck) {
             return { success: false, error: 'slot_taken' }
         }
 
@@ -688,7 +698,13 @@ export async function bookAppointment(
         try {
             // Resolve host name and avatar (assigned team member or admin owner)
             let hostName = profile?.full_name || profile?.business_name || 'Team Member'
-            let hostAvatar = profile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/default-avatar.png'
+            let hostAvatar = profile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
+            if (hostAvatar.includes('/api/fetch-image?url=')) {
+                try { hostAvatar = decodeURIComponent(hostAvatar.split('/api/fetch-image?url=')[1]); } catch (e) {}
+            }
+            if (!hostAvatar.startsWith('http')) {
+                hostAvatar = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
+            }
 
             if (lead?.assigned_to) {
                 const { data: assignedProfile } = await supabaseAdmin
