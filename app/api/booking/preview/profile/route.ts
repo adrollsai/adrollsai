@@ -17,7 +17,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Missing host_id' }, { status: 400 })
     }
 
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(hostId)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(hostId)
     let query = supabaseAdmin
       .from('profiles')
       .select('id, business_name, logo_url, brand_color, google_booking_duration, google_booking_enabled')

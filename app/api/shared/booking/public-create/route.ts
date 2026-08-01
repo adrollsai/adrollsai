@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. Resolve host profile
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(host_id)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(host_id)
     let profileQuery = supabaseAdmin
       .from('profiles')
       .select('id, business_name')

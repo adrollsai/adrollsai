@@ -65,7 +65,7 @@ export async function GET(
         return NextResponse.json({ error: 'host_id is required for preview mode' }, { status: 400 })
       }
       
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(hostId)
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(hostId)
       let query = supabaseAdmin
         .from('profiles')
         .select('id, google_refresh_token, google_booking_enabled, google_booking_duration, google_booking_hours, google_calendar_id')

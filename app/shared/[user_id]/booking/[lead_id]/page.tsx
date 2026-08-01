@@ -99,7 +99,7 @@ export default function PublicBookingPortal() {
         }
 
         // Load host profile
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(currentUserId)
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentUserId)
         let profileQuery = supabase
           .from('profiles')
           .select('id, business_name, logo_url, brand_color, google_booking_duration')
