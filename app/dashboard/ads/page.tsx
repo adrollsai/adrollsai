@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 import LazyVideo from '@/components/LazyVideo'
 import { uploadToR2 } from '@/utils/upload-helper'
+import { getVideoPosterUrl } from '@/utils/get-video-poster'
 
 type Property = { id: string; title: string; price: string; image_url: string; description?: string }
 type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string; status?: string; metadata?: any }
@@ -2382,7 +2383,7 @@ export default function AdsPage() {
                                                         {a.type === 'video' ? (
                                                             <LazyVideo
                                                                 src={fixR2Url(a.url)}
-                                                                poster={a.metadata?.thumbnailUrl ? fixR2Url(a.metadata.thumbnailUrl) : undefined}
+                                                                poster={getVideoPosterUrl(a)}
                                                                 className="w-full h-full object-cover"
                                                             />
                                                         ) : (
@@ -2501,7 +2502,7 @@ export default function AdsPage() {
                                                     {v.type === 'video' ? (
                                                         <LazyVideo 
                                                             src={fixR2Url(v.image_url)} 
-                                                            poster={(v as any).thumbnailUrl ? fixR2Url((v as any).thumbnailUrl) : undefined} 
+                                                            poster={getVideoPosterUrl({ url: v.image_url, metadata: { thumbnailUrl: (v as any).thumbnailUrl } })} 
                                                             className="w-full h-full object-cover" 
                                                         />
                                                     ) : (
@@ -4401,7 +4402,7 @@ export default function AdsPage() {
                             {isVideo ? (
                               <LazyVideo 
                                   src={fixR2Url(c.previewUrl)} 
-                                  poster={c.thumbnailUrl ? fixR2Url(c.thumbnailUrl) : undefined} 
+                                  poster={getVideoPosterUrl({ url: c.previewUrl, metadata: { thumbnailUrl: c.thumbnailUrl } })} 
                                   className="w-full h-full object-cover" 
                               />
                             ) : (
@@ -4924,7 +4925,7 @@ export default function AdsPage() {
                                                 <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
                                                     <LazyVideo 
                                                         src={fixR2Url(a.url)} 
-                                                        poster={a.metadata?.thumbnailUrl ? fixR2Url(a.metadata.thumbnailUrl) : undefined} 
+                                                        poster={getVideoPosterUrl(a)} 
                                                         className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" 
                                                     />
                                                     <div className="absolute inset-0 flex items-center justify-center bg-black/10 pointer-events-none">
@@ -4979,7 +4980,7 @@ export default function AdsPage() {
                                                             <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
                                                                 <LazyVideo 
                                                                     src={fixR2Url(a.url)} 
-                                                                    poster={a.metadata?.thumbnailUrl ? fixR2Url(a.metadata.thumbnailUrl) : undefined} 
+                                                                    poster={getVideoPosterUrl(a)} 
                                                                     className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" 
                                                                 />
                                                                 <div className="absolute inset-0 flex items-center justify-center bg-black/10 pointer-events-none">

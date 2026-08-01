@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { useUpload } from '@/utils/UploadContext'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 import LazyVideo from '@/components/LazyVideo'
+import { getVideoPosterUrl } from '@/utils/get-video-poster'
 
 type Asset = {
     id: string
@@ -1317,7 +1318,7 @@ export default function AssetsPage() {
                                         <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
                                             <LazyVideo 
                                                 src={fixR2Url(asset.url)} 
-                                                poster={asset.metadata?.thumbnailUrl ? fixR2Url(asset.metadata.thumbnailUrl) : undefined} 
+                                                poster={getVideoPosterUrl(asset)} 
                                                 className="w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity" 
                                             />
                                             <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-transparent transition-colors">
