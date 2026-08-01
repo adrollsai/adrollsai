@@ -54,7 +54,7 @@ export default function PublicDirectBooking() {
         setLoading(true)
         setError(null)
 
-        const res = await fetch(`/api/public/booking-profile?host_id=${encodeURIComponent(hostId)}`)
+        const res = await fetch(`/api/shared/booking/profile?host_id=${encodeURIComponent(hostId)}`)
         const data = await res.json()
         
         if (!res.ok || !data.profile) {
