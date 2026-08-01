@@ -49,9 +49,9 @@ export default function LazyVideo({
         <div ref={containerRef} className="w-full h-full relative bg-slate-900 flex items-center justify-center">
             {isInView ? (
                 <video
-                    src={poster ? src : `${src}#t=0.1`}
+                    src={src}
                     poster={poster}
-                    preload={poster ? "none" : "metadata"}
+                    preload="metadata"
                     playsInline={playsInline}
                     muted={muted}
                     loop={loop}

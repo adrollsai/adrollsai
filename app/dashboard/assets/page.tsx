@@ -771,13 +771,11 @@ export default function AssetsPage() {
         })
     }
 
-    // Helper: Fix R2 URL structure if bucket name is missing
+    // Helper: Fix R2 URL structure and route through fetch-image proxy for fallback & video MIME resolution
     const fixR2Url = (url: string) => {
         if (!url) return ''
-        if (url.includes('.r2.dev') && !url.includes('/adrolls-storage/')) {
-            return url.replace('.r2.dev/', '.r2.dev/adrolls-storage/')
-        }
-        return url
+        if (url.startsWith('/api/fetch-image')) return url
+        return `/api/fetch-image?url=${encodeURIComponent(url)}`
     }
 
     // 5. Handle Universal Post
@@ -1449,10 +1447,10 @@ export default function AssetsPage() {
                                 <div className="rounded-[1.5rem] overflow-hidden bg-slate-100 mb-6 border border-slate-200/60 shadow-inner">
                                     {selectedAsset.type === 'video' ? (
                                         <video 
-                                            src={`${fixR2Url(selectedAsset.url)}#t=0.001`} 
+                                            src={fixR2Url(selectedAsset.url)} 
                                             poster={selectedAsset.metadata?.thumbnailUrl ? fixR2Url(selectedAsset.metadata.thumbnailUrl) : undefined}
                                             controls 
-                                            preload="none" 
+                                            preload="metadata" 
                                             className="w-full max-h-[250px] object-contain bg-black" 
                                         />
                                     ) : (
