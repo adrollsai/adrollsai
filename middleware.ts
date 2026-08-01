@@ -119,7 +119,9 @@ export const config = {
      * - favicon.ico (favicon file)
      * - auth (auth callback routes)
      * - shared (custom domain internal routes)
+     * - api/shared (public shared API routes - no auth required)
+     * - api/webhooks (webhook routes - no auth required)
      */
-    '/((?!_next/static|_next/image|favicon.ico|auth|shared|sw.js|sw-v2.js|custom-sw.js|workbox-[a-f0-9]+.js).*)',
+    '/((?!_next/static|_next/image|favicon.ico|auth|shared|api/shared|api/webhooks|sw.js|sw-v2.js|custom-sw.js|workbox-[a-f0-9]+.js).*)',
   ],
 }
