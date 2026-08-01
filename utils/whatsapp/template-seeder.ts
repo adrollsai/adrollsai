@@ -121,6 +121,40 @@ export async function registerDefaultTemplates(
             results.push({ name: 'booking_confirmation_prospect', success: true, cached: true });
         }
 
+        // A2. booking_confirmation_generic (Text-only generic confirmation)
+        if (!existingNames.has('booking_confirmation_generic')) {
+            console.log('[TEMPLATE SEEDER] Registering booking_confirmation_generic template...');
+            const genericPayload = {
+                name: 'booking_confirmation_generic',
+                category: 'UTILITY',
+                language: 'en_US',
+                components: [
+                    {
+                        type: 'BODY',
+                        text: 'Hi {{1}}, your appointment has been confirmed for {{2}} with {{3}} from {{4}}. We look forward to connecting with you!',
+                        example: {
+                            body_text: [
+                                ['John Doe', 'August 2, 2026 at 03:00 PM', 'Sarah Jenkins', 'Nobogent']
+                            ]
+                        }
+                    }
+                ]
+            };
+
+            const genericRes = await fetch(postMetaUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${whatsappToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(genericPayload)
+            });
+            const genericData = await genericRes.json();
+            results.push({ name: 'booking_confirmation_generic', success: !genericData.error, error: genericData.error?.message || null });
+        } else {
+            results.push({ name: 'booking_confirmation_generic', success: true, cached: true });
+        }
+
         // B. booking_notification_admin
         if (!existingNames.has('booking_notification_admin')) {
             console.log('[TEMPLATE SEEDER] Registering booking_notification_admin template...');

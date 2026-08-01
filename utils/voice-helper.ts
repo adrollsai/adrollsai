@@ -797,9 +797,65 @@ export async function bookAppointment(
                         console.warn('[VOICE HELPER] Exception in Priority 1 Free-Form send:', freeFormErr.message)
                     }
 
-                    // Priority 2: Template Fallback if Free-form text was rejected or window closed
+                    // Priority 2: Generic Text-Only Template Fallback (no image requirement, 100% reliable)
                     if (!confirmationDelivered) {
-                        console.log(`[VOICE HELPER] Priority 2: Sending WhatsApp Template confirmation to ${cleanLeadPhone}`)
+                        console.log(`[VOICE HELPER] Priority 2: Sending Generic WhatsApp Template confirmation (booking_confirmation_generic) to ${cleanLeadPhone}`)
+                        const genericPayload = {
+                            messaging_product: 'whatsapp',
+                            recipient_type: 'individual',
+                            to: cleanLeadPhone,
+                            type: 'template',
+                            template: {
+                                name: 'booking_confirmation_generic',
+                                language: { code: 'en_US' },
+                                components: [
+                                    {
+                                        type: 'body',
+                                        parameters: [
+                                            { type: 'text', text: lead.name || 'Valued Prospect' },
+                                            { type: 'text', text: formattedDate },
+                                            { type: 'text', text: hostName },
+                                            { type: 'text', text: profile?.business_name || 'Consultation' }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+
+                        try {
+                            const genRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${whatsappToken}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify(genericPayload)
+                            })
+                            const genData = await genRes.json()
+                            if (genRes.ok && genData.messages?.[0]?.id) {
+                                confirmationDelivered = true
+                                console.log(`[VOICE HELPER] Generic WhatsApp template confirmation delivered to ${cleanLeadPhone}. Message ID: ${genData.messages[0].id}`)
+                                await supabaseAdmin.from('whatsapp_messages').insert({
+                                    user_id: profileId,
+                                    lead_id: leadId,
+                                    direction: 'outbound',
+                                    message_type: 'template',
+                                    body: `💬 WhatsApp Template (Generic): Booking confirmed for ${formattedDate}`,
+                                    status: 'sent',
+                                    message_id: genData.messages[0].id,
+                                    created_at: new Date().toISOString()
+                                }).catch(() => {})
+                            } else {
+                                console.warn('[VOICE HELPER] Generic template send failed, trying image-header template fallback:', genData.error)
+                            }
+                        } catch (genErr: any) {
+                            console.warn('[VOICE HELPER] Exception in Generic Template send:', genErr.message)
+                        }
+                    }
+
+                    // Priority 3: Image-Header Template Fallback (booking_confirmation_prospect)
+                    if (!confirmationDelivered) {
+                        console.log(`[VOICE HELPER] Priority 3: Sending WhatsApp Template confirmation (booking_confirmation_prospect) to ${cleanLeadPhone}`)
                         const prospectPayload = {
                             messaging_product: 'whatsapp',
                             recipient_type: 'individual',
@@ -873,7 +929,7 @@ export async function bookAppointment(
                                 }).catch(() => {})
                             }
                         } catch (tmplErr: any) {
-                            console.error('[VOICE HELPER] Exception in Priority 2 Template send:', tmplErr)
+                            console.error('[VOICE HELPER] Exception in Priority 3 Template send:', tmplErr)
                         }
                     }
                 }
