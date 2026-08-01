@@ -242,8 +242,20 @@ export const UploadProvider = ({ children }: { children: React.ReactNode }) => {
                 }
 
                 if (!compressRes || !compressRes.ok) {
-                    const errorData = compressRes ? await compressRes.json().catch(() => ({})) : {};
-                    throw new Error(errorData.error || 'Serverless video optimization failed.')
+                    // Double check if background processing registered the asset in Supabase
+                    const { data: existingAsset } = await supabase
+                        .from('assets')
+                        .select('id')
+                        .eq('user_id', targetUserId)
+                        .ilike('caption', `%${currentFile.name}%`)
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+
+                    if (!existingAsset) {
+                        const errorData = compressRes ? await compressRes.json().catch(() => ({})) : {};
+                        throw new Error(errorData.error || 'Serverless video optimization failed.')
+                    }
                 }
             } else {
                 updateTask(id, { progress: 95 })
@@ -269,6 +281,9 @@ export const UploadProvider = ({ children }: { children: React.ReactNode }) => {
             // Completed!
             updateTask(id, { status: 'completed', progress: 100 })
             notifyCompletion()
+            setTimeout(() => {
+                removeTask(id)
+            }, 3000)
 
         } catch (err: any) {
             console.error(`[UploadContext] Task ${id} failed:`, err)

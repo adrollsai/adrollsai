@@ -100,7 +100,7 @@ export async function POST(request: Request) {
                     os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
                 )
                 const ffmpeg = fs.existsSync(nodeModulesFfmpeg) ? nodeModulesFfmpeg : (ffmpegPath || 'ffmpeg')
-                const command = `"${ffmpeg}" -y -i "${inputPath}" -filter:v fps=30 -vsync cfr -c:v libx264 -pix_fmt yuv420p -crf 28 -preset superfast -c:a aac -b:a 128k "${outputPath}"`
+                const command = `"${ffmpeg}" -y -i "${inputPath}" -filter:v fps=30 -vsync cfr -c:v libx264 -pix_fmt yuv420p -crf 30 -preset ultrafast -c:a aac -b:a 128k "${outputPath}"`
                 
                 console.log(`[VideoCompress API] Compressing video. Command: ${command}`)
                 await execPromise(command)
