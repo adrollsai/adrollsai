@@ -133,7 +133,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             throw new Error("Job payload not found");
         }
 
-        if (job && job.status !== 'pending' && job.status !== 'processing') {
+        if (job && job.status !== 'pending' && job.status !== 'queued' && job.status !== 'processing') {
             logToFile("[Processor] Job already processed, status:", job.status);
             return;
         }
@@ -584,7 +584,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     });
 
                     const hasGranular = targetingConfig.geo_locations.cities.length > 0 || targetingConfig.geo_locations.regions.length > 0 || targetingConfig.geo_locations.zips.length > 0;
-                    if (hasGranular && targetingConfig.geo_locations.countries.length === 0) delete targetingConfig.geo_locations.countries;
+                    if (hasGranular) delete targetingConfig.geo_locations.countries;
                     else if (targetingConfig.geo_locations.countries.length === 0) targetingConfig.geo_locations.countries.push('IN');
 
                     if (targetingConfig.geo_locations.cities.length === 0) delete targetingConfig.geo_locations.cities;
@@ -597,9 +597,12 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         }
 
         targetingConfig.age_min = ageMin !== undefined && ageMin !== null ? ageMin : 18;
-        targetingConfig.age_max = ageMax !== undefined && ageMax !== null ? ageMax : 65;
-        targetingConfig.targeting_relaxation_types = { custom_audience: 1, lookalike: 1 };
-        targetingConfig.targeting_automation = { advantage_audience: targetingConfig.age_min <= 25 ? 1 : 0 };
+        if (ageMax !== undefined && ageMax !== null && ageMax < 65) {
+            targetingConfig.age_max = ageMax;
+        } else {
+            delete targetingConfig.age_max;
+        }
+        targetingConfig.targeting_automation = { advantage_audience: 0 };
         targetingConfig.device_platforms = ['mobile', 'desktop'];
         targetingConfig.publisher_platforms = ['facebook', 'instagram'];
 

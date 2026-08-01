@@ -1134,7 +1134,9 @@ IMPORTANT RULES:
                                              title: '☎️ Connect with Expert Requested!',
                                              body: `Lead ${leadName} (${leadPhone}) has requested to connect with an expert immediately. Please contact them on call as soon as possible.`,
                                              url: '/dashboard/crm',
-                                             type: 'connect_expert'
+                                             type: 'connect_expert',
+                                             leadPhone,
+                                             leadName
                                          }).catch(err => console.error('[Flow] Multi-channel expert request alert failed:', err));
                                          
                                          return; // Stop processing further automation rules/flows or Gemini

@@ -151,7 +151,9 @@ export async function POST(request: Request) {
         title: '📅 New Meeting Booked!',
         body: `Lead ${lead.name} (${lead.phone || 'No Phone'}) booked an appointment for ${formattedSlotDate}.${hangoutLink ? `\nMeet Link: ${hangoutLink}` : ''}`,
         url: `/dashboard/crm/${lead_id}`,
-        type: 'meeting_booked'
+        type: 'meeting_booked',
+        leadPhone: lead.phone,
+        leadName: lead.name
       })
     } catch (notifErr: any) {
       console.error("[Booking Create API] Failed to send multi-channel admin alert:", notifErr)

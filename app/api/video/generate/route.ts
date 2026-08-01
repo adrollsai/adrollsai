@@ -844,7 +844,7 @@ High-end commercial production quality.
                     const { taskId: ttsTaskId } = await createGeminiTTS({
                         dialogueText: script.dialogue.trim(),
                         speakerName: body.grokVoice || 'Aoede',
-                        style: 'Confident',
+                        style: '',
                         scene: 'Professional real estate commercial voiceover studio',
                         sampleContext: 'High converting luxury real estate marketing video'
                     });
@@ -980,6 +980,7 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                         last_successful_task_id: collageUrls[index] || null,
                         aspect_ratio: "9:16",
                         status: 'Processing',
+                        audio_url: grokAudioUrl || null,
                         final_caption: script.finalCaption || null
                     });
                 if (insertErr) {

@@ -186,7 +186,7 @@ export async function createGeminiTTS({
                 speaker_id: "Speaker 1",
                 voice_name: speakerName,
                 audio_profile: "",
-                style,
+                style: "", // Always empty string as Kie.ai rejects non-empty style strings with HTTP 422
                 pace: "Natural",
                 accent: "Neutral"
             }],

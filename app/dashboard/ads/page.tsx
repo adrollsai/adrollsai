@@ -1805,6 +1805,18 @@ export default function AdsPage() {
       try {
         data = JSON.parse(responseText);
       } catch (jsonErr) {
+        if (res.status === 504) {
+          toast.success('🚀 Campaign submitted! Processing in background...');
+          setIsModalOpen(false);
+          setRemarketSourceCampaign(null);
+          setSelectedProduct(null);
+          setSelectedProducts([]);
+          setAdForm(prev => ({ ...prev, metaLocations: [], ageMin: 18, ageMax: 65 }));
+          setSelectedCreatives([]);
+          setFormQuestions([]);
+          fetchAdsData(true);
+          return;
+        }
         throw new Error(`Server returned unexpected response (Status ${res.status}). Please try again.`);
       }
       if (res.ok) {

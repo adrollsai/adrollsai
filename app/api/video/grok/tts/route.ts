@@ -18,7 +18,7 @@ export async function POST(request: Request) {
         const {
             dialogueText,
             speakerName = "Zephyr",
-            style = "Deadpan",
+            style = "",
             scene = "A quiet technology studio with a clean and professional atmosphere.",
             sampleContext = "High converting promo voiceover"
         } = body;

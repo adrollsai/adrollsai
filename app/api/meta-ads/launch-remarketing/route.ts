@@ -1189,7 +1189,7 @@ export async function POST(request: Request) {
                         targetingConfig.geo_locations.regions.length > 0 ||
                         targetingConfig.geo_locations.zips.length > 0;
 
-                    if (hasGranularTargeting && targetingConfig.geo_locations.countries.length === 0) {
+                    if (hasGranularTargeting) {
                         delete targetingConfig.geo_locations.countries;
                     } else if (targetingConfig.geo_locations.countries.length === 0) {
                         targetingConfig.geo_locations.countries.push('IN');
@@ -1205,16 +1205,13 @@ export async function POST(request: Request) {
         }
 
         // Apply smart targeting constraints and placements (matching high-performing campaigns)
-        // Meta's Advantage+ Audience requires age_min <= 25 and age_max >= 65 for hard controls
         targetingConfig.age_min = ageMin !== undefined && ageMin !== null ? Math.min(ageMin, 25) : 18;
-        targetingConfig.age_max = 65;
-        targetingConfig.targeting_relaxation_types = {
-            custom_audience: 1,
-            lookalike: 1
-        };
-        targetingConfig.targeting_automation = {
-            advantage_audience: 1 // Enable Advantage+ Audience
-        };
+        if (ageMax !== undefined && ageMax !== null && ageMax < 65) {
+            targetingConfig.age_max = ageMax;
+        } else {
+            delete targetingConfig.age_max;
+        }
+        targetingConfig.targeting_automation = { advantage_audience: 0 };
         targetingConfig.device_platforms = ['mobile', 'desktop'];
         targetingConfig.publisher_platforms = ['facebook', 'instagram']; // Exclude messenger for higher lead quality
 

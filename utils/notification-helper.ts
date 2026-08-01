@@ -97,6 +97,8 @@ export async function sendAdminMultiChannelNotification({
   body,
   url = '/dashboard/crm',
   type = 'lead_event',
+  leadPhone,
+  leadName,
   emailSubject,
   emailHtml,
   skipEmail = false,
@@ -108,6 +110,8 @@ export async function sendAdminMultiChannelNotification({
   body: string;
   url?: string;
   type?: string;
+  leadPhone?: string;
+  leadName?: string;
   emailSubject?: string;
   emailHtml?: string;
   skipEmail?: boolean;
@@ -116,6 +120,18 @@ export async function sendAdminMultiChannelNotification({
 }) {
   try {
     console.log(`[MULTI-CHANNEL] Processing notifications for owner: ${ownerUserId}`);
+
+    // Extract actual lead phone number (from parameter or body parsing)
+    let targetLeadPhone = leadPhone ? leadPhone.trim() : '';
+    if (!targetLeadPhone && body) {
+      const phoneMatch = body.match(/(?:Phone:\s*|\+?\b)(\+?\d{10,14})\b/i) || body.match(/(\+?\d{10,14})/);
+      if (phoneMatch) {
+        targetLeadPhone = phoneMatch[1] || phoneMatch[0];
+      }
+    }
+    if (!targetLeadPhone || targetLeadPhone === 'N/A') {
+      targetLeadPhone = 'N/A';
+    }
 
     // Fetch owner profile
     const { data: ownerProfile } = await getSupabaseAdmin()
@@ -171,7 +187,7 @@ export async function sendAdminMultiChannelNotification({
                         { type: 'text', text: title || 'Lead Booking' },
                         { type: 'text', text: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) },
                         { type: 'text', text: ownerProfile.business_name || 'Nobogent' },
-                        { type: 'text', text: cleanPhone },
+                        { type: 'text', text: targetLeadPhone },
                         { type: 'text', text: ownerProfile.email || 'N/A' }
                       ]
                     }
@@ -192,7 +208,7 @@ export async function sendAdminMultiChannelNotification({
                       type: 'body',
                       parameters: [
                         { type: 'text', text: title || 'Lead Request' },
-                        { type: 'text', text: cleanPhone }
+                        { type: 'text', text: targetLeadPhone }
                       ]
                     }
                   ]

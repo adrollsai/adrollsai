@@ -219,23 +219,30 @@ export const UploadProvider = ({ children }: { children: React.ReactNode }) => {
             if (isVideo) {
                 updateTask(id, { status: 'processing', progress: 90 })
 
-                // Trigger serverless video compression endpoint
-                const compressRes = await fetch('/api/assets/compress', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        tempUrl: publicUrl,
-                        fileName: currentFile.name,
-                        fileType: currentFile.type,
-                        fileSize: currentFile.size,
-                        impersonateId,
-                        propertyId,
-                        customInstructions
-                    })
-                })
+                // Trigger serverless video compression endpoint (with 1 retry for transient network errors)
+                let compressRes: Response | null = null;
+                for (let attempt = 1; attempt <= 2; attempt++) {
+                    try {
+                        compressRes = await fetch('/api/assets/compress', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                tempUrl: publicUrl,
+                                fileName: currentFile.name,
+                                fileType: currentFile.type,
+                                fileSize: currentFile.size,
+                                impersonateId,
+                                propertyId,
+                                customInstructions
+                            })
+                        })
+                        if (compressRes.ok) break;
+                    } catch (e) {}
+                    if (attempt < 2) await new Promise(r => setTimeout(r, 1500));
+                }
 
-                if (!compressRes.ok) {
-                    const errorData = await compressRes.json().catch(() => ({}))
+                if (!compressRes || !compressRes.ok) {
+                    const errorData = compressRes ? await compressRes.json().catch(() => ({})) : {};
                     throw new Error(errorData.error || 'Serverless video optimization failed.')
                 }
             } else {

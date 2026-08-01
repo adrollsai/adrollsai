@@ -73,10 +73,19 @@ export async function POST(request: Request) {
 
         if (shouldCompress) {
             try {
-                // 1. Download raw video from temporary R2 storage
+                // 1. Download raw video from temporary R2 storage (with retry for R2 propagation)
                 console.log(`[VideoCompress API] Downloading raw video from: ${tempUrl}`)
-                const response = await fetch(tempUrl)
-                if (!response.ok) throw new Error(`Failed to download raw video from temp storage: HTTP ${response.status}`)
+                let response: Response | null = null;
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        response = await fetch(tempUrl);
+                        if (response && response.ok) break;
+                    } catch (e) {}
+                    if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+                }
+                if (!response || !response.ok) {
+                    throw new Error(`Failed to download raw video from temp storage: HTTP ${response?.status || 'network_error'}`)
+                }
                 
                 const arrayBuffer = await response.arrayBuffer()
                 const buffer = Buffer.from(arrayBuffer)

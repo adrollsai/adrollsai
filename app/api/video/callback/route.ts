@@ -566,6 +566,13 @@ export async function POST(request: Request) {
 
             // Resolve TTS voiceover audio for Grok if a task ID or URL was attached
             let finalAudioUrl = videoTask.audio_url || null;
+            if (!finalAudioUrl && videoTask.asset_id) {
+                const { data: assetRow } = await supabaseAdmin.from('assets').select('metadata').eq('id', videoTask.asset_id).single();
+                if (assetRow?.metadata?.audioUrl) {
+                    finalAudioUrl = assetRow.metadata.audioUrl;
+                    console.log(`[Video Callback] Resolved audioUrl from asset metadata fallback: ${finalAudioUrl}`);
+                }
+            }
             if (finalAudioUrl && finalAudioUrl.startsWith('tts:')) {
                 const ttsTaskId = finalAudioUrl.replace(/^tts:/, '');
                 try {
@@ -643,7 +650,7 @@ export async function POST(request: Request) {
                             const { taskId: ttsTaskId, error: ttsError } = await createGeminiTTS({
                                 dialogueText: voiceoverText,
                                 speakerName: 'Aoede',
-                                style: 'Confident',
+                                style: '',
                                 scene: 'Professional real estate commercial voiceover studio',
                                 sampleContext: 'High converting luxury real estate marketing video'
                             });
