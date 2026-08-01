@@ -140,3 +140,83 @@
   "leadgenTosAccepted": true
 }
 ------------------------------------------------
+[2026-08-01T10:05:43.698Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:43.702Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:43.717Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:43.718Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:43.824Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-01T10:05:44.475Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-01T10:05:45.364Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:45.368Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:45.791Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-01T10:05:46.116Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "82104",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:05:46.194Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-01T10:05:50.250Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:50.251Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:50.362Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:50.363Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:50.485Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-01T10:05:51.015Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-01T10:05:51.296Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "82104",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:05:51.976Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:51.978Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:53.247Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "82104",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:05:54.843Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:54.844Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:56.047Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "82104",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------

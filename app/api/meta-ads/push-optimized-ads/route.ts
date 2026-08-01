@@ -121,37 +121,53 @@ export async function POST(request: Request) {
 
         let successCount = 0;
 
-        let globalThumbHash = null;
-        const hasVideos = selectedAssets.some((a: any) => a.type === 'video' || (a.image_url || a.url || '').toLowerCase().match(/\.(mp4|mov|avi|wmv)$/));
+        let globalThumbHash: string | null = null;
+        const hasVideos = selectedAssets.some((a: any) => a.type === 'video' || (a.image_url || a.url || a.videoSourceUrl || '').toLowerCase().match(/\.(mp4|mov|avi|wmv)$/));
         
         if (hasVideos) {
             console.log("[Push] Preparing video thumbnail for batch...");
             const thumbSource = profile.logo_url || 
-                               selectedAssets.find((a: any) => a.type !== 'video' && !(a.image_url || a.url || '').toLowerCase().match(/\.(mp4|mov|avi|wmv)$/))?.url ||
+                               selectedAssets.find((a: any) => a.type !== 'video' && !(a.image_url || a.url || a.videoSourceUrl || '').toLowerCase().match(/\.(mp4|mov|avi|wmv)$/))?.url ||
                                'https://adrolls.in/logo-square.png'; // High-reliability fallback
             
             if (thumbSource) {
                 console.log("[Push] Using thumb source:", thumbSource);
                 try {
-                    const thumbFetch = await fetch(thumbSource);
-                    const thumbBlob = await thumbFetch.blob();
-                    const thumbData = new FormData();
-                    thumbData.append('source', thumbBlob, `thumb_${Date.now()}.png`);
-                    thumbData.append('access_token', profile.facebook_token);
-                    const thumbRes = await fetch(`${FB_URL}/${profile.ad_account_id}/adimages`, { method: 'POST', body: thumbData });
-                    const thumbResult = await thumbRes.json();
-                    globalThumbHash = thumbResult.images?.[Object.keys(thumbResult.images)[0]]?.hash;
-                    console.log("[Push] Prepared global thumbnail hash:", globalThumbHash);
+                    let cleanThumbUrl = thumbSource;
+                    if (cleanThumbUrl.includes('/api/fetch-image?url=')) {
+                        cleanThumbUrl = decodeURIComponent(cleanThumbUrl.split('/api/fetch-image?url=')[1]);
+                    }
+                    const thumbFetch = await fetch(cleanThumbUrl);
+                    if (thumbFetch.ok) {
+                        const thumbBlob = await thumbFetch.blob();
+                        const thumbData = new FormData();
+                        thumbData.append('source', thumbBlob, `thumb_${Date.now()}.png`);
+                        thumbData.append('access_token', profile.facebook_token);
+                        const thumbRes = await fetch(`${FB_URL}/${profile.ad_account_id}/adimages`, { method: 'POST', body: thumbData });
+                        const thumbResult = await thumbRes.json();
+                        globalThumbHash = thumbResult.images?.[Object.keys(thumbResult.images)[0]]?.hash || null;
+                        console.log("[Push] Prepared global thumbnail hash:", globalThumbHash);
+                    }
                 } catch (e) {
                     console.error("[Push] Failed to prepare video thumbnail:", e);
                 }
-            } else {
-                console.warn("[Push] No thumb source found (no logo and no images in batch).");
             }
         }
 
         for (const asset of selectedAssets) {
-            const imageUrl = asset.image_url || asset.url || "";
+            let rawUrl = asset.image_url || asset.url || asset.previewUrl || asset.videoSourceUrl || "";
+            let imageUrl = rawUrl;
+
+            // Unwrap proxy URL to absolute public CDN URL
+            if (typeof imageUrl === 'string' && imageUrl.includes('/api/fetch-image?url=')) {
+                try {
+                    const decoded = decodeURIComponent(imageUrl.split('/api/fetch-image?url=')[1]);
+                    if (decoded && decoded.startsWith('http')) {
+                        imageUrl = decoded;
+                    }
+                } catch (e) {}
+            }
+
             const isVideo = asset.type === 'video' || (typeof imageUrl === 'string' && imageUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)/));
             
             console.log(`[Push] Processing ${isVideo ? 'video' : 'image'}:`, imageUrl);
@@ -201,12 +217,12 @@ export async function POST(request: Request) {
                     }
                 }
 
-                // 2. Fallback to downloading video and doing a binary upload if file_url failed or is local
-                if (!videoId && imageUrl) {
+                // 2. Fallback to downloading video and doing a binary upload if file_url failed
+                if (!videoId && imageUrl && imageUrl.startsWith('http')) {
                     try {
                         console.log(`[Push] Falling back to downloading video for binary upload: ${imageUrl}`);
                         const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+                        const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
 
                         const videoFetch = await fetch(imageUrl, { signal: controller.signal });
                         if (!videoFetch.ok) {
@@ -244,15 +260,20 @@ export async function POST(request: Request) {
                 }
 
                 if (!videoId) {
-                    console.error("[Push] Video upload failed:", uploadError || "Unknown error");
+                    console.error("[Push] Video upload failed completely:", uploadError || "Unknown error");
                     continue;
                 }
                 
                 // Wait for video processing (Meta requirement)
                 await new Promise(resolve => setTimeout(resolve, 5000));
             } else {
-                // A. Upload Image
-                const imgFetch = await fetch(imageUrl as string);
+                // Upload Image
+                let cleanImgUrl = imageUrl;
+                if (cleanImgUrl.includes('/api/fetch-image?url=')) {
+                    cleanImgUrl = decodeURIComponent(cleanImgUrl.split('/api/fetch-image?url=')[1]);
+                }
+
+                const imgFetch = await fetch(cleanImgUrl);
                 const imgBlob = await imgFetch.blob();
                 const uploadData = new FormData();
                 uploadData.append('source', imgBlob, `opt_push_${Date.now()}.png`);
@@ -266,7 +287,6 @@ export async function POST(request: Request) {
                     console.error("[Push] Image upload failed:", uploadResult);
                     continue;
                 }
-                // We can also use this as a global thumb hash for future videos in this loop
                 if (!globalThumbHash) globalThumbHash = imgHash;
             }
 
@@ -301,11 +321,34 @@ export async function POST(request: Request) {
             const videoCtaValue = isWhatsApp ? { app_destination: 'WHATSAPP' } : ctaValue;
 
             if (isVideo) {
+                // Ensure video thumbnail hash is provided
+                let itemThumbHash = globalThumbHash;
+                if (!itemThumbHash) {
+                    let itemThumbUrl = asset.thumbnailUrl || asset.metadata?.thumbnailUrl || asset.poster || profile.logo_url || 'https://adrolls.in/logo-square.png';
+                    if (typeof itemThumbUrl === 'string' && itemThumbUrl.includes('/api/fetch-image?url=')) {
+                        try { itemThumbUrl = decodeURIComponent(itemThumbUrl.split('/api/fetch-image?url=')[1]); } catch (e) {}
+                    }
+                    try {
+                        const tFetch = await fetch(itemThumbUrl);
+                        if (tFetch.ok) {
+                            const tBlob = await tFetch.blob();
+                            const tData = new FormData();
+                            tData.append('source', tBlob, `vthumb_${Date.now()}.png`);
+                            tData.append('access_token', profile.facebook_token);
+                            const tRes = await fetch(`${FB_URL}/${profile.ad_account_id}/adimages`, { method: 'POST', body: tData });
+                            const tJson = await tRes.json();
+                            itemThumbHash = tJson.images?.[Object.keys(tJson.images)[0]]?.hash || null;
+                        }
+                    } catch (tErr) {
+                        console.error("[Push] Failed to upload video item thumbnail:", tErr);
+                    }
+                }
+
                 creativePayload.object_story_spec.video_data = {
                     video_id: videoId,
                     message: primaryText,
                     title: headline,
-                    image_hash: globalThumbHash, // Meta requires a thumbnail
+                    image_hash: itemThumbHash || globalThumbHash,
                     call_to_action: {
                         type: ctaType,
                         value: videoCtaValue
@@ -353,12 +396,49 @@ export async function POST(request: Request) {
                 if (adRes.ok) {
                     console.log(`[Push] Ad created successfully:`, adData.id);
                     successCount++;
+
+                    // Link asset to campaign in Supabase database so it displays in Nobogent account
+                    try {
+                        const targetAssetId = asset.id || asset.asset_id;
+                        if (targetAssetId) {
+                            await supabase.from('assets').update({
+                                master_creative_id: campaignId,
+                                status: 'Active',
+                                caption: headline || primaryText || null
+                            }).eq('id', targetAssetId);
+                        } else {
+                            await supabase.from('assets').insert({
+                                user_id: targetUserId,
+                                master_creative_id: campaignId,
+                                type: isVideo ? 'video' : 'image',
+                                url: imageUrl,
+                                status: 'Active',
+                                caption: headline || primaryText || null,
+                                metadata: {
+                                    meta_ad_id: adData.id,
+                                    meta_creative_id: creativeData.id,
+                                    thumbnailUrl: asset.thumbnailUrl || asset.metadata?.thumbnailUrl || null,
+                                    headline,
+                                    primary_text: primaryText
+                                }
+                            });
+                        }
+                    } catch (dbErr) {
+                        console.error("[Push] Failed to link asset to campaign in DB:", dbErr);
+                    }
                 } else {
                     console.error("[Push] Ad creation failed:", adData);
                 }
             } else {
                 console.error("[Push] Creative creation failed:", creativeData);
             }
+        }
+
+        if (successCount === 0) {
+            return NextResponse.json({
+                success: false,
+                error: 'Failed to create video ads on Meta. Please check video file format and Meta ad account permissions.'
+            }, { status: 400 });
         }
 
         return NextResponse.json({ success: true, pushedCount: successCount });

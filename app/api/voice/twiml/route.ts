@@ -282,18 +282,34 @@ Configurations: ${JSON.stringify(prop.configurations || {})}`
         try {
             const { data: props } = await supabaseAdmin
                 .from('properties')
-                .select('title, description, price, address, property_type')
+                .select('title, description, price, address, property_type, configurations')
                 .eq('user_id', profileId)
                 .limit(10)
 
             if (props && props.length > 0) {
                 catalogContext = props
-                    .map((p, idx) => `[PROJECT ITEM ${idx + 1}: "${p.title || 'Untitled Project'}"]
+                    .map((p, idx) => {
+                        let tagList: string[] = []
+                        if (p.title) tagList.push(p.title)
+                        if (p.configurations) {
+                            try {
+                                const parsed = typeof p.configurations === 'string' ? JSON.parse(p.configurations) : p.configurations
+                                if (Array.isArray(parsed.tags)) tagList.push(...parsed.tags)
+                                if (Array.isArray(parsed.internal_tags)) tagList.push(...parsed.internal_tags)
+                                if (parsed.project_name) tagList.push(parsed.project_name)
+                                if (parsed.brand_name) tagList.push(parsed.brand_name)
+                            } catch (e) {}
+                        }
+                        const cleanTags = Array.from(new Set(tagList.filter(Boolean))).join(', ')
+
+                        return `[PROJECT ITEM ${idx + 1}: "${p.title || 'Untitled Project'}"]
+Tags/Brand Aliases: ${cleanTags || 'N/A'}
 Type: ${p.property_type || 'Real Estate'}
 Price: ${p.price || 'Contact Developer'}
 Location: ${p.address || 'N/A'}
 Details: ${p.description || 'N/A'}
----`)
+---`
+                    })
                     .join('\n\n')
             }
         } catch (catErr) {

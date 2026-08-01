@@ -1332,11 +1332,11 @@ export default function AdsPage() {
               });
               const data = await res.json();
               if (data.success) {
-                  // Persist final edits to library
+                  // Persist final edits and update master_creative_id to link with campaign
                   for (const v of selectedAssets) {
-                      if (v.asset_id) {
-                          // Fetch existing metadata to merge
-                          const { data: assetData } = await supabase.from('assets').select('metadata').eq('id', v.asset_id).single();
+                      const targetId = v.asset_id || v.id;
+                      if (targetId) {
+                          const { data: assetData } = await supabase.from('assets').select('metadata').eq('id', targetId).single();
                           const existingMetadata = assetData?.metadata || {};
                           const updatedMetadata = {
                               ...existingMetadata,
@@ -1346,17 +1346,20 @@ export default function AdsPage() {
                           };
 
                           await supabase.from('assets').update({ 
+                              master_creative_id: orchestrator.campaign.id,
+                              status: 'Active',
                               caption: v.caption || v.primary_text || null,
                               metadata: updatedMetadata 
-                          }).eq('id', v.asset_id);
-
-                          setAssets(curr => curr.map(asset => asset.id === v.asset_id ? { 
-                              ...asset, 
-                              caption: v.caption || v.primary_text || null,
-                              metadata: updatedMetadata 
-                          } : asset));
+                          }).eq('id', targetId);
                       }
                   }
+
+                  // Refetch assets from Supabase DB so new video ads show up under campaign immediately
+                  const { data: refetchedAssets } = await supabase.from('assets').select('*').order('created_at', { ascending: false });
+                  if (refetchedAssets && refetchedAssets.length > 0) {
+                      setAssets(refetchedAssets);
+                  }
+
                   setOrchestrator(prev => ({ ...prev, status: 'success', step: 4, logs: [...prev.logs, { id: Date.now(), text: `Successfully pushed ${data.pushedCount} ads!`, type: 'system' }] }));
               } else {
                   setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: data.error || "Push failed.", type: 'system' }]}));

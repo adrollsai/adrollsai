@@ -596,17 +596,31 @@ wss.on('connection', (wsConnection) => {
                             }
                         }
 
-                        // Build Catalog Context with complete property details & location
+                        // Build Catalog Context with complete property details, internal tags & location
                         let catalogContext = '';
                         if (props && props.length > 0) {
                             catalogContext = props.map((p) => {
+                                let tagList = [];
+                                if (p.title) tagList.push(p.title);
+                                if (p.configurations) {
+                                    try {
+                                        const parsed = typeof p.configurations === 'string' ? JSON.parse(p.configurations) : p.configurations;
+                                        if (Array.isArray(parsed.tags)) tagList.push(...parsed.tags);
+                                        if (Array.isArray(parsed.internal_tags)) tagList.push(...parsed.internal_tags);
+                                        if (parsed.project_name) tagList.push(parsed.project_name);
+                                        if (parsed.brand_name) tagList.push(parsed.brand_name);
+                                        if (parsed.keywords) tagList.push(parsed.keywords);
+                                    } catch (e) {}
+                                }
+                                const cleanTags = Array.from(new Set(tagList.filter(Boolean))).join(', ');
+
                                 return `<property>
   <id>${p.id}</id>
   <title>${p.title || 'N/A'}</title>
+  <project_name_tags>${cleanTags || 'N/A'}</project_name_tags>
   <type>${p.property_type || 'N/A'}</type>
   <price>${p.price || 'N/A'}</price>
   <location_address>${p.address || p.location || 'N/A'}</location_address>
-  <configurations>${p.configurations || 'N/A'}</configurations>
   <description>${p.description || 'N/A'}</description>
   ${p.rera_number ? `<rera_number>${p.rera_number}</rera_number>` : ''}
 </property>`;

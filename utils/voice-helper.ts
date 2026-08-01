@@ -732,69 +732,133 @@ export async function bookAppointment(
             }
 
             if (phoneId && whatsappToken) {
-                // 1. Prospect message template
+                // 1. Prospect message: Free-form Priority 1, Template Priority 2 Fallback
                 if (cleanLeadPhone) {
                     console.log(`[VOICE HELPER] Sending WhatsApp booking confirmation to prospect: ${cleanLeadPhone}`)
-                    const prospectPayload = {
+                    let confirmationDelivered = false
+
+                    // Priority 1: Free-Form Text Message (high conversion, instant delivery)
+                    const freeFormText = `Hello ${lead.name || 'Valued Lead'}! 🎉\n\nYour meeting has been successfully confirmed!\n\n📅 Date & Time: ${formattedDate}\n👤 Host: ${hostName}\n🏢 Business: ${profile?.business_name || 'Consultation'}${hangoutLink ? `\n🔗 Google Meet: ${hangoutLink}` : ''}\n\nThank you, and we look forward to connecting with you!`
+
+                    const freeFormPayload = {
                         messaging_product: 'whatsapp',
                         recipient_type: 'individual',
                         to: cleanLeadPhone,
-                        type: 'template',
-                        template: {
-                            name: 'booking_confirmation_prospect',
-                            language: {
-                                code: 'en_US'
-                            },
-                            components: [
-                                {
-                                    type: 'header',
-                                    parameters: [
-                                        {
-                                            type: 'image',
-                                            image: {
-                                                link: hostAvatar
-                                            }
-                                        }
-                                    ]
-                                },
-                                {
-                                    type: 'body',
-                                    parameters: [
-                                        {
-                                            type: 'text',
-                                            text: lead.name || 'Prospect'
-                                        },
-                                        {
-                                            type: 'text',
-                                            text: formattedDate
-                                        },
-                                        {
-                                            type: 'text',
-                                            text: hostName
-                                        },
-                                        {
-                                            type: 'text',
-                                            text: profile?.business_name || 'Consultation'
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
+                        type: 'text',
+                        text: { body: freeFormText }
                     }
 
-                    const waRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${whatsappToken}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(prospectPayload)
-                    })
-                    const waData = await waRes.json()
-                    if (waData.error) {
-                        console.error('[VOICE HELPER] WhatsApp Prospect Confirmation Error:', waData.error)
-                    } else {
-                        console.log(`[VOICE HELPER] Prospect WhatsApp confirmation sent successfully. Message ID: ${waData.messages?.[0]?.id}`)
+                    try {
+                        console.log(`[VOICE HELPER] Priority 1: Sending Free-Form WhatsApp text confirmation to ${cleanLeadPhone}`)
+                        const freeFormRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${whatsappToken}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(freeFormPayload)
+                        })
+                        const freeFormData = await freeFormRes.json()
+
+                        if (freeFormRes.ok && freeFormData.messages?.[0]?.id) {
+                            confirmationDelivered = true
+                            console.log(`[VOICE HELPER] Free-Form WhatsApp confirmation delivered to ${cleanLeadPhone}. Message ID: ${freeFormData.messages[0].id}`)
+                            
+                            await supabaseAdmin.from('whatsapp_messages').insert({
+                                user_id: profileId,
+                                lead_id: leadId,
+                                direction: 'outbound',
+                                message_type: 'text',
+                                body: freeFormText,
+                                status: 'sent',
+                                message_id: freeFormData.messages[0].id,
+                                created_at: new Date().toISOString()
+                            }).catch(() => {})
+                        } else {
+                            console.warn('[VOICE HELPER] Free-form WhatsApp send failed (likely outside 24h window), falling back to template message:', freeFormData.error)
+                        }
+                    } catch (freeFormErr: any) {
+                        console.warn('[VOICE HELPER] Exception in Priority 1 Free-Form send:', freeFormErr.message)
+                    }
+
+                    // Priority 2: Template Fallback if Free-form text was rejected or window closed
+                    if (!confirmationDelivered) {
+                        console.log(`[VOICE HELPER] Priority 2: Sending WhatsApp Template confirmation to ${cleanLeadPhone}`)
+                        const prospectPayload = {
+                            messaging_product: 'whatsapp',
+                            recipient_type: 'individual',
+                            to: cleanLeadPhone,
+                            type: 'template',
+                            template: {
+                                name: 'booking_confirmation_prospect',
+                                language: {
+                                    code: 'en_US'
+                                },
+                                components: [
+                                    {
+                                        type: 'header',
+                                        parameters: [
+                                            {
+                                                type: 'image',
+                                                image: {
+                                                    link: hostAvatar
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        type: 'body',
+                                        parameters: [
+                                            {
+                                                type: 'text',
+                                                text: lead.name || 'Prospect'
+                                            },
+                                            {
+                                                type: 'text',
+                                                text: formattedDate
+                                            },
+                                            {
+                                                type: 'text',
+                                                text: hostName
+                                            },
+                                            {
+                                                type: 'text',
+                                                text: profile?.business_name || 'Consultation'
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+
+                        try {
+                            const waRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${whatsappToken}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify(prospectPayload)
+                            })
+                            const waData = await waRes.json()
+                            if (waData.error) {
+                                console.error('[VOICE HELPER] WhatsApp Prospect Template Confirmation Error:', waData.error)
+                            } else {
+                                console.log(`[VOICE HELPER] Prospect WhatsApp template confirmation sent successfully. Message ID: ${waData.messages?.[0]?.id}`)
+                                await supabaseAdmin.from('whatsapp_messages').insert({
+                                    user_id: profileId,
+                                    lead_id: leadId,
+                                    direction: 'outbound',
+                                    message_type: 'template',
+                                    body: `💬 WhatsApp Template: Booking confirmed for ${formattedDate}`,
+                                    status: 'sent',
+                                    message_id: waData.messages?.[0]?.id,
+                                    created_at: new Date().toISOString()
+                                }).catch(() => {})
+                            }
+                        } catch (tmplErr: any) {
+                            console.error('[VOICE HELPER] Exception in Priority 2 Template send:', tmplErr)
+                        }
                     }
                 }
 
