@@ -143,8 +143,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         // If user logs in but has no role assigned, default to admin to bypass onboarding deadlock
         if (userProfile && !userProfile.role) {
-          const { data: allUsers } = await supabase.from('profiles').select('id');
-          if (allUsers && allUsers.length === 1) {
+          const { count } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
+          if (count === 1) {
             await supabase
               .from('profiles')
               .update({ role: 'admin' })
