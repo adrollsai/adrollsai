@@ -66,7 +66,16 @@ export default function LeadProfilePage() {
     const [approvedTemplates, setApprovedTemplates] = useState<any[]>([])
     const [selectedTemplateName, setSelectedTemplateName] = useState('')
     const [selectedTemplateBody, setSelectedTemplateBody] = useState('')
+    const [selectedTemplateLanguage, setSelectedTemplateLanguage] = useState('en_US')
     const [isSendingTemplate, setIsSendingTemplate] = useState(false)
+
+    const fixR2Url = (url: string) => {
+        if (!url) return ''
+        if (url.includes('.r2.dev') && !url.includes('/adrolls-storage/')) {
+            return url.replace('.r2.dev/', '.r2.dev/adrolls-storage/')
+        }
+        return url
+    }
  
     // Editing schedule states
     const [isEditingBooking, setIsEditingBooking] = useState(false)
@@ -151,7 +160,8 @@ export default function LeadProfilePage() {
                     recipient: displayPhone,
                     templateName: selectedTemplateName,
                     isSandboxTest: selectedTemplateName === 'hello_world',
-                    parameters
+                    parameters,
+                    language: selectedTemplateLanguage
                 })
             })
 
@@ -1073,14 +1083,14 @@ END:VCARD`
                                                         >
                                                             {finalVidUrl ? (
                                                                 <>
-                                                                    <video src={finalVidUrl} className="w-full h-full object-cover opacity-90" />
+                                                                    <video src={fixR2Url(finalVidUrl)} className="w-full h-full object-cover opacity-90" />
                                                                     <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
                                                                         <span className="p-1 bg-white/90 rounded-full text-indigo-700 shadow-md text-xs font-black">▶</span>
                                                                     </div>
                                                                 </>
                                                             ) : (
                                                                 <>
-                                                                    <img src={finalImgUrl} alt="Ad Creative Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                                    <img src={fixR2Url(finalImgUrl)} alt="Ad Creative Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                                                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
                                                                         <span className="opacity-0 group-hover:opacity-100 text-white font-extrabold text-[8px] bg-indigo-600/90 px-1.5 py-0.5 rounded shadow-xs">🔍 Zoom</span>
                                                                     </div>
@@ -1727,7 +1737,8 @@ END:VCARD`
                                             const name = e.target.value;
                                             setSelectedTemplateName(name);
                                             const t = approvedTemplates.find(x => x.name === name);
-                                            setSelectedTemplateBody(t?.components?.find((c: any) => c.type === 'BODY')?.text || '');
+                                            setSelectedTemplateBody(t?.components?.find((c: any) => c.type === 'BODY' || c.type === 'body')?.text || '');
+                                            setSelectedTemplateLanguage(t?.language || 'en_US');
                                         }}
                                         className="w-full appearance-none bg-slate-50 border border-slate-100 py-3.5 px-5 rounded-2xl text-sm font-bold text-slate-900 focus:ring-4 focus:ring-blue-500/10 outline-none cursor-pointer"
                                     >
@@ -1967,7 +1978,7 @@ END:VCARD`
                         <div className="bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center min-h-[260px] max-h-[62vh] shadow-inner">
                             {activeMediaModal.origin?.video_url ? (
                                 <video 
-                                    src={activeMediaModal.origin.video_url} 
+                                    src={fixR2Url(activeMediaModal.origin.video_url)} 
                                     controls 
                                     autoPlay 
                                     className="w-full max-h-[60vh] object-contain rounded-xl"

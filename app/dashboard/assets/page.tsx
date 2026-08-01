@@ -1449,7 +1449,7 @@ export default function AssetsPage() {
                                 <div className="rounded-[1.5rem] overflow-hidden bg-slate-100 mb-6 border border-slate-200/60 shadow-inner">
                                     {selectedAsset.type === 'video' ? (
                                         <video 
-                                            src={`${selectedAsset.url}#t=0.001`} 
+                                            src={`${fixR2Url(selectedAsset.url)}#t=0.001`} 
                                             poster={selectedAsset.metadata?.thumbnailUrl ? fixR2Url(selectedAsset.metadata.thumbnailUrl) : undefined}
                                             controls 
                                             preload="none" 

@@ -133,6 +133,7 @@ export default function CRMPage() {
   const [approvedTemplates, setApprovedTemplates] = useState<any[]>([])
   const [selectedTemplateName, setSelectedTemplateName] = useState('')
   const [selectedTemplateBody, setSelectedTemplateBody] = useState('')
+  const [selectedTemplateLanguage, setSelectedTemplateLanguage] = useState('en_US')
   const [isSendingTemplates, setIsSendingTemplates] = useState(false)
   const [isCallingCampaign, setIsCallingCampaign] = useState(false)
   const [templateVarMappings, setTemplateVarMappings] = useState<Record<string, { field: string; customVal: string }>>({})
@@ -212,7 +213,8 @@ export default function CRMPage() {
             recipient: displayPhone,
             templateName: selectedTemplateName,
             isSandboxTest: selectedTemplateName === 'hello_world',
-            parameters
+            parameters,
+            language: selectedTemplateLanguage
           })
         })
 
@@ -2009,7 +2011,8 @@ END:VCARD\n`
                                       const name = e.target.value;
                                       setSelectedTemplateName(name);
                                       const t = approvedTemplates.find(x => x.name === name);
-                                      setSelectedTemplateBody(t?.components?.find((c: any) => c.type === 'BODY')?.text || '');
+                                      setSelectedTemplateBody(t?.components?.find((c: any) => c.type === 'BODY' || c.type === 'body')?.text || '');
+                                      setSelectedTemplateLanguage(t?.language || 'en_US');
                                   }}
                                   className="w-full appearance-none bg-slate-50 border border-slate-100 py-3.5 px-5 rounded-2xl text-sm font-bold text-slate-900 focus:ring-4 focus:ring-blue-500/10 outline-none cursor-pointer"
                               >

@@ -9,7 +9,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { recipient, templateName, isSandboxTest, parameters, variableValues } = await req.json();
+        const { recipient, templateName, isSandboxTest, parameters, variableValues, language } = await req.json();
         if (!recipient) {
             return NextResponse.json({ error: 'Recipient phone number is required' }, { status: 400 });
         }
@@ -17,11 +17,16 @@ export async function POST(req: Request) {
         // Fetch WhatsApp credentials
         const { data: profile } = await supabase
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_phone_number_id')
+            .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, email')
             .eq('id', user.id)
             .single();
 
-        if (!profile || !profile.whatsapp_access_token || !profile.whatsapp_phone_number_id) {
+        const isMasterDefaultUser = profile?.email === 'rchopra489@gmail.com' || profile?.email === 'infobluesquareinfra@gmail.com';
+        const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_ACCESS_TOKEN : null);
+        const whatsappPhoneId = profile?.whatsapp_phone_number_id || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_PHONE_ID : null);
+        const whatsappWabaId = profile?.whatsapp_waba_id || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_WABA_ID : null);
+
+        if (!whatsappToken || !whatsappPhoneId) {
             return NextResponse.json({ error: 'WhatsApp credentials not found. Please connect your account first.' }, { status: 400 });
         }
 
@@ -39,6 +44,96 @@ export async function POST(req: Request) {
         // Use standard sandbox template if requested
         const payloadTemplateName = isSandboxTest ? 'hello_world' : (templateName || 'hello_world');
 
+        let targetLanguage = language || 'en_US';
+        const components: any[] = [];
+
+        // Attempt to inspect actual Meta WABA template definition for precise parameter & language matching
+        if (!isSandboxTest && whatsappWabaId && payloadTemplateName !== 'hello_world') {
+            try {
+                const metaTemplateUrl = `https://graph.facebook.com/v20.0/${whatsappWabaId}/message_templates?name=${payloadTemplateName}&access_token=${whatsappToken}`;
+                const tRes = await fetch(metaTemplateUrl);
+                if (tRes.ok) {
+                    const tData = await tRes.json();
+                    const templateDef = tData.data?.[0];
+                    if (templateDef) {
+                        if (templateDef.language) {
+                            targetLanguage = templateDef.language;
+                        }
+                        
+                        if (Array.isArray(templateDef.components)) {
+                            // 1. HEADER Image component check
+                            const headerComp = templateDef.components.find((c: any) => c.type === 'HEADER');
+                            if (headerComp && headerComp.format === 'IMAGE') {
+                                components.push({
+                                    type: 'header',
+                                    parameters: [
+                                        {
+                                            type: 'image',
+                                            image: {
+                                                link: 'https://designs.adrolls.in/processing'
+                                            }
+                                        }
+                                    ]
+                                });
+                            }
+
+                            // 2. BODY components parameters check
+                            const bodyComp = templateDef.components.find((c: any) => c.type === 'BODY');
+                            if (bodyComp && bodyComp.text) {
+                                const varCount = (bodyComp.text.match(/\{\{\d+\}\}/g) || []).length;
+                                if (varCount > 0) {
+                                    const bodyParams: any[] = [];
+                                    const rawProvided = Array.isArray(parameters) && parameters.length > 0
+                                        ? parameters
+                                        : (Array.isArray(variableValues) ? variableValues : []);
+
+                                    for (let i = 0; i < varCount; i++) {
+                                        const p = rawProvided[i];
+                                        let textVal = typeof p === 'string' ? p : (p?.text || '');
+                                        textVal = textVal.trim();
+                                        if (!textVal) {
+                                            textVal = i === 0 ? 'Valued Customer' : i === 1 ? 'Partner' : 'Details';
+                                        }
+                                        bodyParams.push({ type: 'text', text: textVal });
+                                    }
+
+                                    components.push({
+                                        type: 'body',
+                                        parameters: bodyParams
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (inspectErr) {
+                console.warn('[WHATSAPP TEST SEND] Failed to inspect Meta template definition, using fallback logic:', inspectErr);
+            }
+        }
+
+        // Fallback parameter formatting if components array wasn't built via Meta API definition
+        if (components.length === 0 && !isSandboxTest && payloadTemplateName !== 'hello_world') {
+            const rawProvided = Array.isArray(parameters) && parameters.length > 0
+                ? parameters
+                : (Array.isArray(variableValues) ? variableValues : []);
+
+            if (rawProvided.length > 0) {
+                const bodyParams = rawProvided.map((p: any, idx: number) => {
+                    let textVal = typeof p === 'string' ? p : (p?.text || '');
+                    textVal = textVal.trim();
+                    if (!textVal) {
+                        textVal = idx === 0 ? 'Valued Customer' : idx === 1 ? 'Partner' : 'Details';
+                    }
+                    return { type: 'text', text: textVal };
+                });
+
+                components.push({
+                    type: 'body',
+                    parameters: bodyParams
+                });
+            }
+        }
+
         const messagePayload: any = {
             messaging_product: 'whatsapp',
             to: cleanRecipient,
@@ -46,75 +141,20 @@ export async function POST(req: Request) {
             template: {
                 name: payloadTemplateName,
                 language: {
-                    code: 'en_US'
+                    code: targetLanguage
                 }
             }
         };
 
-        // Inject parameters if provided directly from client or fallback to default hardcoded templates
-        if (!isSandboxTest) {
-            if (Array.isArray(parameters) && parameters.length > 0) {
-                messagePayload.template.components = [
-                    {
-                        type: 'body',
-                        parameters: parameters.map((p: any) => ({
-                            type: 'text',
-                            text: typeof p === 'string' ? p : (p?.text || 'Valued Customer')
-                        }))
-                    }
-                ];
-            } else if (Array.isArray(variableValues) && variableValues.length > 0) {
-                messagePayload.template.components = [
-                    {
-                        type: 'body',
-                        parameters: variableValues.map((val: string) => ({
-                            type: 'text',
-                            text: val || 'Valued Customer'
-                        }))
-                    }
-                ];
-            } else if (templateName === 'real_estate_welcome_1') {
-                messagePayload.template.components = [
-                    {
-                        type: 'body',
-                        parameters: [
-                            { type: 'text', text: 'Valued Lead' },
-                            { type: 'text', text: 'Sunshine Apartments' },
-                            { type: 'text', text: 'Adrolls Real Estate' }
-                        ]
-                    }
-                ];
-            } else if (templateName === 'real_estate_reminder_1') {
-                messagePayload.template.components = [
-                    {
-                        type: 'body',
-                        parameters: [
-                            { type: 'text', text: 'Valued Lead' },
-                            { type: 'text', text: 'Sunshine Apartments' },
-                            { type: 'text', text: 'Tomorrow at 10:00 AM' }
-                        ]
-                    }
-                ];
-            } else if (templateName === 'real_estate_alert_1') {
-                messagePayload.template.components = [
-                    {
-                        type: 'body',
-                        parameters: [
-                            { type: 'text', text: 'Valued Lead' },
-                            { type: 'text', text: 'Sunshine Apartments' },
-                            { type: 'text', text: '₹75 Lakhs' }
-                        ]
-                    }
-                ];
-            }
+        if (components.length > 0) {
+            messagePayload.template.components = components;
         }
 
-
-        const metaUrl = `https://graph.facebook.com/v20.0/${profile.whatsapp_phone_number_id}/messages`;
+        const metaUrl = `https://graph.facebook.com/v20.0/${whatsappPhoneId}/messages`;
         const metaRes = await fetch(metaUrl, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${profile.whatsapp_access_token}`,
+                'Authorization': `Bearer ${whatsappToken}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(messagePayload)
