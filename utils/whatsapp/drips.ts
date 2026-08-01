@@ -104,15 +104,20 @@ export async function triggerWelcomeDrip(
             });
         }
 
-        // Handle Image Header / Media Template support
+        // Handle Media Header (Image, Video, Document) support
         if (flow.header_media_url) {
+            const mediaUrl = flow.header_media_url;
+            const isVideo = mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)/) || (flow.template_name && flow.template_name.includes('vsl')) || (flow.template_name && flow.template_name.includes('video'));
+            const isDocument = mediaUrl.toLowerCase().match(/\.(pdf|doc|docx)/);
+            const mediaType = isVideo ? 'video' : isDocument ? 'document' : 'image';
+
             components.push({
                 type: 'header',
                 parameters: [
                     {
-                        type: 'image',
-                        image: {
-                            link: flow.header_media_url
+                        type: mediaType,
+                        [mediaType]: {
+                            link: mediaUrl
                         }
                     }
                 ]

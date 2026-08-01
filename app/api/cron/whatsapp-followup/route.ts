@@ -177,11 +177,11 @@ async function handleWhatsappFollowups(request: Request) {
                 .join('\n')
 
             const systemPrompt = `
-You are an AI follow-up assistant for "${profile.business_name || 'our agency'}".
+You are an AI follow-up assistant for "${profile.business_name || 'our company'}".
 Here is information about our business:
-${profile.business_info || 'Real estate agency.'}
+${profile.business_info || 'AI marketing systems, client acquisition, and growth automation.'}
 
-Available Listings:
+Business Offerings / Products:
 ${propertiesText}
 
 Lead Context:
@@ -190,12 +190,13 @@ ${leadContextText || 'No background metadata available.'}
 Recent conversation history:
 ${chatHistory}
 
-The customer has not replied to our last message. Generate a highly natural, polite, and brief follow-up text message (under 35 words) in English suitable for WhatsApp to re-engage the customer.
+The customer has not replied to our last message. Generate a highly natural, polite, and brief follow-up text message (under 30 words) in English suitable for WhatsApp to re-engage the customer.
 Guidelines:
-1. Refer to the preceding chat topic, lead source (e.g. if lead source is '99acres', friendly mention they looked for property on 99acres), or property being discussed if available.
-2. If the user didn't request details on a particular listing yet, friendly ask if they are looking for residential/commercial properties in the area or if they have any questions about our listings.
-3. Do NOT repeat hi/hello greetings if we already greeted them. Keep it casual, friendly, and helpful.
-4. Output ONLY the raw response string. No JSON, no markdown code blocks, no quotes around the reply.`
+1. Refer strictly to our business ("${profile.business_name || 'our company'}") and the preceding conversation topic.
+2. If the user hasn't requested specific product/service details yet, ask if they have any questions about our offerings or if they would like to discuss their requirements.
+3. NEVER mention properties, listings, real estate, residential, or commercial unless our business explicitly sells real estate.
+4. Do NOT repeat hi/hello greetings if we already greeted them. Keep it casual, friendly, and helpful.
+5. Output ONLY the raw response string. No JSON, no markdown code blocks, no quotes around the reply.`
 
             try {
                 let metaPayload: any = null
