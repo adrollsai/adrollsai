@@ -3,6 +3,23 @@ import { createClient } from '@/utils/supabase/server';
 
 const FB_URL = "https://graph.facebook.com/v19.0";
 
+function normalizePublicR2Url(url: string): string {
+    if (!url) return '';
+    let target = url;
+    if (target.includes('/api/fetch-image?url=')) {
+        try {
+            const decoded = decodeURIComponent(target.split('/api/fetch-image?url=')[1]);
+            if (decoded && decoded.startsWith('http')) {
+                target = decoded;
+            }
+        } catch (e) {}
+    }
+    if (target.includes('.r2.dev/') && !target.includes('/adrolls-storage/')) {
+        target = target.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+    }
+    return target;
+}
+
 export async function POST(request: Request) {
     try {
         const supabase = await createClient();
@@ -126,17 +143,14 @@ export async function POST(request: Request) {
         
         if (hasVideos) {
             console.log("[Push] Preparing video thumbnail for batch...");
-            const thumbSource = profile.logo_url || 
-                               selectedAssets.find((a: any) => a.type !== 'video' && !(a.image_url || a.url || a.videoSourceUrl || '').toLowerCase().match(/\.(mp4|mov|avi|wmv)$/))?.url ||
-                               'https://adrolls.in/logo-square.png'; // High-reliability fallback
+            const rawThumb = profile.logo_url || 
+                             selectedAssets.find((a: any) => a.type !== 'video' && !(a.image_url || a.url || a.videoSourceUrl || '').toLowerCase().match(/\.(mp4|mov|avi|wmv)$/))?.url ||
+                             'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png';
             
-            if (thumbSource) {
-                console.log("[Push] Using thumb source:", thumbSource);
+            if (rawThumb) {
+                const cleanThumbUrl = normalizePublicR2Url(rawThumb);
+                console.log("[Push] Using normalized thumb source:", cleanThumbUrl);
                 try {
-                    let cleanThumbUrl = thumbSource;
-                    if (cleanThumbUrl.includes('/api/fetch-image?url=')) {
-                        cleanThumbUrl = decodeURIComponent(cleanThumbUrl.split('/api/fetch-image?url=')[1]);
-                    }
                     const thumbFetch = await fetch(cleanThumbUrl);
                     if (thumbFetch.ok) {
                         const thumbBlob = await thumbFetch.blob();
@@ -156,17 +170,7 @@ export async function POST(request: Request) {
 
         for (const asset of selectedAssets) {
             let rawUrl = asset.image_url || asset.url || asset.previewUrl || asset.videoSourceUrl || "";
-            let imageUrl = rawUrl;
-
-            // Unwrap proxy URL to absolute public CDN URL
-            if (typeof imageUrl === 'string' && imageUrl.includes('/api/fetch-image?url=')) {
-                try {
-                    const decoded = decodeURIComponent(imageUrl.split('/api/fetch-image?url=')[1]);
-                    if (decoded && decoded.startsWith('http')) {
-                        imageUrl = decoded;
-                    }
-                } catch (e) {}
-            }
+            let imageUrl = normalizePublicR2Url(rawUrl);
 
             const isVideo = asset.type === 'video' || (typeof imageUrl === 'string' && imageUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)/));
             
@@ -179,19 +183,18 @@ export async function POST(request: Request) {
             if (isVideo) {
                 let uploadError: any = null;
 
-                // 1. Try uploading to Meta via file_url if the URL is public and remote
-                const isPublicUrl = imageUrl && imageUrl.startsWith('http') && !imageUrl.includes('localhost') && !imageUrl.includes('127.0.0.1') && !imageUrl.includes('::1');
-                
-                if (isPublicUrl && imageUrl) {
+                // 1. Try uploading to Meta via URL-encoded file_url
+                if (imageUrl && imageUrl.startsWith('http')) {
                     try {
-                        console.log(`[Push] Uploading video via Meta file_url (JSON): ${imageUrl}`);
+                        console.log(`[Push] Uploading video via Meta file_url (URL-encoded): ${imageUrl}`);
+                        const params = new URLSearchParams();
+                        params.append('file_url', imageUrl);
+                        params.append('access_token', profile.facebook_token);
+
                         const videoRes = await fetch(`${FB_URL}/${profile.ad_account_id}/advideos`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                file_url: imageUrl,
-                                access_token: profile.facebook_token
-                            })
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: params.toString()
                         });
                         
                         const resText = await videoRes.text();
@@ -201,7 +204,7 @@ export async function POST(request: Request) {
                         try {
                             videoResult = JSON.parse(resText);
                         } catch (parseErr) {
-                            throw new Error(`Failed to parse Meta response as JSON (Status ${videoRes.status}): ${resText.substring(0, 500)}`);
+                            throw new Error(`Failed to parse Meta response (Status ${videoRes.status}): ${resText.substring(0, 500)}`);
                         }
                         
                         if (videoResult.id) {
@@ -243,12 +246,12 @@ export async function POST(request: Request) {
                         try {
                             videoResult = JSON.parse(resText);
                         } catch (parseErr) {
-                            throw new Error(`Failed to parse Meta binary response as JSON (Status ${videoRes.status}): ${resText.substring(0, 500)}`);
+                            throw new Error(`Failed to parse Meta binary response (Status ${videoRes.status}): ${resText.substring(0, 500)}`);
                         }
                         
                         if (videoResult.id) {
                             videoId = videoResult.id;
-                            console.log(`[Push] Successfully uploaded video via binary upload fallback. Meta ID: ${videoId}`);
+                            console.log(`[Push] Successfully uploaded video via binary fallback. Meta ID: ${videoId}`);
                         } else {
                             uploadError = videoResult.error || { message: `Binary fallback upload failed (Status ${videoRes.status}): ${resText}` };
                             console.error(`[Push] Binary fallback upload failed:`, uploadError);
@@ -265,14 +268,10 @@ export async function POST(request: Request) {
                 }
                 
                 // Wait for video processing (Meta requirement)
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                await new Promise(resolve => setTimeout(resolve, 3000));
             } else {
                 // Upload Image
-                let cleanImgUrl = imageUrl;
-                if (cleanImgUrl.includes('/api/fetch-image?url=')) {
-                    cleanImgUrl = decodeURIComponent(cleanImgUrl.split('/api/fetch-image?url=')[1]);
-                }
-
+                const cleanImgUrl = normalizePublicR2Url(imageUrl);
                 const imgFetch = await fetch(cleanImgUrl);
                 const imgBlob = await imgFetch.blob();
                 const uploadData = new FormData();
@@ -324,10 +323,8 @@ export async function POST(request: Request) {
                 // Ensure video thumbnail hash is provided
                 let itemThumbHash = globalThumbHash;
                 if (!itemThumbHash) {
-                    let itemThumbUrl = asset.thumbnailUrl || asset.metadata?.thumbnailUrl || asset.poster || profile.logo_url || 'https://adrolls.in/logo-square.png';
-                    if (typeof itemThumbUrl === 'string' && itemThumbUrl.includes('/api/fetch-image?url=')) {
-                        try { itemThumbUrl = decodeURIComponent(itemThumbUrl.split('/api/fetch-image?url=')[1]); } catch (e) {}
-                    }
+                    let rawItemThumb = asset.thumbnailUrl || asset.metadata?.thumbnailUrl || asset.poster || profile.logo_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png';
+                    const itemThumbUrl = normalizePublicR2Url(rawItemThumb);
                     try {
                         const tFetch = await fetch(itemThumbUrl);
                         if (tFetch.ok) {
