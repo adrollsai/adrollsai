@@ -99,6 +99,7 @@ export async function sendAdminMultiChannelNotification({
   type = 'lead_event',
   leadPhone,
   leadName,
+  leadId,
   emailSubject,
   emailHtml,
   skipEmail = false,
@@ -112,6 +113,7 @@ export async function sendAdminMultiChannelNotification({
   type?: string;
   leadPhone?: string;
   leadName?: string;
+  leadId?: string;
   emailSubject?: string;
   emailHtml?: string;
   skipEmail?: boolean;
@@ -120,6 +122,13 @@ export async function sendAdminMultiChannelNotification({
 }) {
   try {
     console.log(`[MULTI-CHANNEL] Processing notifications for owner: ${ownerUserId}`);
+
+    // Build absolute lead page URL for admin direct access
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
+    let leadPageUrl = url.startsWith('http') ? url : `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+    if (leadId && !leadPageUrl.includes('leadId=')) {
+      leadPageUrl = `${baseUrl}/dashboard/crm?leadId=${leadId}`;
+    }
 
     // Extract actual lead phone number (from parameter or body parsing)
     let targetLeadPhone = leadPhone ? leadPhone.trim() : '';
@@ -148,7 +157,7 @@ export async function sendAdminMultiChannelNotification({
     // 1. Push Notification
     if (!skipPush) {
       try {
-        await sendPushNotification(ownerUserId, title, body, url, type);
+        await sendPushNotification(ownerUserId, title, body, leadPageUrl, type);
       } catch (err: any) {
         console.error(`[MULTI-CHANNEL PUSH ERROR]`, err.message);
       }
@@ -170,59 +179,28 @@ export async function sendAdminMultiChannelNotification({
           if (cleanPhone && token && phoneId) {
             const metaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
             
-            let payload: any = null;
-            if (type === 'meeting_booked' || title.toLowerCase().includes('meeting') || title.toLowerCase().includes('booked')) {
-              payload = {
-                messaging_product: 'whatsapp',
-                recipient_type: 'individual',
-                to: cleanPhone,
-                type: 'template',
-                template: {
-                  name: 'booking_notification_admin',
-                  language: { code: 'en_US' },
-                  components: [
-                    {
-                      type: 'body',
-                      parameters: [
-                        { type: 'text', text: title || 'Lead Booking' },
-                        { type: 'text', text: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) },
-                        { type: 'text', text: ownerProfile.business_name || 'Nobogent' },
-                        { type: 'text', text: targetLeadPhone },
-                        { type: 'text', text: ownerProfile.email || 'N/A' }
-                      ]
-                    }
-                  ]
-                }
-              };
-            } else if (type === 'expert_escalation' || title.toLowerCase().includes('expert')) {
-              payload = {
-                messaging_product: 'whatsapp',
-                recipient_type: 'individual',
-                to: cleanPhone,
-                type: 'template',
-                template: {
-                  name: 'expert_connection_notification',
-                  language: { code: 'en_US' },
-                  components: [
-                    {
-                      type: 'body',
-                      parameters: [
-                        { type: 'text', text: title || 'Lead Request' },
-                        { type: 'text', text: targetLeadPhone }
-                      ]
-                    }
-                  ]
-                }
-              };
-            } else {
-              payload = {
-                messaging_product: 'whatsapp',
-                recipient_type: 'individual',
-                to: cleanPhone,
-                type: 'text',
-                text: { body: `${title}\n\n${body}` }
-              };
-            }
+            let payload: any = {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: cleanPhone,
+              type: 'template',
+              template: {
+                name: 'booking_notification_admin',
+                language: { code: 'en_US' },
+                components: [
+                  {
+                    type: 'body',
+                    parameters: [
+                      { type: 'text', text: leadName || title || 'Lead Request' },
+                      { type: 'text', text: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) },
+                      { type: 'text', text: ownerProfile.business_name || 'Nobogent' },
+                      { type: 'text', text: targetLeadPhone },
+                      { type: 'text', text: leadPageUrl }
+                    ]
+                  }
+                ]
+              }
+            };
 
             let waRes = await fetch(metaUrl, {
               method: 'POST',
@@ -241,7 +219,7 @@ export async function sendAdminMultiChannelNotification({
                 recipient_type: 'individual',
                 to: cleanPhone,
                 type: 'text',
-                text: { body: `${title}\n\n${body}` }
+                text: { body: `${title}\n\n${body}\n\n🔗 View Lead: ${leadPageUrl}` }
               };
               waRes = await fetch(metaUrl, {
                 method: 'POST',
@@ -279,7 +257,7 @@ export async function sendAdminMultiChannelNotification({
             </div>
             <p style="font-size: 15px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${body}</p>
             <div style="margin-top: 24px; text-align: center;">
-              <a href="https://app.nobogent.com${url}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">Open Dashboard</a>
+              <a href="${leadPageUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">View Lead in CRM</a>
             </div>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 24px;" />
             <p style="font-size: 11px; color: #94a3b8; text-align: center; text-transform: uppercase; letter-spacing: 0.05em;">Nobogent Business Automation Notification</p>

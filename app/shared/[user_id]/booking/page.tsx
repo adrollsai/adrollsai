@@ -54,27 +54,16 @@ export default function PublicDirectBooking() {
         setLoading(true)
         setError(null)
 
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(hostId || '')
-        let profileQuery = supabase
-          .from('profiles')
-          .select('id, business_name, logo_url, brand_color, google_booking_duration')
+        const res = await fetch(`/api/booking/preview/profile?host_id=${encodeURIComponent(hostId)}`)
+        const data = await res.json()
         
-        if (isUuid) {
-          profileQuery = profileQuery.eq('id', hostId)
-        } else {
-          profileQuery = profileQuery.eq('custom_domain', hostId)
-        }
-
-        const { data: profileData, error: profileErr } = await profileQuery.maybeSingle()
-        if (profileErr) throw profileErr
-        
-        if (!profileData) {
+        if (!res.ok || !data.profile) {
           setError('We could not find this booking page.')
           setLoading(false)
           return
         }
 
-        setProfile(profileData)
+        setProfile(data.profile)
 
         // Pre-select tomorrow's date
         const tomorrow = new Date()

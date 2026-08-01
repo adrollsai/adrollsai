@@ -1051,19 +1051,9 @@ IMPORTANT RULES:
                                          .select('created_at')
                                          .single();
                                      const currentInboundMsgCreatedAt = currentInboundMsg?.created_at || null;
-
-                                     // Trigger multi-channel alert to Admin (Push + Free-form WhatsApp + Email)
+                                     // Routine inbound messages are logged in chat & CRM silently without sending notification noise
                                      const leadDisplayName = chat.recipient_name || latestLead?.name || 'Customer';
                                      const leadDisplayPhone = '+' + cleanFrom;
-                                     const messagePreview = messageText || `[${inboundMediaType || 'media'}]`;
-
-                                     sendAdminMultiChannelNotification({
-                                         ownerUserId,
-                                         title: `💬 WhatsApp Message from ${leadDisplayName}`,
-                                         body: `${leadDisplayName} (${leadDisplayPhone}): "${messagePreview}"`,
-                                         url: '/dashboard/whatsapp',
-                                         type: 'inbound_message'
-                                     }).catch(err => console.error('[Webhook] Multi-channel notification error:', err));
 
                                      // Bypass bot execution for system verification code messages
                                      const isVerificationMessage = /confirmation code|facebook code|verification code|security code/i.test(messageText);
@@ -1072,75 +1062,65 @@ IMPORTANT RULES:
                                          return;
                                      }
 
-                                     // Check if this was a click on the "Connect with Expert" button
-                                     const isConnectExpertClick = buttonReplyId === 'connect_expert' || /connect with expert|connect expert/i.test(messageText);
-                                     if (isConnectExpertClick) {
-                                         console.log(`[Flow] Lead ${cleanFrom} requested to connect with a human expert! Auto-pausing AI for 2 hours.`);
-                                         
-                                         // Auto-pause AI bot for 2 hours so human agent can interact without bot interference
-                                         const currentFlowAnswers = chat.flow_answers || {};
-                                         const pausedUntil = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-                                         const updatedFlowAnswers = { ...currentFlowAnswers, ai_disabled: true, ai_paused_until: pausedUntil };
-                                         
-                                         await supabaseAdmin
-                                             .from('whatsapp_chats')
-                                             .update({
-                                                 flow_answers: updatedFlowAnswers,
-                                                 updated_at: new Date().toISOString()
-                                             })
-                                             .eq('id', chat.id);
-                                         
-                                         // 1. Reply to lead on WhatsApp
-                                         const leadReplyText = "Thank you! Our property expert has been notified and will reach out to you directly shortly. 🙏";
-                                         try {
-                                             const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
-                                             await fetch(metaUrl, {
-                                                 method: 'POST',
-                                                 headers: {
-                                                     'Authorization': `Bearer ${ownerWaToken}`,
-                                                     'Content-Type': 'application/json'
-                                                 },
-                                                 body: JSON.stringify({
-                                                     messaging_product: 'whatsapp',
-                                                     recipient_type: 'individual',
-                                                     to: cleanFrom,
-                                                     type: 'text',
-                                                     text: { body: leadReplyText }
-                                                 })
-                                             });
-                                             
-                                             // Log bot reply in chat
-                                             await supabaseAdmin
-                                                 .from('whatsapp_messages')
-                                                 .insert({
-                                                     chat_id: chat.id,
-                                                     direction: 'outbound',
-                                                     message_text: leadReplyText
-                                                 });
-                                             await supabaseAdmin
-                                                 .from('whatsapp_chats')
-                                                 .update({ last_message_text: leadReplyText, updated_at: new Date().toISOString() })
-                                                 .eq('id', chat.id);
-                                         } catch (waErr) {
-                                             console.error('[Flow] Error sending expert connection response to lead:', waErr);
-                                         }
-                                         
-                                         // 2. Trigger Multi-Channel Alert to Admin (Push + Free-form WhatsApp + Email)
-                                         const leadName = chat.recipient_name || latestLead?.name || 'Prospect';
-                                         const leadPhone = '+' + cleanFrom;
-                                         
-                                         sendAdminMultiChannelNotification({
-                                             ownerUserId,
-                                             title: '☎️ Connect with Expert Requested!',
-                                             body: `Lead ${leadName} (${leadPhone}) has requested to connect with an expert immediately. Please contact them on call as soon as possible.`,
-                                             url: '/dashboard/crm',
-                                             type: 'connect_expert',
-                                             leadPhone,
-                                             leadName
-                                         }).catch(err => console.error('[Flow] Multi-channel expert request alert failed:', err));
-                                         
-                                         return; // Stop processing further automation rules/flows or Gemini
-                                     }
+                                     // Check if this was a click on "Connect with Expert" or "Get Nobogent System" button
+                                      const isConnectExpertClick = buttonReplyId === 'connect_expert' || buttonReplyId === 'get_nobogent_system' || /connect with expert|connect expert|get nobogent system|nobogent system/i.test(messageText);
+                                      if (isConnectExpertClick) {
+                                          console.log(`[Flow] Lead ${cleanFrom} clicked Get Nobogent System / connect with expert! Sending high-priority alert to admin.`);
+                                          
+                                          // 1. Reply to lead on WhatsApp
+                                          const leadReplyText = "Thank you! Our Nobogent AI System team has been notified and will reach out to you directly shortly. You can also pick your strategy session time slot using the link above! 🙏";
+                                          try {
+                                              const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
+                                              await fetch(metaUrl, {
+                                                  method: 'POST',
+                                                  headers: {
+                                                      'Authorization': `Bearer ${ownerWaToken}`,
+                                                      'Content-Type': 'application/json'
+                                                  },
+                                                  body: JSON.stringify({
+                                                      messaging_product: 'whatsapp',
+                                                      recipient_type: 'individual',
+                                                      to: cleanFrom,
+                                                      type: 'text',
+                                                      text: { body: leadReplyText }
+                                                  })
+                                              });
+                                              
+                                              // Log bot reply in chat
+                                              await supabaseAdmin
+                                                  .from('whatsapp_messages')
+                                                  .insert({
+                                                      chat_id: chat.id,
+                                                      direction: 'outbound',
+                                                      message_text: leadReplyText
+                                                  });
+                                              await supabaseAdmin
+                                                  .from('whatsapp_chats')
+                                                  .update({ last_message_text: leadReplyText, updated_at: new Date().toISOString() })
+                                                  .eq('id', chat.id);
+                                          } catch (waErr) {
+                                              console.error('[Flow] Error sending expert connection response to lead:', waErr);
+                                          }
+                                          
+                                          // 2. Trigger Multi-Channel Alert to Admin with Direct CRM Lead Link
+                                          const leadName = chat.recipient_name || latestLead?.name || 'Prospect';
+                                          const leadPhone = '+' + cleanFrom;
+                                          const targetLeadId = latestLead?.id;
+                                          const targetUrl = targetLeadId ? `/dashboard/crm?leadId=${targetLeadId}` : '/dashboard/crm';
+                                          
+                                          sendAdminMultiChannelNotification({
+                                              ownerUserId,
+                                              title: '🚨 Get Nobogent System Requested!',
+                                              body: `High-intent lead ${leadName} (${leadPhone}) clicked "Get Nobogent System"! Please contact them immediately.`,
+                                              url: targetUrl,
+                                              type: 'connect_expert',
+                                              leadPhone,
+                                              leadName,
+                                              leadId: targetLeadId
+                                          }).catch(err => console.error('[Flow] Multi-channel expert request alert failed:', err));
+                                          
+                                          return; // Stop processing further automation rules/flows or Gemini
+                                      }
 
                                     // Helper: send WhatsApp interactive message with customizable action buttons
                                     const sendWAMessage = async (text: string) => {
