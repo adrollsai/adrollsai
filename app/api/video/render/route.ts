@@ -127,10 +127,10 @@ export async function POST(request: Request) {
             const siteName = process.env.REMOTION_AWS_SITE_NAME || 'nobogent-site';
             const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
 
-            // Calculate framesPerLambda for high-speed parallel AWS Lambda rendering
+            // Calculate framesPerLambda to stay safely within AWS Lambda concurrency limits
             const totalFrames = durationInFrames ? Number(durationInFrames) : 900;
-            const maxLambdas = 15;
-            const framesPerLambda = Math.max(80, Math.ceil(totalFrames / maxLambdas));
+            const maxLambdas = 3;
+            const framesPerLambda = Math.max(300, Math.ceil(totalFrames / maxLambdas));
 
             console.log(`[Render Route] Dispatching render using site ${siteName} on region ${region} with ${framesPerLambda} frames per lambda (total frames: ${totalFrames})`);
 
@@ -148,7 +148,7 @@ export async function POST(request: Request) {
                 },
                 codec: 'h264',
                 imageFormat: 'jpeg',
-                maxRetries: 2,
+                maxRetries: 5,
                 privacy: 'public',
                 framesPerLambda,
                 forceDurationInFrames: durationInFrames ? Number(durationInFrames) : undefined,
