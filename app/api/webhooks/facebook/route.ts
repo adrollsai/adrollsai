@@ -230,18 +230,25 @@ export async function POST(request: Request) {
                         // Look up matched profile by personal notification number
                         const { data: profiles } = await supabaseAdmin
                             .from('profiles')
-                            .select('id, role, parent_id, agency_id, business_name, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, ad_account_id, custom_domain')
+                            .select('id, role, parent_id, agency_id, business_name, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, custom_domain')
                             .not('whatsapp_personal_number', 'is', null);
                             
                         const wabaPhoneId = val.metadata?.phone_number_id || '';
                         const matchedProfile = profiles?.find((p: any) => {
-                            // Ensure the message was received on the phone number ID registered to this profile
-                            if (p.whatsapp_phone_number_id !== wabaPhoneId) return false;
+                            const cleanPersonal = p.whatsapp_personal_number ? p.whatsapp_personal_number.replace(/\D/g, '') : '';
+                            if (!cleanPersonal) return false;
                             
-                            const cleanPersonal = p.whatsapp_personal_number.replace(/\D/g, '');
-                            return cleanPersonal === cleanFrom || 
-                                   (cleanPersonal.length >= 10 && cleanFrom.endsWith(cleanPersonal)) ||
-                                   (cleanFrom.length >= 10 && cleanPersonal.endsWith(cleanFrom));
+                            const phoneMatch = cleanPersonal === cleanFrom || 
+                                               (cleanPersonal.length >= 10 && cleanFrom.endsWith(cleanPersonal.slice(-10))) ||
+                                               (cleanFrom.length >= 10 && cleanPersonal.endsWith(cleanFrom.slice(-10)));
+                                               
+                            if (!phoneMatch) return false;
+
+                            // If WABA phone ID is available, match exact WABA phone ID
+                            if (wabaPhoneId && p.whatsapp_phone_number_id) {
+                                return p.whatsapp_phone_number_id === wabaPhoneId;
+                            }
+                            return true;
                         });
                         
                         if (matchedProfile) {

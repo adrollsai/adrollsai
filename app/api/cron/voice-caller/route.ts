@@ -79,9 +79,34 @@ async function handleVoiceCallerDispatcher(request: Request) {
     console.log(`[Voice Caller Dispatcher] Queueing ${leadsToCall.length} calls in QStash...`)
 
     const qstashToken = process.env.QSTASH_TOKEN
-    if (!qstashToken) {
-      console.error('[Voice Caller Dispatcher] QSTASH_TOKEN environment variable is not configured.')
-      return NextResponse.json({ error: 'QStash not configured' }, { status: 500 })
+    const { triggerOutboundCall } = await import('@/utils/voice-helper')
+
+    if (!qstashToken || isCronJobService) {
+      console.log(`[Voice Caller Dispatcher] Executing ${leadsToCall.length} scheduled calls directly...`)
+      let directDispatches = 0
+      for (const lead of leadsToCall) {
+        try {
+          // Clear scheduled time first so we don't double call
+          await supabaseAdmin
+            .from('leads')
+            .update({ voice_call_scheduled_at: null })
+            .eq('id', lead.id)
+
+          const { data: fullLead } = await supabaseAdmin
+            .from('leads')
+            .select('id, user_id')
+            .eq('id', lead.id)
+            .single()
+
+          if (fullLead) {
+            await triggerOutboundCall(supabaseAdmin, fullLead.id, fullLead.user_id, true)
+            directDispatches++
+          }
+        } catch (callErr) {
+          console.error(`[Voice Caller Dispatcher] Direct call dispatch error for lead ${lead.id}:`, callErr)
+        }
+      }
+      return NextResponse.json({ success: true, queuedCount: 0, directDispatches, campaignDispatches })
     }
 
     // Construct the destination worker URL dynamically
@@ -108,7 +133,7 @@ async function handleVoiceCallerDispatcher(request: Request) {
     await Promise.all(publishPromises)
     console.log(`[Voice Caller Dispatcher] Successfully queued ${leadsToCall.length} tasks in QStash.`)
 
-    return NextResponse.json({ success: true, queuedCount: leadsToCall.length })
+    return NextResponse.json({ success: true, queuedCount: leadsToCall.length, campaignDispatches })
   } catch (error: any) {
     console.error('[Voice Caller Dispatcher] Fatal Error:', error)
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })

@@ -163,7 +163,7 @@ export async function POST(req: Request) {
         // Fetch WABA credentials from the owner profile
         const { data: ownerProfile } = await supabaseAdmin
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, email, business_name')
+            .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, email, business_name, avatar_url')
             .eq('id', ownerUserId)
             .single()
 
@@ -214,20 +214,54 @@ export async function POST(req: Request) {
                         if (templateDef && templateDef.components) {
                             const components: any[] = []
                             
-                            // Check for IMAGE header component
+                            // Check for HEADER component (IMAGE, VIDEO, DOCUMENT)
                             const headerComp = templateDef.components.find((c: any) => c.type === 'HEADER')
-                            if (headerComp && headerComp.format === 'IMAGE') {
-                                components.push({
-                                    type: 'header',
-                                    parameters: [
-                                        {
-                                            type: 'image',
-                                            image: {
-                                                link: 'https://designs.adrolls.in/processing' // placeholder/default header image
+                            if (headerComp && headerComp.format) {
+                                const fmt = headerComp.format.toUpperCase()
+                                if (fmt === 'VIDEO') {
+                                    let videoUrl = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
+                                    const { data: flow } = await supabaseAdmin
+                                        .from('whatsapp_flows')
+                                        .select('header_media_url')
+                                        .eq('user_id', ownerUserId)
+                                        .eq('template_name', templateName)
+                                        .maybeSingle()
+                                    if (flow?.header_media_url) videoUrl = flow.header_media_url
+
+                                    components.push({
+                                        type: 'header',
+                                        parameters: [
+                                            {
+                                                type: 'video',
+                                                video: { link: videoUrl }
                                             }
-                                        }
-                                    ]
-                                })
+                                        ]
+                                    })
+                                } else if (fmt === 'IMAGE') {
+                                    let imgUrl = ownerProfile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
+                                    if (imgUrl.includes('/api/fetch-image?url=')) {
+                                        try { imgUrl = decodeURIComponent(imgUrl.split('/api/fetch-image?url=')[1]) } catch (e) {}
+                                    }
+                                    components.push({
+                                        type: 'header',
+                                        parameters: [
+                                            {
+                                                type: 'image',
+                                                image: { link: imgUrl }
+                                            }
+                                        ]
+                                    })
+                                } else if (fmt === 'DOCUMENT') {
+                                    components.push({
+                                        type: 'header',
+                                        parameters: [
+                                            {
+                                                type: 'document',
+                                                document: { link: 'https://adrolls.in/sample-doc.pdf', filename: 'Document.pdf' }
+                                            }
+                                        ]
+                                    })
+                                }
                             }
 
                             // Check for BODY component parameters
