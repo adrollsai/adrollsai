@@ -67,7 +67,7 @@ export async function POST(request: Request) {
             : tempUrl.replace(`${R2_PUBLIC_URL}/`, '').replace(/^\//, '')
 
         const permanentKey = `library/${targetUserId}/${Date.now()}-${cleanName}`
-        const finalPublicUrl = `${R2_PUBLIC_URL}/adrolls-storage/${permanentKey}`
+        const finalPublicUrl = `${R2_PUBLIC_URL}/${permanentKey}`
 
         let shouldCompress = true
 

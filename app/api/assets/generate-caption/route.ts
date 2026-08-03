@@ -17,14 +17,62 @@ export async function POST(req: Request) {
 
         console.log(`[Generate Caption] Fetching and analyzing asset: ${url} (${type})`);
 
-        // Fetch media asset from R2 URL
-        const res = await fetch(url);
-        if (!res.ok) {
-            throw new Error(`Failed to fetch media file from R2. Status: ${res.status}`);
+        // Multi-candidate URL fetching & S3 GetObject fallback for bulletproof media loading
+        const urlCandidates: string[] = [url];
+        if (url.includes('/adrolls-storage/')) {
+            urlCandidates.push(url.replace('/adrolls-storage/', '/'));
+        } else if (url.includes('.r2.dev/')) {
+            urlCandidates.push(url.replace('.r2.dev/', '.r2.dev/adrolls-storage/'));
         }
-        
-        const buffer = Buffer.from(await res.arrayBuffer());
-        const mimeType = res.headers.get('content-type') || (type === 'video' ? 'video/mp4' : 'image/png');
+
+        let buffer: Buffer | null = null;
+        let mimeType = type === 'video' ? 'video/mp4' : 'image/png';
+
+        for (const candUrl of urlCandidates) {
+            try {
+                console.log(`[Generate Caption] Trying URL candidate: ${candUrl}`);
+                const res = await fetch(candUrl);
+                if (res.ok) {
+                    buffer = Buffer.from(await res.arrayBuffer());
+                    mimeType = res.headers.get('content-type') || mimeType;
+                    console.log(`[Generate Caption] Media fetched successfully from candidate URL!`);
+                    break;
+                }
+            } catch (e) {
+                console.warn(`[Generate Caption] Failed fetching URL candidate ${candUrl}:`, e);
+            }
+        }
+
+        // S3 SDK Direct GetObject Fallback if public HTTP returns 404
+        if (!buffer) {
+            try {
+                const { r2, R2_BUCKET, R2_PUBLIC_URL } = await import('@/utils/r2');
+                const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+                
+                const cleanKey = url.includes('/adrolls-storage/')
+                    ? url.split('/adrolls-storage/')[1]
+                    : url.replace(`${R2_PUBLIC_URL}/`, '').replace(/^\//, '');
+
+                console.log(`[Generate Caption] Attempting direct S3 GetObject for key: ${cleanKey}`);
+                const s3Res = await r2.send(new GetObjectCommand({
+                    Bucket: R2_BUCKET,
+                    Key: cleanKey
+                }));
+
+                if (s3Res.Body) {
+                    const byteArray = await s3Res.Body.transformToByteArray();
+                    buffer = Buffer.from(byteArray);
+                    mimeType = s3Res.ContentType || mimeType;
+                    console.log(`[Generate Caption] S3 GetObject fallback succeeded!`);
+                }
+            } catch (s3Err) {
+                console.error(`[Generate Caption] S3 GetObject fallback failed:`, s3Err);
+            }
+        }
+
+        if (!buffer) {
+            throw new Error(`Failed to fetch media file from R2. Status: 404`);
+        }
 
         // Fetch business context
         const { data: profile } = await supabase.from('profiles').select('business_name, contact_number').eq('id', user.id).single();
