@@ -110,24 +110,22 @@ You must generate exactly three pieces of copy:
 Output ONLY a JSON object:
 {"headline": "...", "primary_text": "...", "social_post_description": "..."}`;
 
+        const mediaDataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+
         const { text } = await generateText({
-            model: google('gemini-3-flash-preview'),
+            model: google('gemini-2.5-flash'),
             messages: [
                 {
                     role: 'user',
-                    content: [
-                        { type: 'text', text: prompt },
-                        type === 'image' ? {
-                            type: 'image',
-                            image: buffer,
-                            mimeType: mimeType
-                        } : { 
-                            type: 'file', 
-                            data: buffer, 
-                            mimeType: mimeType 
-                        } as any
+                    content: prompt,
+                    experimental_attachments: [
+                        {
+                            name: `media.${type === 'video' ? 'mp4' : 'png'}`,
+                            contentType: mimeType,
+                            url: mediaDataUrl
+                        }
                     ]
-                }
+                } as any
             ]
         });
 
