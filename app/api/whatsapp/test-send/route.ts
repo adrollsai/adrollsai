@@ -61,20 +61,55 @@ export async function POST(req: Request) {
                         }
                         
                         if (Array.isArray(templateDef.components)) {
-                            // 1. HEADER Image component check
+                            // 1. HEADER component check (IMAGE, VIDEO, DOCUMENT, TEXT with parameters)
                             const headerComp = templateDef.components.find((c: any) => c.type === 'HEADER');
-                            if (headerComp && headerComp.format === 'IMAGE') {
-                                components.push({
-                                    type: 'header',
-                                    parameters: [
-                                        {
-                                            type: 'image',
-                                            image: {
-                                                link: 'https://designs.adrolls.in/processing'
+                            const defaultVideo = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4';
+                            const defaultImage = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png';
+                            const providedMedia = (req as any).headerMediaUrl || (req as any).mediaUrl || null;
+
+                            if (headerComp) {
+                                if (headerComp.format === 'VIDEO') {
+                                    components.push({
+                                        type: 'header',
+                                        parameters: [
+                                            {
+                                                type: 'video',
+                                                video: {
+                                                    link: providedMedia || defaultVideo
+                                                }
                                             }
-                                        }
-                                    ]
-                                });
+                                        ]
+                                    });
+                                } else if (headerComp.format === 'IMAGE') {
+                                    components.push({
+                                        type: 'header',
+                                        parameters: [
+                                            {
+                                                type: 'image',
+                                                image: {
+                                                    link: providedMedia || defaultImage
+                                                }
+                                            }
+                                        ]
+                                    });
+                                } else if (headerComp.format === 'DOCUMENT') {
+                                    components.push({
+                                        type: 'header',
+                                        parameters: [
+                                            {
+                                                type: 'document',
+                                                document: {
+                                                    link: providedMedia || defaultVideo
+                                                }
+                                            }
+                                        ]
+                                    });
+                                } else if (headerComp.format === 'TEXT' && headerComp.text && headerComp.text.includes('{{1}}')) {
+                                    components.push({
+                                        type: 'header',
+                                        parameters: [{ type: 'text', text: 'Valued Customer' }]
+                                    });
+                                }
                             }
 
                             // 2. BODY components parameters check
@@ -116,6 +151,20 @@ export async function POST(req: Request) {
             const rawProvided = Array.isArray(parameters) && parameters.length > 0
                 ? parameters
                 : (Array.isArray(variableValues) ? variableValues : []);
+
+            if (payloadTemplateName.toLowerCase().includes('vsl') || payloadTemplateName.toLowerCase().includes('video')) {
+                components.push({
+                    type: 'header',
+                    parameters: [
+                        {
+                            type: 'video',
+                            video: {
+                                link: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
+                            }
+                        }
+                    ]
+                });
+            }
 
             if (rawProvided.length > 0) {
                 const bodyParams = rawProvided.map((p: any, idx: number) => {

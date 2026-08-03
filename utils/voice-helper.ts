@@ -732,7 +732,7 @@ export async function bookAppointment(
             })
 
             const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
-            const phoneId = profile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_NUMBER_ID
+            const phoneId = profile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || process.env.DEV_WHATSAPP_PHONE_NUMBER_ID
             
             // Normalize prospect phone
             let cleanLeadPhone = lead?.phone ? lead.phone.replace(/\D/g, '') : ''
@@ -780,16 +780,48 @@ export async function bookAppointment(
                             confirmationDelivered = true
                             console.log(`[VOICE HELPER] Free-Form WhatsApp confirmation delivered to ${cleanLeadPhone}. Message ID: ${freeFormData.messages[0].id}`)
                             
-                            await supabaseAdmin.from('whatsapp_messages').insert({
-                                user_id: profileId,
-                                lead_id: leadId,
-                                direction: 'outbound',
-                                message_type: 'text',
-                                body: freeFormText,
-                                status: 'sent',
-                                message_id: freeFormData.messages[0].id,
-                                created_at: new Date().toISOString()
-                            }).catch(() => {})
+                            // Helper to ensure message appears in WhatsApp Inbox tab
+                            let { data: chat } = await supabaseAdmin
+                                .from('whatsapp_chats')
+                                .select('id')
+                                .eq('user_id', profileId)
+                                .eq('recipient_phone', cleanLeadPhone)
+                                .maybeSingle()
+
+                            if (!chat) {
+                                const { data: newChat } = await supabaseAdmin
+                                    .from('whatsapp_chats')
+                                    .insert({
+                                        user_id: profileId,
+                                        lead_id: leadId,
+                                        recipient_name: lead.name || 'Valued Prospect',
+                                        recipient_phone: cleanLeadPhone,
+                                        last_message_text: freeFormText,
+                                        unread_count: 0,
+                                        updated_at: new Date().toISOString()
+                                    })
+                                    .select('id')
+                                    .single()
+                                chat = newChat
+                            } else {
+                                await supabaseAdmin
+                                    .from('whatsapp_chats')
+                                    .update({
+                                        lead_id: leadId,
+                                        last_message_text: freeFormText,
+                                        updated_at: new Date().toISOString()
+                                    })
+                                    .eq('id', chat.id)
+                            }
+
+                            if (chat?.id) {
+                                await supabaseAdmin.from('whatsapp_messages').insert({
+                                    chat_id: chat.id,
+                                    direction: 'outbound',
+                                    message_text: freeFormText,
+                                    created_at: new Date().toISOString()
+                                }).catch(() => {})
+                            }
                         } else {
                             console.warn('[VOICE HELPER] Free-form WhatsApp send failed (likely outside 24h window), falling back to template message:', freeFormData.error)
                         }

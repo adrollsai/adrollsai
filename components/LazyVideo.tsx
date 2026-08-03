@@ -49,6 +49,9 @@ export default function LazyVideo({
         return () => observer.disconnect()
     }, [src, poster])
 
+    // Helper to format video URL for fast native browser frame decoding
+    const videoSrcWithTimestamp = src ? (src.includes('#t=') ? src : `${src}#t=0.001`) : ''
+
     return (
         <div ref={containerRef} className="w-full h-full relative bg-slate-900 flex items-center justify-center overflow-hidden">
             {isInView ? (
@@ -62,9 +65,9 @@ export default function LazyVideo({
                         />
                     ) : (
                         <video
-                            src={src}
+                            src={videoSrcWithTimestamp}
                             poster={effectivePoster || undefined}
-                            preload="none"
+                            preload="metadata"
                             playsInline={playsInline}
                             muted={muted}
                             loop={loop}

@@ -59,7 +59,7 @@ export async function transcribeVideoWithGemini(videoUrl: string) {
             required: ["segments"]
         };
 
-        // 4. Generate Transcript using Gemini 3.5 Flash
+        // 4. Generate Transcript using Gemini Flash
         const result = await generateContentWithFallback(
             genAI,
             [
@@ -71,8 +71,8 @@ export async function transcribeVideoWithGemini(videoUrl: string) {
                 },
                 { text: "Generate a precise transcript of this video. For every segment of speech, provide the start time, end time, and text. Return the result in a clean JSON format matching the schema." },
             ],
-            "gemini-3.5-flash",
-            null,
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
             4,
             2000,
             {

@@ -2613,20 +2613,8 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                   }
               }
 
-              if (recipientEmails.length > 0) {
-                  const { sendFacebookLeadEmail } = await import('@/utils/email-helper');
-                  console.log(`[Facebook Webhook] Sending lead notification emails to: ${recipientEmails.join(', ')}`);
-                  await sendFacebookLeadEmail(recipientEmails, {
-                      name,
-                      email,
-                      phone,
-                      formName,
-                      adName: adCampaignString,
-                      customQuestions: customFields
-                  });
-              } else {
-                  console.warn("[Facebook Webhook] No recipient emails resolved for profile ID:", profile.id);
-              }
+              // Routine raw lead emails suppressed (Email notifications limited to high-priority events: Meeting Booked, Connect with Expert)
+              console.log(`[Facebook Webhook] Raw lead email skipped for ${name} (${recipientEmails.join(', ')}). Email notifications restricted to high-priority events.`);
           } catch (emailErr: any) {
               console.error("[Facebook Webhook] Failed to send lead notification emails:", emailErr);
           }

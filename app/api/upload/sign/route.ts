@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ 
       signedUrl, 
       // 2. FIXED PUBLIC URL: Manually adding 'adrolls-storage' for fetching
-      publicUrl: `${R2_PUBLIC_URL}/adrolls-storage/${key}` 
+      publicUrl: `${R2_PUBLIC_URL}/${key}` 
     })
 
   } catch (error: any) {

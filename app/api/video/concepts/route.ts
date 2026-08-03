@@ -246,22 +246,30 @@ JSON SCHEMA:
             imageDescriptions: z.array(z.string()),
         });
 
+        console.log("[Concepts API] Generating concepts with primary model: gemini-3.5-flash");
         try {
-            console.log("[Concepts API] Generating concepts with primary model: gemini-3.5-flash");
             const res = await generateObject({
                 model: google('gemini-3.5-flash'),
                 schema,
                 messages,
             });
             result = res.object;
-        } catch (err: any) {
-            console.warn("[Concepts API] Primary model failed. Falling back to gemini-3-flash-preview...", err.message);
-            const res = await generateObject({
-                model: google('gemini-3-flash-preview'),
-                schema,
-                messages,
-            });
-            result = res.object;
+        } catch (e35: any) {
+            try {
+                const res = await generateObject({
+                    model: google('gemini-2.0-flash'),
+                    schema,
+                    messages,
+                });
+                result = res.object;
+            } catch (e20: any) {
+                const res = await generateObject({
+                    model: google('gemini-1.5-flash'),
+                    schema,
+                    messages,
+                });
+                result = res.object;
+            }
         }
 
         return NextResponse.json({

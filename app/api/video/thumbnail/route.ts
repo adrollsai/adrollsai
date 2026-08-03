@@ -60,27 +60,11 @@ export async function GET(request: Request) {
             targetVideoUrl = targetVideoUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
         }
 
-        console.log(`[VideoThumbnail API] Downloading video stream to extract frame: ${targetVideoUrl}`);
-
-        let videoRes = await fetch(targetVideoUrl);
-        if (!videoRes.ok && targetVideoUrl !== videoUrl) {
-            videoRes = await fetch(videoUrl);
-        }
-
-        if (!videoRes.ok) {
-            throw new Error(`Failed to fetch video stream: HTTP ${videoRes.status}`);
-        }
-
-        const arrayBuffer = await videoRes.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        console.log(`[VideoThumbnail API] Extracting frame from video URL: ${targetVideoUrl}`);
 
         const tempDir = os.tmpdir();
-        const tempVideoPath = path.join(tempDir, `thumb_v_${Date.now()}_${Math.random().toString(36).substring(7)}.mp4`);
         const tempThumbPath = path.join(tempDir, `thumb_i_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`);
 
-        fs.writeFileSync(tempVideoPath, buffer);
-
-        // 3. Extract 1 frame at 0.5s using FFmpeg scaled down to web-optimized 360px JPEG
         const nodeModulesFfmpeg = path.join(
             process.cwd(),
             'node_modules',
@@ -88,9 +72,39 @@ export async function GET(request: Request) {
             os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
         );
         const ffmpeg = fs.existsSync(nodeModulesFfmpeg) ? nodeModulesFfmpeg : (ffmpegPath || 'ffmpeg');
-        const command = `"${ffmpeg}" -y -ss 00:00:00.500 -i "${tempVideoPath}" -vf "scale=360:-1" -vframes 1 "${tempThumbPath}"`;
 
-        await execPromise(command);
+        // Fast path: Stream frame directly over HTTP range requests using FFmpeg
+        const streamCommand = `"${ffmpeg}" -y -ss 00:00:00.500 -i "${targetVideoUrl}" -vf "scale=360:-1" -vframes 1 "${tempThumbPath}"`;
+
+        let success = false;
+        try {
+            await execPromise(streamCommand);
+            if (fs.existsSync(tempThumbPath) && fs.statSync(tempThumbPath).size > 0) {
+                success = true;
+            }
+        } catch (streamErr) {
+            console.warn('[VideoThumbnail API] Stream command failed, trying fallback download:', streamErr);
+        }
+
+        // Fallback path: Download buffer to disk if remote stream failed
+        if (!success) {
+            let videoRes = await fetch(targetVideoUrl);
+            if (!videoRes.ok && targetVideoUrl !== videoUrl) {
+                videoRes = await fetch(videoUrl);
+            }
+
+            if (!videoRes.ok) {
+                throw new Error(`Failed to fetch video stream: HTTP ${videoRes.status}`);
+            }
+
+            const arrayBuffer = await videoRes.arrayBuffer();
+            const tempVideoPath = path.join(tempDir, `thumb_v_${Date.now()}_${Math.random().toString(36).substring(7)}.mp4`);
+            fs.writeFileSync(tempVideoPath, Buffer.from(arrayBuffer));
+
+            const fallbackCommand = `"${ffmpeg}" -y -ss 00:00:00.500 -i "${tempVideoPath}" -vf "scale=360:-1" -vframes 1 "${tempThumbPath}"`;
+            await execPromise(fallbackCommand);
+            try { fs.unlinkSync(tempVideoPath); } catch (e) {}
+        }
 
         if (!fs.existsSync(tempThumbPath)) {
             throw new Error("FFmpeg failed to produce thumbnail frame");
@@ -98,8 +112,7 @@ export async function GET(request: Request) {
 
         const thumbBuffer = fs.readFileSync(tempThumbPath);
 
-        // Cleanup temporary disk files
-        try { fs.unlinkSync(tempVideoPath); } catch (e) {}
+        // Cleanup temporary thumbnail file
         try { fs.unlinkSync(tempThumbPath); } catch (e) {}
 
         // 4. Upload generated JPEG thumbnail to Cloudflare R2

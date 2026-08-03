@@ -85,7 +85,7 @@ export async function POST(request: Request) {
         ContentType: file.type || 'video/mp4'
       };
 
-      const publicUrl = `${R2_PUBLIC_URL}/adrolls-storage/${key}`;
+      const publicUrl = `${R2_PUBLIC_URL}/${key}`;
 
       let thumbnailUrl: string | null = null;
       try {

@@ -1,4 +1,4 @@
-import { AbsoluteFill, Video, useVideoConfig, useCurrentFrame, interpolate, spring } from 'remotion';
+import { AbsoluteFill, OffthreadVideo, useVideoConfig, useCurrentFrame, interpolate, spring } from 'remotion';
 import React from 'react';
 import { loadFont } from "@remotion/google-fonts/Montserrat";
 
@@ -102,7 +102,11 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                 position: 'absolute',
                 inset: 0,
             }}>
-                <Video src={videoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} crossOrigin="anonymous" />
+                <OffthreadVideo 
+                    src={videoUrl} 
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                    crossOrigin="anonymous" 
+                />
             </div>
 
             {/* Glowing Neon Vignette Border */}

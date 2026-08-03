@@ -368,10 +368,10 @@ export async function POST(request: Request) {
                         const siteName = process.env.REMOTION_AWS_SITE_NAME || 'nobogent-site';
                         const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
 
-                        // Dynamically calculate framesPerLambda to stay below the AWS account concurrency limit (10)
+                        // Use 250+ frames per Lambda (max 3 Lambdas total) to prevent Chromium remote video seeking stalls at chunk boundaries
                         const totalFrames = siblings.length * 15 * 30;
-                        const maxLambdas = 4;
-                        const framesPerLambda = Math.max(200, Math.ceil(totalFrames / maxLambdas));
+                        const maxLambdas = 3;
+                        const framesPerLambda = Math.max(250, Math.ceil(totalFrames / maxLambdas));
 
                         console.log(`[Sync Endpoint] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambda} frames per lambda (total frames: ${totalFrames})`);
 

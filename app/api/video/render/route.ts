@@ -127,7 +127,7 @@ export async function POST(request: Request) {
             const siteName = process.env.REMOTION_AWS_SITE_NAME || 'nobogent-site';
             const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
 
-            // Calculate framesPerLambda to stay safely within AWS Lambda concurrency limits
+            // Use 300+ frames per Lambda (max 3 Lambdas total) to prevent Chromium remote video seeking stalls at chunk boundaries
             const totalFrames = durationInFrames ? Number(durationInFrames) : 900;
             const maxLambdas = 3;
             const framesPerLambda = Math.max(300, Math.ceil(totalFrames / maxLambdas));

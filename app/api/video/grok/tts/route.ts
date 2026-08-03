@@ -77,7 +77,7 @@ export async function POST(request: Request) {
                             Body: audioBuffer,
                             ContentType: 'audio/mpeg'
                         }));
-                        audioUrl = `${R2_PUBLIC_URL}/${r2Key}`;
+                        audioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
                         console.log(`[Grok TTS API] Voiceover persisted to Cloudflare R2: ${audioUrl}`);
                     } else {
                         audioUrl = rawAudioUrl;

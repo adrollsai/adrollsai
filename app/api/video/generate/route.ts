@@ -696,50 +696,33 @@ Dialogue
 Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or backticks.`;
 
                 let finalPrompt = "";
+                console.log(`[Generate API] Generating prompt for scene ${i + 1} with primary model: gemini-3.5-flash`);
                 try {
-                    console.log(`[Generate API] Generating prompt for scene ${i + 1} with primary model: gemini-3.5-flash`);
-                    const { text } = await generateText({
+                    const res = await generateText({
                         model: google('gemini-3.5-flash'),
                         prompt: synthesisPrompt,
                     });
-                    finalPrompt = text.trim();
-                } catch (e: any) {
-                    console.warn(`[Generate API] Primary prompt synthesis failed for scene ${i + 1}, trying gemini-3-flash-preview fallback:`, e.message);
+                    finalPrompt = res.text.trim();
+                } catch (e35: any) {
                     try {
-                        const { text } = await generateText({
-                            model: google('gemini-3-flash-preview'),
+                        const res = await generateText({
+                            model: google('gemini-2.0-flash'),
                             prompt: synthesisPrompt,
                         });
-                        finalPrompt = text.trim();
-                    } catch (fallbackErr: any) {
-                        console.error(`[Generate API] Fallback prompt synthesis also failed for scene ${i + 1}:`, fallbackErr);
-                        const targetImageLabel = (avatarUrl && !isCharacterVideo) ? "Image_2" : "Image_1";
-                        const cleanFallbackDialogue = scene.dialogue;
-                        finalPrompt = `${characterAppearanceText}
-
-The video opens in a premium, warm real estate setting.
-
-A professional female UGC presenter stands in a detailed closeup shot looking directly into the camera.
-
-She says:
-"${cleanFallbackDialogue}"
-
-The camera slowly dollies toward the presenter's face.
-
-Transition to a wide scenic shot showing the product/property matching the supplied reference image 1 (${targetImageLabel}) from super far away so that no human face is visible or mutated.
-
-Professional real estate home tour.
-Photorealistic.
-Ultra-realistic human motion.
-Natural body language.
-Perfect lip synchronization.
-Luxury property marketing video.
-Smooth steadycam movement.
-Cinematic architectural videography.
-Premium lighting.
-No AI artifacts.
-High-end commercial production quality.
-15-second continuous shot.`;
+                        finalPrompt = res.text.trim();
+                    } catch (e20: any) {
+                        try {
+                            const res = await generateText({
+                                model: google('gemini-1.5-flash'),
+                                prompt: synthesisPrompt,
+                            });
+                            finalPrompt = res.text.trim();
+                        } catch (fallbackErr: any) {
+                            console.error(`[Generate API] Fallback prompt synthesis also failed for scene ${i + 1}:`, fallbackErr);
+                            const targetImageLabel = (avatarUrl && !isCharacterVideo) ? "Image_2" : "Image_1";
+                            const cleanFallbackDialogue = scene.dialogue;
+                            finalPrompt = `${characterAppearanceText}\n\nThe video opens in a premium, warm real estate setting.\nA professional female UGC presenter stands in a detailed closeup shot looking directly into the camera.\nShe says:\n"${cleanFallbackDialogue}"\nThe camera slowly dollies toward the presenter's face.\nTransition to a wide scenic shot showing the product/property matching the supplied reference image 1 (${targetImageLabel}) from super far away so that no human face is visible or mutated.\nProfessional real estate home tour.\nPhotorealistic.\nUltra-realistic human motion.\nNatural body language.\nPerfect lip synchronization.\nLuxury property marketing video.\nSmooth steadycam movement.\nCinematic architectural videography.\nPremium lighting.\nNo AI artifacts.\nHigh-end commercial production quality.\n15-second continuous shot.`;
+                        }
                     }
                 }
                 prompts.push(finalPrompt);
@@ -897,7 +880,7 @@ PRODUCT / BRAND / INDUSTRY CONTEXT:
 
 SCRIPT SCENE ${i + 1} DIRECTIVES:
 - Visual Action: "${sceneVisuals}"
-- Audio/Voiceover Context: "${sceneDialogue}"
+- Visual Concept Context: "${sceneDialogue}"
 
 MASTER AD PROMPTING RULES:
 1. SCENE START & DYNAMIC CUTS DIRECTIVE: The prompt MUST strictly begin with: "The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 seconds where..."
@@ -906,27 +889,50 @@ MASTER AD PROMPTING RULES:
    - Shot 2 (2-4s): Authentic human emotional reaction (e.g. customer gasping in delight, smiling warmly, nodding in approval, sharing a joyful moment, or experiencing relief).
    - Shot 3 (4-6s): Dynamic action shot showcasing the product in use or sweeping visual environment (${sceneVisuals}).
    - Shot 4 (6-8s+): Macro texture close-up or satisfying result sequence reflecting high value and satisfaction.
-3. NO DIALOGUE / TALKING HEADS RULE: People in the video show real human emotions, genuine expressions, and physical interactions, but ABSOLUTELY NO talking to the camera, NO speaking lips, NO voiceover dialogue from actors, and NO talking heads.
+3. STRICT NO VOICEOVER / NO SPOKEN DIALOGUE RULE: The video must contain STRICTLY ZERO voiceover, NO spoken speech, NO spoken dialogue, NO actors speaking, NO voiceover narration, and NO talking heads. People in the video show real human emotions, genuine expressions, and physical interactions, but strictly NO talking to camera, NO speaking lips, and NO voiceover speech of any kind.
 4. REFERENCE IMAGE INTEGRATION: ${hasImageForClip ? `"Reference 9:16 collage image as visual identity lock. Seamlessly integrate the colors, product design, architectural style, and visual aesthetics from the reference image across the fast-cut sequence."` : `"Create photorealistic 9:16 commercial visuals representing the product in action."`}
-5. CINEMATOGRAPHY: 35mm anamorphic camera, cinematic lighting, 9:16 portrait aspect ratio, dynamic camera whip pans, macro focus transitions, and an upbeat background music track.
+5. CINEMATOGRAPHY: 35mm anamorphic camera, cinematic lighting, 9:16 portrait aspect ratio, dynamic camera whip pans, macro focus transitions, upbeat background instrumental music track with ZERO voiceover.
 6. NO ON-SCREEN TEXT: Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.
+7. SILENT VOICEOVER DIRECTIVE: Strictly specify: "Completely mute voiceover, zero spoken dialogue, zero speech, no talking heads. Pure visual commercial sequence."
 
 Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do NOT use markdown code blocks or quotes.`;
 
                 let finalGrokPrompt = "";
                 try {
-                    const { text } = await generateText({
-                        model: google('gemini-3.5-flash'),
-                        prompt: scenePromptGen
-                    });
+                    console.log(`[Grok Pipeline] Generating prompt for scene ${i + 1} with primary model: gemini-3.5-flash`);
+                    let text = "";
+                    try {
+                        const res = await generateText({
+                            model: google('gemini-3.5-flash'),
+                            prompt: scenePromptGen
+                        });
+                        text = res.text;
+                    } catch (e35: any) {
+                        try {
+                            const res = await generateText({
+                                model: google('gemini-2.0-flash'),
+                                prompt: scenePromptGen
+                            });
+                            text = res.text;
+                        } catch (e20: any) {
+                            const res = await generateText({
+                                model: google('gemini-1.5-flash'),
+                                prompt: scenePromptGen
+                            });
+                            text = res.text;
+                        }
+                    }
                     let synthesized = text.trim();
                     if (!synthesized.toLowerCase().includes('starts immediately from second 0') && !synthesized.toLowerCase().includes('starts from second 0')) {
                         synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 seconds where... ${synthesized}`;
                     }
+                    if (!synthesized.toLowerCase().includes('no voiceover') && !synthesized.toLowerCase().includes('zero voiceover')) {
+                        synthesized += ` People show emotion but strictly NO voiceover, NO spoken dialogue, NO spoken audio, NO speech, and NO talking to camera.`;
+                    }
                     finalGrokPrompt = synthesized;
                 } catch (genErr) {
                     console.warn(`[Grok Pipeline] Gemini master prompt synthesis failed for scene ${i + 1}, using intelligent multi-cut fallback:`, genErr);
-                    finalGrokPrompt = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 seconds where an opening hero macro shot showcases "${productTitle}", cutting instantly to an delighted customer smiling warmly with genuine excitement, followed by a dynamic tracking shot of ${sceneVisuals || 'the featured product in action'}, ending on a sleek macro texture close-up. Cinematic 35mm anamorphic camera, dynamic lighting, 9:16 portrait aspect ratio, upbeat background music track. People show emotion but strictly NO talking to camera, NO speaking lips. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, or text overlays of any kind.`;
+                    finalGrokPrompt = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 seconds where an opening hero macro shot showcases "${productTitle}", cutting instantly to an delighted customer smiling warmly with genuine excitement, followed by a dynamic tracking shot of ${sceneVisuals || 'the featured product in action'}, ending on a sleek macro texture close-up. Cinematic 35mm anamorphic camera, dynamic lighting, 9:16 portrait aspect ratio, upbeat background instrumental music track. People show emotion but strictly NO voiceover, NO spoken dialogue, NO spoken audio, NO speech, and NO talking to camera. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, or text overlays of any kind.`;
                 }
 
                 grokPrompts.push(finalGrokPrompt);

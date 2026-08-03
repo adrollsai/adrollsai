@@ -508,11 +508,11 @@ export async function POST(request: Request) {
             const siteName = process.env.REMOTION_AWS_SITE_NAME || 'nobogent-site';
             const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
 
-            // Dynamically calculate framesPerLambda to stay below the AWS account concurrency limit (10)
+            // Use 250+ frames per Lambda (max 3 Lambdas total) to prevent Chromium remote video seeking stalls at chunk boundaries
             const clipDurationSec = 15;
             const totalFrames = siblings.length * clipDurationSec * 30;
-            const maxLambdas = 4;
-            const framesPerLambda = Math.max(200, Math.ceil(totalFrames / maxLambdas));
+            const maxLambdas = 3;
+            const framesPerLambda = Math.max(250, Math.ceil(totalFrames / maxLambdas));
 
             console.log(`[Video Callback] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambda} frames per lambda (total frames: ${totalFrames})`);
 
@@ -560,7 +560,7 @@ export async function POST(request: Request) {
             // Calculate actual total frames from real clip durations
             const realClipDurations = clipDurationsInSeconds ?? siblings.map(() => clipDurationSec);
             const actualTotalFrames = Math.round(realClipDurations.reduce((sum, d) => sum + d, 0) * 30);
-            const framesPerLambdaActual = Math.max(200, Math.ceil(actualTotalFrames / maxLambdas));
+            const framesPerLambdaActual = Math.max(250, Math.ceil(actualTotalFrames / maxLambdas));
 
             console.log(`[Video Callback] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambdaActual} frames per lambda (actual total frames: ${actualTotalFrames})`);
 
@@ -588,11 +588,11 @@ export async function POST(request: Request) {
                                     const r2Key = `voiceover/${Date.now()}_grok_async_tts.mp3`;
                                     await r2.send(new PutObjectCommand({
                                         Bucket: R2_BUCKET,
-                                        Key: r2Key,
+                                        Key: `adrolls-storage/${r2Key}`,
                                         Body: audioBuffer,
                                         ContentType: 'audio/mpeg'
                                     }));
-                                    finalAudioUrl = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
+                                    finalAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key.replace(/^\//, '')}`;
                                     console.log(`[Video Callback] Async Gemini TTS voiceover resolved and persisted to R2: ${finalAudioUrl}`);
                                 } else {
                                     finalAudioUrl = ttsStatus.resultUrl;
@@ -667,11 +667,11 @@ export async function POST(request: Request) {
                                                 const r2Key = `voiceover/${Date.now()}_grok_stitch.mp3`;
                                                 await r2.send(new PutObjectCommand({
                                                     Bucket: R2_BUCKET,
-                                                    Key: r2Key,
+                                                    Key: `adrolls-storage/${r2Key}`,
                                                     Body: audioBuffer,
                                                     ContentType: 'audio/mpeg'
                                                 }));
-                                                finalAudioUrl = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
+                                                finalAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key.replace(/^\//, '')}`;
                                                 console.log(`[Video Callback] Grok voiceover generated and persisted: ${finalAudioUrl}`);
                                             }
                                         } catch (r2VoiceErr) {
