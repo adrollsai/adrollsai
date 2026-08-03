@@ -747,7 +747,7 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
         if (!hasCredits) {
             await refundLimit(targetUserId, 'videos');
             return NextResponse.json({ 
-                error: `Insufficient credits. You need at least ${totalCreditsRequired} Nobo Credits to generate this ${prompts.length * 15}-second video.` 
+                error: `Insufficient credits. You need at least ${totalCreditsRequired} Nobo Credits to generate this ${totalDurationForCredits}-second video.` 
             }, { status: 402 });
         }
 

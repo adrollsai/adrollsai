@@ -28,6 +28,24 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
+function formatCallPhone(phoneRaw: string | null | undefined): string {
+  if (!phoneRaw) return '';
+  let clean = phoneRaw.trim();
+  if (clean.startsWith('+')) return clean;
+  let digits = clean.replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 11 && digits.startsWith('0')) {
+    digits = digits.substring(1);
+  }
+  if (digits.length === 10) {
+    return `+91${digits}`;
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return `+${digits}`;
+  }
+  return `+${digits}`;
+}
+
 export default function CRMPage() {
   const supabase = createClient()
   const router = useRouter()
@@ -1431,8 +1449,8 @@ END:VCARD\n`
                     <div key={lead.id} onClick={() => handleLeadClick(lead)} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-200/60 cursor-pointer hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-300 flex flex-col h-full group">
                         
                         {/* ROW 1: Name, Checkbox and Actions */}
-                        <div className="flex justify-between items-start mb-3">
-                            <div className="flex items-start gap-3 flex-1 min-w-0 pr-4 mt-1">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-3">
+                            <div className="flex items-start gap-3 flex-1 min-w-0 w-full sm:w-auto">
                                 <input 
                                     type="checkbox"
                                     checked={selectedLeadIds.includes(lead.id)}
@@ -1444,10 +1462,10 @@ END:VCARD\n`
                                             setSelectedLeadIds(prev => [...prev, lead.id])
                                         }
                                     }}
-                                    className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer"
+                                    className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer shrink-0"
                                 />
                                 <div className="min-w-0 flex-1">
-                                    <h3 className="font-extrabold text-slate-900 text-lg pr-2 break-words whitespace-normal group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
+                                    <h3 className="font-extrabold text-slate-900 text-base sm:text-lg break-words leading-snug group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
                                     <p className="text-[11px] font-bold text-slate-500 mt-0.5">{displayPhone || 'No phone number'}</p>
                                     {(getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name) && (
                                         <p className="text-[10px] font-extrabold text-slate-400/80 mt-1 break-words whitespace-normal bg-slate-50 border border-slate-100 rounded-lg px-2 py-0.5 inline-block max-w-full" title={getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name}>
@@ -1456,7 +1474,7 @@ END:VCARD\n`
                                     )}
                                 </div>
                             </div>
-                            <div className="flex gap-2 shrink-0">
+                            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap sm:flex-nowrap pt-1 sm:pt-0">
                                 {displayPhone && (
                                     <>
                                         <button 
@@ -1509,12 +1527,13 @@ END:VCARD\n`
                                             <Send size={16} />
                                         </a>
                                         <a 
-                                            href={`tel:${displayPhone}`} 
+                                            href={`tel:${formatCallPhone(displayPhone)}`} 
                                             onClick={e => { 
                                                 e.stopPropagation(); 
                                                 sessionStorage.setItem('crm_scroll', window.scrollY.toString()); 
                                             }} 
                                             className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
+                                            title="Call Lead"
                                         >
                                             <Phone size={16} />
                                         </a>
@@ -1523,6 +1542,7 @@ END:VCARD\n`
                                 <button 
                                     onClick={(e) => handleDeleteLead(lead.id, e)} 
                                     className="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
+                                    title="Delete Lead"
                                 >
                                     <Trash2 size={16} />
                                 </button>

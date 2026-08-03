@@ -8,6 +8,24 @@ import { toast } from 'sonner'
 
 const STAGES = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
 
+function formatCallPhone(phoneRaw: string | null | undefined): string {
+    if (!phoneRaw) return '';
+    let clean = phoneRaw.trim();
+    if (clean.startsWith('+')) return clean;
+    let digits = clean.replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.length === 11 && digits.startsWith('0')) {
+        digits = digits.substring(1);
+    }
+    if (digits.length === 10) {
+        return `+91${digits}`;
+    }
+    if (digits.length === 12 && digits.startsWith('91')) {
+        return `+${digits}`;
+    }
+    return `+${digits}`;
+}
+
 function cleanTranscript(transcript: any[]) {
     if (!Array.isArray(transcript)) return []
     const merged: any[] = []
@@ -968,7 +986,7 @@ END:VCARD`
                                     <span>Send Template</span>
                                 </button>
                                 <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors shrink-0" title="Direct WhatsApp Chat"><MessageCircle size={16} /></a>
-                                <a href={`tel:${lead.phone}`} className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full shadow-sm transition-colors shrink-0" title="Call Lead"><Phone size={16} /></a>
+                                <a href={`tel:${formatCallPhone(lead.phone)}`} className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full shadow-sm transition-colors shrink-0" title="Call Lead"><Phone size={16} /></a>
                             </div>
                         )}
                     </div>
