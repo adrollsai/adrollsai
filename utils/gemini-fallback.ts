@@ -8,7 +8,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 export async function generateContentWithFallback(
     genAI: GoogleGenerativeAI,
     contents: any,
-    primaryModel = "gemini-2.5-flash",
+    primaryModel = "gemini-3.5-flash",
     fallbackModel: string | null = "gemini-1.5-flash",
     maxRetries = 4,
     initialDelay = 2000,

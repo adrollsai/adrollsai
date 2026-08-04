@@ -70,7 +70,7 @@ RULES:
         const result = await generateContentWithFallback(
             genAI,
             [prompt, part],
-            "gemini-2.5-flash",
+            "gemini-3.5-flash",
             "gemini-1.5-flash"
         );
         const text = result.response.text();
