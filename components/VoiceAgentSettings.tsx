@@ -373,7 +373,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
   }
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 pb-36 sm:pb-32">
       
       {/* Back Button */}
       <button
@@ -1011,8 +1011,11 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                           </span>
                         </div>
                         {c.custom_prompt && (
-                          <div className="mt-2 bg-white/50 p-2 rounded-lg border border-slate-200/50 text-[10px] text-slate-500 italic max-w-md line-clamp-2">
-                            "{c.custom_prompt}"
+                          <div className="mt-2.5 space-y-1">
+                            <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Conversation Context & Pitch:</span>
+                            <div className="bg-white p-3 rounded-xl border border-slate-200/80 text-[11px] text-slate-700 font-mono leading-relaxed max-h-28 overflow-y-auto custom-scrollbar whitespace-pre-wrap shadow-inner">
+                              {c.custom_prompt}
+                            </div>
                           </div>
                         )}
 
@@ -1081,8 +1084,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
-                        <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${
+                      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 w-full sm:w-auto justify-start sm:justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                        <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full border ${
                           c.status === 'running' 
                             ? 'bg-amber-50 text-amber-600 border-amber-200' 
                             : c.status === 'completed'
@@ -1121,9 +1124,10 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                                 toast.error("Error starting campaign: " + err.message);
                               }
                             }}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black px-3.5 py-1.5 rounded-full shadow-xs active:scale-95 transition-all cursor-pointer"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-4 py-2 rounded-full shadow-md active:scale-95 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
                           >
-                            Launch Call
+                            <Phone size={13} />
+                            <span>Launch Campaign</span>
                           </button>
                         )}
 

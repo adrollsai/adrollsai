@@ -47,7 +47,7 @@ export async function POST(req: Request) {
         // Fetch all leads of the user using admin client to bypass RLS select policy
         const { data: leads, error: leadsErr } = await supabaseAdmin
             .from('leads')
-            .select('id, phone, source, pipeline_stage, campaign_id, ad_name, csv_audience, created_at')
+            .select('id, phone, source, pipeline_stage, campaign_id, ad_name, csv_audience, custom_fields, created_at')
             .eq('user_id', targetId)
             .order('created_at', { ascending: false })
 
@@ -83,14 +83,38 @@ export async function POST(req: Request) {
                     match = true
                 }
                 if (hasMeta) {
-                    if (lead.ad_name && filter.meta_campaigns.includes(lead.ad_name)) {
-                        match = true
-                    }
-                    if (lead.campaign_id) {
-                        const campName = dbCampaigns?.find(c => c.id === lead.campaign_id)?.name
-                        if (campName && filter.meta_campaigns.includes(campName)) {
-                            match = true
+                    const customFieldsStr = typeof lead.custom_fields === 'string' 
+                        ? lead.custom_fields 
+                        : JSON.stringify(lead.custom_fields || {});
+
+                    for (const targetMeta of filter.meta_campaigns) {
+                        if (!targetMeta) continue;
+                        const targetLower = String(targetMeta).toLowerCase();
+                        
+                        if (lead.campaign_id && (lead.campaign_id === targetMeta || String(lead.campaign_id).toLowerCase() === targetLower)) {
+                            match = true;
+                            break;
                         }
+                        if (lead.ad_name && (lead.ad_name === targetMeta || lead.ad_name.toLowerCase().includes(targetLower) || targetLower.includes(lead.ad_name.toLowerCase()))) {
+                            match = true;
+                            break;
+                        }
+                        if (customFieldsStr.toLowerCase().includes(targetLower)) {
+                            match = true;
+                            break;
+                        }
+                        if (lead.campaign_id) {
+                            const campName = dbCampaigns?.find(c => c.id === lead.campaign_id)?.name;
+                            if (campName && (campName === targetMeta || campName.toLowerCase().includes(targetLower))) {
+                                match = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Fallback: If filter.meta_campaigns is non-empty and lead source is Meta/Facebook/WhatsApp, match lead
+                    if (!match && lead.source && /facebook|meta|whatsapp/i.test(lead.source)) {
+                        match = true;
                     }
                 }
                 if (hasCsv && lead.csv_audience && filter.csv_audiences.includes(lead.csv_audience)) {
