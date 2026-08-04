@@ -1,8 +1,9 @@
-// adrollsai/adrollsai/adrollsai-adrollsai-bsi/app/api/post-universal/route.ts
-
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { postToFacebook, postToInstagram, postToLinkedin } from '@/utils/external-apis'
+import { sendPushNotification } from '@/utils/notification-helper'
+
+export const maxDuration = 300
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -41,83 +42,63 @@ export async function POST(request: Request) {
     .eq('id', targetUserId)
     .single()
 
-  if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+  if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+  const userProfile = profile;
 
-  const results: Record<string, string> = {}
-  const promises: Promise<void>[] = []
+  // 3. EXECUTE BACKGROUND DISPATCH (Instant response, zero UI waiting)
+  (async () => {
+    const results: Record<string, string> = {}
+    const promises: Promise<void>[] = []
 
-  // --- HELPER ---
-  const sendToPlatform = async (platform: string, fn: () => Promise<any>) => {
-    try {
-      await fn()
-      results[platform] = 'success'
-    } catch (error: any) {
-      const errorMessage = error.message || 'Unknown Error'
-      console.error(`[Universal Post] ${platform} failed:`, errorMessage)
-      results[platform] = `Failed: ${errorMessage.substring(0, 100)}...`
+    const sendToPlatform = async (platform: string, fn: () => Promise<any>) => {
+      try {
+        await fn()
+        results[platform] = 'success'
+      } catch (error: any) {
+        const errorMessage = error.message || 'Unknown Error'
+        console.error(`[Universal Post Background] ${platform} failed:`, errorMessage)
+        results[platform] = `Failed: ${errorMessage.substring(0, 100)}...`
+      }
     }
-  }
 
-  // --- FACEBOOK ---
-  if (platforms.includes('facebook')) {
-    if (profile.selected_page_token) {
-      promises.push(sendToPlatform('facebook', () => postToFacebook(
-        profile.selected_page_token!, 
-        imageUrl, 
-        caption
-      )))
-    } else {
-      results.facebook = 'skipped_no_token'
+    if (platforms.includes('facebook') && userProfile.selected_page_token) {
+      promises.push(sendToPlatform('facebook', () => postToFacebook(userProfile.selected_page_token!, imageUrl, caption, type)))
     }
-  }
-
-  // --- INSTAGRAM ---
-  if (platforms.includes('instagram')) {
-    if (profile.selected_page_token && profile.selected_page_id) {
-      promises.push(sendToPlatform('instagram', () => postToInstagram(
-        profile.selected_page_token!, 
-        profile.selected_page_id!, 
-        imageUrl, 
-        caption
-      )))
-    } else {
-      results.instagram = 'skipped_no_token_or_page_id' 
+    if (platforms.includes('instagram') && userProfile.selected_page_token && userProfile.selected_page_id) {
+      promises.push(sendToPlatform('instagram', () => postToInstagram(userProfile.selected_page_token!, userProfile.selected_page_id!, imageUrl, caption, type)))
     }
-  }
-
-  // --- LINKEDIN ---
-  if (platforms.includes('linkedin')) {
-    if (profile.linkedin_token && profile.linkedin_id) {
-      const authorUrn = profile.linkedin_urn || `urn:li:person:${profile.linkedin_id}`
-      promises.push(sendToPlatform('linkedin', () => postToLinkedin(
-        profile.linkedin_token!,
-        authorUrn,
-        imageUrl,
-        caption,
-        type
-      )))
-    } else {
-      results.linkedin = 'skipped_no_token'
+    if (platforms.includes('linkedin') && userProfile.linkedin_token && userProfile.linkedin_id) {
+      const authorUrn = userProfile.linkedin_urn || `urn:li:person:${userProfile.linkedin_id}`
+      promises.push(sendToPlatform('linkedin', () => postToLinkedin(userProfile.linkedin_token!, authorUrn, imageUrl, caption, type)))
     }
-  }
 
-  await Promise.all(promises)
+    await Promise.all(promises)
 
-  // Log successful post log if at least one platform dispatch succeeded
-  const hasSuccess = Object.values(results).some(val => val === 'success');
-  if (hasSuccess) {
-    await supabase.from('posts').insert({
-      user_id: targetUserId,
-      title: 'Social Post',
-      content: caption || '',
-      image_url: imageUrl || null,
-      status: 'social_published'
-    })
-  }
+    const hasSuccess = Object.values(results).some(val => val === 'success' || val === 'scheduled')
+    if (hasSuccess) {
+      await supabase.from('posts').insert({
+        user_id: targetUserId,
+        title: 'Social Post',
+        content: caption || '',
+        image_url: imageUrl || null,
+        status: 'social_published'
+      })
+    }
 
+    const successCount = Object.values(results).filter(v => v === 'success' || v === 'scheduled').length;
+    await sendPushNotification(
+      targetUserId,
+      `📲 Social Broadcast Published!`,
+      `Your media post has been published to ${successCount} platform(s) in the background.`,
+      "/dashboard/assets",
+      "social_post"
+    ).catch(() => {});
+  })();
+
+  // Immediate 10ms HTTP response to browser UI
   return NextResponse.json({ 
     success: true, 
-    results,
-    message: "Universal post processed" 
+    results: { status: 'dispatched_in_background' },
+    message: "Social media broadcast scheduled in background successfully!" 
   })
 }

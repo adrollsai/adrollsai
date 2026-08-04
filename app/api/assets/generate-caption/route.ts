@@ -74,8 +74,12 @@ export async function POST(req: Request) {
             throw new Error(`Failed to fetch media file from R2. Status: 404`);
         }
 
-        // Fetch business context
-        const { data: profile } = await supabase.from('profiles').select('business_name, contact_number').eq('id', user.id).single();
+        // Fetch comprehensive business context
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('business_name, contact_number, business_info, mission_statement, custom_prompt')
+            .eq('id', user.id)
+            .single();
 
         // Fetch product context if propertyId is provided
         let propertyContext = "";
@@ -92,11 +96,15 @@ Target Product/Property Details:
             }
         }
 
-        const prompt = `You are a world-class Direct Response Copywriter and Social Media Expert.
-Analyze the provided ${type === 'video' ? 'video' : 'image'} and write high-converting copy for it.
+        const businessOverview = profile?.business_info || profile?.mission_statement || 'AI Lead Automation & Real Estate Marketing Software';
 
-Business: "${profile?.business_name || 'Our Company'}"
-Contact: "${profile?.contact_number || 'DM for details'}"
+        const prompt = `You are a world-class Direct Response Copywriter and Social Media Growth Expert.
+Analyze the provided ${type === 'video' ? 'video' : 'image'} and write high-converting copy for it matching the user's exact business domain.
+
+Business Name: "${profile?.business_name || 'Nobogent'}"
+Business Overview & Offerings: "${businessOverview}"
+Brand Tone & Instructions: "${profile?.custom_prompt || 'Professional, high converting, direct response'}"
+Contact Number: "${profile?.contact_number || 'DM for details'}"
 
 ${propertyContext}
 

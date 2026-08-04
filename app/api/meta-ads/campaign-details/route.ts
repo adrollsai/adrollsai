@@ -94,18 +94,21 @@ export async function GET(request: Request) {
       const impressions = parseInt(insight.impressions || '0', 10);
       const clicks = parseInt(insight.clicks || '0', 10);
       
+      const leadAction = insight.actions?.find((a: any) => a.action_type === 'lead');
+      const leadGroupedAction = insight.actions?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped' || a.action_type === 'offsite_complete_registration_add_meta_leads');
       const waAction = insight.actions?.find((a: any) => 
         a.action_type === 'onsite_conversion.messaging_conversation_started_7d' ||
         a.action_type === 'messaging_conversation_started_7d' ||
         a.action_type === 'onsite_conversion.messaging_first_reply' ||
-        a.action_type === 'messaging_user_depth_2_message_send'
+        a.action_type === 'messaging_user_depth_2_message_send' ||
+        a.action_type === 'onsite_conversion.total_messaging_connection'
       );
-      const leadAction = insight.actions?.find((a: any) => a.action_type === 'lead');
-      const leadGroupedAction = insight.actions?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped');
       
-      const leads = waAction 
-        ? parseInt(waAction.value || '0', 10) 
-        : (leadAction ? parseInt(leadAction.value || '0', 10) : (leadGroupedAction ? parseInt(leadGroupedAction.value || '0', 10) : 0));
+      const leads = leadAction 
+        ? parseInt(leadAction.value || '0', 10) 
+        : (leadGroupedAction 
+          ? parseInt(leadGroupedAction.value || '0', 10) 
+          : (waAction ? parseInt(waAction.value || '0', 10) : 0));
 
       const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
       const cpc = clicks > 0 ? spend / clicks : 0;

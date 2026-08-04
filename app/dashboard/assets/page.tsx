@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Filter, Download, Facebook, Instagram, Linkedin, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2, Check, Trash2, Upload, Copy, AlertCircle, Save } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, Linkedin, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2, Check, Trash2, Upload, Copy, AlertCircle, Save, FileText } from 'lucide-react'
 import JSZip from 'jszip'
 import { analyzeMediaAction } from './actions'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -17,7 +17,7 @@ import { getVideoPosterUrl } from '@/utils/get-video-poster'
 
 type Asset = {
     id: string
-    type: 'image' | 'video'
+    type: 'image' | 'video' | 'pdf' | 'document' | string
     status: string
     url: string
     property_id?: string
@@ -211,8 +211,7 @@ export default function AssetsPage() {
         }
     };
 
-    // Image Preview Modal
-    const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string, type?: 'image' | 'video' }>({ isOpen: false, url: '', title: '', type: 'image' })
+    const [previewImage, setPreviewImage] = useState<{ isOpen: boolean, url: string, title: string, type?: 'image' | 'video' | 'pdf' | 'document' | string }>({ isOpen: false, url: '', title: '', type: 'image' })
 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
     const [isZipping, setIsZipping] = useState(false)
@@ -1314,6 +1313,18 @@ export default function AssetsPage() {
                                                 Remove
                                             </button>
                                         </div>
+                                    ) : (asset.type === 'pdf' || asset.type === 'document' || (asset.url && asset.url.toLowerCase().includes('.pdf'))) ? (
+                                        <div className="w-full h-full bg-slate-900 flex flex-col items-center justify-center p-4 text-center relative group-hover:bg-slate-950 transition-colors">
+                                            <div className="bg-red-500/20 text-red-400 p-4 rounded-2xl mb-2 border border-red-500/30 shadow-lg">
+                                                <FileText size={36} />
+                                            </div>
+                                            <p className="text-[11px] font-black text-white uppercase tracking-wider truncate max-w-[140px]" title={asset.caption || 'PDF Document'}>
+                                                {asset.caption || 'PDF Document'}
+                                            </p>
+                                            <span className="text-[9px] font-bold text-red-400 uppercase tracking-widest mt-1.5 bg-red-500/10 px-2.5 py-0.5 rounded-full border border-red-500/20">
+                                                PDF BROCHURE
+                                            </span>
+                                        </div>
                                     ) : asset.type === 'video' ? (
                                         <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
                                             <LazyVideo 
@@ -1446,7 +1457,19 @@ export default function AssetsPage() {
 
                                 {/* Media Preview */}
                                 <div className="rounded-[1.5rem] overflow-hidden bg-slate-100 mb-6 border border-slate-200/60 shadow-inner">
-                                    {selectedAsset.type === 'video' ? (
+                                    {(selectedAsset.type === 'pdf' || selectedAsset.type === 'document' || selectedAsset.url.toLowerCase().includes('.pdf')) ? (
+                                        <div className="flex flex-col items-center gap-3 p-2 bg-slate-900 rounded-2xl">
+                                            <iframe src={fixR2Url(selectedAsset.url)} className="w-full h-[260px] rounded-xl border border-slate-700 bg-white" title="PDF Preview" />
+                                            <a 
+                                                href={fixR2Url(selectedAsset.url)} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer" 
+                                                className="text-xs font-bold text-red-400 hover:text-red-300 underline flex items-center gap-1.5 py-1"
+                                            >
+                                                <Download size={14} /> Open PDF in New Window / Download
+                                            </a>
+                                        </div>
+                                    ) : selectedAsset.type === 'video' ? (
                                         <video 
                                             src={fixR2Url(selectedAsset.url)} 
                                             poster={selectedAsset.metadata?.thumbnailUrl ? fixR2Url(selectedAsset.metadata.thumbnailUrl) : undefined}

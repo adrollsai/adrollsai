@@ -2792,11 +2792,15 @@ export default function AdsPage() {
                   </div>
                   {(() => {
                     const c = explorerData.campaign as any;
-                    const isWA = c?.objective === 'WHATSAPP' || 
-                                 c?.objective === 'OUTCOME_ENGAGEMENT' || 
-                                 c?.campaign_type === 'whatsapp_chat' || 
-                                 c?.destination_type === 'WHATSAPP' ||
-                                 explorerData.adsets?.some((as: any) => as.destination_type === 'WHATSAPP' || as.promoted_object?.whatsapp_phone_number || as.ads?.some((ad: any) => (ad.creative?.linkUrl || '').includes('whatsapp') || (ad.creative?.linkUrl || '').includes('wa.me')));
+                    const isLeadCamp = c?.objective === 'OUTCOME_LEADS' || 
+                                       c?.objective === 'LEAD_GENERATION' || 
+                                       c?.objective === 'LEADS' ||
+                                       explorerData.adsets?.some((as: any) => as.optimization_goal === 'LEAD_GENERATION' || as.billing_event === 'LEAD_GENERATION' || (as.name || '').toLowerCase().includes('lead'));
+                    const isWA = !isLeadCamp && (
+                      c?.objective === 'WHATSAPP' || 
+                      c?.campaign_type === 'whatsapp_chat' || 
+                      c?.destination_type === 'WHATSAPP'
+                    );
                     return (
                       <div className="bg-blue-50 p-4 rounded-[1.5rem] border border-blue-100 shadow-sm flex flex-col justify-between">
                         <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14} className="text-blue-400" /> {isWA ? 'WhatsApp Conversations' : 'Leads'}</span>
@@ -3953,7 +3957,8 @@ export default function AdsPage() {
                                       {/* Results (Leads / WhatsApp Conversations) */}
                                       {(() => {
                                           const camp = statsModal.campaign as any;
-                                          const isWAStats = camp?.objective === 'WHATSAPP' || camp?.objective === 'OUTCOME_ENGAGEMENT' || camp?.campaign_type === 'whatsapp_chat' || camp?.destination_type === 'WHATSAPP';
+                                          const isLeadCampStats = camp?.objective === 'OUTCOME_LEADS' || camp?.objective === 'LEAD_GENERATION' || camp?.objective === 'LEADS' || (camp?.name || '').toLowerCase().includes('lead') || (camp?.name || '').toLowerCase().includes('villa');
+                                          const isWAStats = !isLeadCampStats && (camp?.objective === 'WHATSAPP' || camp?.campaign_type === 'whatsapp_chat' || camp?.destination_type === 'WHATSAPP');
                                           return (
                                               <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100 shadow-sm hover:border-blue-200 transition-colors">
                                                   <div className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14}/> {isWAStats ? 'WhatsApp Conversations' : 'Results (Leads)'}</div>

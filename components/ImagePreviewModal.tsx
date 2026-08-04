@@ -9,7 +9,7 @@ interface ImagePreviewModalProps {
     onClose: () => void
     imageUrl: string
     title?: string
-    type?: 'image' | 'video'
+    type?: 'image' | 'video' | 'pdf' | 'document' | string
     onSelect?: () => void
     isSelected?: boolean
 }
@@ -148,7 +148,23 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
                             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                             className="relative max-w-full max-h-full flex items-center justify-center"
                         >
-                            {(type === 'video' || (imageUrl && (
+                            {(type === 'pdf' || (imageUrl && imageUrl.toLowerCase().includes('.pdf'))) ? (
+                                <div className="flex flex-col items-center gap-4 w-[90vw] max-w-4xl h-[75vh]">
+                                    <iframe 
+                                        src={imageUrl} 
+                                        className="w-full h-full rounded-2xl bg-white border border-slate-800 shadow-2xl"
+                                        title="PDF Preview"
+                                    />
+                                    <a
+                                        href={imageUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded-full text-xs flex items-center gap-2 shadow-lg transition-all"
+                                    >
+                                        <Download size={16} /> Open PDF in New Tab / Download
+                                    </a>
+                                </div>
+                            ) : (type === 'video' || (imageUrl && (
                                 (/\.(mp4|webm|mov|ogg|m4v|3gp)/i.test(imageUrl.split('?')[0]) ||
                                 imageUrl.toLowerCase().includes('.mp4') ||
                                 imageUrl.toLowerCase().includes('.webm') ||

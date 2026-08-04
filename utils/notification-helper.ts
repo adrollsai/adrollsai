@@ -179,28 +179,46 @@ export async function sendAdminMultiChannelNotification({
           if (cleanPhone && token && phoneId) {
             const metaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
             
-            let payload: any = {
-              messaging_product: 'whatsapp',
-              recipient_type: 'individual',
-              to: cleanPhone,
-              type: 'template',
-              template: {
-                name: 'booking_notification_admin',
-                language: { code: 'en_US' },
-                components: [
-                  {
-                    type: 'body',
-                    parameters: [
-                      { type: 'text', text: leadName || title || 'Lead Request' },
-                      { type: 'text', text: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) },
-                      { type: 'text', text: ownerProfile.business_name || 'Nobogent' },
-                      { type: 'text', text: targetLeadPhone },
-                      { type: 'text', text: leadPageUrl }
-                    ]
-                  }
-                ]
-              }
-            };
+            const isExpertAlert = type === 'connect_expert' || /expert|callback|connect/i.test(title || '') || /expert|callback|connect/i.test(body || '');
+
+            let payload: any;
+            
+            if (isExpertAlert) {
+              // Direct clear text alert for Expert Connections / Callbacks
+              payload = {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: cleanPhone,
+                type: 'text',
+                text: { 
+                  body: `☎️ HIGH-PRIORITY ALERT: Connect with Expert Requested!\n\nLead Name: ${leadName || 'Prospect'}\nPhone: ${targetLeadPhone}\n\n${body || 'Lead clicked "Connect with Expert" on WhatsApp.'}\n\n🔗 View CRM Record: ${leadPageUrl}` 
+                }
+              };
+            } else {
+              // Template for actual appointment bookings
+              payload = {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: cleanPhone,
+                type: 'template',
+                template: {
+                  name: 'booking_notification_admin',
+                  language: { code: 'en_US' },
+                  components: [
+                    {
+                      type: 'body',
+                      parameters: [
+                        { type: 'text', text: leadName || title || 'Lead Request' },
+                        { type: 'text', text: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) },
+                        { type: 'text', text: ownerProfile.business_name || 'Nobogent' },
+                        { type: 'text', text: targetLeadPhone },
+                        { type: 'text', text: leadPageUrl }
+                      ]
+                    }
+                  ]
+                }
+              };
+            }
 
             let waRes = await fetch(metaUrl, {
               method: 'POST',

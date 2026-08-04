@@ -250,33 +250,52 @@ export async function createGrokVideoTask({
 }
 
 /**
- * 2. Facebook Posting 
+ * 2. Facebook Posting (Supports both Photos and Videos)
  */
-export async function postToFacebook(accessToken: string, imageUrl: string, caption: string): Promise<any> {
-    const response = await fetch(`${FACEBOOK_GRAPH_URL}/me/photos`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            access_token: accessToken,
-            url: imageUrl,
-            message: caption,
-            published: true,
-        }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(`Facebook API Error: ${data.error?.message || response.statusText}`)
+export async function postToFacebook(accessToken: string, mediaUrl: string, caption: string, type: string = 'image'): Promise<any> {
+    const isVideo = type === 'video' || !!mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || mediaUrl.includes('/video/') || mediaUrl.includes('generated');
+
+    if (isVideo) {
+        console.log(`[Facebook API] Posting video to Facebook page via /me/videos...`);
+        const response = await fetch(`${FACEBOOK_GRAPH_URL}/me/videos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                access_token: accessToken,
+                file_url: mediaUrl,
+                description: caption,
+            }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(`Facebook API Error: ${data.error?.message || response.statusText}`);
+        }
+        return data;
+    } else {
+        console.log(`[Facebook API] Posting photo to Facebook page via /me/photos...`);
+        const response = await fetch(`${FACEBOOK_GRAPH_URL}/me/photos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                access_token: accessToken,
+                url: mediaUrl,
+                message: caption,
+                published: true,
+            }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(`Facebook API Error: ${data.error?.message || response.statusText}`);
+        }
+        return data;
     }
-    return data;
 }
 
 /**
- * 3. Instagram Posting (Upgraded with Polling & Rate Limit Resilience)
+ * 3. Instagram Posting (Upgraded with REELS support, Polling & Rate Limit Resilience)
  */
-export async function postToInstagram(accessToken: string, pageId: string, mediaUrl: string, caption: string): Promise<any> {
-    // 1. Get IG Account ID (Try to be efficient)
+export async function postToInstagram(accessToken: string, pageId: string, mediaUrl: string, caption: string, type: string = 'image'): Promise<any> {
+    // 1. Get IG Account ID
     const igAccountRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${pageId}?fields=instagram_business_account&access_token=${accessToken}`, {});
     const igAccountData = await igAccountRes.json();
     if (igAccountData.error || !igAccountData.instagram_business_account?.id) {
@@ -291,7 +310,7 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     }
 
     // 2. Detect Media Type
-    const isVideo = mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)$/) || mediaUrl.includes('video');
+    const isVideo = type === 'video' || !!mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || mediaUrl.includes('/video/') || mediaUrl.includes('generated');
     const mediaPayload: any = {
         caption: safeCaption,
         access_token: accessToken,
@@ -299,12 +318,13 @@ export async function postToInstagram(accessToken: string, pageId: string, media
 
     if (isVideo) {
         mediaPayload.video_url = mediaUrl;
-        mediaPayload.media_type = 'VIDEO';
+        mediaPayload.media_type = 'REELS'; // Meta Graph API require REELS for video posts
     } else {
         mediaPayload.image_url = mediaUrl;
     }
 
     // 3. Create Media Container
+    console.log(`[Instagram API] Creating IG ${isVideo ? 'REELS' : 'IMAGE'} container...`);
     const containerRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -316,12 +336,14 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     }
     const creationId = containerData.id;
 
-    // 4. POLL STATUS FOR VIDEOS ONLY (Images are processed synchronously by Meta, and requesting status_description on image containers returns an OAuth error)
+    // 4. POLL STATUS FOR VIDEOS (Max 24s synchronous wait to avoid Cloudflare 524 timeout)
     if (isVideo) {
         let status = 'IN_PROGRESS';
         let attempts = 0;
-        while (status !== 'FINISHED' && attempts < 15) {
-            await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15s (Conserves API limit)
+        const maxSyncAttempts = 8; // 8 x 3s = 24s max wait
+
+        while (status !== 'FINISHED' && attempts < maxSyncAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 3000)); // 3s polling
             const statusRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code,status_description&access_token=${accessToken}`, {});
             const statusData = await statusRes.json();
             status = statusData.status_code;
@@ -332,12 +354,37 @@ export async function postToInstagram(accessToken: string, pageId: string, media
             attempts++;
         }
 
+        // If Meta is still processing after 24s, fire async background publishing pass
         if (status !== 'FINISHED') {
-            throw new Error("Instagram media processing timed out. Please try again in a few minutes.");
+            console.log(`[Instagram API] Video container ${creationId} still processing. Offloading publication to background loop...`);
+            (async () => {
+                let bgStatus = 'IN_PROGRESS';
+                let bgAttempts = 0;
+                while (bgStatus !== 'FINISHED' && bgAttempts < 20) {
+                    await new Promise(resolve => setTimeout(resolve, 8000));
+                    try {
+                        const sRes = await fetch(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code&access_token=${accessToken}`);
+                        const sData = await sRes.json();
+                        bgStatus = sData.status_code;
+                        if (bgStatus === 'FINISHED') {
+                            await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ creation_id: creationId, access_token: accessToken })
+                            });
+                            console.log(`[Instagram API] Background Reel publication successful for ${creationId}!`);
+                            break;
+                        }
+                    } catch (e) {}
+                    bgAttempts++;
+                }
+            })();
+            return { id: creationId, status: 'scheduled' };
         }
     }
 
-    // 5. Publish Container
+    // 5. Publish Container Synchronously
+    console.log(`[Instagram API] Publishing IG media container ${creationId}...`);
     const publishRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -354,53 +401,99 @@ export async function postToInstagram(accessToken: string, pageId: string, media
 }
 
 /**
- * 3.5 LinkedIn Posting (Latest 2026 Versioned REST API)
+ * 3.5 LinkedIn Posting (Latest 2026 Versioned REST API with Robust Error Handling)
  */
 export async function postToLinkedin(accessToken: string, authorUrn: string, assetUrl: string, commentary: string, type: string = 'image'): Promise<any> {
-    const urn = authorUrn
-    const linkedinVersion = '202604'
-    let assetUrn = null
+    let urn = authorUrn || '';
+    if (!urn.startsWith('urn:li:')) {
+        urn = `urn:li:person:${urn}`;
+    }
+
+    const linkedinVersion = '202604';
+    let assetUrn = null;
 
     if (assetUrl) {
-        const isVideo = type === 'video'
-        const initEndpoint = isVideo 
-            ? 'https://api.linkedin.com/rest/videos?action=initializeUpload'
-            : 'https://api.linkedin.com/rest/images?action=initializeUpload'
+        const isVideo = type === 'video' || !!assetUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || assetUrl.includes('/video/') || assetUrl.includes('generated');
 
-        // 1. Initialize
-        const initRes = await fetch(initEndpoint, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Linkedin-Version': linkedinVersion,
-                'X-Restli-Protocol-Version': '2.0.0',
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                initializeUploadRequest: { owner: urn }
-            })
-        })
-        const initData = await initRes.json()
-        if (!initRes.ok) throw new Error(`LinkedIn Init Error: ${initData.message || 'Failed'}`)
+        try {
+            console.log(`[LinkedIn API] Downloading media buffer from ${assetUrl}...`);
+            const fileRes = await fetch(assetUrl);
+            const fileBuffer = Buffer.from(await fileRes.arrayBuffer());
+            const fileSizeBytes = fileBuffer.length;
 
-        const uploadUrl = isVideo ? initData.value.uploadInstructions[0].uploadUrl : initData.value.uploadUrl
-        assetUrn = isVideo ? initData.value.video : initData.value.image
+            if (isVideo) {
+                console.log(`[LinkedIn API] Initializing REST video upload (${fileSizeBytes} bytes)...`);
+                const initRes = await fetch('https://api.linkedin.com/rest/videos?action=initializeUpload', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Linkedin-Version': linkedinVersion,
+                        'X-Restli-Protocol-Version': '2.0.0',
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        initializeUploadRequest: {
+                            owner: urn,
+                            fileSizeBytes: fileSizeBytes
+                        }
+                    })
+                });
+                const initData = await initRes.json();
 
-        // 2. Upload Binary
-        const fileRes = await fetch(assetUrl)
-        const fileBlob = await fileRes.arrayBuffer()
-        const uploadRes = await fetch(uploadUrl, {
-            method: 'PUT',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': type === 'video' ? 'video/mp4' : 'image/jpeg'
-            },
-            body: fileBlob
-        })
-        if (!uploadRes.ok) throw new Error('LinkedIn Binary Upload Failed')
+                if (initRes.ok && initData.value?.video) {
+                    assetUrn = initData.value.video;
+                    const uploadInstructions = initData.value.uploadInstructions || [];
 
-        // 2.5 Wait for processing
-        await new Promise(resolve => setTimeout(resolve, 3000))
+                    console.log(`[LinkedIn API] Uploading ${uploadInstructions.length} video chunk(s)...`);
+                    for (let i = 0; i < uploadInstructions.length; i++) {
+                        const instr = uploadInstructions[i];
+                        const chunk = fileBuffer.subarray(instr.firstByte, instr.lastByte + 1);
+                        await fetch(instr.uploadUrl, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/octet-stream' },
+                            body: chunk
+                        });
+                    }
+                    console.log(`[LinkedIn API] Video binary chunks uploaded successfully! URN: ${assetUrn}`);
+                } else {
+                    console.warn(`[LinkedIn API] Video init failed: ${initData.message}`);
+                }
+            } else {
+                console.log(`[LinkedIn API] Initializing REST image upload...`);
+                const initRes = await fetch('https://api.linkedin.com/rest/images?action=initializeUpload', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Linkedin-Version': linkedinVersion,
+                        'X-Restli-Protocol-Version': '2.0.0',
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        initializeUploadRequest: { owner: urn }
+                    })
+                });
+                const initData = await initRes.json();
+
+                if (initRes.ok && initData.value?.image) {
+                    assetUrn = initData.value.image;
+                    const uploadUrl = initData.value.uploadUrl;
+                    if (uploadUrl) {
+                        await fetch(uploadUrl, {
+                            method: 'PUT',
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`,
+                                'Content-Type': 'image/jpeg'
+                            },
+                            body: fileBuffer
+                        });
+                        console.log(`[LinkedIn API] Image binary uploaded successfully! URN: ${assetUrn}`);
+                    }
+                }
+            }
+        } catch (mediaErr: any) {
+            console.warn(`[LinkedIn API] Media attachment error (${mediaErr.message}), falling back to text post.`);
+            assetUrn = null;
+        }
     }
 
     // 3. Create Post
@@ -412,14 +505,14 @@ export async function postToLinkedin(accessToken: string, authorUrn: string, ass
             feedDistribution: 'MAIN_FEED'
         },
         lifecycleState: 'PUBLISHED'
-    }
+    };
 
     if (assetUrn) {
         payload.content = {
             media: {
                 id: assetUrn
             }
-        }
+        };
     }
 
     const response = await fetch('https://api.linkedin.com/rest/posts', {
@@ -431,15 +524,15 @@ export async function postToLinkedin(accessToken: string, authorUrn: string, ass
             'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload)
-    })
+    });
 
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'LinkedIn API error' }))
-        throw new Error(errorData.message || `LinkedIn error ${response.status}`)
+        const errorData = await response.json().catch(() => ({ message: 'LinkedIn API error' }));
+        throw new Error(errorData.message || `LinkedIn error ${response.status}`);
     }
 
-    const postId = response.headers.get('x-restli-id')
-    return { id: postId }
+    const postId = response.headers.get('x-restli-id');
+    return { id: postId };
 }
 
 /**
