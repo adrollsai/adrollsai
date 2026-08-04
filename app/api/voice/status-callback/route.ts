@@ -161,7 +161,7 @@ export async function POST(req: Request) {
             // Fetch lead details and owner profile credentials
             const { data: lead } = await supabaseAdmin
                 .from('leads')
-                .select('id, name, phone, email, source, custom_fields, notes, pipeline_stage, user_id, voice_call_retry_count')
+                .select('id, name, phone, email, source, campaign_id, custom_fields, notes, pipeline_stage, user_id, voice_call_retry_count')
                 .eq('id', leadId)
                 .single()
 
@@ -849,8 +849,33 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                     (summary && /brochure|pdf|whatsapp|details/i.test(summary))
                 );
 
-                if (isBrochureRequested && lead?.phone) {
-                    console.log(`[TWILIO STATUS CALLBACK] Lead ${leadId} requested brochure/details. Dispatching farmhouse_luxury_brochure WhatsApp template...`);
+                // Check if call specifically belongs to Farmhouse bulk campaign or transcript mentions Farmhouse
+                let isFarmhouseCampaignCall = false;
+                if (lead?.campaign_id) {
+                    const { data: cJob } = await supabaseAdmin
+                        .from('campaign_jobs')
+                        .select('name, custom_instructions, business_info')
+                        .eq('id', lead.campaign_id)
+                        .single();
+                    if (cJob) {
+                        const cText = `${cJob.name || ''} ${cJob.custom_instructions || ''} ${cJob.business_info || ''}`.toLowerCase();
+                        if (cText.includes('farmhouse') || cText.includes('farm house') || cText.includes('bio-climatic') || cText.includes('khushi ram')) {
+                            isFarmhouseCampaignCall = true;
+                        }
+                    }
+                }
+
+                const isFarmhouseTopic = isFarmhouseCampaignCall || Boolean(
+                    transcriptText.includes('farmhouse') || 
+                    transcriptText.includes('farm house') || 
+                    transcriptText.includes('bio-climatic') || 
+                    transcriptText.includes('1 acre') || 
+                    transcriptText.includes('1-acre') || 
+                    transcriptText.includes('luxury villa')
+                );
+
+                if (isBrochureRequested && isFarmhouseTopic && lead?.phone) {
+                    console.log(`[TWILIO STATUS CALLBACK] Lead ${leadId} requested brochure for Farmhouse Campaign. Dispatching native PDF document card...`);
                     try {
                         const { data: ownerProf } = await supabaseAdmin
                             .from('profiles')
