@@ -96,14 +96,16 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       }
 
       // 1.5 Fetch campaigns from Meta campaigns API
-      let metaApiCampaignNames: string[] = []
+      let metaApiCampaignItems: string[] = []
       try {
         const urlParams = new URLSearchParams(window.location.search)
         const impersonateId = urlParams.get('impersonate')
         const metaRes = await fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
         const metaData = await metaRes.json()
         if (metaData.campaigns) {
-          metaApiCampaignNames = metaData.campaigns.map((c: any) => c.name).filter(Boolean)
+          metaApiCampaignItems = metaData.campaigns
+            .filter((c: any) => c.name && c.id)
+            .map((c: any) => `${c.id}|${c.name}`)
         }
       } catch (err) {
         console.error("[META API CAMPAIGNS FETCH ERROR]", err)
@@ -127,16 +129,16 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
         const defaultStages = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
         const allStages = Array.from(new Set([...defaultStages, ...uniqueStages]))
 
-        // Extract Facebook campaigns (campaign_name or ad_name) from leads
+        // Extract Facebook campaigns (campaign_id|campaign_name) from leads
         const fbCampaignsFromLeads = Array.from(new Set(
           leads
-            .filter(l => l.source?.toLowerCase() === 'facebook')
-            .map(l => l.campaign_name || l.ad_name)
+            .filter(l => l.source?.toLowerCase()?.includes('facebook'))
+            .map(l => l.campaign_id ? `${l.campaign_id}|${l.ad_name || l.campaign_name || l.campaign_id}` : (l.ad_name || l.campaign_name))
             .filter(Boolean)
         )) as string[]
 
         // Merge both API campaigns and dynamic lead campaigns
-        const fbCampaigns = Array.from(new Set([...metaApiCampaignNames, ...fbCampaignsFromLeads]))
+        const fbCampaigns = Array.from(new Set([...metaApiCampaignItems, ...fbCampaignsFromLeads]))
 
         // Extract CSV audiences
         const csvAuds = Array.from(new Set(leads.map(l => l.csv_audience).filter(Boolean))) as string[]
@@ -810,7 +812,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                                 }}
                                 className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
                               />
-                              <span className="truncate">{camp}</span>
+                              <span className="truncate">{camp.includes('|') ? camp.split('|')[1] : camp}</span>
                             </label>
                           )
                         })}
@@ -967,7 +969,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                 No campaigns created yet. Build a draft above to get started.
               </div>
             ) : (
-              <div className="space-y-3.5 max-h-[500px] overflow-y-auto pr-1">
+              <div className="space-y-5">
                 {campaigns.map((c) => {
                   const filter = c.audience_filter || {};
                   const getAudienceLabel = () => {
@@ -976,7 +978,10 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                       return 'All Leads'
                     }
                     if (filter.sources && filter.sources.length > 0) parts.push(`Sources: ${filter.sources.join(', ')}`)
-                    if (filter.meta_campaigns && filter.meta_campaigns.length > 0) parts.push(`Campaigns: ${filter.meta_campaigns.join(', ')}`)
+                    if (filter.meta_campaigns && filter.meta_campaigns.length > 0) {
+                      const cleanMeta = filter.meta_campaigns.map((m: string) => m.includes('|') ? m.split('|')[1] : m)
+                      parts.push(`Campaigns: ${cleanMeta.join(', ')}`)
+                    }
                     if (filter.csv_audiences && filter.csv_audiences.length > 0) parts.push(`CSV: ${filter.csv_audiences.join(', ')}`)
                     if (filter.pipeline_stages && filter.pipeline_stages.length > 0) parts.push(`Stages: ${filter.pipeline_stages.join(', ')}`)
                     return parts.length > 0 ? parts.join(' | ') : 'All Leads'
@@ -991,218 +996,226 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                   const progressPercent = totalLeads > 0 ? Math.round(((completedLeads + failedLeads) / totalLeads) * 100) : 0
 
                   return (
-                    <div key={c.id} className="p-4 bg-slate-50 border border-slate-150 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-sans">
-                      <div className="w-full sm:max-w-md lg:max-w-lg">
-                        <h4 className="text-sm font-extrabold text-slate-800">{c.name}</h4>
-                        <div className="flex flex-wrap gap-2 mt-1.5 text-[9px] font-bold">
-                          <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded uppercase max-w-xs truncate inline-block" title={getAudienceLabel()}>
-                            Audience: {getAudienceLabel()}
-                          </span>
-                          <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded uppercase">
-                            🎙️ Voice: {filter.voice_name || 'Aoede'}
-                          </span>
-                          {filter.greeting && (
-                            <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded uppercase truncate max-w-xs" title={filter.greeting}>
-                              💬 Greeting: "{filter.greeting}"
-                            </span>
-                          )}
-                          <span className="text-slate-400 px-1 py-0.5">
-                            Created: {new Date(c.created_at).toLocaleDateString()}
+                    <div key={c.id} className="p-5 bg-slate-50/80 border border-slate-200/80 rounded-2xl flex flex-col gap-4 font-sans shadow-2xs hover:shadow-xs transition-all">
+                      {/* Top Row: Title, Status Pill, Action Buttons */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200/60">
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <h4 className="text-sm font-black text-slate-900">{c.name}</h4>
+                          <span className={`text-[10px] font-black uppercase px-3 py-0.5 rounded-full border ${
+                            c.status === 'running' 
+                              ? 'bg-amber-50 text-amber-600 border-amber-200' 
+                              : c.status === 'completed'
+                              ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                              : c.status === 'paused'
+                              ? 'bg-amber-100 text-amber-800 border-amber-300'
+                              : 'bg-slate-200/70 text-slate-600 border-slate-300/60'
+                          }`}>
+                            {c.status}
                           </span>
                         </div>
-                        {c.custom_prompt && (
-                          <div className="mt-2.5 space-y-1">
-                            <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Conversation Context & Pitch:</span>
-                            <div className="bg-white p-3 rounded-xl border border-slate-200/80 text-[11px] text-slate-700 font-mono leading-relaxed max-h-28 overflow-y-auto custom-scrollbar whitespace-pre-wrap shadow-inner">
-                              {c.custom_prompt}
-                            </div>
-                          </div>
-                        )}
 
-                        {/* Progress and Statistics Dashboard */}
-                        {totalLeads > 0 && (
-                          <div className="mt-3.5 space-y-2 border-t border-slate-100 pt-3">
-                            {/* Progress bar */}
-                            <div className="space-y-1">
-                              <div className="flex justify-between items-center text-[10px] font-extrabold text-slate-500">
-                                <span>PROGRESS: {progressPercent}%</span>
-                                <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[8px]">{completedLeads + failedLeads} / {totalLeads} CALLED</span>
-                              </div>
-                              <div className="w-full bg-slate-200/80 h-2 rounded-full overflow-hidden shadow-inner">
-                                <div 
-                                  className="bg-indigo-600 h-full rounded-full transition-all duration-700 ease-out-back" 
-                                  style={{ width: `${progressPercent}%` }}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Outcome tags */}
-                            <div className="flex flex-wrap gap-1.5 text-[9px] font-extrabold">
-                              <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-100/80 flex items-center gap-1">
-                                ✅ Spoke: {completedLeads}
-                              </span>
-                              <span className="bg-rose-50 text-rose-700 px-2 py-0.5 rounded-md border border-rose-100/80 flex items-center gap-1">
-                                ❌ Unreachable: {failedLeads}
-                              </span>
-                              {callingLeads > 0 && (
-                                <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-150 animate-pulse flex items-center gap-1">
-                                  📞 Dialing: {callingLeads}
-                                </span>
-                              )}
-                              {pendingLeads > 0 && (
-                                <span className="bg-slate-150/40 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200/40 flex items-center gap-1">
-                                  ⏳ Queue: {pendingLeads}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* View Campaign Leads Button */}
-                            <div className="pt-1">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedCampaignForModal(c)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-xl text-[11px] font-extrabold transition-all shadow-2xs active:scale-95 cursor-pointer"
-                              >
-                                <Users size={13} />
-                                <span>View Campaign Leads ({totalLeads})</span>
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {c.status === 'running' && activeCallLead && activeCallLead.voice_campaign_id === c.id ? (
-                          <div className="mt-2.5 bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center justify-between animate-pulse max-w-md shadow-xs">
-                            <span className="text-[10px] text-amber-800 font-bold flex items-center gap-1.5">
-                              📞 Call in progress with <span className="underline">{activeCallLead.name}</span>
-                            </span>
-                            <span className="bg-amber-100 text-amber-700 text-[8px] font-black uppercase px-1.5 py-0.5 rounded">Dialing</span>
-                          </div>
-                        ) : c.status === 'running' && (
-                          <div className="mt-2.5 bg-slate-100/40 border border-slate-200/20 rounded-xl p-2 text-[9px] text-slate-500 font-semibold italic max-w-md">
-                            Preparing next sequential call...
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 w-full sm:w-auto justify-start sm:justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-                        <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full border ${
-                          c.status === 'running' 
-                            ? 'bg-amber-50 text-amber-600 border-amber-200' 
-                            : c.status === 'completed'
-                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                            : 'bg-slate-100 text-slate-500 border-slate-200'
-                        }`}>
-                          {c.status}
-                        </span>
-
-                        {c.status === 'draft' && (
-                          <button
-                            onClick={async () => {
-                              const proceed = confirm(`Launch campaign "${c.name}"? This will place phone calls to all matching leads in the database.`);
-                              if (!proceed) return;
-                              
-                              try {
-                                toast.loading(`Starting campaign "${c.name}"...`);
-                                const urlParams = new URLSearchParams(window.location.search)
-                                const impersonateId = urlParams.get('impersonate')
-                                const res = await fetch(`/api/voice/campaign/start${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ campaignId: c.id })
-                                });
-                                const resData = await res.json();
-                                toast.dismiss();
+                        <div className="flex items-center gap-2">
+                          {c.status === 'draft' && (
+                            <button
+                              onClick={async () => {
+                                const proceed = confirm(`Launch campaign "${c.name}"? This will place phone calls to all matching leads in the database.`);
+                                if (!proceed) return;
                                 
-                                if (resData.success) {
-                                  toast.success(`Campaign launched! Initiated calls to ${resData.totalLeads} leads. 🎙️`);
-                                  fetchCampaignsAndFilters();
-                                } else {
-                                  toast.error(resData.error || "Failed to start campaign");
+                                try {
+                                  toast.loading(`Starting campaign "${c.name}"...`);
+                                  const urlParams = new URLSearchParams(window.location.search)
+                                  const impersonateId = urlParams.get('impersonate')
+                                  const res = await fetch(`/api/voice/campaign/start${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ campaignId: c.id })
+                                  });
+                                  const resData = await res.json();
+                                  toast.dismiss();
+                                  
+                                  if (resData.success) {
+                                    toast.success(`Campaign launched! Initiated calls to ${resData.totalLeads} leads. 🎙️`);
+                                    fetchCampaignsAndFilters();
+                                  } else {
+                                    toast.error(resData.error || "Failed to start campaign");
+                                  }
+                                } catch (err: any) {
+                                  toast.dismiss();
+                                  toast.error("Error starting campaign: " + err.message);
                                 }
-                              } catch (err: any) {
-                                toast.dismiss();
-                                toast.error("Error starting campaign: " + err.message);
-                              }
-                            }}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-4 py-2 rounded-full shadow-md active:scale-95 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
-                          >
-                            <Phone size={13} />
-                            <span>Launch Campaign</span>
-                          </button>
-                        )}
+                              }}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-4 py-2 rounded-full shadow-md active:scale-95 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
+                            >
+                              <Phone size={13} />
+                              <span>Launch Campaign</span>
+                            </button>
+                          )}
 
-                        {c.status === 'running' && (
-                          <button
-                            onClick={async () => {
-                              const proceed = confirm(`Pause campaign "${c.name}"? No further sequential calls will be placed.`);
-                              if (!proceed) return;
+                          {c.status === 'running' && (
+                            <button
+                              onClick={async () => {
+                                const proceed = confirm(`Pause campaign "${c.name}"? No further sequential calls will be placed.`);
+                                if (!proceed) return;
 
-                              try {
-                                toast.loading(`Pausing campaign "${c.name}"...`);
-                                const urlParams = new URLSearchParams(window.location.search)
-                                const impersonateId = urlParams.get('impersonate')
-                                const res = await fetch(`/api/voice/campaign${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
-                                  method: 'PATCH',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ campaignId: c.id, status: 'paused' })
-                                });
-                                const resData = await res.json();
-                                toast.dismiss();
+                                try {
+                                  toast.loading(`Pausing campaign "${c.name}"...`);
+                                  const urlParams = new URLSearchParams(window.location.search)
+                                  const impersonateId = urlParams.get('impersonate')
+                                  const res = await fetch(`/api/voice/campaign${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ campaignId: c.id, status: 'paused' })
+                                  });
+                                  const resData = await res.json();
+                                  toast.dismiss();
 
-                                if (resData.success) {
-                                  toast.success(`Campaign paused!`);
-                                  fetchCampaignsAndFilters();
-                                } else {
-                                  toast.error(resData.error || "Failed to pause campaign");
+                                  if (resData.success) {
+                                    toast.success(`Campaign paused!`);
+                                    fetchCampaignsAndFilters();
+                                  } else {
+                                    toast.error(resData.error || "Failed to pause campaign");
+                                  }
+                                } catch (err: any) {
+                                  toast.dismiss();
+                                  toast.error("Error pausing campaign: " + err.message);
                                 }
-                              } catch (err: any) {
-                                toast.dismiss();
-                                toast.error("Error pausing campaign: " + err.message);
-                              }
-                            }}
-                            className="bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black px-3.5 py-1.5 rounded-full shadow-xs active:scale-95 transition-all cursor-pointer"
-                          >
-                            Pause Call
-                          </button>
-                        )}
+                              }}
+                              className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-black px-4 py-2 rounded-full shadow-sm active:scale-95 transition-all cursor-pointer"
+                            >
+                              Pause Call
+                            </button>
+                          )}
 
-                        {c.status === 'paused' && (
-                          <button
-                            onClick={async () => {
-                              const proceed = confirm(`Resume campaign "${c.name}"?`);
-                              if (!proceed) return;
+                          {c.status === 'paused' && (
+                            <button
+                              onClick={async () => {
+                                const proceed = confirm(`Resume campaign "${c.name}"?`);
+                                if (!proceed) return;
 
-                              try {
-                                toast.loading(`Resuming campaign "${c.name}"...`);
-                                const urlParams = new URLSearchParams(window.location.search)
-                                const impersonateId = urlParams.get('impersonate')
-                                const res = await fetch(`/api/voice/campaign/start${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ campaignId: c.id })
-                                });
-                                const resData = await res.json();
-                                toast.dismiss();
+                                try {
+                                  toast.loading(`Resuming campaign "${c.name}"...`);
+                                  const urlParams = new URLSearchParams(window.location.search)
+                                  const impersonateId = urlParams.get('impersonate')
+                                  const res = await fetch(`/api/voice/campaign/start${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ campaignId: c.id })
+                                  });
+                                  const resData = await res.json();
+                                  toast.dismiss();
 
-                                if (resData.success) {
-                                  toast.success(`Campaign resumed!`);
-                                  fetchCampaignsAndFilters();
-                                } else {
-                                  toast.error(resData.error || "Failed to resume campaign");
+                                  if (resData.success) {
+                                    toast.success(`Campaign resumed!`);
+                                    fetchCampaignsAndFilters();
+                                  } else {
+                                    toast.error(resData.error || "Failed to resume campaign");
+                                  }
+                                } catch (err: any) {
+                                  toast.dismiss();
+                                  toast.error("Error resuming campaign: " + err.message);
                                 }
-                              } catch (err: any) {
-                                toast.dismiss();
-                                toast.error("Error resuming campaign: " + err.message);
-                              }
-                            }}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black px-3.5 py-1.5 rounded-full shadow-xs active:scale-95 transition-all cursor-pointer"
-                          >
-                            Resume Call
-                          </button>
-                        )}
+                              }}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-4 py-2 rounded-full shadow-sm active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              <Play size={13} />
+                              <span>Resume Call</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Audience Badges */}
+                      <div className="flex flex-wrap gap-2 text-[9px] font-bold">
+                        <span className="bg-slate-200/70 text-slate-700 px-2.5 py-1 rounded-md uppercase max-w-xs truncate inline-block" title={getAudienceLabel()}>
+                          Audience: {getAudienceLabel()}
+                        </span>
+                        <span className="bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-md uppercase">
+                          🎙️ Voice: {filter.voice_name || 'Aoede'}
+                        </span>
+                        {filter.greeting && (
+                          <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md uppercase truncate max-w-xs" title={filter.greeting}>
+                            💬 Greeting: "{filter.greeting}"
+                          </span>
+                        )}
+                        <span className="text-slate-400 px-1 py-1 font-semibold">
+                          Created: {new Date(c.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+
+                      {/* Pitch Context Textbox */}
+                      {c.custom_prompt && (
+                        <div className="space-y-1">
+                          <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Conversation Context & Pitch:</span>
+                          <div className="bg-slate-900 text-slate-100 p-3.5 rounded-xl border border-slate-800 text-[11px] font-mono leading-relaxed max-h-32 overflow-y-auto custom-scrollbar whitespace-pre-wrap shadow-inner">
+                            {c.custom_prompt}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Progress and Statistics Dashboard */}
+                      {totalLeads > 0 && (
+                        <div className="space-y-2 border-t border-slate-200/60 pt-3">
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center text-[10px] font-black text-slate-600">
+                              <span>PROGRESS: {progressPercent}%</span>
+                              <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono text-[9px]">{completedLeads + failedLeads} / {totalLeads} CALLED</span>
+                            </div>
+                            <div className="w-full bg-slate-200/80 h-2.5 rounded-full overflow-hidden shadow-inner">
+                              <div 
+                                className="bg-indigo-600 h-full rounded-full transition-all duration-700 ease-out-back" 
+                                style={{ width: `${progressPercent}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Outcome tags */}
+                          <div className="flex flex-wrap gap-2 text-[9px] font-extrabold pt-1">
+                            <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md border border-emerald-100 flex items-center gap-1">
+                              ✅ Spoke: {completedLeads}
+                            </span>
+                            <span className="bg-rose-50 text-rose-700 px-2.5 py-1 rounded-md border border-rose-100 flex items-center gap-1">
+                              ❌ Unreachable: {failedLeads}
+                            </span>
+                            {callingLeads > 0 && (
+                              <span className="bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-md border border-indigo-150 animate-pulse flex items-center gap-1">
+                                📞 Dialing: {callingLeads}
+                              </span>
+                            )}
+                            {pendingLeads > 0 && (
+                              <span className="bg-slate-200/50 text-slate-600 px-2.5 py-1 rounded-md border border-slate-200 flex items-center gap-1">
+                                ⏳ Queue: {pendingLeads}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* View Campaign Leads Button */}
+                          <div className="pt-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCampaignForModal(c)}
+                              className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200/80 rounded-xl text-xs font-black transition-all shadow-xs active:scale-95 cursor-pointer"
+                            >
+                              <Users size={14} />
+                              <span>View Campaign Leads ({totalLeads})</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {c.status === 'running' && activeCallLead && activeCallLead.voice_campaign_id === c.id ? (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between animate-pulse shadow-xs">
+                          <span className="text-[11px] text-amber-900 font-bold flex items-center gap-1.5">
+                            📞 Call in progress with <span className="underline">{activeCallLead.name}</span>
+                          </span>
+                          <span className="bg-amber-200 text-amber-800 text-[9px] font-black uppercase px-2 py-0.5 rounded">Dialing</span>
+                        </div>
+                      ) : c.status === 'running' && (
+                        <div className="bg-slate-100/60 border border-slate-200/60 rounded-xl p-2.5 text-[10px] text-slate-500 font-semibold italic">
+                          Preparing next sequential call...
+                        </div>
+                      )}
                     </div>
-                  );
+                  )
                 })}
               </div>
             )}

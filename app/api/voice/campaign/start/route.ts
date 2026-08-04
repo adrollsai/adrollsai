@@ -83,38 +83,31 @@ export async function POST(req: Request) {
                     match = true
                 }
                 if (hasMeta) {
-                    const customFieldsStr = typeof lead.custom_fields === 'string' 
-                        ? lead.custom_fields 
-                        : JSON.stringify(lead.custom_fields || {});
-
                     for (const targetMeta of filter.meta_campaigns) {
                         if (!targetMeta) continue;
-                        const targetLower = String(targetMeta).toLowerCase();
-                        
-                        if (lead.campaign_id && (lead.campaign_id === targetMeta || String(lead.campaign_id).toLowerCase() === targetLower)) {
+                        const targetId = targetMeta.includes('|') ? targetMeta.split('|')[0].trim() : targetMeta.trim();
+                        const targetName = targetMeta.includes('|') ? targetMeta.split('|')[1].trim() : targetMeta.trim();
+
+                        // 1. Exact campaign_id match
+                        if (lead.campaign_id && (lead.campaign_id === targetId || lead.campaign_id === targetMeta)) {
                             match = true;
                             break;
                         }
-                        if (lead.ad_name && (lead.ad_name === targetMeta || lead.ad_name.toLowerCase().includes(targetLower) || targetLower.includes(lead.ad_name.toLowerCase()))) {
+
+                        // 2. Exact ad_name match
+                        if (lead.ad_name && (lead.ad_name === targetName || lead.ad_name === targetMeta)) {
                             match = true;
                             break;
                         }
-                        if (customFieldsStr.toLowerCase().includes(targetLower)) {
-                            match = true;
-                            break;
-                        }
-                        if (lead.campaign_id) {
-                            const campName = dbCampaigns?.find(c => c.id === lead.campaign_id)?.name;
-                            if (campName && (campName === targetMeta || campName.toLowerCase().includes(targetLower))) {
+
+                        // 3. Custom fields origin match
+                        if (lead.custom_fields) {
+                            const cfStr = typeof lead.custom_fields === 'string' ? lead.custom_fields : JSON.stringify(lead.custom_fields);
+                            if (cfStr.includes(`"campaign_id":"${targetId}"`) || cfStr.includes(`"campaign_id": "${targetId}"`) || cfStr.includes(targetId)) {
                                 match = true;
                                 break;
                             }
                         }
-                    }
-
-                    // Fallback: If filter.meta_campaigns is non-empty and lead source is Meta/Facebook/WhatsApp, match lead
-                    if (!match && lead.source && /facebook|meta|whatsapp/i.test(lead.source)) {
-                        match = true;
                     }
                 }
                 if (hasCsv && lead.csv_audience && filter.csv_audiences.includes(lead.csv_audience)) {
