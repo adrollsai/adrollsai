@@ -703,27 +703,11 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
                         prompt: synthesisPrompt,
                     });
                     finalPrompt = res.text.trim();
-                } catch (e35: any) {
-                    try {
-                        const res = await generateText({
-                            model: google('gemini-2.0-flash'),
-                            prompt: synthesisPrompt,
-                        });
-                        finalPrompt = res.text.trim();
-                    } catch (e20: any) {
-                        try {
-                            const res = await generateText({
-                                model: google('gemini-1.5-flash'),
-                                prompt: synthesisPrompt,
-                            });
-                            finalPrompt = res.text.trim();
-                        } catch (fallbackErr: any) {
-                            console.error(`[Generate API] Fallback prompt synthesis also failed for scene ${i + 1}:`, fallbackErr);
-                            const targetImageLabel = (avatarUrl && !isCharacterVideo) ? "Image_2" : "Image_1";
-                            const cleanFallbackDialogue = scene.dialogue;
-                            finalPrompt = `${characterAppearanceText}\n\nThe video opens in a premium, warm real estate setting.\nA professional female UGC presenter stands in a detailed closeup shot looking directly into the camera.\nShe says:\n"${cleanFallbackDialogue}"\nThe camera slowly dollies toward the presenter's face.\nTransition to a wide scenic shot showing the product/property matching the supplied reference image 1 (${targetImageLabel}) from super far away so that no human face is visible or mutated.\nProfessional real estate home tour.\nPhotorealistic.\nUltra-realistic human motion.\nNatural body language.\nPerfect lip synchronization.\nLuxury property marketing video.\nSmooth steadycam movement.\nCinematic architectural videography.\nPremium lighting.\nNo AI artifacts.\nHigh-end commercial production quality.\n15-second continuous shot.`;
-                        }
-                    }
+                } catch (fallbackErr: any) {
+                    console.error(`[Generate API] Prompt synthesis failed for scene ${i + 1}:`, fallbackErr);
+                    const targetImageLabel = (avatarUrl && !isCharacterVideo) ? "Image_2" : "Image_1";
+                    const cleanFallbackDialogue = scene.dialogue;
+                    finalPrompt = `${characterAppearanceText}\n\nThe video opens in a premium, warm real estate setting.\nA professional female UGC presenter stands in a detailed closeup shot looking directly into the camera.\nShe says:\n"${cleanFallbackDialogue}"\nThe camera slowly dollies toward the presenter's face.\nTransition to a wide scenic shot showing the product/property matching the supplied reference image 1 (${targetImageLabel}) from super far away so that no human face is visible or mutated.\nProfessional real estate home tour.\nPhotorealistic.\nUltra-realistic human motion.\nNatural body language.\nPerfect lip synchronization.\nLuxury property marketing video.\nSmooth steadycam movement.\nCinematic architectural videography.\nPremium lighting.\nNo AI artifacts.\nHigh-end commercial production quality.\n15-second continuous shot.`;
                 }
                 prompts.push(finalPrompt);
             }
@@ -901,27 +885,11 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                 try {
                     console.log(`[Grok Pipeline] Generating prompt for scene ${i + 1} with primary model: gemini-3.5-flash`);
                     let text = "";
-                    try {
-                        const res = await generateText({
-                            model: google('gemini-3.5-flash'),
-                            prompt: scenePromptGen
-                        });
-                        text = res.text;
-                    } catch (e35: any) {
-                        try {
-                            const res = await generateText({
-                                model: google('gemini-2.0-flash'),
-                                prompt: scenePromptGen
-                            });
-                            text = res.text;
-                        } catch (e20: any) {
-                            const res = await generateText({
-                                model: google('gemini-1.5-flash'),
-                                prompt: scenePromptGen
-                            });
-                            text = res.text;
-                        }
-                    }
+                    const res = await generateText({
+                        model: google('gemini-3.5-flash'),
+                        prompt: scenePromptGen
+                    });
+                    text = res.text;
                     let synthesized = text.trim();
                     if (!synthesized.toLowerCase().includes('starts immediately from second 0') && !synthesized.toLowerCase().includes('starts from second 0')) {
                         synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 seconds where... ${synthesized}`;

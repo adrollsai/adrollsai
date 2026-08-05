@@ -486,7 +486,7 @@ wss.on('connection', (wsConnection) => {
 
                 // 1. Fetch details from Supabase and connect to Gemini in parallel
                 let systemInstruction = 'You are a helpful representative. Focus on booking an appointment.';
-                let greetingMessage = 'Hello, how are you?';
+                let greetingMessage = 'Hi, kaise ho aap?';
 
                 // Clear old voice call fields immediately to prevent status callback race conditions
                 try {
@@ -506,7 +506,7 @@ wss.on('connection', (wsConnection) => {
 
                 let dbPromise;
                 let tempSocket;
-                const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || "AIzaSyBR2FcjGiSxX3-X5-fYnAt23ZoITzjgn3Q";
+                const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '';
 
                 const prewarmed = prewarmedPool.get(leadId);
                 if (prewarmed && !prewarmed.used) {
@@ -776,7 +776,7 @@ The prospect recently asked the following questions which we have now resolved. 
                         
                         // Parse campaign greeting if available, otherwise default to warm Hindi greeting
                         let rawGreeting = campaign?.audience_filter?.greeting || null;
-                        let greetingMessage = '';
+                        greetingMessage = '';
 
                         if (rawGreeting) {
                             greetingMessage = rawGreeting

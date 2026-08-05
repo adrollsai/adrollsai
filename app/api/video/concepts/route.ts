@@ -247,30 +247,12 @@ JSON SCHEMA:
         });
 
         console.log("[Concepts API] Generating concepts with primary model: gemini-3.5-flash");
-        try {
-            const res = await generateObject({
-                model: google('gemini-3.5-flash'),
-                schema,
-                messages,
-            });
-            result = res.object;
-        } catch (e35: any) {
-            try {
-                const res = await generateObject({
-                    model: google('gemini-2.0-flash'),
-                    schema,
-                    messages,
-                });
-                result = res.object;
-            } catch (e20: any) {
-                const res = await generateObject({
-                    model: google('gemini-1.5-flash'),
-                    schema,
-                    messages,
-                });
-                result = res.object;
-            }
-        }
+        const res = await generateObject({
+            model: google('gemini-3.5-flash'),
+            schema,
+            messages,
+        });
+        result = res.object;
 
         return NextResponse.json({
             success: true,

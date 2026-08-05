@@ -373,27 +373,11 @@ Output ONLY valid JSON. Do not include markdown code block tags around JSON.`;
 
         let scriptJson = "";
         console.log("[Script API] Generating script with primary model: gemini-3.5-flash");
-        try {
-            const res = await generateText({
-                model: google('gemini-3.5-flash'),
-                prompt: masterPrompt,
-            });
-            scriptJson = res.text;
-        } catch (e35: any) {
-            try {
-                const res = await generateText({
-                    model: google('gemini-2.0-flash'),
-                    prompt: masterPrompt,
-                });
-                scriptJson = res.text;
-            } catch (e20: any) {
-                const res = await generateText({
-                    model: google('gemini-1.5-flash'),
-                    prompt: masterPrompt,
-                });
-                scriptJson = res.text;
-            }
-        }
+        const res = await generateText({
+            model: google('gemini-3.5-flash'),
+            prompt: masterPrompt,
+        });
+        scriptJson = res.text;
 
         try {
             const cleanJson = scriptJson.replace(/```json|```/g, '').trim();
