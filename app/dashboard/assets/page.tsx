@@ -304,7 +304,7 @@ export default function AssetsPage() {
                 .eq('user_id', targetUserId)
                 .order('created_at', { ascending: false });
 
-            let mergedAssets = force ? assetData : mergeCacheData<any>(cachedAssets, assetData || []);
+            let mergedAssets = force ? assetData : mergeCacheData<any>(cachedAssets.filter(c => c.status !== 'Failed'), assetData || []);
             let mergedProps = propData || [];
 
             if (mergedAssets && Array.isArray(mergedAssets)) {
@@ -493,15 +493,26 @@ export default function AssetsPage() {
         }
     }
 
-    // 4. Handle Delete Asset
+    // 4. Handle Delete Asset (supporting impersonated assets & updating local cache)
     const handleDeleteAsset = async (id: string) => {
         if (!confirm('Are you sure you want to delete this asset? This cannot be undone.')) return;
         
         try {
-            const { error } = await supabase.from('assets').delete().eq('id', id);
-            if (error) throw error;
+            const res = await fetch(`/api/assets?id=${id}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const { error } = await supabase.from('assets').delete().eq('id', id);
+                if (error) throw error;
+            }
             toast.success('Asset deleted successfully');
-            setAssets(prev => prev.filter(a => a.id !== id));
+            setAssets(prev => {
+                const updated = prev.filter(a => a.id !== id);
+                const urlParams = new URLSearchParams(window.location.search);
+                const impersonateId = urlParams.get('impersonate');
+                const targetId = impersonateId || userRole || 'user';
+                const assetsKey = `assets_${targetId}`;
+                setLocalCache(assetsKey, updated);
+                return updated;
+            });
         } catch (e: any) {
             toast.error('Delete failed: ' + e.message);
         }

@@ -55,7 +55,7 @@ call gcloud.cmd run deploy gemini-voice-bridge ^
   --platform managed ^
   --region us-central1 ^
   --allow-unauthenticated ^
-  --port 5050
+  --port 8080
 
 if errorlevel 1 (
     echo [ERROR] Cloud Run deployment failed.

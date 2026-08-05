@@ -119,9 +119,20 @@ export async function POST(req: Request) {
             return true
         })
 
-        const targetLeads = filteredLeads.filter(l => l.phone)
+        // Deduplicate leads by normalized 10-digit phone number (keep only the most recent lead per phone number)
+        const uniquePhoneMap = new Map<string, any>()
+        for (const lead of filteredLeads) {
+            if (!lead.phone) continue;
+            const normPhone = lead.phone.replace(/\D/g, '').slice(-10);
+            if (!normPhone || normPhone.length < 10 || /^0+$/.test(normPhone)) continue; // skip invalid numbers
+            if (!uniquePhoneMap.has(normPhone)) {
+                uniquePhoneMap.set(normPhone, lead);
+            }
+        }
+
+        const targetLeads = Array.from(uniquePhoneMap.values());
         if (targetLeads.length === 0) {
-            return NextResponse.json({ error: 'No contacts found matching the target audience filters.' }, { status: 400 })
+            return NextResponse.json({ error: 'No valid unique contacts found matching the target audience filters.' }, { status: 400 })
         }
 
         // Set campaign status to running using admin client
@@ -130,13 +141,23 @@ export async function POST(req: Request) {
             .update({ status: 'running' })
             .eq('id', campaignId)
 
-        // Assign voice_campaign_id in bulk using admin client (in batches of 100 to avoid URI too long gateway issues)
+        // Clear previous campaign assignment for this campaign ID first to remove any stale duplicate records
+        await supabaseAdmin
+            .from('leads')
+            .update({ voice_campaign_id: null })
+            .eq('voice_campaign_id', campaignId)
+
+        // Assign voice_campaign_id and reset call status in bulk for unique target leads (in batches of 100)
         const batchSize = 100
         for (let i = 0; i < targetLeads.length; i += batchSize) {
             const batchIds = targetLeads.slice(i, i + batchSize).map(l => l.id)
             const { error: updateErr } = await supabaseAdmin
                 .from('leads')
-                .update({ voice_campaign_id: campaignId })
+                .update({ 
+                    voice_campaign_id: campaignId,
+                    voice_call_status: null,
+                    voice_call_retry_count: 0
+                })
                 .in('id', batchIds)
             
             if (updateErr) {

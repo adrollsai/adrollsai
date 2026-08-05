@@ -63,16 +63,25 @@ export default function VideoEditorPage() {
             setLoading(true)
             setVideoReady(false)
             
-            // 1. Fetch Asset
-            const { data: assetData, error: assetError } = await supabase
-                .from('assets')
-                .select('*')
-                .eq('id', id)
-                .single()
+            // 1. Fetch Asset via Server API (supporting impersonation bypass)
+            const apiUrl = `/api/assets?id=${id}${impersonate ? `&impersonate=${impersonate}` : ''}`
+            let assetData: any = null
+            try {
+                const res = await fetch(apiUrl)
+                if (res.ok) {
+                    assetData = await res.json()
+                }
+            } catch (e) {}
 
-            if (assetError || !assetData) {
+            if (!assetData || assetData.error) {
+                // Fallback to client Supabase
+                const { data } = await supabase.from('assets').select('*').eq('id', id).single()
+                assetData = data
+            }
+
+            if (!assetData) {
                 toast.error("Failed to load video asset")
-                router.push('/dashboard/assets')
+                router.push(impersonate ? `/dashboard/assets?impersonate=${impersonate}` : '/dashboard/assets')
                 return
             }
 

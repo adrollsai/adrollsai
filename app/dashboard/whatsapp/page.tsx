@@ -637,18 +637,14 @@ export default function AutomationPage() {
           setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, recipient_name: leadEditForm.name } : c))
         }
       } else {
-        if (!leadEditForm.name.trim()) {
-          toast.error("Name is required to save lead in CRM.")
-          setSavingLead(false)
-          return
-        }
+        const finalLeadName = leadEditForm.name.trim() || leadInfo.phone || 'WhatsApp Lead';
 
         // 1. Create lead in CRM
         const { data: newLead, error: insertError } = await supabase
           .from('leads')
           .insert({
             user_id: profile?.id,
-            name: leadEditForm.name.trim(),
+            name: finalLeadName,
             email: leadEditForm.email.trim(),
             phone: leadInfo.phone,
             pipeline_stage: leadEditForm.pipeline_stage || 'New',
@@ -666,13 +662,13 @@ export default function AutomationPage() {
             .from('whatsapp_chats')
             .update({ 
               lead_id: newLead.id,
-              recipient_name: leadEditForm.name.trim() 
+              recipient_name: finalLeadName 
             })
             .eq('id', selectedChatId)
 
           if (chatUpdateErr) throw chatUpdateErr
 
-          setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, lead_id: newLead.id, recipient_name: leadEditForm.name.trim() } : c))
+          setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, lead_id: newLead.id, recipient_name: finalLeadName } : c))
         }
 
         // 3. Back-populate whatsapp chat messages to lead_history for this new lead
@@ -1315,7 +1311,7 @@ export default function AutomationPage() {
                       const directMediaUrl = getResolvedMediaUrl(m.media_url)
                       const extractedImgFromText = !m.media_url ? extractImageFromText(m.message_text) : null
                       const displayImageUrl = directMediaUrl || extractedImgFromText
-                      const isImage = (m.media_type === 'image' || m.media_type === 'sticker') || !!extractedImgFromText
+                      const isImage = (m.media_type === 'image' || m.media_type === 'sticker' || !m.media_type) && !!displayImageUrl
 
                       return (
                         <div key={m.id} className="space-y-2.5">

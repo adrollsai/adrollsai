@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const candidateUrls = Array.from(new Set([urlWithAdrolls, urlWithoutAdrolls, imageUrl]));
+    const candidateUrls = Array.from(new Set([imageUrl, urlWithoutAdrolls, urlWithAdrolls]));
 
     const range = request.headers.get('range');
     const fetchHeaders: Record<string, string> = {};

@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { X, ZoomIn, ZoomOut, Maximize2, Download, RefreshCcw } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { fixR2Url } from '@/utils/get-video-poster'
 
 interface ImagePreviewModalProps {
     isOpen: boolean
@@ -151,12 +152,12 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
                             {(type === 'pdf' || (imageUrl && imageUrl.toLowerCase().includes('.pdf'))) ? (
                                 <div className="flex flex-col items-center gap-4 w-[90vw] max-w-4xl h-[75vh]">
                                     <iframe 
-                                        src={imageUrl} 
+                                        src={fixR2Url(imageUrl)} 
                                         className="w-full h-full rounded-2xl bg-white border border-slate-800 shadow-2xl"
                                         title="PDF Preview"
                                     />
                                     <a
-                                        href={imageUrl}
+                                        href={fixR2Url(imageUrl)}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded-full text-xs flex items-center gap-2 shadow-lg transition-all"
@@ -174,7 +175,7 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
                                 !/\.(jpg|jpeg|png|webp|gif)/i.test(imageUrl.split('?')[0])
                             ))) ? (
                                 <video 
-                                    src={imageUrl.includes('#') ? imageUrl : `${imageUrl}#t=0.001`} 
+                                    src={fixR2Url(imageUrl).includes('#') ? fixR2Url(imageUrl) : `${fixR2Url(imageUrl)}#t=0.001`} 
                                     controls 
                                     autoPlay
                                     preload="metadata"
@@ -182,7 +183,7 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
                                 />
                             ) : (
                                 <img 
-                                    src={imageUrl} 
+                                    src={fixR2Url(imageUrl)} 
                                     alt="Preview" 
                                     className="max-w-[90vw] max-h-[80vh] object-contain select-none shadow-2xl rounded-lg"
                                     draggable={false}

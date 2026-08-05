@@ -15,7 +15,8 @@ import {
   Play,
   Users,
   ExternalLink,
-  X
+  X,
+  Trash2
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
@@ -987,7 +988,17 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                     return parts.length > 0 ? parts.join(' | ') : 'All Leads'
                   }
 
-                  const campaignLeads = allLeads.filter(l => l.voice_campaign_id === c.id)
+                  const rawCampaignLeads = allLeads.filter(l => l.voice_campaign_id === c.id);
+                  const campaignLeadsMap = new Map<string, any>();
+                  for (const lead of rawCampaignLeads) {
+                    if (!lead.phone) continue;
+                    const norm = lead.phone.replace(/\D/g, '').slice(-10);
+                    if (!norm || norm.length < 10 || /^0+$/.test(norm)) continue;
+                    if (!campaignLeadsMap.has(norm)) {
+                      campaignLeadsMap.set(norm, lead);
+                    }
+                  }
+                  const campaignLeads = Array.from(campaignLeadsMap.values());
                   const totalLeads = c.stats ? c.stats.total : campaignLeads.length
                   const completedLeads = c.stats ? c.stats.spoke : campaignLeads.filter(l => l.voice_call_status === 'completed').length
                   const failedLeads = c.stats ? c.stats.unreachable : campaignLeads.filter(l => ['failed', 'failed_max_retries'].includes(l.voice_call_status)).length
@@ -1121,6 +1132,39 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                               <span>Resume Call</span>
                             </button>
                           )}
+
+                          {/* Delete / Remove Campaign Button */}
+                          <button
+                            title="Delete Campaign"
+                            onClick={async () => {
+                              const proceed = confirm(`Are you sure you want to delete campaign "${c.name}"? This action cannot be undone.`);
+                              if (!proceed) return;
+
+                              try {
+                                toast.loading(`Deleting campaign "${c.name}"...`);
+                                const urlParams = new URLSearchParams(window.location.search)
+                                const impersonateId = urlParams.get('impersonate')
+                                const res = await fetch(`/api/voice/campaign?id=${c.id}${impersonateId ? `&impersonate=${impersonateId}` : ''}`, {
+                                  method: 'DELETE'
+                                });
+                                const resData = await res.json();
+                                toast.dismiss();
+
+                                if (resData.success) {
+                                  toast.success(`Campaign deleted!`);
+                                  fetchCampaignsAndFilters();
+                                } else {
+                                  toast.error(resData.error || "Failed to delete campaign");
+                                }
+                              } catch (err: any) {
+                                toast.dismiss();
+                                toast.error("Error deleting campaign: " + err.message);
+                              }
+                            }}
+                            className="p-2 text-rose-500 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-full transition-all cursor-pointer shadow-2xs active:scale-95 ml-1"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </div>
 
@@ -1229,92 +1273,108 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
           <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden font-sans">
             
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-extrabold text-base text-slate-900">{selectedCampaignForModal.name}</h3>
-                  <span className="text-xs font-extrabold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
-                    {allLeads.filter(l => l.voice_campaign_id === selectedCampaignForModal.id).length} Leads Tagged
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                  Click "Open Lead CRM Page" to see full history, conversation transcript, and listen to recorded voice calls.
-                </p>
-              </div>
-              <button
-                onClick={() => setSelectedCampaignForModal(null)}
-                className="p-2 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200/60 transition-colors cursor-pointer"
-              >
-                <X size={20} />
-              </button>
-            </div>
+            {(() => {
+              const rawModalLeads = allLeads.filter(l => l.voice_campaign_id === selectedCampaignForModal.id);
+              const modalLeadsMap = new Map<string, any>();
+              for (const lead of rawModalLeads) {
+                if (!lead.phone) continue;
+                const norm = lead.phone.replace(/\D/g, '').slice(-10);
+                if (!norm || norm.length < 10 || /^0+$/.test(norm)) continue;
+                if (!modalLeadsMap.has(norm)) {
+                  modalLeadsMap.set(norm, lead);
+                }
+              }
+              const modalLeads = Array.from(modalLeadsMap.values());
 
-            {/* Leads List Body */}
-            <div className="p-6 overflow-y-auto flex-1 space-y-3">
-              {allLeads.filter(l => l.voice_campaign_id === selectedCampaignForModal.id).length === 0 ? (
-                <div className="text-center py-12 text-slate-400 text-xs font-semibold">
-                  No leads currently tagged for this campaign.
-                </div>
-              ) : (
-                allLeads
-                  .filter(l => l.voice_campaign_id === selectedCampaignForModal.id)
-                  .map((lead) => {
-                    const impersonateId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('impersonate') : null;
-                    const crmUrl = `/dashboard/crm/${lead.id}${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
-                    
-                    let statusBadgeClass = 'bg-slate-100 text-slate-600 border-slate-200';
-                    let statusText = lead.voice_call_status || 'not_called';
-                    
-                    if (lead.voice_call_status === 'completed') {
-                      statusBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-                      statusText = '✅ Spoke / Completed';
-                    } else if (['failed', 'failed_max_retries'].includes(lead.voice_call_status)) {
-                      statusBadgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
-                      statusText = '❌ Unreachable / Failed';
-                    } else if (lead.voice_call_status === 'calling') {
-                      statusBadgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse';
-                      statusText = '📞 Dialing Now';
-                    } else if (lead.voice_call_status === 'scheduled_retry') {
-                      statusBadgeClass = 'bg-purple-50 text-purple-700 border-purple-200';
-                      statusText = '🔄 Voicemail - Retry Scheduled';
-                    } else if (lead.voice_call_status === 'scheduled_callback') {
-                      statusBadgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
-                      statusText = '🕒 Callback Scheduled';
-                    }
-
-                    return (
-                      <div key={lead.id} className="p-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-slate-300 transition-all">
-                        <div className="space-y-1.5 flex-1 pr-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-extrabold text-sm text-slate-900">{lead.name || 'Unnamed Lead'}</span>
-                            <span className="text-xs font-bold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200/60">{lead.phone}</span>
-                            <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full border ${statusBadgeClass}`}>
-                              {statusText}
-                            </span>
-                          </div>
-                          {lead.voice_call_summary ? (
-                            <p className="text-xs text-slate-600 line-clamp-2 bg-white p-2.5 rounded-xl border border-slate-200/60 italic font-medium leading-relaxed">
-                              "{lead.voice_call_summary}"
-                            </p>
-                          ) : (
-                            <p className="text-[11px] text-slate-400 italic">No call conversation recorded yet.</p>
-                          )}
-                        </div>
-
-                        <a
-                          href={crmUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-2xs shrink-0 active:scale-95 cursor-pointer"
-                        >
-                          <span>Open Lead CRM Page</span>
-                          <ExternalLink size={13} className="text-slate-500" />
-                        </a>
+              return (
+                <>
+                  <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-extrabold text-base text-slate-900">{selectedCampaignForModal.name}</h3>
+                        <span className="text-xs font-extrabold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
+                          {modalLeads.length} Unique Leads Tagged
+                        </span>
                       </div>
-                    );
-                  })
-              )}
-            </div>
+                      <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                        Click "Open Lead CRM Page" to see full history, conversation transcript, and listen to recorded voice calls.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setSelectedCampaignForModal(null)}
+                      className="p-2 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200/60 transition-colors cursor-pointer"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  {/* Leads List Body */}
+                  <div className="p-6 overflow-y-auto flex-1 space-y-3">
+                    {modalLeads.length === 0 ? (
+                      <div className="text-center py-12 text-slate-400 text-xs font-semibold">
+                        No unique leads currently tagged for this campaign.
+                      </div>
+                    ) : (
+                      modalLeads.map((lead) => {
+                        const impersonateId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('impersonate') : null;
+                        const crmUrl = `/dashboard/crm/${lead.id}${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
+                        
+                        let statusBadgeClass = 'bg-slate-100 text-slate-600 border-slate-200';
+                        let statusText = lead.voice_call_status || 'not_called';
+                        
+                        if (lead.voice_call_status === 'completed') {
+                          statusBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                          statusText = '✅ Spoke / Completed';
+                        } else if (['failed', 'failed_max_retries'].includes(lead.voice_call_status)) {
+                          statusBadgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
+                          statusText = '❌ Unreachable / Failed';
+                        } else if (lead.voice_call_status === 'calling') {
+                          statusBadgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse';
+                          statusText = '📞 Dialing Now';
+                        } else if (lead.voice_call_status === 'scheduled_retry') {
+                          statusBadgeClass = 'bg-purple-50 text-purple-700 border-purple-200';
+                          statusText = '🔄 Voicemail - Retry Scheduled';
+                        } else if (lead.voice_call_status === 'scheduled_callback') {
+                          statusBadgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
+                          statusText = '🕒 Callback Scheduled';
+                        }
+
+                        return (
+                          <div key={lead.id} className="p-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-slate-300 transition-all">
+                            <div className="space-y-1.5 flex-1 pr-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-extrabold text-sm text-slate-900">{lead.name || 'Unnamed Lead'}</span>
+                                <span className="text-xs font-bold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200/60">{lead.phone}</span>
+                                <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full border ${statusBadgeClass}`}>
+                                  {statusText}
+                                </span>
+                              </div>
+                              {lead.voice_call_summary ? (
+                                <p className="text-xs text-slate-600 line-clamp-2 bg-white p-2.5 rounded-xl border border-slate-200/60 italic font-medium leading-relaxed">
+                                  "{lead.voice_call_summary}"
+                                </p>
+                              ) : (
+                                <p className="text-[11px] text-slate-400 italic">No call conversation recorded yet.</p>
+                              )}
+                            </div>
+
+                            <a
+                              href={crmUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-2xs shrink-0 active:scale-95 cursor-pointer"
+                            >
+                              <span>Open Lead CRM Page</span>
+                              <ExternalLink size={13} className="text-slate-500" />
+                            </a>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              )
+            })()}
 
           </div>
         </div>

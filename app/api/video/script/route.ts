@@ -77,7 +77,7 @@ export async function POST(request: Request) {
             targetProfile = selectWithAvatars.data;
         }
 
-        const videoModel = body.videoModel || 'seedance';
+        const videoModel = body.videoModel || 'grok';
         const presenterType = body.presenterType || (useCharacterVideo ? 'video' : 'none');
 
         if (videoModel !== 'grok') {

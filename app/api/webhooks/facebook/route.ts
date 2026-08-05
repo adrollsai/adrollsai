@@ -960,8 +960,12 @@ IMPORTANT RULES:
                                         }
                                     }
 
-                                    // 2. Find or create chat record
-                                    const { data: latestLead } = await supabaseAdmin
+                                    // Extract Meta contact profile name if available
+                                    const waContact = val.contacts && val.contacts[0];
+                                    const waProfileName = waContact?.profile?.name || null;
+
+                                    // 2. Find or create CRM lead record
+                                    let { data: latestLead } = await supabaseAdmin
                                         .from('leads')
                                         .select('id, name')
                                         .eq('user_id', ownerUserId)
@@ -969,6 +973,31 @@ IMPORTANT RULES:
                                         .order('created_at', { ascending: false, nullsFirst: false })
                                         .limit(1)
                                         .maybeSingle();
+
+                                    if (!latestLead) {
+                                        const formattedPhone = cleanFrom.startsWith('+') ? cleanFrom : `+${cleanFrom}`;
+                                        const defaultLeadName = (waProfileName && waProfileName.trim()) ? waProfileName.trim() : formattedPhone;
+
+                                        const { data: createdLead, error: createLeadErr } = await supabaseAdmin
+                                            .from('leads')
+                                            .insert({
+                                                user_id: ownerUserId,
+                                                name: defaultLeadName,
+                                                phone: formattedPhone,
+                                                source: 'WhatsApp Inbound',
+                                                pipeline_stage: 'New',
+                                                created_at: new Date().toISOString()
+                                            })
+                                            .select('id, name')
+                                            .single();
+
+                                        if (createdLead) {
+                                            latestLead = createdLead;
+                                            console.log(`[Flow] Created new CRM lead for incoming WhatsApp contact: ${defaultLeadName} (${formattedPhone})`);
+                                        } else {
+                                            console.error('[Flow] Error creating CRM lead for WhatsApp contact:', createLeadErr);
+                                        }
+                                    }
 
                                     let { data: rawChat } = await supabaseAdmin
                                         .from('whatsapp_chats')
@@ -1068,6 +1097,77 @@ IMPORTANT RULES:
                                          console.log(`[Flow] Logged verification message to CRM, skipping bot execution: "${messageText}"`);
                                          return;
                                      }
+
+                                      // Check if this was a click on "Interested" for Nobogent AI Offer campaign
+                                      const isInterestedClick = buttonReplyId === 'interested_btn' || (buttonReplyTitle && buttonReplyTitle.toLowerCase().includes('interested')) || (messageText && /^interested$/i.test(messageText.trim()));
+                                      if (isInterestedClick) {
+                                          console.log(`[Flow] Lead ${cleanFrom} clicked "Interested" on Nobogent Offer! Sending demo response & alerting admin.`);
+
+                                          const demoReplyText = `Awesome! 🚀 Here is how Nobogent — the world's first AI Sales & Marketing Department for Real Estate — works:\n\n🎥 Watch 2-Min Demo: https://nobogent.com\n\nNobogent automates your entire department for ₹9,999/mo:\n✅ 500 AI Calling Minutes to cold & warm leads\n✅ Automated WhatsApp Broadcasts & AI Auto-Replies\n✅ AI Video Ads & Social Media Content Creation\n✅ Built-in Lead CRM & Pipeline Automation\n\nWould you like to speak directly with our team or schedule a live 1-on-1 walkthrough?`;
+
+                                          try {
+                                              const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
+                                              await fetch(metaUrl, {
+                                                  method: 'POST',
+                                                  headers: {
+                                                      'Authorization': `Bearer ${ownerWaToken}`,
+                                                      'Content-Type': 'application/json'
+                                                  },
+                                                  body: JSON.stringify({
+                                                      messaging_product: 'whatsapp',
+                                                      recipient_type: 'individual',
+                                                      to: cleanFrom,
+                                                      type: 'interactive',
+                                                      interactive: {
+                                                          type: 'button',
+                                                          body: { text: demoReplyText },
+                                                          action: {
+                                                              buttons: [
+                                                                  {
+                                                                      type: 'reply',
+                                                                      reply: { id: 'connect_expert', title: 'Talk to Expert 📞' }
+                                                                  }
+                                                              ]
+                                                          }
+                                                      }
+                                                  })
+                                              });
+
+                                              // Log bot reply in database
+                                              await supabaseAdmin
+                                                  .from('whatsapp_messages')
+                                                  .insert({
+                                                      chat_id: chat.id,
+                                                      direction: 'outbound',
+                                                      message_text: demoReplyText
+                                                  });
+                                              await supabaseAdmin
+                                                  .from('whatsapp_chats')
+                                                  .update({ last_message_text: demoReplyText, updated_at: new Date().toISOString() })
+                                                  .eq('id', chat.id);
+                                          } catch (waErr) {
+                                              console.error('[Flow] Error sending demo response to lead:', waErr);
+                                          }
+
+                                          // Trigger Multi-Channel Alert to Admin
+                                          const leadName = chat.recipient_name || latestLead?.name || 'Prospect';
+                                          const leadPhone = '+' + cleanFrom;
+                                          const targetLeadId = latestLead?.id;
+                                          const targetUrl = targetLeadId ? `/dashboard/crm?leadId=${targetLeadId}` : '/dashboard/crm';
+
+                                          sendAdminMultiChannelNotification({
+                                              ownerUserId,
+                                              title: '🔥 Lead Clicked Interested on Nobogent Offer!',
+                                              body: `Prospect ${leadName} (${leadPhone}) clicked "Interested" on your Nobogent broadcast! Follow up now.`,
+                                              url: targetUrl,
+                                              type: 'connect_expert',
+                                              leadPhone,
+                                              leadName,
+                                              leadId: targetLeadId
+                                          }).catch(err => console.error('[Flow] Multi-channel alert failed:', err));
+
+                                          return; // Stop processing real estate qualifying flows
+                                      }
 
                                      // Check if this was a click on "Connect with Expert" or "Get Nobogent System" button
                                       const isConnectExpertClick = buttonReplyId === 'connect_expert' || buttonReplyId === 'get_nobogent_system' || /connect with expert|connect expert|get nobogent system|nobogent system/i.test(messageText);
@@ -1351,9 +1451,9 @@ IMPORTANT RULES:
                                         return;
                                     }
 
-                                    const isInterestedClick = buttonReplyId === 'interested' || /interested|yes interested|looking for property|i am interested/i.test(messageText);
-                                    if (isInterestedClick) {
-                                        console.log(`[Flow] Lead ${cleanFrom} clicked "Interested"! Sending property options.`);
+                                    const isRealEstateInterestedClick = buttonReplyId === 're_interested' || /looking for property|property investment|buy property/i.test(messageText);
+                                    if (isRealEstateInterestedClick) {
+                                        console.log(`[Flow] Lead ${cleanFrom} clicked "Interested" on property inquiry! Sending property options.`);
                                         const responseText = "Awesome! 🎉 We have incredible residential & commercial investment opportunities available right now in top locations.\n\nWhich type of property are you interested in?\n1️⃣ Residential Apartments / Villas\n2️⃣ Commercial / Retail Spaces\n3️⃣ Residential / Commercial Plots\n4️⃣ Talk to a Property Specialist";
                                         await sendWAMessage(responseText);
                                         return;
