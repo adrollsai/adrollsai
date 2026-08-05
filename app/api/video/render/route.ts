@@ -194,7 +194,7 @@ export async function POST(request: Request) {
             console.error(`[Render Route] AWS Lambda delegation failed:`, workerError);
 
             // Revert new asset status back to 'Failed'
-            await supabase
+            await supabaseAdmin
                 .from('assets')
                 .update({ status: 'Failed' })
                 .eq('id', newAsset.id);
