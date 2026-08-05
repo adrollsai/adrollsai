@@ -375,13 +375,29 @@ export async function POST(request: Request) {
 
                         console.log(`[Sync Endpoint] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambda} frames per lambda (total frames: ${totalFrames})`);
 
+                        // Fetch placeholder asset metadata to extract voiceover audioUrl if available
+                        let voiceoverAudioUrl: string | undefined = undefined;
+                        if (task.asset_id) {
+                            const { data: assetData } = await supabaseAdmin
+                                .from('assets')
+                                .select('metadata')
+                                .eq('id', task.asset_id)
+                                .maybeSingle();
+                            
+                            const rawAudio = assetData?.metadata?.audioUrl;
+                            if (rawAudio && typeof rawAudio === 'string' && rawAudio.startsWith('http')) {
+                                voiceoverAudioUrl = rawAudio.replace('r2.dev/adrolls-storage/', 'r2.dev/');
+                            }
+                        }
+
                         const renderResult = await renderMediaOnLambda({
                             region,
                             functionName,
                             serveUrl: `https://${bucketName}.s3.${region}.amazonaws.com/sites/${siteName}/index.html`,
                             composition: 'StitchComposition',
                             inputProps: {
-                                videoUrls: siblings.map(s => s.last_successful_task_id)
+                                videoUrls: siblings.map(s => s.last_successful_task_id),
+                                ...(voiceoverAudioUrl ? { audioUrl: voiceoverAudioUrl } : {})
                             },
                             codec: 'h264',
                             imageFormat: 'jpeg',

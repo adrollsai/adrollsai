@@ -114,6 +114,30 @@ app.post('/stitch', async (req, res) => {
             localFiles.push(localPath);
         }
 
+        // Check for voiceover audioUrl in asset metadata
+        let localAudioPath = null;
+        let voiceoverUrl = req.body.audioUrl;
+        if (!voiceoverUrl && videoTask.asset_id) {
+            const { data: assetData } = await supabaseAdmin.from('assets').select('metadata').eq('id', videoTask.asset_id).maybeSingle();
+            if (assetData?.metadata?.audioUrl) {
+                voiceoverUrl = assetData.metadata.audioUrl;
+            }
+        }
+
+        if (voiceoverUrl && typeof voiceoverUrl === 'string' && voiceoverUrl.startsWith('http')) {
+            try {
+                const cleanAudioUrl = voiceoverUrl.replace('r2.dev/adrolls-storage/', 'r2.dev/');
+                console.log(`[Stitcher] Downloading voiceover audio for stitch: ${cleanAudioUrl}...`);
+                const audioRes = await fetch(cleanAudioUrl);
+                if (audioRes.ok) {
+                    localAudioPath = path.join(tempDir, 'voiceover.mp3');
+                    fs.writeFileSync(localAudioPath, Buffer.from(await audioRes.arrayBuffer()));
+                }
+            } catch (audErr) {
+                console.warn(`[Stitcher] Failed to download voiceover audio:`, audErr.message);
+            }
+        }
+
         // Generate concat.txt
         const concatContent = localFiles.map(file => `file '${file.replace(/\\/g, '/')}'`).join('\n');
         const concatTxtPath = path.join(tempDir, 'concat.txt');
@@ -121,7 +145,9 @@ app.post('/stitch', async (req, res) => {
 
         // Run system FFmpeg cleanly
         const outputPath = path.join(tempDir, 'stitched.mp4');
-        const cmd = `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
+        const cmd = localAudioPath
+            ? `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -ar 48000 -ac 2 -shortest -movflags +faststart "${outputPath}"`
+            : `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
 
         
         console.log(`[Stitcher] Executing FFmpeg: ${cmd}`);
