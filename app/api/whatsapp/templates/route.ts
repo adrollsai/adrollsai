@@ -194,9 +194,9 @@ export async function POST(req: Request) {
                 
                 const mimeType = hType === 'IMAGE' ? 'image/png' : hType === 'VIDEO' ? 'video/mp4' : 'application/pdf'
                 const sampleUrl = hType === 'IMAGE' 
-                    ? 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
+                    ? 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785906182341-offer.jpg'
                     : hType === 'VIDEO'
-                    ? 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
+                    ? 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/42d2e0c5-4fe6-4738-8a9f-63f09be01f12/stitched_1785757278763.mp4'
                     : 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/sample.pdf'
 
                 const headerHandle = await getMetaHeaderHandle(whatsappToken, sampleUrl, mimeType)

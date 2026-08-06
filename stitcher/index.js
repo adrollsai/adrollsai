@@ -421,7 +421,7 @@ app.post('/publish-social', async (req, res) => {
         try {
             const { data: profile } = await supabaseAdmin
                 .from('profiles')
-                .select('selected_page_token, selected_page_id, linkedin_token, linkedin_id, linkedin_urn')
+                .select('selected_page_token, selected_page_id, linkedin_token, linkedin_id, linkedin_urn, facebook_token')
                 .eq('id', targetUserId)
                 .single();
 
@@ -440,11 +440,13 @@ app.post('/publish-social', async (req, res) => {
                 }
             };
 
-            if (platforms.includes('facebook') && profile.selected_page_token) {
-                promises.push(sendToPlatform('facebook', () => postToFacebook(profile.selected_page_token, imageUrl, caption, type, profile.selected_page_id)));
+            const fbToken = profile.selected_page_token || profile.facebook_token;
+
+            if (platforms.includes('facebook') && fbToken) {
+                promises.push(sendToPlatform('facebook', () => postToFacebook(fbToken, imageUrl, caption, type, profile.selected_page_id)));
             }
-            if (platforms.includes('instagram') && profile.selected_page_token && profile.selected_page_id) {
-                promises.push(sendToPlatform('instagram', () => postToInstagram(profile.selected_page_token, profile.selected_page_id, imageUrl, caption, type)));
+            if (platforms.includes('instagram') && fbToken && profile.selected_page_id) {
+                promises.push(sendToPlatform('instagram', () => postToInstagram(fbToken, profile.selected_page_id, imageUrl, caption, type)));
             }
             if (platforms.includes('linkedin') && profile.linkedin_token && profile.linkedin_id) {
                 const authorUrn = profile.linkedin_urn || `urn:li:person:${profile.linkedin_id}`;

@@ -698,12 +698,12 @@ export async function bookAppointment(
         try {
             // Resolve host name and avatar (assigned team member or admin owner)
             let hostName = profile?.full_name || profile?.business_name || 'Team Member'
-            let hostAvatar = profile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
+            let hostAvatar = profile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785906182341-offer.jpg'
             if (hostAvatar.includes('/api/fetch-image?url=')) {
                 try { hostAvatar = decodeURIComponent(hostAvatar.split('/api/fetch-image?url=')[1]); } catch (e) {}
             }
             if (!hostAvatar.startsWith('http')) {
-                hostAvatar = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
+                hostAvatar = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785906182341-offer.jpg'
             }
 
             if (lead?.assigned_to) {

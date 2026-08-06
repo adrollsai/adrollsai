@@ -43,105 +43,57 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No social platforms selected' }, { status: 400 })
     }
 
-    const workerPayload = { targetUserId, imageUrl, caption, type, platforms };
-
-    // 2. OPTION A: QUEUE VIA UPSTASH QSTASH (Guaranteed queue, rate limiting & automatic retries)
-    const qstashToken = process.env.QSTASH_TOKEN;
-    if (qstashToken) {
-      try {
-        console.log(`[Post Universal] Queueing social post via Upstash QStash for user: ${targetUserId}`);
-        const qstashPublishUrl = `https://qstash.upstash.io/v2/publish/${CLOUD_RUN_WORKER_URL}`;
-        const qstashRes = await fetch(qstashPublishUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${qstashToken}`,
-            'Content-Type': 'application/json',
-            'Upstash-Retries': '3'
-          },
-          body: JSON.stringify(workerPayload)
-        });
-
-        if (qstashRes.ok) {
-          return NextResponse.json({
-            success: true,
-            status: 'queued',
-            message: 'Social broadcast queued in QStash message queue! Your posts are publishing asynchronously in the background.'
-          }, { status: 202 });
-        }
-      } catch (qstashErr: any) {
-        console.warn("[Post Universal] QStash publishing error, falling back to direct Cloud Run worker:", qstashErr?.message);
-      }
-    }
-
-    // 3. OPTION B: DIRECT DISPATCH TO CLOUD RUN WORKER (Scale-ready, 0 Vercel limits)
-    try {
-      console.log(`[Post Universal] Dispatching async social post payload directly to Cloud Run worker for user: ${targetUserId}`);
-      const workerRes = await fetch(CLOUD_RUN_WORKER_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(workerPayload)
-      });
-
-      if (workerRes.status === 202 || workerRes.ok) {
-        return NextResponse.json({
-          success: true,
-          status: 'queued',
-          message: 'Social broadcast dispatched to Cloud Run background worker! Your posts are publishing asynchronously.'
-        }, { status: 202 });
-      }
-    } catch (workerError: any) {
-      console.warn("[Post Universal] Cloud Run worker dispatch warning, continuing with fallback execution:", workerError?.message);
-    }
-
-    // 4. FALLBACK: Synchronous Serverless Execution
+    // 1. Direct synchronous execution across all connected platforms for instant publishing
     const { data: profile } = await supabase
       .from('profiles')
-      .select('selected_page_token, selected_page_id, linkedin_token, linkedin_id, linkedin_urn')
+      .select('selected_page_token, selected_page_id, linkedin_token, linkedin_id, linkedin_urn, facebook_token')
       .eq('id', targetUserId)
-      .single()
+      .single();
 
-    if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    if (!profile) return NextResponse.json({ error: 'User profile or social credentials not found' }, { status: 404 });
     const userProfile = profile;
 
-    const results: Record<string, string> = {}
-    const promises: Promise<void>[] = []
+    const results: Record<string, string> = {};
+    const promises: Promise<void>[] = [];
 
     const sendToPlatform = async (platform: string, fn: () => Promise<any>) => {
       try {
-        const res = await fn()
-        results[platform] = res?.status || 'success'
+        const res = await fn();
+        results[platform] = res?.status || 'success';
       } catch (error: any) {
-        const errorMessage = error.message || 'Unknown Error'
-        console.error(`[Universal Post Fallback] ${platform} failed:`, errorMessage)
-        results[platform] = `Failed: ${errorMessage.substring(0, 150)}`
+        const errorMessage = error.message || 'Unknown Error';
+        console.error(`[Universal Post] ${platform} failed:`, errorMessage);
+        results[platform] = `Failed: ${errorMessage.substring(0, 150)}`;
       }
-    }
+    };
 
-    if (platforms.includes('facebook') && userProfile.selected_page_token) {
-      promises.push(sendToPlatform('facebook', () => postToFacebook(userProfile.selected_page_token!, imageUrl, caption, type, userProfile.selected_page_id || undefined)))
+    const fbToken = userProfile.selected_page_token || userProfile.facebook_token;
+
+    if (platforms.includes('facebook') && fbToken) {
+      promises.push(sendToPlatform('facebook', () => postToFacebook(fbToken, imageUrl, caption, type, userProfile.selected_page_id || undefined)));
     }
-    if (platforms.includes('instagram') && userProfile.selected_page_token && userProfile.selected_page_id) {
-      promises.push(sendToPlatform('instagram', () => postToInstagram(userProfile.selected_page_token!, userProfile.selected_page_id!, imageUrl, caption, type)))
+    if (platforms.includes('instagram') && fbToken && userProfile.selected_page_id) {
+      promises.push(sendToPlatform('instagram', () => postToInstagram(fbToken, userProfile.selected_page_id!, imageUrl, caption, type)));
     }
     if (platforms.includes('linkedin') && userProfile.linkedin_token && userProfile.linkedin_id) {
-      const authorUrn = userProfile.linkedin_urn || `urn:li:person:${userProfile.linkedin_id}`
-      promises.push(sendToPlatform('linkedin', () => postToLinkedin(userProfile.linkedin_token!, authorUrn, imageUrl, caption, type)))
+      const authorUrn = userProfile.linkedin_urn || `urn:li:person:${userProfile.linkedin_id}`;
+      promises.push(sendToPlatform('linkedin', () => postToLinkedin(userProfile.linkedin_token!, authorUrn, imageUrl, caption, type)));
     }
 
-    await Promise.all(promises)
+    await Promise.all(promises);
 
-    const hasSuccess = Object.values(results).some(val => val === 'success' || val === 'scheduled')
+    const hasSuccess = Object.values(results).some(val => val === 'success' || val === 'scheduled');
     if (hasSuccess) {
       try {
         await supabase.from('posts').insert({
           user_id: targetUserId,
-          title: 'Social Post',
+          title: 'Universal Social Post',
           content: caption || '',
           image_url: imageUrl || null,
           status: 'social_published'
-        })
+        });
       } catch (insertErr) {
-        console.error("[Universal Post Fallback] Insert post record error:", insertErr)
+        console.error("[Universal Post Fallback] Insert post record error:", insertErr);
       }
     }
 
@@ -157,10 +109,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ 
       success: hasSuccess, 
       results,
-      message: `Social media broadcast finished! Published to ${successCount} platform(s).` 
-    })
+      message: `Publish Everywhere finished! Successfully posted to ${successCount} platform(s).` 
+    });
   } catch (err: any) {
-    console.error("[Universal Post Error]:", err)
-    return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 })
+    console.error("[Universal Post Error]:", err);
+    return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 });
   }
 }

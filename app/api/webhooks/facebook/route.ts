@@ -171,6 +171,16 @@ export async function POST(request: Request) {
             for (const change of entry.changes) {
                 if (change.field === 'messages') {
                     const val = change.value;
+                    const statuses = val.statuses || [];
+                    if (statuses.length > 0) {
+                        for (const statusObj of statuses) {
+                            console.log(`[WHATSAPP WEBHOOK STATUS] Message ID: ${statusObj.id}, Status: ${statusObj.status}, Recipient: ${statusObj.recipient_id}`);
+                            if (statusObj.errors) {
+                                console.error(`[WHATSAPP WEBHOOK STATUS ERROR] Message ID: ${statusObj.id}, Errors:`, JSON.stringify(statusObj.errors, null, 2));
+                            }
+                        }
+                    }
+
                     const messages = val.messages || [];
                       for (const message of messages) {
                         const msgId = message.id;

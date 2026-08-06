@@ -63,50 +63,30 @@ export async function POST(req: Request) {
                         if (Array.isArray(templateDef.components)) {
                             // 1. HEADER component check (IMAGE, VIDEO, DOCUMENT, TEXT with parameters)
                             const headerComp = templateDef.components.find((c: any) => c.type === 'HEADER');
-                            const defaultVideo = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4';
-                            const defaultImage = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png';
-                            
                             const sanitizeMediaUrl = (u: string | null) => u ? u.replace('r2.dev/adrolls-storage/', 'r2.dev/') : null;
                             const providedMedia = sanitizeMediaUrl(headerMediaUrl || null);
 
                             if (headerComp) {
-                                if (headerComp.format === 'VIDEO') {
+                                const fmt = (headerComp.format || '').toUpperCase();
+                                if (['VIDEO', 'IMAGE', 'DOCUMENT'].includes(fmt)) {
+                                    if (!providedMedia) {
+                                        return NextResponse.json({
+                                            error: `Header media (${fmt}) is required for template '${payloadTemplateName}'. Please select or upload a media file.`
+                                        }, { status: 400 });
+                                    }
+                                    const mediaTypeKey = fmt.toLowerCase();
                                     components.push({
                                         type: 'header',
                                         parameters: [
                                             {
-                                                type: 'video',
-                                                video: {
-                                                    link: providedMedia || defaultVideo
+                                                type: mediaTypeKey,
+                                                [mediaTypeKey]: {
+                                                    link: providedMedia
                                                 }
                                             }
                                         ]
                                     });
-                                } else if (headerComp.format === 'IMAGE') {
-                                    components.push({
-                                        type: 'header',
-                                        parameters: [
-                                            {
-                                                type: 'image',
-                                                image: {
-                                                    link: providedMedia || defaultImage
-                                                }
-                                            }
-                                        ]
-                                    });
-                                } else if (headerComp.format === 'DOCUMENT') {
-                                    components.push({
-                                        type: 'header',
-                                        parameters: [
-                                            {
-                                                type: 'document',
-                                                document: {
-                                                    link: providedMedia || defaultVideo
-                                                }
-                                            }
-                                        ]
-                                    });
-                                } else if (headerComp.format === 'TEXT' && headerComp.text && headerComp.text.includes('{{1}}')) {
+                                } else if (fmt === 'TEXT' && headerComp.text && headerComp.text.includes('{{1}}')) {
                                     components.push({
                                         type: 'header',
                                         parameters: [{ type: 'text', text: 'Valued Customer' }]
@@ -153,20 +133,6 @@ export async function POST(req: Request) {
             const rawProvided = Array.isArray(parameters) && parameters.length > 0
                 ? parameters
                 : (Array.isArray(variableValues) ? variableValues : []);
-
-            if (payloadTemplateName.toLowerCase().includes('vsl') || payloadTemplateName.toLowerCase().includes('video')) {
-                components.push({
-                    type: 'header',
-                    parameters: [
-                        {
-                            type: 'video',
-                            video: {
-                                link: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
-                            }
-                        }
-                    ]
-                });
-            }
 
             if (rawProvided.length > 0) {
                 const bodyParams = rawProvided.map((p: any, idx: number) => {
@@ -247,6 +213,56 @@ export async function POST(req: Request) {
         const messageStatus = metaData.messages?.[0]?.message_status;
         
         console.log('[WHATSAPP TEST SEND] ✅ Message accepted by Meta. ID:', messageId, 'Status:', messageStatus || 'accepted');
+
+        // Persist sent template message to DB for conversation history
+        try {
+            const rawPhoneDigits = cleanRecipient.replace(/\D/g, '');
+            const nowIso = new Date().toISOString();
+
+            // 1. Get or create WhatsApp chat
+            let { data: existingChat } = await supabase
+                .from('whatsapp_chats')
+                .select('id')
+                .eq('user_id', user.id)
+                .eq('recipient_phone', rawPhoneDigits)
+                .maybeSingle();
+
+            if (!existingChat) {
+                const { data: newChat } = await supabase
+                    .from('whatsapp_chats')
+                    .insert({
+                        user_id: user.id,
+                        recipient_phone: rawPhoneDigits,
+                        recipient_name: '+' + rawPhoneDigits,
+                        unread_count: 0,
+                        last_message_text: `Sent Template: ${payloadTemplateName}`,
+                        updated_at: nowIso
+                    })
+                    .select('id')
+                    .single();
+                existingChat = newChat;
+            } else {
+                await supabase
+                    .from('whatsapp_chats')
+                    .update({
+                        last_message_text: `Sent Template: ${payloadTemplateName}`,
+                        updated_at: nowIso
+                    })
+                    .eq('id', existingChat.id);
+            }
+
+            // 2. Insert WhatsApp message record
+            if (existingChat?.id) {
+                await supabase.from('whatsapp_messages').insert({
+                    chat_id: existingChat.id,
+                    direction: 'outbound',
+                    message_text: `Sent Template: ${payloadTemplateName}`,
+                    created_at: nowIso
+                });
+            }
+        } catch (dbErr) {
+            console.warn('[WHATSAPP TEST SEND] DB record insertion warning (non-fatal):', dbErr);
+        }
 
         return NextResponse.json({ 
             success: true, 

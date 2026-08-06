@@ -31,6 +31,14 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "50mb",
     },
   },
+  webpack: (config) => {
+    config.ignoreWarnings = [
+      /Failed to parse source map/,
+      /Invalid source map/,
+      /sourceMapURL could not be parsed/,
+    ];
+    return config;
+  },
 };
 
 export default pwa(nextConfig);
