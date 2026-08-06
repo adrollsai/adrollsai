@@ -280,22 +280,30 @@ async function postToInstagram(accessToken, pageId, mediaUrl, caption, type = 'i
     }
     const creationId = containerData.id;
 
-    if (isVideo) {
-        let status = 'IN_PROGRESS';
-        let attempts = 0;
-        while (status !== 'FINISHED' && attempts < 25) {
-            await new Promise(r => setTimeout(r, 5000));
+    let status = 'IN_PROGRESS';
+    let attempts = 0;
+    const maxAttempts = isVideo ? 25 : 6;
+    const pollInterval = isVideo ? 5000 : 2000;
+
+    while (status !== 'FINISHED' && status !== 'FINISHED_DOWNLOADING' && attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, pollInterval));
+        try {
             const statusRes = await fetch(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code,status_description&access_token=${accessToken}`);
             const statusData = await statusRes.json();
-            status = statusData.status_code;
+            if (statusData.status_code) {
+                status = statusData.status_code;
+            } else if (!isVideo) {
+                status = 'FINISHED';
+            }
             if (status === 'ERROR') {
                 throw new Error(`Instagram processing failed: ${statusData.status_description || 'Meta processing error'}`);
             }
-            attempts++;
+        } catch (pollErr) {
+            if (!isVideo) status = 'FINISHED';
         }
+        attempts++;
     }
 
-    await new Promise(r => setTimeout(r, 3000));
     console.log(`[Stitcher Worker] Publishing IG media container ${creationId}...`);
     const publishRes = await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
         method: 'POST',

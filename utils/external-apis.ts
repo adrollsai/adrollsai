@@ -347,57 +347,63 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     }
     const creationId = containerData.id;
 
-    // 4. POLL STATUS FOR VIDEOS (Max 24s synchronous wait to avoid Cloudflare 524 timeout)
-    if (isVideo) {
-        let status = 'IN_PROGRESS';
-        let attempts = 0;
-        const maxSyncAttempts = 8; // 8 x 3s = 24s max wait
+    // 4. POLL STATUS FOR BOTH IMAGES AND VIDEOS
+    let status = 'IN_PROGRESS';
+    let attempts = 0;
+    const maxSyncAttempts = isVideo ? 8 : 5; // 24s max for videos, 10s max for images
+    const pollInterval = isVideo ? 3000 : 2000;
 
-        while (status !== 'FINISHED' && attempts < maxSyncAttempts) {
-            await new Promise(resolve => setTimeout(resolve, 3000)); // 3s polling
+    while (status !== 'FINISHED' && status !== 'FINISHED_DOWNLOADING' && attempts < maxSyncAttempts) {
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        try {
             const statusRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code,status_description&access_token=${accessToken}`, {});
             const statusData = await statusRes.json();
-            status = statusData.status_code;
             
+            if (statusData.status_code) {
+                status = statusData.status_code;
+            } else if (!isVideo) {
+                // If Meta doesn't return status_code for an image container, it is ready for publishing
+                status = 'FINISHED';
+            }
+
             if (status === 'ERROR') {
                 throw new Error(`Instagram processing failed: ${statusData.status_description || 'Unknown Meta processing error'}`);
             }
-            attempts++;
+        } catch (pollErr: any) {
+            if (pollErr.message?.includes('Instagram processing failed')) throw pollErr;
+            if (!isVideo) status = 'FINISHED';
         }
+        attempts++;
+    }
 
-        // If Meta is still processing after 24s, fire async background publishing pass
-        if (status !== 'FINISHED') {
-            console.log(`[Instagram API] Video container ${creationId} still processing. Offloading publication to background loop...`);
-            (async () => {
-                let bgStatus = 'IN_PROGRESS';
-                let bgAttempts = 0;
-                while (bgStatus !== 'FINISHED' && bgAttempts < 20) {
-                    await new Promise(resolve => setTimeout(resolve, 8000));
-                    try {
-                        const sRes = await fetch(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code&access_token=${accessToken}`);
-                        const sData = await sRes.json();
-                        bgStatus = sData.status_code;
-                        if (bgStatus === 'FINISHED') {
-                            await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ creation_id: creationId, access_token: accessToken })
-                            });
-                            console.log(`[Instagram API] Background Reel publication successful for ${creationId}!`);
-                            break;
-                        }
-                    } catch (e) {}
-                    bgAttempts++;
-                }
-            })();
-            return { id: creationId, status: 'scheduled' };
-        }
+    if (isVideo && status !== 'FINISHED' && status !== 'FINISHED_DOWNLOADING') {
+        console.log(`[Instagram API] Video container ${creationId} still processing. Offloading publication to background loop...`);
+        (async () => {
+            let bgStatus = 'IN_PROGRESS';
+            let bgAttempts = 0;
+            while (bgStatus !== 'FINISHED' && bgAttempts < 20) {
+                await new Promise(resolve => setTimeout(resolve, 8000));
+                try {
+                    const sRes = await fetch(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code&access_token=${accessToken}`);
+                    const sData = await sRes.json();
+                    bgStatus = sData.status_code;
+                    if (bgStatus === 'FINISHED' || bgStatus === 'FINISHED_DOWNLOADING') {
+                        await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ creation_id: creationId, access_token: accessToken })
+                        });
+                        console.log(`[Instagram API] Background Reel publication successful for ${creationId}!`);
+                        break;
+                    }
+                } catch (e) {}
+                bgAttempts++;
+            }
+        })();
+        return { id: creationId, status: 'scheduled' };
     }
 
     // 5. Publish Container Synchronously
-    console.log(`[Instagram API] Waiting for container ${creationId} readiness on Meta servers...`);
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
     console.log(`[Instagram API] Publishing IG media container ${creationId}...`);
     const publishRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
         method: 'POST',
