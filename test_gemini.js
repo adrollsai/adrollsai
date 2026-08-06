@@ -42,7 +42,7 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
 }
 `;
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   const result = await model.generateContent(geminiPrompt);
   const text = result.response.text();
   console.log('Gemini JSON output:\n', text);

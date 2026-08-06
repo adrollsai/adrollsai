@@ -55,7 +55,7 @@ app.post('/prewarm', async (req, res) => {
         ]);
 
         const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-        const tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${defaultApiKey || ''}`);
+        const tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${defaultApiKey || ''}`);
 
         const prewarmedEntry = {
             leadId,
@@ -529,7 +529,7 @@ wss.on('connection', (wsConnection) => {
                     ]);
 
                     console.log('[BRIDGE] Connecting to Gemini Live WebSocket concurrently...');
-                    tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${defaultApiKey || ''}`);
+                    tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${defaultApiKey || ''}`);
                 }
 
 
@@ -875,7 +875,7 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                 if (customApiKey && customApiKey !== defaultApiKey) {
                     console.log('[BRIDGE] Custom API Key found in profile. Reconnecting with tenant key...');
                     tempSocket.close();
-                    tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${customApiKey}`);
+                    tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${customApiKey}`);
                 }
                 geminiSocket = tempSocket;
                 geminiApiKey = customApiKey || defaultApiKey;
@@ -1213,7 +1213,7 @@ Do NOT use markdown headers, bold, bullets, or lists. Output only a single clean
 Transcript:
 ${fullTranscript}
 `.trim();
-                    const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${geminiApiKey}`;
+                    const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
                     const summaryRes = await fetch(restUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },

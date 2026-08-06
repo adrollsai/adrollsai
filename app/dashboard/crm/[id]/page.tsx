@@ -7,6 +7,8 @@ import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
 import WhatsAppLivePreview from '@/components/WhatsAppLivePreview'
+import CallFeedbackModal from '@/components/CallFeedbackModal'
+import { PhoneOff } from 'lucide-react'
 
 const STAGES = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
 
@@ -75,7 +77,8 @@ export default function LeadProfilePage() {
     const [isCalling, setIsCalling] = useState(false)
     const [showTranscript, setShowTranscript] = useState(false)
 
-    // Call history states
+    // Call feedback & history states
+    const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
     const [selectedHistoryCall, setSelectedHistoryCall] = useState<any>(null)
     const [isAllHistoryModalOpen, setIsAllHistoryModalOpen] = useState(false)
@@ -961,6 +964,11 @@ END:VCARD`
                             <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md border border-blue-200 shrink-0">
                                 {lead.pipeline_stage || 'New'}
                             </span>
+                            {(lead.dnp_count > 0 || lead.custom_fields?.dnp_count > 0) && (
+                                <span className="text-[10px] font-black bg-rose-50 text-rose-600 px-2 py-0.5 rounded-md border border-rose-200 shrink-0 flex items-center gap-1">
+                                    <PhoneOff size={10} /> DNP x{lead.dnp_count || lead.custom_fields?.dnp_count}
+                                </span>
+                            )}
                             <span className="text-[10px] font-bold text-slate-400 bg-slate-100 border border-slate-200/60 px-2 py-0.5 rounded-md shrink-0">
                                 📅 Created: {new Date(lead.facebook_created_at || lead.created_at).toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}
                             </span>
@@ -1008,7 +1016,14 @@ END:VCARD`
                                     <span>Send Template</span>
                                 </button>
                                 <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors shrink-0" title="Direct WhatsApp Chat"><MessageCircle size={16} /></a>
-                                <a href={`tel:${formatCallPhone(lead.phone)}`} className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full shadow-sm transition-colors shrink-0" title="Call Lead"><Phone size={16} /></a>
+                                <a 
+                                    href={`tel:${formatCallPhone(lead.phone)}`} 
+                                    onClick={() => setIsFeedbackOpen(true)}
+                                    className="p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-full shadow-sm transition-colors shrink-0" 
+                                    title="Call Lead & Log Feedback"
+                                >
+                                    <Phone size={16} />
+                                </a>
                             </div>
                         )}
                     </div>
@@ -2143,6 +2158,14 @@ END:VCARD`
                 </div>
             )}
 
+            {/* CALL FEEDBACK MODAL */}
+            <CallFeedbackModal
+                isOpen={isFeedbackOpen}
+                lead={lead}
+                onClose={() => setIsFeedbackOpen(false)}
+                onSuccess={() => { fetchLeadData(); fetchLeadHistory(); }}
+                currentUserId={impersonateId || undefined}
+            />
         </div>
     )
 }

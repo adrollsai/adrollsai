@@ -88,10 +88,10 @@ export async function GET(req: Request) {
                 break
         }
 
-        // 1. Fetch CRM Leads
+        // 1. Fetch CRM Leads with DNP and call metrics
         let leadsQuery = dbClient
             .from('leads')
-            .select('id, created_at, pipeline_stage, assigned_to, name, phone, email, source')
+            .select('id, created_at, pipeline_stage, assigned_to, name, phone, email, source, dnp_count, last_call_at, last_call_status, last_called_by, custom_fields')
             .eq('user_id', workspaceOwnerId)
 
         if (startDate) {
@@ -150,7 +150,22 @@ export async function GET(req: Request) {
             finalMessages = messages || []
         }
 
-        // 3. Fetch Team Performance if current user is admin/owner
+        // 3. Fetch Call History logs for Call & DNP activity
+        let historyQuery = dbClient
+            .from('lead_history')
+            .select('id, lead_id, user_id, action_type, description, created_at')
+        
+        if (startDate) {
+            historyQuery = historyQuery.gte('created_at', startDate.toISOString())
+        }
+        if (endDate) {
+            historyQuery = historyQuery.lte('created_at', endDate.toISOString())
+        }
+
+        const { data: leadHistoryData } = await historyQuery
+        const safeLeadHistory = leadHistoryData || []
+
+        // 4. Fetch Team Performance if current user is admin/owner
         let teamData: any[] = []
         if (myRole !== 'agent') {
             const { data: teamMembers, error: teamErr } = await dbClient
@@ -164,7 +179,7 @@ export async function GET(req: Request) {
                 // Fetch ALL leads of workspace to compute breakdown
                 let allWorkspaceLeadsQuery = dbClient
                     .from('leads')
-                    .select('id, created_at, pipeline_stage, assigned_to')
+                    .select('id, created_at, pipeline_stage, assigned_to, dnp_count, last_call_at, last_call_status, last_called_by, custom_fields')
                     .eq('user_id', workspaceOwnerId)
 
                 if (startDate) {
@@ -205,10 +220,21 @@ export async function GET(req: Request) {
 
                 teamData = teamMembers.map(member => {
                     const memberLeads = safeAllLeads.filter(l => l.assigned_to === member.id)
-                    const wonLeads = memberLeads.filter(l => l.pipeline_stage === 'Won' || l.pipeline_stage === 'Closed').length
-                    const lostLeads = memberLeads.filter(l => l.pipeline_stage === 'Lost' || l.pipeline_stage === 'Unqualified').length
+                    const wonLeads = memberLeads.filter(l => ['Won', 'Closed', 'Appointment done'].includes(l.pipeline_stage)).length
+                    const qualifiedLeads = memberLeads.filter(l => ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won'].includes(l.pipeline_stage)).length
+                    const lostLeads = memberLeads.filter(l => ['Lost', 'Unqualified'].includes(l.pipeline_stage)).length
                     
-                    // Map lead IDs assigned to this member
+                    // Map call attempts & DNP by this member
+                    const memberCallLogs = safeLeadHistory.filter(h => h.user_id === member.id && ['CALL_INITIATED', 'CALL_FEEDBACK', 'DNP', 'VOICE_CALL'].includes(h.action_type))
+                    const memberDnpLogs = safeLeadHistory.filter(h => h.user_id === member.id && (h.action_type === 'DNP' || (h.description && h.description.includes('DNP'))))
+                    
+                    // Sum DNP count from member leads
+                    const totalDnpOnLeads = memberLeads.reduce((acc, l) => {
+                        const count = l.dnp_count || l.custom_fields?.dnp_count || 0
+                        return acc + count
+                    }, 0)
+
+                    // Map lead IDs assigned to this member for WhatsApp
                     const memberLeadIds = new Set(memberLeads.map(l => l.id))
                     const memberChats = safeAllChats.filter(c => c.lead_id && memberLeadIds.has(c.lead_id))
                     const memberChatIds = new Set(memberChats.map(c => c.id))
@@ -216,6 +242,8 @@ export async function GET(req: Request) {
                     const memberMessages = allMessages.filter(m => memberChatIds.has(m.chat_id))
                     const inboundMessages = memberMessages.filter(m => m.direction === 'inbound').length
                     const outboundMessages = memberMessages.filter(m => m.direction === 'outbound').length
+
+                    const conversionRate = memberLeads.length > 0 ? ((qualifiedLeads / memberLeads.length) * 100).toFixed(1) : '0.0'
 
                     return {
                         id: member.id,
@@ -225,11 +253,15 @@ export async function GET(req: Request) {
                         metrics: {
                             leadsCount: memberLeads.length,
                             wonCount: wonLeads,
+                            qualifiedCount: qualifiedLeads,
                             lostCount: lostLeads,
+                            callsCount: Math.max(memberCallLogs.length, memberLeads.filter(l => l.last_called_by === member.id).length),
+                            dnpCount: Math.max(totalDnpOnLeads, memberDnpLogs.length),
                             chatsCount: memberChats.length,
                             messagesCount: memberMessages.length,
                             inboundCount: inboundMessages,
-                            outboundCount: outboundMessages
+                            outboundCount: outboundMessages,
+                            conversionRate
                         }
                     }
                 })
@@ -245,6 +277,7 @@ export async function GET(req: Request) {
             leads: finalLeads,
             chats: finalChats,
             messages: finalMessages,
+            history: safeLeadHistory,
             team: teamData
         })
 

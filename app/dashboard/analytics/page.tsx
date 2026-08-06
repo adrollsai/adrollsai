@@ -22,7 +22,9 @@ import {
   Shield,
   User,
   Sliders,
-  DollarSign
+  DollarSign,
+  Phone,
+  PhoneOff
 } from 'lucide-react'
 
 // Render simple markdown headers, bolding, and lists into JSX
@@ -222,6 +224,16 @@ export default function AnalyticsPage() {
     const inProgress = totalLeads - wonLeads - lostLeads
     const conversionRate = totalLeads > 0 ? ((wonLeads / totalLeads) * 100).toFixed(1) : '0.0'
 
+    // Calls & DNP breakdown
+    const totalCalls = Math.max(
+      leads.filter(l => l.last_call_at || l.last_call_status).length,
+      team.reduce((acc, t) => acc + (t.metrics?.callsCount || 0), 0)
+    )
+    const totalDnp = Math.max(
+      leads.reduce((acc, l) => acc + (l.dnp_count || l.custom_fields?.dnp_count || 0), 0),
+      team.reduce((acc, t) => acc + (t.metrics?.dnpCount || 0), 0)
+    )
+
     // WhatsApp breakdown
     const waInbound = messages.filter(m => m.direction === 'inbound').length
     const waOutbound = messages.filter(m => m.direction === 'outbound').length
@@ -241,13 +253,15 @@ export default function AnalyticsPage() {
       lostLeads,
       inProgress,
       conversionRate,
+      totalCalls,
+      totalDnp,
       waInbound,
       waOutbound,
       waTotal,
       responseRatio,
       stageBreakdown
     }
-  }, [leads, messages])
+  }, [leads, messages, team])
 
   // --- CHART DATA GENERATION ---
   // A. Leads Timeline Chart
@@ -449,61 +463,89 @@ export default function AnalyticsPage() {
         <div className="space-y-8">
           
           {/* OVERVIEW KEY CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
             
             {/* Total Leads Card */}
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-6 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
+            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-5 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
               <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Total CRM Leads</span>
-                <span className="text-3xl font-black text-[#001D35] tracking-tight">{stats.totalLeads}</span>
-                <span className="text-xs text-emerald-600 font-extrabold flex items-center gap-1 mt-2">
-                  <ArrowUpRight size={14} /> Active Period
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">CRM Leads</span>
+                <span className="text-2xl font-black text-[#001D35] tracking-tight">{stats.totalLeads}</span>
+                <span className="text-[11px] text-emerald-600 font-extrabold flex items-center gap-1 mt-1.5">
+                  <ArrowUpRight size={13} /> Active
                 </span>
               </div>
-              <div className="bg-blue-50 p-4 rounded-3xl text-blue-600 group-hover:scale-110 transition-transform">
-                <Users size={24} />
+              <div className="bg-blue-50 p-3.5 rounded-2xl text-blue-600 group-hover:scale-110 transition-transform shrink-0">
+                <Users size={20} />
+              </div>
+            </div>
+
+            {/* Total Calls Card */}
+            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-5 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Calls Initiated</span>
+                <span className="text-2xl font-black text-emerald-600 tracking-tight">{stats.totalCalls}</span>
+                <span className="text-[11px] text-slate-400 font-extrabold block mt-1.5">
+                  Manual & Voice
+                </span>
+              </div>
+              <div className="bg-emerald-50 p-3.5 rounded-2xl text-emerald-600 group-hover:scale-110 transition-transform shrink-0">
+                <Phone size={20} />
+              </div>
+            </div>
+
+            {/* Total DNP Card */}
+            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-5 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">DNP Count</span>
+                <span className="text-2xl font-black text-rose-600 tracking-tight">{stats.totalDnp}</span>
+                <span className="text-[11px] text-rose-500 font-extrabold block mt-1.5">
+                  Did Not Pick
+                </span>
+              </div>
+              <div className="bg-rose-50 p-3.5 rounded-2xl text-rose-600 group-hover:scale-110 transition-transform shrink-0">
+                <PhoneOff size={20} />
               </div>
             </div>
 
             {/* Won Conversions Card */}
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-6 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
+            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-5 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
               <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Won Conversions</span>
-                <span className="text-3xl font-black text-[#001D35] tracking-tight">{stats.wonLeads}</span>
-                <span className="text-xs text-indigo-600 font-extrabold flex items-center gap-1 mt-2">
-                  In progress: {stats.inProgress}
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Won Deals</span>
+                <span className="text-2xl font-black text-[#001D35] tracking-tight">{stats.wonLeads}</span>
+                <span className="text-[11px] text-indigo-600 font-extrabold flex items-center gap-1 mt-1.5">
+                  Active: {stats.inProgress}
                 </span>
               </div>
-              <div className="bg-emerald-50 p-4 rounded-3xl text-emerald-600 group-hover:scale-110 transition-transform">
-                <CheckCircle2 size={24} />
+              <div className="bg-emerald-50 p-3.5 rounded-2xl text-emerald-600 group-hover:scale-110 transition-transform shrink-0">
+                <CheckCircle2 size={20} />
               </div>
             </div>
 
             {/* Conversion Rate Card */}
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-6 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
+            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-5 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
               <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Conversion Rate</span>
-                <span className="text-3xl font-black text-[#001D35] tracking-tight">{stats.conversionRate}%</span>
-                <span className="text-xs text-indigo-500 font-extrabold block mt-2">
-                  Won leads / Total leads
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Conversion %</span>
+                <span className="text-2xl font-black text-[#001D35] tracking-tight">{stats.conversionRate}%</span>
+                <span className="text-[11px] text-indigo-500 font-extrabold block mt-1.5">
+                  Won / Total
                 </span>
               </div>
-              <div className="bg-indigo-50 p-4 rounded-3xl text-indigo-600 group-hover:scale-110 transition-transform">
-                <TrendingUp size={24} />
+              <div className="bg-indigo-50 p-3.5 rounded-2xl text-indigo-600 group-hover:scale-110 transition-transform shrink-0">
+                <TrendingUp size={20} />
               </div>
             </div>
 
             {/* WhatsApp Messages Card */}
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-6 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
+            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-5 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
               <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">WhatsApp Messages</span>
-                <span className="text-3xl font-black text-[#001D35] tracking-tight">{stats.waTotal}</span>
-                <span className="text-xs text-blue-600 font-extrabold flex items-center gap-1 mt-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">WhatsApp</span>
+                <span className="text-2xl font-black text-[#001D35] tracking-tight">{stats.waTotal}</span>
+                <span className="text-[11px] text-blue-600 font-extrabold flex items-center gap-1 mt-1.5">
                   In: {stats.waInbound} | Out: {stats.waOutbound}
                 </span>
               </div>
-              <div className="bg-teal-50 p-4 rounded-3xl text-teal-600 group-hover:scale-110 transition-transform">
-                <MessageCircle size={24} />
+              <div className="bg-teal-50 p-3.5 rounded-2xl text-teal-600 group-hover:scale-110 transition-transform shrink-0">
+                <MessageCircle size={20} />
               </div>
             </div>
 

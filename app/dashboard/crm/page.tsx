@@ -5,13 +5,15 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { 
   Search, Phone, MessageCircle, RefreshCw, Upload, 
   Plus, CheckCircle2, X, Download, Trash2, UserPlus, 
-  Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, FileText, Send, HelpCircle, Target
+  Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, FileText, Send, HelpCircle, Target,
+  LayoutGrid, List, PhoneCall, PhoneOff, RotateCcw
 } from 'lucide-react'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { createClient } from '@/utils/supabase/client'
 import TestNotificationBtn from '@/components/TestNotificationBtn'
 import { toast } from 'sonner'
 import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
+import CallFeedbackModal from '@/components/CallFeedbackModal'
 
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
@@ -97,8 +99,27 @@ export default function CRMPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCampaign, setSelectedCampaign] = useState('')
   const [selectedForm, setSelectedForm] = useState('')
-  const [selectedCsvAudience, setSelectedCsvAudience] = useState('')
   const [showFilters, setShowFilters] = useState(false)
+
+  // --- VIEW MODE & DNP MANAGER STATE ---
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>(() => {
+    if (typeof window !== 'undefined') {
+      return (sessionStorage.getItem('crm_view_mode') as 'cards' | 'table') || 'cards'
+    }
+    return 'cards'
+  })
+
+  const setViewModeState = (mode: 'cards' | 'table') => {
+    setViewMode(mode)
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('crm_view_mode', mode)
+    }
+  }
+
+  const [selectedDnpFilter, setSelectedDnpFilter] = useState<'ALL' | 'DNP_ONLY' | 'DNP_1' | 'DNP_2' | 'DNP_3PLUS' | 'NO_DNP'>('ALL')
+  const [selectedAgentFilter, setSelectedAgentFilter] = useState<string>('ALL')
+  const [selectedDateRange, setSelectedDateRange] = useState<string>('ALL')
+  const [callFeedbackLead, setCallFeedbackLead] = useState<any>(null)
   
   const [currentPage, setCurrentPageState] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -1390,11 +1411,12 @@ END:VCARD\n`
             </div>
         </div>
 
-        {/* SEARCH & FILTERS BAR */}
+        {/* SEARCH, VIEW SWITCHER & FILTERS BAR */}
         <div className="bg-white p-4 sm:p-5 rounded-[1.5rem] xs:rounded-[2rem] shadow-sm border border-slate-200/60 mb-8 space-y-4">
             
-            <div className="flex flex-col md:flex-row gap-3">
-                <div className="relative flex-1">
+            <div className="flex flex-col md:flex-row items-center gap-3">
+                {/* Search Input */}
+                <div className="relative flex-1 w-full">
                     <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input 
                         type="text" 
@@ -1404,41 +1426,124 @@ END:VCARD\n`
                         className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white pl-12 pr-5 py-3.5 rounded-2xl text-sm font-medium border border-slate-200/60 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all" 
                     />
                 </div>
+
+                {/* View Mode Switcher (Cards vs Table List) */}
+                <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center gap-1 border border-slate-200/80 shrink-0 self-stretch sm:self-auto justify-center">
+                    <button
+                        type="button"
+                        onClick={() => setViewModeState('cards')}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all ${
+                            viewMode === 'cards'
+                                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
+                                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
+                                : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                        title="Cards View"
+                    >
+                        <LayoutGrid size={15} /> Grid Cards
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setViewModeState('table')}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all ${
+                            viewMode === 'table'
+                                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
+                                : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                        title="Table List View"
+                    >
+                        <List size={15} /> List Table
+                    </button>
+                </div>
+
                 <button 
                     onClick={() => setShowFilters(!showFilters)}
-                    className={`px-5 py-3.5 rounded-2xl text-sm font-bold transition-all border flex items-center justify-center gap-2 shrink-0 ${showFilters || selectedCampaign || selectedForm ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                    className={`px-5 py-3.5 rounded-2xl text-sm font-bold transition-all border flex items-center justify-center gap-2 shrink-0 ${showFilters || selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
                 >
-                    <Filter size={18} /> Filters {(selectedCampaign || selectedForm) && <span className="w-2 h-2 rounded-full bg-blue-400"></span>}
+                    <Filter size={18} /> Filters {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL') && <span className="w-2 h-2 rounded-full bg-blue-400"></span>}
                 </button>
             </div>
 
+            {/* DNP MANAGER QUICK PILLS */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar pt-1">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+                    <PhoneOff size={13} className="text-rose-500" /> DNP Filter:
+                </span>
+                {[
+                    { id: 'ALL', label: 'All Leads' },
+                    { id: 'DNP_ONLY', label: '🔥 DNP Only' },
+                    { id: 'DNP_1', label: 'DNP 1' },
+                    { id: 'DNP_2', label: 'DNP 2' },
+                    { id: 'DNP_3PLUS', label: 'DNP 3+ (Retry Queue)' },
+                    { id: 'NO_DNP', label: 'No DNP' }
+                ].map(p => (
+                    <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setSelectedDnpFilter(p.id as any)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all border shrink-0 ${
+                            selectedDnpFilter === p.id
+                                ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                                : 'bg-slate-50 text-slate-600 border-slate-200/80 hover:bg-slate-100'
+                        }`}
+                    >
+                        {p.label}
+                    </button>
+                ))}
+            </div>
+
             {showFilters && (
-                <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-slate-100 animate-in slide-in-from-top-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-100 animate-in slide-in-from-top-2">
+                    {/* Agent Filter */}
                     <div className="relative flex-1">
-                        <select value={selectedCampaign} onChange={(e) => setSelectedCampaign(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-sm font-bold rounded-2xl py-3.5 pl-4 pr-10 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
+                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Assigned Agent</label>
+                        <select value={selectedAgentFilter} onChange={(e) => setSelectedAgentFilter(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
+                            <option value="ALL">All Team Members</option>
+                            <option value="UNASSIGNED">Unassigned Only</option>
+                            {team.map(m => (
+                                <option key={m.id} value={m.id}>{m.business_name || m.email}</option>
+                            ))}
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
+                    </div>
+
+                    {/* Date Range Filter */}
+                    <div className="relative flex-1">
+                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Date Created</label>
+                        <select value={selectedDateRange} onChange={(e) => setSelectedDateRange(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
+                            <option value="ALL">All Time</option>
+                            <option value="TODAY">Today</option>
+                            <option value="YESTERDAY">Yesterday</option>
+                            <option value="7D">Last 7 Days</option>
+                            <option value="30D">Last 30 Days</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
+                    </div>
+
+                    {/* Campaign Filter */}
+                    <div className="relative flex-1">
+                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Campaign</label>
+                        <select value={selectedCampaign} onChange={(e) => setSelectedCampaign(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
                             <option value="">All Campaigns</option>
                             {uniqueCampaigns.map((camp, i) => <option key={i} value={camp}>{camp}</option>)}
                         </select>
-                        <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
                     </div>
+
+                    {/* Form / Source Filter */}
                     <div className="relative flex-1">
-                        <select value={selectedForm} onChange={(e) => setSelectedForm(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-sm font-bold rounded-2xl py-3.5 pl-4 pr-10 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
-                            <option value="">All Lead Forms / Sources</option>
+                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Lead Form / Source</label>
+                        <select value={selectedForm} onChange={(e) => setSelectedForm(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
+                            <option value="">All Lead Forms</option>
                             {uniqueForms.map((form, i) => <option key={i} value={form}>{form}</option>)}
                         </select>
-                        <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
                     </div>
-                    {uniqueCsvAudiences.length > 0 && (
-                        <div className="relative flex-1">
-                            <select value={selectedCsvAudience} onChange={(e) => setSelectedCsvAudience(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-sm font-bold rounded-2xl py-3.5 pl-4 pr-10 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
-                                <option value="">All CSV Audiences</option>
-                                {uniqueCsvAudiences.map((aud, i) => <option key={i} value={aud}>{aud}</option>)}
-                            </select>
-                            <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+
+                    {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedDnpFilter !== 'ALL') && (
+                        <div className="col-span-full flex justify-end">
+                            <button onClick={() => { setSelectedCampaign(''); setSelectedForm(''); setSelectedAgentFilter('ALL'); setSelectedDateRange('ALL'); setSelectedDnpFilter('ALL'); }} className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors">Clear All Filters</button>
                         </div>
-                    )}
-                    {(selectedCampaign || selectedForm || selectedCsvAudience) && (
-                        <button onClick={() => { setSelectedCampaign(''); setSelectedForm(''); setSelectedCsvAudience(''); }} className="px-4 py-3.5 text-xs font-bold text-red-500 hover:bg-red-50 rounded-2xl transition-colors">Clear Filters</button>
                     )}
                 </div>
             )}
@@ -1501,38 +1606,183 @@ END:VCARD\n`
 
             {renderPagination('top')}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-                {currentLeads.map(lead => {
-                    const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
-                    return (
-                    <div key={lead.id} onClick={() => handleLeadClick(lead)} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-200/60 cursor-pointer hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-300 flex flex-col h-full group">
-                        
-                        {/* ROW 1: Name, Checkbox and Actions */}
-                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-3">
-                            <div className="flex items-start gap-3 flex-1 min-w-0 w-full sm:w-auto">
-                                <input 
-                                    type="checkbox"
-                                    checked={selectedLeadIds.includes(lead.id)}
-                                    onChange={(e) => {
-                                        e.stopPropagation();
-                                        if (selectedLeadIds.includes(lead.id)) {
-                                            setSelectedLeadIds(prev => prev.filter(id => id !== lead.id))
-                                        } else {
-                                            setSelectedLeadIds(prev => [...prev, lead.id])
-                                        }
-                                    }}
-                                    className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer shrink-0"
-                                />
-                                <div className="min-w-0 flex-1">
-                                    <h3 className="font-extrabold text-slate-900 text-base sm:text-lg break-words leading-snug group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
-                                    <p className="text-[11px] font-bold text-slate-500 mt-0.5">{displayPhone || 'No phone number'}</p>
-                                    {(getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name) && (
-                                        <p className="text-[10px] font-extrabold text-slate-400/80 mt-1 break-words whitespace-normal bg-slate-50 border border-slate-100 rounded-lg px-2 py-0.5 inline-block max-w-full" title={getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name}>
-                                            📢 {getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name}
-                                        </p>
-                                    )}
+            {viewMode === 'table' ? (
+                <div className="bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden mb-6">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="bg-slate-50/80 border-b border-slate-200/60 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                    <th className="p-4 w-10 text-center">
+                                        <input 
+                                            type="checkbox"
+                                            checked={currentLeads.length > 0 && currentLeads.every(l => selectedLeadIds.includes(l.id))}
+                                            onChange={(e) => {
+                                                const currentIds = currentLeads.map(l => l.id);
+                                                const allSelected = currentIds.every(id => selectedLeadIds.includes(id));
+                                                if (allSelected) {
+                                                    setSelectedLeadIds(prev => prev.filter(id => !currentIds.includes(id)));
+                                                } else {
+                                                    setSelectedLeadIds(prev => Array.from(new Set([...prev, ...currentIds])));
+                                                }
+                                            }}
+                                            className="rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer"
+                                        />
+                                    </th>
+                                    <th className="p-4">Lead Name & Phone</th>
+                                    <th className="p-4">Stage</th>
+                                    <th className="p-4">Assigned Agent</th>
+                                    <th className="p-4">DNP Status</th>
+                                    <th className="p-4">Campaign / Source</th>
+                                    <th className="p-4">Date</th>
+                                    <th className="p-4 text-right">Quick Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {currentLeads.map(lead => {
+                                    const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
+                                    const dnpCount = lead.dnp_count || lead.custom_fields?.dnp_count || 0;
+                                    return (
+                                        <tr key={lead.id} onClick={() => handleLeadClick(lead)} className="hover:bg-slate-50/70 transition-colors cursor-pointer group">
+                                            <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
+                                                <input 
+                                                    type="checkbox"
+                                                    checked={selectedLeadIds.includes(lead.id)}
+                                                    onChange={(e) => {
+                                                        if (selectedLeadIds.includes(lead.id)) {
+                                                            setSelectedLeadIds(prev => prev.filter(id => id !== lead.id))
+                                                        } else {
+                                                            setSelectedLeadIds(prev => [...prev, lead.id])
+                                                        }
+                                                    }}
+                                                    className="rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer"
+                                                />
+                                            </td>
+                                            <td className="p-4">
+                                                <div className="flex flex-col min-w-[160px]">
+                                                    <span className="font-extrabold text-slate-900 text-sm group-hover:text-blue-600 transition-colors truncate">{lead.name || 'Unknown Lead'}</span>
+                                                    <span className="text-xs font-semibold text-slate-500">{displayPhone || '--'}</span>
+                                                </div>
+                                            </td>
+                                            <td className="p-4" onClick={e => e.stopPropagation()}>
+                                                <span className="inline-block text-xs font-bold px-2.5 py-1 rounded-xl bg-blue-50 text-blue-700 border border-blue-200/60">
+                                                    {lead.pipeline_stage || 'New'}
+                                                </span>
+                                            </td>
+                                            <td className="p-4" onClick={e => e.stopPropagation()}>
+                                                {isAdminLike ? (
+                                                    <select value={lead.assigned_to || ''} onChange={(e) => assignLead(lead.id, e.target.value, e)} className="appearance-none bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-lg py-1.5 px-2.5 outline-none transition-all cursor-pointer border border-slate-200/60 max-w-[140px] truncate">
+                                                        <option value="">Unassigned</option>
+                                                        {team.map(member => <option key={member.id} value={member.id}>{member.business_name || 'Agent'}</option>)}
+                                                    </select>
+                                                ) : (
+                                                    <span className="text-xs font-bold text-slate-700">{team.find(t => t.id === lead.assigned_to)?.business_name || 'Unassigned'}</span>
+                                                )}
+                                            </td>
+                                            <td className="p-4">
+                                                {dnpCount > 0 ? (
+                                                    <span className="px-2.5 py-1 text-[10px] font-black rounded-lg bg-rose-500/10 text-rose-600 border border-rose-500/20 inline-flex items-center gap-1">
+                                                        <PhoneOff size={11} /> DNP x{dnpCount}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-xs text-slate-400 font-medium">No DNP</span>
+                                                )}
+                                            </td>
+                                            <td className="p-4">
+                                                <div className="flex flex-col max-w-[160px]">
+                                                    <span className="text-xs font-bold text-slate-700 truncate">{lead.source || 'Direct'}</span>
+                                                    <span className="text-[10px] font-semibold text-slate-400 truncate">{getLeadCampaignName(lead) || lead.ad_name || '--'}</span>
+                                                </div>
+                                            </td>
+                                            <td className="p-4 whitespace-nowrap">
+                                                <span className="text-xs text-slate-500 font-semibold">
+                                                    {new Date(lead.facebook_created_at || lead.created_at).toLocaleDateString([], {day: '2-digit', month: 'short', year: 'numeric'})}
+                                                </span>
+                                            </td>
+                                            <td className="p-4 text-right" onClick={e => e.stopPropagation()}>
+                                                <div className="flex items-center justify-end gap-1.5">
+                                                    {displayPhone && (
+                                                        <>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const telUri = `tel:${formatCallPhone(displayPhone)}`;
+                                                                    window.open(telUri, '_self');
+                                                                    setCallFeedbackLead(lead);
+                                                                }} 
+                                                                className="p-2 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all border border-emerald-500/20"
+                                                                title="Call Lead & Log Outcome"
+                                                            >
+                                                                <Phone size={14} />
+                                                            </button>
+                                                            <a 
+                                                                href={`https://wa.me/${displayPhone.replace(/[^0-9]/g, '')}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="p-2 bg-emerald-50 text-emerald-600 hover:bg-[#25D366] hover:text-white rounded-xl transition-all border border-emerald-200"
+                                                                title="Chat on WhatsApp"
+                                                            >
+                                                                <Send size={14} />
+                                                            </a>
+                                                        </>
+                                                    )}
+                                                    <button 
+                                                        onClick={(e) => handleDeleteLead(lead.id, e)} 
+                                                        className="p-2 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-xl transition-colors border border-slate-200/60"
+                                                        title="Delete Lead"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+                    {currentLeads.map(lead => {
+                        const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
+                        const dnpCount = lead.dnp_count || lead.custom_fields?.dnp_count || 0;
+                        return (
+                        <div key={lead.id} onClick={() => handleLeadClick(lead)} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-200/60 cursor-pointer hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-300 flex flex-col h-full group">
+                            
+                            {/* ROW 1: Name, Checkbox and Actions */}
+                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-3">
+                                <div className="flex items-start gap-3 flex-1 min-w-0 w-full sm:w-auto">
+                                    <input 
+                                        type="checkbox"
+                                        checked={selectedLeadIds.includes(lead.id)}
+                                        onChange={(e) => {
+                                            e.stopPropagation();
+                                            if (selectedLeadIds.includes(lead.id)) {
+                                                setSelectedLeadIds(prev => prev.filter(id => id !== lead.id))
+                                            } else {
+                                                setSelectedLeadIds(prev => [...prev, lead.id])
+                                            }
+                                        }}
+                                        className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer shrink-0"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h3 className="font-extrabold text-slate-900 text-base sm:text-lg break-words leading-snug group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
+                                            {dnpCount > 0 && (
+                                                <span className="px-2 py-0.5 text-[9px] font-black rounded-md bg-rose-500/10 text-rose-600 border border-rose-500/20 inline-flex items-center gap-1">
+                                                    <PhoneOff size={10} /> DNP x{dnpCount}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-[11px] font-bold text-slate-500 mt-0.5">{displayPhone || 'No phone number'}</p>
+                                        {(getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name) && (
+                                            <p className="text-[10px] font-extrabold text-slate-400/80 mt-1 break-words whitespace-normal bg-slate-50 border border-slate-100 rounded-lg px-2 py-0.5 inline-block max-w-full" title={getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name}>
+                                                📢 {getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name}
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
                             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap sm:flex-nowrap pt-1 sm:pt-0">
                                 {displayPhone && (
                                     <>
@@ -1590,9 +1840,10 @@ END:VCARD\n`
                                             onClick={e => { 
                                                 e.stopPropagation(); 
                                                 sessionStorage.setItem('crm_scroll', window.scrollY.toString()); 
+                                                setCallFeedbackLead(lead);
                                             }} 
-                                            className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
-                                            title="Call Lead"
+                                            className="p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-full transition-colors border border-emerald-200/80 shadow-sm"
+                                            title="Call Lead & Log Outcome"
                                         >
                                             <Phone size={16} />
                                         </a>
@@ -2288,6 +2539,15 @@ END:VCARD\n`
            </div>
          </div>
        )}
+
+       {/* CALL FEEDBACK MODAL */}
+       <CallFeedbackModal 
+         isOpen={!!callFeedbackLead} 
+         lead={callFeedbackLead} 
+         onClose={() => setCallFeedbackLead(null)} 
+         onSuccess={() => fetchLeads(true)} 
+         currentUserId={userId} 
+       />
        </div>
      </div>
    )
