@@ -933,7 +933,13 @@ END:VCARD`
             {/* Header */}
             <div className="p-5 bg-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sticky top-0 z-10">
                 <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
-                    <button onClick={() => router.push(impersonateId ? `/dashboard/crm?impersonate=${impersonateId}` : '/dashboard/crm')} className="p-2 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors shrink-0">
+                    <button onClick={() => {
+                        if (typeof window !== 'undefined' && window.history.length > 1) {
+                            router.back()
+                        } else {
+                            router.push(impersonateId ? `/dashboard/crm?impersonate=${impersonateId}` : '/dashboard/crm')
+                        }
+                    }} className="p-2 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors shrink-0">
                         <ArrowLeft size={18} />
                     </button>
                     <div className="min-w-0 flex-1">

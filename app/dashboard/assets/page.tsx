@@ -830,11 +830,12 @@ export default function AssetsPage() {
             }
 
             if (response.ok) {
-                alert(`Broadcast Complete! \n\n${JSON.stringify(data.results, null, 2)}`)
+                const msg = data.message || (data.results ? `Broadcast Results:\n${JSON.stringify(data.results, null, 2)}` : 'Social Broadcast Queued! Your post is publishing asynchronously in the background.')
+                toast.success('🚀 Social Broadcast Queued!', { description: msg })
                 setSelectedAsset(null)
                 fetchAssets(true) // Update status locally
             } else {
-                alert('Partial Error: ' + JSON.stringify(data))
+                toast.error('Posting Error', { description: data.error || data.message || JSON.stringify(data) })
             }
 
         } catch (error: any) {

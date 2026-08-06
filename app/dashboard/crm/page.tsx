@@ -565,6 +565,46 @@ export default function CRMPage() {
     }
   }
 
+  // --- BULLETPROOF MOBILE & SWIPE GESTURE SCROLL RESTORATION ---
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    // Enforce manual scroll restoration so iOS Safari & Android Chrome don't force reset viewport to top (0,0)
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual'
+    }
+
+    const saveScrollPosition = () => {
+      if (window.scrollY > 0) {
+        sessionStorage.setItem('crm_scroll_position', window.scrollY.toString())
+      }
+    }
+
+    const restoreScroll = () => {
+      const savedPos = sessionStorage.getItem('crm_scroll_position')
+      if (savedPos && parseInt(savedPos, 10) > 0) {
+        const targetY = parseInt(savedPos, 10)
+        window.scrollTo({ top: targetY, behavior: 'instant' as any })
+        requestAnimationFrame(() => window.scrollTo({ top: targetY, behavior: 'instant' as any }))
+        setTimeout(() => window.scrollTo({ top: targetY, behavior: 'instant' as any }), 50)
+        setTimeout(() => window.scrollTo({ top: targetY, behavior: 'instant' as any }), 150)
+        setTimeout(() => window.scrollTo({ top: targetY, behavior: 'instant' as any }), 300)
+        setTimeout(() => window.scrollTo({ top: targetY, behavior: 'instant' as any }), 500)
+      }
+    }
+
+    window.addEventListener('scroll', saveScrollPosition, { passive: true })
+    window.addEventListener('pageshow', restoreScroll)
+    window.addEventListener('popstate', restoreScroll)
+
+    return () => {
+      saveScrollPosition()
+      window.removeEventListener('scroll', saveScrollPosition)
+      window.removeEventListener('pageshow', restoreScroll)
+      window.removeEventListener('popstate', restoreScroll)
+    }
+  }, [])
+
   // Fetch leads when page or active filters change
   useEffect(() => {
     if (isFirstRender.current) {
@@ -572,9 +612,24 @@ export default function CRMPage() {
       return;
     }
     setLoading(true)
-    setLeads([])
     fetchLeads(true)
   }, [currentPage, activeStage, selectedCampaign, selectedForm, selectedCsvAudience])
+
+  // Restore scroll position after leads finish rendering in DOM
+  useEffect(() => {
+    if (!loading && leads.length > 0 && typeof window !== 'undefined') {
+      const savedPos = sessionStorage.getItem('crm_scroll_position')
+      if (savedPos && parseInt(savedPos, 10) > 0) {
+        const targetY = parseInt(savedPos, 10)
+        const restore = () => window.scrollTo({ top: targetY, behavior: 'instant' as any })
+        restore()
+        requestAnimationFrame(restore)
+        setTimeout(restore, 50)
+        setTimeout(restore, 150)
+        setTimeout(restore, 300)
+      }
+    }
+  }, [loading, leads.length])
 
   // Trigger initial fetch & silent background auto-sync of Facebook leads
   useEffect(() => { 
