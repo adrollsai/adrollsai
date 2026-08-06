@@ -5,6 +5,8 @@ import { sendPushNotification } from '@/utils/notification-helper'
 
 export const maxDuration = 300
 
+const CLOUD_RUN_WORKER_URL = process.env.CLOUD_RUN_WORKER_URL || 'https://adrolls-stitcher-worker-805895515412.us-central1.run.app/publish-social';
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -41,7 +43,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No social platforms selected' }, { status: 400 })
     }
 
-    // 2. Get User Credentials
+    // 2. DISPATCH TO DEDICATED CLOUD RUN BACKGROUND WORKER (Scale-ready, 0 Vercel limits)
+    try {
+      console.log(`[Post Universal] Dispatching async social post payload to Cloud Run worker for user: ${targetUserId}`);
+      const workerRes = await fetch(CLOUD_RUN_WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId,
+          imageUrl,
+          caption,
+          type,
+          platforms
+        })
+      });
+
+      if (workerRes.status === 202 || workerRes.ok) {
+        return NextResponse.json({
+          success: true,
+          status: 'queued',
+          message: 'Social broadcast dispatched to background Cloud Run worker! Your posts are publishing asynchronously in the background.'
+        }, { status: 202 });
+      }
+    } catch (workerError: any) {
+      console.warn("[Post Universal] Cloud Run worker dispatch warning, continuing with fallback execution:", workerError?.message);
+    }
+
+    // 3. FALLBACK: Synchronous Serverless Execution
     const { data: profile } = await supabase
       .from('profiles')
       .select('selected_page_token, selected_page_id, linkedin_token, linkedin_id, linkedin_urn')
@@ -51,7 +79,6 @@ export async function POST(request: Request) {
     if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
     const userProfile = profile;
 
-    // 3. EXECUTE SYNCHRONOUS PUBLISHING (Awaited to ensure Vercel serverless execution does not freeze)
     const results: Record<string, string> = {}
     const promises: Promise<void>[] = []
 
@@ -61,34 +88,20 @@ export async function POST(request: Request) {
         results[platform] = res?.status || 'success'
       } catch (error: any) {
         const errorMessage = error.message || 'Unknown Error'
-        console.error(`[Universal Post] ${platform} failed:`, errorMessage)
+        console.error(`[Universal Post Fallback] ${platform} failed:`, errorMessage)
         results[platform] = `Failed: ${errorMessage.substring(0, 150)}`
       }
     }
 
-    if (platforms.includes('facebook')) {
-      if (userProfile.selected_page_token) {
-        promises.push(sendToPlatform('facebook', () => postToFacebook(userProfile.selected_page_token!, imageUrl, caption, type, userProfile.selected_page_id || undefined)))
-      } else {
-        results.facebook = 'Failed: Facebook Page Access Token missing in profile.'
-      }
+    if (platforms.includes('facebook') && userProfile.selected_page_token) {
+      promises.push(sendToPlatform('facebook', () => postToFacebook(userProfile.selected_page_token!, imageUrl, caption, type, userProfile.selected_page_id || undefined)))
     }
-
-    if (platforms.includes('instagram')) {
-      if (userProfile.selected_page_token && userProfile.selected_page_id) {
-        promises.push(sendToPlatform('instagram', () => postToInstagram(userProfile.selected_page_token!, userProfile.selected_page_id!, imageUrl, caption, type)))
-      } else {
-        results.instagram = 'Failed: Facebook/Instagram Page connection missing in profile.'
-      }
+    if (platforms.includes('instagram') && userProfile.selected_page_token && userProfile.selected_page_id) {
+      promises.push(sendToPlatform('instagram', () => postToInstagram(userProfile.selected_page_token!, userProfile.selected_page_id!, imageUrl, caption, type)))
     }
-
-    if (platforms.includes('linkedin')) {
-      if (userProfile.linkedin_token && userProfile.linkedin_id) {
-        const authorUrn = userProfile.linkedin_urn || `urn:li:person:${userProfile.linkedin_id}`
-        promises.push(sendToPlatform('linkedin', () => postToLinkedin(userProfile.linkedin_token!, authorUrn, imageUrl, caption, type)))
-      } else {
-        results.linkedin = 'Failed: LinkedIn account connection missing in profile.'
-      }
+    if (platforms.includes('linkedin') && userProfile.linkedin_token && userProfile.linkedin_id) {
+      const authorUrn = userProfile.linkedin_urn || `urn:li:person:${userProfile.linkedin_id}`
+      promises.push(sendToPlatform('linkedin', () => postToLinkedin(userProfile.linkedin_token!, authorUrn, imageUrl, caption, type)))
     }
 
     await Promise.all(promises)
@@ -104,7 +117,7 @@ export async function POST(request: Request) {
           status: 'social_published'
         })
       } catch (insertErr) {
-        console.error("[Universal Post] Insert post record error:", insertErr)
+        console.error("[Universal Post Fallback] Insert post record error:", insertErr)
       }
     }
 

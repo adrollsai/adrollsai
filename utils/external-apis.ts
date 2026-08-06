@@ -424,7 +424,7 @@ export async function postToLinkedin(accessToken: string, authorUrn: string, ass
     let assetUrn = null;
 
     if (assetUrl) {
-        const isVideo = type === 'video' || !!assetUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || assetUrl.includes('/video/') || assetUrl.includes('generated');
+        const isVideo = type === 'video' || !!assetUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || assetUrl.includes('/video/');
 
         try {
             console.log(`[LinkedIn API] Downloading media buffer from ${assetUrl}...`);

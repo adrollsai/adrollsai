@@ -216,6 +216,261 @@ app.post('/stitch', async (req, res) => {
     }
 });
 
+const FACEBOOK_GRAPH_URL = 'https://graph.facebook.com/v19.0';
+
+async function postToFacebook(accessToken, mediaUrl, caption, type = 'image', pageId) {
+    const isVideo = type === 'video' || !!mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || mediaUrl.includes('/video/');
+    const targetNode = pageId || 'me';
+    let cleanMediaUrl = mediaUrl;
+    if (cleanMediaUrl.includes('.r2.dev/') && !cleanMediaUrl.includes('/adrolls-storage/')) {
+        cleanMediaUrl = cleanMediaUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+    }
+
+    const endpoint = isVideo 
+        ? `${FACEBOOK_GRAPH_URL}/${targetNode}/videos` 
+        : `${FACEBOOK_GRAPH_URL}/${targetNode}/photos`;
+    
+    const bodyObj = isVideo
+        ? { access_token: accessToken, file_url: cleanMediaUrl, description: caption }
+        : { access_token: accessToken, url: cleanMediaUrl, caption, message: caption, published: true };
+
+    const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyObj)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(`Facebook API Error: ${data.error?.message || res.statusText}`);
+    return data;
+}
+
+async function postToInstagram(accessToken, pageId, mediaUrl, caption, type = 'image') {
+    const igAccountRes = await fetch(`${FACEBOOK_GRAPH_URL}/${pageId}?fields=instagram_business_account&access_token=${accessToken}`);
+    const igAccountData = await igAccountRes.json();
+    if (igAccountData.error || !igAccountData.instagram_business_account?.id) {
+        throw new Error(`Failed to get IG Account ID: ${igAccountData.error?.message || 'Page not connected to IG'}`);
+    }
+    const igAccountId = igAccountData.instagram_business_account.id;
+
+    let safeCaption = caption || '';
+    if (safeCaption.length > 2190) safeCaption = safeCaption.substring(0, 2187) + '...';
+
+    const isVideo = type === 'video' || !!mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || mediaUrl.includes('/video/');
+    let cleanMediaUrl = mediaUrl;
+    if (cleanMediaUrl.includes('.r2.dev/') && !cleanMediaUrl.includes('/adrolls-storage/')) {
+        cleanMediaUrl = cleanMediaUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+    }
+
+    const mediaPayload = {
+        caption: safeCaption,
+        access_token: accessToken,
+        [isVideo ? 'video_url' : 'image_url']: cleanMediaUrl,
+        ...(isVideo ? { media_type: 'REELS' } : {})
+    };
+
+    console.log(`[Stitcher Worker] Creating IG ${isVideo ? 'REELS' : 'IMAGE'} container...`);
+    const containerRes = await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mediaPayload)
+    });
+    const containerData = await containerRes.json();
+    if (containerData.error || !containerData.id) {
+        throw new Error(`Failed to create IG media container: ${containerData.error?.message || 'Unknown Error'}`);
+    }
+    const creationId = containerData.id;
+
+    if (isVideo) {
+        let status = 'IN_PROGRESS';
+        let attempts = 0;
+        while (status !== 'FINISHED' && attempts < 25) {
+            await new Promise(r => setTimeout(r, 5000));
+            const statusRes = await fetch(`${FACEBOOK_GRAPH_URL}/${creationId}?fields=status_code,status_description&access_token=${accessToken}`);
+            const statusData = await statusRes.json();
+            status = statusData.status_code;
+            if (status === 'ERROR') {
+                throw new Error(`Instagram processing failed: ${statusData.status_description || 'Meta processing error'}`);
+            }
+            attempts++;
+        }
+    }
+
+    console.log(`[Stitcher Worker] Publishing IG media container ${creationId}...`);
+    const publishRes = await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creation_id: creationId, access_token: accessToken })
+    });
+    const publishData = await publishRes.json();
+    if (publishData.error) {
+        throw new Error(`Failed to publish to Instagram: ${publishData.error?.message || 'Unknown Error'}`);
+    }
+    return publishData;
+}
+
+async function postToLinkedin(accessToken, authorUrn, assetUrl, commentary, type = 'image') {
+    let urn = authorUrn || '';
+    if (!urn.startsWith('urn:li:')) urn = `urn:li:person:${urn}`;
+
+    const linkedinVersion = '202604';
+    let assetUrn = null;
+
+    if (assetUrl) {
+        const isVideo = type === 'video' || !!assetUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || assetUrl.includes('/video/');
+        const fileRes = await fetch(assetUrl);
+        const arrayBuffer = await fileRes.arrayBuffer();
+        const fileBuffer = Buffer.from(arrayBuffer);
+        const fileSizeBytes = fileBuffer.length;
+
+        if (isVideo) {
+            const initRes = await fetch('https://api.linkedin.com/rest/videos?action=initializeUpload', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Linkedin-Version': linkedinVersion,
+                    'X-Restli-Protocol-Version': '2.0.0',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ initializeUploadRequest: { owner: urn, fileSizeBytes } })
+            });
+            const initData = await initRes.json();
+            if (initRes.ok && initData.value?.video) {
+                assetUrn = initData.value.video;
+                const instructions = initData.value.uploadInstructions || [];
+                for (const instr of instructions) {
+                    const chunk = fileBuffer.subarray(instr.firstByte, instr.lastByte + 1);
+                    await fetch(instr.uploadUrl, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/octet-stream' },
+                        body: chunk
+                    });
+                }
+            }
+        } else {
+            const initRes = await fetch('https://api.linkedin.com/rest/images?action=initializeUpload', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Linkedin-Version': linkedinVersion,
+                    'X-Restli-Protocol-Version': '2.0.0',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ initializeUploadRequest: { owner: urn } })
+            });
+            const initData = await initRes.json();
+            if (initRes.ok && initData.value?.image) {
+                assetUrn = initData.value.image;
+                if (initData.value.uploadUrl) {
+                    await fetch(initData.value.uploadUrl, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'image/jpeg' },
+                        body: fileBuffer
+                    });
+                }
+            }
+        }
+    }
+
+    const postPayload = {
+        author: urn,
+        commentary: commentary || '',
+        visibility: 'PUBLIC',
+        distribution: { feedDistribution: 'MAIN_FEED', targetEntities: [], thirdPartyDistributionChannels: [] },
+        content: assetUrn ? { media: { id: assetUrn } } : undefined,
+        lifecycleState: 'PUBLISHED',
+        isReshareDisabledByAuthor: false
+    };
+
+    const postRes = await fetch('https://api.linkedin.com/rest/posts', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Linkedin-Version': linkedinVersion,
+            'X-Restli-Protocol-Version': '2.0.0',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(postPayload)
+    });
+
+    const postId = postRes.headers.get('x-restli-id') || postRes.headers.get('location');
+    return { id: postId || 'success', status: 'published' };
+}
+
+app.post('/publish-social', async (req, res) => {
+    const { targetUserId, imageUrl, caption, type, platforms } = req.body;
+    console.log(`[Stitcher Worker] Received async social broadcast request for user ${targetUserId} to platforms:`, platforms);
+
+    if (!targetUserId || !imageUrl || !platforms || !Array.isArray(platforms)) {
+        return res.status(400).json({ error: "Missing required payload fields." });
+    }
+
+    // Immediately respond with 202 Accepted so Vercel & UI return instant response
+    res.status(202).json({ success: true, message: "Social broadcast queued in background Cloud Run worker." });
+
+    // Execute background worker publishing on Cloud Run
+    (async () => {
+        try {
+            const { data: profile } = await supabaseAdmin
+                .from('profiles')
+                .select('selected_page_token, selected_page_id, linkedin_token, linkedin_id, linkedin_urn')
+                .eq('id', targetUserId)
+                .single();
+
+            if (!profile) return console.error(`[Stitcher Worker] Profile not found for user ${targetUserId}`);
+
+            const results = {};
+            const promises = [];
+
+            const sendToPlatform = async (platform, fn) => {
+                try {
+                    const r = await fn();
+                    results[platform] = r?.status || 'success';
+                } catch (err) {
+                    console.error(`[Stitcher Worker] ${platform} publish error:`, err.message);
+                    results[platform] = `Failed: ${err.message.substring(0, 150)}`;
+                }
+            };
+
+            if (platforms.includes('facebook') && profile.selected_page_token) {
+                promises.push(sendToPlatform('facebook', () => postToFacebook(profile.selected_page_token, imageUrl, caption, type, profile.selected_page_id)));
+            }
+            if (platforms.includes('instagram') && profile.selected_page_token && profile.selected_page_id) {
+                promises.push(sendToPlatform('instagram', () => postToInstagram(profile.selected_page_token, profile.selected_page_id, imageUrl, caption, type)));
+            }
+            if (platforms.includes('linkedin') && profile.linkedin_token && profile.linkedin_id) {
+                const authorUrn = profile.linkedin_urn || `urn:li:person:${profile.linkedin_id}`;
+                promises.push(sendToPlatform('linkedin', () => postToLinkedin(profile.linkedin_token, authorUrn, imageUrl, caption, type)));
+            }
+
+            await Promise.allSettled(promises);
+
+            const hasSuccess = Object.values(results).some(val => val === 'success' || val === 'scheduled' || val === 'published');
+            if (hasSuccess) {
+                await supabaseAdmin.from('posts').insert({
+                    user_id: targetUserId,
+                    title: 'Social Post',
+                    content: caption || '',
+                    image_url: imageUrl || null,
+                    status: 'social_published'
+                }).catch(e => console.error("[Stitcher Worker] Insert post error:", e));
+            }
+
+            const successCount = Object.values(results).filter(v => v === 'success' || v === 'scheduled' || v === 'published').length;
+            await sendPushNotification(
+                targetUserId,
+                `📲 Social Broadcast Published!`,
+                `Your media post has been published to ${successCount} platform(s) via background worker.`,
+                "/dashboard/assets",
+                "social_post"
+            );
+            console.log(`[Stitcher Worker] Social broadcast finished for ${targetUserId}. Results:`, results);
+
+        } catch (bgErr) {
+            console.error("[Stitcher Worker] Background social broadcast fatal error:", bgErr);
+        }
+    })();
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
     console.log(`[Stitcher] Server running on port ${PORT}`);
