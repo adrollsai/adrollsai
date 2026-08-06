@@ -395,6 +395,9 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     }
 
     // 5. Publish Container Synchronously
+    console.log(`[Instagram API] Waiting for container ${creationId} readiness on Meta servers...`);
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
     console.log(`[Instagram API] Publishing IG media container ${creationId}...`);
     const publishRes = await fetchWithRetry(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
         method: 'POST',

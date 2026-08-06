@@ -295,6 +295,7 @@ async function postToInstagram(accessToken, pageId, mediaUrl, caption, type = 'i
         }
     }
 
+    await new Promise(r => setTimeout(r, 3000));
     console.log(`[Stitcher Worker] Publishing IG media container ${creationId}...`);
     const publishRes = await fetch(`${FACEBOOK_GRAPH_URL}/${igAccountId}/media_publish`, {
         method: 'POST',
@@ -467,6 +468,104 @@ app.post('/publish-social', async (req, res) => {
 
         } catch (bgErr) {
             console.error("[Stitcher Worker] Background social broadcast fatal error:", bgErr);
+        }
+    })();
+});
+
+app.post('/process-background-image', async (req, res) => {
+    const { userId, propId, taskId, generatedCaption, placeholderId, batchId, propertyTitle, socialCaption } = req.body;
+    console.log(`[Stitcher Worker] Received background image generation job for user ${userId}, taskId ${taskId}`);
+
+    if (!userId || !taskId) {
+        return res.status(400).json({ error: "Missing required payload fields." });
+    }
+
+    res.status(202).json({ success: true, message: "Image generation job queued on Cloud Run worker." });
+
+    (async () => {
+        try {
+            let attempts = 0;
+            let finalImageUrl = '';
+
+            while (attempts < 35) {
+                attempts++;
+                await new Promise(r => setTimeout(r, 8000));
+                
+                const checkRes = await fetch(`https://api.kie.ai/v1/jobs/${taskId}`, {
+                    headers: { 'Authorization': `Bearer ${process.env.KIE_API_KEY || '748a2ca6b7c6135d0c3a45eb36b6bd54'}` }
+                }).catch(() => null);
+
+                if (!checkRes) continue;
+                const checkData = await checkRes.json().catch(() => ({}));
+                const status = checkData.status || checkData.data?.status || checkData.data?.state;
+
+                if (status === 'succeeded' || status === 'completed' || status === 'success') {
+                    const result = checkData.result || checkData.data?.result || checkData.data;
+                    finalImageUrl = result?.image_url || result?.output_url || result?.url || (typeof result === 'string' && result.startsWith('http') ? result : null);
+                    if (finalImageUrl) break;
+                } else if (status === 'failed' || status === 'error') {
+                    console.error(`[Stitcher Worker] Image generation failed for taskId ${taskId}`);
+                    if (placeholderId) {
+                        await supabaseAdmin.from('assets').update({ status: 'Failed', caption: 'Error: Kie AI Generation failed' }).eq('id', placeholderId);
+                    }
+                    break;
+                }
+            }
+
+            if (!finalImageUrl) {
+                if (placeholderId) {
+                    await supabaseAdmin.from('assets').update({ status: 'Failed', caption: 'Error: Generation Timed Out' }).eq('id', placeholderId);
+                }
+                return;
+            }
+
+            // Persist to R2
+            let persistedUrl = finalImageUrl;
+            try {
+                const imgRes = await fetch(finalImageUrl);
+                const rawBuffer = Buffer.from(await imgRes.arrayBuffer());
+                const finalFileName = `generated/${userId}/${Date.now()}.jpg`;
+                
+                await r2.send(new PutObjectCommand({
+                    Bucket: R2_BUCKET,
+                    Key: finalFileName,
+                    Body: rawBuffer,
+                    ContentType: 'image/jpeg'
+                }));
+                persistedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${finalFileName}`;
+            } catch (r2Err) {
+                console.error("[Stitcher Worker] R2 upload error:", r2Err);
+            }
+
+            // Finalize Asset in DB
+            if (placeholderId) {
+                await supabaseAdmin.from('assets').update({
+                    url: persistedUrl,
+                    status: 'Draft',
+                    caption: generatedCaption || 'AI Generated Creative'
+                }).eq('id', placeholderId);
+            } else {
+                await supabaseAdmin.from('assets').insert({
+                    user_id: userId,
+                    property_id: propId || null,
+                    url: persistedUrl,
+                    type: 'image',
+                    status: 'Draft',
+                    caption: generatedCaption || 'AI Generated Creative'
+                });
+            }
+
+            // Send push notification
+            await sendPushNotification(
+                userId,
+                `✨ Creative Ready: ${propertyTitle || 'New Design'}`,
+                `Your requested AI design for ${propertyTitle || 'property'} is ready.`,
+                "/dashboard/assets",
+                "asset_ready"
+            );
+
+        } catch (err) {
+            console.error("[Stitcher Worker] Background image worker fatal error:", err);
         }
     })();
 });

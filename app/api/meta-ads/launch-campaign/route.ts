@@ -335,20 +335,37 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         const host = request.headers.get('host') || 'localhost:3000';
         const protocol = host.includes('localhost') ? 'http' : 'https';
         const processUrl = `${protocol}://${host}/api/meta-ads/process-campaign-job`;
+        const qstashToken = process.env.QSTASH_TOKEN;
 
-        // Fire-and-forget: dispatch job processor asynchronously without blocking HTTP response
-        fetch(processUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ jobId, payload: jobPayload })
-        }).then(async res => {
-            if (!res.ok) {
-                const errText = await res.text();
-                logToFile(`Job processor request failed with status ${res.status}: ${errText}`);
-            }
-        }).catch(err => {
-            logToFile("Failed to trigger job processor:", err.message);
-        });
+        if (qstashToken) {
+            logToFile(`[LaunchCampaign] Queueing campaign job ${jobId} via QStash...`);
+            const qstashPublishUrl = `https://qstash.upstash.io/v2/publish/${processUrl}`;
+            await fetch(qstashPublishUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${qstashToken}`,
+                    'Content-Type': 'application/json',
+                    'Upstash-Retries': '3'
+                },
+                body: JSON.stringify({ jobId, payload: jobPayload })
+            }).catch(err => {
+                logToFile("Failed to queue campaign job in QStash:", err.message);
+            });
+        } else {
+            // Direct dispatch fallback
+            fetch(processUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ jobId, payload: jobPayload })
+            }).then(async res => {
+                if (!res.ok) {
+                    const errText = await res.text();
+                    logToFile(`Job processor request failed with status ${res.status}: ${errText}`);
+                }
+            }).catch(err => {
+                logToFile("Failed to trigger job processor:", err.message);
+            });
+        }
     }
 
     // --- RETURN IMMEDIATELY ---

@@ -85,7 +85,28 @@ export async function POST(req: Request) {
             console.error("[Worker] Failed to create placeholder asset:", placeholderError);
         }
 
-        // Launch asynchronous background process to avoid blocking connections
+        // --- DISPATCH TO CLOUD RUN BACKGROUND WORKER ---
+        const cloudRunWorkerUrl = process.env.CLOUD_RUN_WORKER_URL ? `${process.env.CLOUD_RUN_WORKER_URL}/process-background-image` : 'https://adrolls-stitcher-worker-805895515412.us-central1.run.app/process-background-image';
+        try {
+            fetch(cloudRunWorkerUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId,
+                    propId,
+                    taskId,
+                    generatedCaption,
+                    placeholderId: placeholder?.id,
+                    batchId,
+                    propertyTitle,
+                    socialCaption: body.payload?.socialCaption
+                })
+            }).catch(e => console.warn("[Worker] Cloud Run image worker dispatch warning:", e));
+        } catch (e) {
+            console.warn("[Worker] Cloud Run dispatch error:", e);
+        }
+
+        // Launch fallback local serverless loop if worker is unavailable
         (async () => {
             try {
                 let attempts = 0;

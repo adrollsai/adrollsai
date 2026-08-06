@@ -386,7 +386,9 @@ export async function POST(request: Request) {
                             
                             const rawAudio = assetData?.metadata?.audioUrl;
                             if (rawAudio && typeof rawAudio === 'string' && rawAudio.startsWith('http')) {
-                                voiceoverAudioUrl = rawAudio.replace('r2.dev/adrolls-storage/', 'r2.dev/');
+                                voiceoverAudioUrl = rawAudio.includes('.r2.dev/') && !rawAudio.includes('/adrolls-storage/')
+                                    ? rawAudio.replace('.r2.dev/', '.r2.dev/adrolls-storage/')
+                                    : rawAudio;
                             }
                         }
 
